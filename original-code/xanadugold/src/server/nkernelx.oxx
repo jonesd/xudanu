@@ -1,0 +1,41 @@
+/* Copyright Xanadu Operating Company.  All Rights Reserved. */
+
+/******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+#ifndef NKERNELX_OXX
+#define NKERNELX_OXX
+
+
+#ifndef NKERNELX_OXX
+#include "nkernelx.oxx"
+#endif /* NKERNELX_OXX */
+
+
+
+OPAQUE_TYPE_2(FeBundle,Heaper);
+OPAQUE_TYPE_3(FeArrayBundle,FeBundle,Heaper);
+OPAQUE_TYPE_3(FeElementBundle,FeBundle,Heaper);
+OPAQUE_TYPE_3(FePlaceHolderBundle,FeBundle,Heaper);
+OPAQUE_TYPE_2(FeKeyMaster,Heaper);
+OPAQUE_TYPE_2(FeRangeElement,Heaper);
+OPAQUE_TYPE_3(FeDataHolder,FeRangeElement,Heaper);
+OPAQUE_TYPE_3(FeEdition,FeRangeElement,Heaper);
+OPAQUE_TYPE_3(FeIDHolder,FeRangeElement,Heaper);
+OPAQUE_TYPE_3(FeLabel,FeRangeElement,Heaper);
+OPAQUE_TYPE_3(FePlaceHolder,FeRangeElement,Heaper);
+OPAQUE_TYPE_3(FeWork,FeRangeElement,Heaper);
+OPAQUE_TYPE_4(FeClub,FeWork,FeRangeElement,Heaper);
+OPAQUE_TYPE_2(FeServer,Heaper);
+#endif /* NKERNELX_OXX */
+

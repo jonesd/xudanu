@@ -1,0 +1,216 @@
+#ifndef XU_SCALAR_OXX
+#define XU_SCALAR_OXX
+
+#define XuBooleanValue XuIntValue
+#define XuBooleanValueP XuIntValueP
+
+class XuIEEE128Var;
+class XuIEEE64Var;
+class XuIEEE32Var;
+class XuIEEE8Var;
+
+XU_TYPE(XuValue,XU_COERCION_3(XuValue,XuPromise,XuCounted)
+	XU_INLINE1 XuValueP (char);
+	XU_INLINE1 XuValueP (unsigned char);
+	XU_INLINE1 XuValueP (short);
+	XU_INLINE1 XuValueP (unsigned short);
+	XU_INLINE1 XuValueP (int);
+	XU_INLINE1 XuValueP (unsigned int);
+	XU_INLINE1 XuValueP (long);
+	XU_INLINE1 XuValueP (unsigned long);
+
+	XU_INLINE1 XuValueP (XuIEEE128Var);
+	XU_INLINE1 XuValueP (XuIEEE64Var);
+	XU_INLINE1 XuValueP (XuIEEE32Var);
+	XU_INLINE1 XuValueP (XuIEEE8Var);
+	XU_INLINE1 XuValueP (double);
+	XU_INLINE1 XuValueP (float);
+)
+
+#ifdef XU_ARM_COMPLIANT
+#	define XU_PLUS_PLUS_DECLS			\
+		XU_INLINE XuIntValueP& operator++ ();	\
+		XU_INLINE XuIntValueP& operator-- ();	\
+		XU_INLINE XuIntValueP operator++ (int);	\
+		XU_INLINE XuIntValueP operator-- (int);
+#else
+#	define XU_PLUS_PLUS_DECLS
+#endif /* XU_ARM_COMPLIANT */
+
+XU_TYPE(XuIntValue,XU_COERCION_4(XuIntValue,XuValue,XuPromise,XuCounted)
+	XU_INLINE1 XuIntValueP (char);
+	XU_INLINE1 XuIntValueP (unsigned char);
+	XU_INLINE1 XuIntValueP (short);
+	XU_INLINE1 XuIntValueP (unsigned short);
+	XU_INLINE1 XuIntValueP (int);
+	XU_INLINE1 XuIntValueP (unsigned int);
+	XU_INLINE1 XuIntValueP (long);
+	XU_INLINE1 XuIntValueP (unsigned long);
+
+	/* Arithmetic */
+	XU_INLINE1 XuIntValueP operator+ (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP operator- (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP operator- ();
+	XU_INLINE1 XuIntValueP operator* (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP operator% (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP operator/ (XuIntValueP& other);
+    
+	/* Equality */
+	XU_INLINE1 XuBooleanVar operator== (XuFakeNull*) ;
+	XU_INLINE1 XuBooleanVar operator!= (XuFakeNull*) ;
+	XU_INLINE1 XuBooleanValueP operator== (XuIntValueP& other);
+	XU_INLINE1 XuBooleanValueP operator== (char);
+	XU_INLINE1 XuBooleanValueP operator== (unsigned char);
+	XU_INLINE1 XuBooleanValueP operator== (short);
+	XU_INLINE1 XuBooleanValueP operator== (unsigned short);
+	XU_INLINE1 XuBooleanValueP operator== (int);
+	XU_INLINE1 XuBooleanValueP operator== (unsigned int);
+	XU_INLINE1 XuBooleanValueP operator== (long);
+	XU_INLINE1 XuBooleanValueP operator== (unsigned long);
+	XU_INLINE1 XuBooleanValueP operator!= (XuIntValueP& other);
+	XU_INLINE1 XuBooleanValueP operator!= (char);
+	XU_INLINE1 XuBooleanValueP operator!= (unsigned char);
+	XU_INLINE1 XuBooleanValueP operator!= (short);
+	XU_INLINE1 XuBooleanValueP operator!= (unsigned short);
+	XU_INLINE1 XuBooleanValueP operator!= (int);
+	XU_INLINE1 XuBooleanValueP operator!= (unsigned int);
+	XU_INLINE1 XuBooleanValueP operator!= (long);
+	XU_INLINE1 XuBooleanValueP operator!= (unsigned long);
+
+	/* Comparison */
+	XU_INLINE1 XuBooleanValueP operator< (XuIntValueP& other);
+	XU_INLINE1 XuBooleanValueP operator> (XuIntValueP& other);
+	XU_INLINE1 XuBooleanValueP operator<= (XuIntValueP& other);
+	XU_INLINE1 XuBooleanValueP operator>= (XuIntValueP& other);
+    
+	/* Assignment */
+	XU_INLINE1 XuIntValueP& operator+= (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP& operator-= (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP& operator*= (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP& operator%= (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP& operator/= (XuIntValueP& other);
+
+	XU_PLUS_PLUS_DECLS
+    
+	/* Bit twiddling.  Negative numbers have an infinite number of preceding 1's */
+	XU_INLINE1 XuIntValueP operator<< (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP operator>> (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP operator~ ();
+	XU_INLINE1 XuIntValueP operator| (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP operator& (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP operator^ (XuIntValueP& other);
+    
+	/* Bit Twiddling Assignment */
+	XU_INLINE1 XuIntValueP& operator<<= (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP& operator>>= (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP& operator|= (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP& operator&= (XuIntValueP& other);
+	XU_INLINE1 XuIntValueP& operator^= (XuIntValueP& other);
+
+	/* As XuBooleanValueP */
+	XU_INLINE1 XuBooleanValueP operator! ();
+	XU_INLINE1 XuBooleanValueP operator&& (XuBooleanValueP& other);
+	XU_INLINE1 XuBooleanValueP operator|| (XuBooleanValueP& other);
+)
+
+XU_TYPE(XuFloatValue,XU_COERCION_4(XuFloatValue,XuValue,XuPromise,XuCounted)
+	XU_INLINE1 XuFloatValueP (XuIEEE128Var);
+	XU_INLINE1 XuFloatValueP (XuIEEE64Var);
+	XU_INLINE1 XuFloatValueP (XuIEEE32Var);
+	XU_INLINE1 XuFloatValueP (XuIEEE8Var);
+	XU_INLINE1 XuFloatValueP (double);
+	XU_INLINE1 XuFloatValueP (float);
+)
+
+XU_TYPE(XuArray,XU_COERCION_3(XuArray,XuPromise,XuCounted)
+	XU_INLINE1 XuArrayP (char *);
+)
+
+XU_TYPE(XuIntArray,XU_COERCION_4(XuIntArray,XuArray,XuPromise,XuCounted)
+	XU_INLINE1 XuIntArrayP (char *);
+)
+
+/****/
+
+XU_TYPE(XuPosition,XU_COERCION_3(XuPosition,XuPromise,XuCounted)
+	XuPositionP (XuValueP&);
+	XU_INLINE1 XuPositionP (XuIntValueP&);
+	XU_INLINE1 XuPositionP (XuFloatValueP&);
+
+	XU_INLINE1 XuPositionP (char);
+	XU_INLINE1 XuPositionP (unsigned char);
+	XU_INLINE1 XuPositionP (short);
+	XU_INLINE1 XuPositionP (unsigned short);
+	XU_INLINE1 XuPositionP (int);
+	XU_INLINE1 XuPositionP (unsigned int);
+	XU_INLINE1 XuPositionP (long);
+	XU_INLINE1 XuPositionP (unsigned long);
+
+	XU_INLINE1 XuPositionP (XuIEEE128Var);
+	XU_INLINE1 XuPositionP (XuIEEE64Var);
+	XU_INLINE1 XuPositionP (XuIEEE32Var);
+	XU_INLINE1 XuPositionP (XuIEEE8Var);
+	XU_INLINE1 XuPositionP (float);
+	XU_INLINE1 XuPositionP (double);
+
+	XU_INLINE1 XuPositionP (char *);
+)
+
+XU_TYPE(XuInteger,XU_COERCION_4(XuInteger,XuPosition,XuPromise,XuCounted)
+	XU_INLINE1 XuIntegerP (XuIntValueP&);
+
+	XU_INLINE1 XuIntegerP (char);
+	XU_INLINE1 XuIntegerP (unsigned char);
+	XU_INLINE1 XuIntegerP (short);
+	XU_INLINE1 XuIntegerP (unsigned short);
+	XU_INLINE1 XuIntegerP (int);
+	XU_INLINE1 XuIntegerP (unsigned int);
+	XU_INLINE1 XuIntegerP (long);
+	XU_INLINE1 XuIntegerP (unsigned long);
+)
+
+XU_TYPE(XuReal,XU_COERCION_4(XuReal,XuPosition,XuPromise,XuCounted)
+	XU_INLINE1 XuRealP (XuFloatValueP&);
+
+	XU_INLINE1 XuRealP (XuIEEE128Var);
+	XU_INLINE1 XuRealP (XuIEEE64Var);
+	XU_INLINE1 XuRealP (XuIEEE32Var);
+	XU_INLINE1 XuRealP (XuIEEE8Var);
+	XU_INLINE1 XuRealP (float);
+	XU_INLINE1 XuRealP (double);
+)
+
+XU_TYPE(XuSequence,XU_COERCION_4(XuSequence,XuPosition,XuPromise,XuCounted)
+	XU_INLINE1 XuSequenceP (char *);
+)
+
+
+XU_TYPE(XuMapping,XU_COERCION_3(XuMapping,XuPromise,XuCounted)
+	XU_INLINE1 XuMappingP (XuIntValueP&);
+
+	XU_INLINE1 XuMappingP (char);
+	XU_INLINE1 XuMappingP (unsigned char);
+	XU_INLINE1 XuMappingP (short);
+	XU_INLINE1 XuMappingP (unsigned short);
+	XU_INLINE1 XuMappingP (int);
+	XU_INLINE1 XuMappingP (unsigned int);
+	XU_INLINE1 XuMappingP (long);
+	XU_INLINE1 XuMappingP (unsigned long);
+)
+
+XU_TYPE(XuIntegerMapping,XU_COERCION_4(XuIntegerMapping,XuMapping,XuPromise,XuCounted)
+	XU_INLINE1 XuIntegerMappingP (XuIntValueP&);
+
+	XU_INLINE1 XuIntegerMappingP (char);
+	XU_INLINE1 XuIntegerMappingP (unsigned char);
+	XU_INLINE1 XuIntegerMappingP (short);
+	XU_INLINE1 XuIntegerMappingP (unsigned short);
+	XU_INLINE1 XuIntegerMappingP (int);
+	XU_INLINE1 XuIntegerMappingP (unsigned int);
+	XU_INLINE1 XuIntegerMappingP (long);
+	XU_INLINE1 XuIntegerMappingP (unsigned long);
+)
+
+
+
+#endif /* XU_SCALAR_OXX */

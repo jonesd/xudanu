@@ -1,0 +1,5 @@
+#!/bin/csh
+rm ent.ent
+cp ent.init.gz ent.ent.gz
+gunzip ent.ent
+

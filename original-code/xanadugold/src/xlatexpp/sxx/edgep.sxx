@@ -1,0 +1,149 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define EDGEP_SXX
+
+/*----------------------- BEGIN EdgeAccumulator -----------------------*/
+DEFINE_CLASS_CATEGORY(EdgeAccumulator,Accumulator)
+DEFINE_OPAQUE_TYPE(EdgeAccumulator);
+
+void EdgeAccumulator::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "EdgeAccumulator" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void EdgeAccumulator::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(myManager);
+    xmtr->sendBooleanVar(myStartsInside);
+    xmtr->sendHeaper(myEdges);
+    xmtr->sendInt32(myIndex);
+    xmtr->sendHeaper(myPending);
+}
+
+EdgeAccumulator::EdgeAccumulator (APTR(Rcvr) receiver, TCSJ)
+{
+    myManager = CAST(EdgeManager, receiver->receiveHeaper());
+    myStartsInside = receiver->receiveBooleanVar();
+    myEdges = CAST(PtrArray, receiver->receiveHeaper());
+    myIndex = receiver->receiveInt32();
+    myPending = CAST(TransitionEdge, receiver->receiveHeaper());
+    this->restartEdgeAccumulator(receiver);
+}
+
+
+void parseInto_EdgeAccumulator (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) EdgeAccumulator (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe EdgeAccumulator_recipe(cat_EdgeAccumulator, &XppCuisine, parseInto_EdgeAccumulator);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of EdgeAccumulator ====== */
+
+void EdgeAccumulator::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((EdgeAccumulator*)origin)->myManager,
+				       (Heaper**)&myManager);
+		Heaplet::forwardToOld ((Heaper**)&((EdgeAccumulator*)origin)->myEdges,
+				       (Heaper**)&myEdges);
+		Heaplet::forwardToOld ((Heaper**)&((EdgeAccumulator*)origin)->myPending,
+				       (Heaper**)&myPending);
+	} else {
+		myManager.forwardTo (Heaplet::forward (myManager));
+		myEdges.forwardTo (Heaplet::forward (myEdges));
+		myPending.forwardTo (Heaplet::forward (myPending));
+	}
+}
+
+/*----------------------- END EdgeAccumulator -----------------------*/
+
+
+/*----------------------- BEGIN EdgeSimpleRegionStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(EdgeSimpleRegionStepper,Stepper)
+DEFINE_OPAQUE_TYPE(EdgeSimpleRegionStepper);
+
+void EdgeSimpleRegionStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of EdgeSimpleRegionStepper ====== */
+
+void EdgeSimpleRegionStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((EdgeSimpleRegionStepper*)origin)->myManager,
+				       (Heaper**)&myManager);
+		Heaplet::forwardToOld ((Heaper**)&((EdgeSimpleRegionStepper*)origin)->myEdges,
+				       (Heaper**)&myEdges);
+		Heaplet::forwardToOld ((Heaper**)&((EdgeSimpleRegionStepper*)origin)->mySimple,
+				       (Heaper**)&mySimple);
+	} else {
+		myManager.forwardTo (Heaplet::forward (myManager));
+		myEdges.forwardTo (Heaplet::forward (myEdges));
+		mySimple.forwardTo (Heaplet::forward (mySimple));
+	}
+}
+
+/*----------------------- END EdgeSimpleRegionStepper -----------------------*/
+
+
+/*----------------------- BEGIN EdgeStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(EdgeStepper,Stepper)
+DEFINE_OPAQUE_TYPE(EdgeStepper);
+
+void EdgeStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of EdgeStepper ====== */
+
+void EdgeStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((EdgeStepper*)origin)->myEdges,
+				       (Heaper**)&myEdges);
+	} else {
+		myEdges.forwardTo (Heaplet::forward (myEdges));
+	}
+}
+
+/*----------------------- END EdgeStepper -----------------------*/
+

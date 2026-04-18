@@ -1,0 +1,28 @@
+/*
+      (C) Copyright 1988, 89 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+**************************************************************************** */
+//
+//	Touched while merging with alpha-14
+//		- michael Jul 22 1991
+
+#ifndef OPAQUET_OXX
+#define OPAQUET_OXX
+static char opaquet_oxx_id[] = "$Id: opaquet.oxx,v 2.3 1992/11/25 23:26:36 eric Exp $";
+
+OPAQUE_TYPE_2(Foo,Heaper);
+OPAQUE_TYPE_3(Bar,Foo,Heaper);
+OPAQUE_TYPE_3(Baz,Foo,Heaper);
+OPAQUE_TYPE_2(EqualCoercionTester,Heaper);
+OPAQUE_TYPE_2(DestroyItTester,Heaper);
+
+#endif /* OPAQUET_OXX */

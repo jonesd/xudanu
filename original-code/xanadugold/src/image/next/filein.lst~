@@ -1,0 +1,10 @@
+#	Filename	Predecesors
+0	13Mar93
+1	ech-a.cha	0
+2	ech-b.cha	1
+3	ech-c.cha	2
+4	ech-d.cha	3
+5	ech-e.cha	4
+6	cth-a.cha	2,5; no conflicts
+
+

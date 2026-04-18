@@ -1,0 +1,97 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define TOFUX_SXX
+
+/*----------------------- BEGIN TCSJ -----------------------*/
+
+/*----------------------- END TCSJ -----------------------*/
+
+
+/*----------------------- BEGIN XCSJ -----------------------*/
+
+/*----------------------- END XCSJ -----------------------*/
+
+
+/*----------------------- BEGIN VTBL -----------------------*/
+
+/*----------------------- END VTBL -----------------------*/
+
+
+/*----------------------- BEGIN Tofu -----------------------*/
+
+/*----------------------- END Tofu -----------------------*/
+
+
+/*----------------------- BEGIN Heaper -----------------------*/
+DEFINE_CLASS_CATEGORY(Heaper,Tofu)
+DEFINE_OPAQUE_TYPE(Heaper);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END Heaper -----------------------*/
+
+
+/*----------------------- BEGIN Category -----------------------*/
+DEFINE_CLASS_CATEGORY(Category,Heaper)
+
+void Category::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END Category -----------------------*/
+
+
+/*----------------------- BEGIN BecomeIniter -----------------------*/
+DEFINE_CLASS_CATEGORY(BecomeIniter,Heaper)
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END BecomeIniter -----------------------*/
+
+
+/*----------------------- BEGIN MayBecomeIniter -----------------------*/
+DEFINE_CLASS_CATEGORY(MayBecomeIniter,BecomeIniter)
+
+void MayBecomeIniter::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END MayBecomeIniter -----------------------*/
+
+
+/*----------------------- BEGIN MayBecomeAnySubclassOfIniter -----------------------*/
+DEFINE_CLASS_CATEGORY(MayBecomeAnySubclassOfIniter,BecomeIniter)
+
+void MayBecomeAnySubclassOfIniter::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END MayBecomeAnySubclassOfIniter -----------------------*/
+

@@ -1,0 +1,13 @@
+fluidx.cxx:	GlobalEmulsion::TheEmulsion = new GlobalEmulsion();
+garbagex.cxx:    TheHeap = new Heap (BibopHeap::defaultInitialHeap ());
+tofux.cxx:void * Heaper::operator new (size_t /*s*/)
+tofux.cxx:void * Heaper::operator new (size_t s, void * storage)
+tofux.cxx:void * Heaper::operator new (size_t s,
+tofux.cxx:void * Heaper::operator new (size_t s,
+wparrayx.cxx:		Heaplet::pageOf (nobj)->rememberWeak (this, i,NULL); // on new pg 
+settabx.cxx:		result = new (SetTableStepper::AStepper) SetTableStepper(array, tcsj);
+detectx.cxx:notified of new results from Edition::rangeTranscluders () or 
+recipex.cxx:	result = Heaper::operator new (0, xcsj, this->categoryOfDish());
+schunkx.cxx:		ServerChunk::SecretEmulsion = new ListenerEmulsion();
+xfrspecx.cxx:	result = (Heaper *)Heaper::operator new (0, xcsj, cat);
+urdix.cxx://	    - Urdi::printOn() (to display new queues & vars)

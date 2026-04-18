@@ -1,0 +1,301 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define IDX_SXX
+
+/*----------------------- BEGIN ID -----------------------*/
+DEFINE_CLASS_CATEGORY(ID,Position)
+DEFINE_OPAQUE_TYPE(ID);
+
+void ID::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "ID" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void ID::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(mySpace);
+    xmtr->sendHeaper(myBackend);
+    xmtr->sendIntegerVar(myNumber);
+}
+
+ID::ID (APTR(Rcvr) receiver, TCSJ)
+{
+    mySpace = CAST(IDSpace, receiver->receiveHeaper());
+    myBackend = CAST(Sequence, receiver->receiveHeaper());
+    myNumber = receiver->receiveIntegerVar();
+}
+
+
+void parseInto_ID (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) ID (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe ID_recipe(cat_ID, &DiskCuisine, parseInto_ID);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "ID" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of ID ====== */
+
+void ID::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ID*)origin)->mySpace,
+				       (Heaper**)&mySpace);
+		Heaplet::forwardToOld ((Heaper**)&((ID*)origin)->myBackend,
+				       (Heaper**)&myBackend);
+	} else {
+		mySpace.forwardTo (Heaplet::forward (mySpace));
+		myBackend.forwardTo (Heaplet::forward (myBackend));
+	}
+}
+
+/*----------------------- END ID -----------------------*/
+
+
+/*----------------------- BEGIN IDDsp -----------------------*/
+DEFINE_CLASS_CATEGORY(IDDsp,IdentityDsp)
+DEFINE_OPAQUE_TYPE(IDDsp);
+
+void IDDsp::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IDDsp" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IDDsp::sendSelfTo (APTR(Xmtr) xmtr)
+{
+}
+
+extern Recipe * DiskCuisine;
+PseudoCopyRecipe IDDsp_recipe(cat_IDDsp, &DiskCuisine, IDDsp::make);
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "IDDsp" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of IDDsp ====== */
+
+void IDDsp::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((IDDsp*)origin)->mySpace,
+				       (Heaper**)&mySpace);
+	} else {
+		mySpace.forwardTo (Heaplet::forward (mySpace));
+	}
+}
+
+/*----------------------- END IDDsp -----------------------*/
+
+
+/*----------------------- BEGIN IDRegion -----------------------*/
+DEFINE_CLASS_CATEGORY(IDRegion,XnRegion)
+DEFINE_OPAQUE_TYPE(IDRegion);
+
+void IDRegion::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IDRegion" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IDRegion::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(mySpace);
+    xmtr->sendHeaper(myLocalIDs);
+    xmtr->sendHeaper(myImportedIDs);
+    xmtr->sendBooleanVar(myIncludesRest);
+}
+
+IDRegion::IDRegion (APTR(Rcvr) receiver, TCSJ)
+{
+    mySpace = CAST(IDSpace, receiver->receiveHeaper());
+    myLocalIDs = CAST(IntegerRegion, receiver->receiveHeaper());
+    myImportedIDs = CAST(ImmuTable, receiver->receiveHeaper());
+    myIncludesRest = receiver->receiveBooleanVar();
+}
+
+
+void parseInto_IDRegion (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IDRegion (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe IDRegion_recipe(cat_IDRegion, &DiskCuisine, parseInto_IDRegion);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "IDRegion" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of IDRegion ====== */
+
+void IDRegion::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((IDRegion*)origin)->mySpace,
+				       (Heaper**)&mySpace);
+		Heaplet::forwardToOld ((Heaper**)&((IDRegion*)origin)->myLocalIDs,
+				       (Heaper**)&myLocalIDs);
+		Heaplet::forwardToOld ((Heaper**)&((IDRegion*)origin)->myImportedIDs,
+				       (Heaper**)&myImportedIDs);
+	} else {
+		mySpace.forwardTo (Heaplet::forward (mySpace));
+		myLocalIDs.forwardTo (Heaplet::forward (myLocalIDs));
+		myImportedIDs.forwardTo (Heaplet::forward (myImportedIDs));
+	}
+}
+
+/*----------------------- END IDRegion -----------------------*/
+
+
+/*----------------------- BEGIN IDSpace -----------------------*/
+DEFINE_CLASS_CATEGORY(IDSpace,CoordinateSpace)
+DEFINE_OPAQUE_TYPE(IDSpace);
+
+void IDSpace::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IDSpace" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IDSpace::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    this->sendIDSpaceTo(xmtr);
+}
+
+extern Recipe * DiskCuisine;
+PseudoCopyRecipe IDSpace_recipe(cat_IDSpace, &DiskCuisine, IDSpace::make);
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "IDSpace" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of IDSpace ====== */
+
+void IDSpace::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->CoordinateSpace::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((IDSpace*)origin)->myBackend,
+				       (Heaper**)&myBackend);
+		Heaplet::forwardToOld ((Heaper**)&((IDSpace*)origin)->myNewIDCounter,
+				       (Heaper**)&myNewIDCounter);
+	} else {
+		myBackend.forwardTo (Heaplet::forward (myBackend));
+		myNewIDCounter.forwardTo (Heaplet::forward (myNewIDCounter));
+	}
+}
+
+/*----------------------- END IDSpace -----------------------*/
+

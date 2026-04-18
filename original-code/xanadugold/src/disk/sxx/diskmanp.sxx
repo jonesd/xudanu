@@ -1,0 +1,163 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define DISKMANP_SXX
+
+/*----------------------- BEGIN Cattleman -----------------------*/
+DEFINE_CLASS_CATEGORY(Cattleman,XnExecutor)
+DEFINE_OPAQUE_TYPE(Cattleman);
+
+void Cattleman::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "Cattleman" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of Cattleman ====== */
+
+void Cattleman::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((Cattleman*)origin)->myPasture,
+				       (Heaper**)&myPasture);
+	} else {
+		myPasture.forwardTo (Heaplet::forward (myPasture));
+	}
+}
+
+/*----------------------- END Cattleman -----------------------*/
+
+
+/*----------------------- BEGIN DiskConnection -----------------------*/
+DEFINE_CLASS_CATEGORY(DiskConnection,Connection)
+
+void DiskConnection::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "DiskConnection" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of DiskConnection ====== */
+
+void DiskConnection::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((DiskConnection*)origin)->myHeaper,
+				       (Heaper**)&myHeaper);
+	} else {
+		myHeaper.forwardTo (Heaplet::forward (myHeaper));
+	}
+}
+
+/*----------------------- END DiskConnection -----------------------*/
+
+
+/*----------------------- BEGIN DiskManagerEmulsion -----------------------*/
+
+/*----------------------- END DiskManagerEmulsion -----------------------*/
+
+
+/*----------------------- BEGIN FromDiskPlan -----------------------*/
+DEFINE_CLASS_CATEGORY(FromDiskPlan,BootPlan)
+
+void FromDiskPlan::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "FromDiskPlan" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void FromDiskPlan::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(myCategory);
+    xmtr->sendString(myFilename);
+}
+
+FromDiskPlan::FromDiskPlan (APTR(Rcvr) receiver, TCSJ)
+{
+    myCategory = CAST(Category, receiver->receiveHeaper());
+    myFilename = receiver->receiveString();
+}
+
+
+void parseInto_FromDiskPlan (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) FromDiskPlan (rcvr, tcsj);
+}
+
+extern Recipe * BootCuisine;
+ActualCopyRecipe FromDiskPlan_recipe(cat_FromDiskPlan, &BootCuisine, parseInto_FromDiskPlan);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FromDiskPlan" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of FromDiskPlan ====== */
+
+void FromDiskPlan::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END FromDiskPlan -----------------------*/
+

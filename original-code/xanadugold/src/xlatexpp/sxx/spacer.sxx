@@ -1,0 +1,166 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define SPACER_SXX
+
+/*----------------------- BEGIN ExplicitArrangement -----------------------*/
+DEFINE_CLASS_CATEGORY(ExplicitArrangement,Arrangement)
+
+void ExplicitArrangement::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "ExplicitArrangement" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void ExplicitArrangement::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Arrangement::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myPositions);
+}
+
+ExplicitArrangement::ExplicitArrangement (APTR(Rcvr) receiver, TCSJ)
+  : Arrangement (receiver, tcsj) {
+    myPositions = CAST(PtrArray, receiver->receiveHeaper());
+}
+
+
+void parseInto_ExplicitArrangement (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) ExplicitArrangement (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe ExplicitArrangement_recipe(cat_ExplicitArrangement, &XppCuisine, parseInto_ExplicitArrangement);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of ExplicitArrangement ====== */
+
+void ExplicitArrangement::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ExplicitArrangement*)origin)->myPositions,
+				       (Heaper**)&myPositions);
+	} else {
+		myPositions.forwardTo (Heaplet::forward (myPositions));
+	}
+}
+
+/*----------------------- END ExplicitArrangement -----------------------*/
+
+
+/*----------------------- BEGIN IdentityDsp -----------------------*/
+DEFINE_CLASS_CATEGORY(IdentityDsp,Dsp)
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END IdentityDsp -----------------------*/
+
+
+/*----------------------- BEGIN MergeStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(MergeStepper,Stepper)
+
+void MergeStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "MergeStepper" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void MergeStepper::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(myA);
+    xmtr->sendHeaper(myB);
+    xmtr->sendHeaper(myOrder);
+    xmtr->sendHeaper(myValue);
+}
+
+MergeStepper::MergeStepper (APTR(Rcvr) receiver, TCSJ)
+{
+    myA = CAST(Stepper, receiver->receiveHeaper());
+    myB = CAST(Stepper, receiver->receiveHeaper());
+    myOrder = CAST(OrderSpec, receiver->receiveHeaper());
+    myValue = CAST(Position, receiver->receiveHeaper());
+}
+
+
+void parseInto_MergeStepper (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) MergeStepper (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe MergeStepper_recipe(cat_MergeStepper, &XppCuisine, parseInto_MergeStepper);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of MergeStepper ====== */
+
+void MergeStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((MergeStepper*)origin)->myA,
+				       (Heaper**)&myA);
+		Heaplet::forwardToOld ((Heaper**)&((MergeStepper*)origin)->myB,
+				       (Heaper**)&myB);
+		Heaplet::forwardToOld ((Heaper**)&((MergeStepper*)origin)->myOrder,
+				       (Heaper**)&myOrder);
+		Heaplet::forwardToOld ((Heaper**)&((MergeStepper*)origin)->myValue,
+				       (Heaper**)&myValue);
+	} else {
+		myA.forwardTo (Heaplet::forward (myA));
+		myB.forwardTo (Heaplet::forward (myB));
+		myOrder.forwardTo (Heaplet::forward (myOrder));
+		myValue.forwardTo (Heaplet::forward (myValue));
+	}
+}
+
+/*----------------------- END MergeStepper -----------------------*/
+

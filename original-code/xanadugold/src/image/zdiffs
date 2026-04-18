@@ -1,0 +1,933 @@
+diff -w /Fhypatia/roger/prod/xhs/src/foo /Fhypatia/roger/prod/xhs/src.roger2/foo
+image/client.prc
+comm/bin2comp.hxx
+comm/bin2comp.ixx
+comm/bin2comp.oxx
+comm/bin2comx.cxx
+comm/bin2comx.hxx
+comm/bin2comx.ixx
+comm/bin2comx.oxx
+comm/bootplnp.hxx
+comm/bootplnp.ixx
+comm/bootplnp.oxx
+comm/bootplnr.hxx
+comm/bootplnr.ixx
+comm/bootplnr.oxx
+comm/bootplnx.cxx
+comm/bootplnx.hxx
+comm/bootplnx.ixx
+comm/bootplnx.oxx
+comm/comdtctp.hxx
+comm/comdtctp.ixx
+comm/comdtctp.oxx
+comm/comdtctr.hxx
+comm/comdtctr.ixx
+comm/comdtctr.oxx
+comm/comdtctx.cxx
+comm/cookbkp.hxx
+comm/cookbkp.ixx
+comm/cookbkp.oxx
+comm/cookbkx.cxx
+comm/cookbkx.hxx
+comm/cookbkx.ixx
+comm/cookbkx.oxx
+comm/handlrsx.cxx
+comm/handlrsx.hxx
+comm/handlrsx.ixx
+comm/handlrsx.oxx
+comm/negoti8p.hxx
+comm/negoti8p.ixx
+comm/negoti8p.oxx
+comm/negoti8x.cxx
+comm/negoti8x.hxx
+comm/negoti8x.ixx
+comm/negoti8x.oxx
+comm/nscottyp.hxx
+comm/nscottyp.ixx
+comm/nscottyp.oxx
+comm/nscottyx.cxx
+comm/nscottyx.hxx
+comm/nscottyx.ixx
+comm/nscottyx.oxx
+comm/nxcvrx.cxx
+comm/nxcvrx.hxx
+comm/nxcvrx.ixx
+comm/nxcvrx.oxx
+comm/portalp.hxx
+comm/portalp.ixx
+comm/portalp.oxx
+comm/portalr.hxx
+comm/portalr.ixx
+comm/portalr.oxx
+comm/portalx.cxx
+comm/portalx.hxx
+comm/portalx.ixx
+comm/portalx.oxx
+comm/prolstnp.hxx
+comm/prolstnp.ixx
+comm/prolstnp.oxx
+comm/prolstnx.cxx
+136,138c136
+< 			/*cerr << &PROBLEM(ex);*/
+< 			
+< 			operator<<(cerr ,(Problem*)&PROBLEM(ex));
+---
+> 			cerr << &PROBLEM(ex);
+comm/prolstnx.hxx
+comm/prolstnx.ixx
+comm/prolstnx.oxx
+comm/promanp.hxx
+comm/promanp.ixx
+comm/promanp.oxx
+comm/promanr.hxx
+comm/promanr.ixx
+comm/promanr.oxx
+comm/promant.cxx
+comm/promant.hxx
+comm/promant.ixx
+comm/promant.oxx
+comm/promanx.cxx
+comm/promanx.hxx
+comm/promanx.ixx
+comm/promanx.oxx
+comm/recipex.cxx
+comm/recipex.hxx
+comm/recipex.ixx
+comm/recipex.oxx
+comm/schunkp.hxx
+comm/schunkp.ixx
+comm/schunkp.oxx
+comm/schunkt.cxx
+comm/schunkt.hxx
+comm/schunkt.ixx
+comm/schunkt.oxx
+comm/schunkx.cxx
+comm/schunkx.hxx
+comm/schunkx.ixx
+comm/schunkx.oxx
+comm/sktsrvp.hxx
+comm/sktsrvp.ixx
+comm/sktsrvp.oxx
+comm/sktsrvx.cxx
+155c155,171
+< 	struct	sockaddr_in * sockName = (struct sockaddr_in *)falloc(sizeof(struct sockaddr_in));
+---
+> #ifdef NETMNG
+> #define SOCKA_SIZE sizeof(struct sockaddr)
+> 	struct	sockaddr * sockName = (struct sockaddr *)falloc(SOCKA_SIZE);	
+> #else
+> #define SOCKA_SIZE sizeof(struct sockaddr_in)
+> 	struct	sockaddr_in * sockName = (struct sockaddr_in *)falloc(SOCKA_SIZE);
+> #endif	
+> #ifdef UndeFIned_FALSE
+> #define SOCKA_SIZE sizeof(struct sockaddr)
+> 	struct	sockaddr * sockName = (struct sockaddr *)falloc(SOCKA_SIZE);
+> #endif
+> #ifdef GNU
+> #define SOCK_CAST 
+> #else
+> #define SOCK_CAST (sockaddr *)
+> #endif
+> 
+164,168c180,182
+< #ifdef NETMNG
+< 	if (bind (aSocket, sockName, sizeof (struct sockaddr_in)) < 0) {
+< #else
+< 	if (bind (aSocket, sockName, sizeof (struct sockaddr_in)) < 0) {
+< #endif
+---
+> 
+> 	if (bind ( aSocket, SOCK_CAST sockName, SOCKA_SIZE) < 0) {
+> 
+200a215
+> #ifdef GNU
+201a217,219
+> #else
+> 	sockaddr fromAddr;
+> #endif
+217,219c235
+< 			/*cerr << &PROBLEM(ex);*/
+< 			
+< 			operator<<(cerr,(Problem *)&PROBLEM(ex));
+---
+> 			cerr << &PROBLEM(ex);
+comm/sktsrvx.hxx
+comm/sktsrvx.ixx
+comm/sktsrvx.oxx
+comm/srvloopx.cxx
+comm/srvloopx.hxx
+comm/srvloopx.ixx
+comm/srvloopx.oxx
+comm/txtcommp.hxx
+comm/txtcommp.ixx
+comm/txtcommp.oxx
+comm/txtcommx.cxx
+comm/txtcommx.hxx
+comm/txtcommx.ixx
+comm/txtcommx.oxx
+comm/xfrspecp.hxx
+comm/xfrspecp.ixx
+comm/xfrspecp.oxx
+comm/xfrspect.cxx
+comm/xfrspect.hxx
+comm/xfrspect.ixx
+comm/xfrspect.oxx
+comm/xfrspecx.cxx
+260c260
+< 		SpecialistRcvr::RcvrIbidCache = CAST(PtrArray,myIbids);
+---
+> 		SpecialistRcvr::RcvrIbidCache = myIbids;
+362c362
+< 		SpecialistXmtr::XmtrIbidCache = CAST(PrimIndexTable,myIbids);
+---
+> 		SpecialistXmtr::XmtrIbidCache = myIbids;
+comm/xfrspecx.hxx
+comm/xfrspecx.ixx
+comm/xfrspecx.oxx
+disk/consistt.cxx
+disk/consistt.hxx
+disk/consistt.ixx
+disk/consistt.oxx
+disk/diskmanp.hxx
+disk/diskmanp.ixx
+disk/diskmanp.oxx
+disk/diskmant.cxx
+disk/diskmant.hxx
+disk/diskmant.ixx
+disk/diskmant.oxx
+disk/diskmanx.cxx
+disk/diskmanx.hxx
+disk/diskmanx.ixx
+disk/diskmanx.oxx
+disk/dstatp.hxx
+disk/dstatp.ixx
+disk/dstatp.oxx
+disk/dstatx.cxx
+disk/fakedskp.hxx
+disk/fakedskp.ixx
+disk/fakedskp.oxx
+disk/fakedskx.cxx
+disk/flkinfox.cxx
+disk/flkinfox.hxx
+disk/flkinfox.ixx
+disk/flkinfox.oxx
+disk/packerp.hxx
+disk/packerp.ixx
+disk/packerp.oxx
+disk/packert.cxx
+disk/packert.hxx
+disk/packert.ixx
+disk/packert.oxx
+disk/packerx.cxx
+disk/packerx.hxx
+disk/packerx.ixx
+disk/packerx.oxx
+disk/purgingp.hxx
+disk/purgingp.ixx
+disk/purgingp.oxx
+disk/purgingx.cxx
+disk/purgingx.hxx
+disk/purgingx.ixx
+disk/purgingx.oxx
+disk/snfinfox.cxx
+disk/snfinfox.hxx
+disk/snfinfox.ixx
+disk/snfinfox.oxx
+disk/turtlep.hxx
+disk/turtlep.ixx
+disk/turtlep.oxx
+disk/turtlex.cxx
+disk/turtlex.hxx
+disk/turtlex.ixx
+disk/turtlex.oxx
+server/branchx.cxx
+server/branchx.hxx
+server/branchx.ixx
+server/branchx.oxx
+server/brange1p.hxx
+server/brange1p.ixx
+server/brange1p.oxx
+server/brange1x.cxx
+server/brange1x.hxx
+server/brange1x.ixx
+server/brange1x.oxx
+server/brange2p.hxx
+server/brange2p.ixx
+server/brange2p.oxx
+server/brange2x.cxx
+server/brange2x.hxx
+server/brange2x.ixx
+server/brange2x.oxx
+server/brange3p.hxx
+server/brange3p.ixx
+server/brange3p.oxx
+server/brange3x.cxx
+server/brange3x.hxx
+server/brange3x.ixx
+server/brange3x.oxx
+server/canopyp.hxx
+server/canopyp.ixx
+server/canopyp.oxx
+server/canopyr.hxx
+server/canopyr.ixx
+server/canopyr.oxx
+server/canopyx.cxx
+server/canopyx.hxx
+server/canopyx.ixx
+server/canopyx.oxx
+server/counterp.hxx
+server/counterp.ixx
+server/counterp.oxx
+server/counterx.cxx
+server/counterx.hxx
+server/counterx.ixx
+server/counterx.oxx
+server/cryptop.hxx
+server/cryptop.ixx
+server/cryptop.oxx
+server/cryptox.cxx
+server/cryptox.hxx
+server/cryptox.ixx
+server/cryptox.oxx
+server/dagwoodx.cxx
+server/dagwoodx.hxx
+server/dagwoodx.ixx
+server/dagwoodx.oxx
+server/detectx.cxx
+server/detectx.hxx
+server/detectx.ixx
+server/detectx.oxx
+server/entx.cxx
+server/entx.hxx
+server/entx.ixx
+server/entx.oxx
+server/granmapp.hxx
+server/granmapp.ixx
+server/granmapp.oxx
+server/granmapx.cxx
+352c352
+< 		myGlobalIDFilterSpace = FilterSpace::make (CAST(CoordinateSpace,myGlobalIDSpace));
+---
+> 		myGlobalIDFilterSpace = FilterSpace::make (myGlobalIDSpace);
+354c354
+< 		myEndorsementFilterSpace = FilterSpace::make (CAST(CoordinateSpace,myEndorsementSpace));
+---
+> 		myEndorsementFilterSpace = FilterSpace::make (myEndorsementSpace);
+server/granmapx.hxx
+server/granmapx.ixx
+server/granmapx.oxx
+server/grantabp.hxx
+server/grantabp.ixx
+server/grantabp.oxx
+server/grantabt.cxx
+server/grantabt.hxx
+server/grantabt.ixx
+server/grantabt.oxx
+server/grantabx.cxx
+server/grantabx.hxx
+server/grantabx.ixx
+server/grantabx.oxx
+server/htreex.cxx
+331d330
+< 	if (!myBertCrum->isLE(bCrum)) {
+339d337
+< 		}
+server/htreex.hxx
+server/htreex.ixx
+server/htreex.oxx
+server/idp.hxx
+server/idp.ixx
+server/idp.oxx
+server/idt.cxx
+server/idt.hxx
+server/idt.ixx
+server/idt.oxx
+server/idx.cxx
+server/idx.hxx
+server/idx.ixx
+server/idx.oxx
+server/loavesp.hxx
+server/loavesp.ixx
+server/loavesp.oxx
+server/loavesr.hxx
+server/loavesr.ixx
+server/loavesr.oxx
+server/loavesx.cxx
+server/loavesx.hxx
+server/loavesx.ixx
+server/loavesx.oxx
+server/nadminp.hxx
+server/nadminp.ixx
+server/nadminp.oxx
+server/nadminx.cxx
+server/nadminx.hxx
+server/nadminx.ixx
+server/nadminx.oxx
+server/nkernelp.hxx
+server/nkernelp.ixx
+server/nkernelp.oxx
+server/nkernelt.cxx
+156,157c156,158
+< 	this->makeEditionTestOn(oo);
+< 	this->editionTestOn(oo);
+---
+> 	/* self makeEditionTestOn: oo.
+> 			self editionTestOn: oo.
+> 		[CurrentPacker fluidGet destroyAbandoned] smalltalkOnly.
+159,160c160,162
+< 	this->crossTestOn(oo);
+< 	this->compareTestOn(oo);
+---
+> 			self crossTestOn: oo.
+> 			self compareTestOn: oo.
+> 		[CurrentPacker fluidGet destroyAbandoned] smalltalkOnly.
+162,170c164,172
+< 	this->globalIDTestOn(oo);
+< 	
+< 	this->workTestOn(oo);
+< 	this->endorseTestOn(oo);
+< 	
+< 	this->historyTestOn(oo);
+< 	this->sponsorTestOn(oo);
+< 	
+< 	this->kmTestOn(oo);
+---
+> 			self globalIDTestOn: oo.
+> 		[CurrentPacker fluidGet destroyAbandoned] smalltalkOnly.
+> 			self workTestOn: oo.
+> 			self endorseTestOn: oo.
+> 		[CurrentPacker fluidGet destroyAbandoned] smalltalkOnly.
+> 			self historyTestOn: oo.
+> 			self sponsorTestOn: oo.
+> 		[CurrentPacker fluidGet destroyAbandoned] smalltalkOnly.
+> 			self kmTestOn: oo. */
+575a578
+> 	
+server/nkernelt.hxx
+server/nkernelt.ixx
+server/nkernelt.oxx
+server/nkernelx.cxx
+server/nkernelx.hxx
+server/nkernelx.ixx
+server/nkernelx.oxx
+server/nlinksx.cxx
+server/nlinksx.hxx
+server/nlinksx.ixx
+server/nlinksx.oxx
+server/orootp.hxx
+server/orootp.ixx
+server/orootp.oxx
+server/orootx.cxx
+server/orootx.hxx
+server/orootx.ixx
+server/orootx.oxx
+server/propsp.hxx
+server/propsp.ixx
+server/propsp.oxx
+server/propsx.cxx
+server/propsx.hxx
+server/propsx.ixx
+server/propsx.oxx
+server/shephp.hxx
+server/shephp.ixx
+19a20
+> #ifdef GNU
+22c23
+< 
+---
+> #endif
+server/shephp.oxx
+server/shepht.cxx
+server/shepht.hxx
+server/shepht.ixx
+server/shepht.oxx
+server/shephx.cxx
+32,34d31
+< #ifndef SHEPHP_HXX
+< #include "shephp.hxx"
+< #endif /* SHEPHP_HXX */
+36,40d32
+< #ifndef SHEPHP_IXX
+< #include "shephp.ixx"
+< #endif /* SHEPHP_IXX */
+< 
+< 
+383,387d374
+< 
+< 
+< #ifndef SHEPHP_SXX
+< #include "shephp.sxx"
+< #endif /* SHEPHP_SXX */
+server/shephx.hxx
+63c63
+< extern ShepFlag shepFlag;
+---
+> ShepFlag shepFlag;
+73c73
+< extern PCIJ pcij;
+---
+>  PCIJ pcij;
+server/shephx.ixx
+server/shephx.oxx
+server/sysadmx.cxx
+server/sysadmx.hxx
+server/sysadmx.ixx
+server/sysadmx.oxx
+server/tcludep.hxx
+server/tcludep.ixx
+server/tcludep.oxx
+server/tcludex.cxx
+server/tcludex.hxx
+server/tcludex.ixx
+server/tcludex.oxx
+server/tracepx.cxx
+server/tracepx.hxx
+server/tracepx.ixx
+server/tracepx.oxx
+server/worksrvx.cxx
+server/worksrvx.hxx
+server/worksrvx.ixx
+server/worksrvx.oxx
+server/wrapperp.hxx
+server/wrapperp.ixx
+server/wrapperp.oxx
+server/wrapperx.cxx
+server/wrapperx.hxx
+server/wrapperx.ixx
+server/wrapperx.oxx
+urdi/buildx.cxx
+urdi/buildx.hxx
+urdi/urdi2t.cxx
+urdi/urdi3t.cxx
+urdi/urdi4t.cxx
+urdi/urdi5t.cxx
+urdi/urdip.hxx
+urdi/urdit.cxx
+urdi/urdit.hxx
+urdi/urdix.cxx
+urdi/urdix.hxx
+urdi/urdix.oxx
+xlatexpp/arrayp.hxx
+xlatexpp/arrayp.ixx
+xlatexpp/arrayp.oxx
+xlatexpp/arrayt.cxx
+xlatexpp/arrayt.hxx
+xlatexpp/arrayt.ixx
+xlatexpp/arrayt.oxx
+xlatexpp/arrayx.cxx
+xlatexpp/arrayx.hxx
+xlatexpp/arrayx.ixx
+xlatexpp/arrayx.oxx
+xlatexpp/becomet.cxx
+xlatexpp/becomet.hxx
+xlatexpp/becomet.ixx
+xlatexpp/becomet.oxx
+xlatexpp/cachep.hxx
+xlatexpp/cachep.ixx
+xlatexpp/cachep.oxx
+xlatexpp/cachex.cxx
+xlatexpp/cachex.hxx
+xlatexpp/cachex.ixx
+xlatexpp/cachex.oxx
+xlatexpp/crossp.hxx
+xlatexpp/crossp.ixx
+xlatexpp/crossp.oxx
+xlatexpp/crosst.cxx
+xlatexpp/crosst.hxx
+xlatexpp/crosst.ixx
+xlatexpp/crosst.oxx
+xlatexpp/crossx.cxx
+xlatexpp/crossx.hxx
+xlatexpp/crossx.ixx
+xlatexpp/crossx.oxx
+xlatexpp/edgep.hxx
+xlatexpp/edgep.ixx
+xlatexpp/edgep.oxx
+xlatexpp/edger.hxx
+xlatexpp/edger.ixx
+xlatexpp/edger.oxx
+xlatexpp/edgex.cxx
+xlatexpp/filterp.hxx
+xlatexpp/filterp.ixx
+xlatexpp/filterp.oxx
+xlatexpp/filtert.cxx
+xlatexpp/filtert.hxx
+xlatexpp/filtert.ixx
+xlatexpp/filtert.oxx
+xlatexpp/filterx.cxx
+xlatexpp/filterx.hxx
+xlatexpp/filterx.ixx
+xlatexpp/filterx.oxx
+xlatexpp/gchooksx.cxx
+309c309
+< 			RepairEngineer::FirstEngineer = CAST(RepairEngineer,myNext);
+---
+> 			RepairEngineer::FirstEngineer = myNext;
+393c393
+< 			SanitationEngineer::FirstEngineer = CAST(SanitationEngineer,myNext);
+---
+> 			SanitationEngineer::FirstEngineer = myNext;
+xlatexpp/gchooksx.hxx
+xlatexpp/gchooksx.ixx
+xlatexpp/gchooksx.oxx
+xlatexpp/hashtabp.hxx
+xlatexpp/hashtabp.ixx
+xlatexpp/hashtabp.oxx
+xlatexpp/hashtabt.cxx
+xlatexpp/hashtabt.hxx
+xlatexpp/hashtabt.ixx
+xlatexpp/hashtabt.oxx
+xlatexpp/hashtabx.cxx
+xlatexpp/hashtabx.hxx
+xlatexpp/hashtabx.ixx
+xlatexpp/hashtabx.oxx
+xlatexpp/hloggerp.hxx
+xlatexpp/hloggerp.ixx
+xlatexpp/hloggerp.oxx
+xlatexpp/hloggert.cxx
+xlatexpp/hloggert.hxx
+xlatexpp/hloggert.ixx
+xlatexpp/hloggert.oxx
+xlatexpp/hloggerx.cxx
+xlatexpp/hspacep.hxx
+xlatexpp/hspacep.ixx
+xlatexpp/hspacep.oxx
+xlatexpp/hspacex.cxx
+xlatexpp/hspacex.hxx
+xlatexpp/hspacex.ixx
+xlatexpp/hspacex.oxx
+xlatexpp/integerp.hxx
+xlatexpp/integerp.ixx
+xlatexpp/integerp.oxx
+xlatexpp/integert.cxx
+xlatexpp/integert.hxx
+xlatexpp/integert.ixx
+xlatexpp/integert.oxx
+xlatexpp/integerx.cxx
+xlatexpp/integerx.hxx
+xlatexpp/integerx.ixx
+xlatexpp/integerx.oxx
+xlatexpp/inttabp.hxx
+xlatexpp/inttabp.ixx
+xlatexpp/inttabp.oxx
+xlatexpp/inttabr.hxx
+xlatexpp/inttabr.ixx
+xlatexpp/inttabr.oxx
+xlatexpp/inttabt.cxx
+xlatexpp/inttabt.hxx
+xlatexpp/inttabt.ixx
+xlatexpp/inttabt.oxx
+xlatexpp/inttabx.cxx
+xlatexpp/inttabx.hxx
+xlatexpp/inttabx.ixx
+xlatexpp/inttabx.oxx
+xlatexpp/primtabp.hxx
+xlatexpp/primtabp.ixx
+xlatexpp/primtabp.oxx
+xlatexpp/primtabt.cxx
+xlatexpp/primtabt.hxx
+xlatexpp/primtabt.ixx
+xlatexpp/primtabt.oxx
+xlatexpp/primtabx.cxx
+xlatexpp/primtabx.hxx
+xlatexpp/primtabx.ixx
+xlatexpp/primtabx.oxx
+xlatexpp/primvalx.cxx
+xlatexpp/primvalx.hxx
+xlatexpp/primvalx.ixx
+xlatexpp/primvalx.oxx
+xlatexpp/rcmainx.cxx
+xlatexpp/rcmainx.hxx
+xlatexpp/rcmainx.ixx
+xlatexpp/rcmainx.oxx
+xlatexpp/realp.hxx
+xlatexpp/realp.ixx
+xlatexpp/realp.oxx
+xlatexpp/realt.cxx
+xlatexpp/realt.hxx
+xlatexpp/realt.ixx
+xlatexpp/realt.oxx
+xlatexpp/realx.cxx
+xlatexpp/realx.hxx
+xlatexpp/realx.ixx
+xlatexpp/realx.oxx
+xlatexpp/sequencp.hxx
+xlatexpp/sequencp.ixx
+xlatexpp/sequencp.oxx
+xlatexpp/sequenct.cxx
+xlatexpp/sequenct.hxx
+xlatexpp/sequenct.ixx
+xlatexpp/sequenct.oxx
+xlatexpp/sequencx.cxx
+xlatexpp/sequencx.hxx
+xlatexpp/sequencx.ixx
+xlatexpp/sequencx.oxx
+xlatexpp/setp.hxx
+xlatexpp/setp.ixx
+xlatexpp/setp.oxx
+xlatexpp/sett.cxx
+xlatexpp/sett.hxx
+xlatexpp/sett.ixx
+xlatexpp/sett.oxx
+xlatexpp/settabp.hxx
+xlatexpp/settabp.ixx
+xlatexpp/settabp.oxx
+xlatexpp/settabt.cxx
+xlatexpp/settabt.hxx
+xlatexpp/settabt.ixx
+xlatexpp/settabt.oxx
+xlatexpp/settabx.cxx
+617c617
+< 		SetTableStepper::AnArray = CAST(PtrArray,myPtrs);
+---
+> 		SetTableStepper::AnArray = myPtrs;
+xlatexpp/settabx.hxx
+xlatexpp/settabx.ixx
+xlatexpp/settabx.oxx
+xlatexpp/setx.cxx
+xlatexpp/setx.hxx
+xlatexpp/setx.ixx
+xlatexpp/setx.oxx
+xlatexpp/spacep.hxx
+xlatexpp/spacep.ixx
+xlatexpp/spacep.oxx
+xlatexpp/spacer.hxx
+xlatexpp/spacer.ixx
+xlatexpp/spacer.oxx
+xlatexpp/spacet.cxx
+116,119c116
+< 						
+< 						operator<<(cerr,prob);
+< 						
+< 						cerr << "\n";
+---
+> 						cerr << prob << "\n";
+147,150c144
+< 				
+< 				operator<<(cerr,prob);
+< 				
+< 				cerr << "\n";
+---
+> 				cerr << prob << "\n";
+xlatexpp/spacet.hxx
+xlatexpp/spacet.ixx
+xlatexpp/spacet.oxx
+xlatexpp/spacex.cxx
+xlatexpp/spacex.hxx
+xlatexpp/spacex.ixx
+xlatexpp/spacex.oxx
+xlatexpp/stepperp.hxx
+xlatexpp/stepperp.ixx
+xlatexpp/stepperp.oxx
+xlatexpp/stepperx.cxx
+xlatexpp/stepperx.hxx
+xlatexpp/stepperx.ixx
+xlatexpp/stepperx.oxx
+xlatexpp/tabentp.hxx
+xlatexpp/tabentp.ixx
+xlatexpp/tabentp.oxx
+xlatexpp/tabentt.cxx
+xlatexpp/tabentt.hxx
+xlatexpp/tabentt.ixx
+xlatexpp/tabentt.oxx
+xlatexpp/tabentx.cxx
+xlatexpp/tabentx.hxx
+xlatexpp/tabentx.ixx
+xlatexpp/tabentx.oxx
+xlatexpp/tablesp.hxx
+xlatexpp/tablesp.ixx
+xlatexpp/tablesp.oxx
+xlatexpp/tablest.cxx
+xlatexpp/tablest.hxx
+xlatexpp/tablest.ixx
+xlatexpp/tablest.oxx
+xlatexpp/tablesx.cxx
+xlatexpp/tablesx.hxx
+xlatexpp/tablesx.ixx
+xlatexpp/tablesx.oxx
+xlatexpp/tabtoolx.cxx
+xlatexpp/tabtoolx.hxx
+xlatexpp/tabtoolx.ixx
+xlatexpp/tabtoolx.oxx
+xlatexpp/testert.cxx
+xlatexpp/testert.hxx
+xlatexpp/testert.ixx
+xlatexpp/testert.oxx
+xlatexpp/testerx.cxx
+xlatexpp/testerx.hxx
+xlatexpp/testerx.ixx
+xlatexpp/testerx.oxx
+xlatexpp/thunkx.cxx
+xlatexpp/thunkx.hxx
+xlatexpp/thunkx.ixx
+xlatexpp/thunkx.oxx
+xlatexpp/tokensx.cxx
+xlatexpp/tokensx.hxx
+xlatexpp/tokensx.ixx
+xlatexpp/tokensx.oxx
+xpp/#allocx.cxx
+xpp/#scavx.cxx
+xpp/#tofux.cxx
+xpp/allocp.hxx
+xpp/alloct.cxx
+xpp/alloct.hxx
+xpp/alloct.oxx
+xpp/allocx.cxx
+xpp/allocx.hxx
+xpp/allocx.ixx
+xpp/bibopp.hxx
+xpp/bibopp.ixx
+xpp/bibopp.oxx
+xpp/bibopt.cxx
+xpp/bibopt.hxx
+xpp/bibopt.oxx
+xpp/bibopx.cxx
+xpp/bibopx.hxx
+xpp/bibopx.ixx
+xpp/bibopx.oxx
+xpp/bombt.cxx
+xpp/bombt.hxx
+xpp/bombt.ixx
+xpp/bombx.cxx
+xpp/bombx.hxx
+xpp/bombx.ixx
+xpp/bombx.oxx
+xpp/cbombx.cxx
+xpp/chooset.cxx
+xpp/chooset.hxx
+xpp/chooset.oxx
+xpp/choosex.cxx
+xpp/choosex.hxx
+xpp/copyrcpx.cxx
+xpp/copyrcpx.hxx
+xpp/copyrcpx.oxx
+xpp/crutcht.cxx
+xpp/diagx.cxx
+xpp/diagx.hxx
+xpp/fhasht.cxx
+xpp/fhashx.cxx
+xpp/fhashx.hxx
+xpp/filetpp.hxx
+xpp/filetpp.oxx
+xpp/filetpx.cxx
+xpp/filetpx.hxx
+xpp/filetpx.oxx
+xpp/fluidp.hxx
+xpp/fluidt.cxx
+xpp/fluidt.hxx
+xpp/fluidt.oxx
+xpp/fluidx.cxx
+xpp/fluidx.hxx
+xpp/fluidx.ixx
+xpp/fluidx.oxx
+xpp/garbagep.hxx
+xpp/garbager.ixx
+xpp/garbaget.cxx
+xpp/garbaget.hxx
+xpp/garbaget.ixx
+xpp/garbaget.oxx
+xpp/garbagex.cxx
+xpp/garbagex.hxx
+xpp/garbagex.ixx
+xpp/gmonx.cxx
+xpp/hashes.cxx
+xpp/hsboxx.cxx
+xpp/hsboxx.hxx
+xpp/initt.cxx
+xpp/initt.hxx
+xpp/initt.oxx
+xpp/initx.cxx
+xpp/initx.hxx
+xpp/initx.oxx
+xpp/intvart.cxx
+xpp/intvarx.cxx
+xpp/intvarx.hxx
+xpp/intvarx.ixx
+xpp/loggert.cxx
+xpp/loggerx.cxx
+xpp/loggerx.hxx
+xpp/loggerx.ixx
+xpp/loggerx.oxx
+xpp/mortalx.hxx
+xpp/mortalx.ixx
+xpp/netdbx.hxx
+xpp/opaque2x.ixx
+xpp/opaquet.cxx
+xpp/opaquet.hxx
+xpp/opaquet.oxx
+xpp/opaquex.cxx
+xpp/opaquex.hxx
+xpp/opaquex.ixx
+xpp/parrayp.hxx
+xpp/parrayp.oxx
+xpp/parrayt.cxx
+xpp/parrayt.hxx
+xpp/parrayt.oxx
+xpp/parrayx.cxx
+xpp/parrayx.hxx
+xpp/parrayx.ixx
+xpp/parrayx.oxx
+xpp/psrandt.cxx
+xpp/psrandt.hxx
+xpp/psrandx.cxx
+xpp/psrandx.hxx
+xpp/psrandx.oxx
+xpp/queuesx.cxx
+xpp/queuesx.hxx
+xpp/queuesx.ixx
+xpp/regressx.hxx
+xpp/sboxx.cxx
+xpp/sboxx.hxx
+xpp/scavp.hxx
+xpp/scavp.ixx
+xpp/scavp.oxx
+xpp/scavt.cxx
+xpp/scavt.hxx
+xpp/scavt.oxx
+xpp/scavx.cxx
+26c26
+< Int32 DisableGC = 1;
+---
+> Int32 DisableGC = 0;
+xpp/scavx.hxx
+xpp/scavx.ixx
+xpp/scavx.oxx
+xpp/sema4x.cxx
+xpp/sema4x.hxx
+xpp/sema4x.ixx
+xpp/sema4x.oxx
+xpp/socketx.hxx
+xpp/sockptlx.cxx
+xpp/sockptlx.hxx
+xpp/sockptlx.ixx
+xpp/sockptlx.oxx
+xpp/stringx.hxx
+xpp/stringx.oxx
+xpp/stubrcpx.cxx
+xpp/stubrcpx.hxx
+xpp/stubrcpx.oxx
+xpp/testx.cxx
+xpp/tofup.hxx
+xpp/tofut.cxx
+xpp/tofut.hxx
+xpp/tofut.oxx
+xpp/tofux.cxx
+xpp/tofux.hxx
+xpp/tofux.ixx
+xpp/tofux.oxx
+xpp/tombx.cxx
+xpp/tombx.hxx
+xpp/verwrap.cxx
+xpp/wparrayp.hxx
+xpp/wparrayt.cxx
+xpp/wparrayt.hxx
+xpp/wparrayt.oxx
+xpp/wparrayx.cxx
+xpp/wparrayx.hxx
+xpp/wparrayx.ixx
+xpp/wparrayx.oxx
+xpp/xcompatt.cxx
+xpp/xcompatx.hxx
+xpp/xppx.hxx
+xpp/xunewx.cxx
+xpp/xunewx.hxx

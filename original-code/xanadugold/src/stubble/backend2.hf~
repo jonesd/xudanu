@@ -1,0 +1,310 @@
+ÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿOPY).
+$//	   (Later changed to SHEPHERD_PATRIARCH and SHEPHERD_ANCESTOR)
+$//		- michael Oct  2 1990
+$//
+$//	Lots of additions for Shepherd Stub classes.
+$//		- michael Oct  2-30 1990
+$//
+$//	Stub fixes:
+$//	 - aToken added to shepherd stub constructor and metamorphose()
+$//	 - Killed CHECKED_CLASS(...Stub)
+$//	 - Enabled generation of stub routines for all non-special member
+$//	   functions, not just public: ones.
+$//	 - Dropped ShepFlag argument from ...Stub constructor.
+$//	 - Added internal variable printing to stub printOn()
+$//	 - Eliminated stub's knowlege of Snarf ID & Location.  (token instead)
+$//	 - changed getToken to fetchToken
+$//	 - added operator= to nofault list
+$//	 - got rid of changeDiskLocation()
+$//	 - Renamed fakeGetCategory() to getConcreteCategory() (explicitly fault)
+$//		- michael Nov 11-15 1990
+$//
+$//	 - Added ShepherdStub::isKindOf(Category *) override
+$//	 - Installed code for const handling in shepherd stubs, and discovered
+$//	   that const should not be used.
+$//	 - Moved echoed text from stubble script to StubbleForm.f.
+$//	 - Installed rejection of static member functions in shepherd stubs.
+$//	 - StorageClass NOFAULT
+$//		- michael Nov 16-17 1990
+$//
+$//	Still to do for Stubs:
+$//	 - Fluid var for current handler.
+$//		- michael Nov 11 1990
+$//
+$//	Reorganized for processing of StubbleForm.f by preprocessor:
+$//	 - Added $(VANISH) before preprocessor directives which are to be
+$//	   in the output file, rather than processed here.
+$//	 - Converted Stubble.lexex into $LEX lines, and renamed it Stubble.hlx
+$//	 - Made backend code conditional on definition of WITH_BACKEND_HOOKS
+$//	 - Moved backend code to backend[12].hf
+$//	 - Pulled remaining backend-specific $LEX lines into this file.
+$//		- michael Nov 24 1990
+$//
+$//	Changed fetchShepherdStubCategory() -> get...
+$//	Added hash-only, no-token constructor for stubs.
+$//	Removed destructor.  (Is do-nothing for stub.)
+$//		- michael Dec  4 1990
+$//
+$//	Renamed ViewHandler -> SnarfPacker, ViewEntry* -> PackerEntry*
+$//	(File name, comment, BLAST token changes to match)
+$//		- michael Dec  6 1990
+$//
+$//	Eliminated SnarfPacker arg from metamorphose(), make(), Stub constr.
+$//	Replaced myPacker var with FLUID_VAR(CurrentPacker) in Stub
+$//		- michael Dec  6 1990
+$//
+$//	Moved ancestor stub constructor generation to here from abrahamx.hxx
+$//		- michael Dec  8 1990
+$//
+$//	- Removed *Stub(UInt32 aHash, UInt32 aToken), because token is stored
+$//	  AFTER construction is complete.
+$//	- Removed Abraham(ShepFlag, UInt32 aHash, Uint4 aToken) for same reason.
+$// !!!!Add code to stub to register with SnarfPacker
+$//		- michael Dec 10 1990
+$//
+$//	Added check for concrete shepherd without a patriarch
+$//	Added some support for LOCKED() and DEFERRED_LOCKED() classes.
+$//		- michael Dec 11 1990
+$//
+$//	Changed Stubs from knowing tokens to knowing FlokInfos.
+$//	Changed instantiateFlock to makeReal
+$//		- Dean 17 April 91
+$//	Fixed become declarations between stub and shepherd so it now
+$//	happens at static init time instead of dynamic init time.
+$//		- MarkM 2 June 1991
+$//
+$// MODIFIED FOR NEW FORMIC - rek Nov '91
+$//
+$// - changed SUPERFUNCS to FUNCS_UPWARDS
+$// - removed ':'s from all 0-place predicates
+$// - replaced $(IF MORE), $(FI) with $(SEP ", ")
+$// - changed 'FUNC const:' to 'FUNC | spec: const postspec: const' 
+$// - changed 'CLASS attr: ___' to 'CLASS attr:arg: ___ 1' 
+$//
+$//=================================================================
+$//
+$//  moved Stub support constructor to early position in file so that Stub
+$//  constructor may be able to use it inline.
+$//  (Also tweaked SHEPHERD_ANCESTOR macro)
+$//  (later) Had to move constructor def into macro
+$//	- ech 3-19-92
+
+$#ifndef BACKEND2_HF_IDENT
+/* $$Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $$ */
+$#define BACKEND2_HF_IDENT
+$#endif /* BACKEND2_HF_IDENT */
+$LEX FUNCTION_SPEC: NOFAULT
+$LEX CLASS_ATTRIBUTE: SHEPHERD_PATRIARCH
+$LEX CLASS_ATTRIBUTE: SHEPHERD_ANCESTOR
+$LEX CLASS_ATTRIBUTE: LOCKED
+$LEX CLASS_ATTRIBUTE: DEFERRED_LOCKED
+$//
+$// Shepherd Ancestor constructor
+$//
+$//$(IF CLASS | attr: SHEPHERD_PATRIARCH attr: SHEPHERD_ANCESTOR)$// ** shepherd ancestor class **
+$//
+$///* ===== Stub constructor support in $(CLASS) ===== */
+$//
+$//inline $(CLASS)::$(CLASS)(ShepFlag, UInt32 aHash, APTR(FlockInfo) info)
+$//    : $(CLASS base)(shepFlag, aHash, info)$//
+$// { }
+$//$(FI ** shepherd ancestor class **)
+$(IF CLASS attr: SHEPHERD_PATRIARCH)$// ** stubbed shepherd class **
+
+/* ====== Shepherd Stub Class "$(CLASS)Stub" ======= */
+
+$(IF CLASS ! kind: Heaper)
+$#error "Only Heapers can be Shepherds"
+$(FI)
+
+$#ifndef DISKMANX_HXX
+$#include "diskmanx.hxx" 
+$#define DISKMANX_HXX
+$#endif /* DISKMANX_HXX */
+
+extern Category * cat_$(CLASS)Stub;
+
+CLASS($(CLASS)Stub,$(CLASS)) {
+	CONCRETE($(CLASS)Stub)
+	MANUAL_GC($(CLASS)Stub)
+	NOT_A_TYPE($(CLASS)Stub)
+  public:
+	inline $(CLASS)Stub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+          :  $(CLASS)(shepFlag, aHash, info)  {   }
+
+	virtual void		printOn(ostream&);
+
+$//
+$// Generate fault-and-recall overrides for all non-static member functions
+$// except anything declared NOFAULT, some hidden functions expanded from
+$// macros, and a few functions from Tofu and Heaper (by name, so we don't
+$// need to pollute tofux.hxx with shepherd-related stuff).  The hidden
+$// functions are:
+$//
+$//	CONCRETE()/DEFERRED()	- getCategory()	NOFAULT - block def in Tofu()
+$//	COPY()		- Class(Xcvr, Entry)	NOFAULT (Suppressed by _ctor)
+$//
+$// and are hidden from stubble as well.
+$//
+$( FOR FUNCS_UPWARDS
+      ! | mname: __ct__%
+        | mname: __dt__%
+        | mname: __dl__%
+        | mname: __nw__%
+        | mname: __as__%
+	| name: printOn
+	| name: isKindOf
+	| name: getCategory
+	| name: migrate
+	| name: becomeStub
+	| name: isStub
+	| spec: NOFAULT
+	  spec: static
+    )$// ** non-special methods **
+$(   IF FUNC | spec: const postspec: const)
+$// #error Shepherd const member function requires getReal() call.
+
+$(   FI)
+    $(FUNC type) $(FUNC)($//
+$(        FOR ARGS)
+$(ARG type) arg$(N)$(SEP ", ")
+$(        ROF)$///
+)$(IF FUNC | spec: const postspec: const) const$(FI) {
+$//
+$// !!!! NOTE:  In four places below, const protection is overridden
+$//             with casts, to allow shepherds to swap in when const
+$//             member functions are called.  This is an error.
+$//
+$(   IF FUNC pro: public)
+    $(IF FUNC ! type: void)return $(FI)$///
+	    ($(IF FUNC | spec: const postspec: const)($(CLASS)Stub *)$(FI)$///
+    this)->getReal()->$(FUNC)($//
+$(   ELSE)
+    (($(IF FUNC | spec: const postspec: const)($(CLASS)Stub *)$(FI)this)->getReal());
+    $(IF FUNC ! type: void)return $(FI)this->$(FUNC)($//
+$(   FI)
+$(   IF ARGS)
+$(     FOR ARGS)
+arg$(N)$(SEP ", ")
+$(     ROF)
+$(   FI)
+);
+    }
+
+$( ROF ** non-special methods **)
+
+    private:
+      $(CLASS) *	getReal();  // just * in case not a type
+
+	// Stripped-down COPY($(CLASS)Stub): Just migrate
+    public:
+	// Suppress migrate, so we don't have to clear the pointers.
+	// We need to make sure that any stub-specific state is marked.
+	LEAF void migrate(Heaplet * target,
+			  void * origin,
+			  BooleanVar destinationIsOld) {
+		this->Abraham::migrate(target, origin, destinationIsOld);
+	}
+	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+        LEAF void becomeStub () { }
+        LEAF BooleanVar isStub() { return TRUE; }
+};
+
+Category * $(CLASS)::getShepherdStubCategory () CONST
+{
+        return cat_$(CLASS)Stub;
+}
+
+void $(CLASS)::becomeStub () 
+{
+    UInt32 hash = this->hashForEqual();
+    WPTR(FlockInfo) info = this->fetchInfo();
+    new (this) $(CLASS)Stub (shepFlag, hash, info);
+}
+
+/* ===== $(CLASS)Stub Implementations ==== */
+
+void $(CLASS)Stub::
+printOn(ostream& oo)
+{
+	oo << this->getCategory()->name();
+	oo << "@";
+     /* what are sequenceNumber and SeqNumKludge ? */
+//	oo << sequenceNumber((void *)this) - SeqNumKludge;
+	oo << "()";
+}
+
+$(CLASS) * $(CLASS)Stub::
+getReal() {
+    CurrentPacker.fluidGet()->makeReal(this->fetchInfo());
+    return this;
+}
+
+BooleanVar $(CLASS)Stub::
+isKindOf(Category * aCategory) CONST
+{
+	if (cat_$(CLASS)Stub->isEqualOrSubclassOf(aCategory)) {
+		return TRUE;
+	} else if (aCategory->isEqualOrSubclassOf(cat_$(CLASS))) {
+		return (($(CLASS)Stub *)this)->getReal()->isKindOf(aCategory);
+	} else {
+		return FALSE;
+	}
+}
+
+DEFINE_CLASS_CATEGORY($(CLASS)Stub,$(CLASS))
+
+void $(CLASS)Stub::deferredHack () { /* intentionally blank */ }
+
+$//
+/* $#ifdef WITH_RPC */
+/* ====== Stub Recipe for $(CLASS) ====== */
+
+$#ifndef STUBRCPX_HXX
+$#include "stubrcpx.hxx"
+$#define STUBRCPX_HXX
+$#endif /* STUBRCPX_HXX */
+
+RPTR(Heaper) parseStub_$(CLASS) (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+	RETURN_CONSTRUCT($(CLASS)Stub, (shepFlag, hash, NULL));
+}
+
+extern Recipe * $(CLASS attr:arg: COPY 1);
+ActualStubRecipe $(CLASS)Stub_recipe(cat_$(CLASS)Stub, &$(CLASS attr:arg: COPY 1), parseStub_$(CLASS));
+
+/* $#endif */ /* WITH_RPC */
+$(FI ** stubbed shepherd class **)
+$//
+$//
+$//	Become:
+$//
+$(IF CLASS ! attr: DEFERRED )$/// ** non-deferred class **
+$(  IF CLASS ! attr: SHEPHERD_PATRIARCH)$// ** this is not a stubbed shepherd class **
+$(    FOR SUPERCLASSES)$// ** walk up to the nearest stubbed shepherd class **
+$(      IF SUPERCLASS attr: SHEPHERD_PATRIARCH)
+
+/* ===== mayBecome support between stub and concrete Shepherd ===== */
+
+extern Category * cat_$(SUPERCLASS)Stub;
+DEFINE_MAY_BECOME($(CLASS),$(SUPERCLASS)Stub)
+DEFINE_MAY_BECOME($(SUPERCLASS)Stub,$(CLASS))
+$(    BREAK)
+$(      FI)
+$(      IF SUPERCLASS name: Abraham)
+$(        IF CLASS ! name: Pumpkin)
+$#error "Shepherd class $(CLASS) has no PATRIARCH"
+$(        FI)
+$(      FI)
+$(    ROF)
+$(  ELSE)$// ** this is the stubbed shepherd class **
+
+/* ===== mayBecome support between stub and concrete Shepherd Prototype ===== */
+
+DEFINE_MAY_BECOME($(CLASS),$(CLASS)Stub)
+DEFINE_MAY_BECOME($(CLASS)Stub,$(CLASS))
+$(  FI ** stubbed shepherd class ** )
+$//
+$//
+$//
+$(FI ** non-deferred class ** )
+$//=================================================================

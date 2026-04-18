@@ -1,0 +1,213 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define TABLESP_SXX
+
+/*----------------------- BEGIN ImmuTableOnMu -----------------------*/
+DEFINE_CLASS_CATEGORY(ImmuTableOnMu,ImmuTable)
+
+void ImmuTableOnMu::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "ImmuTableOnMu" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void ImmuTableOnMu::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(myMuTable);
+}
+
+ImmuTableOnMu::ImmuTableOnMu (APTR(Rcvr) receiver, TCSJ)
+{
+    myMuTable = CAST(MuTable, receiver->receiveHeaper());
+}
+
+
+void parseInto_ImmuTableOnMu (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) ImmuTableOnMu (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe ImmuTableOnMu_recipe(cat_ImmuTableOnMu, &XppCuisine, parseInto_ImmuTableOnMu);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of ImmuTableOnMu ====== */
+
+void ImmuTableOnMu::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ImmuTableOnMu*)origin)->myMuTable,
+				       (Heaper**)&myMuTable);
+	} else {
+		myMuTable.forwardTo (Heaplet::forward (myMuTable));
+	}
+}
+
+/*----------------------- END ImmuTableOnMu -----------------------*/
+
+
+/*----------------------- BEGIN IntegerScruTable -----------------------*/
+DEFINE_CLASS_CATEGORY(IntegerScruTable,ScruTable)
+
+void IntegerScruTable::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IntegerScruTable" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IntegerScruTable::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(tableToScru);
+}
+
+IntegerScruTable::IntegerScruTable (APTR(Rcvr) receiver, TCSJ)
+{
+    tableToScru = CAST(IntegerTable, receiver->receiveHeaper());
+}
+
+
+void parseInto_IntegerScruTable (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IntegerScruTable (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe IntegerScruTable_recipe(cat_IntegerScruTable, &XppCuisine, parseInto_IntegerScruTable);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of IntegerScruTable ====== */
+
+void IntegerScruTable::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((IntegerScruTable*)origin)->tableToScru,
+				       (Heaper**)&tableToScru);
+	} else {
+		tableToScru.forwardTo (Heaplet::forward (tableToScru));
+	}
+}
+
+/*----------------------- END IntegerScruTable -----------------------*/
+
+
+/*----------------------- BEGIN OffsetImmuTable -----------------------*/
+DEFINE_CLASS_CATEGORY(OffsetImmuTable,ImmuTable)
+
+void OffsetImmuTable::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of OffsetImmuTable ====== */
+
+void OffsetImmuTable::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((OffsetImmuTable*)origin)->myTable,
+				       (Heaper**)&myTable);
+		Heaplet::forwardToOld ((Heaper**)&((OffsetImmuTable*)origin)->myDsp,
+				       (Heaper**)&myDsp);
+	} else {
+		myTable.forwardTo (Heaplet::forward (myTable));
+		myDsp.forwardTo (Heaplet::forward (myDsp));
+	}
+}
+
+/*----------------------- END OffsetImmuTable -----------------------*/
+
+
+/*----------------------- BEGIN OffsetScruTable -----------------------*/
+DEFINE_CLASS_CATEGORY(OffsetScruTable,ScruTable)
+
+void OffsetScruTable::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of OffsetScruTable ====== */
+
+void OffsetScruTable::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((OffsetScruTable*)origin)->myTable,
+				       (Heaper**)&myTable);
+		Heaplet::forwardToOld ((Heaper**)&((OffsetScruTable*)origin)->myDsp,
+				       (Heaper**)&myDsp);
+	} else {
+		myTable.forwardTo (Heaplet::forward (myTable));
+		myDsp.forwardTo (Heaplet::forward (myDsp));
+	}
+}
+
+/*----------------------- END OffsetScruTable -----------------------*/
+
+
+/*----------------------- BEGIN OffsetScruTableStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(OffsetScruTableStepper,TableStepper)
+
+void OffsetScruTableStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of OffsetScruTableStepper ====== */
+
+void OffsetScruTableStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((OffsetScruTableStepper*)origin)->myTableStepper,
+				       (Heaper**)&myTableStepper);
+		Heaplet::forwardToOld ((Heaper**)&((OffsetScruTableStepper*)origin)->myDsp,
+				       (Heaper**)&myDsp);
+	} else {
+		myTableStepper.forwardTo (Heaplet::forward (myTableStepper));
+		myDsp.forwardTo (Heaplet::forward (myDsp));
+	}
+}
+
+/*----------------------- END OffsetScruTableStepper -----------------------*/
+

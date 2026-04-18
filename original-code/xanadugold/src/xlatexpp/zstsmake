@@ -1,0 +1,3 @@
+settabx.cxx:	returnValue = SetTableStepper::make (elements);
+settabx.cxx:RPTR(SetTableStepper) SetTableStepper::make (APTR(PtrArray) array){
+settabp.hxx:	static RPTR(SetTableStepper) make (APTR(PtrArray) ARG(array));

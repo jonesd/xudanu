@@ -1,0 +1,8 @@
+CAT(foo,bar)
+foobar
+foobar
+./xcompatt.exe
+foobar
+#1: i == 17
+#2: i == 42
+#3: i == 42

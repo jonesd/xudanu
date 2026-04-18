@@ -1,0 +1,631 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define PARRAYX_SXX
+
+/*----------------------- BEGIN PrimArray -----------------------*/
+DEFINE_CLASS_CATEGORY(PrimArray,Heaper)
+DEFINE_OPAQUE_TYPE(PrimArray);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "PrimArray" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void PrimArray::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendInt32(myCount);
+    xmtr->sendInt32(mySize);
+}
+
+PrimArray::PrimArray (APTR(Rcvr) receiver, TCSJ)
+{
+    myCount = receiver->receiveInt32();
+    mySize = receiver->receiveInt32();
+    this->receivePrimArray(receiver);
+}
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+BooleanVar PrimArray::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 PrimArray::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+
+
+/*----------------------- END PrimArray -----------------------*/
+
+
+/*----------------------- BEGIN PrimDataArray -----------------------*/
+DEFINE_CLASS_CATEGORY(PrimDataArray,PrimArray)
+DEFINE_OPAQUE_TYPE(PrimDataArray);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "PrimDataArray" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void PrimDataArray::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PrimArray::sendSelfTo (xmtr);
+}
+
+PrimDataArray::PrimDataArray (APTR(Rcvr) receiver, TCSJ)
+  : PrimArray (receiver, tcsj) {
+}
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END PrimDataArray -----------------------*/
+
+
+/*----------------------- BEGIN PrimFloatArray -----------------------*/
+DEFINE_CLASS_CATEGORY(PrimFloatArray,PrimDataArray)
+DEFINE_OPAQUE_TYPE(PrimFloatArray);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "PrimFloatArray" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void PrimFloatArray::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PrimDataArray::sendSelfTo (xmtr);
+}
+
+PrimFloatArray::PrimFloatArray (APTR(Rcvr) receiver, TCSJ)
+  : PrimDataArray (receiver, tcsj) {
+}
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END PrimFloatArray -----------------------*/
+
+
+/*----------------------- BEGIN IEEE32Array -----------------------*/
+DEFINE_CLASS_CATEGORY(IEEE32Array,PrimFloatArray)
+DEFINE_OPAQUE_TYPE(IEEE32Array);
+
+void IEEE32Array::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IEEE32Array" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IEEE32Array::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PrimFloatArray::sendSelfTo (xmtr);
+}
+
+IEEE32Array::IEEE32Array (APTR(Rcvr) receiver, TCSJ)
+  : PrimFloatArray (receiver, tcsj) {
+}
+
+
+void parseInto_IEEE32Array (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IEEE32Array (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe IEEE32Array_recipe(cat_IEEE32Array, &XppCuisine, parseInto_IEEE32Array);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END IEEE32Array -----------------------*/
+
+
+/*----------------------- BEGIN IEEE64Array -----------------------*/
+DEFINE_CLASS_CATEGORY(IEEE64Array,PrimFloatArray)
+DEFINE_OPAQUE_TYPE(IEEE64Array);
+
+void IEEE64Array::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IEEE64Array" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IEEE64Array::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PrimFloatArray::sendSelfTo (xmtr);
+}
+
+IEEE64Array::IEEE64Array (APTR(Rcvr) receiver, TCSJ)
+  : PrimFloatArray (receiver, tcsj) {
+}
+
+
+void parseInto_IEEE64Array (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IEEE64Array (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe IEEE64Array_recipe(cat_IEEE64Array, &XppCuisine, parseInto_IEEE64Array);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END IEEE64Array -----------------------*/
+
+
+/*----------------------- BEGIN PrimIntegerArray -----------------------*/
+DEFINE_CLASS_CATEGORY(PrimIntegerArray,PrimDataArray)
+DEFINE_OPAQUE_TYPE(PrimIntegerArray);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "PrimIntegerArray" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void PrimIntegerArray::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PrimDataArray::sendSelfTo (xmtr);
+}
+
+PrimIntegerArray::PrimIntegerArray (APTR(Rcvr) receiver, TCSJ)
+  : PrimDataArray (receiver, tcsj) {
+}
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END PrimIntegerArray -----------------------*/
+
+
+/*----------------------- BEGIN PrimIntArray -----------------------*/
+DEFINE_CLASS_CATEGORY(PrimIntArray,PrimIntegerArray)
+DEFINE_OPAQUE_TYPE(PrimIntArray);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "PrimIntArray" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void PrimIntArray::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PrimIntegerArray::sendSelfTo (xmtr);
+}
+
+PrimIntArray::PrimIntArray (APTR(Rcvr) receiver, TCSJ)
+  : PrimIntegerArray (receiver, tcsj) {
+}
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END PrimIntArray -----------------------*/
+
+
+/*----------------------- BEGIN Int32Array -----------------------*/
+DEFINE_CLASS_CATEGORY(Int32Array,PrimIntArray)
+DEFINE_OPAQUE_TYPE(Int32Array);
+
+void Int32Array::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "Int32Array" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void Int32Array::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PrimIntArray::sendSelfTo (xmtr);
+    this->sendInt32Array(xmtr);
+}
+
+Int32Array::Int32Array (APTR(Rcvr) receiver, TCSJ)
+  : PrimIntArray (receiver, tcsj) {
+    this->receiveInt32Array(receiver);
+}
+
+
+void parseInto_Int32Array (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) Int32Array (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe Int32Array_recipe(cat_Int32Array, &XppCuisine, parseInto_Int32Array);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END Int32Array -----------------------*/
+
+
+/*----------------------- BEGIN IntegerVarArray -----------------------*/
+DEFINE_CLASS_CATEGORY(IntegerVarArray,PrimIntegerArray)
+DEFINE_OPAQUE_TYPE(IntegerVarArray);
+
+void IntegerVarArray::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IntegerVarArray" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IntegerVarArray::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PrimIntegerArray::sendSelfTo (xmtr);
+    this->sendIVArray(xmtr);
+}
+
+IntegerVarArray::IntegerVarArray (APTR(Rcvr) receiver, TCSJ)
+  : PrimIntegerArray (receiver, tcsj) {
+    this->receiveIVArray(receiver);
+}
+
+
+void parseInto_IntegerVarArray (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IntegerVarArray (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe IntegerVarArray_recipe(cat_IntegerVarArray, &XppCuisine, parseInto_IntegerVarArray);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END IntegerVarArray -----------------------*/
+
+
+/*----------------------- BEGIN UInt32Array -----------------------*/
+DEFINE_CLASS_CATEGORY(UInt32Array,PrimIntArray)
+DEFINE_OPAQUE_TYPE(UInt32Array);
+
+void UInt32Array::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "UInt32Array" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void UInt32Array::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PrimIntArray::sendSelfTo (xmtr);
+    this->sendInt32Array(xmtr);
+}
+
+UInt32Array::UInt32Array (APTR(Rcvr) receiver, TCSJ)
+  : PrimIntArray (receiver, tcsj) {
+    this->receiveInt32Array(receiver);
+}
+
+
+void parseInto_UInt32Array (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) UInt32Array (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe UInt32Array_recipe(cat_UInt32Array, &XppCuisine, parseInto_UInt32Array);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END UInt32Array -----------------------*/
+
+
+/*----------------------- BEGIN UInt8Array -----------------------*/
+DEFINE_CLASS_CATEGORY(UInt8Array,PrimIntArray)
+DEFINE_OPAQUE_TYPE(UInt8Array);
+
+void UInt8Array::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "UInt8Array" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void UInt8Array::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PrimIntArray::sendSelfTo (xmtr);
+    this->sendUInt8Array(xmtr);
+}
+
+UInt8Array::UInt8Array (APTR(Rcvr) receiver, TCSJ)
+  : PrimIntArray (receiver, tcsj) {
+    this->receiveUInt8Array(receiver);
+}
+
+
+void parseInto_UInt8Array (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) UInt8Array (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe UInt8Array_recipe(cat_UInt8Array, &XppCuisine, parseInto_UInt8Array);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END UInt8Array -----------------------*/
+
+
+/*----------------------- BEGIN ReleaseGuts_Bomb -----------------------*/
+
+/*----------------------- END ReleaseGuts_Bomb -----------------------*/
+
+
+/*----------------------- BEGIN PtrArray -----------------------*/
+DEFINE_CLASS_CATEGORY(PtrArray,PrimArray)
+DEFINE_OPAQUE_TYPE(PtrArray);
+
+void PtrArray::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "PtrArray" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void PtrArray::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PrimArray::sendSelfTo (xmtr);
+    this->sendPtrArray(xmtr);
+}
+
+PtrArray::PtrArray (APTR(Rcvr) receiver, TCSJ)
+  : PrimArray (receiver, tcsj) {
+    this->receivePtrArray(receiver);
+}
+
+
+void parseInto_PtrArray (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) PtrArray (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe PtrArray_recipe(cat_PtrArray, &XppCuisine, parseInto_PtrArray);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END PtrArray -----------------------*/
+
+
+/*----------------------- BEGIN SharedPtrArray -----------------------*/
+DEFINE_CLASS_CATEGORY(SharedPtrArray,PtrArray)
+DEFINE_OPAQUE_TYPE(SharedPtrArray);
+
+void SharedPtrArray::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "SharedPtrArray" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void SharedPtrArray::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PtrArray::sendSelfTo (xmtr);
+    xmtr->sendInt32(myShareCount);
+}
+
+SharedPtrArray::SharedPtrArray (APTR(Rcvr) receiver, TCSJ)
+  : PtrArray (receiver, tcsj) {
+    myShareCount = receiver->receiveInt32();
+}
+
+
+void parseInto_SharedPtrArray (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) SharedPtrArray (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe SharedPtrArray_recipe(cat_SharedPtrArray, &XppCuisine, parseInto_SharedPtrArray);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END SharedPtrArray -----------------------*/
+

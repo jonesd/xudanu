@@ -1,0 +1,21 @@
+self fileOutAll
+	"Print a list of all the code implemented in the system "
+
+	
+	| class |
+	SystemOrganization categories do: 
+		[:sysCat | 
+		Transcript show: sysCat; cr.
+		"form feed between categories of classes"
+		
+		(SystemOrganization listAtCategoryNamed: sysCat) do: 
+		
+			[:className | 
+			class _ Smalltalk at: className.
+			class fileOutAll.
+			self halt.
+		class fileOut.
+			].
+			]
+			
+			

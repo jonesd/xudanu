@@ -1,0 +1,121 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define SKTSRVP_SXX
+
+/*----------------------- BEGIN IPRendezvousListener -----------------------*/
+DEFINE_CLASS_CATEGORY(IPRendezvousListener,FDListener)
+
+void IPRendezvousListener::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IPRendezvousListener" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IPRendezvousListener::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendUInt32(myAddress);
+}
+
+IPRendezvousListener::IPRendezvousListener (APTR(Rcvr) receiver, TCSJ)
+{
+    myAddress = receiver->receiveUInt32();
+    this->restartIPRendezvous(receiver);
+}
+
+
+void parseInto_IPRendezvousListener (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IPRendezvousListener (rcvr, tcsj);
+}
+
+extern Recipe * BootCuisine;
+ActualCopyRecipe IPRendezvousListener_recipe(cat_IPRendezvousListener, &BootCuisine, parseInto_IPRendezvousListener);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END IPRendezvousListener -----------------------*/
+
+
+/*----------------------- BEGIN SelectServerLoop -----------------------*/
+DEFINE_CLASS_CATEGORY(SelectServerLoop,ServerLoop)
+
+void SelectServerLoop::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "SelectServerLoop" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void SelectServerLoop::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    ServerLoop::sendSelfTo (xmtr);
+}
+
+SelectServerLoop::SelectServerLoop (APTR(Rcvr) receiver, TCSJ)
+  : ServerLoop (receiver, tcsj) {
+}
+
+
+void parseInto_SelectServerLoop (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) SelectServerLoop (rcvr, tcsj);
+}
+
+extern Recipe * BootCuisine;
+ActualCopyRecipe SelectServerLoop_recipe(cat_SelectServerLoop, &BootCuisine, parseInto_SelectServerLoop);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END SelectServerLoop -----------------------*/
+

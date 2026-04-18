@@ -1,0 +1,58 @@
+2c2
+< foo is 8 bytes @ 0x122cb0 
+---
+> foo is 8 bytes @ 0x1a0c58 
+5,6c5,6
+< ActualCategory("Foo", cat_Heaper)
+< foo is 8 bytes @ 0x122cbc 
+---
+> Category(????)
+> foo is 8 bytes @ 0x1a0c64 
+9c9
+< ActualCategory("Foo", cat_Heaper)
+---
+> Category(????)
+11,20c11,20
+<  size = 5  1f630
+<  size = 10  1f5f0
+<  size = 15  1f5a0
+<  size = 20  1f530
+<  size = 5  1f500
+<  size = 10  1f4c0
+<  size = 15  1f470
+<  size = 20  1f400
+<  size = 5  1f3d0
+<  size = 10  1f390
+---
+>  size = 5  18c438
+>  size = 10  18c3e8
+>  size = 15  18c388
+>  size = 20  18c308
+>  size = 5  18c2c8
+>  size = 10  18c278
+>  size = 15  18c218
+>  size = 20  18c198
+>  size = 5  18c158
+>  size = 10  18c108
+23,32c23,32
+<  size = 5  1f630
+<  size = 10  1f5f0
+<  size = 15  1f5a0
+<  size = 20  1f530
+<  size = 5  1f500
+<  size = 10  1f4c0
+<  size = 15  1f470
+<  size = 20  1f400
+<  size = 5  1f3d0
+<  size = 10  1f390
+---
+>  size = 5  18c438
+>  size = 10  18c3e8
+>  size = 15  18c388
+>  size = 20  18c308
+>  size = 5  18c2c8
+>  size = 10  18c278
+>  size = 15  18c218
+>  size = 20  18c198
+>  size = 5  18c158
+>  size = 10  18c108

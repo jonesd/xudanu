@@ -1,0 +1,47 @@
+/* Copyright Xanadu Operating Company.  All Rights Reserved. */
+
+/******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+#ifndef PACKERT_OXX
+#define PACKERT_OXX
+
+
+#ifndef DISKMANX_OXX
+#include "diskmanx.oxx"
+#endif /* DISKMANX_OXX */
+
+#ifndef FLKINFOX_OXX
+#include "flkinfox.oxx"
+#endif /* FLKINFOX_OXX */
+
+#ifndef SHEPHX_OXX
+#include "shephx.oxx"
+#endif /* SHEPHX_OXX */
+
+
+
+OPAQUE_TYPE_3(DoublingFlock,Abraham,Heaper);
+class HashStream;
+extern Category * cat_HashStream;
+class HonestAbeIniter;
+extern Category * cat_HonestAbeIniter;
+class HonestAbePlan;
+extern Category * cat_HonestAbePlan;
+class Honestly;
+extern Category * cat_Honestly;
+OPAQUE_TYPE_3(PairFlock,Abraham,Heaper);
+OPAQUE_TYPE_4(TestFlockInfo,FlockInfo,FlockLocation,Heaper);
+OPAQUE_TYPE_3(TestPacker,DiskManager,Heaper);
+#endif /* PACKERT_OXX */
+

@@ -1,0 +1,531 @@
+===> /Fhypatia/roger/prod/xhs/src/xlatexpp/gnusun
+(gcc -g3 -O0 -pg -Winline  -DMANUAL_CRUTCH=1 -I. -I.. -I../../xpp -I../../xlatexpp -I../../disk -I../../comm -I../../server -I../../disk -I../../urdi -I../sxx -I/usr/local/lib/g++-include  -I/usr/local/lib/g++-include/sys -I/usr/local/lib/gcc-lib/sparc-sun-sunos4.1.4/2.7.0/include  -I/usr/local/lib/gcc-lib/sparc-sun-sunos4.1.4/2.7.0/include/sys   -DUSE_INLINE -DGNUSUN -DGNU  -Dsparc -Dunix   -w  -sun4 -c  ../integerx.cxx && (ld -r integerx.o ; rm -f integerx.o ; mv a.out integerx.o ; touch integerx.o; true)) || (rm -f integerx.o; false)
+In file included from ../integerx.cxx:25:
+../integerx.hxx:489: storage class specified for typename
+../integerx.hxx:489: empty component declaration
+../integerx.hxx:489: parse error before `using'
+../integerx.cxx:673: parse error before `using'
+../integerx.cxx: In method `IntegerSpace::IntegerSpace()':
+../integerx.cxx:1980: parse error before `using'
+../integerx.cxx: At top level:
+../integerx.cxx:2071: cannot declare member `AscendingIntegerStepper::SomeSteppers' within `IntegerSpace'
+../integerx.cxx:2071: assignment (not initialization) in declaration
+../integerx.cxx: In method `void IntegerSpace::AscendingIntegerStepperinitTimeNonInherited_Initer::initialize()':
+../integerx.cxx:2076: member `SomeSteppers' is a private member of class `AscendingIntegerStepper'
+../integerx.cxx: At top level:
+../integerx.cxx:2091: cannot declare member function `AscendingIntegerStepper::make' within `IntegerSpace'
+../integerx.cxx:2091: syntax error before `{'
+../integerx.cxx:2094: member `SomeSteppers' is a private member of class `AscendingIntegerStepper'
+../integerx.cxx:2095: parse error before `if'
+../integerx.cxx:2099: `edges' was not declared in this scope
+../integerx.cxx:2099: `count' was not declared in this scope
+../integerx.cxx:2099: no matching function for call to `AscendingIntegerStepper::operator new (long unsigned int, int)'
+../../xpp/tofux.hxx:486: candidates are: Heaper::operator new(long unsigned int, AllocType, XCSJ, Category *)
+../../xpp/tofux.hxx:480:                 Heaper::operator new(long unsigned int, void *, Category *)
+../../xpp/tofux.hxx:477:                 Heaper::operator new(long unsigned int, XCSJ, Category *)
+../../xpp/tofux.hxx:471:                 Heaper::operator new(long unsigned int, void *)
+../../xpp/tofux.hxx:468:                 Heaper::operator new(long unsigned int)
+../integerx.cxx:2100: parse error before `return'
+../integerx.cxx:2106: cannot declare member function `AscendingIntegerStepper::AscendingIntegerStepper' within `IntegerSpace'
+../integerx.cxx:2106: syntax error before `{'
+../integerx.cxx:2109: `count' was not declared in this scope
+../integerx.cxx:2110: parse error before `if'
+../integerx.cxx:2123: cannot declare member function `AscendingIntegerStepper::AscendingIntegerStepper' within `IntegerSpace'
+../integerx.cxx:2123: syntax error before `{'
+../integerx.cxx:2125: redefinition of `int myIndex'
+../integerx.cxx:2108: `int myIndex' previously defined here
+../integerx.cxx:2125: `index' was not declared in this scope
+../integerx.cxx:2126: redefinition of `int myCount'
+../integerx.cxx:2109: `int myCount' previously defined here
+../integerx.cxx:2126: `count' was not declared in this scope
+../integerx.cxx:2128: parse error before `}'
+../integerx.cxx:2132: cannot declare member function `AscendingIntegerStepper::copy' within `IntegerSpace'
+../integerx.cxx:2132: syntax error before `{'
+../integerx.cxx:2135: redefinition of `int result'
+../integerx.cxx:2094: `int result' previously defined here
+../integerx.cxx:2135: member `SomeSteppers' is a private member of class `AscendingIntegerStepper'
+../integerx.cxx:2136: parse error before `if'
+../integerx.cxx:2140: redefinition of `int returnValue'
+../integerx.cxx:2099: `int returnValue' previously defined here
+../integerx.cxx:2140: `myEdges' was not declared in this scope
+../integerx.cxx:2140: no matching function for call to `AscendingIntegerStepper::operator new (long unsigned int, int)'
+../../xpp/tofux.hxx:486: candidates are: Heaper::operator new(long unsigned int, AllocType, XCSJ, Category *)
+../../xpp/tofux.hxx:480:                 Heaper::operator new(long unsigned int, void *, Category *)
+../../xpp/tofux.hxx:477:                 Heaper::operator new(long unsigned int, XCSJ, Category *)
+../../xpp/tofux.hxx:471:                 Heaper::operator new(long unsigned int, void *)
+../../xpp/tofux.hxx:468:                 Heaper::operator new(long unsigned int)
+../integerx.cxx:2141: parse error before `return'
+../integerx.cxx:2146: cannot declare member function `AscendingIntegerStepper::destroy' within `IntegerSpace'
+../integerx.cxx:2146: syntax error before `{'
+../integerx.cxx:2154: cannot declare member function `AscendingIntegerStepper::fetch' within `IntegerSpace'
+../integerx.cxx:2154: syntax error before `{'
+../integerx.cxx:2157: redefinition of `int returnValue'
+../integerx.cxx:2140: `int returnValue' previously defined here
+../integerx.cxx:2158: parse error before `return'
+../integerx.cxx:2165: cannot declare member function `AscendingIntegerStepper::hasValue' within `IntegerSpace'
+../integerx.cxx:2165: syntax error before `{'
+../integerx.cxx:2170: cannot declare member function `AscendingIntegerStepper::step' within `IntegerSpace'
+../integerx.cxx:2170: syntax error before `{'
+../integerx.cxx:2176: parse error before `if'
+../integerx.cxx:2200: cannot declare member function `DescendingIntegerStepper::make' within `IntegerSpace'
+../integerx.cxx:2200: syntax error before `{'
+../integerx.cxx:2206: cannot declare member function `DescendingIntegerStepper::DescendingIntegerStepper' within `IntegerSpace'
+../integerx.cxx:2206: syntax error before `{'
+../integerx.cxx:2208: redefinition of `int myIndex'
+../integerx.cxx:2125: `int myIndex' previously defined here
+../integerx.cxx:2208: `count' was not declared in this scope
+../integerx.cxx:2209: parse error before `if'
+../integerx.cxx:2221: cannot declare member function `DescendingIntegerStepper::DescendingIntegerStepper' within `IntegerSpace'
+../integerx.cxx:2221: syntax error before `{'
+../integerx.cxx:2223: redefinition of `int myIndex'
+../integerx.cxx:2208: `int myIndex' previously defined here
+../integerx.cxx:2223: `index' was not declared in this scope
+../integerx.cxx:2224: redefinition of `int myPosition'
+../integerx.cxx:2127: `int myPosition' previously defined here
+../integerx.cxx:2225: parse error before `}'
+../integerx.cxx:2229: cannot declare member function `DescendingIntegerStepper::copy' within `IntegerSpace'
+../integerx.cxx:2229: syntax error before `{'
+../integerx.cxx:2235: cannot declare member function `DescendingIntegerStepper::fetch' within `IntegerSpace'
+../integerx.cxx:2235: syntax error before `{'
+../integerx.cxx:2238: redefinition of `int returnValue'
+../integerx.cxx:2157: `int returnValue' previously defined here
+../integerx.cxx:2238: multiple initializations given for `returnValue'
+../integerx.cxx:2239: parse error before `return'
+../integerx.cxx:2246: cannot declare member function `DescendingIntegerStepper::hasValue' within `IntegerSpace'
+../integerx.cxx:2246: syntax error before `{'
+../integerx.cxx:2251: cannot declare member function `DescendingIntegerStepper::step' within `IntegerSpace'
+../integerx.cxx:2251: syntax error before `{'
+../integerx.cxx:2256: redefinition of `int crutch_Flag'
+../integerx.cxx:2175: `int crutch_Flag' previously defined here
+../integerx.cxx:2256: multiple initializations given for `crutch_Flag'
+../integerx.cxx:2257: parse error before `if'
+../integerx.cxx:2281: cannot declare member function `IntegerArrangement::make' within `IntegerSpace'
+../integerx.cxx:2281: syntax error before `{'
+../integerx.cxx:2293: cannot declare member function `IntegerArrangement::copyElements' within `IntegerSpace'
+../integerx.cxx:2293: syntax error before `{'
+../integerx.cxx:2299: `fromArrange' was not declared in this scope
+../integerx.cxx:2300: parse error before `if'
+../integerx.cxx:2301: `problemInstance' was not declared in this scope
+../integerx.cxx:2301: `int blast' redeclared as different kind of symbol
+../../xpp/bombx.hxx:838: previous declaration of `void blast(class Problem *)'
+../integerx.cxx:2301: parse error before `}'
+../integerx.cxx:2306: redefinition of `int crutch_Flag'
+../integerx.cxx:2256: `int crutch_Flag' previously defined here
+../integerx.cxx:2306: `myRegion' was not declared in this scope
+../integerx.cxx:2307: parse error before `if'
+../integerx.cxx:2314: `problemInstance' was not declared in this scope
+../integerx.cxx:2314: redefinition of `int blast'
+../integerx.cxx:2301: `int blast' previously defined here
+../integerx.cxx:2314: parse error before `}'
+../integerx.cxx:2320: conflicting types for `int start'
+../integerx.cxx:2295: previous declaration as `long int start'
+../integerx.cxx:2320: `fromArrange' was not declared in this scope
+../integerx.cxx:2320: `fromRegion' was not declared in this scope
+../integerx.cxx:2320: `myOrdering' was not declared in this scope
+../integerx.cxx:2321: conflicting types for `int stop'
+../integerx.cxx:2296: previous declaration as `long int stop'
+../integerx.cxx:2321: `fromArrange' was not declared in this scope
+../integerx.cxx:2321: `fromRegion' was not declared in this scope
+../integerx.cxx:2321: `myOrdering' was not declared in this scope
+../integerx.cxx:2322: conflicting types for `int toStart'
+../integerx.cxx:2297: previous declaration as `long int toStart'
+../integerx.cxx:2322: `toDsp' was not declared in this scope
+../integerx.cxx:2322: `fromRegion' was not declared in this scope
+../integerx.cxx:2322: `myOrdering' was not declared in this scope
+../integerx.cxx:2322: `this' has no member named `indexOf'
+../integerx.cxx:2325: parse error before `->'
+../integerx.cxx:2329: cannot declare member function `IntegerArrangement::indexOf' within `IntegerSpace'
+../integerx.cxx:2329: syntax error before `{'
+../integerx.cxx:2336: `class IntegerVar' used where a `int' was expected
+../integerx.cxx:2337: conflicting types for `int intPos'
+../integerx.cxx:2334: previous declaration as `class IntegerVar intPos'
+../integerx.cxx:2337: passing `IntegerPos * (IntegerSpace::*)(IntegerVar)' as argument 2 of `checkCast(Category *, Heaper *, char *, int)'
+../integerx.cxx:2338: parse error before `{'
+../integerx.cxx:2338: parse error before `while'
+../integerx.cxx:2345: `problemInstance' was not declared in this scope
+../integerx.cxx:2345: redefinition of `int blast'
+../integerx.cxx:2314: `int blast' previously defined here
+../integerx.cxx:2345: parse error before `}'
+../integerx.cxx:2351: cannot declare member function `IntegerArrangement::indicesOf' within `IntegerSpace'
+../integerx.cxx:2351: syntax error before `{'
+../integerx.cxx:2355: `problemInstance' was not declared in this scope
+../integerx.cxx:2355: redefinition of `int blast'
+../integerx.cxx:2345: `int blast' previously defined here
+../integerx.cxx:2355: parse error before `}'
+../integerx.cxx:2361: cannot declare member function `IntegerArrangement::keysOf' within `IntegerSpace'
+../integerx.cxx:2361: syntax error before `{'
+../integerx.cxx:2369: conflicting types for `int left'
+../integerx.cxx:2365: previous declaration as `long int left'
+../integerx.cxx:2370: parse error before `{'
+../integerx.cxx:2370: conflicting types for `class XnRegion * region'
+../integerx.cxx:2338: previous declaration as `class IntegerRegion * region'
+../integerx.cxx:2370: parse error before `while'
+../integerx.cxx:2376: redefinition of `int offset'
+../integerx.cxx:2368: `int offset' previously defined here
+../integerx.cxx:2376: multiple initializations given for `offset'
+../integerx.cxx:2377: parse error before `if'
+../integerx.cxx:2379: redefinition of `int returnValue'
+../integerx.cxx:2238: `int returnValue' previously defined here
+../integerx.cxx:2379: `myOrdering' was not declared in this scope
+../integerx.cxx:2380: parse error before `return'
+../integerx.cxx:2384: conflicting types for `class XnRegion * returnValue'
+../integerx.cxx:2379: previous declaration as `int returnValue'
+../integerx.cxx:2385: conflicting types for `int returnValue'
+../integerx.cxx:2384: previous declaration as `class XnRegion * returnValue'
+../integerx.cxx:2386: parse error before `return'
+../integerx.cxx:2390: `problemInstance' was not declared in this scope
+../integerx.cxx:2390: redefinition of `int blast'
+../integerx.cxx:2355: `int blast' previously defined here
+../integerx.cxx:2390: parse error before `}'
+../integerx.cxx:2396: cannot declare member function `IntegerArrangement::ordering' within `IntegerSpace'
+../integerx.cxx:2396: syntax error before `{'
+../integerx.cxx:2401: cannot declare member function `IntegerArrangement::region' within `IntegerSpace'
+../integerx.cxx:2401: syntax error before `{'
+../integerx.cxx:2407: cannot declare member function `IntegerArrangement::printOn' within `IntegerSpace'
+../integerx.cxx:2407: syntax error before `{'
+../integerx.cxx:2413: cannot declare member function `IntegerArrangement::IntegerArrangement' within `IntegerSpace'
+../integerx.cxx:2413: syntax error before `{'
+../integerx.cxx:2415: `problemInstance' was not declared in this scope
+../integerx.cxx:2415: redefinition of `int blast'
+../integerx.cxx:2390: `int blast' previously defined here
+../integerx.cxx:2415: parse error before `}'
+../integerx.cxx:2418: `ordering' was not declared in this scope
+../integerx.cxx:2419: parse error before `}'
+../integerx.cxx:2423: cannot declare member function `IntegerArrangement::actualHashForEqual' within `IntegerSpace'
+../integerx.cxx:2423: syntax error before `{'
+../integerx.cxx:2428: cannot declare member function `IntegerArrangement::hashForEqual' within `IntegerSpace'
+../integerx.cxx:2428: syntax error before `{'
+../integerx.cxx:2433: cannot declare member function `IntegerArrangement::isEqual' within `IntegerSpace'
+../integerx.cxx:2433: syntax error before `{'
+../integerx.cxx:2434: parse error before `for'
+../integerx.cxx:2439: redefinition of `int crutch_Flag'
+../integerx.cxx:2306: `int crutch_Flag' previously defined here
+../integerx.cxx:2439: base operand of `->' is not a pointer
+../integerx.cxx:2439: `o' was not declared in this scope
+../integerx.cxx:2440: parse error before `if'
+../integerx.cxx:2466: cannot declare member `IntegerEdgeAccumulator::SomeAccumulators' within `IntegerSpace'
+../integerx.cxx:2466: assignment (not initialization) in declaration
+../integerx.cxx: In method `void IntegerSpace::IntegerEdgeAccumulatorinitTimeNonInherited_Initer::initialize()':
+../integerx.cxx:2471: member `SomeAccumulators' is a private member of class `IntegerEdgeAccumulator'
+../integerx.cxx: At top level:
+../integerx.cxx:2486: cannot declare member function `IntegerEdgeAccumulator::make' within `IntegerSpace'
+../integerx.cxx:2486: syntax error before `{'
+../integerx.cxx:2489: redefinition of `int result'
+../integerx.cxx:2135: `int result' previously defined here
+../integerx.cxx:2489: member `SomeAccumulators' is a private member of class `IntegerEdgeAccumulator'
+../integerx.cxx:2490: parse error before `if'
+../integerx.cxx:2494: redefinition of `int returnValue'
+../integerx.cxx:2385: `int returnValue' previously defined here
+../integerx.cxx:2494: `startsInside' was not declared in this scope
+../integerx.cxx:2494: `count' was not declared in this scope
+../integerx.cxx:2494: no matching function for call to `IntegerEdgeAccumulator::operator new (long unsigned int, int)'
+../../xpp/tofux.hxx:486: candidates are: Heaper::operator new(long unsigned int, AllocType, XCSJ, Category *)
+../../xpp/tofux.hxx:480:                 Heaper::operator new(long unsigned int, void *, Category *)
+../../xpp/tofux.hxx:477:                 Heaper::operator new(long unsigned int, XCSJ, Category *)
+../../xpp/tofux.hxx:471:                 Heaper::operator new(long unsigned int, void *)
+../../xpp/tofux.hxx:468:                 Heaper::operator new(long unsigned int)
+../integerx.cxx:2495: parse error before `return'
+../integerx.cxx:2501: cannot declare member function `IntegerEdgeAccumulator::IntegerEdgeAccumulator' within `IntegerSpace'
+../integerx.cxx:2501: syntax error before `{'
+../integerx.cxx:2503: `count' was not declared in this scope
+../integerx.cxx:2504: redefinition of `int myIndex'
+../integerx.cxx:2223: `int myIndex' previously defined here
+../integerx.cxx:2506: `class IntegerVar' used where a `int' was expected
+../integerx.cxx:2507: parse error before `}'
+../integerx.cxx:2516: cannot declare member function `IntegerEdgeAccumulator::IntegerEdgeAccumulator' within `IntegerSpace'
+../integerx.cxx:2516: syntax error before `{'
+../integerx.cxx:2518: redefinition of `int myEdges'
+../integerx.cxx:2503: `int myEdges' previously defined here
+../integerx.cxx:2518: `edges' was not declared in this scope
+../integerx.cxx:2519: redefinition of `int myIndex'
+../integerx.cxx:2504: `int myIndex' previously defined here
+../integerx.cxx:2519: `index' was not declared in this scope
+../integerx.cxx:2520: redefinition of `int havePending'
+../integerx.cxx:2505: `int havePending' previously defined here
+../integerx.cxx:2520: `hasPending' was not declared in this scope
+../integerx.cxx:2521: redefinition of `int myPending'
+../integerx.cxx:2506: `int myPending' previously defined here
+../integerx.cxx:2521: `pending' was not declared in this scope
+../integerx.cxx:2522: parse error before `}'
+../integerx.cxx:2526: cannot declare member function `IntegerEdgeAccumulator::copy' within `IntegerSpace'
+../integerx.cxx:2526: syntax error before `{'
+../integerx.cxx:2529: redefinition of `int result'
+../integerx.cxx:2489: `int result' previously defined here
+../integerx.cxx:2529: member `SomeAccumulators' is a private member of class `IntegerEdgeAccumulator'
+../integerx.cxx:2530: parse error before `if'
+../integerx.cxx:2534: redefinition of `int returnValue'
+../integerx.cxx:2494: `int returnValue' previously defined here
+../integerx.cxx:2534: `myStartsInside' was not declared in this scope
+../integerx.cxx:2534: no matching function for call to `IntegerEdgeAccumulator::operator new (long unsigned int, int)'
+../../xpp/tofux.hxx:486: candidates are: Heaper::operator new(long unsigned int, AllocType, XCSJ, Category *)
+../../xpp/tofux.hxx:480:                 Heaper::operator new(long unsigned int, void *, Category *)
+../../xpp/tofux.hxx:477:                 Heaper::operator new(long unsigned int, XCSJ, Category *)
+../../xpp/tofux.hxx:471:                 Heaper::operator new(long unsigned int, void *)
+../../xpp/tofux.hxx:468:                 Heaper::operator new(long unsigned int)
+../integerx.cxx:2535: parse error before `return'
+../integerx.cxx:2540: cannot declare member function `IntegerEdgeAccumulator::destroy' within `IntegerSpace'
+../integerx.cxx:2540: syntax error before `{'
+../integerx.cxx:2548: cannot declare member function `IntegerEdgeAccumulator::step' within `IntegerSpace'
+../integerx.cxx:2548: syntax error before `{'
+../integerx.cxx:2553: cannot declare member function `IntegerEdgeAccumulator::value' within `IntegerSpace'
+../integerx.cxx:2553: syntax error before `{'
+../integerx.cxx:2555: redefinition of `int returnValue'
+../integerx.cxx:2534: `int returnValue' previously defined here
+../integerx.cxx:2555: `this' has no member named `region'
+../integerx.cxx:2556: parse error before `return'
+../integerx.cxx:2561: cannot declare member function `IntegerEdgeAccumulator::printOn' within `IntegerSpace'
+../integerx.cxx:2561: syntax error before `{'
+../integerx.cxx:2567: cannot declare member function `IntegerEdgeAccumulator::edge' within `IntegerSpace'
+../integerx.cxx:2567: syntax error before `{'
+../integerx.cxx:2577: redefinition of `int myPending'
+../integerx.cxx:2521: `int myPending' previously defined here
+../integerx.cxx:2577: `x' was not declared in this scope
+../integerx.cxx:2578: parse error before `}'
+../integerx.cxx:2581: redefinition of `int myPending'
+../integerx.cxx:2577: `int myPending' previously defined here
+../integerx.cxx:2581: `x' was not declared in this scope
+../integerx.cxx:2582: parse error before `}'
+../integerx.cxx:2586: cannot declare member function `IntegerEdgeAccumulator::edges' within `IntegerSpace'
+../integerx.cxx:2586: syntax error before `{'
+../integerx.cxx:2596: redefinition of `int havePending'
+../integerx.cxx:2520: `int havePending' previously defined here
+../integerx.cxx:2597: parse error before `->'
+../integerx.cxx:2602: redefinition of `int myPending'
+../integerx.cxx:2581: `int myPending' previously defined here
+../integerx.cxx:2602: `stepper' was not declared in this scope
+../integerx.cxx:2603: parse error before `->'
+../integerx.cxx:2610: cannot declare member function `IntegerEdgeAccumulator::region' within `IntegerSpace'
+../integerx.cxx:2610: syntax error before `{'
+../integerx.cxx:2620: redefinition of `int returnValue'
+../integerx.cxx:2555: `int returnValue' previously defined here
+../integerx.cxx:2620: multiple initializations given for `returnValue'
+../integerx.cxx:2621: parse error before `return'
+../integerx.cxx:2624: redefinition of `int returnValue'
+../integerx.cxx:2620: `int returnValue' previously defined here
+../integerx.cxx:2624: multiple initializations given for `returnValue'
+../integerx.cxx:2625: parse error before `return'
+../integerx.cxx:2645: cannot declare member `IntegerEdgeStepper::SomeEdgeSteppers' within `IntegerSpace'
+../integerx.cxx:2645: assignment (not initialization) in declaration
+../integerx.cxx: In method `void IntegerSpace::IntegerEdgeStepperinitTimeNonInherited_Initer::initialize()':
+../integerx.cxx:2650: member `SomeEdgeSteppers' is a private member of class `IntegerEdgeStepper'
+../integerx.cxx: At top level:
+../integerx.cxx:2665: cannot declare member function `IntegerEdgeStepper::outOfBounds' within `IntegerSpace'
+../integerx.cxx:2665: syntax error before `{'
+../integerx.cxx:2666: `problemInstance' was not declared in this scope
+../integerx.cxx:2666: redefinition of `int blast'
+../integerx.cxx:2415: `int blast' previously defined here
+../integerx.cxx:2666: parse error before `}'
+../integerx.cxx:2675: cannot declare member function `IntegerEdgeStepper::make' within `IntegerSpace'
+../integerx.cxx:2675: syntax error before `{'
+../integerx.cxx:2678: redefinition of `int result'
+../integerx.cxx:2529: `int result' previously defined here
+../integerx.cxx:2678: member `SomeEdgeSteppers' is a private member of class `IntegerEdgeStepper'
+../integerx.cxx:2679: parse error before `if'
+../integerx.cxx:2683: redefinition of `int returnValue'
+../integerx.cxx:2624: `int returnValue' previously defined here
+../integerx.cxx:2683: `entering' was not declared in this scope
+../integerx.cxx:2683: `count' was not declared in this scope
+../integerx.cxx:2683: `edges' was not declared in this scope
+../integerx.cxx:2683: no matching function for call to `IntegerEdgeStepper::operator new (long unsigned int, int)'
+../../xpp/tofux.hxx:486: candidates are: Heaper::operator new(long unsigned int, AllocType, XCSJ, Category *)
+../../xpp/tofux.hxx:480:                 Heaper::operator new(long unsigned int, void *, Category *)
+../../xpp/tofux.hxx:477:                 Heaper::operator new(long unsigned int, XCSJ, Category *)
+../../xpp/tofux.hxx:471:                 Heaper::operator new(long unsigned int, void *)
+../../xpp/tofux.hxx:468:                 Heaper::operator new(long unsigned int)
+../integerx.cxx:2684: parse error before `return'
+../integerx.cxx:2696: cannot declare member function `IntegerEdgeStepper::fetch' within `IntegerSpace'
+../integerx.cxx:2696: syntax error before `{'
+../integerx.cxx:2699: redefinition of `int returnValue'
+../integerx.cxx:2683: `int returnValue' previously defined here
+../integerx.cxx:2699: `this' has no member named `edge'
+../integerx.cxx:2700: parse error before `return'
+../integerx.cxx:2713: cannot declare member function `IntegerEdgeStepper::IntegerEdgeStepper' within `IntegerSpace'
+../integerx.cxx:2713: syntax error before `{'
+../integerx.cxx:2715: redefinition of `int myIndex'
+../integerx.cxx:2519: `int myIndex' previously defined here
+../integerx.cxx:2716: redefinition of `int myCount'
+../integerx.cxx:2126: `int myCount' previously defined here
+../integerx.cxx:2716: `count' was not declared in this scope
+../integerx.cxx:2717: redefinition of `int myEdges'
+../integerx.cxx:2518: `int myEdges' previously defined here
+../integerx.cxx:2717: `edges' was not declared in this scope
+../integerx.cxx:2718: parse error before `}'
+../integerx.cxx:2726: cannot declare member function `IntegerEdgeStepper::IntegerEdgeStepper' within `IntegerSpace'
+../integerx.cxx:2726: syntax error before `{'
+../integerx.cxx:2728: redefinition of `int myIndex'
+../integerx.cxx:2715: `int myIndex' previously defined here
+../integerx.cxx:2728: `index' was not declared in this scope
+../integerx.cxx:2729: redefinition of `int myCount'
+../integerx.cxx:2716: `int myCount' previously defined here
+../integerx.cxx:2729: `count' was not declared in this scope
+../integerx.cxx:2730: redefinition of `int myEdges'
+../integerx.cxx:2717: `int myEdges' previously defined here
+../integerx.cxx:2730: `edges' was not declared in this scope
+../integerx.cxx:2731: parse error before `}'
+../integerx.cxx:2735: cannot declare member function `IntegerEdgeStepper::destroy' within `IntegerSpace'
+../integerx.cxx:2735: syntax error before `{'
+../integerx.cxx:2743: cannot declare member function `IntegerEdgeStepper::copy' within `IntegerSpace'
+../integerx.cxx:2743: syntax error before `{'
+../integerx.cxx:2749: cannot declare member function `IntegerEdgeStepper::printOn' within `IntegerSpace'
+../integerx.cxx:2749: syntax error before `{'
+../integerx.cxx:2774: cannot declare member function `IntegerSimpleRegionStepper::fetch' within `IntegerSpace'
+../integerx.cxx:2774: syntax error before `{'
+../integerx.cxx:2779: cannot declare member function `IntegerSimpleRegionStepper::hasValue' within `IntegerSpace'
+../integerx.cxx:2779: syntax error before `{'
+../integerx.cxx:2784: cannot declare member function `IntegerSimpleRegionStepper::step' within `IntegerSpace'
+../integerx.cxx:2784: syntax error before `{'
+../integerx.cxx:2791: parse error before `if'
+../integerx.cxx:2808: cannot declare member function `IntegerSimpleRegionStepper::IntegerSimpleRegionStepper' within `IntegerSpace'
+../integerx.cxx:2808: syntax error before `{'
+../integerx.cxx:2810: redefinition of `int myIndex'
+../integerx.cxx:2728: `int myIndex' previously defined here
+../integerx.cxx:2811: redefinition of `int myCount'
+../integerx.cxx:2729: `int myCount' previously defined here
+../integerx.cxx:2811: `count' was not declared in this scope
+../integerx.cxx:2812: redefinition of `int isLeftBounded'
+../integerx.cxx:2790: `int isLeftBounded' previously defined here
+../integerx.cxx:2812: `leftBounded' was not declared in this scope
+../integerx.cxx:2813: parse error before `if'
+../integerx.cxx:2839: cannot declare member function `IntegerSimpleRegionStepper::IntegerSimpleRegionStepper' within `IntegerSpace'
+../integerx.cxx:2839: syntax error before `{'
+../integerx.cxx:2841: redefinition of `int myIndex'
+../integerx.cxx:2810: `int myIndex' previously defined here
+../integerx.cxx:2841: `index' was not declared in this scope
+../integerx.cxx:2842: redefinition of `int myCount'
+../integerx.cxx:2811: `int myCount' previously defined here
+../integerx.cxx:2842: `count' was not declared in this scope
+../integerx.cxx:2843: redefinition of `int isLeftBounded'
+../integerx.cxx:2812: `int isLeftBounded' previously defined here
+../integerx.cxx:2843: `leftBounded' was not declared in this scope
+../integerx.cxx:2844: `simple' was not declared in this scope
+../integerx.cxx:2845: parse error before `}'
+../integerx.cxx:2849: cannot declare member function `IntegerSimpleRegionStepper::copy' within `IntegerSpace'
+../integerx.cxx:2849: syntax error before `{'
+../integerx.cxx:2855: cannot declare member function `IntegerSimpleRegionStepper::printOn' within `IntegerSpace'
+../integerx.cxx:2855: syntax error before `{'
+../integerx.cxx:2875: cannot declare member function `IntegerUpOrder::make' within `IntegerSpace'
+../integerx.cxx:2875: syntax error before `{'
+../integerx.cxx:2881: cannot declare member function `IntegerUpOrder::actualHashForEqual' within `IntegerSpace'
+../integerx.cxx:2881: syntax error before `{'
+../integerx.cxx:2886: cannot declare member function `IntegerUpOrder::follows' within `IntegerSpace'
+../integerx.cxx:2886: syntax error before `{'
+../integerx.cxx:2891: cannot declare member function `IntegerUpOrder::followsInt' within `IntegerSpace'
+../integerx.cxx:2891: syntax error before `{'
+../integerx.cxx:2899: cannot declare member function `IntegerUpOrder::isEqual' within `IntegerSpace'
+../integerx.cxx:2899: syntax error before `{'
+../integerx.cxx:2904: cannot declare member function `IntegerUpOrder::isFullOrder' within `IntegerSpace'
+../integerx.cxx:2904: syntax error before `{'
+../integerx.cxx:2909: cannot declare member function `IntegerUpOrder::preceeds' within `IntegerSpace'
+../integerx.cxx:2909: syntax error before `{'
+../integerx.cxx:2916: `before' was not declared in this scope
+../integerx.cxx:2917: conflicting types for `int second'
+../integerx.cxx:2914: previous declaration as `class IntegerRegion * second'
+../integerx.cxx:2917: `after' was not declared in this scope
+../integerx.cxx:2918: parse error before `if'
+../integerx.cxx:2929: cannot declare member function `IntegerUpOrder::arrange' within `IntegerSpace'
+../integerx.cxx:2929: syntax error before `{'
+../integerx.cxx:2931: redefinition of `int returnValue'
+../integerx.cxx:2699: `int returnValue' previously defined here
+../integerx.cxx:2931: bad argument 2 for function `static class IntegerArrangement * IntegerArrangement::make(class XnRegion *, class OrderSpec *)' (type was class IntegerSpace::IntegerEdgeStepperinitTimeNonInherited_Initer *)
+../integerx.cxx:2932: parse error before `return'
+../integerx.cxx:2936: cannot declare member function `IntegerUpOrder::chooseMany' within `IntegerSpace'
+../integerx.cxx:2936: syntax error before `{'
+../integerx.cxx:2941: redefinition of `int returnValue'
+../integerx.cxx:2931: `int returnValue' previously defined here
+../integerx.cxx:2941: `this' has no member named `arrange'
+../integerx.cxx:2941: `Int32' was not declared in this scope
+../integerx.cxx:2941: parse error before `0'
+../integerx.cxx:2941: `n' was not declared in this scope
+../integerx.cxx:2942: parse error before `return'
+../integerx.cxx:2946: cannot declare member function `IntegerUpOrder::chooseOne' within `IntegerSpace'
+../integerx.cxx:2946: syntax error before `{'
+../integerx.cxx:2950: redefinition of `int returnValue'
+../integerx.cxx:2941: `int returnValue' previously defined here
+../integerx.cxx:2950: multiple initializations given for `returnValue'
+../integerx.cxx:2951: parse error before `return'
+../integerx.cxx:2955: cannot declare member function `IntegerUpOrder::coordinateSpace' within `IntegerSpace'
+../integerx.cxx:2955: syntax error before `{'
+../integerx.cxx:2957: redefinition of `int returnValue'
+../integerx.cxx:2950: `int returnValue' previously defined here
+../integerx.cxx:2957: multiple initializations given for `returnValue'
+../integerx.cxx:2958: parse error before `return'
+../integerx.cxx:2962: cannot declare member function `IntegerUpOrder::IntegerUpOrder' within `IntegerSpace'
+../integerx.cxx:2962: syntax error before `{'
+In file included from ../integerx.cxx:2965:
+../sxx/integerx.sxx:28: cannot declare member function `IntegerMapping::IntegerMapping' within `IntegerSpace'
+../sxx/integerx.sxx:28: syntax error before `:'
+../sxx/integerx.sxx:28: cannot declare member function `IntegerMapping::getCategory' within `IntegerSpace'
+../sxx/integerx.sxx:28: syntax error before `{'
+../sxx/integerx.sxx:29: cannot declare member function `CP2_IntegerMapping::CP2_IntegerMapping' within `IntegerSpace'
+../sxx/integerx.sxx:29: syntax error before `{'
+../sxx/integerx.sxx:29: cannot declare member function `GP2_IntegerMapping::GP2_IntegerMapping' within `IntegerSpace'
+../sxx/integerx.sxx:29: syntax error before `{'
+../sxx/integerx.sxx:31: cannot declare member function `IntegerMapping::deferredHack' within `IntegerSpace'
+../sxx/integerx.sxx:31: syntax error before `{'
+In file included from ../../xpp/copyrcpx.hxx:32,
+                 from ../sxx/integerx.sxx:40,
+                 from ../integerx.cxx:2965:
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::CP2_ActualCopyRecipe::->' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `{'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::CP2_ActualCopyRecipe::(unary *)' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `{'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::CP2_ActualCopyRecipe::=' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `{'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::CP2_ActualCopyRecipe::type name' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `{'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::CP2_ActualCopyRecipe::CP2_ActualCopyRecipe' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `{'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::CP2_ActualCopyRecipe::CP2_ActualCopyRecipe' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `:'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::GP2_ActualCopyRecipe::->' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `{'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::GP2_ActualCopyRecipe::(unary *)' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `{'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::GP2_ActualCopyRecipe::=' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `{'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::GP2_ActualCopyRecipe::type name' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `{'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::GP2_ActualCopyRecipe::GP2_ActualCopyRecipe' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `:'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::GP2_ActualCopyRecipe::GP2_ActualCopyRecipe' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `:'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::GP2_ActualCopyRecipe::GP2_ActualCopyRecipe' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `:'
+../../xpp/copyrcpx.oxx:28: cannot declare member function `IntegerSpace::GP2_ActualCopyRecipe::GP2_ActualCopyRecipe' within `IntegerSpace'
+../../xpp/copyrcpx.oxx:28: syntax error before `:'
+In file included from ../integerx.cxx:2965:
+../sxx/integerx.sxx:50: cannot declare member function `IntegerMapping::sendSelfTo' within `IntegerSpace'
+../sxx/integerx.sxx:50: syntax error before `{'
+../sxx/integerx.sxx:54: conflicting types for `class IntegerSpace::Recipe * XppCuisine'
+../../comm/recipex.hxx:66: previous declaration as `class Recipe * XppCuisine'
+../sxx/integerx.sxx:64: cannot declare member function `IntegerPos::IntegerPos' within `IntegerSpace'
+../sxx/integerx.sxx:64: syntax error before `:'
+../sxx/integerx.sxx:64: cannot declare member function `IntegerPos::getCategory' within `IntegerSpace'
+../sxx/integerx.sxx:64: syntax error before `{'
+../sxx/integerx.sxx:65: cannot declare member function `CP2_IntegerPos::CP2_IntegerPos' within `IntegerSpace'
+../sxx/integerx.sxx:65: syntax error before `{'
+../sxx/integerx.sxx:65: cannot declare member function `GP2_IntegerPos::GP2_IntegerPos' within `IntegerSpace'
+../sxx/integerx.sxx:65: syntax error before `{'
+../sxx/integerx.sxx:67: cannot declare member function `IntegerPos::deferredHack' within `IntegerSpace'
+../sxx/integerx.sxx:67: syntax error before `{'
+../sxx/integerx.sxx:86: cannot declare member function `IntegerPos::sendSelfTo' within `IntegerSpace'
+../sxx/integerx.sxx:86: syntax error before `{'
+../sxx/integerx.sxx:91: cannot declare member function `IntegerPos::IntegerPos' within `IntegerSpace'
+../sxx/integerx.sxx:91: syntax error before `{'
+../integerx.hxx: In function `void parseInto_IntegerPos(class Rcvr *, void *)':
+../integerx.hxx:278: constructor `IntegerPos::IntegerPos(class Rcvr *, class TCSJ)' is protected
+../sxx/integerx.sxx:97: within this context
+../sxx/integerx.sxx: At top level:
+../sxx/integerx.sxx:100: conflicting types for `class Recipe * XppCuisine'
+../sxx/integerx.sxx:54: previous declaration as `class IntegerSpace::Recipe * XppCuisine'
+../sxx/integerx.sxx:101: parse error before `('
+../sxx/integerx.sxx:154: parse error before `('
+../sxx/integerx.sxx:202: parse error before `('
+../sxx/integerx.sxx:202: type for resolving address of overloaded function must be pointer type
+In file included from ../integerx.cxx:2970:
+../sxx/integerp.sxx:110: parse error before `('
+../sxx/integerp.sxx:238: parse error before `('
+../integerx.cxx: In function `(static initializers for ../integerx.cxx)':
+../integerx.cxx:2957: confused by earlier errors, bailing out
+*** Error code 1
+make: Fatal error: Command failed for target `integerx.o'

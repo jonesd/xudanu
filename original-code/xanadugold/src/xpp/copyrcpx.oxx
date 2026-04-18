@@ -1,0 +1,31 @@
+/* Copyright Xanadu Operating Company.  All Rights Reserved.
+	14 August 1991 at 5:37:07 pm
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+
+#ifndef COPYRCPX_OXX
+#define COPYRCPX_OXX
+
+VERSION_ID(copyrcpx_oxx,	
+	   "$Id: copyrcpx.oxx,v 2.5 1992/11/25 23:26:08 eric Exp $")
+
+#ifndef RECIPEX_OXX
+#include "recipex.oxx"
+#endif /* RECIPEX_OXX */
+
+
+OPAQUE_TYPE_4(ActualCopyRecipe,CopyRecipe,Recipe,Heaper);
+
+#endif /* COPYRCPX_OXX */
+

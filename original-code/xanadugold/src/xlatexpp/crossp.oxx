@@ -1,0 +1,41 @@
+/* Copyright Xanadu Operating Company.  All Rights Reserved. */
+
+/******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+#ifndef CROSSP_OXX
+#define CROSSP_OXX
+
+
+#ifndef CROSSX_OXX
+#include "crossx.oxx"
+#endif /* CROSSX_OXX */
+
+#ifndef STEPPERX_OXX
+#include "stepperx.oxx"
+#endif /* STEPPERX_OXX */
+
+
+
+OPAQUE_TYPE_4(ActualTuple,Tuple,Position,Heaper);
+OPAQUE_TYPE_3(BoxAccumulator,Accumulator,Heaper);
+OPAQUE_TYPE_3(BoxProjectionStepper,Stepper,Heaper);
+OPAQUE_TYPE_3(BoxStepper,Stepper,Heaper);
+OPAQUE_TYPE_5(GenericCrossDsp,CrossMapping,Dsp,Mapping,Heaper);
+OPAQUE_TYPE_4(GenericCrossRegion,CrossRegion,XnRegion,Heaper);
+class GenericCrossSimpleRegionStepper;
+extern Category * cat_GenericCrossSimpleRegionStepper;
+OPAQUE_TYPE_4(GenericCrossSpace,CrossSpace,CoordinateSpace,Heaper);
+OPAQUE_TYPE_3(TupleStepper,Stepper,Heaper);
+#endif /* CROSSP_OXX */
+

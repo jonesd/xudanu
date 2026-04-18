@@ -1,0 +1,10 @@
+#!/usr/local/bin/ksh
+n=0
+csh -c 'time febet.exe ../init.rc'
+while [ ! -f core ] ; do
+	n=`expr 1 + $n`
+	cp ent.ent ent.save
+	echo Run $n
+	csh -c 'time febet.exe ../works2.rc'
+done
+echo Crashed on run $n

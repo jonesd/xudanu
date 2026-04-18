@@ -1,0 +1,3357 @@
+'From Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989 on 9 April 1993 at 4:53:56 pm'!
+
+ChangeLog user: #ech!
+
+'File out on next/ech-f.cha'!
+
+!SharedPtrArray methodsFor: #accessing!
+{void INLINE} shareLess: sharer {Heaper}
+	"The sharer is used in C++ for postmortem finalization"
+	myShareCount _ myShareCount - 1! !
+
+!SharedPtrArray methodsFor: #accessing!
+{void INLINE} shareMore: sharer {Heaper}
+	"The sharer is used in C++ for postmortem finalization"
+	myShareCount _ myShareCount + 1! !
+
+!ActualHashSet methodsFor: #'private: housekeeping'!
+{void} actualAboutToWrite
+
+	| newValues {UInt32Array} newEntries {SharedPtrArray}  |
+	newValues _ myHashValues copy cast: UInt32Array.
+	newEntries _ myHashEntries copy cast: SharedPtrArray.
+	myHashEntries shareLess: self.
+	myHashValues _ newValues.
+	myHashEntries _ newEntries.
+	myHashEntries shareMore: self! !
+
+!ActualHashSet methodsFor: #'protected: creation'!
+create: newTally {Int32} with: entries {SharedPtrArray}
+	super create.
+	myTally _ newTally.
+	myHashValues _ UInt32Array make: entries count.
+	myHashEntries _ entries.
+	myHashEntries shareMore: self.
+	[NewSetCount _ NewSetCount + 1] smalltalkOnly.! !
+
+!ActualHashSet methodsFor: #'protected: creation'!
+create: newTally {Int32} with: hashValues {UInt32Array} with: entries {SharedPtrArray}
+	super create.
+	myTally _ newTally.
+	myHashValues _ hashValues.
+	myHashEntries _ entries.
+	myHashEntries shareMore: self.
+	[NewSetCount _ NewSetCount + 1] smalltalkOnly.! !
+
+!ActualHashSet methodsFor: #hooks:!
+{void RECEIVE.HOOK} receiveHashSet: rcvr {Rcvr} 
+	"Make myHashEntries large enough that we won't grow."
+	
+	| count {Int32} |
+	count _ LPPrimeSizeProvider make uInt32PrimeAfter: (myTally * 2).
+	myHashEntries _ SharedPtrArray make: count.
+	myHashEntries shareMore: self.
+	myHashValues _ UInt32Array make: count.
+	myTally timesRepeat: [self hashStore: rcvr receiveHeaper with: myHashValues with: myHashEntries]! !
+
+!ActualHashTable methodsFor: #protected:!
+create: entries {SharedPtrArray of: TableEntry} with: tally {Int32} with: cs {CoordinateSpace} 
+	super create.
+	myHashEntries _ entries.
+	myTally _ tally.
+	myCoordinateSpace _ cs.
+	myHashEntries shareMore: self! !
+
+!ActualHashTable methodsFor: #hooks:!
+{void RECEIVE.HOOK} receiveHashTable: rcvr {Rcvr} 
+	"This currently doesn't take advantage of the optimizations in TableEntries.  It should."
+
+	myHashEntries _ SharedPtrArray make: myTally // 2 + 1.
+	myHashEntries shareMore: self.
+	(myCoordinateSpace isEqual: IntegerSpace make)
+		ifTrue: [myTally timesRepeat: 
+				[| index {IntegerVar} |
+				index _ rcvr receiveIntegerVar.
+				self storeEntry: (TableEntry make.IntegerVar: index with: rcvr receiveHeaper)]]
+		ifFalse: [myTally timesRepeat: 
+				[| key {Position} |
+				key _ rcvr receiveHeaper cast: Position.
+				self storeEntry: (TableEntry make: key with: rcvr receiveHeaper)]]! !
+
+!SetTable methodsFor: #creation!
+create: entries {SharedPtrArray of: TableEntry} with: tally {Int32} with: cs {CoordinateSpace} 
+	super create.
+	myHashEntries _ entries.
+	myTally _ tally.
+	myCoordinateSpace _ cs.
+	myHashEntries shareMore: self! !
+
+!HashSetStepper methodsFor: #'protected: creation'!
+create: elements {SharedPtrArray} with: current {Int32}
+	super create.
+	myElements _ elements.
+	myElements shareMore: self.
+	myCurrent _ current.
+	self verifyEntry! !
+
+!BucketArrayStepper methodsFor: #'protected: create'!
+create: entries {SharedPtrArray} with: entry {TableEntry | NULL} with: nextBucket {Int32}
+	super create.
+	myEntry _ entry.
+	myEntries _ entries.
+	myNextBucket _ nextBucket.
+	myEntries shareMore: self.
+	self verifyEntry! !
+
+!ActualHashSet methodsFor: #'private: housekeeping'!
+{void} checkSize: byAmount {Int32}
+
+	| newSize {Int32} newValues {UInt32Array} newEntries {SharedPtrArray} he {Heaper wimpy} |
+	
+	"Leave a third of free space."
+	(((myTally + byAmount) * 5) bitShiftRight: 2) < myHashEntries count ifTrue:
+		[self aboutToWrite.
+		^VOID].
+
+	newSize _ LPPrimeSizeProvider make uInt32PrimeAfter: ((myHashValues count * 2) + byAmount).
+	newValues _ UInt32Array make: newSize.
+	newEntries _ SharedPtrArray make: newSize.
+	Int32Zero almostTo: myHashValues count do: [:from {Int32 register} |
+		(he _ myHashEntries fetch: from) ~~ NULL 
+			ifTrue: [self hashStore: he with: newValues with: newEntries]].
+	myHashEntries shareCount > 1
+		ifTrue: [myHashEntries shareLess: self]
+		ifFalse: [myHashValues destroy.
+			myHashEntries destroy].
+	myHashValues _ newValues.
+	myHashEntries _ newEntries.
+	myHashEntries shareMore: self! !
+
+!ActualHashTable methodsFor: #private:!
+{void} aboutToWrite
+	"If my contents are shared, and I'm about to change them, make a copy of them."
+	myHashEntries shareCount > 1 ifTrue:
+		[| newEntries {SharedPtrArray of: TableEntry} entryCount {Int32} |
+		entryCount _ myHashEntries count.
+		newEntries _ SharedPtrArray make: entryCount.
+		Int32Zero almostTo: entryCount do: [:index {Int32} | 
+			| entry {TableEntry wimpy} |
+			(entry _ (myHashEntries fetch: index) cast: TableEntry) ~~ NULL ifTrue: 
+				[| newEntry {TableEntry} |
+				newEntry _ entry copy.
+				newEntries at: index store: newEntry.
+				entry _ entry fetchNext.
+				[entry ~~ NULL] whileTrue: 
+					[newEntry setNext: entry copy.
+					newEntry _ newEntry fetchNext.
+					entry _ entry fetchNext]]].
+		myHashEntries shareLess: self.
+		myHashEntries _ newEntries.
+		myHashEntries shareMore: self]! !
+
+!ActualHashTable methodsFor: #private:!
+{void} checkSize
+	| oldEntries {SharedPtrArray} oldSize {Int32} newSize {Int32} |
+	myTally > (myHashEntries count * 2)
+		ifTrue: 
+			[oldSize _ myHashEntries count.
+			newSize _ LPPrimeSizeProvider make uInt32PrimeAfter: (oldSize * 4).
+			myHashEntries shareLess: self.
+			oldEntries _ myHashEntries.
+			myHashEntries _ SharedPtrArray make: newSize.
+			myHashEntries shareMore: self.
+			Int32Zero almostTo: oldSize do: [:j {Int32} |
+				| cur {TableEntry} next {TableEntry} |
+				cur _ (oldEntries fetch: j) cast: TableEntry.
+				[cur ~~ NULL] whileTrue: 
+					[next _ cur fetchNext.
+					self storeEntry: cur.
+					cur _ next]].
+			oldEntries destroy]! !
+
+!SetTable methodsFor: #'private: resize'!
+{void} aboutToWrite
+	"If my contents are shared, and I'm about to change them, make a copy of them."
+	myHashEntries shareCount > 1 ifTrue:
+		[| newEntries {SharedPtrArray of: TableEntry} entryCount {Int32} |
+		entryCount _ myHashEntries count.
+		newEntries _ SharedPtrArray make: entryCount.
+		Int32Zero almostTo: entryCount do: [:index {Int32} | 
+			| entry {TableEntry wimpy} |
+			(entry _ (myHashEntries fetch: index) cast: TableEntry) ~~ NULL ifTrue: 
+				[| newEntry {TableEntry} |
+				newEntry _ entry copy.
+				newEntries at: index store: newEntry.
+				entry _ entry fetchNext.
+				[entry ~~ NULL] whileTrue: 
+					[newEntry setNext: entry copy.
+					newEntry _ newEntry fetchNext.
+					entry _ entry fetchNext]]].
+		myHashEntries shareLess: self.
+		myHashEntries _ newEntries.
+		myHashEntries shareMore: self]! !
+
+!SetTable methodsFor: #'private: resize'!
+{void} checkSize
+	| oldEntries {SharedPtrArray} oldSize {Int32} newSize {Int32} |
+	myTally > (myHashEntries count * 3)
+		ifTrue:
+			[oldSize _ myHashEntries count.
+			newSize _ PrimeSizeProvider make uInt32PrimeAfter: (oldSize * 4).
+			myHashEntries shareLess: self.
+			oldEntries _ myHashEntries.
+			myHashEntries _ SharedPtrArray make: newSize.
+			myHashEntries shareMore: self.
+			Int32Zero almostTo: oldSize do: [:j {Int32 register} |
+				| cur {TableEntry} next {TableEntry} |
+				cur _ (oldEntries fetch: j) cast: TableEntry.
+				[cur ~~ NULL] whileTrue: 
+					[next _ cur fetchNext.
+					self storeEntry: cur.
+					cur _ next]].
+			oldEntries destroy]! !
+
+!MuSet class methodsFor: #'pseudo constructors'!
+{MuSet} make 
+	^ActualHashSet make! !
+
+!MuSet class methodsFor: #'pseudo constructors'!
+{MuSet} make.Heaper: item {Heaper}
+
+	^ActualHashSet make.Heaper: item! !
+
+!MuSet class methodsFor: #'pseudo constructors'!
+{MuSet} make.IntegerVar: someSize {IntegerVar}
+	"someSize is a non-semantic hint about how big the set might get."
+	^ActualHashSet make.IntegerVar: someSize! !
+
+!EditSequence methodsFor: #accessing!
+{MuSet of: EditSequence} allSequences
+	(myNextSequence == NULL) 
+		ifTrue:
+			[^MuSet make.Heaper: self]
+		ifFalse:
+			[| seq {MuSet of: EditSequence} |
+			seq _ myNextSequence allSequences.
+			seq store: self.
+			^seq]! !
+
+!LCSFinder methodsFor: #'propogating values'!
+{void} addToQueue: offset {IntegerVar} with: index {IntegerVar}
+	| curEntry {IntegerVar} pair {Pair of: IntegerPos} |
+	curEntry _ (myDiagonals fetch: offset) entryAt: index.
+	pair _ Pair make: (IntegerPos make: offset) with: (IntegerPos make: index).
+	(myNextDiagonals intFetch: curEntry) == NULL
+		ifTrue: 
+			[ | newSet {MuSet of: (Pair of: IntegerPos)} |
+			newSet _ MuSet make.Heaper: pair.
+			myNextDiagonals atInt: curEntry introduce: newSet]
+		ifFalse:
+			[((myNextDiagonals intFetch: curEntry) cast: MuSet) store: pair]! !
+
+!FirstFitMaker methodsFor: #scoring!
+{MuSet of: EditSequences} lowestMoveCount: set {MuSet of: EditSequences}
+	| scoreTable {IntegerTable of: (MuSet of: EditSequences)} score {IntegerVar} |
+	scoreTable _ IntegerTable make.
+	set stepper forEach: [:eachSeq {EditSequence} |
+		score _ eachSeq countMoves.
+		(scoreTable fetch: score) == NULL
+			ifTrue: [scoreTable at: score introduce: (MuSet make.Heaper: eachSeq)]
+			ifFalse: [((scoreTable fetch: score) cast: MuSet) store: eachSeq]].
+	^(scoreTable fetch: (scoreTable domain cast: IntegerRegion) start) cast: MuSet! !
+
+!FirstFitMaker methodsFor: #scoring!
+{MuSet of: EditSequences} shortestMoves: set {MuSet of: EditSequences}
+	| scoreTable {IntegerTable of: (MuSet of: EditSequences)} score {IntegerVar} |
+	scoreTable _ IntegerTable make.
+	set stepper forEach: [:eachSeq {EditSequence} |
+		score _ eachSeq totalMoveDistances.
+		(scoreTable intFetch: score) == NULL
+			ifTrue: [scoreTable atInt: score introduce: (MuSet make.Heaper: eachSeq)]
+			ifFalse: [((scoreTable intFetch: score) cast: MuSet) store: eachSeq]].
+	^(scoreTable intFetch: (scoreTable domain cast: IntegerRegion) start) cast: MuSet! !
+
+!FirstFitMaker methodsFor: #scoring!
+{MuSet of: EditSequences} smallShortMoves: set {MuSet of: EditSequences}
+	| scoreTable {IntegerTable of: (MuSet of: EditSequences)} score {IntegerVar} |
+	scoreTable _ IntegerTable make.
+	set stepper forEach: [:eachSeq {EditSequence} |
+		score _ eachSeq moveSizeXDist.
+		(scoreTable fetch: score) == NULL
+			ifTrue: [scoreTable at: score introduce: (MuSet make.Heaper: eachSeq)]
+			ifFalse: [((scoreTable fetch: score) cast: MuSet) store: eachSeq]].
+	^(scoreTable fetch: (scoreTable domain cast: IntegerRegion) start) cast: MuSet! !
+
+MuSet class removeSelector: #muSetWith:!
+
+SharedPtrArray removeSelector: #shareLess!
+
+SharedPtrArray removeSelector: #shareMore!
+
+!ActualHashSet methodsFor: #'protected: creation'!
+{void} destruct
+	Heaper inGC ifFalse: [myHashEntries shareLess: self].
+	super destruct! !
+
+!ActualHashTable methodsFor: #protected:!
+{void} destruct
+	Heaper inGC ifFalse: [myHashEntries shareLess: self].
+	super destruct! !
+
+!SetTable methodsFor: #creation!
+{void} destruct
+	Heaper inGC ifFalse: [myHashEntries shareLess: self].
+	super destruct! !
+
+XnExecutor subclass: #CloseExecutor
+	instanceVariableNames: ''
+	classVariableNames: '
+		FDArray {Int32Array} 
+		FileDescriptorHolders {WeakPtrArray} '
+	poolDictionaries: ''
+	category: 'Xanadu-gchooks'!
+
+CloseExecutor getOrMakeCxxClassDescription attributes: #(CONCRETE EQ )!
+
+CloseExecutor comment:
+'This executor manages objects that need to close file descriptors on finalization.'!
+
+CloseExecutor organization addCategory: #invoking before: nil!
+
+CloseExecutor organization addCategory: #'protected: create' before: #invoking!
+
+!CloseExecutor methodsFor: #'protected: create'!
+create
+	super create! !
+
+CloseExecutor class organization addCategory: #'smalltalk: init' before: nil!
+
+!CloseExecutor class methodsFor: #'smalltalk: init'!
+linkTimeNonInherited
+	FDArray := NULL.
+	FileDescriptorHolders := NULL! !
+
+CloseExecutor class organization addCategory: #accessing before: #'smalltalk: init'!
+
+XnExecutor subclass: #CloseExecutor
+	instanceVariableNames: ''
+	classVariableNames: '
+		FDArray {Int32Array} 
+		FileDescriptorHolders {WeakPtrArray} '
+	poolDictionaries: ''
+	category: 'Xanadu-gchooks'!
+
+CloseExecutor getOrMakeCxxClassDescription attributes: #(CONCRETE EQ NOT.A.TYPE )!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'gchooks')  addClass: CloseExecutor getOrMakeCxxClassDescription in: #public])!
+
+!PrimArray methodsFor: #'bulk accessing'!
+{Int32} indexOf: value {Heaper}
+	with: start {Int32 default: Int32Zero}
+	"The index of the nth occurrence of the given value at or after (before if n is negative) the given index, or -1 if there is none."
+
+	self indexOf: value with: start with: 1! !
+
+!PrimArray methodsFor: #'bulk accessing'!
+{Int32} indexOf: value {Heaper}
+	"The index of the nth occurrence of the given value at or after (before if n is negative) the given index, or -1 if there is none."
+
+	self indexOf: value with: 0 with: 1! !
+
+PrimArray organization classify: #indexOf: under: #'smalltalk: defaults'!
+
+PrimArray organization classify: #indexOf:with: under: #'smalltalk: defaults'!
+
+XnExecutor subclass: #DeleteExecutor
+	instanceVariableNames: ''
+	classVariableNames: '
+		FDArray {void star star} 
+		FileDescriptorHolders {WeakPtrArray} '
+	poolDictionaries: ''
+	category: 'Xanadu-gchooks'!
+
+DeleteExecutor getOrMakeCxxClassDescription attributes: #(CONCRETE EQ NOT.A.TYPE )!
+
+DeleteExecutor comment:
+'This executor manages objects that need to release non-Heaper storage on finalization.'!
+
+DeleteExecutor getOrMakeCxxClassDescription attributes: #(CONCRETE EQ NOT.A.TYPE )!
+
+DeleteExecutor organization addCategory: #'protected: create' before: nil!
+
+!DeleteExecutor methodsFor: #'protected: create'!
+create
+	super create! !
+
+DeleteExecutor organization addCategory: #invoking before: #'protected: create'!
+
+!DeleteExecutor methodsFor: #invoking!
+{void} execute: estateIndex {Int32}
+	| storage {void star} |
+	storage := StorageArray at: estateIndex.
+	storage ~~ NULL ifTrue: [
+		storage delete].
+	StorageArray at: estateIndex put: NULL.! !
+
+DeleteExecutor class organization addCategory: #linkTimeNonInherited before: nil!
+
+DeleteExecutor class organization removeCategory: #linkTimeNonInherited!
+
+DeleteExecutor class organization addCategory: #'smalltalk: init' before: nil!
+
+!DeleteExecutor class methodsFor: #'smalltalk: init'!
+linkTimeNonInherited
+	StorageArray := NULL.
+	StorageHolders := NULL.! !
+
+DeleteExecutor class organization addCategory: #accessing before: #'smalltalk: init'!
+
+XnExecutor subclass: #DeleteExecutor
+	instanceVariableNames: ''
+	classVariableNames: '
+		StorageArray {void vector star} 
+		StorageHolders {WeakPtrArray} '
+	poolDictionaries: ''
+	category: 'Xanadu-gchooks'!
+
+DeleteExecutor getOrMakeCxxClassDescription attributes: #(CONCRETE EQ NOT.A.TYPE )!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'gchooks')  addClass: DeleteExecutor getOrMakeCxxClassDescription in: #public])!
+
+!Request methodsFor: #creation!
+create: name {char star} with: receiver {Heaper}
+	"This constructor is called by the proxy routine on the client side."
+	super create.
+	myMsgName _ name.
+	myRcvr _ receiver.
+	myAmServer _ false.! !
+
+CommentThunk organization addCategory: #hooks: before: #destruct!
+
+EchoThunk removeSelector: #destruct!
+
+EchoThunk organization removeCategory: #destruct!
+
+EchoThunk organization addCategory: #hooks: before: nil!
+
+CommentThunk removeSelector: #destruct!
+
+Request removeSelector: #destruct!
+
+SetCommProtocol removeSelector: #destruct!
+
+SetCommProtocol organization addCategory: #hooks: before: #thunking!
+
+SetDiskProtocol removeSelector: #destruct!
+
+SetDiskProtocol organization addCategory: #hooks: before: #protected:!
+
+SwitchLogger organization addCategory: #hooks: before: nil!
+
+SwitchLogger removeSelector: #destruct!
+
+SwitchLogger organization removeCategory: #destruct!
+
+!FDListener methodsFor: #creation!
+{void} destruct
+
+	Heaper inGC ifFalse: [
+		[myFD close] smalltalkOnly.
+		'close (myFD);' translateOnly].
+	super destruct.! !
+
+!Request methodsFor: #hooks:!
+{void RECEIVE.HOOK} restartRequest: rcvr {Rcvr unused default: NULL}
+	myAmServer _ true.
+	DeleteExecutor registerHolder: self with: myMsgName.! !
+
+!FDListener methodsFor: #creation!
+{void} registerFor: anFD {int}
+
+	myFD _ anFD.
+	CloseExecutor registerHolder: self with: anFD.
+	ServerLoop introduceChunk: self! !
+
+!CommentThunk methodsFor: #hooks:!
+{void} restartCommentThunk: rcvr {Rcvr unused default: NULL}
+	DeleteExecutor registerHolder: self with: message.! !
+
+!EchoThunk methodsFor: #hooks:!
+{void} restartEchoThunk: rcvr {Rcvr unused default: NULL}
+	DeleteExecutor registerHolder: self with: message! !
+
+!SetCommProtocol methodsFor: #hooks:!
+{void} restartSetCommProtocol: rcvr {Rcvr unused default: NULL}
+	DeleteExecutor registerHolder: self with: myName! !
+
+!SetDiskProtocol methodsFor: #hooks:!
+{void} restartSetDiskProtocol: rcvr {Rcvr unused default: NULL}
+	DeleteExecutor registerHolder: self with: myName! !
+
+!SwitchLogger methodsFor: #hooks:!
+{void} restartSwitchLogger: rcvr {Rcvr unused default: NULL}
+	DeleteExecutor registerHolder: self with: myLoggerName.
+	DeleteExecutor registerHolder: self with: myDirective.! !
+
+DeleteExecutor class removeSelector: #register:with:!
+
+DeleteExecutor class removeSelector: #unregister:with:!
+
+CloseExecutor class removeSelector: #register:with:!
+
+CloseExecutor class removeSelector: #unregister:with:!
+
+!CloseExecutor class methodsFor: #accessing!
+{void} registerHolder: holder {Heaper} with: fd {Int32}
+	| slot {Int32} |
+	FDArray == NULL ifTrue: [
+		| exec {XnExecutor} |
+		FDArray := Int32Array make: 32.
+		exec := CloseExecutor create.
+		FileDescriptorHolders := WeakPtrArray make: exec with: 32].
+	slot := FileDescriptorHolders indexOf: NULL.
+	slot == -1 ifTrue: [
+		slot := FDArray count.
+		FDArray := (FDArray copyGrow: 16) cast: Int32Array.
+		FileDescriptorHolders := (FileDescriptorHolders copyGrow: 16) cast: WeakPtrArray].
+	FDArray at: slot storeInt: fd.
+	FileDescriptorHolders at: slot store: holder.! !
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'gchooks') cxxHeader: '#include <osfcn.h>
+#include <stdlib.h>' in: #public])!
+
+!CloseExecutor methodsFor: #invoking!
+{void} execute: estateIndex {Int32}
+	| fd {Int32} |
+	fd := FDArray intAt: estateIndex.
+	fd ~= -1 ifTrue: [
+		[fd close] smalltalkOnly.
+		'close((int)fd);' translateOnly.
+		FDArray at: estateIndex storeInt: -1]! !
+
+!DeleteExecutor class methodsFor: #accessing!
+{void} registerHolder: holder {Heaper} with: storage {void star}
+	| slot {Int32} |
+	StorageArray == NULL ifTrue: [
+		| exec {XnExecutor} |
+		'DeleteExecutor::StorageArray = new void* [32];
+		memset (DeleteExecutor::StorageArray, 0, 32 * sizeof(void*));' translateOnly.
+		[StorageArray := PtrArray nulls: 32] smalltalkOnly.
+		exec := DeleteExecutor create.
+		StorageHolders := WeakPtrArray make: exec with: 32].
+	slot := StorageHolders indexOf: NULL.
+	slot == -1 ifTrue: [
+		slot := StorageHolders count.
+		'void ** newArray = new void* [slot + 16];
+		memset(&newArray[slot], 0, 16 * sizeof(void*));
+		MEMMOVE(newArray, DeleteExecutor::StorageArray, (int)slot);
+		delete DeleteExecutor::StorageArray;
+		DeleteExecutor::StorageArray = newArray;' translateOnly.
+		[StorageArray := StorageArray copyGrow: 16] smalltalkOnly.
+		StorageHolders := (StorageHolders copyGrow: 16) cast: WeakPtrArray].
+	StorageArray at: slot put: storage.
+	StorageHolders at: slot store: holder.! !
+
+ChangeRecorder user: #ech!
+
+!PtrArray methodsFor: #'bulk accessing'!
+{Int32} indexOfObject: value {IntegerVar | IEEE64 | Heaper | NULL}
+	with: start {Int32 default: Int32Zero}
+	with: nth {Int32 default: 1}
+	"The index of the nth occurrence of anything but the given value at or after (before if n is negative) the given index, or -1 if there is none."
+
+	| result n |
+	start < 0
+		ifTrue: [result := self basicSize + start + 1.
+			result < 0
+				ifTrue: [Heaper BLAST: #IndexOutOfBounds]]
+		ifFalse: [result := start + 1].
+	result > self basicSize
+		ifTrue: [Heaper BLAST: #IndexOutOfBounds].
+	nth >= 0 ifTrue:
+		[n := nth.
+			[|o|
+			o := self basicAt: result.
+			((value == NULL and: [o == NULL]) or: [value isEqual: o]) ifTrue:
+				[n := n - 1.
+				n == 0
+					ifTrue: [^result - 1]].
+			result := result + 1.
+		result < self basicSize] whileTrue.
+		^-1]
+	ifFalse:
+		[n := nth.
+			[|o|
+			o := self basicAt: result.
+			((value == NULL and: [o == NULL]) or: [value isEqual: o]) ifTrue:
+				[n := n + 1.
+				n == 0
+					ifTrue: [^result]].
+			result := result - 1.
+		result > 0] whileTrue.
+		^-1]! !
+
+!PtrArray methodsFor: #'bulk accessing'!
+{Int32} indexOfEQ: value {Heaper | NULL}
+	with: start {Int32 default: Int32Zero}
+	with: nth {Int32 default: 1}
+	"The index of the nth occurrence of anything but the given value at or after (before if n is negative) the given index, or -1 if there is none."
+
+	| result n |
+	start < 0
+		ifTrue: [result := self basicSize + start + 1.
+			result < 0
+				ifTrue: [Heaper BLAST: #IndexOutOfBounds]]
+		ifFalse: [result := start + 1].
+	result > self basicSize
+		ifTrue: [Heaper BLAST: #IndexOutOfBounds].
+	nth >= 0 ifTrue:
+		[n := nth.
+			[|o|
+			o := self basicAt: result.
+			value == o ifTrue:
+				[n := n - 1.
+				n == 0
+					ifTrue: [^result - 1]].
+			result := result + 1.
+		result < self basicSize] whileTrue.
+		^-1]
+	ifFalse:
+		[n := nth.
+			[|o|
+			o := self basicAt: result.
+			value == o ifTrue:
+				[n := n + 1.
+				n == 0
+					ifTrue: [^result]].
+			result := result - 1.
+		result > 0] whileTrue.
+		^-1]! !
+
+!PtrArray methodsFor: #'bulk accessing'!
+{Int32} indexOfEQOrNull: value {Heaper | NULL}
+	with: start {Int32 default: Int32Zero}
+	with: nth {Int32 default: 1}
+	"The index of the nth occurrence of anything but the given value at or after (before if n is negative) the given index, or -1 if there is none."
+
+	| result n |
+	start < 0
+		ifTrue: [result := self basicSize + start + 1.
+			result < 0
+				ifTrue: [Heaper BLAST: #IndexOutOfBounds]]
+		ifFalse: [result := start + 1].
+	result > self basicSize
+		ifTrue: [Heaper BLAST: #IndexOutOfBounds].
+	nth >= 0 ifTrue:
+		[n := nth.
+			[|o|
+			o := self basicAt: result.
+			(value == o or: [o == NULL]) ifTrue:
+				[n := n - 1.
+				n == 0
+					ifTrue: [^result - 1]].
+			result := result + 1.
+		result < self basicSize] whileTrue.
+		^-1]
+	ifFalse:
+		[n := nth.
+			[|o|
+			o := self basicAt: result.
+			(value == o or: [o == NULL]) ifTrue:
+				[n := n + 1.
+				n == 0
+					ifTrue: [^result]].
+			result := result - 1.
+		result > 0] whileTrue.
+		^-1]! !
+
+PtrArray organization addCategory: #'smalltalk: bulk accessing' before: #'bulk accessing'!
+
+PtrArray organization classify: #indexOfObject:with:with: under: #'smalltalk: bulk accessing'!
+
+PtrArray removeSelector: #indexOfObjectEQ:with:with:!
+
+PtrArray removeSelector: #indexOfObjectEQOrNull:with:with:!
+
+!PtrArray methodsFor: #'bulk accessing'!
+{Int32} indexOfEQ: value {Heaper | NULL}
+	with: start {Int32 default: Int32Zero}
+	"The index of the first occurrence of anything but the given value at or after (before if n is negative) the given index, or -1 if there is none."
+
+	self indexOfEQ: value with: start with: 1! !
+
+!PtrArray methodsFor: #'bulk accessing'!
+{Int32} indexOfEQ: value {Heaper | NULL}
+	"The index of the first occurrence of anything but the given value, or -1 if there is none."
+
+	self indexOfEQ: value with: 0 with: 1! !
+
+PtrArray organization classify: #indexOfEQ: under: #'smalltalk: defaults'!
+
+PtrArray organization classify: #indexOfEQ:with: under: #'smalltalk: defaults'!
+
+!CloseExecutor class methodsFor: #accessing!
+{void} unregisterHolder: holder {Heaper} with: fd {Int32}
+	| slot {Int32} |
+	slot := FileDescriptorHolders indexOfEQ: holder.
+	[slot ~= -1 and: [slot < FDArray count and: [(FDArray intAt: slot) ~= fd]]] whileTrue: [
+		slot := FileDescriptorHolders indexOfEQ: holder with: slot + 1].
+	(slot == -1 or: [(FDArray intAt: slot) ~= fd]) ifTrue: [
+		Heaper BLAST: #SanityViolation].
+	FileDescriptorHolders at: slot store: NULL.
+	FDArray at: slot storeInt: -1.! !
+
+!DeleteExecutor class methodsFor: #accessing!
+{void} unregisterHolder: holder {Heaper} with: storage {void star}
+	| slot {Int32} |
+	slot := StorageHolders indexOfEQ: holder.
+	[slot ~= -1 and: [slot < StorageHolders count and: [(StorageArray at: slot) ~~ storage]]] whileTrue: [
+		slot := StorageHolders indexOfEQ: holder with: slot + 1].
+	(slot == -1 or: [(StorageArray at: slot) ~~ storage]) ifTrue: [
+		Heaper BLAST: #SanityViolation].
+	StorageArray at: slot put: NULL.
+	StorageHolders at: slot store: NULL.! !
+
+!HashSetStepper methodsFor: #accessing!
+{BooleanVar} hasValue
+	^myElements ~~ NULL and: [myCurrent < myElements count]! !
+
+!HashSetStepper methodsFor: #accessing!
+{Heaper wimpy} fetch
+	(myElements ~~ NULL and: [myCurrent < myElements count])
+		ifTrue: [^myElements fetch: myCurrent]
+		ifFalse: [^NULL]! !
+
+!HashSetStepper methodsFor: #'protected: destruct'!
+{void} destruct
+	Heaper inGC ifFalse: [
+		myElements ~~ NULL ifTrue: [
+			myElements shareLess: self]].
+	super destruct! !
+
+!BucketArrayStepper methodsFor: #'protected: create'!
+{void} destruct
+	Heaper inGC ifFalse: [
+		myEntries ~~ NULL ifTrue: [
+			myEntries shareLess: self]].
+	super destruct! !
+
+!BucketArrayStepper methodsFor: #private:!
+{void} verifyEntry
+	"Step through the bucket till we find something with a matching key."
+	| bucket {Int32} |
+	"use a local index to avoid pointer refs in loop"
+	myEntry ~~ NULL ifTrue: [^VOID].
+	bucket _ myNextBucket.
+	[bucket < myEntries count] whileTrue:
+		[|nextEntry {Heaper wimpy}|
+		nextEntry _ myEntries fetch: bucket.
+		bucket _ bucket + 1.
+		nextEntry ~~ NULL ifTrue:
+			[myEntry _ nextEntry cast: TableEntry.
+			myNextBucket _ bucket.
+			^VOID]].
+	myEntries := NULL.! !
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'stepper') hxxHeader: '#ifdef MANUAL_CRUTCH
+#	define BEGIN_FOR_EACH(TYPE,VAR,EXPR) {						\
+		SPTR(Stepper) OF(TYPE) loop_Stepper = (EXPR);			\
+		SPTR(TYPE) VAR;												\
+		while ((VAR = CAST(TYPE,loop_Stepper->fetch())) !!= NULL ) {
+
+
+#define END_FOR_EACH											\
+			loop_Stepper->step();									\
+		}															\
+		loop_Stepper->destroy();									\
+	}
+#else /* MANUAL_CRUTCH */
+
+#	define BEGIN_FOR_EACH(TYPE,VAR,EXPR) {					\
+		SPTR(TYPE) VAR;											\
+		for(SPTR(Stepper) OF(TYPE) loop_Stepper = (EXPR);		\
+				loop_Stepper->hasValue();							\
+				loop_Stepper->step()) {							\
+			VAR = CAST(TYPE,loop_Stepper->fetch());	
+
+
+#define END_FOR_EACH											\
+		}															\
+		loop_Stepper->destroy();									\
+	}
+#endif /* MANUAL_CRUTCH */
+
+#ifdef MANUAL_CRUTCH
+
+#	define BEGIN_FOR_POSITIONS(TYPE1,POSITION,TYPE2,VALUE,EXPR) {						\
+		SPTR(TableStepper) OF(TYPE1) loop_Stepper = CAST(TableStepper,(EXPR));		\
+		SPTR(TYPE1) POSITION;											\
+		SPTR(TYPE2) VALUE;										\
+		while ( loop_Stepper->hasValue() ) {						\
+			POSITION = CAST(TYPE1,loop_Stepper->position());				\
+			VALUE = CAST(TYPE2,loop_Stepper->fetch());	
+			
+#define END_FOR_POSITIONS				\
+			loop_Stepper->step();				\
+		}										\
+		loop_Stepper->destroy();				\
+	}
+
+#	define BEGIN_FOR_INDICES(INDEX,TYPE2,VALUE,EXPR) {						\
+		SPTR(TableStepper) OF(TYPE1) loop_Stepper = CAST(TableStepper,(EXPR));		\
+		IntegerVar INDEX;											\
+		SPTR(TYPE2) VALUE;										\
+		while ( loop_Stepper->hasValue() ) {						\
+			INDEX = loop_Stepper->index();				\
+			VALUE = CAST(TYPE2,loop_Stepper->fetch());	
+			
+#define END_FOR_INDICES				\
+			loop_Stepper->step();				\
+		}										\
+		loop_Stepper->destroy();				\
+	}
+
+#else /* MANUAL_CRUTCH */
+
+#	define BEGIN_FOR_POSITIONS(TYPE1,POSITION,TYPE2,VALUE,EXPR) {			\
+		SPTR(TYPE1) POSITION;											\
+		SPTR(TYPE2) VALUE;										\
+		for(	 SPTR(TableStepper) OF(TYPE1) loop_Stepper = CAST(TableStepper,(EXPR));		\
+				loop_Stepper->hasValue();							\
+				loop_Stepper->step()) {							\
+			POSITION = CAST(TYPE1,loop_Stepper->position());				\
+			VALUE = CAST(TYPE2,loop_Stepper->fetch());
+
+#define END_FOR_POSITIONS				\
+		}										\
+		loop_Stepper->destroy();				\
+	}
+
+#	define BEGIN_FOR_INDICES(INDEX,TYPE2,VALUE,EXPR) {			\
+		IntegerVar INDEX;											\
+		SPTR(TYPE2) VALUE;										\
+		for(	 SPTR(TableStepper) OF(TYPE1) loop_Stepper = CAST(TableStepper,(EXPR));		\
+				loop_Stepper->hasValue();							\
+				loop_Stepper->step()) {							\
+			INDEX = loop_Stepper->index();				\
+			VALUE = CAST(TYPE2,loop_Stepper->fetch());
+
+#define END_FOR_INDICES				\
+		}										\
+		loop_Stepper->destroy();				\
+	}
+
+#endif /* MANUAL_CRUTCH */
+' in: #public])!
+
+!Reference class methodsFor: #'pseudo constructors'!
+{ScruSet of: Reference} linkReferences: link {XuLink} with: document {DocumentModel}
+	"make a set of references matching the ways in which the link attaches to the document"
+	| endsets {TableStepper} result {MuSet of: Reference} |
+	result _ MuSet make.
+	(endsets _ link endsets asTable stepper) forEach: [ :endset {LinkEndSet} |
+		(self endset: endset refersTo: document) ifTrue:
+			[result store: (LinkReference make: link with: (endsets position cast: ID))]].
+	^result! !
+
+!CompositeRegion class methodsFor: #'pseudo constructors'!
+{CompositeRegion} compositeTwoGapRegion: cs {CoordinateSpace} with: key1 {Position} with: region1 {XnRegion} with: key2 {Position} with: region2 {XnRegion}
+	| keys {TableStepper} table {MuTable} |
+	region1 isFull
+		ifTrue: [^CompositeRegion compositeGapRegion: cs with: key2 with: region2].
+	region2 isFull
+		ifTrue: [^CompositeRegion compositeGapRegion: cs with: key1 with: region1].
+	table _ MuTable make: (cs cast: CompositeSpace) subSpaces coordinateSpace.
+	(keys _ (cs cast: CompositeSpace) subSpaces stepper) forEach: [ :sub {CoordinateSpace} |
+		((keys position isEqual: key1) not and: [(keys position isEqual: key2) not]) ifTrue:
+			[table at: keys position introduce: sub fullRegion]].
+	table at: key1 introduce: region1.
+	table at: key2 introduce: region2.
+	^CompositeRegion make: cs with: table asImmuTable! !
+
+!CompositeRegion class methodsFor: #'pseudo constructors'!
+{CompositeRegion} compositeTwoSliceRegion: cs {CoordinateSpace} with: key1 {Position} with: region1 {XnRegion} with: key2 {Position} with: region2 {XnRegion}
+	| keys {TableStepper} table {MuTable} |
+	region1 isEmpty
+		ifTrue: [^CompositeRegion compositeSliceRegion: cs with: key2 with: region2].
+	region2 isEmpty
+		ifTrue: [^CompositeRegion compositeSliceRegion: cs with: key1 with: region1].
+	table _ MuTable make: (cs cast: CompositeSpace) subSpaces coordinateSpace.
+	(keys _ (cs cast: CompositeSpace) subSpaces stepper) forEach: [ :sub {CoordinateSpace} |
+		((keys position isEqual: key1) not and: [(keys position isEqual: key2) not]) ifTrue:
+			[table at: keys position introduce: sub emptyRegion]].
+	table at: key1 introduce: region1.
+	table at: key2 introduce: region2.
+	^CompositeRegion make: cs with: table asImmuTable! !
+
+!CompositeRegion class methodsFor: #'pseudo constructors'!
+make: cs {CoordinateSpace} with: regions {ImmuTable of: XnRegion}
+	| empties {IntegerVar} fulls {IntegerVar} empty {Position} full {Position} neither {Position} subs {TableStepper} |
+	empties _ fulls _ IntegerVar0.
+	empty _ full _ neither _ NULL.
+	(subs _ regions stepper) forEach: [ :sub {XnRegion} |
+		sub isEmpty ifTrue:
+			[empties _ empties + 1. empty _ subs position]
+		ifFalse: [sub isFull ifTrue:
+			[fulls _ fulls + 1. full _ subs position]
+		ifFalse: [neither == NULL ifTrue:
+			[neither _ subs position]
+		ifFalse:
+			[^ActualCompositeRegion create: cs with: regions]]]].
+	neither == NULL ifTrue:
+		[empties = IntegerVar0 ifTrue:
+			[^FullCompositeRegion create: cs].
+		fulls = IntegerVar0 ifTrue:
+			[^EmptyCompositeRegion create: cs].
+		fulls = 1 ifTrue:
+			[^CompositeSliceRegion create: cs with: full with: ((regions get: full) cast: XnRegion)].
+		empties = 1 ifTrue:
+			[^CompositeGapRegion create: cs with: empty with: ((regions get: empty) cast: XnRegion)].
+		^ActualCompositeRegion create: cs with: regions].
+	empties = IntegerVar0 ifTrue:
+		[^CompositeGapRegion create: cs with: neither with: ((regions get: neither) cast: XnRegion)].
+	fulls = IntegerVar0 ifTrue:
+		[^CompositeSliceRegion create: cs with: neither with: ((regions get: neither) cast: XnRegion)].
+	^ActualCompositeRegion create: cs with: regions! !
+
+!CounterTable methodsFor: #printing!
+{void} printOn: oo {ostream reference}
+	myCounters domain stepper forEach: [ :name {Sequence} | | counter {Counter} counts {TableStepper} |
+		counter _ myCounters get: name.
+		oo << name << ' (' << counter total << ')
+'.
+		(counts _ counter results stepper) forEach: [ :each {IntegerPos} |
+			oo << '	' << each asIntegerVar << ':	' << counts position << '
+']]! !
+
+!ActualOrgl methodsFor: #accessing!
+{ScruTable} asTable
+	"return a table of the contents"
+	| result {MuTable} keys {TableStepper} |
+	result _ self orglRoot asTable asMuTable.
+	(keys _ result stepper) forEach: [ :value {Heaper} |
+		result at: keys position store: (self mapValue: value)].
+	^ result! !
+
+!ActualOrgl methodsFor: #private!
+{ScruTable of: ID} mapBackReference: gk {GateKeeper} 
+	with: direct {ScruTable of: Stamp}
+	"map a table of stamps into a table of IDs of stamps containing stamps.  As a 
+	convenience, the containing stamps are made readable."
+	| result {MuTable} step {TableStepper} |
+	result _ MuTable make: direct coordinateSpace.
+	(step _ direct stepper) forEach: [ :stamp {Stamp} | 
+		| table {IntegerTable} | 
+		table _ IntegerTable make: 1.
+		table atInt: IntegerVar0 store: stamp.
+		result 
+			at: step position 
+			store: ((gk cast: ActualGateKeeper) makeReadableOrgl: table) stampID].
+	^result! !
+
+!PrimIndexTableStepper methodsFor: #accessing!
+{Heaper}  key
+	"This does not necessarily return a Position"
+	myIndex < myIndices count ifTrue: [^ myPtrs fetch: myIndex].
+	Heaper BLAST: #EmptyStepper.
+	^ NULL "Hush up the compiler"! !
+
+PrimIndexTableStepper removeSelector: #position!
+
+!PromiseManager methodsFor: #'protected: creation'!
+{void} destruct
+	Heaper inGC ifFalse: [
+		| step {PrimIndexTableStepper} |
+		myPortal destroy.
+		"clean up all the ref counted Detectors"
+		step _ myRefCounts stepper.
+		[step hasValue] whileTrue: [
+			| detect {Heaper} |
+			detect _ step key.
+			detect destroy.
+			step step]].
+	super destruct! !
+
+!Reference methodsFor: #accessing!
+{ScruTable of: MuWordArray} followChoiceNames
+	"make up a table of choices for following this link"
+	| result {MuTable of: MuWordArray} waldos {TableStepper} |
+	result _ MuTable make: IDSpace make.
+	(waldos _ self followChoices stepper) forEach: [ :waldo {Waldo} |
+		waldo 
+			cast: XuText into: [:xut |
+				result at: waldos position
+					introduce: (xut asDataTable: (IntegerRegion before: 20)) asMuTable]
+			others: 
+				[result at: waldos position
+					introduce: (MuWordArray make.charVector: waldo getCategory name)]].
+	^result! !
+
+!LinkReference methodsFor: #accessing!
+{ScruTable of: Waldo} followChoices
+	"make up a table of choices for following this link"
+	| result {MuTable of: Waldo} endsets {TableStepper} |
+	self hack. "should really look at all the ends in an endset"
+	result _ MuTable make: IDSpace make.
+	(endsets _ self link endsets asTable stepper) forEach: [ :endset {LinkEndSet} |
+		(endsets position isEqual: self endsetID) ifFalse:
+			[result at: endsets position introduce: endset getDescriptor]].
+	^result! !
+
+!ScruTable methodsFor: #testing!
+{BooleanVar} contentsEqual: other {ScruTable}
+	"Returns whether the two ScruTables have exactly the same mapping from 
+	keys to values at the moment. 'a->contentsEqual(b)' is equivalent to 
+	'a->asImmuTable()->isEqual(b->asImmuTable())'. See ScruTable::contentsEqual"
+
+	| myStepper {TableStepper} otherValue {Heaper} |
+	(other count ~= self count) ifTrue: [^false].
+	(other coordinateSpace isEqual: self coordinateSpace) ifFalse: [^false].
+	myStepper _ self stepper.
+	[myStepper hasValue] whileTrue:
+		[otherValue _ other fetch: myStepper position.
+		otherValue == NULL ifTrue: [^false].
+		(otherValue isEqual: myStepper fetch) ifFalse: [^false].
+		myStepper step].
+	^true! !
+
+!ScruTable methodsFor: #printing!
+{void} printOnWithSyntax: stream {ostream reference} 
+	with: open {char star} 
+	with: map {char star} 
+	with: sep {char star} 
+	with: close {char star} 
+	"Print the contents of the table as 
+	<open> key1 <map> value1 <sep> key2 <map> value2 
+	<sep> ... <sep> keyN <map> valueN <close>. 
+	For example, 'table->printOnWithSyntax(oo, ""{"", 
+	""=>"", "", "", ""}"");' may result in 
+	'{3=>Foo(), 5=>Bar()}'. 
+	
+	One wierd but convenient special case: if the 
+	domain space is an IntegerSpace, 
+	we print the keys according to the way IntegerVars 
+	print, not the way 
+	XuIntegers print."
+
+	| stomp {TableStepper} |
+	stream << open.
+	self isEmpty ifFalse:
+		[stomp _ self stepper.
+		[stomp hasValue]
+			whileTrue: 
+				[stomp position 
+					cast: IntegerPos into: [:xui |
+						stream << xui asIntegerVar]
+					others: [stream << stomp position].
+				stream << map << stomp fetch.
+				stomp step.
+				stomp hasValue ifTrue: [stream << sep]].
+		stomp destroy].
+	stream << close! !
+
+!BackfollowTable methodsFor: #'private: private'!
+{void} makeTable
+	| newTab {MuTable} dStep {TableStepper} |
+	newTab _ (tableInternal emptySize: tableInternal count) asMuTable.
+	(dStep _ tableInternal stepper) forEach: 
+		[:elem {Heaper} | 
+			(valueInternal isEqual: elem) ifTrue: [newTab at: dStep position introduce: elem]].
+	tableInternal destroy.
+	tableInternal _ newTab! !
+
+!ImmuTableOnMu methodsFor: #'SEF manipulation'!
+{ImmuTable} combineWith: other {ImmuTable}
+
+	| newMuTable {MuTable} others {TableStepper} |
+	newMuTable _ myMuTable copy cast: MuTable.
+	others _ other stepper.
+	[others hasValue] whileTrue:
+		[newMuTable at: others position store: others fetch.
+		others step].
+	others destroy.
+	^ImmuTableOnMu create: newMuTable! !
+
+!OffsetImmuTable methodsFor: #conversion!
+{MuTable} asMuTable
+	| newTab {MuTable} s {TableStepper} |
+	newTab _ (myTable emptySize: myTable count) asMuTable.
+	(s _ myTable stepper) forEach: [ :e {Heaper} |
+		newTab at: (myDsp of: s position) store: e].
+	^ newTab! !
+
+!OffsetImmuTable methodsFor: #'SEF manipulation'!
+{ImmuTable} combineWith: other {ImmuTable}
+
+	| newTable {MuTable} others {TableStepper} |
+	newTable _ myTable copy asMuTable.
+	others _ other stepper.
+	[others hasValue] whileTrue:
+		[newTable at: (myDsp inverseOf: others position) store: others fetch.
+		others step].
+	others destroy.
+	^OffsetImmuTable create: newTable asImmuTable with: myDsp! !
+
+!MuTable methodsFor: #'smalltalk: defaults'!
+{void} introduceAll: table {ScruTable} with: dsp {Dsp default: NULL} 
+	| stepper {TableStepper} |
+	(table coordinateSpace isEqual: self coordinateSpace)
+		ifFalse: [Heaper BLAST: #WrongCoordSpace].
+	(self domain intersects: (dsp ofAll: table domain))
+		ifTrue: [Heaper BLAST: #AlreadyInTable].
+	dsp == NULL
+		ifTrue: [(stepper _ table stepper) forEach: [:d {Heaper} | 
+				self at: stepper position introduce: d]]
+		ifFalse: [(stepper _ table stepper) forEach: [:e {Heaper} | 
+				self at: (dsp of: stepper position) introduce: e]]! !
+
+!MuTable methodsFor: #'bulk operations'!
+{void} replaceAll: table {ScruTable} 
+	with: dsp {Dsp default: NULL} 
+	with: region {XnRegion default: NULL}
+	"'MuTable::replaceAll is to 'MuTable::replace' as 'MuTable::storeAll' is to 
+	'MuTable::store'.  See MuTable::storeAll.  In addition to the functionality 
+	provided by MuTable::storeAll, I BLAST *unless* all the associations I'm being
+	asked to store override existing associations of mine.  If I BLAST for this
+	reason, then I guarantee that I haven't changed myself at all."
+
+	"Since this function checks the relavent regions, it can call the potentially 
+	more efficient store:"
+	
+	| stepper {TableStepper} |
+
+	(table coordinateSpace isEqual: self coordinateSpace) ifFalse:
+		[ Heaper BLAST: #WrongCoordSpace ].
+	dsp == NULL
+		ifTrue:
+			[(table domain isSubsetOf: self domain) ifFalse:
+				[ Heaper BLAST: #AlreadyInTable ].
+			(stepper _ table stepper) forEach:
+				[ :e {Heaper} |
+				self at: stepper position store: e]]
+		ifFalse:
+			[region == NULL
+				ifTrue:
+					[((dsp ofAll: table domain) isSubsetOf: self domain) ifFalse:
+						[ Heaper BLAST: #AlreadyInTable ].
+					(stepper _ table stepper) forEach:
+						[ :x {Heaper} |
+						self at: (dsp of: stepper position) store: x]]
+				ifFalse:
+					[((dsp ofAll: (table domain intersect: region)) isSubsetOf: self domain) ifFalse:
+						[ Heaper BLAST: #AlreadyInTable ].
+					(stepper _ (table subTable: region) stepper) forEach:
+						[ :y {Heaper} |
+						self at: (dsp of: stepper position) store: y]]]! !
+
+!MuTable methodsFor: #'smalltalk: defaults'!
+{void} storeAll: table {ScruTable} with: dsp {Dsp default: NULL} 
+	| stepper {TableStepper} |
+	(table coordinateSpace isEqual: self coordinateSpace)
+		ifFalse: [Heaper BLAST: #WrongCoordSpace].
+	dsp == NULL
+		ifTrue: [(stepper _ table stepper) forEach: [:e {Heaper} | 
+				self at: (dsp of: stepper position) store: e]]
+		ifFalse: [(stepper _ table stepper) forEach: [:x {Heaper} | 
+				self at: stepper position store: x]]! !
+
+!MuTable methodsFor: #'bulk operations'!
+{void} storeAll: table {ScruTable} 
+	with: dsp {Dsp default: NULL} 
+	with: region {XnRegion default: NULL}
+	"I 'store' into myself (see MuTable::store) all the associations from 'table'.
+	If 'region' is provided, then I only store those associations from 'table' whose
+	key is inside 'region'.  If 'dsp' is provided, then I transform the keys (from 
+	the remaining associations) by dsp before storing into myself."
+	
+	| stepper {TableStepper} |
+
+	(table coordinateSpace isEqual: self coordinateSpace) ifFalse:
+		[ Heaper BLAST: #WrongCoordSpace ].
+
+	dsp == NULL
+		ifTrue:
+			[(stepper _ table stepper) forEach:
+				[ :e {Heaper} |
+				self at: stepper position store: e]]
+		ifFalse:
+			[| localTable {ScruTable} |
+			region ~~ NULL ifTrue: [ localTable _ table subTable: region ]
+							ifFalse: [ localTable _ table ].
+			(stepper _ localTable stepper) forEach:
+				[ :x {Heaper} |
+				self at: (dsp of: stepper position) store: x]]! !
+
+!GrandHashTable methodsFor: #creation!
+{ScruTable} copy
+
+	| newTable {GrandHashTable} s {TableStepper} |
+	newTable _ GrandHashTable make: myCs with: numNodes.
+	(s _ self stepper) forEach:
+		[:e {Heaper} |
+		newTable at: (s position) store: e].
+	^ newTable! !
+
+!GrandHashTable methodsFor: #accessing!
+{XnRegion} domain
+	| result {XnRegion} stepper {TableStepper} |
+	
+	result _ self coordinateSpace emptyRegion.
+	(stepper _ self stepper cast: TableStepper) forEach:
+		[ :elem {Heaper} |
+		result _ result with: (stepper position)].
+	^ result! !
+
+!GrandHashTable methodsFor: #accessing!
+{ScruTable} subTable: region {XnRegion}
+
+	| newTable {GrandHashTable} elements {TableStepper} |
+	newTable _ GrandHashTable make.CoordinateSpace: myCs with: 8.
+	elements _ self stepper.
+	elements forEach:
+		[:elemValue {Heaper} | (region hasMember: elements position) ifTrue:
+			[newTable at: elements position store: elemValue]].
+	^newTable! !
+
+!ActualHashTable methodsFor: #accessing!
+{XnRegion} domain
+	|keys {TableStepper} |
+	keys _ self stepper.
+	(self coordinateSpace == IntegerSpace make)
+		ifTrue: [|result {IntegerRegion} |
+			result _ IntegerRegion make.
+			[keys hasValue] whileTrue:
+				[result _ (result withInt: keys index) cast: IntegerRegion. "This is stupid, I should not need a cast here"
+				keys step].
+			keys destroy.
+			^result]
+		ifFalse: [|result {XnRegion} |
+			result _ self coordinateSpace emptyRegion.
+			[keys hasValue] whileTrue:
+				[result _ result with: keys position.
+				keys step].
+			keys destroy.
+			^ result].! !
+
+!ActualHashTable methodsFor: #accessing!
+{ScruTable} subTable: region {XnRegion}
+
+	| newTable {HashTable} elements {TableStepper} |
+	newTable _ HashTable make.CoordinateSpace: myCoordinateSpace with: region count.
+	elements _ self stepper.
+	elements forEach:
+		[:elemValue {Heaper} | (region hasMember: elements position) ifTrue:
+			[newTable at: elements position store: elemValue]].
+	^newTable! !
+
+!ActualIntegerTable methodsFor: #'protected: COW stuff'!
+{void} becomeCloneOnWrite: where {Heaper}
+	| tmp {IntegerTable} source {TableStepper} |
+	tmp _ (ActualIntegerTable new.Become: where) create: start with: (start + lastElem).
+	tally == UInt32Zero ifTrue: [^ VOID].
+	source _ ITAscendingStepper create: self with: start + firstElem with: start + lastElem.
+	source forEach: [ :tableElem {Heaper} |
+		tmp at: source position store: tableElem].! !
+
+!OffsetScruTable methodsFor: #conversion!
+{MuTable} asMuTable
+	| newTab {MuTable} s {TableStepper} |
+	newTab _ (myTable emptySize: myTable count) asMuTable.
+	(s _ myTable stepper) forEach: [ :e {Heaper} |
+		newTab at: (myDsp of: s position) store: e].
+	^ newTab! !
+
+!SetTable methodsFor: #accessing!
+{XnRegion} domain
+	| result {XnRegion} keys {TableStepper} |
+	result _ self coordinateSpace emptyRegion.
+	(keys _ self stepper) forEach: [ :element {Heaper} |
+		result _ result with: keys position].
+	^result! !
+
+!SetTable methodsFor: #printing!
+{void} printOnWithSimpleSyntax: oo {ostream reference} with: open {char star} with: sep {char star} with: close {char star} 
+	| stomp {TableStepper} |
+	oo << open.
+	self isEmpty
+		ifTrue: [oo << 'empty']
+		ifFalse: 
+			[stomp _ self stepper.
+			oo << stomp position << '->' << stomp fetch.
+			stomp step.
+			stomp forEach: [:val {Heaper} |
+				oo << sep << stomp position << '->' << val]].
+	oo << close! !
+
+!SetTable methodsFor: #'private: resize'!
+{void} storeEntry: entry {TableEntry}
+	| idx {UInt32} |
+	(myCoordinateSpace isEqual: IntegerSpace make)
+		ifTrue: [idx _ IntegerPos integerHash: entry index ]
+		ifFalse: [idx _ entry position hashForEqual].
+	idx _ idx \\ myHashEntries count.
+	entry setNext: ((myHashEntries fetch: idx) cast: TableEntry).
+	myHashEntries at: idx store: entry! !
+
+!PrimPtrTableStepper methodsFor: #accessing!
+{IntegerVar} index
+	myIndex < myIndices count ifTrue: [^ myIndices integerVarAt: myIndex].
+	Heaper BLAST: #EmptyStepper.
+	^ NULL "Hush up the compiler"! !
+
+PrimPtrTableStepper removeSelector: #key!
+
+!SnarfRecord methodsFor: #transactions!
+{void} flushChanges
+	"Rewrite all flocks that have changed in this snarf."
+
+	| highest {Int32} handler {SnarfHandler} newHighest {IntegerVar} stepper {PrimPtrTableStepper} shep {Abraham} |
+	handler _ self getWriteHandler.
+	highest _ handler mapCount.
+	newHighest _ self wipeBelowHighest: highest with: handler.
+	"mySpaceLeft also has the size of the cells taken out of it."
+	self thingToDo. 
+		"Depending on tests, this might also preclear the total space for all
+		of the flocks to be written.  Then we will only compact once, and do
+		it before writing any flocks."
+	self hack.  "This should get the highest index from myOccupied, except that it might not be computed."
+	handler allocateCells: newHighest - highest.
+	stepper := myChangedFlocks stepper.
+	[(shep := stepper fetch cast: Abraham) ~~ NULL] whileTrue: 
+		[| index {IntegerVar} |
+		index := stepper index.
+		(shep isEqual: Pumpkin make) ifFalse:
+			[shep getInfo snarfID == mySnarfID	 
+				ifTrue:
+					["Not forwarded."
+					| xmtr {Xmtr} stream {XnWriteStream} |
+					shep isStub not assert: 'Must be instantiated'.
+					handler at: index allocate: shep getInfo oldSize.
+					stream _ handler writeStream: index.
+					xmtr _ myPacker makeXmtr: stream.
+					xmtr sendHeaper: shep.
+					xmtr destroy.
+					stream destroy.
+					handler at: index DOTasLong storeForget: shep getInfo isForgotten.
+					shep getInfo commitFlags.
+					shep getInfo clearContentsDirty]
+				ifFalse:
+					["We only get here for forwarded flocks."
+					handler forward: index to: shep getInfo snarfID with: shep getInfo index]].
+		stepper step].
+	stepper destroy.
+	myChangedFlocks clearAll.
+	handler destroy! !
+
+!SnarfRecord methodsFor: #'private: private'!
+{SnarfHandler} getWriteHandler
+	"Get the handler for my snarf so that I can send or receive data from it."
+
+	| handler {SnarfHandler} flag {BooleanVar} |
+	flag := myOccupied ~~ NULL and: [myOccupied count == myChangedFlocks count].
+	"We also need to compare regions in case as many things are dismantled as are unchanged."
+	"Change this to iterate myOCcupied and check the presence of each element. 
+	 Either that or use an IntegerTable for myChangedFlocks."
+	"myChangedFlocks really wants to be an optimizing representation."
+	flag ifTrue: [
+		| stepper {PrimPtrTableStepper} |
+		"calculate myOccupied isSuperSetOf: myChangedFlocks domain"
+		stepper := myChangedFlocks stepper.
+		[flag and: [stepper hasValue]] whileTrue: [
+			(myOccupied hasIntMember: stepper index) ifFalse: [flag := false].
+			stepper step].
+		flag := flag and: [stepper hasValue not].
+		stepper destroy].
+	
+	flag	
+		ifTrue:
+			[handler _ SnarfHandler make: (myPacker currentView makeErasingHandle: mySnarfID).
+			handler initializeSnarf]
+		ifFalse:
+			[handler _ SnarfHandler make: (myPacker currentView makeReadHandle: mySnarfID)].
+	handler makeWritable.
+	^handler! !
+
+!SnarfRecord methodsFor: #'private: private'!
+{IntegerVar} wipeBelowHighest: highest {Int32} with: handler {SnarfHandler}
+	| newHighest {IntegerVar} stepper {PrimPtrTableStepper} |
+	"(myChangedFlocks domain intersect: (IntegerRegion before: highest)) stepper forEach: 
+		[:key {XnInteger} | handler wipeFlock: key asIntegerVar]. ----  too inefficient.  also compute the upper bound for later." 
+	newHighest _ highest.
+	stepper _ myChangedFlocks stepper.
+	[stepper hasValue] whileTrue: 
+		[| index {IntegerVar} |
+		index := stepper index.
+		index < highest ifTrue: [handler wipeFlock: index].
+		index >= newHighest ifTrue: [newHighest _ index+1   "Must be above the new key."].
+		stepper step].
+	stepper destroy.
+	^ newHighest! !
+
+!TableStepper methodsFor: #special!
+{IntegerVar} index
+	"Unboxed version of TableStepper::key.  See class comment in XuInteger."
+	
+	^(self position cast: IntegerPos) asIntegerVar! !
+
+!TableStepper methodsFor: #special!
+{Position CLIENT} position
+	"A TableStepper actually enumerates the associations of a table. Through the normal Stepper protocol, it makes available the range element of the current association. Through this additional protocol, it make accessible the key of the current association.  This message returns the same object as TwoStepper::other, the only difference being the static knowledge that it's a Position."
+
+	self subclassResponsibility! !
+
+!TableStepper methodsFor: #operations!
+{PrimArray CLIENT} stepManyPairs: count {Int32 default: -1}
+	"An array of the remaining elements in alternating positions in the array
+		[k1, v1, k2, v2, k3, v3, ...]
+	Returns an array of up to count * 2 elements (or some arbitrary number if count is negative), and steps the stepper the corresponding number of times. You should check whether the stepper is atEnd, since it can stop before the number you give it because of some internal limit or grouping issue."
+	
+	| result {Accumulator} n {Int32} |
+	count >= Int32Zero
+		ifTrue: [n := count * 2]
+		ifFalse: [n := 1000].
+	result := PtrArrayAccumulator create: n.
+	n := Int32Zero.
+	[self hasValue and: [(count < Int32Zero and: [n < 1000]) or: [n < count]]] whileTrue:
+		[result step: self position.
+		result step: self fetch.
+		self step.
+		n := n + 1].
+	^result value cast: PrimArray! !
+
+!BackfollowStepper methodsFor: #special!
+{Position} position
+	^stepperInternal position! !
+
+BackfollowStepper removeSelector: #key!
+
+BucketArrayStepper removeSelector: #key!
+
+!GrandHashTableStepper methodsFor: #special!
+{Position} position
+	^ (nodeStepper entry cast: GrandTableEntry) position! !
+
+GrandHashTableStepper removeSelector: #key!
+
+!GrantStepper methodsFor: #operations!
+{void} step
+	[myBundles hasValue] whileTrue:
+		[myBundles step.
+		(myClubIDs == NULL or: [myClubIDs hasMember: self position])
+			ifTrue: [^VOID]]! !
+
+!OffsetArrayStepper methodsFor: #special!
+{Position} position
+	^myDsp of: myArrayStepper position! !
+
+OffsetArrayStepper removeSelector: #key!
+
+!OffsetScruTableStepper methodsFor: #special!
+{Position} position
+	^myDsp of: myTableStepper position! !
+
+OffsetScruTableStepper removeSelector: #key!
+
+!WimpyTableStepper methodsFor: #special!
+{Position} position
+	^myStepper position! !
+
+WimpyTableStepper removeSelector: #key!
+
+!TableEntry methodsFor: #accessing!
+{IntegerVar} index
+	^ (self position cast: IntegerPos) asIntegerVar! !
+
+!TableEntry methodsFor: #printing!
+{void} printOn: oo {ostream reference}
+	oo << self getCategory name << '(' << self position << ' -> ' << self value << ')'! !
+
+!HeaperAsEntry methodsFor: #accessing!
+{BooleanVar} match: position {Position}
+	"Return true if my position matches position."
+	
+	^self position isEqual: position! !
+
+!HashTableTester methodsFor: #tests!
+{void} testStepperCopyOn: aStream {ostream reference} 
+	"self runTest: #testStepperCopyOn:"
+
+	| tab1 {MuTable} tab2 {MuTable} stp {TableStepper} |
+	aStream << 'Test copy by stepper.
+'.
+	tab1 _ HashTable make.CoordinateSpace: IntegerSpace make.
+	tab1 atInt: 1 introduce: (UInt8Array string: 'filly').
+	tab1 atInt: IntegerVar0 introduce: (UInt8Array string: 'mare').
+	tab1 atInt: -1 introduce: (UInt8Array string: 'colt').
+	tab1 atInt: 27 introduce: (UInt8Array string: 'stallion').
+	aStream << 'Starting table is:
+' << tab1 << '
+with count ' << tab1 count << '.
+Now testing store during forEach loop
+'.	
+	(stp _ tab1 stepper) forEach: [ :e {Heaper} |
+		aStream << 'at index ' << stp position << ' storing ' << stp position << ' on top of ' << e << '
+'.
+		tab1 at: stp position store: stp position].
+	aStream << 'Ending table is:
+' << tab1 << '
+with count ' << tab1 count << '.
+'.
+	tab2 _ tab1 copy cast: MuTable.
+	(stp _ tab2 stepper) forEach: [ :x {Heaper} |
+		aStream << 'at index ' << stp position << ' storing ''foo'' on top of ' << x << '
+'.
+		tab2 at: stp position store: (UInt8Array string: 'foo')].
+	aStream << 'Ending table is:
+' << tab2 << '
+with count ' << tab2 count << '.
+Done with stepperCopy test.
+'.! !
+
+!SetTableTester methodsFor: #tests!
+{void} test1on: oo {ostream reference}
+
+	| tab1 {SetTable} stp {TableStepper} |
+	
+	tab1 _ SetTable make: IntegerSpace make.
+	oo << 'table is now ' << tab1 << '
+'.
+	tab1 at: 1 integer store: (Sequence string: 'abcd').
+	tab1 at: 1 integer store: (Sequence string: 'abce').
+	tab1 at: 1 integer store: (Sequence string: 'abcf').
+	tab1 at: 1 integer store: (Sequence string: 'abcg').
+	tab1 at: 1 integer store: (Sequence string: 'abch').
+	tab1 at: 1 integer store: (Sequence string: 'abci').
+	oo << 'tab1 is now ' << tab1 << '
+'.
+	tab1 at: 2 integer store: (Sequence string: 'abcd').
+	tab1 at: 2 integer store: (Sequence string: 'abce').
+	tab1 at: 2 integer store: (Sequence string: 'abcf').
+	tab1 at: 2 integer store: (Sequence string: 'abcg').
+	tab1 at: 2 integer store: (Sequence string: 'abch').
+	tab1 at: 2 integer store: (Sequence string: 'abci').
+	oo << 'tab1 is now ' << tab1 << '
+'.
+	tab1 at: 3 integer store: (Sequence string: 'abcd').
+	tab1 at: 3 integer store: (Sequence string: 'abce').
+	tab1 at: 3 integer store: (Sequence string: 'abcf').
+	tab1 at: 3 integer store: (Sequence string: 'abcg').
+	tab1 at: 3 integer store: (Sequence string: 'abch').
+	tab1 at: 3 integer store: (Sequence string: 'abci').
+	oo << 'tab1 is now ' << tab1 << '
+'.
+	oo << '
+contents of table are:
+'.
+	(stp _ tab1 stepper) forEach: [:elem {Heaper} | 
+		oo << 'tab1 fetch: ' << stp position << ' == ' << elem << '
+']! !
+
+!TableEntry methodsFor: #accessing!
+{Position} position
+	self subclassResponsibility! !
+
+!HashIndexEntry methodsFor: #accessing!
+{Position} position
+	^self value hashForEqual integer! !
+
+!HeaperAsEntry methodsFor: #accessing!
+{Position} position
+	^HeaperAsPosition make: self value! !
+
+!IndexEntry methodsFor: #accessing!
+{Position} position
+	^myIndex integer! !
+
+!PositionEntry methodsFor: #accessing!
+{Position} position
+	^myKey! !
+
+PositionEntry removeSelector: #key!
+
+IndexEntry removeSelector: #key!
+
+HeaperAsEntry removeSelector: #key!
+
+HashIndexEntry removeSelector: #key!
+
+TableEntry removeSelector: #key!
+
+!TableEntryTester methodsFor: #testing!
+{void} test1on: oo {ostream reference}
+
+	| ent1 {TableEntry} |
+	oo << 'start of test 1 - basic stuff
+'.
+	ent1 _ TableEntry make: (Sequence string: 'one') with: (Sequence string: 'two').
+	oo << '
+ent1 == ' << ent1 << '; key is ' << ent1 position << '; and value is ' << ent1 value <<
+	'; next is ' << ent1 fetchNext << '
+'.
+	oo << '
+test match of ent1 with ' << (Sequence string: 'one') << ': '.
+	(ent1 match: (Sequence string: 'one'))
+		ifTrue: [oo << 'TRUE']
+		ifFalse: [oo << 'FALSE'].
+	oo << '
+test match of ent1 with ' << (Sequence string: 'two') << ': '.
+	(ent1 match: (Sequence string: 'two'))
+		ifTrue: [oo << 'TRUE']
+		ifFalse: [oo << 'FALSE'].
+	oo << '
+test matchValue of ent1 with ' << (Sequence string: 'one') << ': '.
+	(ent1 matchValue: (Sequence string: 'one'))
+		ifTrue: [oo << 'TRUE']
+		ifFalse: [oo << 'FALSE'].
+	oo << '
+test matchValue of ent1 with ' << (Sequence string: 'two') << ': '.
+	(ent1 matchValue: (Sequence string: 'two'))
+		ifTrue: [oo << 'TRUE']
+		ifFalse: [oo << 'FALSE'].
+	oo << '
+end of test one
+
+'! !
+
+!TableEntryTester methodsFor: #testing!
+{void} test2on: oo {ostream reference}
+
+	| ent1 {TableEntry} ent2 {TableEntry} ent3 {TableEntry} |
+	oo << 'start of test 2 - linking stuff
+'.
+	ent1 _ TableEntry make: (Sequence string: 'one') with: (Sequence string: 'value').
+	oo << '
+ent1 == ' << ent1 << '; key is ' << ent1 position << '; and value is ' << ent1 value <<
+	'; next is ' << ent1 fetchNext << '
+'.
+	ent2 _ TableEntry make: (Sequence string: 'two') with: (Sequence string: 'value').
+	oo << '
+ent2 == ' << ent2 << '; key is ' << ent2 position << '; and value is ' << ent2 value <<
+	'; next is ' << ent2 fetchNext << '
+'.
+	ent3 _ TableEntry make: (Sequence string: 'three') with: (Sequence string: 'value').
+	oo << '
+ent3 == ' << ent3 << '; key is ' << ent3 position << '; and value is ' << ent3 value <<
+	'; next is ' << ent3 fetchNext << '
+'.
+	ent1 setNext: ent2.
+	ent2 setNext: ent3.
+	oo << 'ent1 next now: ' << ent1 fetchNext.
+	oo << '
+ent2 next now: ' << ent2 fetchNext.
+	oo << '
+ent3 next now: ' << ent3 fetchNext << '
+'.
+	"oo << 'step over chain:
+'.
+	ent1 stepper forEach: [:ent {TableEntry} |
+		oo << 'entry is ' << ent << '
+']."! !
+
+!TableEntryTester methodsFor: #testing!
+{void} test3on: oo {ostream reference}
+
+	| ent1 {TableEntry} ent2 {TableEntry} ent3 {TableEntry} ent4 {TableEntry} |
+	[IntegerPos] USES.
+	oo << 'start of test 2 - different entry types
+'.
+	ent1 _ TableEntry make: (Sequence string: 'one') with: (Sequence string: 'value').
+	oo << '
+ent1 == ' << ent1 << '; key is ' << ent1 position << '; and value is ' << ent1 value <<
+	'; next is ' << ent1 fetchNext << '
+'.
+	ent2 _ TableEntry make: (1 integer) with: (Sequence string: 'value').
+	oo << '
+ent2 == ' << ent2 << '; key is ' << ent2 position << '; and value is ' << ent2 value <<
+	'; next is ' << ent2 fetchNext << '
+'.
+	ent2 _ TableEntry make.IntegerVar: 1 with: (Sequence string: 'value').
+	oo << '
+ent2 == ' << ent2 << '; key is ' << ent2 position << '; and value is ' << ent2 value <<
+	'; next is ' << ent2 fetchNext << '
+'.
+	ent3 _ TableEntry make: (HeaperAsPosition make: (Sequence string: 'three')) with: (Sequence string: 'three').
+	oo << '
+ent3 == ' << ent3 << '; key is ' << ent3 position << '; and value is ' << ent3 value <<
+	'; next is ' << ent3 fetchNext << '
+'.
+	ent4 _ TableEntry make: (Sequence string: 'value') hashForEqual integer with: (Sequence string: 'value').
+	oo << '
+ent4 == ' << ent4 << '; key is ' << ent4 position << '; and value is ' << ent4 value <<
+	'; next is ' << ent4 fetchNext << '
+'.
+	ent4 _ TableEntry make.IntegerVar: (Sequence string: 'value') hashForEqual with: (Sequence string: 'value').
+	oo << '
+ent4 == ' << ent4 << '; key is ' << ent4 position << '; and value is ' << ent4 value <<
+	'; next is ' << ent4 fetchNext << '
+'.! !
+
+!FMListDirector methodsFor: #'private: updating'!
+{void} updateAll
+ 
+	| stomp {TableStepper} mcTable {IntegerTable} |
+	Scaffold fluidBind: self scaffold during: [
+		myViewList wipe: myViewList domain.
+		mcTable _ myController controllers cast: IntegerTable.
+		mcTable wipeAll: myController controllers domain.
+		stomp _ myModelList asTable stepper.
+		stomp forEach: [:elem {Heaper} | | newBuilding
+{FMBuilding} |
+			newBuilding _ Scaffold fluidGet build: elem.
+			myViewList insert: stomp index with: newBuilding view.
+			newBuilding controller ~~ NULL ifTrue: 
+				[mcTable at: stomp position introduce: newBuilding
+controller]]]! !
+
+!ActualCompositeRegion methodsFor: #accessing!
+{XnRegion} asSimpleRegion
+
+	| subs {TableStepper} result {MuTable} |
+	result _ MuTable make: self subRegions coordinateSpace.
+	(subs _ self subRegions stepper) forEach: [ :sub {XnRegion} |
+		result at: subs position store: sub asSimpleRegion].
+	^CompositeRegion make: self coordinateSpace with: result asImmuTable! !
+
+!ActualCompositeRegion methodsFor: #operations!
+{XnRegion} complement
+
+	| subs {TableStepper} result {MuTable} |
+	result _ MuTable make: self subRegions coordinateSpace.
+	(subs _ self subRegions stepper) forEach: [ :sub {XnRegion} |
+		result at: subs position store: sub complement].
+	^CompositeRegion make: self coordinateSpace with: result asImmuTable! !
+
+!ActualCompositeRegion methodsFor: #operations!
+{XnRegion} intersect: other {XnRegion}
+	| subs {TableStepper} result {MuTable} |
+	((other isKindOf: EmptyCompositeRegion)
+			or: [(other isKindOf: FullCompositeRegion)
+			or: [(other isKindOf: CompositeSliceRegion)]])
+		ifTrue: [^other intersect: self].
+	(other isKindOf: CompositeGapRegion) ifTrue:
+		[ | slice {CompositeGapRegion} |
+		slice _ other basicCast: CompositeGapRegion.
+		result _ self subRegions asMuTable.
+		result at: slice key replace: (slice region intersect: (self subRegion: slice key))]
+	ifFalse:
+		[result _ MuTable make: self subRegions coordinateSpace.
+		(subs _ (other cast: ActualCompositeRegion) subRegions stepper) forEach: [ :sub {XnRegion} |
+			result at: subs position store: ((self subRegion: subs position) intersect: sub)]].
+	^CompositeRegion make: self coordinateSpace with: result asImmuTable! !
+
+!ActualCompositeRegion methodsFor: #testing!
+{BooleanVar} intersects: other {XnRegion}
+	"tell whether it has any points in common"
+	| subs {TableStepper} |
+	(other isKindOf: CompositeGapRegion) ifTrue:
+		[ | gap {CompositeGapRegion} |
+		gap _ other basicCast: CompositeGapRegion.
+		self subRegions domain stepper forEach: [ :key {Position} |
+			(key isEqual: gap key)
+				ifTrue: [((self subRegion: key) intersects: gap region)
+					ifTrue: [^true]]
+				ifFalse: [(self subRegion: key) isEmpty
+					ifFalse:	 [^true]]].
+		^false].
+	(other isKindOf: ActualCompositeRegion) ifFalse:
+		[^(other cast: CompositeRegion) intersects: self].
+	(subs _ (other basicCast: ActualCompositeRegion) subRegions stepper) forEach: [ :sub {XnRegion} |
+		((self subRegion: subs position) intersects: sub)
+			ifTrue: [^true]].
+	^false! !
+
+!ActualCompositeRegion methodsFor: #testing!
+{BooleanVar} isFinite
+	| subs {TableStepper} |
+	(subs _ self subRegions stepper) forEach: [ :sub {XnRegion} |
+		((self subRegion: subs position) isFinite)
+			ifFalse: [^false]].
+	^true! !
+
+!ActualCompositeRegion methodsFor: #testing!
+{BooleanVar} isSimple
+	| subs {TableStepper} |
+	(subs _ self subRegions stepper) forEach: [ :sub {XnRegion} |
+		((self subRegion: subs position) isSimple)
+			ifFalse: [^false]].
+	^true! !
+
+!ActualCompositeRegion methodsFor: #testing!
+{BooleanVar} isSubsetOf: other {XnRegion}
+	| subs {TableStepper} |
+	((other isKindOf: EmptyCompositeRegion) or: [other isKindOf: CompositeSliceRegion])
+		ifTrue: [^false].
+	(other isKindOf: FullCompositeRegion) ifTrue: [^true].
+	(other isKindOf: CompositeGapRegion) ifTrue:
+		[ | gap {CompositeGapRegion} |
+		gap _ other basicCast: CompositeGapRegion.
+		^(self subRegion: gap key) isSubsetOf: gap region].
+	(subs _ (other cast: ActualCompositeRegion) subRegions stepper) forEach: [ :sub {XnRegion} |
+		((self subRegion: subs position) isSubsetOf: sub)
+			ifFalse: [^false]].
+	^true! !
+
+!ActualCompositeRegion methodsFor: #operations!
+{XnRegion} minus: other {XnRegion}
+	| subs {TableStepper} result {MuTable} |
+	((other isKindOf: EmptyCompositeRegion)
+			or: [(other isKindOf: FullCompositeRegion)
+			or: [other isKindOf: CompositeGapRegion]])
+		ifTrue: [^(other basicCast: CompositeRegion) subtractedFrom: self].
+	(other isKindOf: CompositeSliceRegion) ifTrue:
+		[ | slice {CompositeSliceRegion} |
+		slice _ other basicCast: CompositeSliceRegion.
+		result _ self subRegions asMuTable.
+		result at: slice key replace: ((self subRegion: slice key) minus: slice region)]
+	ifFalse:
+		[result _ MuTable make: self subRegions coordinateSpace.
+		(subs _ (other cast: ActualCompositeRegion) subRegions stepper) forEach: [ :sub {XnRegion} |
+			result at: subs position store: ((self subRegion: subs position) minus: sub)]].
+	^CompositeRegion make: self coordinateSpace with: result asImmuTable! !
+
+!ActualCompositeRegion methodsFor: #operations!
+{XnRegion} simpleUnion: other {XnRegion}
+	| subs {TableStepper} result {MuTable} |
+	((other isKindOf: EmptyCompositeRegion)
+			or: [(other isKindOf: FullCompositeRegion)
+			or: [(other isKindOf: CompositeGapRegion)]])
+		ifTrue: [^other simpleUnion: self].
+	result _ MuTable make: self subRegions coordinateSpace.
+	(other isKindOf: CompositeSliceRegion) ifTrue:
+		[ | slice {CompositeSliceRegion} |
+		slice _ other basicCast: CompositeSliceRegion.
+		(subs _ (other cast: ActualCompositeRegion) subRegions stepper) forEach: [ :sub {XnRegion} |
+			(subs position isEqual: slice key) ifFalse:
+				[result at: slice key introduce: sub asSimpleRegion]].
+		result at: slice key introduce: (slice region simpleUnion: (self subRegion: slice key)).]
+	ifFalse:
+		[(subs _ (other cast: ActualCompositeRegion) subRegions stepper) forEach: [ :sub {XnRegion} |
+			result at: subs position store: ((self subRegion: subs position) simpleUnion: sub)]].
+	^CompositeRegion make: self coordinateSpace with: result asImmuTable! !
+
+!ActualCompositeRegion methodsFor: #operations!
+{XnRegion} subtractedFrom: other {CompositeRegion}
+	"other minus: self -- arranged this way for modularity"
+	| result {MuTable of: XnRegion} subs {TableStepper} |
+	"minus should only pass this an ActualCompositeRegion or a CompositeGapRegion"
+	result _ MuTable make: self subRegions coordinateSpace.
+	(other isKindOf: CompositeGapRegion) ifTrue:
+		[ | gap {CompositeGapRegion} |
+		gap _ other basicCast: CompositeGapRegion.
+		(subs _ self subRegions stepper) forEach: [ :sub {XnRegion} |
+			(subs position isEqual: gap key)
+				ifTrue: [result at: gap key
+					introduce: (gap region minus: sub)]
+				ifFalse: [result at: subs position
+					introduce: sub complement]]]
+	ifFalse:
+		[(subs _ (other cast: ActualCompositeRegion) subRegions stepper) forEach: [ :sub {XnRegion} |
+			result at: subs position introduce: (sub minus: (self subRegion: subs position))]].
+	^CompositeRegion make: self coordinateSpace with: result asImmuTable! !
+
+!ActualCompositeRegion methodsFor: #operations!
+{XnRegion} unionWith: other {XnRegion}
+	| subs {TableStepper} result {MuTable} |
+	((other isKindOf: EmptyCompositeRegion)
+			or: [(other isKindOf: FullCompositeRegion)
+			or: [(other isKindOf: CompositeGapRegion)]])
+		ifTrue: [^other unionWith: self].
+	(other isKindOf: CompositeSliceRegion) ifTrue:
+		[ | slice {CompositeSliceRegion} |
+		slice _ other basicCast: CompositeSliceRegion.
+		result _ self subRegions asMuTable.
+		result at: slice key replace: (slice region unionWith: (self subRegion: slice key)).]
+	ifFalse:
+		[result _ MuTable make: self subRegions coordinateSpace.
+		(subs _ (other cast: ActualCompositeRegion) subRegions stepper) forEach: [ :sub {XnRegion} |
+			result at: subs position introduce: ((self subRegion: subs position) simpleUnion: sub)]].
+	^CompositeRegion make: self coordinateSpace with: result asImmuTable! !
+
+!PathRegion methodsFor: #accessing!
+{XnRegion} keysTransformedBy: dsp {Dsp}
+	"transform the keys by the dsp"
+	| result {MuTable of: XnRegion} loop {TableStepper} |
+	result _ MuTable make: myPath coordinateSpace.
+	(loop _ myPath stepper) forEach: [ :sub {XnRegion} |
+		result at: (dsp of: loop position) introduce: sub].
+	^PathRegion make: result asImmuTable! !
+
+!PathRegion methodsFor: #operations!
+{XnRegion} minus: region {XnRegion}
+	| other {PathRegion} result {MuTable of: XnRegion} loop {TableStepper} |
+	other _ region cast: PathRegion.
+	result _ MuTable make: myPath coordinateSpace.
+	(loop _ myPath stepper) forEach: [ :mySub {XnRegion} | | sub {XnRegion} |
+		sub _ other fetchSubRegion: loop position.
+		sub == NULL
+			ifTrue: [sub _ mySub]
+			ifFalse: [sub _ mySub minus: sub].
+		sub isEmpty ifFalse:
+			[result at: loop position store: sub]].
+	^PathRegion make: result asImmuTable! !
+
+TableStepper organization classify: #key under: #'smalltalk: operations'!
+
+!TableStepper methodsFor: #'smalltalk: operations'!
+{void} forPositions: fn {BlockClosure of: Position with: Heaper} 
+	[| result {Heaper} |
+	[(result _ self fetch) ~~ NULL]
+		whileTrue:
+			[fn of: self position and: result.
+			self step]]
+		valueNowOrOnUnwindDo: [self destroy]! !
+
+!MessageNode class methodsFor: #'class initialization'!
+initialize
+	"MessageNode initialize. "
+	| mac |
+	mac _ IdentityDictionary new: 32.
+		#(	ifTrue: ifFalse:
+			ifTrue:ifFalse: ifFalse:ifTrue:
+			and: or:
+			whileFalse: whileTrue:
+			whileFalse whileTrue
+			repeat
+			to:do: to:by:do: almostTo:do: almostTo:by:do: timesRepeat:
+			downTo:do:
+			forEach: forKeyValues: forPositions:)
+	with:
+		#(	transformIfTrue transformIfFalse
+			transformIfTrueIfFalse transformIfFalseIfTrue
+			transformAnd transformOr
+			transformWhileFalseDo transformWhileTrueDo
+			transformWhileFalse transformWhileTrue
+			transformRepeat
+			transformToDo transformToByDo transformAlmostToDo transformAlmostToByDo transformTimesRepeat
+			transformDownToDo
+			transformForEach transformForKeyValues transformForKeyValues)
+	do:
+		[:selector :message | mac at: selector put: message].
+	MacroSelectors _ mac! !
+
+!HxxPrintStream methodsFor: #'message translations'!
+printForKeyValues: stepper args: args
+"       Stepper forKeyValues: [:Key {Type1} Value {Type2} | Body] translates to
+        FOR_POSITIONS(Type1,Key,Type2,Value,(Stepper),{Body});
+"
+        | block arg |
+        args size = 1 assert: 'bad collect: expression'.
+        (args first isBlockNode) 
+                ifFalse: ["Fallback in case a block is passed in as an argument."
+                        ^self printRealMessage: #forKeyValues rec: stepper args: args].
+        block _ args first.
+        self asExpression: 
+                [self << 'BEGIN_FOR_POSITIONS('.
+                arg _ block arguments first.
+                (self extractType: arg type) makeCast printTypeOn: self.
+                self << ','; emphasis: 2; << arg name; emphasis: 1; << $,.
+                arg _ block arguments last.
+                (self extractType: arg type) makeCast printTypeOn: self.
+                self << ','; emphasis: 2; << arg name; emphasis: 1.
+                self << ',('.
+                stepper prettyPrintOn: self.
+                self << ')) '; startBlock.
+                self asStatement: [block body prettyPrintOn: self].
+                self stopBlock; << ' END_FOR_POSITIONS;'].! !
+
+!HxxPrintStream methodsFor: #'message translations'!
+printForPositions: stepper args: args
+"       Stepper forKeyValues: [:Key {Type1} Value {Type2} | Body] translates to
+        FOR_POSITIONS(Type1,Key,Type2,Value,(Stepper),{Body});
+"
+        | block arg |
+        args size = 1 assert: 'bad collect: expression'.
+        (args first isBlockNode) 
+                ifFalse: ["Fallback in case a block is passed in as an argument."
+                        ^self printRealMessage: #forKeyValues rec: stepper args: args].
+        block _ args first.
+        self asExpression: 
+                [self << 'BEGIN_FOR_POSITIONS('.
+                arg _ block arguments first.
+                (self extractType: arg type) makeCast printTypeOn: self.
+                self << ','; emphasis: 2; << arg name; emphasis: 1; << $,.
+                arg _ block arguments last.
+                (self extractType: arg type) makeCast printTypeOn: self.
+                self << ','; emphasis: 2; << arg name; emphasis: 1.
+                self << ',('.
+                stepper prettyPrintOn: self.
+                self << ')) '; startBlock.
+                self asStatement: [block body prettyPrintOn: self].
+                self stopBlock; << ' END_FOR_POSITIONS;'].! !
+
+!HxxPrintStream methodsFor: #'message translations'!
+printForIndices: stepper args: args
+"       Stepper forIndices: [:Key {IntegerVar} Value {Type2} | Body] translates to
+        FOR_INDICES(Key,Type2,Value,(Stepper),{Body});
+"
+        | block arg |
+        args size = 1 assert: 'bad collect: expression'.
+        (args first isBlockNode) 
+                ifFalse: ["Fallback in case a block is passed in as an argument."
+                        ^self printRealMessage: #forIndices rec: stepper args: args].
+        block _ args first.
+        self asExpression: 
+                [self << 'BEGIN_FOR_INDICES('.
+                arg _ block arguments first.
+                self emphasis: 2; << arg name; emphasis: 1; << $,.
+                arg _ block arguments last.
+                (self extractType: arg type) makeCast printTypeOn: self.
+                self << ','; emphasis: 2; << arg name; emphasis: 1.
+                self << ',('.
+                stepper prettyPrintOn: self.
+                self << ')) '; startBlock.
+                self asStatement: [block body prettyPrintOn: self].
+                self stopBlock; << ' END_FOR_INDICES;'].! !
+
+!TableStepper methodsFor: #'smalltalk: operations'!
+{void} forIndices: fn {BlockClosure of: IntegerVar with: Heaper} 
+	[| result {Heaper} |
+	[(result _ self fetch) ~~ NULL]
+		whileTrue:
+			[fn of: self index and: result.
+			self step]]
+		valueNowOrOnUnwindDo: [self destroy]! !
+
+!HxxPrintStream class methodsFor: #maps!
+mapOverride: sel
+	"Map from CXX selectors methods that handle them specially."
+	"KEEP THIS LIST SORTED!!!!!!!! - integrator"
+	| array  override | 
+	array _ #(
+		(not printNot:args:)
+		(abs printFunction:args:)
+		(acos printFunction:args:)
+		(almostToByDo printForAlmost:args:)
+		(almostToDo printForAlmost:args:)
+		(and printAnd:args:)
+		(arrayFetch printFetch:args:)
+		(arrayStore printPut:args:)
+		(arrow printArrow:args:)
+		(asin printFunction:args:)
+		(asUInt8 printCast:args:)  "numerical value of Character"
+		(atan printFunction:args:)
+		(asCharacter printCast:args:)
+		(asDouble printCast:args:)
+		(asFloat printCast:args:)
+		(asInteger printCast:args:)
+		(asOop printAsOop:args:)
+		(asProblem printAsProblem:args:)
+		(assert printAssert:args:)
+		(atan printFunction:args:)
+		(basicCast printCastBasic:args:)
+		(binaryFn printBlockMsg:args:)
+		(bitInvert printInvert:args:)
+		(bomb printBomb:args:)
+		(cast printCastMacro:args:)
+		(castInto printCastInto:args:)
+		(castIntoCastInto printCastInto:args:)
+		(castIntoCastIntoCastInto printCastInto:args:)
+		(castIntoCastIntoCastIntoCastInto printCastInto:args:)
+		(castIntoCastIntoCastIntoCastIntoCastInto printCastInto:args:) 	
+		(castIntoCastIntoCastIntoCastIntoCastIntoCastInto printCastInto:args:)
+		(castIntoCastIntoCastIntoCastIntoCastIntoCastIntoOthers printCastInto:args:)
+		(castIntoCastIntoCastIntoCastIntoCastIntoOthers printCastInto:args:)
+		(castIntoCastIntoCastIntoCastIntoOthers printCastInto:args:)
+		(castIntoCastIntoCastIntoOthers printCastInto:args:)
+		(castIntoCastIntoOthers printCastInto:args:)
+		(castIntoOthers printCastInto:args:)
+		(class printClass:args:)
+		(consistent printConsistent:args:)
+		(convert printConvert:args:)
+		(cos printFunction:args:)
+		(create printConstructor:args:)
+		(critical printCritical:args:)
+		(defineClientFluid printDefineClientFluid:args:)
+		(defineFluid printDefineFluid:args:)
+		(defineGlobal printDefineGlobal:args:)
+		(defineLogger printDefineLogger:args:)
+		(definePromiseFluid printDefinePromiseFluid:args:)
+		(delayCast printDelayCastMacro:args:)	
+		(delayTryCatch printDelayTry:args:)
+		(delete printDelete:args:)
+		(destroy printDestroy:args:)
+		(doMain printDoMain:args:)
+		(downToDo printForDown:args:)
+		(enum printEnum:args:)
+		(enumFlags printEnumFlags:args:)
+		(exp printFunction:args:)
+		(fabs printFunction:args:)
+		(FLUID intercept )
+		(fluidBindDuring printFluidBind:args:)
+		(fluidFetch printFluidVar:args:)
+		(fluidGet printFluidVar:args:)
+		(fluidSet printFluidSet:args:)
+		(fluidVar printFluidVar:args:)
+		(forEach printForEach:args:)
+		(forEachPromise printForEachPromise:args:)
+		(forIndices printForIndices:args:)
+		(forKeyValues printForKeyValues:args:)
+		(forPositions printForPositions:args:)
+		(hack printHack:args:)
+		(handleDo printException:args:)
+		(ifdef printIfdef:args:)
+		(ifdefElse printIfdef:args:)
+		(ifFalse printIfNot:args:)
+		(ifFalseIfTrue printIfNot:args:)
+		(ifndef printIfndef:args:)
+		(ifndefElse printIfndef:args:)
+		(ifTrue printIf:args:)
+		(ifTrueIfFalse printIf:args:)
+		(initTimeInherited printIgnore:args:)
+ 		(insistent printInsistent:args:)
+		(invokeFunction printInvoke:args:)
+		(knownBug printKnownBug:args:)
+		(linkTimeInherited printIgnore:args:)
+		(LOG printLOG:args:)
+		(log printFunction:args:)
+		(loop printFor:args:)
+		(loopAlmost printForAlmost:args:)
+		(loopDown printForDown:args:)
+		(make printPseudoconstructor:args:)
+		(max printFunction:args:)
+		(mightNotImplement printMightNotImplement:args:)
+		(min printFunction:args:)
+		(namedBlock printBlock:args:)
+		(namedBlockWith printBlock:args:)
+		(namedBlockWithWith printBlock:args:)
+		(namedBlockWithWithWith printBlock:args:)
+		(namedBlockWithWithWithWith printBlock:args:)
+		(negated printNegated:args:)
+		(notNULL printNotNULL:args:)
+		(notNULLElse printNotNULL:args:)
+		(obsolete printObsolete:args:)
+		(or printOr:args:)
+		(pack printPackMacro:args:)
+		(passe printPasse:args:)
+		(postDec printPostDec:args:)
+		(postInc printPostInc:args:)
+		(pow printFunction:args:)
+		(preDec printPreDec:args:)
+		(predicate printBlockMsg:args:)
+		(preInc printPreInc:args:)
+		(preorderNumber printCategoryMessage:args:)
+		(preorderMax printCategoryMessage:args:)
+		(quickCast printCastMacro:args:)
+		(raise printBlast:args:)
+		(raiseWith printBlast:args:)
+		(react printReact:args:)
+		(reanimate printReanimate:args:)
+		(refAssign printRefAssign:args:)
+		(refValue printRefValue:args:)
+		(repeat printRepeat:args:)
+		(REQUIRES printRequires:args:)
+		(rounded printFunction:args:)
+		(sin printFunction:args:)
+		(shouldImplement printShouldImplement:args:)
+		(shouldNotImplement printShouldNotImplement:args:)
+		(showWhile printShowCursor:args:)
+		(smalltalkOnly printIgnore:args:)
+		(pointerToStaticMember printStaticMemberPointer:args:)
+		(tan printFunction:args:)
+		(thingToDo printThingToDo:args:)
+		(timesRepeat printTimesRepeat:args:)
+		(toByDo printFor:args:)
+		(toDo printFor:args:)
+		(translateOnly printTranslateOnly:args:)
+		(uint8 printFunction:args:)
+		(unaryFn printBlockMsg:args:)
+		(unimplemented printUnimplemented:args:)
+		(USES printIgnore:args:)
+		(valueNowOrOnUnwindDo printUnwind:args:)
+		(valueOnUnwindDo printUnwind:args:)
+		(whileFalse printNotWhile:args:)
+		(whileTrue printWhile:args:)
+		(willNotImplement printWillNotImplement:args:)
+		(xuInteger printIntegerFunction:args:)
+	).
+	array ~~ CxxOverrideArray ifTrue: 
+		[CxxOverrideArray _ array.
+		CxxOverrideMap _ IdentityDictionary fromPairs: array].
+	override _ CxxOverrideMap at: sel ifAbsent: [nil].
+	override == #intercept ifTrue: [self warn: 'Selector ''', sel, ''' not allowed.'].
+	^override! !
+
+!FeWrapperSpec class methodsFor: #accessing!
+{void} setWrapperEndorsements: endorsements {ScruTable of: Sequence with: CrossRegion}
+	"A table mapping from wrapper names to endorsements"
+	
+	TheWrapperEndorsements := endorsements asMuTable.
+	self setupWrapperSpecs.
+	TheWrappersFromEndorsements := MuTable make: CurrentGrandMap fluidGet endorsementSpace.
+	endorsements stepper forPositions: [ :seq {Sequence} :endorses {CrossRegion} |
+		endorses isFinite ifFalse: [Heaper BLAST: #FatalError].
+		Ravi thingToDo. "implement stepper so that endorsements are allowed to be regions"
+		TheWrappersFromEndorsements at: endorses theOne
+			introduce: (self get: seq)
+		"endorses stepper forEach: [ :endorse {Tuple} |
+			TheWrappersFromEndorsements at: endorse
+				introduce: (self get: seq)]"].! !
+
+!BeGrandMap methodsFor: #'private: booting'!
+{void} coldBoot
+	
+	| emptyDesc {FeEdition} emptyClub {BeClub}
+	  publicDesc {FeEdition} publicClub {BeClub}
+	  adminClub {BeClub} archiveClub {BeClub}
+	  clubNames {BeEdition} 
+	  endorsements {MuTable of: Sequence and: CrossRegion} number {IntegerVar}
+	  iDSpace {IDSpace}  endorseTokenWorks {BeEdition} |
+	
+	"set up the initial set of Clubs"
+	myEmptyClubID := ID make: NULL with: NULL with: -1.
+	myPublicClubID := ID make: NULL with: NULL with: -2.
+	self thingToDo. "ensure that the following IDs are deterministic"
+	myAdminClubID := myGlobalIDSpace newID.
+	myArchiveClubID := myGlobalIDSpace newID.
+	myAccessClubID := myGlobalIDSpace newID.
+	
+	"figure out the IDs of the Wrapper endorsement Works"
+	endorsements := MuTable make: SequenceSpace make.
+	number := -3.
+	FeWrapperSpec knownWrappers stepper forEach: [ :name {Sequence} |
+		| iD {ID}  |
+		Ravi thingToDo. "put something more descriptive here"
+		iD := ID make: NULL with: NULL with: number.
+		number := number - 1.
+		endorsements at: name
+			introduce: (myEndorsementSpace
+				crossOfRegions: ((PrimSpec pointer
+					arrayWithTwo: myArchiveClubID asRegion
+					with: iD asRegion) cast: PtrArray))].
+	myWrapperEndorsements := endorsements asImmuTable.
+	
+	"set up the special flag bits used by the canopy"
+	myEndorsementFlags := PtrArray nulls: 5+10.
+	myEndorsementFlags at: UInt32Zero
+		store: ((endorsements get: (Sequence string: 'Text')) cast: XnRegion) theOne.
+	myEndorsementFlags at: 1
+		store: ((endorsements get: (Sequence string: 'HyperLink')) cast: XnRegion) theOne.
+	myEndorsementFlags at: 2
+		store: ((endorsements get: (Sequence string: 'HyperRef')) cast: XnRegion) theOne.
+	myEndorsementFlags at: 3
+		store: ((endorsements get: (Sequence string: 'SingleRef')) cast: XnRegion) theOne.
+	myEndorsementFlags at: 4
+		store: ((endorsements get: (Sequence string: 'MultiRef')) cast: XnRegion) theOne.
+	"generate some IDs to use as endorsement tokens"
+	5 almostTo: myEndorsementFlags count do: [ :i {Int32} |
+		myEndorsementFlags at: i store: (myEndorsementSpace
+			crossOfRegions: ((PrimSpec pointer
+					arrayWithTwo: myGlobalIDSpace fullRegion
+					with: myGlobalIDSpace newID asRegion) cast: PtrArray))].
+	CanopyCrum useEndorsementFlags: myEndorsementFlags.
+	
+	CurrentAuthor fluidSet: myEmptyClubID.
+	InitialReadClub fluidSet: myPublicClubID.
+	InitialEditClub fluidSet: myEmptyClubID.
+	InitialOwner fluidSet: myEmptyClubID.
+	InitialSponsor fluidSet: myEmptyClubID.  Dean knownBug.  "Who sponsors clubs?"
+
+	emptyDesc := (self carrier: (self newEmptyEdition: SequenceSpace make)) makeFe cast: FeEdition.
+	emptyClub := self newClub: emptyDesc with: myEmptyClubID.
+	emptyClub setEditClub: NULL.
+
+	publicDesc := (self carrier: (self
+		newEditionWith: (Sequence string: 'ClubDescription:LockSmith')
+			with: (self carrier:
+					(self newDataEdition: (UInt8Array string: 'boo')
+						with: (IntegerRegion make: IntegerVarZero with: 3)
+						with: IntegerSpace make getAscending)))) makeFe cast: FeEdition.
+	publicClub := self newClub: publicDesc with: myPublicClubID.
+	publicClub setEditClub: NULL.
+	
+	emptyClub sponsor: (myPublicClubID asRegion cast: IDRegion).
+	publicClub sponsor: (myPublicClubID asRegion cast: IDRegion).
+	InitialSponsor fluidSet: myPublicClubID.
+	
+	InitialReadClub fluidSet: myAdminClubID.
+	InitialEditClub fluidSet: myAdminClubID.
+	InitialOwner fluidSet: myAdminClubID.  self thingToDo.  "This should probably still be the Null Club."
+	adminClub := self newClub: publicDesc with: myAdminClubID.
+	
+	InitialReadClub fluidSet: myArchiveClubID.
+	InitialEditClub fluidSet: myArchiveClubID.
+	InitialOwner fluidSet: myArchiveClubID.
+	archiveClub := self newClub: publicDesc with: myArchiveClubID.
+	
+	CurrentKeyMaster fluidSet: (FeKeyMaster make: self publicClubID).
+	InitialReadClub fluidSet: myAdminClubID.
+	InitialEditClub fluidSet: myAdminClubID.
+	iDSpace := IDSpace unique.
+	self newClub: ((self carrier: (self
+			newEditionWith: (Sequence string: 'ClubDescription:Membership')
+			with: (self carrier: (((self
+					newEditionWith: iDSpace newID with: (self carrier: publicClub))
+					with: iDSpace newID with: (self carrier: adminClub))
+					with: iDSpace newID with: (self carrier: archiveClub))))) makeFe cast: FeEdition)
+		with: myAccessClubID.
+	
+	InitialReadClub fluidSet: myPublicClubID.
+	InitialSponsor fluidSet: myAdminClubID.
+	InitialEditClub fluidSet: myAdminClubID.
+	
+	clubNames := (((self newEditionWith: (Sequence string: 'System Admin') with:  (self carrier: adminClub))
+		combine: (self newEditionWith: (Sequence string: 'System Archive') with: (self carrier: archiveClub)))
+		combine: (self newEditionWith: (Sequence string: 'Universal Null') with: (self carrier: emptyClub)))
+		combine: (self newEditionWith: (Sequence string: 'Universal Public') with:  (self carrier: publicClub)).
+	myClubDirectoryID := self assignID: (self newWork: (FeEdition on: clubNames)).
+	
+	"actually create the Wrapper description Works"
+	endorsements stepper forPositions: [ :name {Sequence} :end {CrossRegion} |
+		Ravi thingToDo. "put something more descriptive in the Work"
+		self at: (((end theOne cast: Tuple) coordinate: 1) cast: ID)
+			tryIntroduce: (self
+				newWork: (FeEdition on: (self
+					newDataEdition: name integers
+					with: (IntegerRegion make: IntegerVarZero with: name integers count)
+					with: IntegerSpace make ascending)))].
+	"actually create the endorsement token Works"
+	iDSpace := IDSpace unique.
+	endorseTokenWorks := self newEmptyEdition: iDSpace.
+	5 almostTo: myEndorsementFlags count do: [ :i {Int32} | | work {BeWork} |
+		work := self newWork: emptyDesc. "contents don't matter"
+		self at: (((((myEndorsementFlags get: i) cast: CrossRegion)
+				projection: 1) cast: IDRegion) theOne cast: ID)
+			tryIntroduce: work.
+		endorseTokenWorks := endorseTokenWorks
+			with: iDSpace newID
+			with: (self carrier: work)].
+	"attach & endorse them so they can be found"
+	InitialReadClub fluidBind: myAdminClubID during:
+	[InitialEditClub fluidBind: NULL during:
+		[ | edition {BeEdition} |
+		edition := (self
+			newEditionWith: (Sequence string: 'Universal Public')
+				with: (self carrier: publicClub))
+			with: (Sequence string: 'Fast Tokens')
+				with: (self carrier: endorseTokenWorks).
+		self newWork: (FeEdition on: edition).
+		edition endorse: (myEndorsementSpace
+			crossOfRegions: ((PrimSpec pointer
+					arrayWithTwo: myEmptyClubID asRegion
+					with: myEmptyClubID asRegion) cast: PtrArray))]].
+	
+	myGateLockSmithEdition := self
+		newDataEdition: (UInt8Array string: 'wall')
+		with: (IntegerRegion make: IntegerVarZero with: 4)
+		with: IntegerSpace make ascending.
+	myGrants := self newEditionWithAll: myGlobalIDSpace fullRegion
+		with: (self carrier: adminClub).
+	
+	InitialOwner fluidSet: (NULL basicCast: ID).
+	InitialSponsor fluidSet: (NULL basicCast: ID).
+	InitialReadClub fluidSet: myEmptyClubID.
+	InitialEditClub fluidSet: (NULL basicCast: ID).
+	CurrentAuthor fluidSet: (NULL basicCast: ID).
+	CurrentKeyMaster fluidSet: (NULL basicCast: FeKeyMaster).! !
+
+!Fossil methodsFor: #'private: accessing'!
+{KeyMaster} makeKeyMaster
+	"Make a KeyMaster with the authority stored in the imprint.
+	(Will change when the eviction bug {MB10} is fixed.)"
+	
+	| clubs {MuTable of: ID and: GateKeeper} |
+	
+	"Make and empty MuTable of IDs
+	For each club imprint (with its corresponding filter imprint)
+		Fill in a table entry with a GateKeeper made from the imprint
+	Return a composite gatekeeper made from the table."
+	
+	clubs := MuTable make: IDSpace make.
+	myClubsAndFilters stepper forPositions: [ :id {ID} :filter {Filter} |
+		clubs at: id introduce: (ActualGateKeeper
+			clubGateKeeper: id with: filter with: myGrandMap)].
+	^ActualGateKeeper compositeGateKeeper: clubs asImmuTable
+		with: myUserID! !
+
+!SnarfPacker methodsFor: #private:!
+{void} refitFlocks
+	"Make sure all flocks that have changed still fit in their snarfs. 
+	 Add any that don't to myNewFlocks and return the table 
+	 from their current locations to the newShepherds."
+
+	mySnarfMap stepper forIndices: 
+		[:snarfID {IntegerVar} :rec {SnarfRecord} |
+		rec refitFlocks.
+		mySnarfInfo setSpaceLeft: snarfID DOTasLong with: rec spaceLeft]! !
+
+!TestPacker methodsFor: #'private: testing'!
+{void} checkNewFlockIndices
+
+	myNewFlocks stepper forIndices: [ :index {IntegerVar} :value {FlockInfo} |
+		index DOTasLong = value index ifFalse:
+			[Heaper BLAST: #NewFlockIndexDoesNotMatch]]! !
+
+!FeMultiLockSmith methodsFor: #'server locks'!
+{Lock} newLock: clubID {ID | NULL}
+
+	| result {MuTable of: Lock} |
+	result := MuTable make: SequenceSpace make.
+	self edition stepper forPositions: [ :name {Sequence} :smith {FeEdition} |
+		result at: name
+			introduce: (((FeLockSmith spec wrap: smith) cast: FeLockSmith) newLock: clubID)].
+	^MultiLock make: clubID with: self with: result asImmuTable! !
+
+!ActualHashTable methodsFor: #hooks:!
+{void SEND.HOOK} sendHashTable: xmtr {Xmtr}
+	"This currently doesn't take advantage of the optimizations in TableEntries.  It should."
+	
+	(myCoordinateSpace isEqual: IntegerSpace make)
+		ifTrue:
+			[self stepper forIndices: [:index {IntegerVar} :value {Heaper} |
+				xmtr sendIntegerVar: index.
+				xmtr sendHeaper: value]]
+		ifFalse:
+			[self stepper forPositions: [:p {Position} :v {Heaper} |
+				xmtr sendHeaper: p.
+				xmtr sendHeaper: v]]! !
+
+!FebeIniter methodsFor: #initialization!
+{void} initializeClubs
+	
+	| directory {XuDirectory}    |
+	
+	[Transcript nextPutAll: 'building initial clubs'; endEntry] smalltalkOnly.
+
+	directory _ XuDirectory userDirectory: self adminKM
+		with: NULL with: NULL with: OpenOriginalDocument.
+	
+	self userList stepper forPositions:
+		[ :userName {PackOBits} :userPassword {PackOBits} |
+		| tClub {ClubManager} |
+		[Transcript nextPutAll: '.'; endEntry] smalltalkOnly.
+		tClub _ self makeClub: userName with: userPassword with: directory.
+		tClub destroy].
+	
+	self groupList stepper forPositions:
+		[ :groupName {PackOBits} :members {ScruSet of: PackOBits} | | tClub {ClubManager} |
+		[Transcript nextPutAll: '.'; endEntry] smalltalkOnly.
+		tClub _ self makeClub: groupName
+			with: (Sequence string: '')
+			with: directory.
+		members stepper forEach: [ :member {PackOBits} |
+			tClub addMember: (directory getClubID: member)].
+		tClub destroy].
+
+	[Transcript cr; nextPutAll: 'setting up homedocs'; endEntry] smalltalkOnly.
+	directory stepper forEach: [:userID {ID} |
+		[Transcript nextPutAll: '.'; endEntry] smalltalkOnly.
+		self setupHomeDocFor: userID with: directory].
+
+	directory destroy! !
+
+!WorksTester methodsFor: #tests!
+{void} editionTestOn: oo {ostream reference}
+	"Test the simple Edition operations"
+	
+	| edition {FeEdition} |
+	oo << 'Testing various Edition operations' << myCR.
+	edition := FeEdition empty: IntegerSpace make.
+	oo << 'initially: ' << edition << myCR
+		<< ' coordinateSpace: ' << edition coordinateSpace << myCR
+		<< ' count: ' << edition count << myCR
+		<< ' domain: ' << edition domain << myCR
+		<< ' isEmpty: ' << edition isEmpty << myCR
+		<< ' isFinite: ' << edition isFinite << myCR.
+	edition := edition with: (IntegerPos make: Int32Zero) with: FeRangeElement placeHolder.
+	oo << 'with(0): ' << edition << myCR
+		<< ' theOne: ' << edition theOne << myCR.
+	edition := edition withAll: (IntegerSpace make above: (IntegerPos make: 1) with: true)
+		with: (FeDataHolder make: (PrimIntValue make: 65)).
+	oo << 'withAll: ' << edition << myCR
+		<< ' domain: ' << edition domain << myCR
+		<< ' isEmpty: ' << edition isEmpty << myCR
+		<< ' isFinite: ' << edition isFinite << myCR.
+	oo << 'stepper:' << myCR.
+	[ScruTable] USES.
+	(edition stepper: (IntegerSpace make interval: (IntegerPos make: IntegerVarZero) with: (IntegerPos make: 2))) forPositions:
+		[ :p {Position} :v {FeRangeElement} |
+		oo << ' ' << p << ' -> ' << v << myCR].
+	edition := edition without: (IntegerPos make: 3).
+	oo << 'without 3' << edition << myCR.
+	edition := edition withoutAll: (IntegerSpace make above: (IntegerPos make: 2) with: true).
+	oo << 'withoutAll: ' << edition << myCR
+		<< ' count: ' << edition count << myCR
+		<< ' domain: ' << edition domain << myCR
+		<< ' isEmpty: ' << edition isEmpty << myCR
+		<< ' isFinite: ' << edition isFinite << myCR
+		<< ' get 1: ' << (edition get: (IntegerPos make: 1)) << myCR.
+	
+	oo << 'combined: ' << (edition combine: (FeEdition fromOne: (IntegerPos make: 5)
+			with: FeRangeElement placeHolder)) << myCR.
+	oo << 'replaced: ' << (edition replace: (FeEdition fromOne: (IntegerPos make: 1)
+			with: FeRangeElement placeHolder)) << myCR.! !
+
+!WorksTester methodsFor: #tests!
+{void} historyTestOn: oo {ostream reference}
+	| work {FeWork} |
+	work _ FeWork make: (FeEdition fromArray: (WorksTester string: 'Howdy doody.')).
+	work setHistoryClub: FeServer publicClubID.
+	work revise: (FeEdition fromArray: (WorksTester string: 'Good bye')).
+	work revise: (FeEdition fromArray: (WorksTester string: 'Much better.')).
+	oo << 'The trail is: ' << work revisions << myCR.
+	work revisions stepper forPositions: 
+		[:position {Position} :value {FeWork} |
+		oo << position << '->' << (value edition retrieve theOne cast: FeArrayBundle) array << myCR].
+	
+	"self halt."
+	oo << myCR.! !
+
+!IDRegion methodsFor: #private:!
+{SequenceRegion} backends
+	"All backends which have generated IDs in this Region"
+	
+	| result {XnRegion} |
+	myIncludesRest ifTrue:
+		[result := SequenceSpace make fullRegion.
+		(myLocalIDs intersects: TheGlobalNumbers) ifFalse:
+			[result := result without: Sequence zero].
+		(myLocalIDs intersects: TheLocalNumbers) ifFalse:
+			[result := result without: FeServer identifier].
+		myImportedIDs ~~ NULL ifTrue:
+			[myImportedIDs stepper forPositions: [ :backend {Sequence} :iDs {IntegerRegion} |
+				iDs isEmpty ifTrue:
+					[result := result without: backend]]].
+		^result cast: SequenceRegion]
+	ifFalse:
+		[result := SequenceSpace make emptyRegion.
+		(myLocalIDs intersects: TheGlobalNumbers) ifTrue:
+			[result := result with: Sequence zero].
+		(myLocalIDs intersects: TheLocalNumbers) ifTrue:
+			[result := result with: FeServer identifier].
+		myImportedIDs ~~ NULL ifTrue:
+			[result := result unionWith: myImportedIDs domain].
+		^result cast: SequenceRegion]! !
+
+!IDRegion methodsFor: #operations!
+{XnRegion} complement
+
+	| result {MuTable of: Sequence and: IntegerRegion} resTable {ImmuTable} |
+	myImportedIDs == NULL ifTrue:
+		[result := NULL]
+	ifFalse:
+		[result := MuTable make: SequenceSpace make.
+		myImportedIDs stepper forPositions:
+			[ :backend {Sequence} :iDs {IntegerRegion} |
+			result at: backend store: (TheLocalNumbers minus: iDs)]].
+	result == NULL ifTrue: [resTable := NULL] ifFalse: [resTable := result asImmuTable].
+	^IDRegion make: mySpace
+		with: (myLocalIDs complement cast: IntegerRegion)
+		with: resTable
+		with: myIncludesRest not! !
+
+!IDRegion methodsFor: #enumerating!
+{ScruSet of: XnRegion} distinctions
+
+	| result {SetAccumulator} table {MuTable of: Sequence} |
+	Ravi thingToDo. "consolidate duplicated code"
+	result := SetAccumulator make.
+	myImportedIDs == NULL ifTrue:
+		[myLocalIDs distinctions stepper forEach: [ :local {IntegerRegion} |
+			| region {IDRegion} |
+			region _ IDRegion make: mySpace
+				with: local with: NULL with: myIncludesRest.
+			result step: region]]
+	ifFalse:
+		[myIncludesRest ifTrue:
+			[myLocalIDs distinctions stepper forEach:
+				[ :local {IntegerRegion} |
+				| region {IDRegion} |
+				region _ IDRegion make: mySpace
+									with: local with: NULL with: true.
+				result step: region].
+			myImportedIDs stepper forPositions:
+				[ :backend {Sequence} :iDs {IntegerRegion} |
+				iDs distinctions stepper forEach:
+					[ :import {IntegerRegion} |
+					| region {IDRegion} |
+					table := MuTable make: SequenceSpace make.
+					table at: backend store: import.
+					region _ IDRegion make: mySpace
+										with: IntegerRegion allIntegers
+										with: table asImmuTable
+										with: true.
+					result step: region]]]
+		ifFalse:
+			[ | backend {Sequence} |
+			(myLocalIDs isEmpty and: [myImportedIDs count = 1]) ifFalse:
+				[Heaper BLAST: #MustBeSimple].
+			backend := myImportedIDs domain theOne cast: Sequence.
+			(myImportedIDs theOne cast: IntegerRegion) distinctions stepper forEach:
+				[ :import {Sequence} |
+				| region {IDRegion} |
+				table := MuTable make: SequenceSpace make.
+				table at: backend store: import.
+				region _ IDRegion make: mySpace
+						with: myLocalIDs
+						with: table asImmuTable
+						with: false.
+				result step: region]]].
+	^result value cast: ScruSet! !
+
+!IDRegion methodsFor: #private:!
+{XnRegion of: Sequence} explicitBackends
+	"All backends which are non-empty and are explicitly listed. For IDSimpleStepper"
+	
+	| result {XnRegion} |
+	result := SequenceSpace make emptyRegion.
+	(myLocalIDs intersects: TheGlobalNumbers) ifTrue:
+		[result := result with: Sequence zero].
+	(myLocalIDs intersects: TheLocalNumbers) ifTrue:
+		[result := result with: FeServer identifier].
+	myImportedIDs ~~ NULL ifTrue:
+		[myIncludesRest ifTrue:
+			[myImportedIDs stepper forPositions:
+				[ :backend {Sequence} :iDs {IntegerRegion} |
+				iDs isEmpty ifFalse:
+					[result := result with: backend]]]
+		ifFalse:
+			[result := result unionWith: myImportedIDs domain]].
+	^result! !
+
+!IDRegion methodsFor: #accessing!
+{UInt8Array CLIENT} export
+	"Essential. Export the IDRegion in a form that can be used to recreate it with IDRegion::import."
+		
+	| xmtr {SpecialistXmtr} result {WriteVariableArrayStream} |
+	result := WriteVariableArrayStream make: 500.
+	xmtr := Binary2XcvrMaker make
+		makeXmtr: (TransferSpecialist make: Cookbook make)
+		with: result.
+	ID exportSequence: xmtr
+		with: (self coordinateSpace cast: IDSpace) backend.
+	ID exportIntegerRegion: xmtr with: myLocalIDs.
+	myImportedIDs == NULL ifTrue:
+		[xmtr sendIntegerVar: IntegerVarZero]
+	ifFalse:
+		[xmtr sendIntegerVar: myImportedIDs count.
+		myImportedIDs stepper forPositions: [ :key {Sequence} :value {IntegerRegion} |
+			ID exportSequence: xmtr with: key.
+			ID exportIntegerRegion: xmtr with: value]].
+	xmtr sendIntegerVar: myIncludesRest.
+	^result array! !
+
+!IDRegion methodsFor: #private:!
+{IDRegion} fetchInexplicit
+	"The region which covers material not in the explicitBackends list, or NULL if there is none."
+	
+	| result {MuTable | NULL} actualResult {ImmuTable | NULL} |
+	myIncludesRest ifFalse:
+		[^NULL].
+	myImportedIDs == NULL ifTrue:
+		[result := NULL]
+	ifFalse:
+		[result := MuTable make: SequenceSpace make.
+		myImportedIDs stepper forPositions: [ :backend {Sequence} :iDs {IntegerRegion} |
+			result at: backend introduce: IntegerRegion make]].
+	result ~~ NULL ifTrue: [actualResult := result asImmuTable] ifFalse: [actualResult := NULL].
+	^IDRegion make: mySpace
+		with: IntegerRegion make
+		with: actualResult
+		with: true! !
+
+!IDRegion methodsFor: #operations!
+{XnRegion} intersect: region {XnRegion} 
+	| resTable {ImmuTable} |
+	region cast: IDRegion into: [ :other | | result {MuTable} |
+		myImportedIDs == NULL ifTrue:
+			[(myIncludesRest and: [other fetchImportedIDs ~~ NULL])
+				ifTrue: [result := other fetchImportedIDs asMuTable]
+				ifFalse: [result := NULL]]
+		ifFalse:
+			[other fetchImportedIDs == NULL ifTrue:
+				[other includesRest
+					ifTrue: [result := myImportedIDs asMuTable]
+					ifFalse: [result := NULL]]
+			ifFalse:
+				[result := MuTable make: SequenceSpace make.
+				myImportedIDs stepper forPositions:
+					[ :backend {Sequence} :iDs {IntegerRegion} |
+					| otherIDs {IntegerRegion} |
+					otherIDs := (other getImportedIDs fetch: backend) cast: IntegerRegion.
+					otherIDs ~~ NULL ifTrue:
+						[result at: backend store: (iDs intersect: otherIDs)]
+					ifFalse: [other includesRest ifTrue:
+						[result at: backend store: iDs]]].
+				myIncludesRest ifTrue:
+					[other getImportedIDs stepper forPositions:
+						[ :backend {Sequence} :otherIDs {IntegerRegion} |
+						| iDs {IntegerRegion} |
+						iDs := (myImportedIDs fetch: backend) cast: IntegerRegion.
+						iDs == NULL ifTrue:
+							[result at: backend store: otherIDs]]]]].
+		result ~~ NULL ifTrue:
+			[result stepper forPositions:
+				[ :backend {Sequence} :iDs {IntegerRegion} | | f {BooleanVar} |
+				(myIncludesRest and: [other includesRest])
+					ifTrue: [f := iDs isEqual: TheLocalNumbers]
+					ifFalse: [f := iDs isEmpty].
+				f ifTrue: [result wipe: backend]].
+			result isEmpty ifTrue:
+				[result := NULL]].
+		result == NULL ifTrue: [resTable := NULL] ifFalse: [resTable := result asImmuTable].
+		^IDRegion make: mySpace
+			with: ((myLocalIDs intersect: other localIDs) cast: IntegerRegion)
+			with: resTable
+			with: (myIncludesRest and: [other includesRest])].
+	^NULL "fodder"! !
+
+!IDRegion methodsFor: #testing!
+{BooleanVar} isSubsetOf: region {XnRegion}
+	
+	region cast: IDRegion into: [ :other |
+		(myLocalIDs isSubsetOf: other localIDs)
+			ifFalse: [^false].
+		myImportedIDs == NULL ifTrue:
+			[^myIncludesRest not
+				or: [other includesRest
+					and: [other fetchImportedIDs == NULL]]].
+		other fetchImportedIDs == NULL ifTrue:
+			[^other includesRest "since we know I have imported IDs"].
+		myIncludesRest ifTrue:
+			[(other includesRest
+					and: [other fetchImportedIDs domain isSubsetOf: myImportedIDs domain])
+				ifFalse: [^false]].
+		myImportedIDs stepper forPositions:
+			[ :backend {Sequence} :iDs {IntegerRegion} |
+			| otherIDs {IntegerRegion | NULL} |
+			otherIDs := (other getImportedIDs fetch: backend) cast: IntegerRegion.
+			otherIDs == NULL
+				ifTrue: [(other includesRest or: [iDs isEmpty])
+					ifFalse: [^false]]
+				ifFalse: [(iDs isSubsetOf: otherIDs)
+					ifFalse: [^false]]]].
+	^true! !
+
+!IDRegion methodsFor: #printing!
+{void} printOn: oo {ostream reference}
+
+	| iDs {XnRegion} |
+	oo << '{' << (self coordinateSpace cast: IDSpace) identifier << ' |'.
+	iDs := myLocalIDs intersect: (IntegerRegion before: IntegerVarZero).
+	iDs isEmpty ifFalse:
+		[oo << ' !!' << iDs].
+	iDs := myLocalIDs intersect: (IntegerRegion after: IntegerVarZero).
+	iDs isEmpty ifFalse:
+		[oo << ' ' << FeServer identifier << '.' << iDs].
+	myImportedIDs == NULL ifFalse:
+		[myImportedIDs stepper forPositions:
+			[ :backend {Sequence} :iDs {IntegerRegion} |
+			oo << ' ' << backend << '.' << iDs]].
+	myIncludesRest ifTrue:
+		[oo << ' ...{...} '].
+	oo << '}'! !
+
+!IDRegion methodsFor: #operations!
+{XnRegion} unionWith: region {XnRegion} 
+	| resTable {ImmuTable} |
+	region cast: IDRegion into: [ :other | | result {MuTable} |
+		myImportedIDs == NULL ifTrue:
+			[(myIncludesRest or: [other fetchImportedIDs == NULL])
+				ifTrue: [result := NULL]
+				ifFalse: [result := other fetchImportedIDs asMuTable]]
+		ifFalse:
+			[other fetchImportedIDs == NULL ifTrue:
+				[other includesRest
+					ifTrue: [result := NULL]
+					ifFalse: [result := myImportedIDs asMuTable]]
+			ifFalse:
+				[result := MuTable make: SequenceSpace make.
+				myImportedIDs stepper forPositions:
+					[ :backend {Sequence} :iDs {IntegerRegion} |
+					| otherIDs {IntegerRegion} |
+					otherIDs := (other getImportedIDs fetch: backend) cast: IntegerRegion.
+					otherIDs ~~ NULL ifTrue:
+						[result at: backend store: (iDs unionWith: otherIDs)]
+					ifFalse: [other includesRest ifFalse:
+						[result at: backend store: iDs]]].
+				myIncludesRest ifFalse:
+					[other getImportedIDs stepper forPositions:
+						[ :backend {Sequence} :otherIDs {IntegerRegion} |
+						| iDs {IntegerRegion} |
+						iDs := (myImportedIDs fetch: backend) cast: IntegerRegion.
+						iDs == NULL ifTrue:
+							[result at: backend store: otherIDs]]]]].
+		result ~~ NULL ifTrue:
+			[result stepper forPositions:
+				[ :backend {Sequence} :iDs {IntegerRegion} | | f {BooleanVar} |
+				(myIncludesRest or: [other includesRest])
+					ifTrue: [f := iDs isEqual: TheLocalNumbers]
+					ifFalse: [f := iDs isEmpty].
+				f ifTrue: [result wipe: backend]].
+			result isEmpty ifTrue:
+				[result := NULL]].
+		result == NULL ifTrue: [resTable := NULL] ifFalse: [resTable := result asImmuTable].
+		^IDRegion make: mySpace
+			with: ((myLocalIDs unionWith: other localIDs) cast: IntegerRegion)
+			with: resTable
+			with: (myIncludesRest or: [other includesRest])].
+	^NULL "fodder"! !
+
+!IDRegion methodsFor: #operations!
+{XnRegion} with: pos {Position} 
+	| resTable {ImmuTable} newLocalIDs {IntegerRegion} |
+	pos cast: ID into: [ :id | | result {MuTable} |
+		myImportedIDs == NULL ifTrue:
+			[(myIncludesRest or: [id fetchBackend == NULL])
+				ifTrue: [result := NULL]
+				ifFalse: [result := MuTable make: id fetchSpace.
+						result at: id fetchBackend introduce: (IntegerRegion make: id number)]]
+		ifFalse:
+			[id fetchBackend == NULL ifTrue:
+				[result := myImportedIDs asMuTable]
+			ifFalse:
+				[result := MuTable make: SequenceSpace make.
+				myImportedIDs stepper forPositions:
+					[ :backend {Sequence} :iDs {IntegerRegion} |
+					(id fetchBackend isEqual: backend)
+						ifTrue: [result at: backend store: (iDs withInt: id number)]
+						ifFalse: [result at: backend store: iDs]]].
+				myIncludesRest ifFalse:
+					[result at: id fetchBackend store: (IntegerRegion make: id number)]].
+		result ~~ NULL ifTrue:
+			[result stepper forPositions:
+				[ :backend {Sequence} :iDs {IntegerRegion} | | f {BooleanVar} |
+				myIncludesRest
+					ifTrue: [f := iDs isEqual: TheLocalNumbers]
+					ifFalse: [f := iDs isEmpty].
+				f ifTrue: [result wipe: backend]].
+			result isEmpty ifTrue:
+				[result := NULL]].
+		result == NULL ifTrue: [resTable := NULL] ifFalse: [resTable := result asImmuTable].
+		newLocalIDs := myLocalIDs.
+		id fetchBackend == NULL
+			ifTrue: [newLocalIDs := (newLocalIDs withInt: id number) cast: IntegerRegion].
+		^IDRegion make: mySpace
+			with: newLocalIDs
+			with: resTable
+			with: myIncludesRest].
+	^NULL "fodder"! !
+
+!ActualHashTable methodsFor: #private:!
+{void} storeEntry: anEntry {TableEntry}
+	"Store the tableentry into the entry table"
+	| index {UInt32} |
+	index _ anEntry position hashForEqual \\ myHashEntries count.
+	anEntry setNext: ((myHashEntries fetch: index) cast: TableEntry).
+	myHashEntries at: index store: anEntry! !
+
+!BucketArrayStepper methodsFor: #special!
+{Position} position
+	myEntry ~~ NULL assert: 'Illegal access'.
+	^myEntry position! !
+
+!HashSetStepper methodsFor: #private:!
+{void} verifyEntry
+	myElements ~~ NULL ifTrue: [
+		myCurrent < myElements count ifTrue: [
+			myCurrent := myElements indexPast: NULL with: myCurrent.
+			myCurrent == -1 ifTrue: [myCurrent := myElements count]].
+		self hasValue ifFalse: [
+			myElements shareLess: self.
+			myElements := NULL]].! !
+
+!EditionStepper methodsFor: #special!
+{Position} position
+
+	^myKeys get cast: Position! !
+
+EditionStepper removeSelector: #key!
+
+!PtrArrayStepper methodsFor: #special!
+{Position} position
+	
+	myIndex >= myPastEnd ifTrue:
+		[Heaper BLAST: #EmptyStepper].
+	^myIndex integer! !
+
+PtrArrayStepper removeSelector: #key!
+
+!ArrayStepper methodsFor: #special!
+{Position} position
+	^indexInternal integer! !
+
+ArrayStepper removeSelector: #key!
+
+!TableStepper methodsFor: #'smalltalk: operations'!
+{Position} key
+	"A TableStepper actually enumerates the associations of a table. Through the normal Stepper protocol, it makes available the range element of the current association. Through this additional protocol, it make accessible the key of the current association.  This message returns the same object as TwoStepper::other, the only difference being the static knowledge that it's a Position."
+
+	^ self position! !
+
+!GrantStepper methodsFor: #special!
+{Position} position
+
+	Ravi thingToDo. "in future implementations this might also get back an ArrayBundle"
+	^CurrentGrandMap fluidGet iDOf: (myBundles get cast: FeElementBundle) element getOrMakeBe! !
+
+GrantStepper removeSelector: #key!
+
+!IntegerTableStepper methodsFor: #special!
+{Position} position
+	self subclassResponsibility! !
+
+IntegerTableStepper removeSelector: #key!
+
+!ITAscendingStepper methodsFor: #special!
+{Position} position
+	^ self index integer! !
+
+ITAscendingStepper removeSelector: #key!
+
+!ITDescendingStepper methodsFor: #special!
+{Position} position
+	^ self index integer! !
+
+ITDescendingStepper removeSelector: #key!
+
+!ITGenericStepper methodsFor: #special!
+{Position} position
+	^indexInternal integer! !
+
+ITGenericStepper removeSelector: #key!
+
+!OrderedCollectionStepper methodsFor: #special!
+{Position} position
+	^indexInternal integer! !
+
+!GrandTableEntry methodsFor: #testing!
+{BooleanVar} matches: anEntry {GrandEntry}
+	^ keyInternal isEqual: (anEntry cast: GrandTableEntry) position! !
+
+!GrandTableEntry methodsFor: #accessing!
+{Position} position
+	^ keyInternal! !
+
+!SnarfPacker methodsFor: #private:!
+{void} flushFlocks
+	"Actually write all the changed and newly assigned flocks to the disk."
+	 
+	mySnarfMap stepper forIndices: 
+		[:index {IntegerVar} :rec {SnarfRecord} |
+		rec flushChanges.
+		mySnarfMap intWipe: index.
+		rec destroy].
+	mySnarfMap destroy.
+	mySnarfMap _ IntegerTable make: 50.! !
+
+!ServerChunk methodsFor: #'protected: destruct'!
+{void} destruct
+	"ServerChunks are destroyed explicitly in the server loop."
+	Heaper inGC ifFalse: [
+		| saveChunk {ServerChunk} |
+		(myFluidSpace ~~ NULL) ifTrue: [
+			saveChunk _ CurrentChunk.
+			CurrentChunk _ self.
+			ServerChunk emulsion destructAll.
+			CurrentChunk _ saveChunk.].
+		ServerLoop removeChunk: self.
+		ChunkCleaner beClean].
+	super destruct.! !
+
+!DiskManager methodsFor: #'protected: creation'!
+{void} destruct
+
+	Heaper inGC ifFalse: [
+		(myFluidSpace ~~ NULL) ifTrue: [
+			CurrentPacker fluidBind: self during:
+				[DiskManager emulsion destructAll]]]. 
+	super destruct.! !
+
+Heaper subclass: #PrimSet
+	instanceVariableNames: '
+		myPtrs {PtrArray}
+		myTally {Int4}
+		myWeakness {BooleanVar}
+		myExecutor {XnExecutor | NULL}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-primtab'!
+
+PrimSet getOrMakeCxxClassDescription attributes: #(CONCRETE )!
+
+PrimSet comment:
+'A set of pointers.  May be strong or weak.  If we have a separate executor, it is called with the remaining size after removal.'!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'primtab')  addClass: PrimSet getOrMakeCxxClassDescription in: #public])!
+
+!PrimSet methodsFor: #'protected: create'!
+create: size {Int32} with: weakness {BooleanVar}
+	super create.
+	myWeakness := weakness.
+	myExecutor := NULL.
+	weakness
+		ifTrue: [myPtrs := WeakPtrArray make: (PrimSetExecutor make: self) with: size]
+		ifFalse: [myPtrs := PtrArray nulls: size].
+	myTally := Int32Zero.! !
+
+!PrimSet methodsFor: #'protected: create'!
+create: size {Int32} with.Executor: exec {XnExecutor}
+	super create.
+	myWeakness := true.
+	myExecutor := exec.
+	myPtrs := WeakPtrArray make: (PrimSetExecutor make: self) with: size.
+	myTally := Int32Zero.! !
+
+!PrimSet class methodsFor: #create!
+{PrimSet} weak: size {Int32} with: exec {XnExecutor}
+	^ self create: size with.Executor: exec! !
+
+!PrimSet methodsFor: #'private: weakness'!
+{void} weakRemove: index {Int32}
+	myPtrs at: index store: PrimRemovedObject make. "NULL will mess up hashFind"
+	myTally := myTally - 1.
+	myExecutor ~~ NULL ifTrue: [
+		myExecutor execute: myTally].! !
+
+BeRangeElement subclass: #BeWork
+	instanceVariableNames: '
+		myEdition {BeEdition}
+		myEditionLabel {BeLabel}
+		myReadClub {ID | NULL}
+		myEditClub {ID | NULL}
+		myOwnProp {BertProp}
+		myHistory {BeEdition | NULL}
+		myHistoryClub {ID | NULL}
+		myRevisionCount {IntegerVar}
+		myRevisionTime {IntegerVar}
+		myReviser {ID}
+		mySponsors {IDRegion}
+		myLockingWork {WeakPtrArray NOCOPY of: FeWork}
+		myRevisionWatchers {PrimSet NOCOPY | NULL of: FeWork}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-Be-Basic'!
+
+BeWork getOrMakeCxxClassDescription attributes: #(LOCKED COPY SHEPHERD.PATRIARCH CONCRETE )!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'brange2')  addClass: BeWork getOrMakeCxxClassDescription in: #public])!
+
+XnExecutor subclass: #RevisionWatcherExecutor
+	instanceVariableNames: 'myWork {BeWork}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-brange2'!
+
+RevisionWatcherExecutor getOrMakeCxxClassDescription attributes: #(CONCRETE )!
+
+RevisionWatcherExecutor comment:
+'This executor tells its BeWork when the last of its revision watchers have gone away.'!
+
+RevisionWatcherExecutor organization addCategory: #'protected: create' before: nil!
+
+!RevisionWatcherExecutor methodsFor: #'protected: create'!
+create: work {BeWork}
+	super create.
+	myWork := work! !
+
+RevisionWatcherExecutor class organization addCategory: #create before: nil!
+
+!RevisionWatcherExecutor class methodsFor: #create!
+{XnExecutor} make: work {BeWork}
+	^ self create: work! !
+
+XnExecutor subclass: #RevisionWatcherExecutor
+	instanceVariableNames: 'myWork {BeWork}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-brange2'!
+
+RevisionWatcherExecutor getOrMakeCxxClassDescription attributes: #(CONCRETE NOT.A.TYPE )!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'brange2')  addClass: RevisionWatcherExecutor getOrMakeCxxClassDescription in: #public])!
+
+!BeWork methodsFor: #contents!
+{void} addRevisionWatcher: work {FeWork}
+	"Tell the FE Work whenever this Work is revised"
+	
+	myRevisionWatchers == NULL ifTrue:
+		[myRevisionWatchers := PrimSet weak: 7 with: (RevisionWatcherExecutor make: self)].
+	myRevisionWatchers introduce: work! !
+
+!BeWork methodsFor: #contents!
+{void} removeLastRevisionWatcher
+	"Inform the work that its last revision watcher is gone."
+	
+	myRevisionWatchers := NULL! !
+
+RevisionWatcherExecutor organization addCategory: #execute before: nil!
+
+!RevisionWatcherExecutor methodsFor: #execute!
+{void} execute: arg {Int32}
+	arg == Int32Zero ifTrue: [
+		myWork removeLastRevisionWatcher]! !
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'brange2')  removeClass: RevisionWatcherExecutor getCxxClassDescription in: #public])!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'brange2')  addClass: RevisionWatcherExecutor getOrMakeCxxClassDescription in: #private])!
+
+!FeWork methodsFor: #history!
+{void} removeLastRevisionDetector
+	"Essential. Inform the work that its last revision detector has gone away."
+	
+	myRevisionDetectors := NULL.
+	myBeWork removeRevisionWatcher: self! !
+
+XnExecutor subclass: #RevisionDetectorExecutor
+	instanceVariableNames: 'myWork {FeWork}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-nkernel'!
+
+RevisionDetectorExecutor getOrMakeCxxClassDescription attributes: #(CONCRETE NOT.A.TYPE )!
+
+RevisionDetectorExecutor comment:
+'This class informs its work when its last detector has gone away.'!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'nkernel')  addClass: RevisionDetectorExecutor getOrMakeCxxClassDescription in: #private])!
+
+RevisionDetectorExecutor organization addCategory: #execute before: nil!
+
+!RevisionDetectorExecutor methodsFor: #execute!
+{void} execute: arg {Int32}
+	arg == Int32Zero ifTrue: [
+		myWork removeLastRevisionDetector]! !
+
+RevisionDetectorExecutor organization addCategory: #'protected: create' before: #execute!
+
+!RevisionDetectorExecutor methodsFor: #'protected: create'!
+create: work {FeWork}
+	super create.
+	myWork := work! !
+
+RevisionDetectorExecutor class organization addCategory: #create before: nil!
+
+!RevisionDetectorExecutor class methodsFor: #create!
+{XnExecutor} make: work {FeWork}
+	^ self create: work! !
+
+!FeWork methodsFor: #history!
+{void} addRevisionDetector: detector {FeRevisionDetector}
+	"Essential. Trigger a Detector whenever there is a revision to the Work which the CurrentKeyMaster can see. If this detector has already been added, then the old KeyMaster associated with it is replaced with the CurrentKeyMaster.
+	See RevisionDetector::revised (Edition * contents,
+		ID * author,
+		IntegerVar sequence,
+		IntegerVar time)."
+	
+	myRevisionDetectors == NULL ifTrue:
+		[myRevisionDetectors := PrimSet weak: 7 with: (RevisionDetectorExecutor make: self).
+		myBeWork addRevisionWatcher: self]
+	ifFalse:
+		[myRevisionDetectors stepper forEach: [ :pair {Pair} |
+			(detector isEqual: pair right) ifTrue:
+				[myRevisionDetectors remove: pair]]].
+	myRevisionDetectors introduce: (Pair make: CurrentKeyMaster fluidGet with: detector)! !
+
+CommRevisionDetector removeSelector: #destruct!
+
+FeWork removeSelector: #removeRevisionDetector:!
+
+!BeEdition methodsFor: #becoming!
+{void} removeLastDetector
+	"Notify the edition that there are no remaining detectors on it."
+	
+	myDetectors := NULL.
+	self propChange: PropChange detectorWaitingChange with: BertProp make! !
+
+XnExecutor subclass: #BeEditionDetectorExecutor
+	instanceVariableNames: 'myEdition {BeEdition}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-brange3'!
+
+BeEditionDetectorExecutor getOrMakeCxxClassDescription attributes: #(CONCRETE NOT.A.TYPE )!
+
+BeEditionDetectorExecutor comment:
+'This class notifies its edition when its last detector has gone.'!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'brange3')  addClass: BeEditionDetectorExecutor getOrMakeCxxClassDescription in: #protected])!
+
+BeEditionDetectorExecutor class organization addCategory: #creation before: nil!
+
+!BeEditionDetectorExecutor class methodsFor: #creation!
+{XnExecutor} make: edition {BeEdition}
+	^ self create: edition! !
+
+!BeEdition methodsFor: #becoming!
+{void} addDetector: detect {FeFillRangeDetector}
+	"Add a detector which will be triggered with a FeEdition when a PlaceHolder becomes a non-PlaceHolder"
+	
+	myDetectors == NULL ifTrue:
+		[myDetectors := PrimSet weak: 7 with: (BeEditionDetectorExecutor make: self).
+		self propChange: PropChange detectorWaitingChange
+			with: BertProp detectorWaitingProp].
+	myDetectors introduce: detect.
+	myOrglRoot triggerDetector: detect.! !
+
+BeRangeElement subclass: #BeEdition
+	instanceVariableNames: '
+		myOrglRoot {OrglRoot}
+		myWorks {MuSet of: BeWork}
+		myOwnProp {BertProp}
+		myProp {BertProp}
+		myDetectors {(PrimSet NOCOPY of: FeFillRangeDetector)
+	| NULL}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-Be-Basic'!
+
+BeEdition getOrMakeCxxClassDescription attributes: #(LOCKED COPY SHEPHERD.PATRIARCH CONCRETE )!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'brange3')  addClass: BeEdition getOrMakeCxxClassDescription in: #public])!
+
+FeRangeElement subclass: #FeWork
+	instanceVariableNames: '
+		myKeyMaster {FeKeyMaster | NULL}
+		myAuthor {ID}
+		amWaiting {BooleanVar}
+		myBeWork {BeWork}
+		myStatusDetectors {PrimSet | NULL of: FeStatusDetector}
+		myRevisionDetectors {PrimSet | NULL of: FeRevisionDetector}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-nkernel'!
+
+FeWork getOrMakeCxxClassDescription attributes: #(ON.CLIENT CONCRETE )!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'nkernel')  addClass: FeWork getOrMakeCxxClassDescription in: #public])!
+
+CommFillRangeDetector removeSelector: #destruct!
+
+!FeWork methodsFor: #'grab status'!
+{void} removeLastStatusDetector
+	"Essential.  Last detector has gone away"
+	
+	myStatusDetectors := NULL! !
+
+CommStatusDetector removeSelector: #destruct!
+
+FeWork removeSelector: #removeStatusDetector:!
+
+XnExecutor subclass: #StatusDetectorExecutor
+	instanceVariableNames: 'myWork {FeWork}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-nkernel'!
+
+StatusDetectorExecutor getOrMakeCxxClassDescription attributes: #(CONCRETE NOT.A.TYPE )!
+
+StatusDetectorExecutor comment:
+'This class informs its work when its last status detector has gone away.'!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'nkernel')  addClass: StatusDetectorExecutor getOrMakeCxxClassDescription in: #public])!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'nkernel')  removeClass: StatusDetectorExecutor getCxxClassDescription in: #public])!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'nkernel')  addClass: StatusDetectorExecutor getOrMakeCxxClassDescription in: #private])!
+
+StatusDetectorExecutor organization addCategory: #'protected: create' before: nil!
+
+!StatusDetectorExecutor methodsFor: #'protected: create'!
+create: work {FeWork}
+	super create.
+	myWork := work.! !
+
+StatusDetectorExecutor organization addCategory: #executing before: #'protected: create'!
+
+!StatusDetectorExecutor methodsFor: #executing!
+{void} execute: arg {Int32}
+	arg == Int32Zero ifTrue: [
+		myWork removeLastStatusDetector]! !
+
+StatusDetectorExecutor class organization addCategory: #create before: nil!
+
+!StatusDetectorExecutor class methodsFor: #create!
+{XnExecutor} make: work {FeWork}
+	^ self create: work! !
+
+!FeWork methodsFor: #'grab status'!
+{void} addStatusDetector: detector {FeStatusDetector}
+	"Essential.  Add a detector which will be notified whenever the locking status of this Work object changes.
+	See FeStatusDetector::grabbed (Work *, ID *) / released (Work *)."
+	
+	myStatusDetectors == NULL ifTrue:
+		[myStatusDetectors := PrimSet weak: 7 with: (StatusDetectorExecutor make: self)].
+	myStatusDetectors introduce: detector! !
+
+!BePlaceHolder methodsFor: #accessing!
+{void} removeLastDetector
+
+	myDetectors := NULL! !
+
+BeRangeElement subclass: #BePlaceHolder
+	instanceVariableNames: '
+		myTrailBlazer {TrailBlazer | NULL}
+		myDetectors {PrimSet NOCOPY | NULL of: FeFillDetector}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-Be-Basic'!
+
+BePlaceHolder getOrMakeCxxClassDescription attributes: #(LOCKED COPY SHEPHERD.PATRIARCH CONCRETE )!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'brange1')  addClass: BePlaceHolder getOrMakeCxxClassDescription in: #public])!
+
+XnExecutor subclass: #FillDetectorExecutor
+	instanceVariableNames: 'myPlaceHolder {BePlaceHolder}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-brange1'!
+
+FillDetectorExecutor getOrMakeCxxClassDescription attributes: #(CONCRETE NOT.A.TYPE )!
+
+FillDetectorExecutor comment:
+'This class notifies its place holder when its last fill detector has gone away.'!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'brange1')  addClass: FillDetectorExecutor getOrMakeCxxClassDescription in: #public])!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'brange1')  removeClass: FillDetectorExecutor getCxxClassDescription in: #public])!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'brange1')  addClass: FillDetectorExecutor getOrMakeCxxClassDescription in: #private])!
+
+CommFillDetector removeSelector: #destruct!
+
+!BePlaceHolder methodsFor: #accessing!
+{void} addDetector: detector {FeFillDetector}
+
+	myDetectors == NULL ifTrue:
+		[myDetectors := PrimSet weak: 7 with: (FillDetectorExecutor make: self)].
+	myDetectors store: detector! !
+
+FillDetectorExecutor organization addCategory: #'protected: create' before: nil!
+
+!FillDetectorExecutor methodsFor: #'protected: create'!
+create: placeHolder {BePlaceHolder}
+	super create.
+	myPlaceHolder := placeHolder.! !
+
+FillDetectorExecutor organization addCategory: #execute before: nil!
+
+!FillDetectorExecutor methodsFor: #execute!
+{void} execute: arg {Int32}
+	arg == Int32Zero ifTrue: [
+		myPlaceHolder removeLastDetector]! !
+
+FillDetectorExecutor class organization addCategory: #create before: nil!
+
+!FillDetectorExecutor class methodsFor: #create!
+{XnExecutor} make: placeHolder {BePlaceHolder}
+	^ self create: placeHolder! !
+
+BeEditionDetectorExecutor organization addCategory: #'protected: create' before: nil!
+
+!BeEditionDetectorExecutor methodsFor: #'protected: create'!
+create: edition {BeEdition}
+	super create.
+	myEdition := edition.! !
+
+BeEditionDetectorExecutor organization addCategory: #execute before: nil!
+
+!BeEditionDetectorExecutor methodsFor: #execute!
+{void} execute: arg {Int32}
+	arg == Int32Zero ifTrue: [
+		myEdition removeLastDetector].! !
+
+"----NOTE----"
+
+ChangeLog logNote: 'TableStepper key->position rename; rest of post-mortem...'!
+
+'File out on next/ech-g.cha'!

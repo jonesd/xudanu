@@ -1,0 +1,138 @@
+/Fhypatia/roger/prod/xhs/src/xpp
+/Fhypatia/roger/prod/xhs/src/xpp
+parrayx.cxx:    BLAST(NOT_YET_IMPLEMENTED); /* not yet well defined here */
+parrayx.cxx:    BLAST(NOT_YET_IMPLEMENTED); /* not yet well defined here */
+parrayx.cxx:    BLAST(NOT_YET_IMPLEMENTED); /* not yet well defined here */
+scavx.cxx:            BLAST(CLEANUP_OF_OLD_NOT_YET_IMPLEMENTED_);         // we implement code that uses this
+/Fhypatia/roger/prod/xhs/src/xlatexpp
+/Fhypatia/roger/prod/xhs/src/xlatexpp
+crossx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+crossx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+crossx.cxx:					BLAST(NOT_YET_IMPLEMENTED);
+crossx.cxx:			BLAST(NOT_YET_IMPLEMENTED);
+crossx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+crossx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+crossx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+crossx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+crossx.cxx:						BLAST(NOT_YET_IMPLEMENTED);
+edgex.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+filterx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+filterx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+hashtabx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+integerx.cxx:			BLAST(NOT_YET_IMPLEMENTED);
+integerx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+integerx.cxx:			BLAST(NOT_YET_IMPLEMENTED);
+integerx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+primvalx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+realx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+realx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+realx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+realx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+realx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+realx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+realx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+realx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+realx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+sequencx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+sequencx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+sequencx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+sequencx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+settabx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+setx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+spacex.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+spacex.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+testerx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+/Fhypatia/roger/prod/xhs/src/server
+/Fhypatia/roger/prod/xhs/src/server
+brange1x.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+brange1x.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+brange3x.cxx:								BLAST(NOT_YET_IMPLEMENTED);
+brange3x.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+brange3x.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+brange3x.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+brange3x.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+brange3x.cxx:			BLAST(NOT_YET_IMPLEMENTED);
+brange3x.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+brange3x.cxx:			BLAST(NOT_YET_IMPLEMENTED);
+dagwoodx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+granmapx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+idx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+idx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+loavesx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+loavesx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+loavesx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+loavesx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+loavesx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+loavesx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+loavesx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nkernelx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+nlinksx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+nlinksx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+orootx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+orootx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+shephx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+sysadmx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+sysadmx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+sysadmx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+/Fhypatia/roger/prod/xhs/src/disk
+/Fhypatia/roger/prod/xhs/src/disk
+diskmant.cxx:				BLAST(NOT_YET_IMPLEMENTED);
+fakedskx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+fakedskx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+fakedskx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+fakedskx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+/Fhypatia/roger/prod/xhs/src/comm
+/Fhypatia/roger/prod/xhs/src/comm
+bin2comx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+bin2comx.cxx:					BLAST(NOT_YET_IMPLEMENTED);
+bin2comx.cxx:				BLAST(NOT_YET_IMPLEMENTED);
+bin2comx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+promanx.cxx:		BLAST(NOT_YET_IMPLEMENTED);
+promanx.cxx:					BLAST(NOT_YET_IMPLEMENTED);
+promanx.cxx:				BLAST(NOT_YET_IMPLEMENTED);
+promanx.cxx:						BLAST(NOT_YET_IMPLEMENTED);
+promanx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+promanx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+txtcommx.cxx:	BLAST(NOT_YET_IMPLEMENTED);
+/Fhypatia/roger/prod/xhs/src/urdi
+/Fhypatia/roger/prod/xhs/src/urdi

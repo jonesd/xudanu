@@ -1,0 +1,7 @@
+#ifndef XU_OPAQUE_OXX
+#define XU_OPAQUE_OXX
+
+XU_TYPE_1(XuCounted)
+XU_TYPE_2(XuPromise,XuCounted)
+
+#endif /* XU_OPAQUE_OXX */

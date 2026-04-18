@@ -1,0 +1,4 @@
+2c2
+< CAT(foo,bar)
+---
+> foobar

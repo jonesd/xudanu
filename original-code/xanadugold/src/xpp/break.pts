@@ -1,0 +1,45 @@
+i2   breakpoint     keep n   0x001ae5a8 in ourMoreCore__FUl at ../allocx.cxx:242
+5   breakpoint     keep y   0x001af65c in garbageCollect__7HeapletSFv at ../scavx.cxx:177
+        breakpoint already hit 3 times
+        x/x 0x437d60
+7   breakpoint     keep n   0x001b025c in forward__7HeapletSFP6Heaper at ../scavx.cxx:377
+        cont
+8   breakpoint     keep n   0x001a3a60 in migrate__12WeakPtrArrayFPvi at ../wparrayx.cxx:179
+9   breakpoint     keep y   0x001a3a8c in migrate__12WeakPtrArrayFPvi at ../wparrayx.cxx:184
+        breakpoint already hit 17 times
+        x/x 0x437d60
+11  breakpoint     keep n   0x001a3ba0 in migrate__12WeakPtrArrayFPvi at ../wparrayx.cxx:197
+        info locals
+        print /x *(__0this->myStorage__9PrimArray)@120
+15  breakpoint     keep n   0x001b2fa8 in __ct__19PointerReferenceSetFP7Heaplet at ../scavx.cxx:1077
+20  breakpoint     keep n   0x0034fb08 in init__29Fluid_CurrentServerConnectionFv at ../srvloopx.cxx:71
+21  breakpoint     keep n   0x003510a8 in execute__10ServerLoopFv at ../srvloopx.cxx:230
+22  breakpoint     keep n   0x001b0968 in scavengeNew__7HeapletFv at ../scavx.cxx:488
+        print /x *0x414584
+        cont
+23  breakpoint     keep n   0x001b0a04 in scavengeNew__7HeapletFv at ../scavx.cxx:493
+        print /x *0x414584
+        cont
+25  breakpoint     keep n   0x001b188c in release__14HeapletManagerFP7Heaplet at ../scavx.cxx:723
+        info args
+        cont
+27  breakpoint     keep n   0x001b18c0 in release__14HeapletManagerFP7Heaplet at ../scavx.cxx:727
+        info args
+        cont
+28  breakpoint     keep n   0x001b1880 in take__14HeapletManagerFv at ../scavx.cxx:720
+        info locals
+29  breakpoint     keep n   0x001b379c in executeWeakly__17ArrayReferenceSetFv at ../scavx.cxx:1212
+        info locals
+30  breakpoint     keep n   0x0019dba0 in migrate__8PtrArrayFPvi at ../parrayx.cxx:3128
+        x/x 0x41bd5c
+35  breakpoint     keep y   0x001b307c in remember__17ArrayReferenceSetFP8PtrArraylT1
+                                       at ../scavx.cxx:1095
+        breakpoint already hit 323 times
+        x/x 0x437d60
+        info args
+        cont
+36  breakpoint     keep n   0x001b36c0 in executeWeakly__17ArrayReferenceSetFv at ../scavx.cxx:1194
+        x/x 0x437d60
+37  breakpoint     keep n   0x001b36a4 in executeWeakly__17ArrayReferenceSetFv at ../scavx.cxx:1193
+(gdb) command 35
+

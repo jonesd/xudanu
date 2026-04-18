@@ -1,0 +1,208 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define INTEGERX_SXX
+
+/*----------------------- BEGIN IntegerMapping -----------------------*/
+DEFINE_CLASS_CATEGORY(IntegerMapping,Dsp)
+DEFINE_OPAQUE_TYPE(IntegerMapping);
+
+void IntegerMapping::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IntegerMapping" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IntegerMapping::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    this->sendIntegerMapping(xmtr);
+}
+
+extern Recipe * XppCuisine;
+PseudoCopyRecipe IntegerMapping_recipe(cat_IntegerMapping, &XppCuisine, IntegerMapping::make);
+
+
+
+
+/*----------------------- END IntegerMapping -----------------------*/
+
+
+/*----------------------- BEGIN IntegerPos -----------------------*/
+DEFINE_CLASS_CATEGORY(IntegerPos,Position)
+DEFINE_OPAQUE_TYPE(IntegerPos);
+
+void IntegerPos::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IntegerPos" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IntegerPos::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendIntegerVar(myValue);
+}
+
+IntegerPos::IntegerPos (APTR(Rcvr) receiver, TCSJ)
+{
+    myValue = receiver->receiveIntegerVar();
+}
+
+
+void parseInto_IntegerPos (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IntegerPos (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe IntegerPos_recipe(cat_IntegerPos, &XppCuisine, parseInto_IntegerPos);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END IntegerPos -----------------------*/
+
+
+/*----------------------- BEGIN IntegerRegion -----------------------*/
+DEFINE_CLASS_CATEGORY(IntegerRegion,XnRegion)
+DEFINE_OPAQUE_TYPE(IntegerRegion);
+
+void IntegerRegion::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IntegerRegion" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IntegerRegion::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendBooleanVar(myStartsInside);
+    xmtr->sendUInt32(myTransitionCount);
+    xmtr->sendHeaper(myTransitions);
+}
+
+IntegerRegion::IntegerRegion (APTR(Rcvr) receiver, TCSJ)
+{
+    myStartsInside = receiver->receiveBooleanVar();
+    myTransitionCount = receiver->receiveUInt32();
+    myTransitions = CAST(IntegerVarArray, receiver->receiveHeaper());
+}
+
+
+void parseInto_IntegerRegion (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IntegerRegion (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe IntegerRegion_recipe(cat_IntegerRegion, &XppCuisine, parseInto_IntegerRegion);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of IntegerRegion ====== */
+
+void IntegerRegion::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((IntegerRegion*)origin)->myTransitions,
+				       (Heaper**)&myTransitions);
+	} else {
+		myTransitions.forwardTo (Heaplet::forward (myTransitions));
+	}
+}
+
+/*----------------------- END IntegerRegion -----------------------*/
+
+
+/*----------------------- BEGIN IntegerSpace -----------------------*/
+DEFINE_CLASS_CATEGORY(IntegerSpace,CoordinateSpace)
+DEFINE_OPAQUE_TYPE(IntegerSpace);
+
+void IntegerSpace::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IntegerSpace" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IntegerSpace::sendSelfTo (APTR(Xmtr) xmtr)
+{
+}
+
+extern Recipe * XppCuisine;
+PseudoCopyRecipe IntegerSpace_recipe(cat_IntegerSpace, &XppCuisine, IntegerSpace::make);
+
+
+
+
+/*----------------------- END IntegerSpace -----------------------*/
+

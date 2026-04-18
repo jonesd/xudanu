@@ -1,0 +1,106 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define OROOTP_SXX
+
+/*----------------------- BEGIN HBottomCrum -----------------------*/
+DEFINE_CLASS_CATEGORY(HBottomCrum,HistoryCrum)
+DEFINE_OPAQUE_TYPE(HBottomCrum);
+
+void HBottomCrum::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "HBottomCrum" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void HBottomCrum::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    HistoryCrum::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myTrace);
+    xmtr->sendHeaper(myBertCrum);
+    xmtr->sendHeaper(myEditions);
+}
+
+HBottomCrum::HBottomCrum (APTR(Rcvr) receiver, TCSJ)
+  : HistoryCrum (receiver, tcsj) {
+    myTrace = CAST(TracePosition, receiver->receiveHeaper());
+    myBertCrum = CAST(BertCrum, receiver->receiveHeaper());
+    myEditions = CAST(MuSet, receiver->receiveHeaper());
+}
+
+
+void parseInto_HBottomCrum (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) HBottomCrum (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe HBottomCrum_recipe(cat_HBottomCrum, &DiskCuisine, parseInto_HBottomCrum);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "HBottomCrum" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of HBottomCrum ====== */
+
+void HBottomCrum::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((HBottomCrum*)origin)->myTrace,
+				       (Heaper**)&myTrace);
+		Heaplet::forwardToOld ((Heaper**)&((HBottomCrum*)origin)->myBertCrum,
+				       (Heaper**)&myBertCrum);
+		Heaplet::forwardToOld ((Heaper**)&((HBottomCrum*)origin)->myEditions,
+				       (Heaper**)&myEditions);
+	} else {
+		myTrace.forwardTo (Heaplet::forward (myTrace));
+		myBertCrum.forwardTo (Heaplet::forward (myBertCrum));
+		myEditions.forwardTo (Heaplet::forward (myEditions));
+	}
+}
+
+/*----------------------- END HBottomCrum -----------------------*/
+

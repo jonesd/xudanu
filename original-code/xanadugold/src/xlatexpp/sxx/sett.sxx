@@ -1,0 +1,276 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define SETT_SXX
+
+/*----------------------- BEGIN ScruSetTester -----------------------*/
+DEFINE_CLASS_CATEGORY(ScruSetTester,Tester)
+DEFINE_OPAQUE_TYPE(ScruSetTester);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "ScruSetTester" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void ScruSetTester::sendSelfTo (APTR(Xmtr) xmtr)
+{
+}
+
+ScruSetTester::ScruSetTester (APTR(Rcvr) receiver, TCSJ)
+{
+    this->restartScruSetTester(receiver);
+}
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of ScruSetTester ====== */
+
+void ScruSetTester::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ScruSetTester*)origin)->myTestSets,
+				       (Heaper**)&myTestSets);
+	} else {
+		myTestSets.forwardTo (Heaplet::forward (myTestSets));
+	}
+}
+
+/*----------------------- END ScruSetTester -----------------------*/
+
+
+/*----------------------- BEGIN ImmuSetTester -----------------------*/
+DEFINE_CLASS_CATEGORY(ImmuSetTester,ScruSetTester)
+DEFINE_OPAQUE_TYPE(ImmuSetTester);
+
+void ImmuSetTester::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "ImmuSetTester" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void ImmuSetTester::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    ScruSetTester::sendSelfTo (xmtr);
+}
+
+ImmuSetTester::ImmuSetTester (APTR(Rcvr) receiver, TCSJ)
+  : ScruSetTester (receiver, tcsj) {
+}
+
+
+void parseInto_ImmuSetTester (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) ImmuSetTester (rcvr, tcsj);
+}
+
+extern Recipe * BootCuisine;
+ActualCopyRecipe ImmuSetTester_recipe(cat_ImmuSetTester, &BootCuisine, parseInto_ImmuSetTester);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END ImmuSetTester -----------------------*/
+
+
+/*----------------------- BEGIN MuSetTester -----------------------*/
+DEFINE_CLASS_CATEGORY(MuSetTester,ScruSetTester)
+DEFINE_OPAQUE_TYPE(MuSetTester);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "MuSetTester" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void MuSetTester::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    ScruSetTester::sendSelfTo (xmtr);
+}
+
+MuSetTester::MuSetTester (APTR(Rcvr) receiver, TCSJ)
+  : ScruSetTester (receiver, tcsj) {
+}
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END MuSetTester -----------------------*/
+
+
+/*----------------------- BEGIN HashSetTester -----------------------*/
+DEFINE_CLASS_CATEGORY(HashSetTester,MuSetTester)
+DEFINE_OPAQUE_TYPE(HashSetTester);
+
+void HashSetTester::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "HashSetTester" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void HashSetTester::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    MuSetTester::sendSelfTo (xmtr);
+}
+
+HashSetTester::HashSetTester (APTR(Rcvr) receiver, TCSJ)
+  : MuSetTester (receiver, tcsj) {
+}
+
+
+void parseInto_HashSetTester (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) HashSetTester (rcvr, tcsj);
+}
+
+extern Recipe * BootCuisine;
+ActualCopyRecipe HashSetTester_recipe(cat_HashSetTester, &BootCuisine, parseInto_HashSetTester);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END HashSetTester -----------------------*/
+
+
+/*----------------------- BEGIN SetTester -----------------------*/
+DEFINE_CLASS_CATEGORY(SetTester,Tester)
+DEFINE_OPAQUE_TYPE(SetTester);
+
+void SetTester::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "SetTester" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void SetTester::sendSelfTo (APTR(Xmtr) xmtr)
+{
+}
+
+SetTester::SetTester (APTR(Rcvr) receiver, TCSJ)
+{
+}
+
+
+void parseInto_SetTester (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) SetTester (rcvr, tcsj);
+}
+
+extern Recipe * BootCuisine;
+ActualCopyRecipe SetTester_recipe(cat_SetTester, &BootCuisine, parseInto_SetTester);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END SetTester -----------------------*/
+
+
+/*----------------------- BEGIN SHTO -----------------------*/
+DEFINE_CLASS_CATEGORY(SHTO,Heaper)
+DEFINE_OPAQUE_TYPE(SHTO);
+
+void SHTO::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of SHTO ====== */
+
+void SHTO::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((SHTO*)origin)->myStringValue,
+				       (Heaper**)&myStringValue);
+	} else {
+		myStringValue.forwardTo (Heaplet::forward (myStringValue));
+	}
+}
+
+/*----------------------- END SHTO -----------------------*/
+

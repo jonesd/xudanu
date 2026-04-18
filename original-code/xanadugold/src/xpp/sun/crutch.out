@@ -1,0 +1,69 @@
+good ! 0
+good if ! 0
+good ! 1
+good if ! 1
+good 1 && 1
+good if 1 && 1
+good 1 && 0
+good if 1 && 0
+good 0 && 1
+good if 0 && 1
+good 0 && 0
+good if 0 && 0
+good ! ( 1 && 1 )
+good if ! ( 1 && 1 )
+good ! ( 1 && 0 )
+good if ! ( 1 && 0 )
+good ! ( 0 && 1 )
+good if ! ( 0 && 1 )
+good ! ( 0 && 0 )
+good if ! ( 0 && 0 )
+good 1 || 1
+good if 1 || 1
+good 1 || 0
+good if 1 || 0
+good 0 || 1
+good if 0 || 1
+good 0 || 0
+good if 0 || 0
+good ! ( 1 || 1 )
+good if ! ( 1 || 1 )
+good ! ( 1 || 0 )
+good if ! ( 1 || 0 )
+good ! ( 0 || 1 )
+good if ! ( 0 || 1 )
+good ! ( 0 || 0 )
+good if ! ( 0 || 0 )
+good 1 && 1 || 1
+good if 1 && 1 || 1
+good 1 && 1 || 0
+good if 1 && 1 || 0
+good 1 && 0 || 1
+good if 1 && 0 || 1
+good 1 && 0 || 0
+good if 1 && 0 || 0
+good 0 && 1 || 1
+good if 0 && 1 || 1
+good 0 && 1 || 0
+good if 0 && 1 || 0
+good 0 && 0 || 1
+good if 0 && 0 || 1
+good 0 && 0 || 0
+good if 0 && 0 || 0
+good 1 && ( 1 || 1 )
+good if 1 && ( 1 || 1 )
+good 1 && ( 1 || 0 )
+good if 1 && ( 1 || 0 )
+good 1 && ( 0 || 1 )
+good if 1 && ( 0 || 1 )
+good 1 && ( 0 || 0 )
+good if 1 && ( 0 || 0 )
+good 0 && ( 1 || 1 )
+good if 0 && ( 1 || 1 )
+good 0 && ( 1 || 0 )
+good if 0 && ( 1 || 0 )
+good 0 && ( 0 || 1 )
+good if 0 && ( 0 || 1 )
+good 0 && ( 0 || 0 )
+good if 0 && ( 0 || 0 )
+for 0 1 2 3 4 5 6 7 8 9 

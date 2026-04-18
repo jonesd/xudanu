@@ -1,0 +1,112 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define XFRSPECX_SXX
+
+/*----------------------- BEGIN SpecialistRcvr -----------------------*/
+DEFINE_CLASS_CATEGORY(SpecialistRcvr,Rcvr)
+DEFINE_OPAQUE_TYPE(SpecialistRcvr);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of SpecialistRcvr ====== */
+
+void SpecialistRcvr::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((SpecialistRcvr*)origin)->mySpecialist,
+				       (Heaper**)&mySpecialist);
+		Heaplet::forwardToOld ((Heaper**)&((SpecialistRcvr*)origin)->myIbids,
+				       (Heaper**)&myIbids);
+	} else {
+		mySpecialist.forwardTo (Heaplet::forward (mySpecialist));
+		myIbids.forwardTo (Heaplet::forward (myIbids));
+	}
+}
+
+/*----------------------- END SpecialistRcvr -----------------------*/
+
+
+/*----------------------- BEGIN SpecialistXmtr -----------------------*/
+DEFINE_CLASS_CATEGORY(SpecialistXmtr,Xmtr)
+DEFINE_OPAQUE_TYPE(SpecialistXmtr);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of SpecialistXmtr ====== */
+
+void SpecialistXmtr::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((SpecialistXmtr*)origin)->mySpecialist,
+				       (Heaper**)&mySpecialist);
+		Heaplet::forwardToOld ((Heaper**)&((SpecialistXmtr*)origin)->myIbids,
+				       (Heaper**)&myIbids);
+	} else {
+		mySpecialist.forwardTo (Heaplet::forward (mySpecialist));
+		myIbids.forwardTo (Heaplet::forward (myIbids));
+	}
+}
+
+/*----------------------- END SpecialistXmtr -----------------------*/
+
+
+/*----------------------- BEGIN TransferSpecialist -----------------------*/
+DEFINE_CLASS_CATEGORY(TransferSpecialist,Heaper)
+DEFINE_OPAQUE_TYPE(TransferSpecialist);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+BooleanVar TransferSpecialist::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 TransferSpecialist::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of TransferSpecialist ====== */
+
+void TransferSpecialist::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((TransferSpecialist*)origin)->myCookbook,
+				       (Heaper**)&myCookbook);
+	} else {
+		myCookbook.forwardTo (Heaplet::forward (myCookbook));
+	}
+}
+
+/*----------------------- END TransferSpecialist -----------------------*/
+
+
+/*----------------------- BEGIN XcvrMaker -----------------------*/
+DEFINE_CLASS_CATEGORY(XcvrMaker,Heaper)
+DEFINE_OPAQUE_TYPE(XcvrMaker);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END XcvrMaker -----------------------*/
+

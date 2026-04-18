@@ -1,0 +1,39 @@
+/* Copyright Xanadu Operating Company.  All Rights Reserved. */
+
+/******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+#ifndef SEQUENCP_OXX
+#define SEQUENCP_OXX
+
+
+#ifndef EDGER_OXX
+#include "edger.oxx"
+#endif /* EDGER_OXX */
+
+
+
+OPAQUE_TYPE_3(SequenceEdge,TransitionEdge,Heaper);
+class AfterSequence;
+extern Category * cat_AfterSequence;
+class BeforeSequence;
+extern Category * cat_BeforeSequence;
+class BeforeSequencePrefix;
+extern Category * cat_BeforeSequencePrefix;
+OPAQUE_TYPE_3(SequenceManager,EdgeManager,Heaper);
+class SequenceStepper;
+extern Category * cat_SequenceStepper;
+class SequenceUpOrder;
+extern Category * cat_SequenceUpOrder;
+#endif /* SEQUENCP_OXX */
+

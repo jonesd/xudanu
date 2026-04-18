@@ -1,0 +1,64 @@
+Class organization -- RootClasses
+
+This chart is for newbies to get an outline understanding of the Classes at
+the C++ level.  All of these are in /xpp.  Operator new is overridden in all
+classes, defined as a call to falloc in xnewx.cxx (as is delete). 
+
+
+bombx.hxx:class Problem ROOTCLASS {
+bombx.hxx:class BombSuperclass ROOTCLASS {
+bombx.hxx:class Shield ROOTCLASS {
+bombx.hxx:class BombStringDetonator ROOTCLASS {
+
+The bomb stuff was written Micheal and is one of the more understandable parts
+of the whole thing due do documentation.
+
+fluidx.hxx:class FluidVarDescription ROOTCLASS {
+
+   fluidx.hxx:    class CAT(Fluid_,varName) : public FluidVarDescription { \
+   fluidx.oxx:extern class Category * cat_FluidVarDescription;
+
+fluidx.hxx:class Emulsion ROOTCLASS {
+
+fluidp.hxx:class GlobalEmulsion : public Emulsion {
+fluidt.hxx:class TestEmulsion : public Emulsion {
+
+   fluidx.oxx:extern class Category * cat_Emulsion;
+   diskmanp.hxx:class DiskManagerEmulsion : public Emulsion {
+   schunkp.hxx:class ListenerEmulsion : public Emulsion {
+
+initx.hxx:class Initializer ROOTCLASS {
+initx.hxx:class Initer ROOTCLASS {
+initx.hxx:class Terminator ROOTCLASS {
+
+intvarx.hxx:class IntegerVar ROOTCLASS {
+
+loggert.cxx:class Early ROOTCLASS {
+loggerx.hxx:struct Logger ROOTCLASS {
+loggerx.hxx:class RegisterLogger ROOTCLASS {
+
+opaquex.hxx:class CheckedPtrVar ROOTCLASS {
+
+parrayp.hxx:class PrimArrayHeap ROOTCLASS {
+
+queuesx.hxx:class Queue ROOTCLASS {
+
+scavp.hxx:class HeapletManager ROOTCLASS {
+scavp.hxx:class HeapletSetStepper ROOTCLASS {
+scavp.hxx:class HeapletSet ROOTCLASS {
+scavp.hxx:class PointerReferenceSet ROOTCLASS {
+scavp.hxx:class ArrayReferenceSet ROOTCLASS {
+scavp.hxx:class OutPointerSet ROOTCLASS {
+scavp.hxx:class PtrArraySet ROOTCLASS {
+scavt.hxx:class ScavengerTester ROOTCLASS {
+scavx.hxx:class Heaplet ROOTCLASS {
+
+tofup.hxx:class CategoryList ROOTCLASS {
+tofux.hxx:class Tofu ROOTCLASS {
+
+wparrayx.hxx:class EstateRecorder ROOTCLASS {
+
+xcompatx.hxx:#		define ROOTCLASS	: public SingleObject
+xcompatx.hxx:#		define ROOTCLASS
+xcompatx.hxx:#	define ROOTCLASS
+

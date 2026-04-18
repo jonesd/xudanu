@@ -1,0 +1,6 @@
+#ifndef SCAVX_OXX
+#define SCAVX_OXX
+
+class Heaplet;
+
+#endif /* SCAVX_OXX */

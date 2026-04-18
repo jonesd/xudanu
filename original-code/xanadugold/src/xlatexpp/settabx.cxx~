@@ -1,0 +1,650 @@
+/* Copyright Xanadu Operating Company.  All Rights Reserved. */
+
+/******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+#ifndef SETTABX_CXX
+#define SETTABX_CXX
+
+
+#ifndef CHOOSEX_HXX
+#include "choosex.hxx"
+#endif /* CHOOSEX_HXX */
+
+#ifndef SETTABX_HXX
+#include "settabx.hxx"
+#endif /* SETTABX_HXX */
+
+#ifndef SETTABX_IXX
+#include "settabx.ixx"
+#endif /* SETTABX_IXX */
+
+#ifndef SETTABP_HXX
+#include "settabp.hxx"
+#endif /* SETTABP_HXX */
+
+#ifndef SETTABP_IXX
+#include "settabp.ixx"
+#endif /* SETTABP_IXX */
+
+
+#ifndef INTEGERX_HXX
+#include "integerx.hxx"
+#endif /* INTEGERX_HXX */
+
+#ifndef PRIMTABX_HXX
+#include "primtabx.hxx"
+#endif /* PRIMTABX_HXX */
+
+#ifndef TABENTX_HXX
+#include "tabentx.hxx"
+#endif /* TABENTX_HXX */
+
+#ifndef TABTOOLX_HXX
+#include "tabtoolx.hxx"
+#endif /* TABTOOLX_HXX */
+
+
+
+
+/* ************************************************************************ *
+ * 
+ *                    Class SetTable 
+ *
+ * ************************************************************************ */
+
+
+/* creation */
+
+
+RPTR(SetTable) SetTable::make (APTR(CoordinateSpace) cs, IntegerVar size){
+	RETURN_CONSTRUCT(SetTable,(SharedPtrArray::make (size.asLong() | 1), Int32Zero, cs));
+}
+/* SetTable is a table-like object (NOT at true table) that can store 
+multiple values at a single position.  See MuTable for comments on 
+the protocol.
+  The reason that this is not a table subclass is because of several 
+ambiguities in the contract.  For example, replace for a table 
+implies that the position must be previously occupied, but in a 
+settable the position is occupied only if the exact association 
+(key->value) is present. */
+
+
+/* accessing */
+
+
+void SetTable::introduce (APTR(Position) aKey, APTR(Heaper) anObject){
+	/* Store anObject at position aKey; BLAST if position is 
+	already occupied
+		 (for SetTable, there must be an object that isEqual to 
+	anObject at aKey 
+		 for the position to be considered occupied) */
+	
+	if (!this->store(aKey, anObject)) {
+		BLAST(AlreadyInTable);
+	}
+}
+
+
+BooleanVar SetTable::store (APTR(Position) aKey, APTR(Heaper) anObject){
+	/* Store anObject at position aKey; return TRUE if store 
+	accomplished, FALSE otherwise */
+	
+	register Int32 index;
+	SPTR(TableEntry) entry;
+	
+	if (anObject == NULL) {
+		BLAST(NullInsertion);
+	}
+	this->aboutToWrite();
+	this->checkSize();
+	index = aKey->hashForEqual() % myHashEntries->count();
+	entry = CAST(TableEntry,myHashEntries->fetch(index));
+	while (entry != NULL) {
+		{	BooleanVar crutch_Flag;
+			/* entry->match(aKey) && entry->matchValue(anObject) */
+			
+			crutch_Flag = entry->match(aKey);
+			if(crutch_Flag) {
+				crutch_Flag = entry->matchValue(anObject);
+			}
+			if (crutch_Flag) {
+				return FALSE;
+			}
+		}
+		entry = entry->fetchNext();
+	}
+	entry = TableEntry::make (aKey, anObject);
+	entry->setNext(CAST(TableEntry,myHashEntries->fetch(index)));
+	myHashEntries->store(index, entry);
+	myTally += 1;
+	return TRUE;
+}
+
+
+void SetTable::atIntIntroduce (IntegerVar index, APTR(Heaper) anObject){
+	if (!this->atIntStore(index, anObject)) {
+		BLAST(AlreadyInTable);
+	}
+}
+
+
+BooleanVar SetTable::atIntStore (IntegerVar index, APTR(Heaper) anObject){
+	register Int32 offset;
+	SPTR(TableEntry) entry;
+	
+	if (anObject == NULL) {
+		BLAST(NullInsertion);
+	}
+	this->aboutToWrite();
+	this->checkSize();
+	offset = IntegerPos::integerHash(index) % myHashEntries->count();
+	entry = CAST(TableEntry,myHashEntries->fetch(offset));
+	while (entry != NULL) {
+		{	BooleanVar crutch_Flag;
+			/* entry->matchInt(index) && entry->matchValue(anObject) */
+			
+			crutch_Flag = entry->matchInt(index);
+			if(crutch_Flag) {
+				crutch_Flag = entry->matchValue(anObject);
+			}
+			if (crutch_Flag) {
+				return FALSE;
+			}
+		}
+		entry = entry->fetchNext();
+	}
+	entry = TableEntry::make (index, anObject);
+	entry->setNext(CAST(TableEntry,myHashEntries->fetch(offset)));
+	myHashEntries->store(offset, entry);
+	myTally += 1;
+	return TRUE;
+}
+
+
+RPTR(XnRegion) SetTable::domain (){
+	SPTR(XnRegion) result;
+	SPTR(TableStepper) keys;
+	
+	result = this->coordinateSpace()->emptyRegion();
+	BEGIN_FOR_EACH(Heaper,element,(keys = this->stepper())) {
+		result = result->with(keys->position());
+	} END_FOR_EACH;
+	WPTR(XnRegion) 	returnValue;
+	returnValue = result;
+	return returnValue;
+}
+
+
+void SetTable::intRemove (IntegerVar index, APTR(Heaper) value){
+	if (!this->wipe(index, value)) {
+		BLAST(NotInTable);
+	}
+}
+
+
+void SetTable::remove (APTR(Position) key, APTR(Heaper) value){
+	if (!this->wipeAssociation(key, value)) {
+		BLAST(NotInTable);
+	}
+}
+
+
+BooleanVar SetTable::wipe (IntegerVar index, APTR(Heaper) value){
+	register Int32 offset;
+	SPTR(TableEntry) prev;
+	SPTR(TableEntry) entry;
+	
+	offset = IntegerPos::integerHash(index) % myHashEntries->count();
+	entry = CAST(TableEntry,myHashEntries->fetch(offset));
+	prev = entry;
+	while (entry != NULL) {
+		{	BooleanVar crutch_Flag;
+			/* entry->matchInt(index) && entry->matchValue(value) */
+			
+			crutch_Flag = entry->matchInt(index);
+			if(crutch_Flag) {
+				crutch_Flag = entry->matchValue(value);
+			}
+			if (crutch_Flag) {
+				this->aboutToWrite();
+				if (entry->isEqual(prev)) {
+					myHashEntries->store(offset, entry->fetchNext());
+				} else {
+					prev->setNext(entry->fetchNext());
+				}
+				{entry->destroy();  entry = NULL /* don't want stale (S/CHK)PTRs */;}
+				entry = NULL;
+				prev = NULL;
+				myTally -= 1;
+				return TRUE;
+			}
+		}
+		prev = entry;
+		entry = entry->fetchNext();
+	}
+	return FALSE;
+}
+
+
+BooleanVar SetTable::wipeAssociation (APTR(Position) key, APTR(Heaper) value){
+	register Int32 offset;
+	SPTR(TableEntry) prev;
+	SPTR(TableEntry) entry;
+	
+	offset = key->hashForEqual() % myHashEntries->count();
+	entry = CAST(TableEntry,myHashEntries->fetch(offset));
+	prev = NULL;
+	while (entry != NULL) {
+		{	BooleanVar crutch_Flag;
+			/* entry->match(key) && entry->matchValue(value) */
+			
+			crutch_Flag = entry->match(key);
+			if(crutch_Flag) {
+				crutch_Flag = entry->matchValue(value);
+			}
+			if (crutch_Flag) {
+				this->aboutToWrite();
+				if (prev == NULL) {
+					myHashEntries->store(offset, entry->fetchNext());
+				} else {
+					prev->setNext(entry->fetchNext());
+				}
+				{entry->destroy();  entry = NULL /* don't want stale (S/CHK)PTRs */;}
+				entry = prev = NULL;
+				myTally -= 1;
+				return TRUE;
+			}
+		}
+		prev = entry;
+		entry = entry->fetchNext();
+	}
+	return FALSE;
+}
+/* printing */
+
+
+void SetTable::printOn (ostream& oo){
+	oo << this->getCategory()->name();
+	this->printOnWithSimpleSyntax(oo, "[", ", ", "]");
+}
+
+
+void SetTable::printOnWithSimpleSyntax (
+		ostream& oo, 
+		char * open, 
+		char * sep, 
+		char * close)
+{
+	SPTR(TableStepper) stomp;
+	
+	oo << open;
+	if (this->isEmpty()) {
+		oo << "empty";
+	} else {
+		stomp = this->stepper();
+		oo << stomp->position() << "->" << stomp->fetch();
+		stomp->step();
+		BEGIN_FOR_EACH(Heaper,val,(stomp)) {
+			oo << sep << stomp->position() << "->" << val;
+		} END_FOR_EACH;
+	}
+	oo << close;
+}
+/* runLength */
+
+
+RPTR(XnRegion) SetTable::runAt (APTR(Position) index){
+	if (this->includesKey(index)) {
+		WPTR(XnRegion) 	returnValue;
+		returnValue = index->asRegion();
+		return returnValue;
+	} else {
+		WPTR(XnRegion) 	returnValue;
+		returnValue = myCoordinateSpace->emptyRegion();
+		return returnValue;
+	}
+}
+
+
+RPTR(XnRegion) SetTable::runAtInt (IntegerVar index){
+	WPTR(XnRegion) 	returnValue;
+	returnValue = this->runAt(IntegerPos::make (index));
+	return returnValue;
+}
+/* enumerating */
+
+
+RPTR(TableStepper) SetTable::stepper (APTR(OrderSpec) order/* = NULL*/){
+	/* ignore order spec for now */
+	
+	if (order == NULL) {
+		WPTR(TableStepper) 	returnValue;
+		returnValue = TableEntry::bucketStepper(myHashEntries);
+		return returnValue;
+	} else {
+		BLAST(NOT_YET_IMPLEMENTED);
+		/* fodder */
+		return NULL;
+	}
+}
+
+
+RPTR(Stepper) SetTable::stepperAt (APTR(Position) key){
+	register Int32 offset;
+	SPTR(PrimSet) elements;
+	WPTR(TableEntry) entry;
+	
+	offset = key->hashForEqual() % myHashEntries->count();
+	elements = PrimSet::make ();
+	entry = CAST(TableEntry,myHashEntries->fetch(offset));
+	while (entry != NULL) {
+		if (entry->match(key)) {
+			elements->introduce(entry->value());
+		}
+		entry = entry->fetchNext();
+	}
+	WPTR(Stepper) 	returnValue;
+	returnValue = elements->stepper();
+	return returnValue;
+}
+
+
+RPTR(Stepper) SetTable::stepperAtInt (IntegerVar index){
+	register Int32 offset;
+	SPTR(PtrArray) elements;
+	WPTR(TableEntry) entry;
+	Int32 i;
+	
+	offset = IntegerPos::integerHash(index) % myHashEntries->count();
+	elements = SetTableStepper::array();
+	i = Int32Zero;
+	entry = CAST(TableEntry,myHashEntries->fetch(offset));
+	while (entry != NULL) {
+		if (entry->matchInt(index)) {
+			if (i >= elements->count()) {
+				elements = CAST(PtrArray,elements->copyGrow(4));
+			}
+			elements->store(i, entry->value());
+			i += 1;
+		}
+		entry = entry->fetchNext();
+	}
+	WPTR(Stepper) 	returnValue;
+	returnValue = SetTableStepper::make (elements);
+	return returnValue;
+}
+/* creation */
+
+
+SetTable::SetTable (
+		APTR(SharedPtrArray) OF1(TableEntry) entries, 
+		Int32 tally, 
+		APTR(CoordinateSpace) cs) 
+{
+	myHashEntries = entries;
+	myTally = tally;
+	myCoordinateSpace = cs;
+	myHashEntries->shareMore();
+}
+
+
+void SetTable::destruct (){
+	myHashEntries->shareLess();
+	this->Heaper::destruct();
+}
+/* testing */
+
+
+BooleanVar SetTable::includes (APTR(Position) key, APTR(Heaper) value){
+	BEGIN_FOR_EACH(Heaper,val,(this->stepperAt(key))) {
+		if (val->isEqual(value)) {
+			return TRUE;
+		}
+	} END_FOR_EACH;
+	return FALSE;
+}
+
+
+BooleanVar SetTable::includesKey (APTR(Position) aKey){
+	SPTR(Stepper) stp;
+	BooleanVar result;
+	
+	stp = this->stepperAt(aKey);
+	result = stp->hasValue();
+	{stp->destroy();  stp = NULL /* don't want stale (S/CHK)PTRs */;}
+	return result;
+}
+
+
+BooleanVar SetTable::isEmpty (){
+	return this->count() == IntegerVar0;
+}
+/* private: resize */
+
+
+void SetTable::aboutToWrite (){
+	/* If my contents are shared, and I'm about to change them, 
+	make a copy of them. */
+	
+	if (myHashEntries->shareCount() > 1) {
+		SPTR(SharedPtrArray) OF1(TableEntry) newEntries;
+		Int32 entryCount;
+		
+		entryCount = myHashEntries->count();
+		newEntries = SharedPtrArray::make (entryCount);
+		{
+			Int32 LoopFinal = entryCount;
+			Int32 index = Int32Zero;
+			for (;;) {
+				if (index >= LoopFinal){
+					break;
+				}
+				{
+					WPTR(TableEntry) entry;
+					
+					if ((entry = CAST(TableEntry,myHashEntries->fetch(index))) != NULL) {
+						SPTR(TableEntry) newEntry;
+						
+						newEntry = entry->copy();
+						newEntries->store(index, newEntry);
+						entry = entry->fetchNext();
+						while (entry != NULL) {
+							newEntry->setNext(entry->copy());
+							newEntry = newEntry->fetchNext();
+							entry = entry->fetchNext();
+						}
+					}
+				}
+				index += 1;
+			}
+		}
+		myHashEntries->shareLess();
+		myHashEntries = newEntries;
+		myHashEntries->shareMore();
+	}
+}
+
+
+void SetTable::checkSize (){
+	SPTR(SharedPtrArray) oldEntries;
+	Int32 oldSize;
+	Int32 newSize;
+	
+	if (myTally > myHashEntries->count() * 3) {
+		oldSize = myHashEntries->count();
+		newSize = PrimeSizeProvider::make ()->uInt32PrimeAfter(oldSize * 4);
+		myHashEntries->shareLess();
+		oldEntries = myHashEntries;
+		myHashEntries = SharedPtrArray::make (newSize);
+		myHashEntries->shareMore();
+		{
+			Int32 LoopFinal = oldSize;
+			register Int32 j = Int32Zero;
+			for (;;) {
+				if (j >= LoopFinal){
+					break;
+				}
+				{
+					SPTR(TableEntry) cur;
+					SPTR(TableEntry) next;
+					
+					cur = CAST(TableEntry,oldEntries->fetch(j));
+					while (cur != NULL) {
+						next = cur->fetchNext();
+						this->storeEntry(cur);
+						cur = next;
+					}
+				}
+				j += 1;
+			}
+		}
+		{oldEntries->destroy();  oldEntries = NULL /* don't want stale (S/CHK)PTRs */;}
+	}
+}
+
+
+void SetTable::storeEntry (APTR(TableEntry) entry){
+	UInt32 idx;
+	
+	if (myCoordinateSpace->isEqual(IntegerSpace::make ())) {
+		idx = IntegerPos::integerHash(entry->index());
+	} else {
+		idx = entry->position()->hashForEqual();
+	}
+	idx %= myHashEntries->count();
+	entry->setNext(CAST(TableEntry,myHashEntries->fetch(idx)));
+	myHashEntries->store(idx, entry);
+}
+
+
+
+/* ************************************************************************ *
+ * 
+ *                    Class SetTableStepper 
+ *
+ * ************************************************************************ */
+
+
+
+/* Initializers for SetTableStepper */
+
+GPTR(PtrArray) SetTableStepper::AnArray = NULL;
+GPTR(SetTableStepper) SetTableStepper::AStepper = NULL;
+
+
+/* Initializers for SetTableStepper */
+
+
+
+/* create */
+
+
+RPTR(SetTableStepper) SetTableStepper::make (APTR(PtrArray) array){
+	if (SetTableStepper::AStepper != NULL) {
+		SPTR(SetTableStepper) result;
+		
+		result = new (SetTableStepper::AStepper)  SetTableStepper(array, tcsj);
+
+		WPTR(SetTableStepper) 	returnValue;
+		returnValue = result;
+		return returnValue;
+	} else {
+		RETURN_CONSTRUCT(SetTableStepper,(array, tcsj));
+	}
+}
+/* accessing */
+
+
+RPTR(PtrArray) SetTableStepper::array (){
+	if (SetTableStepper::AnArray != NULL) {
+		SPTR(PtrArray) result;
+		
+		result = SetTableStepper::AnArray;
+		SetTableStepper::AnArray = NULL;
+		WPTR(PtrArray) 	returnValue;
+		returnValue = result;
+		return returnValue;
+	} else {
+		WPTR(PtrArray) 	returnValue;
+		returnValue = PtrArray::nulls(16);
+		return returnValue;
+	}
+}
+/* accessing */
+
+
+RPTR(Heaper) SetTableStepper::fetch (){
+	if (myIndex < myPtrs->count()) {
+		WPTR(Heaper) 	returnValue;
+		returnValue = myPtrs->fetch(myIndex);
+		return returnValue;
+	} else {
+		return NULL;
+	}
+}
+
+
+BooleanVar SetTableStepper::hasValue (){
+	return myIndex < myPtrs->count();
+}
+
+
+void SetTableStepper::step (){
+	myIndex += 1;
+}
+/* create */
+
+
+RPTR(Stepper) SetTableStepper::copy (){
+	RETURN_CONSTRUCT(SetTableStepper,(CAST(PtrArray,myPtrs->copy()), myIndex));
+}
+
+
+void SetTableStepper::destroy (){
+	if (SetTableStepper::AStepper == NULL) {
+		myPtrs->storeAll();
+		SetTableStepper::AnArray = CAST(PtrArray,myPtrs);
+		SetTableStepper::AStepper = this;
+		this->destruct();
+	} else {
+		this->Stepper::destroy();
+	}
+}
+/* protected: create */
+
+
+SetTableStepper::SetTableStepper (APTR(PtrArray) array, TCSJ) {
+	myPtrs = array;
+	myIndex = Int32Zero;
+}
+
+
+SetTableStepper::SetTableStepper (APTR(PtrArray) array, Int32 index) {
+	myPtrs = array;
+	myIndex = index;
+}
+
+#ifndef SETTABX_SXX
+#include "settabx.sxx"
+#endif /* SETTABX_SXX */
+
+
+#ifndef SETTABP_SXX
+#include "settabp.sxx"
+#endif /* SETTABP_SXX */
+
+
+
+#endif /* SETTABX_CXX */
+

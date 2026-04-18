@@ -1,0 +1,1851 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define TCLUDEX_SXX
+
+/*----------------------- BEGIN HashSetCache -----------------------*/
+DEFINE_CLASS_CATEGORY(HashSetCache,Heaper)
+DEFINE_OPAQUE_TYPE(HashSetCache);
+
+void HashSetCache::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "HashSetCache" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void HashSetCache::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendUInt32(mySize);
+    xmtr->sendHeaper(myElements);
+}
+
+HashSetCache::HashSetCache (APTR(Rcvr) receiver, TCSJ)
+{
+    mySize = receiver->receiveUInt32();
+    myElements = CAST(PtrArray, receiver->receiveHeaper());
+}
+
+
+void parseInto_HashSetCache (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) HashSetCache (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe HashSetCache_recipe(cat_HashSetCache, &DiskCuisine, parseInto_HashSetCache);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "HashSetCache" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+BooleanVar HashSetCache::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 HashSetCache::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of HashSetCache ====== */
+
+void HashSetCache::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((HashSetCache*)origin)->myElements,
+				       (Heaper**)&myElements);
+	} else {
+		myElements.forwardTo (Heaplet::forward (myElements));
+	}
+}
+
+/*----------------------- END HashSetCache -----------------------*/
+
+
+/*----------------------- BEGIN Matcher -----------------------*/
+DEFINE_CLASS_CATEGORY(Matcher,AgendaItem)
+DEFINE_OPAQUE_TYPE(Matcher);
+
+void Matcher::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "Matcher" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void Matcher::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    AgendaItem::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myOrglRoot);
+    xmtr->sendHeaper(myFinder);
+    xmtr->sendHeaper(myFossil);
+}
+
+Matcher::Matcher (APTR(Rcvr) receiver, TCSJ)
+  : AgendaItem (receiver, tcsj) {
+    myOrglRoot = CAST(OrglRoot, receiver->receiveHeaper());
+    myFinder = CAST(PropFinder, receiver->receiveHeaper());
+    myFossil = CAST(RecorderFossil, receiver->receiveHeaper());
+}
+
+
+void parseInto_Matcher (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) Matcher (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe Matcher_recipe(cat_Matcher, &DiskCuisine, parseInto_Matcher);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Shepherd Patriarch Class "Matcher" ======= */
+
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Shepherd Stub Class "MatcherStub" ======= */
+
+
+#ifndef DISKMANX_HXX
+#include "diskmanx.hxx" 
+#define DISKMANX_HXX
+#endif /* DISKMANX_HXX */
+
+extern Category * cat_MatcherStub;
+
+CLASS(MatcherStub,Matcher) {
+	CONCRETE(MatcherStub)
+	MANUAL_GC(MatcherStub)
+	NOT_A_TYPE(MatcherStub)
+  public:
+	inline MatcherStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+          :  Matcher(shepFlag, aHash, info)  {   }
+
+	virtual void		printOn(ostream&);
+
+    BooleanVar step() {
+    return (this)->getReal()->step();
+    }
+
+    void dismantle() {
+    (this)->getReal()->dismantle();
+    }
+
+    void forgetYourself() {
+    (this)->getReal()->forgetYourself();
+    }
+
+    void rememberYourself() {
+    (this)->getReal()->rememberYourself();
+    }
+
+    void schedule() {
+    (this)->getReal()->schedule();
+    }
+
+    void unschedule() {
+    (this)->getReal()->unschedule();
+    }
+
+    void newShepherd() {
+    ((this)->getReal());
+    this->newShepherd();
+    }
+
+    void diskUpdate() {
+    ((this)->getReal());
+    this->diskUpdate();
+    }
+
+    void destroy() {
+    (this)->getReal()->destroy();
+    }
+
+    UInt32 contentsHash() {
+    return (this)->getReal()->contentsHash();
+    }
+
+    BooleanVar isPurgeable() {
+    return (this)->getReal()->isPurgeable();
+    }
+
+    BooleanVar isUnlocked() {
+    return (this)->getReal()->isUnlocked();
+    }
+
+    void restartAbraham(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartAbraham(arg1);
+    }
+
+    UInt32 hashForEqual() {
+    return (this)->getReal()->hashForEqual();
+    }
+
+    void printContentsOn(ostream& arg1) {
+    (this)->getReal()->printContentsOn(arg1);
+    }
+
+    void changeClassToThatOf(WSP2_Heaper arg1) {
+    (this)->getReal()->changeClassToThatOf(arg1);
+    }
+
+    void sendSelfTo(WSP2_Xmtr arg1) {
+    (this)->getReal()->sendSelfTo(arg1);
+    }
+
+
+    private:
+      Matcher *	getReal();  // just * in case not a type
+
+	// Stripped-down COPY(MatcherStub): Just migrate
+    public:
+	// Suppress migrate, so we don't have to clear the pointers.
+	// We need to make sure that any stub-specific state is marked.
+	LEAF void migrate(void * origin, BooleanVar destinationIsOld) {
+		this->Abraham::migrate(origin, destinationIsOld);
+	}
+	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+        LEAF void becomeStub () { }
+        LEAF BooleanVar isStub() { return TRUE; }
+};
+
+Category * Matcher::getShepherdStubCategory () CONST
+{
+        return cat_MatcherStub;
+}
+
+void Matcher::becomeStub () 
+{
+    UInt32 hash = this->hashForEqual();
+    WPTR(FlockInfo) info = this->fetchInfo();
+    new (this) MatcherStub (shepFlag, hash, info);
+}
+
+/* ===== MatcherStub Implementations ==== */
+
+void MatcherStub::
+printOn(ostream& oo)
+{
+	oo << this->getCategory()->name();
+	oo << "@";
+     /* what are sequenceNumber and SeqNumKludge ? */
+//	oo << sequenceNumber((void *)this) - SeqNumKludge;
+	oo << "()";
+}
+
+Matcher * MatcherStub::
+getReal() {
+    CurrentPacker.fluidGet()->makeReal(this->fetchInfo());
+    return this;
+}
+
+BooleanVar MatcherStub::
+isKindOf(Category * aCategory) CONST
+{
+	if (cat_MatcherStub->isEqualOrSubclassOf(aCategory)) {
+		return TRUE;
+	} else if (aCategory->isEqualOrSubclassOf(cat_Matcher)) {
+		return ((MatcherStub *)this)->getReal()->isKindOf(aCategory);
+	} else {
+		return FALSE;
+	}
+}
+
+DEFINE_CLASS_CATEGORY(MatcherStub,Matcher)
+
+void MatcherStub::deferredHack () { /* intentionally blank */ }
+
+/* #ifdef WITH_RPC */
+/* ====== Stub Recipe for Matcher ====== */
+
+#ifndef STUBRCPX_HXX
+#include "stubrcpx.hxx"
+#define STUBRCPX_HXX
+#endif /* STUBRCPX_HXX */
+
+RPTR(Heaper) parseStub_Matcher (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+	RETURN_CONSTRUCT(MatcherStub, (shepFlag, hash, NULL));
+}
+
+extern Recipe * DiskCuisine;
+ActualStubRecipe MatcherStub_recipe(cat_MatcherStub, &DiskCuisine, parseStub_Matcher);
+
+/* #endif */ /* WITH_RPC */
+
+/* ===== mayBecome support between stub and concrete Shepherd Prototype ===== */
+
+DEFINE_MAY_BECOME(Matcher,MatcherStub)
+DEFINE_MAY_BECOME(MatcherStub,Matcher)
+
+/* ====== Object Migrator for Scavenging of Matcher ====== */
+
+void Matcher::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->AgendaItem::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((Matcher*)origin)->myOrglRoot,
+				       (Heaper**)&myOrglRoot);
+		Heaplet::forwardToOld ((Heaper**)&((Matcher*)origin)->myFinder,
+				       (Heaper**)&myFinder);
+		Heaplet::forwardToOld ((Heaper**)&((Matcher*)origin)->myFossil,
+				       (Heaper**)&myFossil);
+	} else {
+		myOrglRoot.forwardTo (Heaplet::forward (myOrglRoot));
+		myFinder.forwardTo (Heaplet::forward (myFinder));
+		myFossil.forwardTo (Heaplet::forward (myFossil));
+	}
+}
+
+/*----------------------- END Matcher -----------------------*/
+
+
+/*----------------------- BEGIN NorthRecorderChecker -----------------------*/
+DEFINE_CLASS_CATEGORY(NorthRecorderChecker,AgendaItem)
+DEFINE_OPAQUE_TYPE(NorthRecorderChecker);
+
+void NorthRecorderChecker::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "NorthRecorderChecker" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void NorthRecorderChecker::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    AgendaItem::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myEdition);
+    xmtr->sendHeaper(myFinder);
+}
+
+NorthRecorderChecker::NorthRecorderChecker (APTR(Rcvr) receiver, TCSJ)
+  : AgendaItem (receiver, tcsj) {
+    myEdition = CAST(BeEdition, receiver->receiveHeaper());
+    myFinder = CAST(PropFinder, receiver->receiveHeaper());
+}
+
+
+void parseInto_NorthRecorderChecker (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) NorthRecorderChecker (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe NorthRecorderChecker_recipe(cat_NorthRecorderChecker, &DiskCuisine, parseInto_NorthRecorderChecker);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Shepherd Patriarch Class "NorthRecorderChecker" ======= */
+
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Shepherd Stub Class "NorthRecorderCheckerStub" ======= */
+
+
+#ifndef DISKMANX_HXX
+#include "diskmanx.hxx" 
+#define DISKMANX_HXX
+#endif /* DISKMANX_HXX */
+
+extern Category * cat_NorthRecorderCheckerStub;
+
+CLASS(NorthRecorderCheckerStub,NorthRecorderChecker) {
+	CONCRETE(NorthRecorderCheckerStub)
+	MANUAL_GC(NorthRecorderCheckerStub)
+	NOT_A_TYPE(NorthRecorderCheckerStub)
+  public:
+	inline NorthRecorderCheckerStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+          :  NorthRecorderChecker(shepFlag, aHash, info)  {   }
+
+	virtual void		printOn(ostream&);
+
+    BooleanVar step() {
+    return (this)->getReal()->step();
+    }
+
+    void forgetYourself() {
+    (this)->getReal()->forgetYourself();
+    }
+
+    void rememberYourself() {
+    (this)->getReal()->rememberYourself();
+    }
+
+    void schedule() {
+    (this)->getReal()->schedule();
+    }
+
+    void unschedule() {
+    (this)->getReal()->unschedule();
+    }
+
+    void dismantle() {
+    ((this)->getReal());
+    this->dismantle();
+    }
+
+    void newShepherd() {
+    ((this)->getReal());
+    this->newShepherd();
+    }
+
+    void diskUpdate() {
+    ((this)->getReal());
+    this->diskUpdate();
+    }
+
+    void destroy() {
+    (this)->getReal()->destroy();
+    }
+
+    UInt32 contentsHash() {
+    return (this)->getReal()->contentsHash();
+    }
+
+    BooleanVar isPurgeable() {
+    return (this)->getReal()->isPurgeable();
+    }
+
+    BooleanVar isUnlocked() {
+    return (this)->getReal()->isUnlocked();
+    }
+
+    void restartAbraham(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartAbraham(arg1);
+    }
+
+    UInt32 hashForEqual() {
+    return (this)->getReal()->hashForEqual();
+    }
+
+    void printContentsOn(ostream& arg1) {
+    (this)->getReal()->printContentsOn(arg1);
+    }
+
+    void changeClassToThatOf(WSP2_Heaper arg1) {
+    (this)->getReal()->changeClassToThatOf(arg1);
+    }
+
+    void sendSelfTo(WSP2_Xmtr arg1) {
+    (this)->getReal()->sendSelfTo(arg1);
+    }
+
+
+    private:
+      NorthRecorderChecker *	getReal();  // just * in case not a type
+
+	// Stripped-down COPY(NorthRecorderCheckerStub): Just migrate
+    public:
+	// Suppress migrate, so we don't have to clear the pointers.
+	// We need to make sure that any stub-specific state is marked.
+	LEAF void migrate(void * origin, BooleanVar destinationIsOld) {
+		this->Abraham::migrate(origin, destinationIsOld);
+	}
+	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+        LEAF void becomeStub () { }
+        LEAF BooleanVar isStub() { return TRUE; }
+};
+
+Category * NorthRecorderChecker::getShepherdStubCategory () CONST
+{
+        return cat_NorthRecorderCheckerStub;
+}
+
+void NorthRecorderChecker::becomeStub () 
+{
+    UInt32 hash = this->hashForEqual();
+    WPTR(FlockInfo) info = this->fetchInfo();
+    new (this) NorthRecorderCheckerStub (shepFlag, hash, info);
+}
+
+/* ===== NorthRecorderCheckerStub Implementations ==== */
+
+void NorthRecorderCheckerStub::
+printOn(ostream& oo)
+{
+	oo << this->getCategory()->name();
+	oo << "@";
+     /* what are sequenceNumber and SeqNumKludge ? */
+//	oo << sequenceNumber((void *)this) - SeqNumKludge;
+	oo << "()";
+}
+
+NorthRecorderChecker * NorthRecorderCheckerStub::
+getReal() {
+    CurrentPacker.fluidGet()->makeReal(this->fetchInfo());
+    return this;
+}
+
+BooleanVar NorthRecorderCheckerStub::
+isKindOf(Category * aCategory) CONST
+{
+	if (cat_NorthRecorderCheckerStub->isEqualOrSubclassOf(aCategory)) {
+		return TRUE;
+	} else if (aCategory->isEqualOrSubclassOf(cat_NorthRecorderChecker)) {
+		return ((NorthRecorderCheckerStub *)this)->getReal()->isKindOf(aCategory);
+	} else {
+		return FALSE;
+	}
+}
+
+DEFINE_CLASS_CATEGORY(NorthRecorderCheckerStub,NorthRecorderChecker)
+
+void NorthRecorderCheckerStub::deferredHack () { /* intentionally blank */ }
+
+/* #ifdef WITH_RPC */
+/* ====== Stub Recipe for NorthRecorderChecker ====== */
+
+#ifndef STUBRCPX_HXX
+#include "stubrcpx.hxx"
+#define STUBRCPX_HXX
+#endif /* STUBRCPX_HXX */
+
+RPTR(Heaper) parseStub_NorthRecorderChecker (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+	RETURN_CONSTRUCT(NorthRecorderCheckerStub, (shepFlag, hash, NULL));
+}
+
+extern Recipe * DiskCuisine;
+ActualStubRecipe NorthRecorderCheckerStub_recipe(cat_NorthRecorderCheckerStub, &DiskCuisine, parseStub_NorthRecorderChecker);
+
+/* #endif */ /* WITH_RPC */
+
+/* ===== mayBecome support between stub and concrete Shepherd Prototype ===== */
+
+DEFINE_MAY_BECOME(NorthRecorderChecker,NorthRecorderCheckerStub)
+DEFINE_MAY_BECOME(NorthRecorderCheckerStub,NorthRecorderChecker)
+
+/* ====== Object Migrator for Scavenging of NorthRecorderChecker ====== */
+
+void NorthRecorderChecker::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->AgendaItem::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((NorthRecorderChecker*)origin)->myEdition,
+				       (Heaper**)&myEdition);
+		Heaplet::forwardToOld ((Heaper**)&((NorthRecorderChecker*)origin)->myFinder,
+				       (Heaper**)&myFinder);
+	} else {
+		myEdition.forwardTo (Heaplet::forward (myEdition));
+		myFinder.forwardTo (Heaplet::forward (myFinder));
+	}
+}
+
+/*----------------------- END NorthRecorderChecker -----------------------*/
+
+
+/*----------------------- BEGIN ReleaseRecorder_Bomb -----------------------*/
+
+/*----------------------- END ReleaseRecorder_Bomb -----------------------*/
+
+
+/*----------------------- BEGIN RecorderFossil -----------------------*/
+DEFINE_CLASS_CATEGORY(RecorderFossil,Abraham)
+DEFINE_OPAQUE_TYPE(RecorderFossil);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "RecorderFossil" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void RecorderFossil::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Abraham::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myLoginAuthority);
+    xmtr->sendHeaper(myTrailBlazer);
+    xmtr->sendIntegerVar(myAgendaCount);
+}
+
+RecorderFossil::RecorderFossil (APTR(Rcvr) receiver, TCSJ)
+  : Abraham (receiver, tcsj) {
+    myLoginAuthority = CAST(IDRegion, receiver->receiveHeaper());
+    myTrailBlazer = CAST(TrailBlazer, receiver->receiveHeaper());
+    myAgendaCount = receiver->receiveIntegerVar();
+    this->restartRecorderFossil(receiver);
+}
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Shepherd Patriarch Class "RecorderFossil" ======= */
+
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Shepherd Stub Class "RecorderFossilStub" ======= */
+
+
+#ifndef DISKMANX_HXX
+#include "diskmanx.hxx" 
+#define DISKMANX_HXX
+#endif /* DISKMANX_HXX */
+
+extern Category * cat_RecorderFossilStub;
+
+CLASS(RecorderFossilStub,RecorderFossil) {
+	CONCRETE(RecorderFossilStub)
+	MANUAL_GC(RecorderFossilStub)
+	NOT_A_TYPE(RecorderFossilStub)
+  public:
+	inline RecorderFossilStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+          :  RecorderFossil(shepFlag, aHash, info)  {   }
+
+	virtual void		printOn(ostream&);
+
+    void addItem(WSP2_AgendaItem arg1) {
+    (this)->getReal()->addItem(arg1);
+    }
+
+    void extinguish(WSP2_TrailBlazer arg1) {
+    (this)->getReal()->extinguish(arg1);
+    }
+
+    void releaseRecorder() {
+    (this)->getReal()->releaseRecorder();
+    }
+
+    void removeItem(WSP2_AgendaItem arg1) {
+    (this)->getReal()->removeItem(arg1);
+    }
+
+    RSP2_ResultRecorder secretRecorder() {
+    return (this)->getReal()->secretRecorder();
+    }
+
+    BooleanVar isExtinct() {
+    return (this)->getReal()->isExtinct();
+    }
+
+    BooleanVar isPurgeable() {
+    return (this)->getReal()->isPurgeable();
+    }
+
+    void restartRecorderFossil(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartRecorderFossil(arg1);
+    }
+
+    void dismantle() {
+    ((this)->getReal());
+    this->dismantle();
+    }
+
+    RSP2_ResultRecorder actualRecorder() {
+    ((this)->getReal());
+    return this->actualRecorder();
+    }
+
+    void memoryCheck() {
+    ((this)->getReal());
+    this->memoryCheck();
+    }
+
+    RSP2_TrailBlazer trailBlazer() {
+    ((this)->getReal());
+    return this->trailBlazer();
+    }
+
+    void storeDataRecordingAgents(WSP2_SensorCrum arg1, WSP2_Agenda arg2) {
+    (this)->getReal()->storeDataRecordingAgents(arg1, arg2);
+    }
+
+    void storePartialityRecordingAgents(WSP2_SensorCrum arg1, WSP2_Agenda arg2) {
+    (this)->getReal()->storePartialityRecordingAgents(arg1, arg2);
+    }
+
+    void storeRangeElementRecordingAgents(WSP2_BeRangeElement arg1, WSP2_SensorCrum arg2, WSP2_Agenda arg3) {
+    (this)->getReal()->storeRangeElementRecordingAgents(arg1, arg2, arg3);
+    }
+
+    void diskUpdate() {
+    ((this)->getReal());
+    this->diskUpdate();
+    }
+
+    void destroy() {
+    (this)->getReal()->destroy();
+    }
+
+    UInt32 contentsHash() {
+    return (this)->getReal()->contentsHash();
+    }
+
+    BooleanVar isUnlocked() {
+    return (this)->getReal()->isUnlocked();
+    }
+
+    void restartAbraham(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartAbraham(arg1);
+    }
+
+    UInt32 hashForEqual() {
+    return (this)->getReal()->hashForEqual();
+    }
+
+    void printContentsOn(ostream& arg1) {
+    (this)->getReal()->printContentsOn(arg1);
+    }
+
+    void changeClassToThatOf(WSP2_Heaper arg1) {
+    (this)->getReal()->changeClassToThatOf(arg1);
+    }
+
+    void sendSelfTo(WSP2_Xmtr arg1) {
+    (this)->getReal()->sendSelfTo(arg1);
+    }
+
+
+    private:
+      RecorderFossil *	getReal();  // just * in case not a type
+
+	// Stripped-down COPY(RecorderFossilStub): Just migrate
+    public:
+	// Suppress migrate, so we don't have to clear the pointers.
+	// We need to make sure that any stub-specific state is marked.
+	LEAF void migrate(void * origin, BooleanVar destinationIsOld) {
+		this->Abraham::migrate(origin, destinationIsOld);
+	}
+	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+        LEAF void becomeStub () { }
+        LEAF BooleanVar isStub() { return TRUE; }
+};
+
+Category * RecorderFossil::getShepherdStubCategory () CONST
+{
+        return cat_RecorderFossilStub;
+}
+
+void RecorderFossil::becomeStub () 
+{
+    UInt32 hash = this->hashForEqual();
+    WPTR(FlockInfo) info = this->fetchInfo();
+    new (this) RecorderFossilStub (shepFlag, hash, info);
+}
+
+/* ===== RecorderFossilStub Implementations ==== */
+
+void RecorderFossilStub::
+printOn(ostream& oo)
+{
+	oo << this->getCategory()->name();
+	oo << "@";
+     /* what are sequenceNumber and SeqNumKludge ? */
+//	oo << sequenceNumber((void *)this) - SeqNumKludge;
+	oo << "()";
+}
+
+RecorderFossil * RecorderFossilStub::
+getReal() {
+    CurrentPacker.fluidGet()->makeReal(this->fetchInfo());
+    return this;
+}
+
+BooleanVar RecorderFossilStub::
+isKindOf(Category * aCategory) CONST
+{
+	if (cat_RecorderFossilStub->isEqualOrSubclassOf(aCategory)) {
+		return TRUE;
+	} else if (aCategory->isEqualOrSubclassOf(cat_RecorderFossil)) {
+		return ((RecorderFossilStub *)this)->getReal()->isKindOf(aCategory);
+	} else {
+		return FALSE;
+	}
+}
+
+DEFINE_CLASS_CATEGORY(RecorderFossilStub,RecorderFossil)
+
+void RecorderFossilStub::deferredHack () { /* intentionally blank */ }
+
+/* #ifdef WITH_RPC */
+/* ====== Stub Recipe for RecorderFossil ====== */
+
+#ifndef STUBRCPX_HXX
+#include "stubrcpx.hxx"
+#define STUBRCPX_HXX
+#endif /* STUBRCPX_HXX */
+
+RPTR(Heaper) parseStub_RecorderFossil (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+	RETURN_CONSTRUCT(RecorderFossilStub, (shepFlag, hash, NULL));
+}
+
+extern Recipe * DiskCuisine;
+ActualStubRecipe RecorderFossilStub_recipe(cat_RecorderFossilStub, &DiskCuisine, parseStub_RecorderFossil);
+
+/* #endif */ /* WITH_RPC */
+
+/* ====== Object Migrator for Scavenging of RecorderFossil ====== */
+
+void RecorderFossil::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->Abraham::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((RecorderFossil*)origin)->myLoginAuthority,
+				       (Heaper**)&myLoginAuthority);
+		Heaplet::forwardToOld ((Heaper**)&((RecorderFossil*)origin)->myTrailBlazer,
+				       (Heaper**)&myTrailBlazer);
+		Heaplet::forwardToOld ((Heaper**)&((RecorderFossil*)origin)->myRecorder,
+				       (Heaper**)&myRecorder);
+	} else {
+		myLoginAuthority.forwardTo (Heaplet::forward (myLoginAuthority));
+		myTrailBlazer.forwardTo (Heaplet::forward (myTrailBlazer));
+		myRecorder.forwardTo (Heaplet::forward (myRecorder));
+	}
+}
+
+/*----------------------- END RecorderFossil -----------------------*/
+
+
+/*----------------------- BEGIN RecorderHoister -----------------------*/
+DEFINE_MAY_BECOME(RecorderHoister,ActualPropChanger)
+DEFINE_CLASS_CATEGORY(RecorderHoister,PropChanger)
+DEFINE_OPAQUE_TYPE(RecorderHoister);
+
+void RecorderHoister::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "RecorderHoister" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void RecorderHoister::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PropChanger::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myCargo);
+}
+
+RecorderHoister::RecorderHoister (APTR(Rcvr) receiver, TCSJ)
+  : PropChanger (receiver, tcsj) {
+    myCargo = CAST(MuSet, receiver->receiveHeaper());
+}
+
+
+void parseInto_RecorderHoister (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) RecorderHoister (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe RecorderHoister_recipe(cat_RecorderHoister, &DiskCuisine, parseInto_RecorderHoister);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "RecorderHoister" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ===== mayBecome support between stub and concrete Shepherd ===== */
+
+extern Category * cat_PropChangerStub;
+DEFINE_MAY_BECOME(RecorderHoister,PropChangerStub)
+DEFINE_MAY_BECOME(PropChangerStub,RecorderHoister)
+
+/* ====== Object Migrator for Scavenging of RecorderHoister ====== */
+
+void RecorderHoister::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->PropChanger::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((RecorderHoister*)origin)->myCargo,
+				       (Heaper**)&myCargo);
+	} else {
+		myCargo.forwardTo (Heaplet::forward (myCargo));
+	}
+}
+
+/*----------------------- END RecorderHoister -----------------------*/
+
+
+/*----------------------- BEGIN RecorderTrigger -----------------------*/
+DEFINE_CLASS_CATEGORY(RecorderTrigger,AgendaItem)
+DEFINE_OPAQUE_TYPE(RecorderTrigger);
+
+void RecorderTrigger::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "RecorderTrigger" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void RecorderTrigger::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    AgendaItem::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myFossil);
+    xmtr->sendHeaper(myElement);
+}
+
+RecorderTrigger::RecorderTrigger (APTR(Rcvr) receiver, TCSJ)
+  : AgendaItem (receiver, tcsj) {
+    myFossil = CAST(RecorderFossil, receiver->receiveHeaper());
+    myElement = CAST(BeRangeElement, receiver->receiveHeaper());
+}
+
+
+void parseInto_RecorderTrigger (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) RecorderTrigger (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe RecorderTrigger_recipe(cat_RecorderTrigger, &DiskCuisine, parseInto_RecorderTrigger);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Shepherd Patriarch Class "RecorderTrigger" ======= */
+
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Shepherd Stub Class "RecorderTriggerStub" ======= */
+
+
+#ifndef DISKMANX_HXX
+#include "diskmanx.hxx" 
+#define DISKMANX_HXX
+#endif /* DISKMANX_HXX */
+
+extern Category * cat_RecorderTriggerStub;
+
+CLASS(RecorderTriggerStub,RecorderTrigger) {
+	CONCRETE(RecorderTriggerStub)
+	MANUAL_GC(RecorderTriggerStub)
+	NOT_A_TYPE(RecorderTriggerStub)
+  public:
+	inline RecorderTriggerStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+          :  RecorderTrigger(shepFlag, aHash, info)  {   }
+
+	virtual void		printOn(ostream&);
+
+    BooleanVar step() {
+    return (this)->getReal()->step();
+    }
+
+    void dismantle() {
+    (this)->getReal()->dismantle();
+    }
+
+    void forgetYourself() {
+    (this)->getReal()->forgetYourself();
+    }
+
+    void rememberYourself() {
+    (this)->getReal()->rememberYourself();
+    }
+
+    void schedule() {
+    (this)->getReal()->schedule();
+    }
+
+    void unschedule() {
+    (this)->getReal()->unschedule();
+    }
+
+    void newShepherd() {
+    ((this)->getReal());
+    this->newShepherd();
+    }
+
+    void diskUpdate() {
+    ((this)->getReal());
+    this->diskUpdate();
+    }
+
+    void destroy() {
+    (this)->getReal()->destroy();
+    }
+
+    UInt32 contentsHash() {
+    return (this)->getReal()->contentsHash();
+    }
+
+    BooleanVar isPurgeable() {
+    return (this)->getReal()->isPurgeable();
+    }
+
+    BooleanVar isUnlocked() {
+    return (this)->getReal()->isUnlocked();
+    }
+
+    void restartAbraham(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartAbraham(arg1);
+    }
+
+    UInt32 hashForEqual() {
+    return (this)->getReal()->hashForEqual();
+    }
+
+    void printContentsOn(ostream& arg1) {
+    (this)->getReal()->printContentsOn(arg1);
+    }
+
+    void changeClassToThatOf(WSP2_Heaper arg1) {
+    (this)->getReal()->changeClassToThatOf(arg1);
+    }
+
+    void sendSelfTo(WSP2_Xmtr arg1) {
+    (this)->getReal()->sendSelfTo(arg1);
+    }
+
+
+    private:
+      RecorderTrigger *	getReal();  // just * in case not a type
+
+	// Stripped-down COPY(RecorderTriggerStub): Just migrate
+    public:
+	// Suppress migrate, so we don't have to clear the pointers.
+	// We need to make sure that any stub-specific state is marked.
+	LEAF void migrate(void * origin, BooleanVar destinationIsOld) {
+		this->Abraham::migrate(origin, destinationIsOld);
+	}
+	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+        LEAF void becomeStub () { }
+        LEAF BooleanVar isStub() { return TRUE; }
+};
+
+Category * RecorderTrigger::getShepherdStubCategory () CONST
+{
+        return cat_RecorderTriggerStub;
+}
+
+void RecorderTrigger::becomeStub () 
+{
+    UInt32 hash = this->hashForEqual();
+    WPTR(FlockInfo) info = this->fetchInfo();
+    new (this) RecorderTriggerStub (shepFlag, hash, info);
+}
+
+/* ===== RecorderTriggerStub Implementations ==== */
+
+void RecorderTriggerStub::
+printOn(ostream& oo)
+{
+	oo << this->getCategory()->name();
+	oo << "@";
+     /* what are sequenceNumber and SeqNumKludge ? */
+//	oo << sequenceNumber((void *)this) - SeqNumKludge;
+	oo << "()";
+}
+
+RecorderTrigger * RecorderTriggerStub::
+getReal() {
+    CurrentPacker.fluidGet()->makeReal(this->fetchInfo());
+    return this;
+}
+
+BooleanVar RecorderTriggerStub::
+isKindOf(Category * aCategory) CONST
+{
+	if (cat_RecorderTriggerStub->isEqualOrSubclassOf(aCategory)) {
+		return TRUE;
+	} else if (aCategory->isEqualOrSubclassOf(cat_RecorderTrigger)) {
+		return ((RecorderTriggerStub *)this)->getReal()->isKindOf(aCategory);
+	} else {
+		return FALSE;
+	}
+}
+
+DEFINE_CLASS_CATEGORY(RecorderTriggerStub,RecorderTrigger)
+
+void RecorderTriggerStub::deferredHack () { /* intentionally blank */ }
+
+/* #ifdef WITH_RPC */
+/* ====== Stub Recipe for RecorderTrigger ====== */
+
+#ifndef STUBRCPX_HXX
+#include "stubrcpx.hxx"
+#define STUBRCPX_HXX
+#endif /* STUBRCPX_HXX */
+
+RPTR(Heaper) parseStub_RecorderTrigger (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+	RETURN_CONSTRUCT(RecorderTriggerStub, (shepFlag, hash, NULL));
+}
+
+extern Recipe * DiskCuisine;
+ActualStubRecipe RecorderTriggerStub_recipe(cat_RecorderTriggerStub, &DiskCuisine, parseStub_RecorderTrigger);
+
+/* #endif */ /* WITH_RPC */
+
+/* ===== mayBecome support between stub and concrete Shepherd Prototype ===== */
+
+DEFINE_MAY_BECOME(RecorderTrigger,RecorderTriggerStub)
+DEFINE_MAY_BECOME(RecorderTriggerStub,RecorderTrigger)
+
+/* ====== Object Migrator for Scavenging of RecorderTrigger ====== */
+
+void RecorderTrigger::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->AgendaItem::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((RecorderTrigger*)origin)->myFossil,
+				       (Heaper**)&myFossil);
+		Heaplet::forwardToOld ((Heaper**)&((RecorderTrigger*)origin)->myElement,
+				       (Heaper**)&myElement);
+	} else {
+		myFossil.forwardTo (Heaplet::forward (myFossil));
+		myElement.forwardTo (Heaplet::forward (myElement));
+	}
+}
+
+/*----------------------- END RecorderTrigger -----------------------*/
+
+
+/*----------------------- BEGIN ResultRecorder -----------------------*/
+DEFINE_CLASS_CATEGORY(ResultRecorder,Heaper)
+DEFINE_OPAQUE_TYPE(ResultRecorder);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "ResultRecorder" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+BooleanVar ResultRecorder::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 ResultRecorder::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of ResultRecorder ====== */
+
+void ResultRecorder::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ResultRecorder*)origin)->myPermissionsFilter,
+				       (Heaper**)&myPermissionsFilter);
+		Heaplet::forwardToOld ((Heaper**)&((ResultRecorder*)origin)->myEndorsementsFilter,
+				       (Heaper**)&myEndorsementsFilter);
+		Heaplet::forwardToOld ((Heaper**)&((ResultRecorder*)origin)->myRelevantEndorsements,
+				       (Heaper**)&myRelevantEndorsements);
+		Heaplet::forwardToOld ((Heaper**)&((ResultRecorder*)origin)->myKeyMaster,
+				       (Heaper**)&myKeyMaster);
+		Heaplet::forwardToOld ((Heaper**)&((ResultRecorder*)origin)->myTrailBlazer,
+				       (Heaper**)&myTrailBlazer);
+	} else {
+		myPermissionsFilter.forwardTo (Heaplet::forward (myPermissionsFilter));
+		myEndorsementsFilter.forwardTo (Heaplet::forward (myEndorsementsFilter));
+		myRelevantEndorsements.forwardTo (Heaplet::forward (myRelevantEndorsements));
+		myKeyMaster.forwardTo (Heaplet::forward (myKeyMaster));
+		myTrailBlazer.forwardTo (Heaplet::forward (myTrailBlazer));
+	}
+}
+
+/*----------------------- END ResultRecorder -----------------------*/
+
+
+/*----------------------- BEGIN EditionRecorder -----------------------*/
+DEFINE_CLASS_CATEGORY(EditionRecorder,ResultRecorder)
+DEFINE_OPAQUE_TYPE(EditionRecorder);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "EditionRecorder" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of EditionRecorder ====== */
+
+void EditionRecorder::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->ResultRecorder::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((EditionRecorder*)origin)->myDirectFilter,
+				       (Heaper**)&myDirectFilter);
+		Heaplet::forwardToOld ((Heaper**)&((EditionRecorder*)origin)->myIndirectFilter,
+				       (Heaper**)&myIndirectFilter);
+	} else {
+		myDirectFilter.forwardTo (Heaplet::forward (myDirectFilter));
+		myIndirectFilter.forwardTo (Heaplet::forward (myIndirectFilter));
+	}
+}
+
+/*----------------------- END EditionRecorder -----------------------*/
+
+
+/*----------------------- BEGIN WorkRecorder -----------------------*/
+DEFINE_CLASS_CATEGORY(WorkRecorder,ResultRecorder)
+DEFINE_OPAQUE_TYPE(WorkRecorder);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "WorkRecorder" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END WorkRecorder -----------------------*/
+
+
+/*----------------------- BEGIN SouthRecorderChecker -----------------------*/
+DEFINE_CLASS_CATEGORY(SouthRecorderChecker,AgendaItem)
+DEFINE_OPAQUE_TYPE(SouthRecorderChecker);
+
+void SouthRecorderChecker::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "SouthRecorderChecker" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void SouthRecorderChecker::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    AgendaItem::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myORoot);
+    xmtr->sendHeaper(myFinder);
+    xmtr->sendHeaper(mySCrum);
+}
+
+SouthRecorderChecker::SouthRecorderChecker (APTR(Rcvr) receiver, TCSJ)
+  : AgendaItem (receiver, tcsj) {
+    myORoot = CAST(OrglRoot, receiver->receiveHeaper());
+    myFinder = CAST(PropFinder, receiver->receiveHeaper());
+    mySCrum = CAST(SensorCrum, receiver->receiveHeaper());
+}
+
+
+void parseInto_SouthRecorderChecker (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) SouthRecorderChecker (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe SouthRecorderChecker_recipe(cat_SouthRecorderChecker, &DiskCuisine, parseInto_SouthRecorderChecker);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Shepherd Patriarch Class "SouthRecorderChecker" ======= */
+
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Shepherd Stub Class "SouthRecorderCheckerStub" ======= */
+
+
+#ifndef DISKMANX_HXX
+#include "diskmanx.hxx" 
+#define DISKMANX_HXX
+#endif /* DISKMANX_HXX */
+
+extern Category * cat_SouthRecorderCheckerStub;
+
+CLASS(SouthRecorderCheckerStub,SouthRecorderChecker) {
+	CONCRETE(SouthRecorderCheckerStub)
+	MANUAL_GC(SouthRecorderCheckerStub)
+	NOT_A_TYPE(SouthRecorderCheckerStub)
+  public:
+	inline SouthRecorderCheckerStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+          :  SouthRecorderChecker(shepFlag, aHash, info)  {   }
+
+	virtual void		printOn(ostream&);
+
+    void dismantle() {
+    (this)->getReal()->dismantle();
+    }
+
+    BooleanVar step() {
+    return (this)->getReal()->step();
+    }
+
+    void forgetYourself() {
+    (this)->getReal()->forgetYourself();
+    }
+
+    void rememberYourself() {
+    (this)->getReal()->rememberYourself();
+    }
+
+    void schedule() {
+    (this)->getReal()->schedule();
+    }
+
+    void unschedule() {
+    (this)->getReal()->unschedule();
+    }
+
+    void newShepherd() {
+    ((this)->getReal());
+    this->newShepherd();
+    }
+
+    void diskUpdate() {
+    ((this)->getReal());
+    this->diskUpdate();
+    }
+
+    void destroy() {
+    (this)->getReal()->destroy();
+    }
+
+    UInt32 contentsHash() {
+    return (this)->getReal()->contentsHash();
+    }
+
+    BooleanVar isPurgeable() {
+    return (this)->getReal()->isPurgeable();
+    }
+
+    BooleanVar isUnlocked() {
+    return (this)->getReal()->isUnlocked();
+    }
+
+    void restartAbraham(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartAbraham(arg1);
+    }
+
+    UInt32 hashForEqual() {
+    return (this)->getReal()->hashForEqual();
+    }
+
+    void printContentsOn(ostream& arg1) {
+    (this)->getReal()->printContentsOn(arg1);
+    }
+
+    void changeClassToThatOf(WSP2_Heaper arg1) {
+    (this)->getReal()->changeClassToThatOf(arg1);
+    }
+
+    void sendSelfTo(WSP2_Xmtr arg1) {
+    (this)->getReal()->sendSelfTo(arg1);
+    }
+
+
+    private:
+      SouthRecorderChecker *	getReal();  // just * in case not a type
+
+	// Stripped-down COPY(SouthRecorderCheckerStub): Just migrate
+    public:
+	// Suppress migrate, so we don't have to clear the pointers.
+	// We need to make sure that any stub-specific state is marked.
+	LEAF void migrate(void * origin, BooleanVar destinationIsOld) {
+		this->Abraham::migrate(origin, destinationIsOld);
+	}
+	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+        LEAF void becomeStub () { }
+        LEAF BooleanVar isStub() { return TRUE; }
+};
+
+Category * SouthRecorderChecker::getShepherdStubCategory () CONST
+{
+        return cat_SouthRecorderCheckerStub;
+}
+
+void SouthRecorderChecker::becomeStub () 
+{
+    UInt32 hash = this->hashForEqual();
+    WPTR(FlockInfo) info = this->fetchInfo();
+    new (this) SouthRecorderCheckerStub (shepFlag, hash, info);
+}
+
+/* ===== SouthRecorderCheckerStub Implementations ==== */
+
+void SouthRecorderCheckerStub::
+printOn(ostream& oo)
+{
+	oo << this->getCategory()->name();
+	oo << "@";
+     /* what are sequenceNumber and SeqNumKludge ? */
+//	oo << sequenceNumber((void *)this) - SeqNumKludge;
+	oo << "()";
+}
+
+SouthRecorderChecker * SouthRecorderCheckerStub::
+getReal() {
+    CurrentPacker.fluidGet()->makeReal(this->fetchInfo());
+    return this;
+}
+
+BooleanVar SouthRecorderCheckerStub::
+isKindOf(Category * aCategory) CONST
+{
+	if (cat_SouthRecorderCheckerStub->isEqualOrSubclassOf(aCategory)) {
+		return TRUE;
+	} else if (aCategory->isEqualOrSubclassOf(cat_SouthRecorderChecker)) {
+		return ((SouthRecorderCheckerStub *)this)->getReal()->isKindOf(aCategory);
+	} else {
+		return FALSE;
+	}
+}
+
+DEFINE_CLASS_CATEGORY(SouthRecorderCheckerStub,SouthRecorderChecker)
+
+void SouthRecorderCheckerStub::deferredHack () { /* intentionally blank */ }
+
+/* #ifdef WITH_RPC */
+/* ====== Stub Recipe for SouthRecorderChecker ====== */
+
+#ifndef STUBRCPX_HXX
+#include "stubrcpx.hxx"
+#define STUBRCPX_HXX
+#endif /* STUBRCPX_HXX */
+
+RPTR(Heaper) parseStub_SouthRecorderChecker (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+	RETURN_CONSTRUCT(SouthRecorderCheckerStub, (shepFlag, hash, NULL));
+}
+
+extern Recipe * DiskCuisine;
+ActualStubRecipe SouthRecorderCheckerStub_recipe(cat_SouthRecorderCheckerStub, &DiskCuisine, parseStub_SouthRecorderChecker);
+
+/* #endif */ /* WITH_RPC */
+
+/* ===== mayBecome support between stub and concrete Shepherd Prototype ===== */
+
+DEFINE_MAY_BECOME(SouthRecorderChecker,SouthRecorderCheckerStub)
+DEFINE_MAY_BECOME(SouthRecorderCheckerStub,SouthRecorderChecker)
+
+/* ====== Object Migrator for Scavenging of SouthRecorderChecker ====== */
+
+void SouthRecorderChecker::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->AgendaItem::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((SouthRecorderChecker*)origin)->myORoot,
+				       (Heaper**)&myORoot);
+		Heaplet::forwardToOld ((Heaper**)&((SouthRecorderChecker*)origin)->myFinder,
+				       (Heaper**)&myFinder);
+		Heaplet::forwardToOld ((Heaper**)&((SouthRecorderChecker*)origin)->mySCrum,
+				       (Heaper**)&mySCrum);
+	} else {
+		myORoot.forwardTo (Heaplet::forward (myORoot));
+		myFinder.forwardTo (Heaplet::forward (myFinder));
+		mySCrum.forwardTo (Heaplet::forward (mySCrum));
+	}
+}
+
+/*----------------------- END SouthRecorderChecker -----------------------*/
+
+
+/*----------------------- BEGIN TrailBlazer -----------------------*/
+DEFINE_CLASS_CATEGORY(TrailBlazer,Abraham)
+DEFINE_OPAQUE_TYPE(TrailBlazer);
+
+void TrailBlazer::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "TrailBlazer" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void TrailBlazer::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Abraham::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myTrail);
+    xmtr->sendHeaper(myRecorded);
+    xmtr->sendIntegerVar(myRefCount);
+}
+
+TrailBlazer::TrailBlazer (APTR(Rcvr) receiver, TCSJ)
+  : Abraham (receiver, tcsj) {
+    myTrail = CAST(BeEdition, receiver->receiveHeaper());
+    myRecorded = CAST(HashSetCache, receiver->receiveHeaper());
+    myRefCount = receiver->receiveIntegerVar();
+}
+
+
+void parseInto_TrailBlazer (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) TrailBlazer (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe TrailBlazer_recipe(cat_TrailBlazer, &DiskCuisine, parseInto_TrailBlazer);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Shepherd Patriarch Class "TrailBlazer" ======= */
+
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Shepherd Stub Class "TrailBlazerStub" ======= */
+
+
+#ifndef DISKMANX_HXX
+#include "diskmanx.hxx" 
+#define DISKMANX_HXX
+#endif /* DISKMANX_HXX */
+
+extern Category * cat_TrailBlazerStub;
+
+CLASS(TrailBlazerStub,TrailBlazer) {
+	CONCRETE(TrailBlazerStub)
+	MANUAL_GC(TrailBlazerStub)
+	NOT_A_TYPE(TrailBlazerStub)
+  public:
+	inline TrailBlazerStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+          :  TrailBlazer(shepFlag, aHash, info)  {   }
+
+	virtual void		printOn(ostream&);
+
+    void setEdition(WSP2_BeEdition arg1) {
+    ((this)->getReal());
+    this->setEdition(arg1);
+    }
+
+    BooleanVar isAlive() {
+    return (this)->getReal()->isAlive();
+    }
+
+    void record(WSP2_BeRangeElement arg1) {
+    (this)->getReal()->record(arg1);
+    }
+
+    void addReference(WSP2_Abraham arg1) {
+    (this)->getReal()->addReference(arg1);
+    }
+
+    void removeReference(WSP2_Abraham arg1) {
+    (this)->getReal()->removeReference(arg1);
+    }
+
+    void dismantle() {
+    ((this)->getReal());
+    this->dismantle();
+    }
+
+    void diskUpdate() {
+    ((this)->getReal());
+    this->diskUpdate();
+    }
+
+    void destroy() {
+    (this)->getReal()->destroy();
+    }
+
+    UInt32 contentsHash() {
+    return (this)->getReal()->contentsHash();
+    }
+
+    BooleanVar isPurgeable() {
+    return (this)->getReal()->isPurgeable();
+    }
+
+    BooleanVar isUnlocked() {
+    return (this)->getReal()->isUnlocked();
+    }
+
+    void restartAbraham(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartAbraham(arg1);
+    }
+
+    UInt32 hashForEqual() {
+    return (this)->getReal()->hashForEqual();
+    }
+
+    void printContentsOn(ostream& arg1) {
+    (this)->getReal()->printContentsOn(arg1);
+    }
+
+    void changeClassToThatOf(WSP2_Heaper arg1) {
+    (this)->getReal()->changeClassToThatOf(arg1);
+    }
+
+    void sendSelfTo(WSP2_Xmtr arg1) {
+    (this)->getReal()->sendSelfTo(arg1);
+    }
+
+
+    private:
+      TrailBlazer *	getReal();  // just * in case not a type
+
+	// Stripped-down COPY(TrailBlazerStub): Just migrate
+    public:
+	// Suppress migrate, so we don't have to clear the pointers.
+	// We need to make sure that any stub-specific state is marked.
+	LEAF void migrate(void * origin, BooleanVar destinationIsOld) {
+		this->Abraham::migrate(origin, destinationIsOld);
+	}
+	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+        LEAF void becomeStub () { }
+        LEAF BooleanVar isStub() { return TRUE; }
+};
+
+Category * TrailBlazer::getShepherdStubCategory () CONST
+{
+        return cat_TrailBlazerStub;
+}
+
+void TrailBlazer::becomeStub () 
+{
+    UInt32 hash = this->hashForEqual();
+    WPTR(FlockInfo) info = this->fetchInfo();
+    new (this) TrailBlazerStub (shepFlag, hash, info);
+}
+
+/* ===== TrailBlazerStub Implementations ==== */
+
+void TrailBlazerStub::
+printOn(ostream& oo)
+{
+	oo << this->getCategory()->name();
+	oo << "@";
+     /* what are sequenceNumber and SeqNumKludge ? */
+//	oo << sequenceNumber((void *)this) - SeqNumKludge;
+	oo << "()";
+}
+
+TrailBlazer * TrailBlazerStub::
+getReal() {
+    CurrentPacker.fluidGet()->makeReal(this->fetchInfo());
+    return this;
+}
+
+BooleanVar TrailBlazerStub::
+isKindOf(Category * aCategory) CONST
+{
+	if (cat_TrailBlazerStub->isEqualOrSubclassOf(aCategory)) {
+		return TRUE;
+	} else if (aCategory->isEqualOrSubclassOf(cat_TrailBlazer)) {
+		return ((TrailBlazerStub *)this)->getReal()->isKindOf(aCategory);
+	} else {
+		return FALSE;
+	}
+}
+
+DEFINE_CLASS_CATEGORY(TrailBlazerStub,TrailBlazer)
+
+void TrailBlazerStub::deferredHack () { /* intentionally blank */ }
+
+/* #ifdef WITH_RPC */
+/* ====== Stub Recipe for TrailBlazer ====== */
+
+#ifndef STUBRCPX_HXX
+#include "stubrcpx.hxx"
+#define STUBRCPX_HXX
+#endif /* STUBRCPX_HXX */
+
+RPTR(Heaper) parseStub_TrailBlazer (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+	RETURN_CONSTRUCT(TrailBlazerStub, (shepFlag, hash, NULL));
+}
+
+extern Recipe * DiskCuisine;
+ActualStubRecipe TrailBlazerStub_recipe(cat_TrailBlazerStub, &DiskCuisine, parseStub_TrailBlazer);
+
+/* #endif */ /* WITH_RPC */
+
+/* ===== mayBecome support between stub and concrete Shepherd Prototype ===== */
+
+DEFINE_MAY_BECOME(TrailBlazer,TrailBlazerStub)
+DEFINE_MAY_BECOME(TrailBlazerStub,TrailBlazer)
+
+
+BooleanVar TrailBlazer::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 TrailBlazer::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of TrailBlazer ====== */
+
+void TrailBlazer::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->Abraham::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((TrailBlazer*)origin)->myTrail,
+				       (Heaper**)&myTrail);
+		Heaplet::forwardToOld ((Heaper**)&((TrailBlazer*)origin)->myRecorded,
+				       (Heaper**)&myRecorded);
+	} else {
+		myTrail.forwardTo (Heaplet::forward (myTrail));
+		myRecorded.forwardTo (Heaplet::forward (myRecorded));
+	}
+}
+
+/*----------------------- END TrailBlazer -----------------------*/
+

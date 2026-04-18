@@ -1,0 +1,7 @@
+#ifndef SCAVP_OXX
+#define SCAVP_OXX
+
+class HeapletManager;
+class HeapletSet;
+
+#endif /* SCAVP_OXX */

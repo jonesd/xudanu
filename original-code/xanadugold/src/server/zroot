@@ -1,0 +1,1059 @@
+/Fhypatia/roger/prod/xhs/src/xpp
+/Fhypatia/roger/prod/xhs/src/xpp
+bibopp.hxx:class BibopPage ROOTCLASS {
+bibopx.hxx:class ExhaustionHook ROOTCLASS {
+bibopx.hxx:class BibopHeap ROOTCLASS {
+bibopx.hxx:class LiveHeaperStepper ROOTCLASS {
+bombx.hxx://	Added ROOTCLASS for MacSingleInheritance
+bombx.hxx:class Problem ROOTCLASS {
+bombx.hxx:class BombSuperclass ROOTCLASS {
+bombx.hxx:class Shield ROOTCLASS {
+bombx.hxx://	rooted at firstP).
+bombx.hxx:class BombStringDetonator ROOTCLASS {
+fluidt.hxx:class Bar ROOTCLASS {
+fluidt.hxx:class TestSpace ROOTCLASS {
+fluidx.hxx://	provide GC roots, and they interface through '*' pointers to avoid
+fluidx.hxx:class FluidVarDescription ROOTCLASS {
+fluidx.hxx:class Emulsion ROOTCLASS {
+garbagex.hxx:class Heap ROOTCLASS {
+inc.h: * privileged processes (e.g. root).
+initx.hxx:class Initializer ROOTCLASS {
+initx.hxx:class Initer ROOTCLASS {
+initx.hxx:class Terminator ROOTCLASS {
+intvarx.hxx:class IntegerVar ROOTCLASS {
+loggert.cxx:class Early ROOTCLASS {
+loggerx.hxx:struct Logger ROOTCLASS {
+loggerx.hxx:class RegisterLogger ROOTCLASS {
+opaquex.hxx:class CheckedPtrVar ROOTCLASS {
+opaquex.hxx://	GPTR(TYPE) - Global strong pointer to TYPE to be used as a root for garbage
+parrayp.hxx:class PrimArrayHeap ROOTCLASS {
+queuesx.hxx:class Queue ROOTCLASS {
+scavp.hxx:class HeapletManager ROOTCLASS {
+scavp.hxx:class HeapletSetStepper ROOTCLASS {
+scavp.hxx:class HeapletSet ROOTCLASS {
+scavp.hxx:class PointerReferenceSet ROOTCLASS {
+scavp.hxx:class ArrayReferenceSet ROOTCLASS {
+scavp.hxx:class OutPointerSet ROOTCLASS {
+scavp.hxx:class PtrArraySet ROOTCLASS {
+scavt.cxx:    static GPTR(TConsCell) Root = NULL;
+scavt.cxx:    Root = cell;
+scavt.cxx:    Heaplet * npage = Heaplet::pageOf (Root);
+scavt.cxx:	if (cell == Root) {
+scavt.cxx:	    oo << "migrate did not happen, cell == Root\n";
+scavt.cxx:		if (Root != *(TConsCell**)cell) {
+scavt.cxx:		oo << "Root";
+scavt.cxx:    cell = Root;
+scavt.cxx:    Root = cell;
+scavt.cxx:    npage = Heaplet::pageOf (Root);
+scavt.cxx:	if (cell == Root) {
+scavt.cxx:	    oo << "migrate did not happen, cell == Root\n";
+scavt.cxx:		if (Root != *(TConsCell**)cell) {
+scavt.cxx:		oo << "Root";
+scavt.cxx:    cell = Root;
+scavt.cxx:    static GPTR(PtrArray) Root = NULL;
+scavt.cxx:    Root = PtrArray::nulls(8);
+scavt.cxx:	Root->store (i, rawPtrs[i]);
+scavt.cxx:    oo << "initial PtrArray\n\tRoot = " << Root << "\n";
+scavt.cxx:    oo << "PtrArray after GC\n\tRoot = " << Root << "\n";
+scavt.cxx:	    if (Root->fetch(i) != *cell) {
+scavt.cxx:	    oo << "Root[" << i << "]";
+scavt.cxx:	rawPtrs[i] = CAST(TConsCell,Root->fetch (i));
+scavt.cxx:    Root->store (2, rawPtrs[2]);
+scavt.cxx:    oo << "\tRoot = " << Root << "\n";
+scavt.cxx:    oo << "PtrArray after GC\n\tRoot = " << Root << "\n";
+scavt.cxx:	    if (Root->fetch(i) != *cell) {
+scavt.cxx:	    oo << "Root[" << i << "]";
+scavt.cxx:    GPTR(TConsCell) Root = NULL;
+scavt.cxx:    Root = growBig (growBig (growBig (cons (NULL, NULL))));
+scavt.cxx:    oo << "Root = " << Root << "\n";
+scavt.cxx:    oo << "Root = " << Root << "\n";
+scavt.cxx:    oo << "side effecting leaves of Root\n";
+scavt.cxx:    addLeaf (Root, newCell);
+scavt.cxx:    oo << "Root = " << Root << "\n";
+scavt.cxx:    oo << "pointing to newCell with a root\n";
+scavt.cxx:    GPTR(TConsCell) aRoot = newCell;
+scavt.cxx:    oo << "removing root to newCell\n";
+scavt.cxx:    aRoot = NULL;
+scavt.cxx:    oo << "replacing root to newCell\n";
+scavt.cxx:    aRoot = newCell;
+scavt.cxx:    oo << "removing pointer to structure, but restoring root to newCell\n";
+scavt.cxx:    aRoot = newCell;
+scavt.cxx:    Root = NULL;
+scavt.cxx:    newCell = aRoot;
+scavt.cxx:    newCell = aRoot;
+scavt.cxx:    newCell = aRoot;
+scavt.cxx:    GPTR(PtrArray) pRoot = PtrArray::nulls (8);
+scavt.cxx:    oo << "original PtrArray pRoot = " << pRoot << "\n";
+scavt.cxx:    oo << "garbage collecting to make pRoot old\n";
+scavt.cxx:    oo << "storing new object (cell) in pRoot[0]\n";
+scavt.cxx:    pRoot->store (0, cell);
+scavt.cxx:    oo << "pRoot now = " << pRoot << "\n";
+scavt.cxx:    oo << "(pRoot%PAGESIZE="
+scavt.cxx:    << (void*)((Int32)(Heaper*)pRoot & ~PAGEMASK) << ")\n";
+scavt.cxx:    if (pRoot->fetch(0) == cell) {
+scavt.cxx:    oo << "pRoot now = " << pRoot << "\n";
+scavt.cxx:    oo << "(pRoot%PAGESIZE="
+scavt.cxx:    << (void*)((Int32)(Heaper*)pRoot & ~PAGEMASK) << ")\n";
+scavt.cxx:    cell = CAST(TConsCell,pRoot->fetch(0));
+scavt.cxx:    GPTR(TConsCell) CellRoot = cons (NULL, NULL);
+scavt.cxx:    Array1->store (4, CellRoot);
+scavt.cxx:    Heaplet * heap = Heaplet::pageOf (CellRoot);
+scavt.cxx:    printWeakArraySetOn (oo, heap, CellRoot);
+scavt.cxx:    heap = Heaplet::pageOf (CellRoot);
+scavt.cxx:    printWeakArraySetOn (oo, heap, CellRoot);
+scavt.cxx:    heap = Heaplet::pageOf (CellRoot);
+scavt.cxx:    printWeakArraySetOn (oo, heap, CellRoot);
+scavt.cxx:    oo << "dropping root to cell\n";
+scavt.cxx:    CellRoot = NULL;
+scavt.cxx:    CellRoot = cons (NULL, NULL);
+scavt.cxx:    Array1->store (6, CellRoot);
+scavt.cxx:    heap = Heaplet::pageOf (CellRoot);
+scavt.cxx:    printWeakArraySetOn (oo, heap, CellRoot);
+scavt.cxx:    heap = Heaplet::pageOf (CellRoot);
+scavt.cxx:    printWeakArraySetOn (oo, heap, CellRoot);
+scavt.cxx:    oo << "dropping root to array 1 and to cell\n";
+scavt.cxx:    CellRoot = NULL;
+scavt.cxx:    CellRoot = cons (NULL, NULL);
+scavt.cxx:    Array1->store (3, CellRoot);
+scavt.cxx:    CellRoot = NULL;
+scavt.cxx:    CellRoot = cons (NULL, NULL);
+scavt.cxx:    Array1->store (5, CellRoot);
+scavt.cxx:    CellRoot = NULL;
+scavt.hxx:class ScavengerTester ROOTCLASS {
+scavx.cxx://  exception condition where one was a root.  If so, opp will be in current.
+scavx.cxx:			    // was a root (migrated first)
+scavx.hxx:class Heaplet ROOTCLASS {
+tofup.hxx:class CategoryList ROOTCLASS {
+tofux.cxx://	Made CheckedPtrVar into root class & removed unused comm stuff from
+tofux.hxx://	Made CheckedPtrVar into root class & removed unused comm stuff from
+tofux.hxx:class Tofu ROOTCLASS {
+wparrayx.hxx:class EstateRecorder ROOTCLASS {
+xcompatx.hxx:#		define ROOTCLASS	: public SingleObject
+xcompatx.hxx:#		define ROOTCLASS
+xcompatx.hxx:#	define ROOTCLASS
+/Fhypatia/roger/prod/xhs/src/xlatexpp
+/Fhypatia/roger/prod/xhs/src/xlatexpp
+/Fhypatia/roger/prod/xhs/src/server
+/Fhypatia/roger/prod/xhs/src/server
+branchx.cxx:	RETURN_CONSTRUCT(RootBranch,(xfulltrace, tcsj));
+branchx.cxx:three kinds are root (no parent), tree (one parent) and dag (two 
+branchx.cxx:		branch existing off my root. */
+branchx.cxx: *                    Class   RootBranch 
+branchx.cxx:void RootBranch::cacheRecur (APTR(PrimIndexTable) navCache){
+branchx.cxx:RootBranch::RootBranch (APTR(DagWood) ft, TCSJ) 
+branchx.hxx:	three kinds are root (no parent), tree (one parent) and dag 
+branchx.hxx:	/* recur toward the root filling in the cache. */
+branchx.hxx:		branch existing off my root. */
+branchx.hxx: *                    Class   RootBranch 
+branchx.hxx:class RootBranch : public BranchDescription {
+branchx.hxx:/* Attributes for class RootBranch */
+branchx.hxx:	CONCRETE(RootBranch)
+branchx.hxx:	SHEPHERD_ANCESTOR(RootBranch,BranchDescription)
+branchx.hxx:	COPY(RootBranch,DiskCuisine)
+branchx.hxx:	LOCKED(RootBranch)
+branchx.hxx:	NOT_A_TYPE(RootBranch)
+branchx.hxx:	NO_GC(RootBranch)
+branchx.hxx:	RootBranch (APTR(DagWood) ARG(ft), TCSJ);
+branchx.hxx:};  /* end class RootBranch */
+branchx.ixx: *                    Class   RootBranch 
+branchx.oxx:class RootBranch;
+branchx.oxx:extern Category * cat_RootBranch;
+brange1x.cxx:#ifndef OROOTX_HXX
+brange1x.cxx:#include "orootx.hxx"
+brange1x.cxx:#endif /* OROOTX_HXX */
+brange1x.hxx:#ifndef OROOTX_OXX
+brange1x.hxx:#include "orootx.oxx"
+brange1x.hxx:#endif /* OROOTX_OXX */
+brange3x.cxx:RPTR(BeEdition) BeEdition::make (APTR(OrglRoot) oroot){
+brange3x.cxx:		RETURN_CONSTRUCT(BeEdition,(oroot, tcsj));
+brange3x.cxx:					returnValue = BeEdition::make (myOrglRoot->combine(other->orglRoot()));
+brange3x.cxx:					returnValue = BeEdition::make (myOrglRoot->copy(keys));
+brange3x.cxx:	SPTR(OrglRoot) resultRoot;
+brange3x.cxx:							returnValue = BeEdition::make (myOrglRoot->transformedBy(dsp));
+brange3x.cxx:					domain = myOrglRoot->simpleDomain();
+brange3x.cxx:					resultRoot = OrglRoot::make (mapping->rangeSpace());
+brange3x.cxx:								resultRoot = resultRoot->combine(myOrglRoot->copy(common)->transformedBy(dsp));
+brange3x.cxx:					returnValue = BeEdition::make (resultRoot);
+brange3x.cxx:	returnValue = myOrglRoot->coordinateSpace();
+brange3x.cxx:	return myOrglRoot->count();
+brange3x.cxx:	returnValue = myOrglRoot->domain();
+brange3x.cxx:	returnValue = myOrglRoot->fetch(key, this);
+brange3x.cxx:	return myOrglRoot->fetch(key, this) != NULL;
+brange3x.cxx:	return myOrglRoot->isEmpty();
+brange3x.cxx:		/* myOrglRoot->simpleDomain()->isFinite() || myOrglRoot->domain()->isFinite() */
+brange3x.cxx:		crutch_Flag = myOrglRoot->simpleDomain()->isFinite();
+brange3x.cxx:			crutch_Flag = myOrglRoot->domain()->isFinite();
+brange3x.cxx:	return CAST(IDRegion,myOrglRoot->rangeOwners(positions));
+brange3x.cxx:		theRegion = myOrglRoot->simpleDomain();
+brange3x.cxx:	BEGIN_FOR_EACH(Heaper,bundle,(myOrglRoot->bundleStepper(theRegion, theOrder))) {
+brange3x.cxx:			changer = myOrglRoot->propChanger(change);
+brange3x.cxx:						SouthRecorderChecker::make (myOrglRoot, finder, CAST(SensorCrum,myOrglRoot->sensorCrum()->fetchParent()));
+brange3x.cxx:	myOrglRoot->triggerDetector(detect);
+brange3x.cxx:	returnValue = myOrglRoot->ownerAt(key);
+brange3x.cxx:					returnValue = BeEdition::make (myOrglRoot->copy(region)->setAllOwners(newOwner));
+brange3x.cxx:	returnValue = myOrglRoot->keysLabelled(label);
+brange3x.cxx:RPTR(OrglRoot) BeEdition::orglRoot (){
+brange3x.cxx:	return (OrglRoot*) myOrglRoot;
+brange3x.cxx:		myOrglRoot->updateBCrumTo(newBCrum);
+brange3x.cxx:		SouthRecorderChecker::make (myOrglRoot, newFinder, CAST(SensorCrum,scrum->fetchParent()))->schedule();
+brange3x.cxx:	returnValue = myOrglRoot->getBe(key);
+brange3x.cxx:		myOrglRoot->updateBCrumTo(newBCrum);
+brange3x.cxx:	returnValue = myOrglRoot->mapSharedTo(other->hCrum()->hCut());
+brange3x.cxx:	returnValue = myOrglRoot->sharedRegion(other->hCrum()->hCut());
+brange3x.cxx:BeEdition::BeEdition (APTR(OrglRoot) root, TCSJ) 
+brange3x.cxx:	: BeRangeElement(root->sensorCrum(), tcsj) {
+brange3x.cxx:	/* this should not have the same SensorCrum as my OrglRoot */
+brange3x.cxx:	myOrglRoot = root;
+brange3x.cxx:		myOrglRoot->introduceEdition(this);
+brange3x.cxx:		if (::isConstructed(myOrglRoot)) {
+brange3x.cxx:			myOrglRoot->removeEdition(this);
+brange3x.cxx:		myOrglRoot = NULL;
+brange3x.cxx:	oo << this->getCategory()->name() << "(" << myOrglRoot << ")";
+brange3x.cxx:	returnValue = myOrglRoot->attachTrailBlazer(blazer);
+brange3x.cxx:	result = myOrglRoot->fetchTrailBlazer();
+brange3x.cxx:	myOrglRoot->checkTrailBlazer(result);
+brange3x.cxx:	endorsement and permission filtering info rootward in the 
+brange3x.cxx:	SPTR(OrglRoot) oroot;
+brange3x.cxx:		oroot = myOrglRoot;
+brange3x.cxx:						oroot = myOrglRoot->copy(region);
+brange3x.cxx:	oroot->storeRecordingAgents(fossil, rAgents);
+brange3x.cxx:				Matcher::make (oroot, recorder->bertPropFinder(), fossil);
+brange3x.cxx:	SPTR(OrglRoot) oroot;
+brange3x.cxx:		oroot = myOrglRoot;
+brange3x.cxx:						oroot = myOrglRoot->copy(region);
+brange3x.cxx:		Matcher::make (oroot, recorder->bertPropFinder(), fossil)->schedule();
+brange3x.hxx:#ifndef OROOTX_OXX
+brange3x.hxx:#include "orootx.oxx"
+brange3x.hxx:#endif /* OROOTX_OXX */
+brange3x.hxx:	static RPTR(BeEdition) make (APTR(OrglRoot) ARG(oroot));
+brange3x.hxx:	virtual NOLOCK RPTR(OrglRoot) orglRoot ();
+brange3x.hxx:	BeEdition (APTR(OrglRoot) ARG(root), TCSJ);
+brange3x.hxx:	endorsement and permission filtering info rootward in the 
+brange3x.hxx:	CHKPTR(OrglRoot) myOrglRoot;
+brange3x.ixx:#ifndef OROOTX_HXX
+brange3x.ixx:#include "orootx.hxx"
+brange3x.ixx:#endif /* OROOTX_HXX */
+canopyp.hxx:	virtual RPTR(CanopyCrum) rootFor (APTR(CanopyCrum) ARG(bertCrum));
+canopyp.hxx:		Also update CachedRoot. */
+canopyp.hxx:	CHKPTR(CanopyCrum) myCachedRoot;
+canopyp.hxx:	/* Used to propagate some prop(erty) change rootwards in some 
+canopyp.hxx:	it gets to a local root or no further propagation in necessary. */
+canopyr.hxx:	/* Used to propagate some prop(erty) change rootwards in some 
+canopyr.hxx:	it gets to a local root or no further propagation in necessary. */
+canopyr.hxx:	until it gets to a local root or no further propagation in 
+canopyr.hxx:	/* Used to propagate some prop(erty) change rootwards in some 
+canopyr.hxx:	it gets to a local root or no further propagation in necessary. */
+canopyx.cxx:gets extended at the root.
+canopyx.cxx:It then returns the nearest root that contains both trees.  If it 
+canopyx.cxx:	SPTR(CanopyCrum) myRoot;
+canopyx.cxx:	SPTR(CanopyCrum) otherRoot;
+canopyx.cxx:	otherRoot = cache->rootFor(otherBCrum);
+canopyx.cxx:	myRoot = cache->rootFor(this);
+canopyx.cxx:	if (myRoot->maxHeight() > otherRoot->maxHeight()) {
+canopyx.cxx:		returnValue = this->makeJoin(otherRoot);
+canopyx.cxx:		returnValue = otherBCrum->makeJoin(myRoot);
+canopyx.cxx:		BLAST(We_can_only_dismantle_the_canopy_from_the_root_on_up_);
+canopyx.cxx:	/* Make a canopyCrum for a root:  it has no children. */
+canopyx.cxx:	rootward) */
+canopyx.cxx:	rootward) */
+canopyx.cxx:	/* Make a canopyCrum for a root:  it has no children. */
+canopyx.cxx:	/* Make a canopyCrum for a root:  it has no children. */
+canopyx.cxx:	/* Make a canopyCrum for a root:  it has no children. */
+canopyx.cxx:		(If sCrum is null, search through all my ancestors to a root 
+canopyx.cxx:	/* from self rootward until told to stop (at sCrum or the root)
+canopyx.cxx:	iterate through my ancestors to sCrum or a root. */
+canopyx.cxx:		Walk rootward on the sensor canopy, where many steps may 
+canopyx.cxx:	operation rootward). */
+canopyx.cxx:	/* Remove recorders because they have migrated rootward.
+canopyx.cxx:		The caller also handles all issues of rootward propagation 
+canopyx.cxx:/* Used to propagate some prop(erty) change rootwards in some canopy. 
+canopyx.cxx:local root or no further propagation in necessary. */
+canopyx.cxx:/* Used to propagate some prop(erty) change rootwards in some canopy. 
+canopyx.cxx:local root or no further propagation in necessary. */
+canopyx.cxx:				If more needs to be done, step rootward.  (myCrum is set 
+canopyx.cxx:	to NULL if I am the root.)
+canopyx.cxx:	myCachedRoot = NULL;
+canopyx.cxx:	myCachedRoot = NULL;
+canopyx.cxx:		myCachedRoot = canopyCrum;
+canopyx.cxx:			myCachedRoot = cur;
+canopyx.cxx:RPTR(CanopyCrum) CanopyCache::rootFor (APTR(CanopyCrum) bertCrum){
+canopyx.cxx:	return (CanopyCrum*) myCachedRoot;
+canopyx.cxx:		Also update CachedRoot. */
+canopyx.cxx:		if ((Heaper * ) myCachedRoot == childCrum) {
+canopyx.cxx:			myCachedRoot = parentCrum;
+canopyx.cxx:/* Used to propagate some prop(erty) change rootwards in some canopy. 
+canopyx.cxx:local root or no further propagation in necessary. */
+canopyx.cxx:				If more needs to be done, step rootward.  (myCrum is set 
+canopyx.cxx:	to NULL if I am the root.)
+canopyx.hxx:	then the height of the tree gets extended at the root.
+canopyx.hxx:	constraint on the tree.  It then returns the nearest root 
+canopyx.hxx:	/* Make a canopyCrum for a root:  it has no children. */
+canopyx.hxx:	/* Make a canopyCrum for a root:  it has no children. */
+canopyx.hxx:	/* Make a canopyCrum for a root:  it has no children. */
+canopyx.hxx:	/* Make a canopyCrum for a root:  it has no children. */
+canopyx.hxx:		(If sCrum is null, search through all my ancestors to a root 
+canopyx.hxx:	iterate through my ancestors to sCrum or a root. */
+canopyx.hxx:	/* Remove recorders because they have migrated rootward.
+canopyx.hxx:		The caller also handles all issues of rootward propagation 
+dagwoodx.cxx:'myRoot' is just for debugging for the moment. */
+dagwoodx.cxx:RPTR(TracePosition) DagWood::root (){
+dagwoodx.cxx:	return (TracePosition*) myRoot;
+dagwoodx.cxx:	/* This should really create a new root, but that's harder to draw!. */
+dagwoodx.cxx:	returnValue = myRoot->newSuccessor();
+dagwoodx.cxx:	myRoot = TracePosition::make (BranchDescription::make (this), 1);
+dagwoodx.cxx:	/* Ensure that no elements get allocated on the root branch. */
+dagwoodx.cxx:	myRoot->newSuccessor();
+dagwoodx.cxx:	return this->Abraham::contentsHash() ^ myRoot->hashForEqual();
+dagwoodx.hxx:	large).  The variable 'myRoot' is just for debugging for the moment. */
+dagwoodx.hxx:	virtual NOLOCK RPTR(TracePosition) root ();
+dagwoodx.hxx:	/* This should really create a new root, but that's harder to draw!. */
+dagwoodx.hxx:	CHKPTR(TracePosition) myRoot;
+granmapx.cxx:#ifndef OROOTX_HXX
+granmapx.cxx:#include "orootx.hxx"
+granmapx.cxx:#endif /* OROOTX_HXX */
+granmapx.cxx:	SPTR(OrglRoot) result;
+granmapx.cxx:							OrglRoot::makeData(keys, ordering, values));
+granmapx.cxx:					result = OrglRoot::make (ordering->coordinateSpace());
+granmapx.cxx:						SPTR(OrglRoot) oroot;
+granmapx.cxx:						oroot = 
+granmapx.cxx:								OrglRoot::makeData(IntegerMapping::make (-offset)->ofAll(region), ordering, array);
+granmapx.cxx:						result = result->combine(oroot->transformedBy(IntegerMapping::make (offset)));
+granmapx.cxx:					returnValue = BeEdition::make (ActualOrglRoot::make (Loaf::make (region, value), region));
+granmapx.cxx:					returnValue = BeEdition::make (ActualOrglRoot::make (Loaf::make (keys, value), keys));
+granmapx.cxx:						returnValue = BeEdition::make (OrglRoot::make (cs));
+granmapx.cxx:					returnValue = BeEdition::make (OrglRoot::make (region));
+granmapx.cxx:						OrglRoot::make (keys, ordering, values));
+grantabp.hxx:	/* oldOverflowRoot holds onto the overflow tree that was in 
+grantabp.hxx:	CHKPTR(GrandOverflow) overflowRoot;
+grantabp.hxx:	CHKPTR(GrandOverflow) oldOverflowRoot;
+grantabx.cxx:/* oldOverflowRoot holds onto the overflow tree that was in place 
+grantabx.cxx:	if (oldOverflowRoot != NULL) {
+grantabx.cxx:		returnValue = oldOverflowRoot->fetch(toMatch, aHash);
+grantabx.cxx:	if (oldOverflowRoot != NULL) {
+grantabx.cxx:		oldOverflowRoot->wipe(toMatch, aHash);
+grantabx.cxx:	overflowRoot = NULL;
+grantabx.cxx:	oldOverflowRoot = NULL;
+grantabx.cxx:		if (overflowRoot != NULL) {
+grantabx.cxx:			{overflowRoot->destroy();  overflowRoot = NULL /* don't want stale (S/CHK)PTRs */;}
+grantabx.cxx:		if (oldOverflowRoot != NULL) {
+grantabx.cxx:			{oldOverflowRoot->destroy();  oldOverflowRoot = NULL /* don't want stale (S/CHK)PTRs */;}
+grantabx.cxx:		if (overflowRoot != NULL) {
+grantabx.cxx:			if (oldOverflowRoot != NULL) {
+grantabx.cxx:			oldOverflowRoot = overflowRoot;
+grantabx.cxx:			overflowRoot = NULL;
+grantabx.cxx:			GrandNodeReinserter::make (this, oldOverflowRoot)->schedule();
+grantabx.cxx:			{oldOverflowRoot->destroy();  oldOverflowRoot = NULL /* don't want stale (S/CHK)PTRs */;}
+grantabx.cxx:			oldOverflowRoot = NULL;
+grantabx.cxx:	if (overflowRoot != NULL) {
+grantabx.cxx:		result ^= overflowRoot->hashForEqual();
+grantabx.cxx:	if (oldOverflowRoot != NULL) {
+grantabx.cxx:		result ^= oldOverflowRoot->hashForEqual();
+grantabx.cxx:		/* overflowRoot == NULL && oldOverflowRoot == NULL */
+grantabx.cxx:		crutch_Flag = overflowRoot == NULL;
+grantabx.cxx:			crutch_Flag = oldOverflowRoot == NULL;
+grantabx.cxx:	return (GrandOverflow*) oldOverflowRoot;
+grantabx.cxx:	return (GrandOverflow*) overflowRoot;
+grantabx.cxx:	if (overflowRoot == NULL) {
+grantabx.cxx:			CONSTRUCT(overflowRoot,GrandOverflow,(GrandNode::OverflowPageSize, 1));
+grantabx.cxx:	return (GrandOverflow*) overflowRoot;
+htreex.cxx:#ifndef OROOTX_HXX
+htreex.cxx:#include "orootx.hxx"
+htreex.cxx:#endif /* OROOTX_HXX */
+htreex.cxx:of children:  0, 1, or more.  ORoots have 0 children and 
+htreex.hxx:#ifndef OROOTX_OXX
+htreex.hxx:#include "orootx.oxx"
+htreex.hxx:#endif /* OROOTX_OXX */
+htreex.hxx:	of children:  0, 1, or more.  ORoots have 0 children and 
+loavesp.hxx:	virtual RPTR(OrglRoot) setAllOwners (APTR(ID) ARG(owner));
+loavesp.hxx:	virtual RPTR(OrglRoot) combine (
+loavesp.hxx:			APTR(ActualOrglRoot) ARG(another), 
+loavesp.hxx:	virtual void informTo (APTR(OrglRoot) ARG(orgl));
+loavesp.hxx:	virtual RPTR(OrglRoot) setAllOwners (APTR(ID) ARG(owner));
+loavesp.hxx:	virtual void informTo (APTR(OrglRoot) ARG(orgl));
+loavesp.hxx:	virtual RPTR(OrglRoot) setAllOwners (APTR(ID) ARG(owner));
+loavesp.hxx:	to trace.  Redefine this to pass down to my hRoot. */
+loavesp.hxx:	virtual void informTo (APTR(OrglRoot) ARG(orgl));
+loavesp.hxx:	virtual RPTR(OrglRoot) setAllOwners (APTR(ID) ARG(owner));
+loavesp.hxx:	virtual RPTR(OrglRoot) setAllOwners (APTR(ID) ARG(owner));
+loavesp.hxx:	virtual RPTR(OrglRoot) combine (
+loavesp.hxx:			APTR(ActualOrglRoot) ARG(another), 
+loavesp.hxx:	virtual void informTo (APTR(OrglRoot) ARG(orgl));
+loavesx.cxx:					returnValue = FeEdition::on(BeEdition::make (ActualOrglRoot::make (this, this->domain())));
+loavesx.cxx:RPTR(OrglRoot) OExpandingLoaf::combine (
+loavesx.cxx:		APTR(ActualOrglRoot) another, 
+loavesx.cxx:	SPTR(ActualOrglRoot) result;
+loavesx.cxx:	SPTR(OrglRoot) him;
+loavesx.cxx:	result = ActualOrglRoot::make (this->transformedBy(globalDsp), myGlobalRegion);
+loavesx.cxx:		SPTR(OrglRoot) hisOut;
+loavesx.cxx:					result->makeNew(split, result, CAST(ActualOrglRoot,hisOut));
+loavesx.cxx:	WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:void OExpandingLoaf::informTo (APTR(OrglRoot) /* orgl */){
+loavesx.cxx:	of backfollow (which is leafward, then rootward, in the 
+loavesx.cxx:RPTR(OrglRoot) DspLoaf::setAllOwners (APTR(ID) owner){
+loavesx.cxx:	WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:RPTR(OrglRoot) DspLoaf::combine (
+loavesx.cxx:		APTR(ActualOrglRoot) another, 
+loavesx.cxx:	WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:void OPartialLoaf::informTo (APTR(OrglRoot) /* orgl */){
+loavesx.cxx:RPTR(OrglRoot) OPartialLoaf::setAllOwners (APTR(ID) owner){
+loavesx.cxx:		WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:		returnValue = OrglRoot::make (this->domain()->coordinateSpace());
+loavesx.cxx:		WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:		returnValue = ActualOrglRoot::make (this, this->domain());
+loavesx.cxx:void OVirtualLoaf::informTo (APTR(OrglRoot) /* orgl */){
+loavesx.cxx:RPTR(OrglRoot) OVirtualLoaf::setAllOwners (APTR(ID) owner){
+loavesx.cxx:		WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:		returnValue = OrglRoot::make (this->domain()->coordinateSpace());
+loavesx.cxx:		WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:		returnValue = ActualOrglRoot::make (this, this->domain());
+loavesx.cxx:	to trace.  Redefine this to pass down to my hRoot. */
+loavesx.cxx:void RegionLoaf::informTo (APTR(OrglRoot) /* orgl */){
+loavesx.cxx:RPTR(OrglRoot) RegionLoaf::setAllOwners (APTR(ID) owner){
+loavesx.cxx:		WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:		returnValue = OrglRoot::make (this->domain()->coordinateSpace());
+loavesx.cxx:		WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:		returnValue = ActualOrglRoot::make (this, this->domain());
+loavesx.cxx:RPTR(OrglRoot) SplitLoaf::setAllOwners (APTR(ID) owner){
+loavesx.cxx:	SPTR(OrglRoot) in;
+loavesx.cxx:	SPTR(OrglRoot) out;
+loavesx.cxx:		WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:		WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:		/* CAST(ActualOrglRoot,in)->fullcrum() == myIn && CAST(ActualOrglRoot,out)->fullcrum() == myOut */
+loavesx.cxx:		crutch_Flag = CAST(ActualOrglRoot,in)->fullcrum() == myIn;
+loavesx.cxx:			crutch_Flag = CAST(ActualOrglRoot,out)->fullcrum() == myOut;
+loavesx.cxx:			WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:			returnValue = ActualOrglRoot::make (this, in->simpleDomain()->simpleUnion(out->simpleDomain()));
+loavesx.cxx:	WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:	returnValue = CAST(ActualOrglRoot,in)->makeNew(mySplit, CAST(ActualOrglRoot,in), CAST(ActualOrglRoot,out));
+loavesx.cxx:RPTR(OrglRoot) SplitLoaf::combine (
+loavesx.cxx:		APTR(ActualOrglRoot) another, 
+loavesx.cxx:	SPTR(ActualOrglRoot) newIn;
+loavesx.cxx:	SPTR(ActualOrglRoot) newOut;
+loavesx.cxx:	SPTR(OrglRoot) hisIn;
+loavesx.cxx:	SPTR(OrglRoot) hisOut;
+loavesx.cxx:	newIn = ActualOrglRoot::make (myIn->transformedBy(globalDsp), limitRegion->intersect(globalIn));
+loavesx.cxx:	newOut = ActualOrglRoot::make (myOut->transformedBy(globalDsp), limitRegion->intersect(globalOut));
+loavesx.cxx:	WPTR(OrglRoot) 	returnValue;
+loavesx.cxx:	returnValue = newIn->makeNew(globalIn, CAST(ActualOrglRoot,newIn->combine(hisIn)), CAST(ActualOrglRoot,newOut->combine(hisOut)));
+loavesx.cxx:void SplitLoaf::informTo (APTR(OrglRoot) /* orgl */){
+loavesx.hxx:#ifndef OROOTX_HXX
+loavesx.hxx:#include "orootx.hxx"
+loavesx.hxx:#endif /* OROOTX_HXX */
+loavesx.hxx:	virtual RPTR(OrglRoot) setAllOwners (APTR(ID) ARG(owner)) DEFERRED_FUNC;
+loavesx.hxx:	virtual RPTR(OrglRoot) combine (
+loavesx.hxx:			APTR(ActualOrglRoot) ARG(another), 
+loavesx.hxx:	virtual RPTR(OrglRoot) setAllOwners (APTR(ID) ARG(owner)) DEFERRED_FUNC;
+loavesx.hxx:	virtual RPTR(OrglRoot) combine (
+loavesx.hxx:			APTR(ActualOrglRoot) ARG(another), 
+loavesx.hxx:	virtual RPTR(OrglRoot) combine (
+loavesx.hxx:			APTR(ActualOrglRoot) ARG(another), 
+loavesx.hxx:	virtual void informTo (APTR(OrglRoot) ARG(orgl));
+loavesx.hxx:	of backfollow (which is leafward, then rootward, in the 
+loavesx.hxx:	virtual RPTR(OrglRoot) setAllOwners (APTR(ID) ARG(owner)) DEFERRED_FUNC;
+loavesx.oxx:#ifndef OROOTX_OXX
+loavesx.oxx:#include "orootx.oxx"
+loavesx.oxx:#endif /* OROOTX_OXX */
+orootp.hxx:#ifndef OROOTP_HXX
+orootp.hxx:#define OROOTP_HXX
+orootp.hxx:#ifndef OROOTX_HXX
+orootp.hxx:#include "orootx.hxx"
+orootp.hxx:#endif /* OROOTX_HXX */
+orootp.hxx:#ifndef OROOTP_OXX
+orootp.hxx:#include "orootp.oxx"
+orootp.hxx:#endif /* OROOTP_OXX */
+orootp.hxx:#endif /* OROOTP_HXX */
+orootp.ixx:#ifndef OROOTP_IXX
+orootp.ixx:#define OROOTP_IXX
+orootp.ixx:#endif /* OROOTP_IXX */
+orootp.oxx:#ifndef OROOTP_OXX
+orootp.oxx:#define OROOTP_OXX
+orootp.oxx:#endif /* OROOTP_OXX */
+orootx.cxx:#ifndef OROOTX_CXX
+orootx.cxx:#define OROOTX_CXX
+orootx.cxx:#ifndef OROOTX_HXX
+orootx.cxx:#include "orootx.hxx"
+orootx.cxx:#endif /* OROOTX_HXX */
+orootx.cxx:#ifndef OROOTX_IXX
+orootx.cxx:#include "orootx.ixx"
+orootx.cxx:#endif /* OROOTX_IXX */
+orootx.cxx:#ifndef OROOTP_HXX
+orootx.cxx:#include "orootp.hxx"
+orootx.cxx:#endif /* OROOTP_HXX */
+orootx.cxx:#ifndef OROOTP_IXX
+orootx.cxx:#include "orootp.ixx"
+orootx.cxx:#endif /* OROOTP_IXX */
+orootx.cxx: *                    Class   OrglRoot 
+orootx.cxx:RPTR(OrglRoot) OrglRoot::make (APTR(CoordinateSpace) cs){
+orootx.cxx:	/* create a new orgl root */
+orootx.cxx:		RETURN_CONSTRUCT(EmptyOrglRoot,(cs, tcsj));
+orootx.cxx:RPTR(OrglRoot) OrglRoot::make (APTR(XnRegion) region){
+orootx.cxx:		WPTR(OrglRoot) 	returnValue;
+orootx.cxx:		returnValue = OrglRoot::make (region->coordinateSpace());
+orootx.cxx:	WPTR(OrglRoot) 	returnValue;
+orootx.cxx:	returnValue = ActualOrglRoot::make (Loaf::make (region), region);
+orootx.cxx:RPTR(OrglRoot) OrglRoot::make (
+orootx.cxx:	SPTR(OrglRoot) result;
+orootx.cxx:	result = OrglRoot::make (ordering->coordinateSpace());
+orootx.cxx:		result = result->combine(ActualOrglRoot::make (Loaf::make (region, element), region));
+orootx.cxx:	WPTR(OrglRoot) 	returnValue;
+orootx.cxx:RPTR(OrglRoot) OrglRoot::makeData (APTR(PrimDataArray) values, APTR(Arrangement) arrangement){
+orootx.cxx:	WPTR(OrglRoot) 	returnValue;
+orootx.cxx:	returnValue = ActualOrglRoot::make (Loaf::make (values, arrangement), arrangement->region());
+orootx.cxx:RPTR(OrglRoot) OrglRoot::makeData (
+orootx.cxx:	WPTR(OrglRoot) 	returnValue;
+orootx.cxx:	returnValue = ActualOrglRoot::make (Loaf::make (values, ordering->arrange(keys)), keys);
+orootx.cxx:RPTR(AgendaItem) OrglRoot::propChanger (APTR(PropChange) change){
+orootx.cxx:BooleanVar OrglRoot::updateBCrumTo (APTR(BertCrum) newBCrum){
+orootx.cxx:RPTR(HistoryCrum) OrglRoot::hCrum (){
+orootx.cxx:RPTR(TracePosition) OrglRoot::hCut (){
+orootx.cxx:void OrglRoot::introduceEdition (APTR(BeEdition) edition){
+orootx.cxx:void OrglRoot::removeEdition (APTR(BeEdition) stamp){
+orootx.cxx:		can keep OrglRoots around, so destroy the receiver. */
+orootx.cxx:void OrglRoot::dismantle (){
+orootx.cxx:OrglRoot::OrglRoot (APTR(SensorCrum) OR(NULL) scrum, TCSJ) 
+orootx.cxx:UInt32 OrglRoot::contentsHash (){
+orootx.cxx: *                    Class     ActualOrglRoot 
+orootx.cxx:RPTR(ActualOrglRoot) ActualOrglRoot::make (APTR(Loaf) loaf, APTR(XnRegion) region){
+orootx.cxx:	/* create a new orgl root */
+orootx.cxx:		BLAST(Attempt_to_make_an_empty_ActualOrglRoot);
+orootx.cxx:		RETURN_CONSTRUCT(ActualOrglRoot,(loaf, region));
+orootx.cxx:RPTR(XnRegion) ActualOrglRoot::attachTrailBlazer (APTR(TrailBlazer) blazer){
+orootx.cxx:void ActualOrglRoot::checkRecorders (APTR(PropFinder) finder, APTR(SensorCrum) OR(NULL) scrum){
+orootx.cxx:void ActualOrglRoot::checkTrailBlazer (APTR(TrailBlazer) blazer){
+orootx.cxx:void ActualOrglRoot::delayedFindMatching (
+orootx.cxx:RPTR(TrailBlazer) OR(NULL) ActualOrglRoot::fetchTrailBlazer (){
+orootx.cxx:void ActualOrglRoot::storeRecordingAgents (APTR(RecorderFossil) recorder, APTR(Agenda) agenda){
+orootx.cxx:void ActualOrglRoot::triggerDetector (APTR(FeFillRangeDetector) detect){
+orootx.cxx:BooleanVar ActualOrglRoot::updateBCrumTo (APTR(BertCrum) newBCrum){
+orootx.cxx:	if (this->OrglRoot::updateBCrumTo(newBCrum)) {
+orootx.cxx:RPTR(CoordinateSpace) ActualOrglRoot::coordinateSpace (){
+orootx.cxx:IntegerVar ActualOrglRoot::count (){
+orootx.cxx:RPTR(XnRegion) ActualOrglRoot::domain (){
+orootx.cxx:RPTR(FeRangeElement) OR(NULL) ActualOrglRoot::fetch (APTR(Position) key, APTR(BeEdition) edition){
+orootx.cxx:RPTR(Loaf) ActualOrglRoot::fullcrum (){
+orootx.cxx:RPTR(BeRangeElement) ActualOrglRoot::getBe (APTR(Position) key){
+orootx.cxx:					returnValue = CAST(ActualOrglRoot,this->copy(key->asRegion()))->fullcrum()->getBe(key);
+orootx.cxx:BooleanVar ActualOrglRoot::isEmpty (){
+orootx.cxx:	/* ActualOrglRoots believe they have stuff beneath them. */
+orootx.cxx:RPTR(XnRegion) ActualOrglRoot::keysLabelled (APTR(BeLabel) label){
+orootx.cxx:RPTR(Mapping) ActualOrglRoot::mapSharedTo (APTR(TracePosition) trace){
+orootx.cxx:RPTR(ID) ActualOrglRoot::ownerAt (APTR(Position) key){
+orootx.cxx:RPTR(XnRegion) ActualOrglRoot::rangeOwners (APTR(XnRegion) OR(NULL) positions){
+orootx.cxx:RPTR(OrglRoot) ActualOrglRoot::setAllOwners (APTR(ID) owner){
+orootx.cxx:	WPTR(OrglRoot) 	returnValue;
+orootx.cxx:RPTR(XnRegion) ActualOrglRoot::sharedRegion (APTR(TracePosition) trace){
+orootx.cxx:RPTR(XnRegion) ActualOrglRoot::simpleDomain (){
+orootx.cxx:RPTR(PrimSpec) ActualOrglRoot::specAt (APTR(Position) key){
+orootx.cxx:RPTR(Pair) OF1(OrglRoot) ActualOrglRoot::tryAllBecome (APTR(OrglRoot) other){
+orootx.cxx:RPTR(XnRegion) ActualOrglRoot::usedDomain (){
+orootx.cxx:RPTR(Stepper) ActualOrglRoot::bundleStepper (APTR(XnRegion) region, APTR(OrderSpec) order){
+orootx.cxx:RPTR(OrglRoot) ActualOrglRoot::combine (APTR(OrglRoot) another){
+orootx.cxx:	SPTR(ActualOrglRoot) him;
+orootx.cxx:	SPTR(OrglRoot) result;
+orootx.cxx:	him = CAST(ActualOrglRoot,another);
+orootx.cxx:		WPTR(OrglRoot) 	returnValue;
+orootx.cxx:		WPTR(OrglRoot) 	returnValue;
+orootx.cxx:	WPTR(OrglRoot) 	returnValue;
+orootx.cxx:RPTR(OrglRoot) ActualOrglRoot::copy (APTR(XnRegion) region){
+orootx.cxx:		WPTR(OrglRoot) 	returnValue;
+orootx.cxx:		SPTR(OrglRoot) result;
+orootx.cxx:		result = OrglRoot::make (this->coordinateSpace());
+orootx.cxx:		WPTR(OrglRoot) 	returnValue;
+orootx.cxx:RPTR(OrglRoot) ActualOrglRoot::copyDistinction (APTR(XnRegion) region){
+orootx.cxx:		WPTR(OrglRoot) 	returnValue;
+orootx.cxx:		returnValue = OrglRoot::make (this->coordinateSpace());
+orootx.cxx:			WPTR(OrglRoot) 	returnValue;
+orootx.cxx:			returnValue = ActualOrglRoot::make (CAST(InnerLoaf,myO)->inPart(), myRegion->intersect(region));
+orootx.cxx:RPTR(OrglRoot) ActualOrglRoot::copySimple (APTR(XnRegion) simpleRegion){
+orootx.cxx:	SPTR(OrglRoot) result;
+orootx.cxx:			WPTR(OrglRoot) 	returnValue;
+orootx.cxx:		result = CAST(ActualOrglRoot,result)->copyDistinction(distinct);
+orootx.cxx:	WPTR(OrglRoot) 	returnValue;
+orootx.cxx:void ActualOrglRoot::fill (
+orootx.cxx:RPTR(ActualOrglRoot) ActualOrglRoot::makeNew (
+orootx.cxx:		APTR(ActualOrglRoot) newIn, 
+orootx.cxx:		APTR(ActualOrglRoot) newOut)
+orootx.cxx:	WPTR(ActualOrglRoot) 	returnValue;
+orootx.cxx:	returnValue = ActualOrglRoot::make (
+orootx.cxx:RPTR(OrglRoot) ActualOrglRoot::transformedBy (APTR(Dsp) externalDsp){
+orootx.cxx:	WPTR(OrglRoot) 	returnValue;
+orootx.cxx:	returnValue = ActualOrglRoot::make (myO->transformedBy(externalDsp), externalDsp->ofAll(myRegion));
+orootx.cxx:RPTR(OrglRoot) ActualOrglRoot::unTransformedBy (APTR(Dsp) externalDsp){
+orootx.cxx:	WPTR(OrglRoot) 	returnValue;
+orootx.cxx:	returnValue = ActualOrglRoot::make (myO->unTransformedBy(externalDsp), externalDsp->inverseOfAll(myRegion));
+orootx.cxx:ActualOrglRoot::ActualOrglRoot (APTR(Loaf) fullcrum, APTR(XnRegion) region) 
+orootx.cxx:	: OrglRoot(fullcrum->sensorCrum(), tcsj) {
+orootx.cxx:void ActualOrglRoot::printOn (ostream& aStream){
+orootx.cxx:RPTR(ActualOrglRoot) OR(NULL) ActualOrglRoot::fetchEasyCombine (APTR(ActualOrglRoot) another){
+orootx.cxx:		SPTR(OrglRoot) myIn;
+orootx.cxx:		SPTR(OrglRoot) myOut;
+orootx.cxx:			WPTR(ActualOrglRoot) OR(NULL) 	returnValue;
+orootx.cxx:			returnValue = this->makeNew(bound, another, CAST(ActualOrglRoot,myOut));
+orootx.cxx:			WPTR(ActualOrglRoot) OR(NULL) 	returnValue;
+orootx.cxx:			returnValue = this->makeNew(bound, CAST(ActualOrglRoot,another->combine(myIn)), CAST(ActualOrglRoot,myOut));
+orootx.cxx:UInt8 ActualOrglRoot::splay (APTR(XnRegion) region){
+orootx.cxx:	to the root */
+orootx.cxx:void ActualOrglRoot::dismantle (){
+orootx.cxx:		this->OrglRoot::dismantle();
+orootx.cxx:UInt32 ActualOrglRoot::contentsHash (){
+orootx.cxx:	return this->OrglRoot::contentsHash() ^ myO->hashForEqual() ^ myRegion->hashForEqual();
+orootx.cxx: *                    Class     EmptyOrglRoot 
+orootx.cxx:RPTR(XnRegion) EmptyOrglRoot::attachTrailBlazer (APTR(TrailBlazer) blazer){
+orootx.cxx:void EmptyOrglRoot::checkRecorders (APTR(PropFinder) finder, APTR(SensorCrum) OR(NULL) scrum){
+orootx.cxx:void EmptyOrglRoot::checkTrailBlazer (APTR(TrailBlazer) /* blazer */){
+orootx.cxx:void EmptyOrglRoot::delayedFindMatching (
+orootx.cxx:RPTR(TrailBlazer) OR(NULL) EmptyOrglRoot::fetchTrailBlazer (){
+orootx.cxx:void EmptyOrglRoot::storeRecordingAgents (APTR(RecorderFossil) recorder, APTR(Agenda) agenda){
+orootx.cxx:void EmptyOrglRoot::triggerDetector (APTR(FeFillRangeDetector) detect){
+orootx.cxx:RPTR(CoordinateSpace) EmptyOrglRoot::coordinateSpace (){
+orootx.cxx:IntegerVar EmptyOrglRoot::count (){
+orootx.cxx:RPTR(XnRegion) EmptyOrglRoot::domain (){
+orootx.cxx:RPTR(FeRangeElement) OR(NULL) EmptyOrglRoot::fetch (APTR(Position) key, APTR(BeEdition) edition){
+orootx.cxx:RPTR(BeRangeElement) EmptyOrglRoot::getBe (APTR(Position) key){
+orootx.cxx:BooleanVar EmptyOrglRoot::isEmpty (){
+orootx.cxx:RPTR(XnRegion) EmptyOrglRoot::keysLabelled (APTR(BeLabel) label){
+orootx.cxx:RPTR(Mapping) EmptyOrglRoot::mapSharedTo (APTR(TracePosition) /* trace */){
+orootx.cxx:RPTR(ID) EmptyOrglRoot::ownerAt (APTR(Position) key){
+orootx.cxx:RPTR(XnRegion) EmptyOrglRoot::rangeOwners (APTR(XnRegion) OR(NULL) positions){
+orootx.cxx:RPTR(OrglRoot) EmptyOrglRoot::setAllOwners (APTR(ID) owner){
+orootx.cxx:RPTR(XnRegion) EmptyOrglRoot::sharedRegion (APTR(TracePosition) /* trace */){
+orootx.cxx:RPTR(XnRegion) EmptyOrglRoot::simpleDomain (){
+orootx.cxx:RPTR(PrimSpec) EmptyOrglRoot::specAt (APTR(Position) key){
+orootx.cxx:RPTR(XnRegion) EmptyOrglRoot::usedDomain (){
+orootx.cxx:RPTR(Stepper) EmptyOrglRoot::bundleStepper (APTR(XnRegion) region, APTR(OrderSpec) order){
+orootx.cxx:RPTR(OrglRoot) EmptyOrglRoot::combine (APTR(OrglRoot) orgl){
+orootx.cxx:	WPTR(OrglRoot) 	returnValue;
+orootx.cxx:RPTR(OrglRoot) EmptyOrglRoot::copy (APTR(XnRegion) /* externalRegion */){
+orootx.cxx:RPTR(OrglRoot) EmptyOrglRoot::transformedBy (APTR(Dsp) /* externalDsp */){
+orootx.cxx:RPTR(OrglRoot) EmptyOrglRoot::unTransformedBy (APTR(Dsp) /* externalDsp */){
+orootx.cxx:EmptyOrglRoot::EmptyOrglRoot (APTR(CoordinateSpace) cs, TCSJ) 
+orootx.cxx:	: OrglRoot((SensorCrum * ) NULL, tcsj) {
+orootx.cxx:UInt32 EmptyOrglRoot::contentsHash (){
+orootx.cxx:	return this->OrglRoot::contentsHash() ^ myCS->hashForEqual();
+orootx.cxx:	that intermediate orglRoots generated by copy and combine are 
+orootx.cxx:#ifndef OROOTX_SXX
+orootx.cxx:#include "orootx.sxx"
+orootx.cxx:#endif /* OROOTX_SXX */
+orootx.cxx:#ifndef OROOTP_SXX
+orootx.cxx:#include "orootp.sxx"
+orootx.cxx:#endif /* OROOTP_SXX */
+orootx.cxx:#endif /* OROOTX_CXX */
+orootx.hxx:#ifndef OROOTX_HXX
+orootx.hxx:#define OROOTX_HXX
+orootx.hxx:#ifndef OROOTX_OXX
+orootx.hxx:#include "orootx.oxx"
+orootx.hxx:#endif /* OROOTX_OXX */
+orootx.hxx:#ifndef OROOTP_OXX
+orootx.hxx:#include "orootp.oxx"
+orootx.hxx:#endif /* OROOTP_OXX */
+orootx.hxx: *                    Class   OrglRoot 
+orootx.hxx:class OrglRoot : public OPart {
+orootx.hxx:/* Attributes for class OrglRoot */
+orootx.hxx:	DEFERRED(OrglRoot)
+orootx.hxx:	SHEPHERD_PATRIARCH(OrglRoot,OPart)
+orootx.hxx:	COPY(OrglRoot,DiskCuisine)
+orootx.hxx:	DEFERRED_LOCKED(OrglRoot)
+orootx.hxx:	AUTO_GC(OrglRoot)
+orootx.hxx:	/* create a new orgl root */
+orootx.hxx:	static RPTR(OrglRoot) make (APTR(CoordinateSpace) ARG(cs));
+orootx.hxx:	static RPTR(OrglRoot) make (APTR(XnRegion) ARG(region));
+orootx.hxx:	static RPTR(OrglRoot) make (
+orootx.hxx:	static RPTR(OrglRoot) makeData (APTR(PrimDataArray) ARG(values), APTR(Arrangement) ARG(arrangement));
+orootx.hxx:	static RPTR(OrglRoot) makeData (
+orootx.hxx:	virtual RPTR(OrglRoot) setAllOwners (APTR(ID) ARG(owner)) DEFERRED_FUNC;
+orootx.hxx:	virtual RPTR(OrglRoot) combine (APTR(OrglRoot) ARG(orgl)) DEFERRED_FUNC;
+orootx.hxx:	virtual RPTR(OrglRoot) copy (APTR(XnRegion) ARG(externalRegion)) DEFERRED_FUNC;
+orootx.hxx:	virtual RPTR(OrglRoot) transformedBy (APTR(Dsp) ARG(externalDsp)) DEFERRED_FUNC;
+orootx.hxx:	virtual RPTR(OrglRoot) unTransformedBy (APTR(Dsp) ARG(externalDsp)) DEFERRED_FUNC;
+orootx.hxx:	OrglRoot (APTR(SensorCrum) OR(NULL) ARG(scrum), TCSJ);
+orootx.hxx:};  /* end class OrglRoot */
+orootx.hxx: *                    Class     ActualOrglRoot 
+orootx.hxx:class ActualOrglRoot : public OrglRoot {
+orootx.hxx:/* Attributes for class ActualOrglRoot */
+orootx.hxx:	CONCRETE(ActualOrglRoot)
+orootx.hxx:	SHEPHERD_PATRIARCH(ActualOrglRoot,OrglRoot)
+orootx.hxx:	COPY(ActualOrglRoot,DiskCuisine)
+orootx.hxx:	LOCKED(ActualOrglRoot)
+orootx.hxx:	AUTO_GC(ActualOrglRoot)
+orootx.hxx:	/* create a new orgl root */
+orootx.hxx:	static RPTR(ActualOrglRoot) make (APTR(Loaf) ARG(loaf), APTR(XnRegion) ARG(region));
+orootx.hxx:	/* ActualOrglRoots believe they have stuff beneath them. */
+orootx.hxx:	virtual RPTR(OrglRoot) setAllOwners (APTR(ID) ARG(owner));
+orootx.hxx:	virtual RPTR(Pair) OF1(OrglRoot) tryAllBecome (APTR(OrglRoot) ARG(other));
+orootx.hxx:	virtual RPTR(OrglRoot) combine (APTR(OrglRoot) ARG(another));
+orootx.hxx:	virtual RPTR(OrglRoot) copy (APTR(XnRegion) ARG(region));
+orootx.hxx:	virtual RPTR(OrglRoot) copyDistinction (APTR(XnRegion) ARG(region));
+orootx.hxx:	virtual RPTR(OrglRoot) copySimple (APTR(XnRegion) ARG(simpleRegion));
+orootx.hxx:	virtual RPTR(ActualOrglRoot) makeNew (
+orootx.hxx:			APTR(ActualOrglRoot) ARG(newIn), 
+orootx.hxx:			APTR(ActualOrglRoot) ARG(newOut))
+orootx.hxx:	virtual RPTR(OrglRoot) transformedBy (APTR(Dsp) ARG(externalDsp));
+orootx.hxx:	virtual RPTR(OrglRoot) unTransformedBy (APTR(Dsp) ARG(externalDsp));
+orootx.hxx:	ActualOrglRoot (APTR(Loaf) ARG(fullcrum), APTR(XnRegion) ARG(region));
+orootx.hxx:	virtual RPTR(ActualOrglRoot) OR(NULL) fetchEasyCombine (APTR(ActualOrglRoot) ARG(another));
+orootx.hxx:	to the root */
+orootx.hxx:};  /* end class ActualOrglRoot */
+orootx.hxx: *                    Class     EmptyOrglRoot 
+orootx.hxx:class EmptyOrglRoot : public OrglRoot {
+orootx.hxx:/* Attributes for class EmptyOrglRoot */
+orootx.hxx:	CONCRETE(EmptyOrglRoot)
+orootx.hxx:	SHEPHERD_PATRIARCH(EmptyOrglRoot,OrglRoot)
+orootx.hxx:	COPY(EmptyOrglRoot,DiskCuisine)
+orootx.hxx:	LOCKED(EmptyOrglRoot)
+orootx.hxx:	AUTO_GC(EmptyOrglRoot)
+orootx.hxx:	virtual NOLOCK RPTR(OrglRoot) setAllOwners (APTR(ID) ARG(owner));
+orootx.hxx:	virtual NOLOCK RPTR(OrglRoot) combine (APTR(OrglRoot) ARG(orgl));
+orootx.hxx:	virtual NOLOCK RPTR(OrglRoot) copy (APTR(XnRegion) ARG(externalRegion));
+orootx.hxx:	virtual NOLOCK RPTR(OrglRoot) transformedBy (APTR(Dsp) ARG(externalDsp));
+orootx.hxx:	virtual NOLOCK RPTR(OrglRoot) unTransformedBy (APTR(Dsp) ARG(externalDsp));
+orootx.hxx:	EmptyOrglRoot (APTR(CoordinateSpace) ARG(cs), TCSJ);
+orootx.hxx:	friend class OrglRoot;
+orootx.hxx:};  /* end class EmptyOrglRoot */
+orootx.hxx:#endif /* OROOTX_HXX */
+orootx.ixx:#ifndef OROOTX_IXX
+orootx.ixx:#define OROOTX_IXX
+orootx.ixx:#ifndef OROOTP_HXX
+orootx.ixx:#include "orootp.hxx"
+orootx.ixx:#endif /* OROOTP_HXX */
+orootx.ixx: *                    Class   OrglRoot 
+orootx.ixx: *                    Class     ActualOrglRoot 
+orootx.ixx: *                    Class     EmptyOrglRoot 
+orootx.ixx:#endif /* OROOTX_IXX */
+orootx.oxx:#ifndef OROOTX_OXX
+orootx.oxx:#define OROOTX_OXX
+orootx.oxx:#ifndef OROOTX_OXX
+orootx.oxx:#include "orootx.oxx"
+orootx.oxx:#endif /* OROOTX_OXX */
+orootx.oxx:OPAQUE_TYPE_4(OrglRoot,OPart,Abraham,Heaper);
+orootx.oxx:OPAQUE_TYPE_5(ActualOrglRoot,OrglRoot,OPart,Abraham,Heaper);
+orootx.oxx:OPAQUE_TYPE_5(EmptyOrglRoot,OrglRoot,OPart,Abraham,Heaper);
+orootx.oxx:#endif /* OROOTX_OXX */
+shephx.cxx:	/* This is the root of the automatically generated 
+shephx.hxx:	/* This is the root of the automatically generated 
+tcludex.cxx:		APTR(OrglRoot) oroot, 
+tcludex.cxx:		RETURN_CONSTRUCT(Matcher,(oroot, finder, fossil));
+tcludex.cxx:backFollow thru the past.  (myOrglRoot == NULL when the shot has been done.) */
+tcludex.cxx:	if (myOrglRoot == NULL) {
+tcludex.cxx:		myOrglRoot->delayedFindMatching(myFinder, myFossil, recorder);
+tcludex.cxx:		myOrglRoot = NULL;
+tcludex.cxx:		APTR(OrglRoot) oroot, 
+tcludex.cxx:	myOrglRoot = oroot;
+tcludex.cxx:		/* stop making sure the OrglRoot sticks around.  
+tcludex.cxx:				If more needs to be done, step rootward.  (myCrum is set 
+tcludex.cxx:	to NULL if I am the root.)
+tcludex.cxx:		APTR(OrglRoot) oroot, 
+tcludex.cxx:		RETURN_CONSTRUCT(SouthRecorderChecker,(oroot, finder, scrum));
+tcludex.cxx:here where it also arises for an OrglRoot.  The OrglRoot is itself 
+tcludex.cxx:an OrglRoot (so I only have to solve the "how to keep it around" 
+tcludex.cxx:		APTR(OrglRoot) oroot, 
+tcludex.cxx:	myORoot = oroot;
+tcludex.cxx:		add/removePointer already.  myStamp and myORoot need 
+tcludex.cxx:		If empty ORoot
+tcludex.cxx:	if (myORoot == NULL) {
+tcludex.cxx:	myORoot->checkRecorders(myFinder, mySCrum);
+tcludex.cxx:		myORoot = NULL;
+tcludex.hxx:#ifndef OROOTX_OXX
+tcludex.hxx:#include "orootx.oxx"
+tcludex.hxx:#endif /* OROOTX_OXX */
+tcludex.hxx:	remember to backFollow thru the past.  (myOrglRoot == NULL 
+tcludex.hxx:			APTR(OrglRoot) ARG(oroot), 
+tcludex.hxx:			APTR(OrglRoot) ARG(oroot), 
+tcludex.hxx:	CHKPTR(OrglRoot) OR(NULL) myOrglRoot;
+tcludex.hxx:	OrglRoot.  The OrglRoot is itself held by a persistent Stamp, 
+tcludex.hxx:	just hold onto two Stamps instead of a Stamp and an OrglRoot 
+tcludex.hxx:			APTR(OrglRoot) ARG(oroot), 
+tcludex.hxx:			APTR(OrglRoot) ARG(oroot), 
+tcludex.hxx:	CHKPTR(OrglRoot) OR(NULL) myORoot;
+tcludex.ixx:#ifndef OROOTX_HXX
+tcludex.ixx:#include "orootx.hxx"
+tcludex.ixx:#endif /* OROOTX_HXX */
+tracepx.cxx:The ent navigates to O-roots from H-roots in the northern direction using 
+tracepx.hxx:	The ent navigates to O-roots from H-roots in the northern 
+sxx/branchx.sxx:/*----------------------- BEGIN RootBranch -----------------------*/
+sxx/branchx.sxx:DEFINE_CLASS_CATEGORY(RootBranch,BranchDescription)
+sxx/branchx.sxx:void RootBranch::deferredHack () { /* intentionally blank */ }
+sxx/branchx.sxx:/* ====== Copy Class "RootBranch" ======= */
+sxx/branchx.sxx:void RootBranch::sendSelfTo (APTR(Xmtr) xmtr)
+sxx/branchx.sxx:RootBranch::RootBranch (APTR(Rcvr) receiver, TCSJ)
+sxx/branchx.sxx:void parseInto_RootBranch (APTR(Rcvr) rcvr, OUT void * storage) {
+sxx/branchx.sxx:  new (storage) RootBranch (rcvr, tcsj);
+sxx/branchx.sxx:ActualCopyRecipe RootBranch_recipe(cat_RootBranch, &DiskCuisine, parseInto_RootBranch);
+sxx/branchx.sxx:/* ====== Shepherd Ancestor Class "RootBranch" ======= */
+sxx/branchx.sxx:DEFINE_MAY_BECOME(RootBranch,BranchDescriptionStub)
+sxx/branchx.sxx:DEFINE_MAY_BECOME(BranchDescriptionStub,RootBranch)
+sxx/branchx.sxx:/*----------------------- END RootBranch -----------------------*/
+sxx/brange3x.sxx:    xmtr->sendHeaper(myOrglRoot);
+sxx/brange3x.sxx:    myOrglRoot = CAST(OrglRoot, receiver->receiveHeaper());
+sxx/brange3x.sxx:    RSP2_OrglRoot orglRoot() {
+sxx/brange3x.sxx:    return this->orglRoot();
+sxx/brange3x.sxx:		Heaplet::forwardToOld ((Heaper**)&((BeEdition*)origin)->myOrglRoot,
+sxx/brange3x.sxx:				       (Heaper**)&myOrglRoot);
+sxx/brange3x.sxx:		myOrglRoot.forwardTo (Heaplet::forward (myOrglRoot));
+sxx/canopyp.sxx:		Heaplet::forwardToOld ((Heaper**)&((CanopyCache*)origin)->myCachedRoot,
+sxx/canopyp.sxx:				       (Heaper**)&myCachedRoot);
+sxx/canopyp.sxx:		myCachedRoot.forwardTo (Heaplet::forward (myCachedRoot));
+sxx/dagwoodx.sxx:    xmtr->sendHeaper(myRoot);
+sxx/dagwoodx.sxx:    myRoot = CAST(TracePosition, receiver->receiveHeaper());
+sxx/dagwoodx.sxx:    RSP2_TracePosition root() {
+sxx/dagwoodx.sxx:    return (this)->getReal()->root();
+sxx/dagwoodx.sxx:		Heaplet::forwardToOld ((Heaper**)&((DagWood*)origin)->myRoot,
+sxx/dagwoodx.sxx:				       (Heaper**)&myRoot);
+sxx/dagwoodx.sxx:		myRoot.forwardTo (Heaplet::forward (myRoot));
+sxx/grantabp.sxx:    xmtr->sendHeaper(overflowRoot);
+sxx/grantabp.sxx:    xmtr->sendHeaper(oldOverflowRoot);
+sxx/grantabp.sxx:    overflowRoot = CAST(GrandOverflow, receiver->receiveHeaper());
+sxx/grantabp.sxx:    oldOverflowRoot = CAST(GrandOverflow, receiver->receiveHeaper());
+sxx/grantabp.sxx:		Heaplet::forwardToOld ((Heaper**)&((GrandNode*)origin)->overflowRoot,
+sxx/grantabp.sxx:				       (Heaper**)&overflowRoot);
+sxx/grantabp.sxx:		Heaplet::forwardToOld ((Heaper**)&((GrandNode*)origin)->oldOverflowRoot,
+sxx/grantabp.sxx:				       (Heaper**)&oldOverflowRoot);
+sxx/grantabp.sxx:		overflowRoot.forwardTo (Heaplet::forward (overflowRoot));
+sxx/grantabp.sxx:		oldOverflowRoot.forwardTo (Heaplet::forward (oldOverflowRoot));
+sxx/loavesx.sxx:    RSP2_OrglRoot setAllOwners(WSP2_ID arg1) {
+sxx/loavesx.sxx:    RSP2_OrglRoot combine(WSP2_ActualOrglRoot arg1, WSP2_XnRegion arg2, WSP2_Dsp arg3) {
+sxx/orootp.sxx:#define OROOTP_SXX
+sxx/orootx.sxx:#define OROOTX_SXX
+sxx/orootx.sxx:/*----------------------- BEGIN OrglRoot -----------------------*/
+sxx/orootx.sxx:DEFINE_CLASS_CATEGORY(OrglRoot,OPart)
+sxx/orootx.sxx:DEFINE_OPAQUE_TYPE(OrglRoot);
+sxx/orootx.sxx:/* ====== Copy Class "OrglRoot" ======= */
+sxx/orootx.sxx:void OrglRoot::sendSelfTo (APTR(Xmtr) xmtr)
+sxx/orootx.sxx:OrglRoot::OrglRoot (APTR(Rcvr) receiver, TCSJ)
+sxx/orootx.sxx:/* ====== Shepherd Patriarch Class "OrglRoot" ======= */
+sxx/orootx.sxx:/* ====== Shepherd Stub Class "OrglRootStub" ======= */
+sxx/orootx.sxx:extern Category * cat_OrglRootStub;
+sxx/orootx.sxx:CLASS(OrglRootStub,OrglRoot) {
+sxx/orootx.sxx:	CONCRETE(OrglRootStub)
+sxx/orootx.sxx:	MANUAL_GC(OrglRootStub)
+sxx/orootx.sxx:	NOT_A_TYPE(OrglRootStub)
+sxx/orootx.sxx:	inline OrglRootStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+sxx/orootx.sxx:          :  OrglRoot(shepFlag, aHash, info)  {   }
+sxx/orootx.sxx:    RSP2_OrglRoot setAllOwners(WSP2_ID arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot combine(WSP2_OrglRoot arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot copy(WSP2_XnRegion arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot transformedBy(WSP2_Dsp arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot unTransformedBy(WSP2_Dsp arg1) {
+sxx/orootx.sxx:      OrglRoot *	getReal();  // just * in case not a type
+sxx/orootx.sxx:	// Stripped-down COPY(OrglRootStub): Just migrate
+sxx/orootx.sxx:Category * OrglRoot::getShepherdStubCategory () CONST
+sxx/orootx.sxx:        return cat_OrglRootStub;
+sxx/orootx.sxx:void OrglRoot::becomeStub () 
+sxx/orootx.sxx:    new (this) OrglRootStub (shepFlag, hash, info);
+sxx/orootx.sxx:/* ===== OrglRootStub Implementations ==== */
+sxx/orootx.sxx:void OrglRootStub::
+sxx/orootx.sxx:OrglRoot * OrglRootStub::
+sxx/orootx.sxx:BooleanVar OrglRootStub::
+sxx/orootx.sxx:	if (cat_OrglRootStub->isEqualOrSubclassOf(aCategory)) {
+sxx/orootx.sxx:	} else if (aCategory->isEqualOrSubclassOf(cat_OrglRoot)) {
+sxx/orootx.sxx:		return ((OrglRootStub *)this)->getReal()->isKindOf(aCategory);
+sxx/orootx.sxx:DEFINE_CLASS_CATEGORY(OrglRootStub,OrglRoot)
+sxx/orootx.sxx:void OrglRootStub::deferredHack () { /* intentionally blank */ }
+sxx/orootx.sxx:/* ====== Stub Recipe for OrglRoot ====== */
+sxx/orootx.sxx:RPTR(Heaper) parseStub_OrglRoot (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+sxx/orootx.sxx:	RETURN_CONSTRUCT(OrglRootStub, (shepFlag, hash, NULL));
+sxx/orootx.sxx:ActualStubRecipe OrglRootStub_recipe(cat_OrglRootStub, &DiskCuisine, parseStub_OrglRoot);
+sxx/orootx.sxx:/* ====== Object Migrator for Scavenging of OrglRoot ====== */
+sxx/orootx.sxx:void OrglRoot::
+sxx/orootx.sxx:		Heaplet::forwardToOld ((Heaper**)&((OrglRoot*)origin)->myHCrum,
+sxx/orootx.sxx:/*----------------------- END OrglRoot -----------------------*/
+sxx/orootx.sxx:/*----------------------- BEGIN ActualOrglRoot -----------------------*/
+sxx/orootx.sxx:DEFINE_CLASS_CATEGORY(ActualOrglRoot,OrglRoot)
+sxx/orootx.sxx:DEFINE_OPAQUE_TYPE(ActualOrglRoot);
+sxx/orootx.sxx:void ActualOrglRoot::deferredHack () { /* intentionally blank */ }
+sxx/orootx.sxx:/* ====== Copy Class "ActualOrglRoot" ======= */
+sxx/orootx.sxx:void ActualOrglRoot::sendSelfTo (APTR(Xmtr) xmtr)
+sxx/orootx.sxx:    OrglRoot::sendSelfTo (xmtr);
+sxx/orootx.sxx:ActualOrglRoot::ActualOrglRoot (APTR(Rcvr) receiver, TCSJ)
+sxx/orootx.sxx:  : OrglRoot (receiver, tcsj) {
+sxx/orootx.sxx:void parseInto_ActualOrglRoot (APTR(Rcvr) rcvr, OUT void * storage) {
+sxx/orootx.sxx:  new (storage) ActualOrglRoot (rcvr, tcsj);
+sxx/orootx.sxx:ActualCopyRecipe ActualOrglRoot_recipe(cat_ActualOrglRoot, &DiskCuisine, parseInto_ActualOrglRoot);
+sxx/orootx.sxx:/* ====== Shepherd Patriarch Class "ActualOrglRoot" ======= */
+sxx/orootx.sxx:/* ====== Shepherd Stub Class "ActualOrglRootStub" ======= */
+sxx/orootx.sxx:extern Category * cat_ActualOrglRootStub;
+sxx/orootx.sxx:CLASS(ActualOrglRootStub,ActualOrglRoot) {
+sxx/orootx.sxx:	CONCRETE(ActualOrglRootStub)
+sxx/orootx.sxx:	MANUAL_GC(ActualOrglRootStub)
+sxx/orootx.sxx:	NOT_A_TYPE(ActualOrglRootStub)
+sxx/orootx.sxx:	inline ActualOrglRootStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+sxx/orootx.sxx:          :  ActualOrglRoot(shepFlag, aHash, info)  {   }
+sxx/orootx.sxx:    RSP2_OrglRoot setAllOwners(WSP2_ID arg1) {
+sxx/orootx.sxx:    RSP2_Pair tryAllBecome(WSP2_OrglRoot arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot combine(WSP2_OrglRoot arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot copy(WSP2_XnRegion arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot copyDistinction(WSP2_XnRegion arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot copySimple(WSP2_XnRegion arg1) {
+sxx/orootx.sxx:    RSP2_ActualOrglRoot makeNew(WSP2_XnRegion arg1, WSP2_ActualOrglRoot arg2, WSP2_ActualOrglRoot arg3) {
+sxx/orootx.sxx:    RSP2_OrglRoot transformedBy(WSP2_Dsp arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot unTransformedBy(WSP2_Dsp arg1) {
+sxx/orootx.sxx:    RSP2_ActualOrglRoot fetchEasyCombine(WSP2_ActualOrglRoot arg1) {
+sxx/orootx.sxx:      ActualOrglRoot *	getReal();  // just * in case not a type
+sxx/orootx.sxx:	// Stripped-down COPY(ActualOrglRootStub): Just migrate
+sxx/orootx.sxx:Category * ActualOrglRoot::getShepherdStubCategory () CONST
+sxx/orootx.sxx:        return cat_ActualOrglRootStub;
+sxx/orootx.sxx:void ActualOrglRoot::becomeStub () 
+sxx/orootx.sxx:    new (this) ActualOrglRootStub (shepFlag, hash, info);
+sxx/orootx.sxx:/* ===== ActualOrglRootStub Implementations ==== */
+sxx/orootx.sxx:void ActualOrglRootStub::
+sxx/orootx.sxx:ActualOrglRoot * ActualOrglRootStub::
+sxx/orootx.sxx:BooleanVar ActualOrglRootStub::
+sxx/orootx.sxx:	if (cat_ActualOrglRootStub->isEqualOrSubclassOf(aCategory)) {
+sxx/orootx.sxx:	} else if (aCategory->isEqualOrSubclassOf(cat_ActualOrglRoot)) {
+sxx/orootx.sxx:		return ((ActualOrglRootStub *)this)->getReal()->isKindOf(aCategory);
+sxx/orootx.sxx:DEFINE_CLASS_CATEGORY(ActualOrglRootStub,ActualOrglRoot)
+sxx/orootx.sxx:void ActualOrglRootStub::deferredHack () { /* intentionally blank */ }
+sxx/orootx.sxx:/* ====== Stub Recipe for ActualOrglRoot ====== */
+sxx/orootx.sxx:RPTR(Heaper) parseStub_ActualOrglRoot (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+sxx/orootx.sxx:	RETURN_CONSTRUCT(ActualOrglRootStub, (shepFlag, hash, NULL));
+sxx/orootx.sxx:ActualStubRecipe ActualOrglRootStub_recipe(cat_ActualOrglRootStub, &DiskCuisine, parseStub_ActualOrglRoot);
+sxx/orootx.sxx:DEFINE_MAY_BECOME(ActualOrglRoot,ActualOrglRootStub)
+sxx/orootx.sxx:DEFINE_MAY_BECOME(ActualOrglRootStub,ActualOrglRoot)
+sxx/orootx.sxx:/* ====== Object Migrator for Scavenging of ActualOrglRoot ====== */
+sxx/orootx.sxx:void ActualOrglRoot::
+sxx/orootx.sxx:	this->OrglRoot::migrate(origin, destinationIsOld);
+sxx/orootx.sxx:		Heaplet::forwardToOld ((Heaper**)&((ActualOrglRoot*)origin)->myO,
+sxx/orootx.sxx:		Heaplet::forwardToOld ((Heaper**)&((ActualOrglRoot*)origin)->myRegion,
+sxx/orootx.sxx:/*----------------------- END ActualOrglRoot -----------------------*/
+sxx/orootx.sxx:/*----------------------- BEGIN EmptyOrglRoot -----------------------*/
+sxx/orootx.sxx:DEFINE_CLASS_CATEGORY(EmptyOrglRoot,OrglRoot)
+sxx/orootx.sxx:DEFINE_OPAQUE_TYPE(EmptyOrglRoot);
+sxx/orootx.sxx:void EmptyOrglRoot::deferredHack () { /* intentionally blank */ }
+sxx/orootx.sxx:/* ====== Copy Class "EmptyOrglRoot" ======= */
+sxx/orootx.sxx:void EmptyOrglRoot::sendSelfTo (APTR(Xmtr) xmtr)
+sxx/orootx.sxx:    OrglRoot::sendSelfTo (xmtr);
+sxx/orootx.sxx:EmptyOrglRoot::EmptyOrglRoot (APTR(Rcvr) receiver, TCSJ)
+sxx/orootx.sxx:  : OrglRoot (receiver, tcsj) {
+sxx/orootx.sxx:void parseInto_EmptyOrglRoot (APTR(Rcvr) rcvr, OUT void * storage) {
+sxx/orootx.sxx:  new (storage) EmptyOrglRoot (rcvr, tcsj);
+sxx/orootx.sxx:ActualCopyRecipe EmptyOrglRoot_recipe(cat_EmptyOrglRoot, &DiskCuisine, parseInto_EmptyOrglRoot);
+sxx/orootx.sxx:/* ====== Shepherd Patriarch Class "EmptyOrglRoot" ======= */
+sxx/orootx.sxx:/* ====== Shepherd Stub Class "EmptyOrglRootStub" ======= */
+sxx/orootx.sxx:extern Category * cat_EmptyOrglRootStub;
+sxx/orootx.sxx:CLASS(EmptyOrglRootStub,EmptyOrglRoot) {
+sxx/orootx.sxx:	CONCRETE(EmptyOrglRootStub)
+sxx/orootx.sxx:	MANUAL_GC(EmptyOrglRootStub)
+sxx/orootx.sxx:	NOT_A_TYPE(EmptyOrglRootStub)
+sxx/orootx.sxx:	inline EmptyOrglRootStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+sxx/orootx.sxx:          :  EmptyOrglRoot(shepFlag, aHash, info)  {   }
+sxx/orootx.sxx:    RSP2_OrglRoot setAllOwners(WSP2_ID arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot combine(WSP2_OrglRoot arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot copy(WSP2_XnRegion arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot transformedBy(WSP2_Dsp arg1) {
+sxx/orootx.sxx:    RSP2_OrglRoot unTransformedBy(WSP2_Dsp arg1) {
+sxx/orootx.sxx:      EmptyOrglRoot *	getReal();  // just * in case not a type
+sxx/orootx.sxx:	// Stripped-down COPY(EmptyOrglRootStub): Just migrate
+sxx/orootx.sxx:Category * EmptyOrglRoot::getShepherdStubCategory () CONST
+sxx/orootx.sxx:        return cat_EmptyOrglRootStub;
+sxx/orootx.sxx:void EmptyOrglRoot::becomeStub () 
+sxx/orootx.sxx:    new (this) EmptyOrglRootStub (shepFlag, hash, info);
+sxx/orootx.sxx:/* ===== EmptyOrglRootStub Implementations ==== */
+sxx/orootx.sxx:void EmptyOrglRootStub::
+sxx/orootx.sxx:EmptyOrglRoot * EmptyOrglRootStub::
+sxx/orootx.sxx:BooleanVar EmptyOrglRootStub::
+sxx/orootx.sxx:	if (cat_EmptyOrglRootStub->isEqualOrSubclassOf(aCategory)) {
+sxx/orootx.sxx:	} else if (aCategory->isEqualOrSubclassOf(cat_EmptyOrglRoot)) {
+sxx/orootx.sxx:		return ((EmptyOrglRootStub *)this)->getReal()->isKindOf(aCategory);
+sxx/orootx.sxx:DEFINE_CLASS_CATEGORY(EmptyOrglRootStub,EmptyOrglRoot)
+sxx/orootx.sxx:void EmptyOrglRootStub::deferredHack () { /* intentionally blank */ }
+sxx/orootx.sxx:/* ====== Stub Recipe for EmptyOrglRoot ====== */
+sxx/orootx.sxx:RPTR(Heaper) parseStub_EmptyOrglRoot (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+sxx/orootx.sxx:	RETURN_CONSTRUCT(EmptyOrglRootStub, (shepFlag, hash, NULL));
+sxx/orootx.sxx:ActualStubRecipe EmptyOrglRootStub_recipe(cat_EmptyOrglRootStub, &DiskCuisine, parseStub_EmptyOrglRoot);
+sxx/orootx.sxx:DEFINE_MAY_BECOME(EmptyOrglRoot,EmptyOrglRootStub)
+sxx/orootx.sxx:DEFINE_MAY_BECOME(EmptyOrglRootStub,EmptyOrglRoot)
+sxx/orootx.sxx:/* ====== Object Migrator for Scavenging of EmptyOrglRoot ====== */
+sxx/orootx.sxx:void EmptyOrglRoot::
+sxx/orootx.sxx:	this->OrglRoot::migrate(origin, destinationIsOld);
+sxx/orootx.sxx:		Heaplet::forwardToOld ((Heaper**)&((EmptyOrglRoot*)origin)->myCS,
+sxx/orootx.sxx:/*----------------------- END EmptyOrglRoot -----------------------*/
+sxx/tcludex.sxx:    xmtr->sendHeaper(myOrglRoot);
+sxx/tcludex.sxx:    myOrglRoot = CAST(OrglRoot, receiver->receiveHeaper());
+sxx/tcludex.sxx:		Heaplet::forwardToOld ((Heaper**)&((Matcher*)origin)->myOrglRoot,
+sxx/tcludex.sxx:				       (Heaper**)&myOrglRoot);
+sxx/tcludex.sxx:		myOrglRoot.forwardTo (Heaplet::forward (myOrglRoot));
+sxx/tcludex.sxx:    xmtr->sendHeaper(myORoot);
+sxx/tcludex.sxx:    myORoot = CAST(OrglRoot, receiver->receiveHeaper());
+sxx/tcludex.sxx:		Heaplet::forwardToOld ((Heaper**)&((SouthRecorderChecker*)origin)->myORoot,
+sxx/tcludex.sxx:				       (Heaper**)&myORoot);
+sxx/tcludex.sxx:		myORoot.forwardTo (Heaplet::forward (myORoot));
+/Fhypatia/roger/prod/xhs/src/disk
+/Fhypatia/roger/prod/xhs/src/disk
+/Fhypatia/roger/prod/xhs/src/comm
+/Fhypatia/roger/prod/xhs/src/comm
+/Fhypatia/roger/prod/xhs/src/urdi
+/Fhypatia/roger/prod/xhs/src/urdi
+urdix.cxx://	    - Urdi::snarfCacheLRURoot
+urdix.cxx:	viewRoot = viewDummyP = NULL;	// In case constructor fails;
+urdix.cxx:	snarfCacheRoot = NULL;		// In case constructor fails;
+urdix.cxx:	viewRoot = viewDummyP;
+urdix.cxx:	snarfCacheRoot = snarfCacheDummyP;
+urdix.cxx:	snarfCacheLRURoot = snarfCacheLRUDummyP;
+urdix.cxx:	viewRoot = viewDummyP = NULL;	// In case constructor fails;
+urdix.cxx:	snarfCacheRoot = NULL;		// In case constructor fails;
+urdix.cxx:	viewRoot = viewDummyP;
+urdix.cxx:	snarfCacheRoot = snarfCacheDummyP;
+urdix.cxx:	snarfCacheLRURoot = snarfCacheLRUDummyP;
+urdix.cxx:	viewRoot = viewDummyP = NULL;	// In case constructor fails;
+urdix.cxx:	snarfCacheRoot = NULL;		// In case constructor fails;
+urdix.cxx:	viewRoot = viewDummyP;
+urdix.cxx:	snarfCacheRoot = snarfCacheDummyP;
+urdix.cxx:	snarfCacheLRURoot = snarfCacheLRUDummyP;
+urdix.cxx:		if (snarfCacheRoot == snarfCacheGoatP) {
+urdix.cxx:		tempSnarfCacheP->linkBefore(snarfCacheRoot);
+urdix.cxx:		latestSafeOnStageP = snarfCacheRoot;
+urdix.cxx:		if (snarfCacheRoot->isGroupEnd()) {
+urdix.cxx:			latestCommittedP = snarfCacheRoot;
+urdix.cxx:		if (((SnarfHeader *)snarfCacheRoot->snarfP)->groupFlag
+urdix.cxx:	while (snarfCacheRoot != latestCommittedP) {
+urdix.cxx:		tempSnarfCacheP = snarfCacheRoot;
+urdix.cxx:	while ((tempSnarfCacheP = snarfCacheLRURoot) != snarfCacheLRUDummyP) {
+urdix.cxx:	if (viewRoot != viewDummyP) {
+urdix.cxx:	while ((snarfCacheP = snarfCacheRoot) != NULL) {
+urdix.cxx:	while ((snarfCacheP = snarfCacheLRURoot) != NULL) {
+urdix.cxx:	oo << "\tviewRoot:\t\t-> "	<< canPtr((void *)viewRoot)	<< "\n";
+urdix.cxx:	oo << "\tsnarfCacheRoot:\t\t-> " << canPtr((void *)snarfCacheRoot)	<< "\n";
+urdix.cxx:	oo << "\tsnarfCacheLRURoot:\t-> " << canPtr((void *)snarfCacheLRURoot)	<< "\n";
+urdix.cxx:	snarfCacheP = snarfCacheRoot;
+urdix.cxx:	snarfCacheP = snarfCacheLRURoot;
+urdix.cxx:	viewP = viewRoot;
+urdix.cxx:	snarfCacheP = snarfCacheRoot;
+urdix.cxx:	snarfCacheRoot->markGroupEnd();
+urdix.cxx:	return (latestCommittedP = snarfCacheRoot);
+urdix.cxx:	while ((snarfCacheP = snarfCacheRoot) != latestCommittedP) {
+urdix.cxx:	SnarfCache *	tempSnarfCacheP = snarfCacheLRURoot;
+urdix.cxx:		urdiP->snarfCacheRoot = this;
+urdix.cxx:	nextSnarfCacheP			= urdiP->snarfCacheLRURoot;
+urdix.cxx:	urdiP->snarfCacheLRURoot = this;
+urdix.cxx:		urdiP->snarfCacheRoot			= nextSnarfCacheP;
+urdix.cxx:		urdiP->snarfCacheLRURoot		= nextSnarfCacheP;
+urdix.cxx:		snarfHandleRoot		= NULL;
+urdix.cxx:		frozenSnarfHandleRoot	= NULL;
+urdix.cxx:		nextViewP	= urdiP->viewRoot;
+urdix.cxx:		urdiP->viewRoot	= this;
+urdix.cxx:		snarfHandleRoot = snarfHandleDummyP;
+urdix.cxx:		frozenSnarfHandleRoot		= NULL;
+urdix.cxx:	if (snarfHandleRoot != snarfHandleDummyP) {
+urdix.cxx:	if (urdiP->viewRoot == this) {
+urdix.cxx:		urdiP->viewRoot = nextViewP;
+urdix.cxx:	oo << "\tsnarfHandleRoot\t\t-> "	<< canPtr((void *)snarfHandleRoot)	<< "\n";
+urdix.cxx:	oo << "\tfrozenSnarfHandleRoot\t-> " << canPtr((void *)frozenSnarfHandleRoot)	<< "\n";
+urdix.cxx:	snarfHandleP = snarfHandleRoot;
+urdix.cxx:	while (frozenSnarfHandleRoot != NULL) {
+urdix.cxx:		frozenSnarfHandleRoot->thaw();
+urdix.cxx:	SnarfHandle *	snarfHandleP = snarfHandleRoot;
+urdix.cxx:	SnarfHandle *	snarfHandleP = snarfHandleRoot;
+urdix.cxx:	if (urdiP->latestCommittedP != urdiP->snarfCacheRoot) {
+urdix.cxx:		nextSnarfHandleP	= viewP->snarfHandleRoot;
+urdix.cxx:		viewP->snarfHandleRoot	= this;
+urdix.cxx:		snarfCacheP->linkBefore(viewP->urdiP->snarfCacheRoot);
+urdix.cxx:		viewP->snarfHandleRoot			= nextSnarfHandleP;
+urdix.cxx:		tempSnarfCacheP->linkBefore(viewP->urdiP->snarfCacheRoot);
+urdix.cxx:		nextFrozenSnarfHandleP	= viewP->frozenSnarfHandleRoot;
+urdix.cxx:		viewP->frozenSnarfHandleRoot	= this;
+urdix.cxx:			viewP->frozenSnarfHandleRoot = nextFrozenSnarfHandleP;
+urdix.hxx://	    - Urdi::snarfCacheLRURoot
+urdix.hxx:	UrdiView *		viewRoot;		// = dummy view object;
+urdix.hxx:	SnarfCache *		snarfCacheRoot;		// = goat cache object;
+urdix.hxx:	SnarfCache *		snarfCacheLRURoot;	// = dummy cache #2;
+urdix.hxx:	SnarfHandle *		snarfHandleRoot;	// = dummy handle object;
+urdix.hxx:	SnarfHandle *		frozenSnarfHandleRoot;	// = NULL;

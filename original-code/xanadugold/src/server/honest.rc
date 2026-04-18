@@ -1,0 +1,8 @@
+WorksBootMaker();
+BackendBootMaker();
+SetDiskProtocol("texty");
+HonestAbeIniter(Category(BeGrandMap),1);
+ClearPlan(Category(BeGrandMap));
+HonestAbePlan(Category(BeGrandMap));
+WorksTester();
+NULL;

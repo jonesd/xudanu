@@ -1,0 +1,426 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define BECOMET_SXX
+
+/*----------------------- BEGIN BecomeTester -----------------------*/
+DEFINE_CLASS_CATEGORY(BecomeTester,Tester)
+DEFINE_OPAQUE_TYPE(BecomeTester);
+
+void BecomeTester::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "BecomeTester" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void BecomeTester::sendSelfTo (APTR(Xmtr) xmtr)
+{
+}
+
+BecomeTester::BecomeTester (APTR(Rcvr) receiver, TCSJ)
+{
+}
+
+
+void parseInto_BecomeTester (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) BecomeTester (rcvr, tcsj);
+}
+
+extern Recipe * BootCuisine;
+ActualCopyRecipe BecomeTester_recipe(cat_BecomeTester, &BootCuisine, parseInto_BecomeTester);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END BecomeTester -----------------------*/
+
+
+/*----------------------- BEGIN Chameleon -----------------------*/
+DEFINE_CLASS_CATEGORY(Chameleon,Heaper)
+DEFINE_OPAQUE_TYPE(Chameleon);
+
+void Chameleon::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "Chameleon" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void Chameleon::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendIntegerVar(myA);
+    xmtr->sendHeaper(myB);
+    xmtr->sendBooleanVar(myC);
+}
+
+Chameleon::Chameleon (APTR(Rcvr) receiver, TCSJ)
+{
+    myA = receiver->receiveIntegerVar();
+    myB = CAST(Heaper, receiver->receiveHeaper());
+    myC = receiver->receiveBooleanVar();
+}
+
+
+void parseInto_Chameleon (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) Chameleon (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe Chameleon_recipe(cat_Chameleon, &XppCuisine, parseInto_Chameleon);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of Chameleon ====== */
+
+void Chameleon::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((Chameleon*)origin)->myB,
+				       (Heaper**)&myB);
+	} else {
+		myB.forwardTo (Heaplet::forward (myB));
+	}
+}
+
+/*----------------------- END Chameleon -----------------------*/
+
+
+/*----------------------- BEGIN Butterfly -----------------------*/
+DEFINE_CLASS_CATEGORY(Butterfly,Chameleon)
+DEFINE_OPAQUE_TYPE(Butterfly);
+
+void Butterfly::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "Butterfly" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void Butterfly::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Chameleon::sendSelfTo (xmtr);
+    xmtr->sendIntegerVar(myE);
+    xmtr->sendHeaper(myF);
+}
+
+Butterfly::Butterfly (APTR(Rcvr) receiver, TCSJ)
+  : Chameleon (receiver, tcsj) {
+    myE = receiver->receiveIntegerVar();
+    myF = CAST(Heaper, receiver->receiveHeaper());
+}
+
+
+void parseInto_Butterfly (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) Butterfly (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe Butterfly_recipe(cat_Butterfly, &XppCuisine, parseInto_Butterfly);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of Butterfly ====== */
+
+void Butterfly::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->Chameleon::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((Butterfly*)origin)->myF,
+				       (Heaper**)&myF);
+	} else {
+		myF.forwardTo (Heaplet::forward (myF));
+	}
+}
+
+/*----------------------- END Butterfly -----------------------*/
+
+
+/*----------------------- BEGIN GoldButterfly -----------------------*/
+DEFINE_CLASS_CATEGORY(GoldButterfly,Butterfly)
+DEFINE_OPAQUE_TYPE(GoldButterfly);
+
+void GoldButterfly::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END GoldButterfly -----------------------*/
+
+
+/*----------------------- BEGIN IronButterfly -----------------------*/
+DEFINE_MAY_BECOME_ANY_SUBCLASS_OF(IronButterfly,Chameleon)
+DEFINE_CLASS_CATEGORY(IronButterfly,Butterfly)
+DEFINE_OPAQUE_TYPE(IronButterfly);
+
+void IronButterfly::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END IronButterfly -----------------------*/
+
+
+/*----------------------- BEGIN LeadButterfly -----------------------*/
+DEFINE_MAY_BECOME(LeadButterfly,Butterfly)
+DEFINE_MAY_BECOME(LeadButterfly,DeadMoth)
+DEFINE_CLASS_CATEGORY(LeadButterfly,Butterfly)
+DEFINE_OPAQUE_TYPE(LeadButterfly);
+
+void LeadButterfly::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END LeadButterfly -----------------------*/
+
+
+/*----------------------- BEGIN DeadButterfly -----------------------*/
+DEFINE_CLASS_CATEGORY(DeadButterfly,Chameleon)
+DEFINE_OPAQUE_TYPE(DeadButterfly);
+
+void DeadButterfly::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "DeadButterfly" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void DeadButterfly::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Chameleon::sendSelfTo (xmtr);
+    xmtr->sendIntegerVar(myJ);
+    xmtr->sendHeaper(myK);
+    xmtr->sendHeaper(myL);
+    xmtr->sendHeaper(myM);
+}
+
+DeadButterfly::DeadButterfly (APTR(Rcvr) receiver, TCSJ)
+  : Chameleon (receiver, tcsj) {
+    myJ = receiver->receiveIntegerVar();
+    myK = CAST(Heaper, receiver->receiveHeaper());
+    myL = CAST(Heaper, receiver->receiveHeaper());
+    myM = CAST(Heaper, receiver->receiveHeaper());
+}
+
+
+void parseInto_DeadButterfly (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) DeadButterfly (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe DeadButterfly_recipe(cat_DeadButterfly, &XppCuisine, parseInto_DeadButterfly);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of DeadButterfly ====== */
+
+void DeadButterfly::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->Chameleon::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((DeadButterfly*)origin)->myK,
+				       (Heaper**)&myK);
+		Heaplet::forwardToOld ((Heaper**)&((DeadButterfly*)origin)->myL,
+				       (Heaper**)&myL);
+		Heaplet::forwardToOld ((Heaper**)&((DeadButterfly*)origin)->myM,
+				       (Heaper**)&myM);
+	} else {
+		myK.forwardTo (Heaplet::forward (myK));
+		myL.forwardTo (Heaplet::forward (myL));
+		myM.forwardTo (Heaplet::forward (myM));
+	}
+}
+
+/*----------------------- END DeadButterfly -----------------------*/
+
+
+/*----------------------- BEGIN DeadMoth -----------------------*/
+DEFINE_CLASS_CATEGORY(DeadMoth,Chameleon)
+DEFINE_OPAQUE_TYPE(DeadMoth);
+
+void DeadMoth::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "DeadMoth" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void DeadMoth::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Chameleon::sendSelfTo (xmtr);
+    xmtr->sendIntegerVar(myG);
+    xmtr->sendHeaper(myH);
+    xmtr->sendBooleanVar(myI);
+}
+
+DeadMoth::DeadMoth (APTR(Rcvr) receiver, TCSJ)
+  : Chameleon (receiver, tcsj) {
+    myG = receiver->receiveIntegerVar();
+    myH = CAST(Heaper, receiver->receiveHeaper());
+    myI = receiver->receiveBooleanVar();
+}
+
+
+void parseInto_DeadMoth (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) DeadMoth (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe DeadMoth_recipe(cat_DeadMoth, &XppCuisine, parseInto_DeadMoth);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of DeadMoth ====== */
+
+void DeadMoth::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->Chameleon::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((DeadMoth*)origin)->myH,
+				       (Heaper**)&myH);
+	} else {
+		myH.forwardTo (Heaplet::forward (myH));
+	}
+}
+
+/*----------------------- END DeadMoth -----------------------*/
+
+
+/*----------------------- BEGIN Moth -----------------------*/
+DEFINE_MAY_BECOME(Moth,Butterfly)
+DEFINE_CLASS_CATEGORY(Moth,Chameleon)
+DEFINE_OPAQUE_TYPE(Moth);
+
+void Moth::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "Moth" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void Moth::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Chameleon::sendSelfTo (xmtr);
+    xmtr->sendIntegerVar(myD);
+}
+
+Moth::Moth (APTR(Rcvr) receiver, TCSJ)
+  : Chameleon (receiver, tcsj) {
+    myD = receiver->receiveIntegerVar();
+}
+
+
+void parseInto_Moth (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) Moth (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe Moth_recipe(cat_Moth, &XppCuisine, parseInto_Moth);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END Moth -----------------------*/
+

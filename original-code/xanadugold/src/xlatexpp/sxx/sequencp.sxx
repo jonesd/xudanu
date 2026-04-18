@@ -1,0 +1,333 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define SEQUENCP_SXX
+
+/*----------------------- BEGIN SequenceEdge -----------------------*/
+DEFINE_CLASS_CATEGORY(SequenceEdge,TransitionEdge)
+DEFINE_OPAQUE_TYPE(SequenceEdge);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "SequenceEdge" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void SequenceEdge::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    TransitionEdge::sendSelfTo (xmtr);
+    xmtr->sendHeaper(mySequence);
+}
+
+SequenceEdge::SequenceEdge (APTR(Rcvr) receiver, TCSJ)
+  : TransitionEdge (receiver, tcsj) {
+    mySequence = CAST(Sequence, receiver->receiveHeaper());
+}
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of SequenceEdge ====== */
+
+void SequenceEdge::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((SequenceEdge*)origin)->mySequence,
+				       (Heaper**)&mySequence);
+	} else {
+		mySequence.forwardTo (Heaplet::forward (mySequence));
+	}
+}
+
+/*----------------------- END SequenceEdge -----------------------*/
+
+
+/*----------------------- BEGIN AfterSequence -----------------------*/
+DEFINE_CLASS_CATEGORY(AfterSequence,SequenceEdge)
+
+void AfterSequence::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "AfterSequence" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void AfterSequence::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    SequenceEdge::sendSelfTo (xmtr);
+}
+
+AfterSequence::AfterSequence (APTR(Rcvr) receiver, TCSJ)
+  : SequenceEdge (receiver, tcsj) {
+}
+
+
+void parseInto_AfterSequence (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) AfterSequence (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe AfterSequence_recipe(cat_AfterSequence, &XppCuisine, parseInto_AfterSequence);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END AfterSequence -----------------------*/
+
+
+/*----------------------- BEGIN BeforeSequence -----------------------*/
+DEFINE_CLASS_CATEGORY(BeforeSequence,SequenceEdge)
+
+void BeforeSequence::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "BeforeSequence" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void BeforeSequence::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    SequenceEdge::sendSelfTo (xmtr);
+}
+
+BeforeSequence::BeforeSequence (APTR(Rcvr) receiver, TCSJ)
+  : SequenceEdge (receiver, tcsj) {
+}
+
+
+void parseInto_BeforeSequence (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) BeforeSequence (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe BeforeSequence_recipe(cat_BeforeSequence, &XppCuisine, parseInto_BeforeSequence);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END BeforeSequence -----------------------*/
+
+
+/*----------------------- BEGIN BeforeSequencePrefix -----------------------*/
+DEFINE_CLASS_CATEGORY(BeforeSequencePrefix,SequenceEdge)
+
+void BeforeSequencePrefix::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "BeforeSequencePrefix" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void BeforeSequencePrefix::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    SequenceEdge::sendSelfTo (xmtr);
+    xmtr->sendIntegerVar(myLimit);
+}
+
+BeforeSequencePrefix::BeforeSequencePrefix (APTR(Rcvr) receiver, TCSJ)
+  : SequenceEdge (receiver, tcsj) {
+    myLimit = receiver->receiveIntegerVar();
+}
+
+
+void parseInto_BeforeSequencePrefix (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) BeforeSequencePrefix (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe BeforeSequencePrefix_recipe(cat_BeforeSequencePrefix, &XppCuisine, parseInto_BeforeSequencePrefix);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END BeforeSequencePrefix -----------------------*/
+
+
+/*----------------------- BEGIN SequenceManager -----------------------*/
+DEFINE_CLASS_CATEGORY(SequenceManager,EdgeManager)
+DEFINE_OPAQUE_TYPE(SequenceManager);
+
+void SequenceManager::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "SequenceManager" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void SequenceManager::sendSelfTo (APTR(Xmtr) xmtr)
+{
+}
+
+SequenceManager::SequenceManager (APTR(Rcvr) receiver, TCSJ)
+{
+}
+
+
+void parseInto_SequenceManager (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) SequenceManager (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe SequenceManager_recipe(cat_SequenceManager, &XppCuisine, parseInto_SequenceManager);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END SequenceManager -----------------------*/
+
+
+/*----------------------- BEGIN SequenceStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(SequenceStepper,Stepper)
+
+void SequenceStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of SequenceStepper ====== */
+
+void SequenceStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((SequenceStepper*)origin)->myTransitions,
+				       (Heaper**)&myTransitions);
+	} else {
+		myTransitions.forwardTo (Heaplet::forward (myTransitions));
+	}
+}
+
+/*----------------------- END SequenceStepper -----------------------*/
+
+
+/*----------------------- BEGIN SequenceUpOrder -----------------------*/
+DEFINE_CLASS_CATEGORY(SequenceUpOrder,OrderSpec)
+
+void SequenceUpOrder::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "SequenceUpOrder" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void SequenceUpOrder::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    OrderSpec::sendSelfTo (xmtr);
+}
+
+SequenceUpOrder::SequenceUpOrder (APTR(Rcvr) receiver, TCSJ)
+  : OrderSpec (receiver, tcsj) {
+}
+
+
+void parseInto_SequenceUpOrder (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) SequenceUpOrder (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe SequenceUpOrder_recipe(cat_SequenceUpOrder, &XppCuisine, parseInto_SequenceUpOrder);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END SequenceUpOrder -----------------------*/
+

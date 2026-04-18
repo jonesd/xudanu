@@ -1,0 +1,8 @@
+GCMaxInterval(20000);
+GCMinInterval(10000);
+WorksBootMaker();
+FromDiskPlan(
+	Category(BeGrandMap),
+	"ent.ent");
+WorksTester();
+NULL;
