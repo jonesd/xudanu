@@ -1,0 +1,142 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define GRANTABT_SXX
+
+/*----------------------- BEGIN GrandHashSetTester -----------------------*/
+DEFINE_CLASS_CATEGORY(GrandHashSetTester,MuSetTester)
+DEFINE_OPAQUE_TYPE(GrandHashSetTester);
+
+void GrandHashSetTester::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "GrandHashSetTester" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void GrandHashSetTester::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    MuSetTester::sendSelfTo (xmtr);
+}
+
+GrandHashSetTester::GrandHashSetTester (APTR(Rcvr) receiver, TCSJ)
+  : MuSetTester (receiver, tcsj) {
+}
+
+
+void parseInto_GrandHashSetTester (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) GrandHashSetTester (rcvr, tcsj);
+}
+
+extern Recipe * BootCuisine;
+ActualCopyRecipe GrandHashSetTester_recipe(cat_GrandHashSetTester, &BootCuisine, parseInto_GrandHashSetTester);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "GrandHashSetTester" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END GrandHashSetTester -----------------------*/
+
+
+/*----------------------- BEGIN GrandHashTableTester -----------------------*/
+DEFINE_CLASS_CATEGORY(GrandHashTableTester,Tester)
+DEFINE_OPAQUE_TYPE(GrandHashTableTester);
+
+void GrandHashTableTester::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "GrandHashTableTester" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void GrandHashTableTester::sendSelfTo (APTR(Xmtr) xmtr)
+{
+}
+
+GrandHashTableTester::GrandHashTableTester (APTR(Rcvr) receiver, TCSJ)
+{
+}
+
+
+void parseInto_GrandHashTableTester (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) GrandHashTableTester (rcvr, tcsj);
+}
+
+extern Recipe * BootCuisine;
+ActualCopyRecipe GrandHashTableTester_recipe(cat_GrandHashTableTester, &BootCuisine, parseInto_GrandHashTableTester);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "GrandHashTableTester" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END GrandHashTableTester -----------------------*/
+

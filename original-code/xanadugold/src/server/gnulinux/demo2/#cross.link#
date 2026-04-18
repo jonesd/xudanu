@@ -1,0 +1,364 @@
+Current directory is ~/prod/xhs/src/server/gnusun/demo2/
+GDB is free software and you are welcome to distribute copies of it
+ under certain conditions; type "show copying" to see the conditions.
+There is absolutely no warranty for GDB; type "show warranty" for details.
+GDB 4.15.1 (sparc-sun-sunos4.1.4), Copyright 1995 Free Software Foundation, Inc...Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../xpp: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../xlatexpp: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../comm: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../server: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../disk: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../platform/sun: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../urdi: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../xpp/sxx: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../xlatexpp/sxx: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../comm/sxx: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../server/sxx: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../disk/sxx: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../platform/sun: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../../urdi/sxx: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../xpp: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../xlatexpp: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../comm: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../server: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../disk: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../platform/sun: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../urdi: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../xpp/sxx: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../xlatexpp/sxx: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../comm/sxx: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../server/sxx: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../disk/sxx: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../platform/sun: No such file or directory.
+Warning: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/../urdi/sxx: No such file or directory.
+
+(gdb) b tokensx.cxx:81
+Breakpoint 1 at 0x1ba4c8: file ../tokensx.cxx, line 81.
+(gdb) b branchx.sxx:194
+Breakpoint 2 at 0x74568: file ../sxx/branchx.sxx, line 194.
+(gdb) run ../hilltrk.rc
+Starting program: /Fhypatia/roger/prod/xhs/src/server/gnusun/demo2/febet.exe ../hilltrk.rc
+Starting server loop
+
+Breakpoint 1, TokenSource::takeToken (this=0x558028) at ../tokensx.cxx:81
+(gdb) c 390
+Will ignore next 389 crossings of breakpoint 1.  Continuing.
+
+Breakpoint 2, BranchDescriptionStub::migrate (this=0x584f78, origin=0x57aa14, 
+    destinationIsOld=0) at ../sxx/branchx.sxx:194
+(gdb) c
+Continuing.
+
+Breakpoint 2, BranchDescriptionStub::migrate (this=0x5852c8, origin=0x5793c4, 
+    destinationIsOld=0) at ../sxx/branchx.sxx:194
+(gdb) 
+Continuing.
+
+Breakpoint 2, BranchDescriptionStub::migrate (this=0x585764, origin=0x56f05c, 
+    destinationIsOld=0) at ../sxx/branchx.sxx:194
+(gdb) 
+Continuing.
+
+Breakpoint 2, BranchDescriptionStub::migrate (this=0x585910, origin=0x56eb8c, 
+    destinationIsOld=0) at ../sxx/branchx.sxx:194
+(gdb) 
+Continuing.
+
+Breakpoint 2, BranchDescriptionStub::migrate (this=0x585abc, origin=0x56d954, 
+    destinationIsOld=0) at ../sxx/branchx.sxx:194
+(gdb) 
+Continuing.
+
+Breakpoint 2, BranchDescriptionStub::migrate (this=0x586074, origin=0x56cd04, 
+    destinationIsOld=0) at ../sxx/branchx.sxx:194
+(gdb) 
+Continuing.
+
+Breakpoint 2, BranchDescriptionStub::migrate (this=0x58629c, origin=0x56d598, 
+    destinationIsOld=0) at ../sxx/branchx.sxx:194
+(gdb) disable 2
+(gdb) c
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+(gdb) command 1
+Type commands for when breakpoint 1 is hit, one per line.
+End with a line saying just "end".
+>info locals
+>end
+(gdb) info locals
+tmp = 318
+(gdb) c
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 314
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 319
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 320
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 314
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 314
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 321
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 322
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 323
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 324
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 325
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 326
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 327
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 328
+(gdb) 
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 329
+(gdb) command 1
+Type commands for when breakpoint 1 is hit, one per line.
+End with a line saying just "end".
+>info locals
+>cont
+>end
+(gdb) c
+Continuing.
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 330
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 331
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 332
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 333
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 334
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 335
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 336
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 337
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 338
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 339
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 340
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 341
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 342
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 343
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 342
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 344
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 345
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 346
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 342
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 347
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 348
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 347
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 349
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 350
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 351
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 352
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 347
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 353
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 354
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 355
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 356
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 357
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 358
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 359
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 360
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 361
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 362
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 363
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 364
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 365
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 366
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 367
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 368
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 369
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 370
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 371
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 372
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 373
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 374
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 375
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 376
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 377
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 378
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 379
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 380
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 381
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 382
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 383
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 384
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 385
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 386
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 387
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 388
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 389
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.cxx:81
+tmp = 390
+
+Breakpoint 1, TokenSource::takeToken (this=0x568028) at ../tokensx.c

@@ -1,0 +1,221 @@
+Testing Bomb
+
+sub1(): Testing arming/firing sequence
+About to do PLANT_BOMB()
+About to do ARM_BOMB()
+About to do ARM_BOMB()
+BLAM!.
+About to do DETONATE_BOMB()
+BLAM!.
+About to do DETONATE_BOMB()
+About to do ARM_BOMB()
+Leaving sub1()
+BLAM!.
+
+sub2(): Testing smartbomb signal source detection, and BLAST() macro
+About to do PLANT_BOMB() on smart bomb
+About to do ARM_BOMB() on smart bomb
+About to leave area of smart bomb
+0, therefore: BLAM!.
+About to do PLANT_BOMB() on smart bomb
+About to do ARM_BOMB() on smart bomb
+About to do DETONATE_BOMB() on smart bomb
+3, therefore: BLAM!.
+About to do ARM_BOMB() on smart bomb
+About to rearm smart bomb
+4, therefore: BLAM!.
+About to do ARM_BOMB() on smart bomb
+4, therefore: BLAM!.
+About to do INSTALL_LOUD_SHIELD()
+About to do SHIELD_UP()
+About to do PLANT_BOMB() on second smart bomb
+About to do ARM_BOMB() on second smart bomb
+About to do INSTALL_LOUD_SHIELD()
+About to do SHIELD_UP()
+About to do PLANT_BOMB() on recursive bomb.
+About to do ARM_BOMB() on recursive bomb.
+About to do PLANT_BOMB() on third smart bomb
+About to do ARM_BOMB() on third smart bomb
+About to do PLANT_BOMB() on disarmer bomb
+About to do ARM_BOMB() on disarmer bomb
+About to do BLAST()
+disarming.
+1, therefore: Third bomb message.
+recursive BLAM!.
+About to do PLANT_BOMB()
+About to do ARM_BOMB()
+This is the recursive message.
+1, therefore: Second bomb message.
+Problem(FOO_ERROR, val = 1, file = ../bombt.cxx, line = 263)
+Caught it!  VAL = 1
+problemName = FOO_ERROR, val = 1, fileName = ../bombt.cxx, lineNumber = 263
+0, therefore: First bomb message.
+
+sub3(): Testing plant / arm / fire in loop with local bomb
+Top of loop
+About to do PLANT_BOMB()
+Inside scope
+About to do ARM_BOMB()
+About to leave scope
+This is the message.
+Outside scope
+Top of loop
+About to do PLANT_BOMB()
+Inside scope
+About to do ARM_BOMB()
+About to leave scope
+This is the message.
+Outside scope
+Top of loop
+About to do PLANT_BOMB()
+Inside scope
+About to do ARM_BOMB()
+About to leave scope
+This is the message.
+Outside scope
+Outside loop, leaving sub3()
+
+sub4(): Testing disarm
+About to do PLANT_BOMB()
+About to do ARM_BOMB()
+About to do DISARM_BOMB()
+leaving sub4()
+
+sub6(): EVERYTHING and ALL_BUT
+About to do INSTALL_LOUD_SHIELD()
+About to do SHIELD_UP()
+About to do INSTALL_LOUD_SHIELD()
+About to do SHIELD_UP()
+About to do BLAST_WITH_VAL()
+Problem(SNURD_ERROR, val = 2, file = ../bombt.cxx, line = 364)
+Caught it with EVERYTHING!  VAL = 2
+
+sub7(): Testing CONSTRUCTOR_BOMB()
+About to do INSTALL_LOUD_SHIELD()
+
+About to do SHIELD_UP()
+About to do 'new CroakSub()'
+Croak: Object is in the same place.
+CroakSub: 
+~CroakSub: 
+~Croak
+Problem(DIE_LATER, val = 1, file = ../bombt.cxx, line = 453)
+
+About to do SHIELD_UP()
+About to do 'new DieSub()'
+Die: Object is in the same place.
+~Die
+Problem(DIE, val = 1, file = ../bombt.cxx, line = 379)
+
+About to do 'new LiveSub()'
+Live: Object is in the same place.
+LiveSub: 
+About to do delete liveP
+~LiveSub: 
+~Live
+
+About to do 'new LiveSub()'
+Live: Object is in the same place.
+LiveSub: 
+About to do delete liveP
+~LiveSub: 
+~Live
+
+Leaving sub7()
+
+sub8(): Testing CONSTRUCTOR_BOMB()
+About to do INSTALL_LOUD_SHIELD()
+
+About to do BOOBY_TRAP()
+About to do 'new BrokenDerivedThing()'
+BaseThing: 
+Cracked: 
+CrackedA: 
+Cracked: 
+CrackedB: 
+~BrokenThing
+~CrackedC: 
+~Cracked: 
+~CrackedB: 
+~Cracked: 
+~CrackedA: 
+~Cracked: 
+~BaseThing: 
+Problem(BLAP, val = 1, file = ../bombt.cxx, line = 629)
+
+Leaving sub8()
+
+sub10(): Testing gCHook() and pointerish things
+           that don't override detonateBomb()
+
+gCHooks() return:
+gCHooks() return:
+gCHooks() return: 1
+gCHooks() return: 1
+gCHooks() return: 2 1
+gCHooks() return: 1
+gCHooks() return:
+
+Leaving sub10()
+
+sub11(): Testing detection order during BLAST().
+About to do PLANT_BOMB() on smart bomb #1
+About to do ARM_BOMB() on smart bomb #1
+About to do PLANT_BOMB() on smart bomb #2
+About to do INSTALL_LOUD_SHIELD()
+About to do SHIELD_UP()
+About to do PLANT_BOMB() on smart bomb #3
+About to do PLANT_BOMB() on smart bomb #4
+About to do ARM_BOMB() on smart bomb #4
+About to do ARM_BOMB() on smart bomb #3
+About to do ARM_BOMB() on smart bomb #2
+About to call sub11a()
+
+sub11a(): Testing destruction order returning a bomb.
+About to do PLANT_BOMB() on smart bomb #1a
+About to do ARM_BOMB() on smart bomb #1a
+Leaving sub11a().
+verbose_Bomb constructed.
+0, therefore: BLAM number 1a!
+About to do BLAST()
+~verbose_Bomb destructed.
+1, therefore: BLAM number 4!
+1, therefore: BLAM number 3!
+Problem(FOO_ERROR, val = 1, file = ../bombt.cxx, line = 935)
+Caught it!  VAL = 1
+problemName = FOO_ERROR, val = 1, fileName = ../bombt.cxx, lineNumber = 935
+Leaving sub11() via SHIELD_RETURN
+0, therefore: BLAM number 2!
+0, therefore: BLAM number 1!
+
+sub12(): Testing TRY macros
+
+One: do a TRY(FOO) catching a FOO_ERROR
+One: About to BLAST(FOO_ERROR)
+One: Caught it.
+
+Two: Nesting TRY(SNURD) in TRY(FOO), blasting BAR_ERROR
+Two: About to BLAST(BAR_ERROR)
+Two: Caught it in inner TRY.
+
+Three: Nesting TRY(SNURD) in TRY(FOO), not blasting
+Three: Error-free inner part
+
+Four: Ditto, with no inner code to try.
+
+Five: Nesting TRY(SNURD) in TRY(FOO), blasting SNURD_ERROR
+Five: About to BLAST(SNURD_ERROR)
+Five: Caught it in inner TRY.
+
+Six: Nesting TRY(SNURD) in TRY(FOO), blasting FOO_ERROR
+Six: About to BLAST(FOO_ERROR)
+Six: Caught it in outer TRY.
+
+Seven: Testing LOUD_TRY(), VAL, and PROBLEM
+Seven: About to BLAST_WITH_VAL(FOO_ERROR, 7)
+Problem(FOO_ERROR, val = 7, file = ../bombt.cxx, line = 1035)
+Seven: Caught it!  VAL = 7
+Seven: problemName = FOO_ERROR, val = 7, fileName = ../bombt.cxx, lineNumber = 1035
+
+Leaving sub12().
+End of test of Bomb

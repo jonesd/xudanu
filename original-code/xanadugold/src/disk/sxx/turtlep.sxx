@@ -1,0 +1,122 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define TURTLEP_SXX
+
+/*----------------------- BEGIN SimpleTurtle -----------------------*/
+DEFINE_CLASS_CATEGORY(SimpleTurtle,Turtle)
+DEFINE_OPAQUE_TYPE(SimpleTurtle);
+
+void SimpleTurtle::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "SimpleTurtle" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void SimpleTurtle::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Turtle::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myCounter);
+    xmtr->sendHeaper(myBootHeaper);
+    xmtr->sendHeaper(myBootCategory);
+    xmtr->sendHeaper(myAgenda);
+}
+
+SimpleTurtle::SimpleTurtle (APTR(Rcvr) receiver, TCSJ)
+  : Turtle (receiver, tcsj) {
+    myCounter = CAST(Counter, receiver->receiveHeaper());
+    myBootHeaper = CAST(Heaper, receiver->receiveHeaper());
+    myBootCategory = CAST(Category, receiver->receiveHeaper());
+    myAgenda = CAST(Agenda, receiver->receiveHeaper());
+    this->restartSimpleTurtle(receiver);
+}
+
+
+void parseInto_SimpleTurtle (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) SimpleTurtle (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe SimpleTurtle_recipe(cat_SimpleTurtle, &DiskCuisine, parseInto_SimpleTurtle);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "SimpleTurtle" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ===== mayBecome support between stub and concrete Shepherd ===== */
+
+extern Category * cat_TurtleStub;
+DEFINE_MAY_BECOME(SimpleTurtle,TurtleStub)
+DEFINE_MAY_BECOME(TurtleStub,SimpleTurtle)
+
+/* ====== Object Migrator for Scavenging of SimpleTurtle ====== */
+
+void SimpleTurtle::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->Turtle::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((SimpleTurtle*)origin)->myCounter,
+				       (Heaper**)&myCounter);
+		Heaplet::forwardToOld ((Heaper**)&((SimpleTurtle*)origin)->myBootHeaper,
+				       (Heaper**)&myBootHeaper);
+		Heaplet::forwardToOld ((Heaper**)&((SimpleTurtle*)origin)->myProtocol,
+				       (Heaper**)&myProtocol);
+		Heaplet::forwardToOld ((Heaper**)&((SimpleTurtle*)origin)->myCookbook,
+				       (Heaper**)&myCookbook);
+		Heaplet::forwardToOld ((Heaper**)&((SimpleTurtle*)origin)->myAgenda,
+				       (Heaper**)&myAgenda);
+	} else {
+		myCounter.forwardTo (Heaplet::forward (myCounter));
+		myBootHeaper.forwardTo (Heaplet::forward (myBootHeaper));
+		myProtocol.forwardTo (Heaplet::forward (myProtocol));
+		myCookbook.forwardTo (Heaplet::forward (myCookbook));
+		myAgenda.forwardTo (Heaplet::forward (myAgenda));
+	}
+}
+
+/*----------------------- END SimpleTurtle -----------------------*/
+

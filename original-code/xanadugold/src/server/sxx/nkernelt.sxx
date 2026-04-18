@@ -1,0 +1,217 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define NKERNELT_SXX
+
+/*----------------------- BEGIN WorksTester -----------------------*/
+DEFINE_CLASS_CATEGORY(WorksTester,Tester)
+DEFINE_OPAQUE_TYPE(WorksTester);
+
+void WorksTester::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "WorksTester" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void WorksTester::sendSelfTo (APTR(Xmtr) xmtr)
+{
+}
+
+WorksTester::WorksTester (APTR(Rcvr) receiver, TCSJ)
+{
+    this->restartWorksTester(receiver);
+}
+
+
+void parseInto_WorksTester (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) WorksTester (rcvr, tcsj);
+}
+
+extern Recipe * BootCuisine;
+ActualCopyRecipe WorksTester_recipe(cat_WorksTester, &BootCuisine, parseInto_WorksTester);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "WorksTester" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of WorksTester ====== */
+
+void WorksTester::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((WorksTester*)origin)->myConnection,
+				       (Heaper**)&myConnection);
+		Heaplet::forwardToOld ((Heaper**)&((WorksTester*)origin)->myTestID,
+				       (Heaper**)&myTestID);
+	} else {
+		myConnection.forwardTo (Heaplet::forward (myConnection));
+		myTestID.forwardTo (Heaplet::forward (myTestID));
+	}
+}
+
+/*----------------------- END WorksTester -----------------------*/
+
+
+/*----------------------- BEGIN WorksTestFillDetector -----------------------*/
+DEFINE_CLASS_CATEGORY(WorksTestFillDetector,FeFillDetector)
+
+void WorksTestFillDetector::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "WorksTestFillDetector" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+BooleanVar WorksTestFillDetector::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 WorksTestFillDetector::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of WorksTestFillDetector ====== */
+
+void WorksTestFillDetector::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END WorksTestFillDetector -----------------------*/
+
+
+/*----------------------- BEGIN WorksTestFillRangeDetector -----------------------*/
+DEFINE_CLASS_CATEGORY(WorksTestFillRangeDetector,FeFillRangeDetector)
+
+void WorksTestFillRangeDetector::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "WorksTestFillRangeDetector" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+BooleanVar WorksTestFillRangeDetector::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 WorksTestFillRangeDetector::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of WorksTestFillRangeDetector ====== */
+
+void WorksTestFillRangeDetector::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END WorksTestFillRangeDetector -----------------------*/
+
+
+/*----------------------- BEGIN WorksTestStatusDetector -----------------------*/
+DEFINE_CLASS_CATEGORY(WorksTestStatusDetector,FeStatusDetector)
+
+void WorksTestStatusDetector::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "WorksTestStatusDetector" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+BooleanVar WorksTestStatusDetector::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 WorksTestStatusDetector::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of WorksTestStatusDetector ====== */
+
+void WorksTestStatusDetector::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END WorksTestStatusDetector -----------------------*/
+

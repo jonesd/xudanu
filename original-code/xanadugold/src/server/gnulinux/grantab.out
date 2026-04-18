@@ -1,0 +1,134 @@
+Running all HashTable tests.
+Test 1
+Create tables with create, create: and create:with:
+
+Printing tables:
+
+0x76876c
+
+0x76a3f4
+
+Test empty table: Empty
+
+Test introduce: 0x76876c, table count now: 2
+
+Test introduce: 0x76876c, table count now: 3
+
+Test introduce: 0x76876c, table count now: 4
+
+already in table blast caught, table now:
+
+0x76876c
+
+and table count: 4
+
+
+Test 2
+Create tables.
+
+Starting table is:
+
+0x76aaf8
+
+after replace:
+0x76aaf8 and table count: 4
+Test replace() in unknown territory. 
+NotInTable blast caught, table now:
+0x76aaf8
+and table count: 4
+
+Test 3
+Create tables.
+
+Starting table is:
+
+0x76cb68
+
+after store:
+
+0x76cb68 and table count: 4
+
+Test store() in unknown territory. 
+
+after store:
+
+0x76cb68 and table count: 5
+
+Test store() with NULL. 
+
+NullInsertion blast caught, table now:
+
+0x76cb68
+
+and table count: 5
+
+
+Test 4
+Create tables.
+
+Starting table is:
+
+0x76ea74
+
+with count 4
+
+Testing domain
+
+0x770b58
+
+Test get(1) 0x77082c
+
+Test get() in unknown territory. 
+
+NotInTable blast caught, table now:
+
+0x76ea74
+
+and table count: 4
+
+
+Test 5
+Create tables.
+
+Starting table is:
+
+0x770b90
+
+with count 4
+
+Now, testing remove(1)
+
+Table now:
+
+0x770b90
+
+with count 3
+
+Test remove(1) in unknown territory. 
+
+NotInTable blast caught, table now:
+
+0x770b90
+
+and table count: 3
+
+Test growth behavior of GrandHashTable
+Growth test successful.
+GrandHashSet testing
+MuSet testing
+Start ScruSet testing
+testing isEmpty
+end of isEmpty tests
+testing hasMember and theOne
+end of hasMember and theOne tests
+testing contentsEqual() and contentsHash()
+end of ContentsEqual tests
+testing intersects
+end of intersects tests
+testing isSubsetOf
+end of isSubsetOf tests
+End of Scruset testing
+start binary tests
+end binary tests
+End of MuSet testing
+End of GrandHashSet testing

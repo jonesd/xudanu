@@ -1,0 +1,142 @@
+'From Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989 on 29 March 1993 at 4:53:58 pm'!
+
+ChangeLog user: #cth!
+
+" FILE IN " ' after /home/xanadu/hibbert/image/goodies/sun.st'!
+
+ChangeRecorder user: #cth!
+
+"----NOTE----"
+
+ChangeLog logNote: 'include file fixes for SGI'!
+
+'File out on ../src/image/next/cth-a.cha'!
+
+" FILE IN " ' before ../src/image/next/ech-a.cha'!
+
+ChangeRecorder user: #cth!
+
+" FILE IN " ' after ../src/image/next/ech-a.cha'!
+
+" FILE IN " ' before ../src/image/next/ech-b.cha'!
+
+ChangeRecorder user: #cth!
+
+" FILE IN " ' after ../src/image/next/ech-b.cha'!
+
+" FILE IN " ' before ../src/image/next/ech-c.cha'!
+
+ChangeRecorder user: #cth!
+
+" FILE IN " ' after ../src/image/next/ech-c.cha'!
+
+" FILE IN " ' before ../src/image/next/ech-d.cha'!
+
+ChangeRecorder user: #cth!
+
+" FILE IN " ' after ../src/image/next/ech-d.cha'!
+
+" FILE IN " ' before ../src/image/next/ech-e.cha'!
+
+ChangeRecorder user: #cth!
+
+" FILE IN " ' after ../src/image/next/ech-e.cha'!
+
+" FILE IN " ' before ../src/image/next/cth-a.cha'!
+
+ChangeRecorder user: #cth!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'sktsrv') hxxHeader: '' in: #public])!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'sktsrv') cxxHeader: '#include <sys/types.h>
+#if defined(HIGHC) | defined(_MSC_VER)
+#	include <sys/time.h>
+#endif /* HIGHC | _MSC_VER */
+#include <stdlib.h>
+#include <stream.h>
+#include <string.h>
+#include <fcntl.h>
+
+#ifdef unix
+#	include <netdbx.hxx>
+#	include <sys/socket.h>
+#	include <netinet/in.h>
+#	include <sys/socket.h>
+#	include <osfcn.h>
+#	ifdef __sgi
+		int	getdtablesize();		/* SGI forgot to put it in osfcn.h */
+#		include <libc.h>	/* for bzero(), which is called by FD_ZERO */
+#		include <errno.h>
+#	endif	/* sgi */
+#endif /* unix */
+
+#include <signal.h>
+
+#ifdef WIN32
+#	include <winsock.h>
+#	include <io.h>
+#	define close _close
+#endif /* WIN32 */
+
+#ifdef HIGHC
+extern "C" {
+#	define NOMEMMGR /* TO AVOID GPTR MACRO CONFLICT */
+#	include <nmpcip.h>
+};
+#endif /* HIGHC */
+#include <socketx.hxx>
+' in: #public])!
+
+ChangeRecorder user: #cth!
+
+"----NOTE----"
+
+ChangeLog logNote: 'include file fixes for SGI'!
+
+ChangeRecorder user: #cth!
+
+" FILE IN " ' after ../src/image/next/cth-a.cha'!
+
+" FILE IN " ' before ../src/image/next/filein.lst'!
+
+ChangeRecorder user: #cth!
+
+" FILE IN " ' before ../src/image/next/ech-f.cha'!
+
+ChangeRecorder user: #cth!
+
+" FILE IN " ' after ../src/image/next/ech-f.cha'!
+
+" FILE IN " ' before ../src/image/next/filein.lst'!
+
+ChangeRecorder user: #cth!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'proman') cxxHeader: '' in: #public])!
+
+!PromiseManager class methodsFor: #'smalltalk: init'!
+linkTimeNonInherited
+
+	PromiseClasses _ NULL.
+	AllRequests _ NULL.
+	"LoginRequests _ NULL"
+	Logger defineLogger: #BlastLog.! !
+
+!PromiseManager methodsFor: #'private: comm'!
+{void} respondProblem: problem {Problem}
+
+	BlastLog << 'Blast sent: ' << problem getProblemName << ' at: '.
+	BlastLog << problem getFileName << ':' << problem getLineNumber << '
+'.
+	self flushAcks.
+	self sendResponse: PromiseManager errorResponse.
+	self sendIntegerVar: (PromiseManager problemNumber: problem getProblemName).
+	self sendIntegerVar: (PromiseManager problemSource: problem getFileName
+		with: problem getLineNumber).
+	myNextClientPromise _ myNextClientPromise + 1.
+	myError _ NULL! !
+
+"----NOTE----"
+
+ChangeLog logNote: 'Make Blast reporting use a Logger'!
+
+'File out on ../src/image/next/cth-b.cha'!

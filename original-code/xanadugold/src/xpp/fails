@@ -1,0 +1,13 @@
+the current reason for the crash is that a branch object which is
+on the branch with the token of 268 and a location of c804e0 has
+not been migrated to a new page when the page was collected.
+
+the object which points to the lost object earlier is at 989cb0.
+and is properly listed in the pointer ref set on that page.  you 
+can see it in the third word over when using x/4 0xc80050
+
+you can see the crash faster, and the daage even faster by
+runing with recycleOld off.  it takes 209 hits of gc and
+97 hits at 1239 to get to the point where the pointer to the
+in the pointer ref set gets forgotten.  it takes to 147 hits on 
+the gc for the problem to cause a crash.

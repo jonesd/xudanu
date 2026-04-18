@@ -1,0 +1,2244 @@
+'From Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989 on 26 August 1994 at 3:08:23 pm'!
+
+ChangeLog user: #ech!
+
+!Cookbook class methodsFor: #declaring!
+{Cookbook} declareCookbook: id {char star} with: bootCat {Category} with: cuisine {Recipe}
+	"Create and register a cookbook.  The cookbook can be looked up according to etiher its name or bootCategory."
+	
+	| recipes {PtrArray} count {Int32} |
+	"preorder -> recipe."
+	recipes _ WeakPtrArray make: XnExecutor noopExecutor with: Heaper preorderMax + 1.
+	count _ ActualCookbook addCuisine: cuisine to: recipes.
+	^ActualCookbook create: bootCat with: id with: recipes with: count! !
+
+!Cookbook class methodsFor: #declaring!
+{Cookbook} declareCookbook: id {char star} with: bootCat {Category} with: cuisine1 {Recipe} with: cuisine2 {Recipe}
+	"Create and register a cookbook.  The cookbook can be looked up according to etiher its name or bootCategory."
+	
+	| recipes {PtrArray} count {Int32} |
+	"preorder -> recipe."
+	recipes _ WeakPtrArray make: XnExecutor noopExecutor with: Heaper preorderMax + 1.
+	count _ ActualCookbook addCuisine: cuisine1 to: recipes.
+	count _ count + (ActualCookbook addCuisine: cuisine2 to: recipes).
+	^ActualCookbook create: bootCat with: id with: recipes with: count! !
+
+!Cookbook class methodsFor: #declaring!
+{Cookbook} declareCookbook: id {char star} with: bootCat {Category} with: cuisine1 {Recipe} with: cuisine2 {Recipe} with: cuisine3 {Recipe}
+	"Create and register a cookbook.  The cookbook can be looked up according to etiher its name or bootCategory."
+	
+	| recipes {PtrArray} count {Int32} |
+	"preorder -> recipe."
+	recipes _ WeakPtrArray make: XnExecutor noopExecutor with: Heaper preorderMax + 1.
+	count _ ActualCookbook addCuisine: cuisine1 to: recipes.
+	count _ count + (ActualCookbook addCuisine: cuisine2 to: recipes).
+	count _ count + (ActualCookbook addCuisine: cuisine3 to: recipes).
+	^ActualCookbook create: bootCat with: id with: recipes with: count! !
+
+!Cookbook class methodsFor: #declaring!
+{Cookbook} declareCookbook: id {char star} with: bootCat {Category} with: cuisine1 {Recipe} with: cuisine2 {Recipe} with: cuisine3 {Recipe} with: cuisine4 {Recipe}
+	"Create and register a cookbook.  The cookbook can be looked up according to etiher its name or bootCategory."
+	
+	| recipes {PtrArray} count {Int32} |
+	"preorder -> recipe."
+	recipes _ WeakPtrArray make: XnExecutor noopExecutor with: Heaper preorderMax + 1.
+	count _ ActualCookbook addCuisine: cuisine1 to: recipes.
+	count _ count + (ActualCookbook addCuisine: cuisine2 to: recipes).
+	count _ count + (ActualCookbook addCuisine: cuisine3 to: recipes).
+	count _ count + (ActualCookbook addCuisine: cuisine4 to: recipes).
+	^ActualCookbook create: bootCat with: id with: recipes with: count! !
+
+!PrimIndexTable methodsFor: #accessing!
+{void} clearAll
+	"Clear all entries from the table. I know this looks like a hack, but the 
+	alternative is to throw away the table and build a new one: an expensive 
+	prospect for comm."
+
+	myPtrs count > myOriginalSize
+		ifTrue:
+			[myPtrs destroy.
+			amWimpy 
+				ifTrue: [myPtrs := WeakPtrArray make: XnExecutor noopExecutor with: myOriginalSize]
+				ifFalse: [myPtrs := PtrArray nulls: myOriginalSize]]
+		ifFalse:
+			[myPtrs storeAll].
+	myTally _ Int32Zero! !
+
+!PrimIndexTable methodsFor: #protected:!
+create: size {Int32} with: wimpy {BooleanVar}
+	super create.
+	amWimpy := wimpy.
+	amWimpy ifTrue: [myPtrs := WeakPtrArray make: XnExecutor noopExecutor with: size]
+		ifFalse: [myPtrs := PtrArray nulls: size].
+	myIndices := IntegerVarArray zeros: size.
+	myTally := Int32Zero.
+	myOriginalSize := size.! !
+
+!PrimIndexTable methodsFor: #private:!
+{void} rehash: oldPtrs {PtrArray} with: oldIndices {IntegerVarArray} with: newSize {Int32}
+	amWimpy ifTrue: [myPtrs := WeakPtrArray make: XnExecutor noopExecutor with: newSize]
+		ifFalse: [myPtrs := PtrArray nulls: newSize].
+	myIndices := IntegerVarArray zeros: newSize.
+	Int32Zero almostTo: oldPtrs count do: [:i {Int32} |
+		| loc {Int32} |
+		(oldPtrs fetch: i) ~~ NULL ifTrue:
+			[loc := self hashFind: (oldPtrs fetch: i).
+			myIndices at: loc storeIntegerVar: (oldIndices integerVarAt: i).
+			myPtrs at: loc store: (oldPtrs fetch: i)]].
+	oldPtrs destroy.
+	oldIndices destroy! !
+
+!PrimPtr2PtrTable methodsFor: #'protected: create'!
+create: size {Int32}
+	super create.
+	myFromPtrs := WeakPtrArray make: XnExecutor noopExecutor with: size.
+	myToPtrs := PtrArray nulls: size.
+	myTally := Int32Zero.! !
+
+!PrimPtr2PtrTable methodsFor: #private:!
+{void} grow
+	| oldFromPtrs {PtrArray} oldToPtrs {PtrArray} tmp {Heaper wimpy} removed {Heaper wimpy} |
+	oldFromPtrs := myFromPtrs.
+	oldToPtrs := myToPtrs.
+	myFromPtrs := WeakPtrArray make: XnExecutor noopExecutor with: 5 * myFromPtrs count // 3.
+	myToPtrs := PtrArray nulls: myFromPtrs count.
+	removed _ PrimRemovedObject make.
+	Int32Zero almostTo: oldFromPtrs count do: [:i {Int32} |
+		| loc {Int32} |
+		((tmp _ oldToPtrs fetch: i) ~~ NULL and: [tmp ~~ removed]) ifTrue:
+			[loc := self hashFind: (oldFromPtrs fetch: i).
+			myFromPtrs at: loc store: (oldFromPtrs fetch: i).
+			myToPtrs at: loc store: (oldToPtrs fetch: i)]].
+	oldFromPtrs destroy.
+	oldToPtrs destroy! !
+
+!Abraham methodsFor: #'protected: destruction'!
+{void NOFAULT NOLOCK} destruct
+	"Called when an object is leaving RAM.  Additional behavior for subclasses of Abraham:
+	Tell the snarfPacker that I am leaving RAM and should be removed from its tables."
+	
+	myInfo ~~ NULL
+		ifTrue: [CurrentPacker fluidGet dropFlock: myToken].
+	super destruct! !
+
+!DiskManager methodsFor: #'protected: creation'!
+{void} destruct
+
+	(myFluidSpace ~~ NULL) ifTrue: [
+		CurrentPacker fluidBind: self during:
+			[DiskManager emulsion destructAll]]. 
+	super destruct.! !
+
+!SnarfPacker methodsFor: #shepherds!
+{void} dropFlock: token {Int32}
+	"The flock is being removed from memory.  For now, this is an error
+	 if the flock has been updated.  If the flock has been forgotten, 
+	 then it will be dismantled when next it comes in from disk.
+	 Because of forwarding, there may be many FlockInfos refering
+	 to the flock if it is not new."
+
+	| info {FlockInfo} |
+	info := FlockInfo getInfo: token.
+	(info isNew or: [info isForwarded])
+		ifTrue: [myNewFlocks intRemove: info index].
+	info isNew
+		ifFalse:
+			[info isForgotten ifFalse: [Heaper BLAST: #OnlyRemoveUnchangedFlocks].
+			(myFlocks stepperAtInt: info flockHash) forEach: 
+				[:oi {FlockInfo} |
+				oi token == token ifTrue: [myFlocks wipe.IntegerVar: info flockHash with: oi]]].
+	FlockInfo removeInfo: token! !
+
+!TestPacker methodsFor: #shepherds!
+{void} dropFlock: token {Int32}
+	| info {FlockInfo} |
+	info := FlockInfo getInfo: token.
+	info isNew
+		ifTrue: 
+			[myNewFlocks intRemove: info index]
+		ifFalse: 
+			[info isForgotten ifFalse: [Heaper BLAST: #OnlyRemoveUnchangedFlocks].
+			myChangedFlocks intWipe: info index.
+			myFlocks intRemove: info index].
+	FlockInfo removeInfo: token! !
+
+!TestPacker methodsFor: #'private: disk'!
+{void} recordUpdate: info {FlockInfo} 
+	"The flock represented by info has changed.  Record it in the
+	 bookkeeping data-structures.  This must be called by all things 
+	 that affect whether the flock gets rewritten to disk."
+	| shep {Abraham} |
+	
+	info isNew not ifTrue: 
+		[(shep _ info fetchShepherd) ~~ NULL ifTrue:
+			[(shep isEqual: Pumpkin make)
+				ifTrue: 
+					[blastOnError ifTrue: [Heaper BLAST: #MustNotRecordChangesForPumpkins].
+					cerr << 'Pumpkin ' << info << ' tried to diskUpdate
+'.
+					^VOID]].
+		myChangedFlocks atInt: info index store: shep]! !
+
+!FeActualDataHolder methodsFor: #destruct!
+{void} destruct
+
+	myBeDataHolder removeFeRangeElement: self.
+	super destruct.! !
+
+!FeEdition methodsFor: #destruct!
+{void} destruct
+
+	myBeEdition removeFeRangeElement: self.
+	super destruct.! !
+
+!FeIDHolder methodsFor: #destruct!
+{void} destruct
+
+	myBeIDHolder removeFeRangeElement: self.
+	super destruct.! !
+
+!FeLabel methodsFor: #destruct!
+{void} destruct
+
+	myBeLabel == NULL ifFalse:
+		[myBeLabel removeFeRangeElement: self].
+	super destruct.! !
+
+!FeActualPlaceHolder methodsFor: #destruct!
+{void} destruct
+
+	myRangeElement removeFeRangeElement: self.
+	super destruct.! !
+
+!FeWork methodsFor: #destruct!
+{void} destruct
+
+	myBeWork removeFeRangeElement: self.
+	myBeWork tryUnlock: self.
+	myKeyMaster ~~ NULL ifTrue:
+		[myKeyMaster unregisterWork: self].
+	super destruct.! !
+
+!PromiseManager methodsFor: #'protected: creation'!
+{void} destruct
+	| step {PrimIndexTableStepper} |
+	myPortal destroy.
+	"clean up all the ref counted Detectors"
+	step _ myRefCounts stepper.
+	[step hasValue] whileTrue: [
+		| detect {Heaper} |
+		detect _ step key.
+		detect destroy.
+		step step].
+	super destruct! !
+
+!SpecialistRcvr methodsFor: #'protected: creation'!
+{void} destruct
+	RcvrIbidCache == NULL 
+		ifTrue:
+			[myIbids storeAll.
+			RcvrIbidCache _ myIbids.
+			myIbids _ NULL]
+		ifFalse: [myIbids destroy].
+	"mySpecialist destroy"
+	super destruct! !
+
+!GrandHashSet methodsFor: #'protected: creation'!
+{void} destruct
+ 	| temp {Heaper} |
+ 	self checkSteppers.
+ 	DiskManager consistent: numNodes with:
+		[UInt32Zero almostTo: numNodes do:
+			[:i {UInt32} |
+			(temp _ grandNodes fetch: i) ~~ NULL ifTrue: [temp destroy]]].
+	super destruct! !
+
+!GrandHashTable methodsFor: #'protected: creation'!
+{void} destruct
+ 	| temp {Heaper} |
+ 	DiskManager consistent: numNodes with:
+		[UInt32Zero almostTo: numNodes do:
+			[:i {UInt32} |
+			(temp _ grandNodes fetch: i) ~~ NULL ifTrue: [temp destroy]]].
+	super destruct! !
+
+!ServerChunk methodsFor: #'protected: destruct'!
+{void} destruct
+	"ServerChunks are destroyed explicitly in the server loop."
+	| saveChunk {ServerChunk} |
+	(myFluidSpace ~~ NULL) ifTrue: [
+		saveChunk _ CurrentChunk.
+		CurrentChunk _ self.
+		ServerChunk emulsion destructAll.
+		CurrentChunk _ saveChunk.].
+	ServerLoop removeChunk: self.
+	ChunkCleaner beClean.
+	super destruct.! !
+
+!FDListener methodsFor: #creation!
+{void} destruct
+
+	[myFD close] smalltalkOnly.
+	'close (myFD);' translateOnly.
+	super destruct.! !
+
+!IPPromiseListener methodsFor: #'protected: destruct'!
+{void} destruct
+	mySession _ NULL.
+	myPortal _ NULL.
+	myManager destroy.
+	myManager _ NULL.
+	super destruct! !
+
+!SnarfInfoHandler methodsFor: #'protected: destruct'!
+{void} destruct
+	"Release all my handles before going away."
+	myCurrentHandle _ NULL.
+	mySnarfs getCategory ~= Heaper ifTrue:
+		[mySnarfs stepper forEach:
+			 [:handle {SnarfHandle} |
+			 handle destroy]].
+	mySnarfs _ NULL.
+	super destruct! !
+
+!GrandHashSetStepper methodsFor: #'protected: create'!
+{void} destruct
+	nodeStepper ~~ NULL ifTrue: [ nodeStepper destroy ].
+	set fewerSteppers.
+	super destruct.! !
+
+!GrandNodeStepper methodsFor: #'protected: creation'!
+{void} destruct
+	pageStepper ~~ NULL ifTrue: [ pageStepper destroy ].
+	overflowStepper ~~ NULL ifTrue: [ overflowStepper destroy ].
+	super destruct.! !
+
+!GrandOverflowStepper methodsFor: #'protected: creation'!
+{void} destruct
+	childStepper ~~ NULL ifTrue: [ childStepper destroy ].
+	super destruct.! !
+
+!GrandHashTableStepper methodsFor: #'protected: creation'!
+{void} destruct
+	nodeStepper ~~ NULL ifTrue: [ nodeStepper destroy ].
+	table fewerSteppers.
+	super destruct.! !
+
+!SpecialistXmtr methodsFor: #'protected: creation'!
+{void} destruct
+	XmtrIbidCache == NULL 
+		ifTrue:
+			[myIbids clearAll.
+			XmtrIbidCache _ myIbids.
+			myIbids _ NULL]
+		ifFalse: [myIbids destroy].
+	"mySpecialist destroy"
+	super destruct! !
+
+!TestPacker methodsFor: #transactions!
+{void} makePersistent
+
+	[amCommitting := true.
+	self refitFlocks.
+	myNewFlocks stepper forEach: [:info {FlockInfo} | | shep {Abraham} |
+		(shep _ info fetchShepherd) ~~ NULL ifTrue:
+			[self assignSnarf: shep]].
+	self flushChanges.
+	myNewFlocks destroy.
+	myNewFlocks := IntegerTable make: 500]
+		valueNowOrOnUnwindDo:
+			(TestPacker bomb.EndCommit: self)! !
+
+!ChunkCleaner class methodsFor: #cleanup!
+{void} beClean
+	| cleaner {ChunkCleaner} |
+	cleaner := FirstCleaner.
+	[cleaner ~~ NULL] whileTrue: [
+		cleaner cleanup.
+		cleaner := cleaner next].
+! !
+
+!SnarfPacker methodsFor: #transactions!
+{void} makePersistent
+	"The virtual image in memory is now in a consistent state. Write the image of 
+	all changed or new Shepherds out to the disk in a single atomic action.  The 
+	atomicity only happens on top of a real Urdi, however."
+	
+	self checkInfos.
+	[myInsideCommit _ true.
+	"Note which flocks still fit in their snarfs, and forwards ones that don't"
+	self refitFlocks.
+	"Assign all new and migrating flocks to a snarf in a GC safe fashion."
+	IntegerVarZero to: myNewFlocks highestIndex do: 
+		[:i {IntegerVar} |
+		| info {FlockInfo} |
+		info _ (myNewFlocks intFetch: i) cast: FlockInfo.
+		"IF we GC'd, flocks and their infos might have been removed."
+		info ~~ NULL ifTrue: 
+			[| shep {Abraham} |  "This might be the only strong pointer to the object!!"
+			info markShepNull.
+			shep _ info fetchShepherd.
+			shep ~~ NULL ifTrue: [self assignSnarf: shep]]].
+	"Write out all the changes into URDI buffers."
+	self flushFlocks.
+	myNewFlocks destroy.
+	myNewFlocks _ IntegerTable make: 500.
+	self commitView.
+	[Transcript show: '.'] smalltalkOnly.
+	myNewEstimate _ IntegerVarZero]
+		valueNowOrOnUnwindDo:
+			(SnarfPacker bomb.ResetCommit: self).
+	self checkInfos.! !
+
+!DiskIniter methodsFor: #running!
+{void} execute
+
+	| maker {XcvrMaker} cookbook {Cookbook} turtle {Turtle} conn {Connection} |
+	DiskManager initializeDisk: myFilename.
+	maker _ ProtocolBroker diskProtocol.
+	cookbook _ Cookbook make.Category: myCategory.
+	turtle _ Turtle make: cookbook with: myCategory with: maker.
+	conn _ Connection make: myCategory.
+	turtle saveBootHeaper: conn bootHeaper.
+	(conn bootHeaper cast: BeGrandMap) bePurgeable.
+	CurrentPacker fluidGet purge.
+	"Let's make sure that the GC gets as much as possible."
+	"[WorksBootMaker] USES.
+	GrandConnection fluidSet: NULL."
+	conn _ NULL.
+	turtle _ NULL.
+	maker _ NULL.
+	cookbook _ NULL.
+	CurrentPacker fluidGet destroy.
+	CurrentPacker fluidSet: (NULL basicCast: DiskManager).! !
+
+!HonestAbeIniter methodsFor: #running!
+{void} execute
+
+	| cookbook {Cookbook} turtle {Turtle} conn {Connection} |
+	TestPacker make: blastOnError with: persistInterval.
+	cookbook := Cookbook make.Category: myCategory.
+	turtle := Turtle make: cookbook with: myCategory with: ProtocolBroker diskProtocol.
+	conn := Connection make: myCategory.
+	TheHonestConnection _ conn.
+	turtle saveBootHeaper: conn bootHeaper.
+	"The following is here so that later thunks can get the GrandMap &c"
+	"[WorksBootMaker] USES.
+	GrandConnection fluidSet: TheHonestConnection.ó"
+	TheHonestGrandMap _ conn bootHeaper cast: BeGrandMap.
+	CurrentPacker fluidGet purge.
+	"CurrentPacker fluidSet: NULL.
+"! !
+
+!ServerLoop class methodsFor: #'smalltalk: init'!
+staticTimeNonInherited
+	Connection defineFluid: #CurrentServerConnection with: Emulsion globalEmulsion with: [NULL].
+	ServerLoop defineFluid: #CurrentServerLoop with: Emulsion globalEmulsion with: [NULL].! !
+
+!ServerLoop methodsFor: #'protected: accessing'!
+{Stepper} stepper
+	^ myStepper! !
+
+!ServerLoop methodsFor: #'protected: accessing'!
+{void} stepper: stepper {Stepper}
+	myStepper := stepper! !
+
+"----NOTE----"
+
+ChangeLog logNote: 'Changed rcmain and ServerLoop to comply with scavenger.'!
+
+Object subclass: #ScavengeablePage
+	instanceVariableNames: ''
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-scav'!
+
+ScavengeablePage getOrMakeCxxClassDescription attributes: #(CONCRETE SMALLTALK.ONLY )!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'scav')  addClass: ScavengeablePage getOrMakeCxxClassDescription in: #public])!
+
+ScavengeablePage class organization addCategory: #collection before: nil!
+
+!ScavengeablePage class methodsFor: #collection!
+garbageCollect! !
+
+!SharedPtrArray methodsFor: #accessing!
+{void INLINE} shareLess
+	myShareCount _ myShareCount - 1! !
+
+!ActualHashSet methodsFor: #'protected: creation'!
+{void} destruct
+	myHashEntries shareLess.
+	super destruct! !
+
+!ActualHashTable methodsFor: #protected:!
+{void} destruct
+	myHashEntries shareLess.
+	super destruct! !
+
+!SetTable methodsFor: #creation!
+{void} destruct
+	myHashEntries shareLess.
+	super destruct! !
+
+!HashSetStepper methodsFor: #'protected: destruct'!
+{void} destruct
+	myElements ~~ NULL ifTrue: [
+		myElements shareLess].
+	super destruct! !
+
+!HashSetStepper methodsFor: #private:!
+{void} verifyEntry
+	myElements ~~ NULL ifTrue: [
+		myCurrent < myElements count ifTrue: [
+			myCurrent := myElements indexPast: NULL with: myCurrent.
+			myCurrent == -1 ifTrue: [myCurrent := myElements count]].
+		self hasValue ifFalse: [
+			myElements shareLess.
+			myElements := NULL]].! !
+
+!BucketArrayStepper methodsFor: #'protected: create'!
+{void} destruct
+	myEntries ~~ NULL ifTrue: [
+		myEntries shareLess].
+	super destruct! !
+
+SharedPtrArray removeSelector: #shareLess:!
+
+!SharedPtrArray methodsFor: #accessing!
+{void INLINE} shareMore
+	myShareCount _ myShareCount + 1! !
+
+!ActualHashSet methodsFor: #'private: housekeeping'!
+{void} actualAboutToWrite
+
+	| newValues {UInt32Array} newEntries {SharedPtrArray}  |
+	newValues _ myHashValues copy cast: UInt32Array.
+	newEntries _ myHashEntries copy cast: SharedPtrArray.
+	myHashEntries shareLess.
+	myHashValues _ newValues.
+	myHashEntries _ newEntries.
+	myHashEntries shareMore! !
+
+!ActualHashSet methodsFor: #'private: housekeeping'!
+{void} checkSize: byAmount {Int32}
+
+	| newSize {Int32} newValues {UInt32Array} newEntries {SharedPtrArray} he {Heaper wimpy} |
+	
+	"Leave a third of free space."
+	(((myTally + byAmount) * 5) bitShiftRight: 2) < myHashEntries count ifTrue:
+		[self aboutToWrite.
+		^VOID].
+
+	newSize _ LPPrimeSizeProvider make uInt32PrimeAfter: ((myHashValues count * 2) + byAmount).
+	newValues _ UInt32Array make: newSize.
+	newEntries _ SharedPtrArray make: newSize.
+	Int32Zero almostTo: myHashValues count do: [:from {Int32 register} |
+		(he _ myHashEntries fetch: from) ~~ NULL 
+			ifTrue: [self hashStore: he with: newValues with: newEntries]].
+	myHashEntries shareCount > 1
+		ifTrue: [myHashEntries shareLess]
+		ifFalse: [myHashValues destroy.
+			myHashEntries destroy].
+	myHashValues _ newValues.
+	myHashEntries _ newEntries.
+	myHashEntries shareMore! !
+
+!ActualHashSet methodsFor: #'protected: creation'!
+create: newTally {Int32} with: entries {SharedPtrArray}
+	super create.
+	myTally _ newTally.
+	myHashValues _ UInt32Array make: entries count.
+	myHashEntries _ entries.
+	myHashEntries shareMore.
+	[NewSetCount _ NewSetCount + 1] smalltalkOnly.! !
+
+!ActualHashSet methodsFor: #'protected: creation'!
+create: newTally {Int32} with: hashValues {UInt32Array} with: entries {SharedPtrArray}
+	super create.
+	myTally _ newTally.
+	myHashValues _ hashValues.
+	myHashEntries _ entries.
+	myHashEntries shareMore.
+	[NewSetCount _ NewSetCount + 1] smalltalkOnly.! !
+
+!ActualHashSet methodsFor: #hooks:!
+{void RECEIVE.HOOK} receiveHashSet: rcvr {Rcvr} 
+	"Make myHashEntries large enough that we won't grow."
+	
+	| count {Int32} |
+	count _ LPPrimeSizeProvider make uInt32PrimeAfter: (myTally * 2).
+	myHashEntries _ SharedPtrArray make: count.
+	myHashEntries shareMore.
+	myHashValues _ UInt32Array make: count.
+	myTally timesRepeat: [self hashStore: rcvr receiveHeaper with: myHashValues with: myHashEntries]! !
+
+!ActualHashTable methodsFor: #private:!
+{void} aboutToWrite
+	"If my contents are shared, and I'm about to change them, make a copy of them."
+	myHashEntries shareCount > 1 ifTrue:
+		[| newEntries {SharedPtrArray of: TableEntry} entryCount {Int32} |
+		entryCount _ myHashEntries count.
+		newEntries _ SharedPtrArray make: entryCount.
+		Int32Zero almostTo: entryCount do: [:index {Int32} | 
+			| entry {TableEntry wimpy} |
+			(entry _ (myHashEntries fetch: index) cast: TableEntry) ~~ NULL ifTrue: 
+				[| newEntry {TableEntry} |
+				newEntry _ entry copy.
+				newEntries at: index store: newEntry.
+				entry _ entry fetchNext.
+				[entry ~~ NULL] whileTrue: 
+					[newEntry setNext: entry copy.
+					newEntry _ newEntry fetchNext.
+					entry _ entry fetchNext]]].
+		myHashEntries shareLess.
+		myHashEntries _ newEntries.
+		myHashEntries shareMore]! !
+
+!ActualHashTable methodsFor: #private:!
+{void} checkSize
+	| oldEntries {SharedPtrArray} oldSize {Int32} newSize {Int32} |
+	myTally > (myHashEntries count * 2)
+		ifTrue: 
+			[oldSize _ myHashEntries count.
+			newSize _ LPPrimeSizeProvider make uInt32PrimeAfter: (oldSize * 4).
+			myHashEntries shareLess.
+			oldEntries _ myHashEntries.
+			myHashEntries _ SharedPtrArray make: newSize.
+			myHashEntries shareMore.
+			Int32Zero almostTo: oldSize do: [:j {Int32} |
+				| cur {TableEntry} next {TableEntry} |
+				cur _ (oldEntries fetch: j) cast: TableEntry.
+				[cur ~~ NULL] whileTrue: 
+					[next _ cur fetchNext.
+					self storeEntry: cur.
+					cur _ next]].
+			oldEntries destroy]! !
+
+!ActualHashTable methodsFor: #protected:!
+create: entries {SharedPtrArray of: TableEntry} with: tally {Int32} with: cs {CoordinateSpace} 
+	super create.
+	myHashEntries _ entries.
+	myTally _ tally.
+	myCoordinateSpace _ cs.
+	myHashEntries shareMore! !
+
+!ActualHashTable methodsFor: #hooks:!
+{void RECEIVE.HOOK} receiveHashTable: rcvr {Rcvr} 
+	"This currently doesn't take advantage of the optimizations in TableEntries.  It should."
+
+	myHashEntries _ SharedPtrArray make: myTally // 2 + 1.
+	myHashEntries shareMore.
+	(myCoordinateSpace isEqual: IntegerSpace make)
+		ifTrue: [myTally timesRepeat: 
+				[| index {IntegerVar} |
+				index _ rcvr receiveIntegerVar.
+				self storeEntry: (TableEntry make.IntegerVar: index with: rcvr receiveHeaper)]]
+		ifFalse: [myTally timesRepeat: 
+				[| key {Position} |
+				key _ rcvr receiveHeaper cast: Position.
+				self storeEntry: (TableEntry make: key with: rcvr receiveHeaper)]]! !
+
+!SetTable methodsFor: #'private: resize'!
+{void} aboutToWrite
+	"If my contents are shared, and I'm about to change them, make a copy of them."
+	myHashEntries shareCount > 1 ifTrue:
+		[| newEntries {SharedPtrArray of: TableEntry} entryCount {Int32} |
+		entryCount _ myHashEntries count.
+		newEntries _ SharedPtrArray make: entryCount.
+		Int32Zero almostTo: entryCount do: [:index {Int32} | 
+			| entry {TableEntry wimpy} |
+			(entry _ (myHashEntries fetch: index) cast: TableEntry) ~~ NULL ifTrue: 
+				[| newEntry {TableEntry} |
+				newEntry _ entry copy.
+				newEntries at: index store: newEntry.
+				entry _ entry fetchNext.
+				[entry ~~ NULL] whileTrue: 
+					[newEntry setNext: entry copy.
+					newEntry _ newEntry fetchNext.
+					entry _ entry fetchNext]]].
+		myHashEntries shareLess.
+		myHashEntries _ newEntries.
+		myHashEntries shareMore]! !
+
+!SetTable methodsFor: #'private: resize'!
+{void} checkSize
+	| oldEntries {SharedPtrArray} oldSize {Int32} newSize {Int32} |
+	myTally > (myHashEntries count * 3)
+		ifTrue:
+			[oldSize _ myHashEntries count.
+			newSize _ PrimeSizeProvider make uInt32PrimeAfter: (oldSize * 4).
+			myHashEntries shareLess.
+			oldEntries _ myHashEntries.
+			myHashEntries _ SharedPtrArray make: newSize.
+			myHashEntries shareMore.
+			Int32Zero almostTo: oldSize do: [:j {Int32 register} |
+				| cur {TableEntry} next {TableEntry} |
+				cur _ (oldEntries fetch: j) cast: TableEntry.
+				[cur ~~ NULL] whileTrue: 
+					[next _ cur fetchNext.
+					self storeEntry: cur.
+					cur _ next]].
+			oldEntries destroy]! !
+
+!SetTable methodsFor: #creation!
+create: entries {SharedPtrArray of: TableEntry} with: tally {Int32} with: cs {CoordinateSpace} 
+	super create.
+	myHashEntries _ entries.
+	myTally _ tally.
+	myCoordinateSpace _ cs.
+	myHashEntries shareMore! !
+
+!HashSetStepper methodsFor: #'protected: creation'!
+create: elements {SharedPtrArray} with: current {Int32}
+	super create.
+	myElements _ elements.
+	myElements shareMore.
+	myCurrent _ current.
+	self verifyEntry! !
+
+!BucketArrayStepper methodsFor: #'protected: create'!
+create: entries {SharedPtrArray} with: entry {TableEntry | NULL} with: nextBucket {Int32}
+	super create.
+	myEntry _ entry.
+	myEntries _ entries.
+	myNextBucket _ nextBucket.
+	myEntries shareMore.
+	self verifyEntry! !
+
+SharedPtrArray removeSelector: #shareMore:!
+
+!HxxPrintStream class methodsFor: #maps!
+mapOverride: sel
+	"Map from CXX selectors methods that handle them specially."
+	"KEEP THIS LIST SORTED!!!!!!!! - integrator"
+	| array  override | 
+	array _ #(
+		(not printNot:args:)
+		(abs printFunction:args:)
+		(acos printFunction:args:)
+		(almostToByDo printForAlmost:args:)
+		(almostToDo printForAlmost:args:)
+		(and printAnd:args:)
+		(arrayFetch printFetch:args:)
+		(arrayStore printPut:args:)
+		(arrow printArrow:args:)
+		(asin printFunction:args:)
+		(asUInt8 printCast:args:)  "numerical value of Character"
+		(atan printFunction:args:)
+		(asCharacter printCast:args:)
+		(asDouble printCast:args:)
+		(asFloat printCast:args:)
+		(asInteger printCast:args:)
+		"(asOop printAsOop:args:)"
+		(asProblem printAsProblem:args:)
+		(assert printAssert:args:)
+		(atan printFunction:args:)
+		(basicCast printCastBasic:args:)
+		(binaryFn printBlockMsg:args:)
+		(bitInvert printInvert:args:)
+		(bomb printBomb:args:)
+		(cast printCastMacro:args:)
+		(castInto printCastInto:args:)
+		(castIntoCastInto printCastInto:args:)
+		(castIntoCastIntoCastInto printCastInto:args:)
+		(castIntoCastIntoCastIntoCastInto printCastInto:args:)
+		(castIntoCastIntoCastIntoCastIntoCastInto printCastInto:args:) 	
+		(castIntoCastIntoCastIntoCastIntoCastIntoCastInto printCastInto:args:)
+		(castIntoCastIntoCastIntoCastIntoCastIntoCastIntoOthers printCastInto:args:)
+		(castIntoCastIntoCastIntoCastIntoCastIntoOthers printCastInto:args:)
+		(castIntoCastIntoCastIntoCastIntoOthers printCastInto:args:)
+		(castIntoCastIntoCastIntoOthers printCastInto:args:)
+		(castIntoCastIntoOthers printCastInto:args:)
+		(castIntoOthers printCastInto:args:)
+		(class printClass:args:)
+		(consistent printConsistent:args:)
+		(convert printConvert:args:)
+		(cos printFunction:args:)
+		(create printConstructor:args:)
+		(critical printCritical:args:)
+		(defineClientFluid printDefineClientFluid:args:)
+		(defineFluid printDefineFluid:args:)
+		(defineGlobal printDefineGlobal:args:)
+		(defineLogger printDefineLogger:args:)
+		(definePromiseFluid printDefinePromiseFluid:args:)
+		(delayCast printDelayCastMacro:args:)	
+		(delayTryCatch printDelayTry:args:)
+		(delete printDelete:args:)
+		(destroy printDestroy:args:)
+		(doMain printDoMain:args:)
+		(downToDo printForDown:args:)
+		(enum printEnum:args:)
+		(enumFlags printEnumFlags:args:)
+		(exp printFunction:args:)
+		(fabs printFunction:args:)
+		(FLUID intercept )
+		(fluidBindDuring printFluidBind:args:)
+		(fluidFetch printFluidVar:args:)
+		(fluidGet printFluidVar:args:)
+		(fluidSet printFluidSet:args:)
+		(fluidVar printFluidVar:args:)
+		(forEach printForEach:args:)
+		(forEachPromise printForEachPromise:args:)
+		(forIndices printForIndices:args:)
+		(forKeyValues printForKeyValues:args:)
+		(forPositions printForPositions:args:)
+		(hack printHack:args:)
+		(handleDo printException:args:)
+		(ifdef printIfdef:args:)
+		(ifdefElse printIfdef:args:)
+		(ifFalse printIfNot:args:)
+		(ifFalseIfTrue printIfNot:args:)
+		(ifndef printIfndef:args:)
+		(ifndefElse printIfndef:args:)
+		(ifTrue printIf:args:)
+		(ifTrueIfFalse printIf:args:)
+		(initTimeInherited printIgnore:args:)
+ 		(insistent printInsistent:args:)
+		(invokeFunction printInvoke:args:)
+		(knownBug printKnownBug:args:)
+		(linkTimeInherited printIgnore:args:)
+		(LOG printLOG:args:)
+		(log printFunction:args:)
+		(loop printFor:args:)
+		(loopAlmost printForAlmost:args:)
+		(loopDown printForDown:args:)
+		(make printPseudoconstructor:args:)
+		(max printFunction:args:)
+		(mightNotImplement printMightNotImplement:args:)
+		(min printFunction:args:)
+		(namedBlock printBlock:args:)
+		(namedBlockWith printBlock:args:)
+		(namedBlockWithWith printBlock:args:)
+		(namedBlockWithWithWith printBlock:args:)
+		(namedBlockWithWithWithWith printBlock:args:)
+		(negated printNegated:args:)
+		(notNULL printNotNULL:args:)
+		(notNULLElse printNotNULL:args:)
+		(obsolete printObsolete:args:)
+		(or printOr:args:)
+		(pack printPackMacro:args:)
+		(passe printPasse:args:)
+		(postDec printPostDec:args:)
+		(postInc printPostInc:args:)
+		(pow printFunction:args:)
+		(preDec printPreDec:args:)
+		(predicate printBlockMsg:args:)
+		(preInc printPreInc:args:)
+		(preorderNumber printCategoryMessage:args:)
+		(preorderMax printCategoryMessage:args:)
+		(quickCast printCastMacro:args:)
+		(raise printBlast:args:)
+		(raiseWith printBlast:args:)
+		(react printReact:args:)
+		(reanimate printReanimate:args:)
+		(refAssign printRefAssign:args:)
+		(refValue printRefValue:args:)
+		(repeat printRepeat:args:)
+		(REQUIRES printRequires:args:)
+		(rounded printFunction:args:)
+		(sin printFunction:args:)
+		(shouldImplement printShouldImplement:args:)
+		(shouldNotImplement printShouldNotImplement:args:)
+		(showWhile printShowCursor:args:)
+		(smalltalkOnly printIgnore:args:)
+		(pointerToStaticMember printStaticMemberPointer:args:)
+		(tan printFunction:args:)
+		(thingToDo printThingToDo:args:)
+		(timesRepeat printTimesRepeat:args:)
+		(toByDo printFor:args:)
+		(toDo printFor:args:)
+		(translateOnly printTranslateOnly:args:)
+		(uint8 printFunction:args:)
+		(unaryFn printBlockMsg:args:)
+		(unimplemented printUnimplemented:args:)
+		(USES printIgnore:args:)
+		(valueNowOrOnUnwindDo printUnwind:args:)
+		(valueOnUnwindDo printUnwind:args:)
+		(whileFalse printNotWhile:args:)
+		(whileTrue printWhile:args:)
+		(willNotImplement printWillNotImplement:args:)
+		(xuInteger printIntegerFunction:args:)
+	).
+	array ~~ CxxOverrideArray ifTrue: 
+		[CxxOverrideArray _ array.
+		CxxOverrideMap _ IdentityDictionary fromPairs: array].
+	override _ CxxOverrideMap at: sel ifAbsent: [nil].
+	override == #intercept ifTrue: [self warn: 'Selector ''', sel, ''' not allowed.'].
+	^override! !
+
+!SnarfPacker methodsFor: #transactions!
+{void} purgeClean: noneLocked {BooleanVar default: false}
+	"purge all shepherds that are currently clean, not locked, not dirty,
+	 and purgeable.  Purging just turns them into stubs, freeing all their 
+	 flocks.  Garbage collection can clean up the flocks and any stubs no 
+	 longer pointed to by something in memory.  Because infos for new 
+	 flocks don't appear in myFlocks, this will not throw out any newFlocks 
+	 (which will be marked dirty anyway).  For each FlockInfo, we check
+	 that its flock refers to that exact instance to get correct information
+	 about its dirty state."
+	 | stackPtrs {PrimPtrTable} |
+	myInsideCommit ifTrue: [^VOID].
+	[myInsideCommit _ true. "to prevent recursive call"
+	[Transcript show: 'Starting purge...'] smalltalkOnly.
+	noneLocked
+		ifTrue: [stackPtrs _ PrimPtrTable make: 1]
+		ifFalse: [stackPtrs _ StackExaminer pointersOnStack].
+	myFlocks stepper forEach:
+		[:info {FlockInfo} |
+		| shep {Abraham} |
+		shep _ info fetchShepherd.
+		[(shep ~~ NULL
+			and: [shep fetchInfo == info
+			and: [shep isStub not
+			and: [(stackPtrs fetch: shep asOop) == NULL
+			and: [shep isPurgeable
+			and: [info isDirty not]]]]])
+			ifTrue: [shep becomeStub]] smalltalkOnly.
+		'if (shep && shep->fetchInfo() == info && !!shep->isStub() && (stackPtrs->fetch((Int32)(void*)shep) == NULL) && shep->isPurgeable() && !!info->isDirty()) {
+			shep->becomeStub();
+			}' translateOnly.]]
+	valueNowOrOnUnwindDo:
+		(SnarfPacker bomb.ResetCommit: self).
+	noneLocked ifFalse: [myRepairer setMustPurge].
+	[Transcript show: 'done.'; cr] smalltalkOnly! !
+
+!TestPacker methodsFor: #transactions!
+{void} purgeClean: noneLocked {BooleanVar default: false}
+	
+	 | stackPtrs {PrimPtrTable} |
+	[Transcript show: 'Starting purge...'] smalltalkOnly.
+	noneLocked
+		ifTrue: [stackPtrs _ PrimPtrTable make: 1]
+		ifFalse: [stackPtrs _ StackExaminer pointersOnStack].
+	myFlocks stepper forEach:
+		[ :info {FlockInfo} |
+		| shep {Abraham} |
+		shep := info fetchShepherd.
+		[(shep ~~ NULL
+				and: [shep isStub not
+				and: [(stackPtrs fetch: shep asOop) == NULL
+				and: [shep isPurgeable
+				and: [info isDirty not]]]])
+			ifTrue: [shep becomeStub]] smalltalkOnly.
+		'if (shep && shep->fetchInfo() == info && !!shep->isStub() && (stackPtrs->fetch((Int32)(void*)shep) == NULL) && shep->isPurgeable() && !!info->isDirty()) {
+			shep->becomeStub();
+			}' translateOnly.].
+	[Transcript show: 'done.'; cr] smalltalkOnly! !
+
+!ShepherdLockTester methodsFor: #testing!
+{void} test1On: oo {ostream reference} 
+	"ShepherdLockTester runTest: #test1On:"
+	| aLocked {ShepherdLocked} anUnlocked {ShepherdLocked} stackPtrs {PrimPtrTable} |
+	stackPtrs _ StackExaminer pointersOnStack.
+	aLocked _ ShepherdLocked makeLocked.
+	anUnlocked _ ShepherdLocked makeUnlocked.
+	oo << 'aLocked Shepherd '.
+	[(stackPtrs fetch: aLocked asOop) == NULL
+		ifFalse: [oo << 'is locked']
+		ifTrue: [oo << 'is not locked']] smalltalkOnly.
+	'if (stackPtrs->fetch((Int32)(void*)aLocked) == NULL) {
+		oo << "is locked";
+	} else {
+		oo << "is not locked";
+	}' translateOnly.
+	aLocked isReallyUnlocked
+		ifFalse: [oo << '; is really locked']
+		ifTrue: [oo << '; is really not locked'].
+	oo << '
+anUnlocked Shepherd '.
+	[(stackPtrs fetch: anUnlocked asOop) == NULL
+		ifFalse: [oo << 'is locked']
+		ifTrue: [oo << 'is not locked']] smalltalkOnly.
+	'if (stackPtrs->fetch((Int32)(void*)anUnlocked) == NULL) {
+		oo << "is locked";
+	} else {
+		oo << "is not locked";
+	}' translateOnly.
+	anUnlocked isReallyUnlocked
+		ifFalse: [oo << '; is really locked']
+		ifTrue: [oo << '; is really not locked'].
+	oo << '
+'.! !
+
+!StackExaminer class methodsFor: #accessing!
+{PrimPtrTable} pointersOnStack
+	"Do NOT destroy the result table.  It is reused to avoid allocation during purgeClean."
+	| result {PrimPtrTable} |
+	TheStackSet == NULL ifTrue: [TheStackSet := PrimPtrTable make: 1024].
+	result _ TheStackSet.
+	result clearAll.
+	[| context |
+	context _ thisContext.
+	[context ~~ nil] whileTrue: [
+		context stack do: [:p |
+			(p == nil or: [p isInteger]) ifFalse: [
+				result at: p asOop store: result
+			]
+		].
+		result at: context receiver store: result].
+	] smalltalkOnly.
+	'Int32 stack;
+	Int32 * stackPtr = & stack;
+	if (StackExaminer::stackEnd() == NULL) {
+		BLAST(StackEndUninitialized);
+	}
+	for (; stackPtr < (Int32 *) StackExaminer::stackEnd(); stackPtr++) {
+		if (*stackPtr !!= 0 && (*stackPtr & 3) == 0) {
+			result->store((Int32)(void*)*stackPtr, result);
+		}
+	}' translateOnly.
+	^ result! !
+
+!RegionTester methodsFor: #testing!
+{void} testBinaryRegionOpsOn: oo {ostream reference}
+	myExampleRegions stepper forEach: [:one {XnRegion} |
+		myExampleRegions stepper forEach: [:two {XnRegion} |
+			one hashForEqual <= two hashForEqual ifTrue: [
+				Heaper problems.AllBlasts
+					handle: [ :ex |
+						| prob {Problem} |
+						'prob = &PROBLEM(ex);' translateOnly.
+						[prob _ Problem create: ex PROBLEM with: ex parameter
+									with: ex initialContext sender printString with: 0] smalltalkOnly.
+						cerr << prob << '
+'.
+						oo << 'problem checking binary ops of ' << one << ' and ' << two << '
+'.
+						ex return]
+					do: [self binaryCheck: one with: two]]]].
+	oo << 'binary regions tests succeeded
+'! !
+
+!CompositeTester methodsFor: #init!
+{void} combineRegions: regions {ImmuSet of: XnRegion} 
+	with: result {SetAccumulator of: XnRegion}
+	regions stepper forEach: [ :one {XnRegion} |
+		regions stepper forEach: [ :two {XnRegion} |
+			one hashForEqual < two hashForEqual ifTrue:
+				[result step: (one unionWith: two).
+				result step: (one intersect: two)]]]! !
+
+!FilterTester methodsFor: #init!
+{ImmuSet of: XnRegion} initExamples
+	| acc {SetAccumulator of: XnRegion} 
+	  result {SetAccumulator of: Filter} 
+	  space {FilterSpace} 
+	  simple {ImmuSet} |
+	acc _ SetAccumulator make.
+	acc step: (IntegerRegion make).
+	acc step: (IntegerRegion make: 3).
+	acc step: (IntegerRegion make: 1 with: 7).
+	acc step: (IntegerRegion make: 5 with: 7).
+	acc step: (IntegerRegion make: 5 with: 9).
+	(acc value cast: ImmuSet) stepper forEach: [ :each {XnRegion} |
+		acc step: each complement].
+	myBaseRegions _ (acc value cast: ImmuSet).
+	result _ SetAccumulator make.
+	space _ FilterSpace make: IntegerSpace make.
+	myBaseRegions stepper forEach: [ :region {XnRegion} |
+		result step: (Filter subsetFilter: space with: region).
+		result step: (Filter notSubsetFilter: space with: region).
+		result step: (Filter supersetFilter: space with: region).
+		result step: (Filter notSupersetFilter: space with: region)].
+	simple _ (result value cast: ImmuSet).
+	simple stepper forEach: [ :one {Filter} |
+		simple stepper forEach: [ :two {Filter} |
+			one hashForEqual < two hashForEqual ifTrue:
+				[result step: (one unionWith: two).
+				result step: (one intersect: two)]]].
+	^(result value cast: ImmuSet)! !
+
+!IDTester methodsFor: #init!
+{ImmuSet of: XnRegion} initExamples
+
+	| iDs {SetAccumulator} result {SetAccumulator}
+	  backend {Sequence} base {ImmuSet}
+	  s {IDSpace} |
+
+	myConnection := Connection make: FeServer.
+	myConnection bootHeaper.
+
+	iDs := SetAccumulator make.
+	backend := FeServer identifier.
+	s := IDSpace make: (backend withLast: 3) with: 1.
+	iDs step: (ID using: s with: backend with: 3).
+	iDs step: (ID using: s with: backend with: 30).
+	iDs step: (ID using: s with: (backend withLast: 7) with: 77).
+	iDs step: (ID using: s with: (backend withLast: 7) with: 33).
+	iDs step: (ID using: s with: (backend withLast: 5) with: 99).
+	result := SetAccumulator make.
+	(iDs value cast: ImmuSet) stepper forEach: [ :iD {ID} |
+		result step: iD asRegion.
+		result step: iD asRegion complement].
+	"result step: (s iDsFromServer: backend).
+	result step: (s iDsFromServer: (backend withLast: 7)).
+	result step: (s iDsFromServer: (backend withLast: 9)).
+	result step: (s iDsFromServer: backend) complement.
+	result step: (s iDsFromServer: (backend withLast: 7))complement.
+	result step: (s iDsFromServer: (backend withLast: 9))complement."
+	
+	base := result value cast: ImmuSet.
+	base stepper forEach: [ :r {IDRegion} |
+		base stepper forEach: [ :r2 {IDRegion} |
+			r hashForEqual < r2 hashForEqual ifTrue:
+				[result step: (r unionWith: r2).
+				result step: (r intersect: r2)]]].
+	^result value cast: ImmuSet! !
+
+!RealTester methodsFor: #'deferred: init'!
+{ImmuSet of: XnRegion} initExamples
+	| reals {SetAccumulator} result {SetAccumulator} base {ImmuSet} |
+	reals := SetAccumulator make.
+	reals step: (RealPos make: 0.0).
+	reals step: (RealPos make: 1.0).
+	reals step: (RealPos make: 2.0).
+	result := SetAccumulator make.
+	(reals value cast: ScruSet) stepper forEach: [ :real {RealPos} |
+		result step: (RealSpace make above: real with: true).
+		result step: (RealSpace make above: real with: false).
+		result step: (RealSpace make below: real with: true).
+		result step: (RealSpace make below: real with: false)].
+	base := result value cast: ImmuSet.
+	base stepper forEach: [ :r {RealRegion} |
+		base stepper forEach: [ :r2 {RealRegion} |
+			r hashForEqual < r2 hashForEqual ifTrue:
+				[result step: (r unionWith: r2).
+				result step: (r intersect: r2)]]].
+	^result value cast: ImmuSet! !
+
+!SequenceTester methodsFor: #init!
+{ImmuSet of: XnRegion} initExamples
+	| sequences {SetAccumulator} result {SetAccumulator} base {ImmuSet} |
+	sequences := SetAccumulator make.
+	sequences step: (Sequence zero).
+	sequences step: (Sequence one: 1).
+	sequences step: (Sequence two: 1 with: 2).
+	sequences step: (Sequence two: 1 with: -2).
+	(sequences value cast: ImmuSet) stepper forEach: [ :tum {Sequence} |
+		sequences step: (tum shift: 2).
+		sequences step: (tum shift: -2)].
+	result := SetAccumulator make.
+	(sequences value cast: ScruSet) stepper forEach: [ :sequence {Sequence} |
+		result step: (SequenceSpace make prefixedBy: sequence
+			with: sequence shift + sequence count).
+		result step: (SequenceSpace make prefixedBy: sequence
+			with: sequence shift + sequence count) complement.
+		result step: (SequenceSpace make above: sequence with: true).
+		result step: (SequenceSpace make above: sequence with: false).
+		result step: (SequenceSpace make below: sequence with: true).
+		result step: (SequenceSpace make below: sequence with: false)].
+	base := result value cast: ImmuSet.
+	base stepper forEach: [ :r {SequenceRegion} |
+		base stepper forEach: [ :r2 {SequenceRegion} |
+			r hashForEqual < r2 hashForEqual ifTrue:
+				[result step: (r unionWith: r2).
+				result step: (r intersect: r2)]]].
+	^result value cast: ImmuSet! !
+
+!SnarfTester methodsFor: #testing!
+{void} testBinaryRegionOpsOn: oo {ostream reference}
+	myExampleRegions stepper forEach: [:one {XnRegion} |
+		myExampleRegions stepper forEach: [:two {XnRegion} |
+			one hashForEqual <= two hashForEqual ifTrue:
+				[[oo << 'checking binary ops of ' << one << ' and ' << two << '
+'] translateOnly. "smalltalk runs out of space"
+				self binaryCheck: one with: two]]].
+	oo << 'binary regions tests succeeded
+'! !
+
+!BasicSpace methodsFor: #testing!
+{UInt32} actualHashForEqual
+	"is equal to any basic space on the same category of positions"
+
+	^self getCategory hashForEqual + 1! !
+
+!CrossSpace methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^mySubSpaces contentsHash bitXor: #cat.U.CrossSpace hashForEqual! !
+
+!FilterSpace methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^myBaseSpace hashForEqual + 1! !
+
+!HeaperSpace methodsFor: #testing!
+{UInt32} actualHashForEqual
+	"is equal to any basic space on the same category of positions"
+
+	^self getCategory hashForEqual + 1! !
+
+!IDSpace methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	myBackend == NULL
+		ifTrue: [^mySpaceNumber DOThashForEqual
+			bitXor: self getCategory hashForEqual]
+		ifFalse: [^(myBackend hashForEqual
+			bitXor: mySpaceNumber DOThashForEqual)
+			bitXor: self getCategory hashForEqual]! !
+
+!IntegerSpace methodsFor: #testing!
+{UInt32} actualHashForEqual
+	"is equal to any basic space on the same category of positions"
+
+	^self getCategory hashForEqual + 1! !
+
+!RealSpace methodsFor: #testing!
+{UInt32} actualHashForEqual
+	"is equal to any basic space on the same category of positions"
+
+	^self getCategory hashForEqual + 1! !
+
+!SequenceSpace methodsFor: #testing!
+{UInt32} actualHashForEqual
+	"is equal to any basic space on the same category of positions"
+
+	^self getCategory hashForEqual + 1! !
+
+!CompositeMapping methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^#cat.U.CompositeMapping hashForEqual bitXor: myMappings hashForEqual! !
+
+!Joint methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^myUnioned hashForEqual + myIntersected hashForEqual! !
+
+!ConstantMapping methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^myCoordinateSpace hashForEqual + myValues hashForEqual! !
+
+!GenericCrossDsp methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^(mySpace hashForEqual
+		bitXor: mySubDsps contentsHash)
+		bitXor: self getCategory hashForEqual! !
+
+!FilterDsp methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^myCS hashForEqual + #cat.U.FilterDsp hashForEqual! !
+
+!IntegerMapping methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^ (myTranslation) DOTasLong + #cat.U.IntegerMapping hashForEqual! !
+
+!EmptyMapping methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^#cat.U.EmptyMapping hashForEqual! !
+
+!SimpleMapping methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^myRegion hashForEqual + myMapping hashForEqual! !
+
+!CrossOrderSpec methodsFor: #accessing!
+{UInt32} actualHashForEqual
+
+	Someone shouldImplement.
+	^UInt32Zero "fodder"! !
+
+!IDUpOrder methodsFor: #accessing!
+{UInt32} actualHashForEqual
+
+	^self getCategory hashForEqual! !
+
+!IntegerUpOrder methodsFor: #accessing!
+{UInt32} actualHashForEqual
+
+	^#cat.U.IntegerUpOrder hashForEqual + 1! !
+
+!RealUpOrder methodsFor: #accessing!
+{UInt32} actualHashForEqual
+
+	^#cat.U.RealUpOrder hashForEqual + 1! !
+
+!ReverseOrder methodsFor: #accessing!
+{UInt32} actualHashForEqual
+
+	^myOrder hashForEqual bitXor: -1! !
+
+!SequenceUpOrder methodsFor: #accessing!
+{UInt32} actualHashForEqual
+
+	^self getCategory hashForEqual! !
+
+!Pair methodsFor: #access!
+{UInt32} actualHashForEqual
+	| result {UInt32} |
+	leftPart ~~ NULL
+		ifTrue: [result _ leftPart hashForEqual]
+		ifFalse: [result _ 37].
+	rightPart ~~ NULL
+		ifTrue: [^ result + rightPart hashForEqual]
+		ifFalse: [^ result + 73]! !
+
+!FilterPosition methodsFor: #comparing!
+{UInt32} actualHashForEqual
+
+	^myRegion hashForEqual + 1! !
+
+!ID methodsFor: #comparing!
+{UInt32} actualHashForEqual
+
+	| result {UInt32} |
+	result := self getCategory hashForEqual.
+	mySpace ~~ NULL ifTrue:
+		[result := result bitXor: mySpace hashForEqual].
+	myBackend ~~ NULL ifTrue:
+		[result := result bitXor: myBackend hashForEqual].
+	^result bitXor: myNumber DOThashForEqual! !
+
+!IntegerPos methodsFor: #comparing!
+{UInt32} actualHashForEqual
+	"This must use an external function so other parts of the system can
+	 compute the hash from an integerVar without boxing."
+	 
+	"Open-code in smalltalk because we don't have inlines."
+	"NOTE:  Do NOT change this without also changing the implementation of integerHash!!!!!!."
+	[^(((myValue DOTasLong * 99991) lo3bytes) bitXor: 98953) "bitShiftRight: 6"] smalltalkOnly.
+	[^IntegerPos integerHash: myValue] translateOnly! !
+
+!RealPos methodsFor: #comparing!
+{UInt32} actualHashForEqual
+	
+	[^self asIEEE64 basicCast: UInt32] translateOnly.
+	
+	[^self asIEEE64 truncated] smalltalkOnly! !
+
+!Sequence methodsFor: #comparing!
+{UInt32} actualHashForEqual
+
+	^myShift DOTasLong bitXor: myNumbers elementsHash! !
+
+!ActualTuple methodsFor: #comparing!
+{UInt32} actualHashForEqual
+	
+	^myCoordinates contentsHash! !
+
+!StrongAsPosition methodsFor: #comparing!
+{UInt32} actualHashForEqual
+	^itsHeaper hashForEqual! !
+
+!PrimFloatSpec methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^self getCategory hashForEqual
+		bitXor: (FHash fastHash.UInt32: myBitCount)! !
+
+!PrimIntegerSpec methodsFor: #testing!
+{UInt32} actualHashForEqual
+	| signPart {UInt32} |
+	amSigned ifTrue: [signPart _ 255] ifFalse: [signPart _ UInt32Zero].
+	^(self getCategory hashForEqual
+		bitXor: (FHash fastHash.UInt32: myBitCount))
+		bitXor: signPart! !
+
+!PrimPointerSpec methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^self getCategory hashForEqual bitXor: self arrayClass hashForEqual! !
+
+!PrimIEEE32 methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	Eric thingToDo. "Figure out a hash for floats"
+	[^myValue hash] smalltalkOnly.
+	[Eric shouldImplement.
+	^ self bitCount] translateOnly.! !
+
+!PrimIEEE64 methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	Eric thingToDo. "Figure out a hash for floats"
+	[^myValue hash] smalltalkOnly.
+	[Eric shouldImplement.
+	^ self bitCount] translateOnly.! !
+
+!PrimIntValue methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^FHash fastHash.UInt32: myValue DOTasLong! !
+
+!BertProp methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^myPermissions hashForEqual bitXor: myEndorsements hashForEqual! !
+
+!SensorProp methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^myRelevantPermissions hashForEqual
+		bitXor: myRelevantEndorsements hashForEqual! !
+
+!BackfollowFinder methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^(self getCategory hashForEqual bitXor: myPermissionsFilter hashForEqual)
+	  bitXor: myEndorsementsFilter hashForEqual! !
+
+BackfollowPFinder removeSelector: #alHashForEqual!
+
+!BackfollowPFinder methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^self getCategory hashForEqual bitXor: myPermissionsFilter hashForEqual! !
+
+!CannotPartializeFinder methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^self getCategory hashForEqual! !
+
+!SensorFinder methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^self getCategory hashForEqual! !
+
+!ClosedPropFinder methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^self getCategory hashForEqual! !
+
+!OpenPropFinder methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^self getCategory hashForEqual! !
+
+!AnyRecorderEFinder methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^(myPermissions hashForEqual
+		bitXor: myEndorsementsDelta hashForEqual)
+		bitXor: myNewEndorsements hashForEqual! !
+
+!AnyRecorderPFinder methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^myPermissionsDelta hashForEqual
+		bitXor: myPermissions hashForEqual! !
+
+!CumulativeRecorderFinder methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^(myGenerators hashForEqual
+		bitXor: myCurrent hashForEqual)
+		bitXor: myOthers hashForEqual! !
+
+!ContainedEditionRecorderEFinder methodsFor: #testing!
+{UInt32	} actualHashForEqual
+
+	^((self rangeElement hashForEqual
+		bitXor: myPermissions hashForEqual)
+		bitXor: myEndorsementsDelta hashForEqual)
+		bitXor: myNewEndorsements hashForEqual! !
+
+!OriginalResultRecorderEFinder methodsFor: #testing!
+{UInt32	} actualHashForEqual
+
+	^((self rangeElement hashForEqual
+		bitXor: myPermissions hashForEqual)
+		bitXor: myEndorsementsDelta hashForEqual)
+		bitXor: myNewEndorsements hashForEqual! !
+
+!ResultRecorderPFinder methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^(myPermissionsDelta hashForEqual
+		bitXor: myNewPermissions hashForEqual)
+		bitXor: myEndorsements hashForEqual! !
+
+!PartialityFinder methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^self getCategory hashForEqual! !
+
+!Recipe methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^self categoryOfDish hashForEqual * 701! !
+
+!RegionDelta methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^myBefore hashForEqual + myAfter hashForEqual! !
+
+!NoScrambler methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^#cat.U.NoScrambler hashForEqual + 1! !
+
+!ImmuSet methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^self contentsHash! !
+
+!ImmuTable methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^#cat.U.ImmuTable hashForEqual + self contentsHash! !
+
+!OffsetImmuTable methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^#cat.U.OffsetImmuTable hashForEqual + myTable hashForEqual + myDsp hashForEqual! !
+
+!SHTO methodsFor: #tests!
+{UInt32} actualHashForEqual
+
+	^ myHashValue! !
+
+!BoundedTrace methodsFor: #testing!
+{UInt32} actualHashForEqual
+	"This isn't used now.  It might be later.  Hash 
+	 based on both the branch and position  This hash
+	 uses a couple of arbitrary primes."
+
+	^(myBranch hashForEqual + myPosition * 10993) bitAnd: 134217727 "2^27-1"! !
+
+!RealEdge methodsFor: #comparing!
+{UInt32} actualHashForEqual
+
+	^myPos hashForEqual bitXor: self getCategory hashForEqual! !
+
+!SequenceEdge methodsFor: #comparing!
+{UInt32} actualHashForEqual
+
+	^self sequence hashForEqual bitXor: self getCategory hashForEqual! !
+
+!XcvrMaker methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^self getCategory hashForEqual * 997 + (FHash fastHash.String: self id)! !
+
+!CrossRegion methodsFor: #testing!
+{UInt32} actualHashForEqual
+	"To avoid overly burdensome canonicalization rules, my hash is calculated from the hash of my projections"
+	
+	^#cat.U.CrossRegion hashForEqual bitXor: self projections contentsHash.! !
+
+!GenericCrossRegion methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	| result {UInt32} boxes {BoxStepper} |
+	result := self getCategory hashForEqual.
+	boxes := self boxStepper.
+	[boxes hasValue] whileTrue:
+		[result := result bitXor: boxes boxHash.
+		boxes step].
+	boxes destroy.
+	^result! !
+
+!AndFilter methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^(self coordinateSpace hashForEqual bitXor: mySubFilters hashForEqual)
+		bitXor: #cat.U.AndFilter hashForEqual! !
+
+!ClosedFilter methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^self coordinateSpace hashForEqual bitXor: #cat.U.ClosedFilter hashForEqual! !
+
+!NotSubsetFilter methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^(self coordinateSpace hashForEqual bitXor: myRegion hashForEqual)
+		bitXor: #cat.U.NotSubsetFilter hashForEqual! !
+
+!NotSupersetFilter methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^(self coordinateSpace hashForEqual bitXor: myRegion hashForEqual)
+		bitXor: #cat.U.NotSupersetFilter hashForEqual! !
+
+!OpenFilter methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^self coordinateSpace hashForEqual bitXor: #cat.U.OpenFilter hashForEqual! !
+
+!OrFilter methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^(self coordinateSpace hashForEqual bitXor: mySubFilters hashForEqual)
+		bitXor: #cat.U.OrFilter hashForEqual! !
+
+!SubsetFilter methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^(self coordinateSpace hashForEqual bitXor: myRegion hashForEqual)
+		bitXor: #cat.U.SubsetFilter hashForEqual! !
+
+!SupersetFilter methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^(self coordinateSpace hashForEqual bitXor: myRegion hashForEqual)
+		bitXor: #cat.U.SupersetFilter hashForEqual! !
+
+!IDRegion methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	| result {UInt32} |
+	result := self getCategory hashForEqual bitXor: myLocalIDs hashForEqual.
+	mySpace ~~ NULL ifTrue:
+		[result := result bitXor: mySpace hashForEqual].
+	myImportedIDs ~~ NULL ifTrue:
+		[result := result bitXor: myImportedIDs hashForEqual].
+	myIncludesRest ifTrue:
+		[result := result bitXor: 65535].
+	^result! !
+
+!IntegerRegion methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^(myTransitions elementsHash: myTransitionCount)
+		bitXor: ((myStartsInside ifTrue: [9617] ifFalse: [518293])
+		bitXor: myTransitionCount * 17)! !
+
+!RealRegion methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^((self getCategory hashForEqual
+		bitXor: (myTransitionVals contentsHash))
+		bitXor: (myTransitionFlags contentsHash))
+		bitXor: (myStartsInside ifTrue: [255] ifFalse: [UInt32Zero])! !
+
+!SequenceRegion methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	^(self getCategory hashForEqual
+		bitXor: (myTransitions elementsHash: myTransitionsCount))
+		bitXor: (myStartsInside ifTrue: [255] ifFalse: [UInt32Zero])! !
+
+!SetRegion methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^(self getCategory hashForEqual
+		bitXor: myPositions hashForEqual)
+		bitXor: (myIsComplement ifTrue: [15732] ifFalse: [Int32Zero])! !
+
+Recipe removeSelector: #hashForEqual!
+
+XcvrMaker removeSelector: #hashForEqual!
+
+NoScrambler removeSelector: #hashForEqual!
+
+ID removeSelector: #hashForEqual!
+
+IDRegion removeSelector: #hashForEqual!
+
+IDSpace removeSelector: #hashForEqual!
+
+IDUpOrder organization classify: #actualHashForEqual under: #testing!
+
+IDUpOrder organization classify: #isEqual: under: #testing!
+
+IDUpOrder removeSelector: #hashForEqual!
+
+IDUpOrder organization classify: #preceeds:with: under: #testing!
+
+BoundedTrace removeSelector: #hashForEqual!
+
+BertProp removeSelector: #hashForEqual!
+
+SensorProp removeSelector: #hashForEqual!
+
+BackfollowFinder removeSelector: #hashForEqual!
+
+BackfollowPFinder removeSelector: #hashForEqual!
+
+CannotPartializeFinder removeSelector: #hashForEqual!
+
+SensorFinder removeSelector: #hashForEqual!
+
+ClosedPropFinder removeSelector: #hashForEqual!
+
+OpenPropFinder removeSelector: #hashForEqual!
+
+AnyRecorderEFinder removeSelector: #hashForEqual!
+
+AnyRecorderPFinder removeSelector: #hashForEqual!
+
+CumulativeRecorderFinder removeSelector: #hashForEqual!
+
+ContainedEditionRecorderEFinder removeSelector: #hashForEqual!
+
+OriginalResultRecorderEFinder removeSelector: #hashForEqual!
+
+ResultRecorderPFinder removeSelector: #hashForEqual!
+
+PartialityFinder removeSelector: #hashForEqual!
+
+PrimFloatSpec removeSelector: #hashForEqual!
+
+PrimIntegerSpec removeSelector: #hashForEqual!
+
+PrimIEEE32 removeSelector: #hashForEqual!
+
+PrimIEEE64 removeSelector: #hashForEqual!
+
+PrimIntValue removeSelector: #hashForEqual!
+
+ImmuSet removeSelector: #hashForEqual!
+
+GenericCrossDsp removeSelector: #hashForEqual!
+
+CrossOrderSpec organization classify: #actualHashForEqual under: #testing!
+
+CrossOrderSpec removeSelector: #hashForEqual!
+
+CrossOrderSpec organization classify: #isEqual: under: #testing!
+
+CrossOrderSpec organization classify: #preceeds:with: under: #testing!
+
+CrossRegion removeSelector: #hashForEqual!
+
+GenericCrossRegion removeSelector: #hashForEqual!
+
+CrossSpace removeSelector: #hashForEqual!
+
+ActualTuple removeSelector: #hashForEqual!
+
+AndFilter removeSelector: #hashForEqual!
+
+ClosedFilter removeSelector: #hashForEqual!
+
+NotSubsetFilter removeSelector: #hashForEqual!
+
+NotSupersetFilter removeSelector: #hashForEqual!
+
+OpenFilter removeSelector: #hashForEqual!
+
+OrFilter removeSelector: #hashForEqual!
+
+SubsetFilter removeSelector: #hashForEqual!
+
+SupersetFilter removeSelector: #hashForEqual!
+
+FilterDsp removeSelector: #hashForEqual!
+
+FilterPosition removeSelector: #hashForEqual!
+
+FilterPosition organization renameCategory: #comparing to: #testing!
+
+FilterSpace removeSelector: #hashForEqual!
+
+Joint removeSelector: #hashForEqual!
+
+Joint organization classify: #isEqual: under: #testing!
+
+RegionDelta removeSelector: #hashForEqual!
+
+HeaperSpace removeSelector: #hashForEqual!
+
+SetRegion removeSelector: #hashForEqual!
+
+StrongAsPosition organization renameCategory: #comparing to: #testing!
+
+StrongAsPosition removeSelector: #hashForEqual!
+
+IntegerMapping removeSelector: #hashForEqual!
+
+IntegerPos organization renameCategory: #comparing to: #testing!
+
+IntegerPos removeSelector: #hashForEqual!
+
+IntegerRegion removeSelector: #hashForEqual!
+
+IntegerSpace removeSelector: #hashForEqual!
+
+IntegerUpOrder organization classify: #actualHashForEqual under: #testing!
+
+IntegerUpOrder removeSelector: #hashForEqual!
+
+IntegerUpOrder organization classify: #isEqual: under: #testing!
+
+IntegerUpOrder organization classify: #preceeds:with: under: #testing!
+
+RealEdge organization renameCategory: #comparing to: #testing!
+
+RealEdge removeSelector: #hashForEqual!
+
+RealPos organization renameCategory: #comparing to: #testing!
+
+RealPos removeSelector: #hashForEqual!
+
+RealRegion removeSelector: #hashForEqual!
+
+RealSpace removeSelector: #hashForEqual!
+
+RealUpOrder organization classify: #actualHashForEqual under: #testing!
+
+RealUpOrder organization classify: #isEqual: under: #testing!
+
+RealUpOrder organization classify: #preceeds:with: under: #testing!
+
+RealUpOrder removeSelector: #hashForEqual!
+
+Sequence organization renameCategory: #comparing to: #testing!
+
+Sequence removeSelector: #hashForEqual!
+
+SequenceEdge organization renameCategory: #comparing to: #testing!
+
+SequenceEdge removeSelector: #hashForEqual!
+
+SequenceRegion removeSelector: #hashForEqual!
+
+SequenceSpace removeSelector: #hashForEqual!
+
+SequenceUpOrder removeSelector: #hashForEqual!
+
+SequenceUpOrder organization classify: #actualHashForEqual under: #testing!
+
+SequenceUpOrder organization classify: #isEqual: under: #testing!
+
+SequenceUpOrder organization classify: #preceeds:with: under: #testing!
+
+BasicSpace removeSelector: #hashForEqual!
+
+CompositeMapping removeSelector: #hashForEqual!
+
+ConstantMapping removeSelector: #hashForEqual!
+
+IdentityDsp removeSelector: #hashForEqual!
+
+EmptyMapping removeSelector: #hashForEqual!
+
+SimpleMapping removeSelector: #hashForEqual!
+
+ReverseOrder removeSelector: #hashForEqual!
+
+ReverseOrder organization classify: #actualHashForEqual under: #testing!
+
+ReverseOrder organization classify: #isEqual: under: #testing!
+
+ReverseOrder organization classify: #preceeds:with: under: #testing!
+
+Pair organization addCategory: #testing before: #access!
+
+Pair organization renameCategory: #access to: #accessing!
+
+Pair removeSelector: #hashForEqual!
+
+Pair organization classify: #actualHashForEqual under: #testing!
+
+Pair organization classify: #isEqual: under: #testing!
+
+ImmuTable removeSelector: #hashForEqual!
+
+OffsetImmuTable removeSelector: #hashForEqual!
+
+!Heaper methodsFor: #accessing!
+{UInt32} hashForEqual
+	^ self actualHashForEqual! !
+
+!Heaper methodsFor: #accessing!
+{UInt32} actualHashForEqual
+	^ self asOop! !
+
+!PrimIndexTable methodsFor: #private:!
+{Int32} hashFind: value {Heaper}
+	| loc {Int32} start {Int32} top {Int32} tmp {Heaper wimpy} |
+	loc := value hashForEqual.
+	top := myPtrs count.
+	loc :=  (FHash fastHash.UInt32: loc) \\ top.
+	start := loc.
+	[(tmp _ myPtrs fetch: loc) ~~ NULL] whileTrue:
+		[tmp == value ifTrue: [ ^ loc ].
+		loc := loc + 1.
+		loc = start ifTrue: [ Heaper BLAST: #SanityViolation ].
+		loc >= top ifTrue: 
+			[loc := Int32Zero]].
+	^ loc! !
+
+!PrimIndexTable methodsFor: #private:!
+{Int32} hashFindFetch: value {Heaper}
+	| hashLoc {Int32} loc {Int32} top {Int32} tmp {Heaper wimpy} |
+	hashLoc := value hashForEqual.
+	top := myPtrs count.
+	hashLoc :=  (FHash fastHash.UInt32: hashLoc) \\ top.
+	loc := hashLoc.
+	[(tmp _ myPtrs fetch: loc) ~~ NULL] whileTrue:
+		[tmp == value ifTrue: [ ^ loc ].
+		loc := loc + 1.
+		loc == hashLoc ifTrue: [^ -1].
+		loc >= top ifTrue: 
+			[loc := Int32Zero]].
+	^ -1! !
+
+!PrimPtr2PtrTable methodsFor: #private:!
+{Int32} hashFind: key {Heaper}
+	| loc {Int32} firstRemoved {Int32} tmp {Heaper wimpy} removed {Heaper wimpy} looped {BooleanVar} |
+	firstRemoved _ -1.
+	loc := key hashForEqual.
+	loc :=  (FHash fastHash.UInt32: loc) \\ myFromPtrs count.
+	removed _ PrimRemovedObject make.
+	looped _ false.
+	[(tmp _ myToPtrs fetch: loc) ~~ NULL] whileTrue:
+		[((myFromPtrs fetch: loc) basicCast: Heaper star) == key ifTrue: [ ^ loc ].
+		tmp == removed ifTrue:
+			[firstRemoved == -1 ifTrue: [firstRemoved _ loc]].
+		loc := loc + 1.
+		loc >= myFromPtrs count ifTrue: 
+			[looped ifTrue: [^firstRemoved] ifFalse: [looped _ true].
+			loc := Int32Zero]].
+	firstRemoved ~~ -1
+		ifTrue: [ ^ firstRemoved ]
+		ifFalse: [ ^ loc ]! !
+
+!PrimSet methodsFor: #private:!
+{Int32} hashFind: value {Heaper}
+	| loc {Int32} firstRemoved {Int32} tmp {Heaper wimpy} removed {Heaper wimpy} looped {BooleanVar} |
+	firstRemoved _ -1.
+	loc := value hashForEqual.
+	loc :=  (FHash fastHash.UInt32: loc) \\ myPtrs count.
+	removed _ PrimRemovedObject make.
+	looped _ false.
+	[(tmp _ myPtrs fetch: loc) ~~ NULL] whileTrue:
+		[tmp == value ifTrue: [ ^ loc ].
+		tmp == removed ifTrue:
+			[firstRemoved == -1 ifTrue: [firstRemoved _ loc]].
+		loc := loc + 1.
+		loc >= myPtrs count ifTrue: 
+			[looped ifTrue: [^firstRemoved] ifFalse: [looped _ true].
+			loc := Int32Zero]].
+	firstRemoved ~~ -1
+		ifTrue: [ ^ firstRemoved ]
+		ifFalse: [ ^ loc ]! !
+
+Heaper organization addCategory: #testing before: #accessing!
+
+Heaper removeSelector: #eqHash!
+
+Heaper organization classify: #actualHashForEqual under: #testing!
+
+Heaper organization classify: #hashForEqual under: #testing!
+
+Heaper organization classify: #isEqual: under: #testing!
+
+!Abraham methodsFor: #testing!
+{UInt32 NOFAULT} actualHashForEqual
+	^myHash! !
+
+Abraham removeSelector: #hashForEqual!
+
+!HistoryCrum methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^myHash! !
+
+!OrderSpec methodsFor: #accessing!
+{UInt32} actualHashForEqual
+
+	self subclassResponsibility! !
+
+OrderSpec organization classify: #actualHashForEqual under: #testing!
+
+OrderSpec removeSelector: #hashForEqual!
+
+OrderSpec organization classify: #isEqual: under: #testing!
+
+OrderSpec organization classify: #preceeds:with: under: #testing!
+
+!CoordinateSpace methodsFor: #accessing!
+{UInt32} actualHashForEqual
+
+	self subclassResponsibility! !
+
+CoordinateSpace removeSelector: #hashForEqual!
+
+Position organization renameCategory: #comparing to: #testing!
+
+!Position methodsFor: #testing!
+{UInt32} actualHashForEqual
+	"since we redefine equal, subclasses had better redefine actualHashForEqual"
+
+	self subclassResponsibility! !
+
+!XnRegion methodsFor: #testing!
+{UInt32} actualHashForEqual
+	self subclassResponsibility! !
+
+XnRegion removeSelector: #hashForEqual!
+
+Position removeSelector: #hashForEqual!
+
+HistoryCrum removeSelector: #hashForEqual!
+
+Tuple organization renameCategory: #comparing to: #testing!
+
+!Tuple methodsFor: #testing!
+{UInt32} actualHashForEqual
+	
+	self subclassResponsibility! !
+
+Tuple removeSelector: #hashForEqual!
+
+UnOrdered organization renameCategory: #comparing to: #testing!
+
+!UnOrdered methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	self subclassResponsibility! !
+
+UnOrdered removeSelector: #hashForEqual!
+
+!HeaperAsPosition methodsFor: #comparing!
+{UInt32} actualHashForEqual
+
+	self subclassResponsibility! !
+
+HeaperAsPosition removeSelector: #hashForEqual!
+
+HeaperAsPosition organization renameCategory: #comparing to: #testing!
+
+PrimPointerSpec removeSelector: #hashForEqual!
+
+Heaper class organization addCategory: #accessing before: nil!
+
+!Heaper class methodsFor: #accessing!
+{UInt32} takeOop
+	^ self asOop! !
+
+!PropChange methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^self takeOop! !
+
+PropChange removeSelector: #hashForEqual!
+
+!ScruSet methodsFor: #testing!
+{UInt32} actualHashForEqual
+	self subclassResponsibility! !
+
+ScruSet removeSelector: #hashForEqual!
+
+ScruSet subclass: #MuSet
+	instanceVariableNames: ''
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-Collection-Sets'!
+
+MuSet getOrMakeCxxClassDescription attributes: #(DEFERRED EQ )!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'set')  addClass: MuSet getOrMakeCxxClassDescription in: #public])!
+
+MuSet organization renameCategory: #testing to: #generated:!
+
+!MuSet methodsFor: #generated:!
+{UInt32} actualHashForEqual
+	^self asOop! !
+
+MuSet removeSelector: #hashForEqual!
+
+!Heaper class methodsFor: #'stubble OTHERS'!
+{void} compileEQ
+	"Compile code to do EQ comparisions"
+	self compileGeneratedMethod: 'isEqual: other ^self == other'.
+	self compileGeneratedMethod: 'actualHashForEqual ^self asOop'! !
+
+!Heaper class methodsFor: #'smalltalk: system'!
+info.stProtocol
+"{void NOLOCK CLIENT} destroy
+{UInt32 CLIENT} actualHashForEqual
+{BooleanVar CLIENT} isEqual: other {Heaper}
+"! !
+
+!ScruTable methodsFor: #testing!
+{UInt32} actualHashForEqual
+	"See ScruTable::isEqual"
+
+	self subclassResponsibility! !
+
+ScruTable removeSelector: #hashForEqual!
+
+!IntegerScruTable methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^#cat.U.IntegerScruTable hashForEqual + tableToScru hashForEqual! !
+
+IntegerScruTable removeSelector: #hashForEqual!
+
+!OffsetScruTable methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^#cat.U.OffsetScruTable hashForEqual + myTable hashForEqual + myDsp hashForEqual! !
+
+OffsetScruTable removeSelector: #hashForEqual!
+
+SHTO removeSelector: #hashForEqual!
+
+Stepper organization renameCategory: #testing to: #'generated: testing'!
+
+!Stepper methodsFor: #'generated: testing'!
+{UInt32} actualHashForEqual
+	^self asOop! !
+
+Heaper subclass: #Stepper
+	instanceVariableNames: ''
+	classVariableNames: 'TheEmptyStepper {Stepper wimpy} '
+	poolDictionaries: ''
+	category: 'Xanadu-Collection-Steppers'!
+
+Stepper getOrMakeCxxClassDescription attributes: #(ON.CLIENT DEFERRED EQ )!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'stepper')  addClass: Stepper getOrMakeCxxClassDescription in: #public])!
+
+Stepper removeSelector: #hashForEqual!
+
+!TracePosition methodsFor: #testing!
+{UInt32} actualHashForEqual
+	"Hash based on both the branch and position."
+
+	self subclassResponsibility! !
+
+TracePosition removeSelector: #hashForEqual!
+
+TransitionEdge organization renameCategory: #comparing to: #testing!
+
+TransitionEdge organization addCategory: #accessing before: #testing!
+
+TransitionEdge organization classify: #floor: under: #testing!
+
+TransitionEdge organization classify: #ceiling: under: #accessing!
+
+TransitionEdge organization classify: #floor: under: #accessing!
+
+!TransitionEdge methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	self subclassResponsibility! !
+
+TransitionEdge removeSelector: #hashForEqual!
+
+!Filter methodsFor: #testing!
+{UInt32} actualHashForEqual
+
+	self subclassResponsibility! !
+
+Filter removeSelector: #hashForEqual!
+
+!Accumulator methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^ Heaper takeOop! !
+
+Accumulator removeSelector: #hashForEqual!
+
+Accumulator organization renameCategory: #testing to: #'generated: testing'!
+
+Heaper subclass: #Accumulator
+	instanceVariableNames: ''
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-Collection-Steppers'!
+
+Accumulator getOrMakeCxxClassDescription attributes: #(DEFERRED EQ )!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'stepper')  addClass: Accumulator getOrMakeCxxClassDescription in: #public])!
+
+!IdentityDsp methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^Heaper takeOop! !
+
+!OffsetScruArray methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^#cat.U.OffsetScruArray hashForEqual + myArray hashForEqual + myDsp hashForEqual! !
+
+OffsetScruArray removeSelector: #hashForEqual!
+
+!ShepherdLocked methodsFor: #accessing!
+{BooleanVar} isReallyUnlocked
+	[^ (StackExaminer pointersOnStack fetch: self asOop) == NULL] smalltalkOnly.
+	'return StackExaminer::pointersOnStack()->fetch((Int32)(void*)this) == NULL;' translateOnly.! !
+
+ScavengeablePage rename: #Heaplet!
+
+Heaplet comment: ''!
+
+Heaplet class comment: ''!
+
+!MainDummy class methodsFor: #'global: booting'!
+{int} XU.U.MAIN: argc {int} with: argv {char star vector}
+	| stackObject {Int32} |
+	[StackExaminer] USES.
+	'StackExaminer::stackEnd(&stackObject);' translateOnly.
+	Initializer with: argc with: argv doMain:
+	[| rc {Rcvr} next {Heaper | NULL} |
+	argc < 2 ifTrue: [cerr << 'usage: ' << (argv at: Int32Zero) << ' rcFileName
+'.	^1].
+	rc _ TextyXcvrMaker make 
+			makeRcvr: (TransferSpecialist make: (Cookbook make.String: 'boot')) 
+			with: (XnReadFile make: (argv at: 1)).
+	CurrentMainReceiver fluidBind: rc during:
+		[next _ CurrentMainReceiver fluidGet receiveHeaper.
+		[next ~~ NULL] whileTrue:
+			[MainActiveThunk fluidBind: next during:
+				[next cast: Thunk into: [:thunk | thunk execute] others: []].
+			next _ CurrentMainReceiver fluidGet  receiveHeaper].
+			CurrentMainReceiver fluidGet destroy].
+	^Int32Zero]! !
+
+!ServerLoop methodsFor: #execution!
+{void} execute
+	| deadLoop {ServerLoop} |
+	CurrentServerLoop fluidBind: self during: 
+		[CurrentServerConnection fluidBind: (Connection make: myCategory) during:
+			[CurrentServerConnection fluidGet bootHeaper.
+			ServerLoop registerServerLoop: self.
+			[CurrentServerLoop fluidGet terminate] whileFalse:
+				[CurrentServerLoop fluidGet stepper: CurrentServerLoop fluidGet activeChunks stepper.
+				[CurrentServerLoop fluidGet stepper hasValue] whileTrue:
+					[ | chunk {ServerChunk} |
+					chunk := CurrentServerLoop fluidGet stepper fetch cast: ServerChunk.
+					chunk execute ifFalse: [
+						CurrentServerLoop fluidGet activeChunks remove: chunk.
+						chunk shouldDestroy ifTrue: [chunk destroy]].
+					Heaplet garbageCollect.
+					RepairEngineer repairThings.
+					CurrentServerLoop fluidGet stepper step].
+				CurrentServerLoop fluidGet stepper: NULL.
+				CurrentServerLoop fluidGet scheduleChunks].
+			TheChunks stepper forEach: [:c {ServerChunk} | c destroy].
+			deadLoop _ ServerLoop removeServerLoop.
+			((deadLoop basicCast: Heaper star) ~= CurrentServerLoop fluidGet) ifTrue: [Heaper BLAST: #WRONG.U.SERVERLOOP]].
+		CurrentServerConnection fluidGet destroy.
+		CurrentServerLoop fluidGet destroy].! !
+
+ExplicitArrangement organization addCategory: #'private: accessing' before: nil!
+
+ExplicitArrangement organization addCategory: #testing before: #'private: accessing'!
+
+!ExplicitArrangement methodsFor: #'private: accessing'!
+{PtrArray} positions
+	^ myPositions! !
+
+!ExplicitArrangement methodsFor: #testing!
+{BooleanVar} isEqual: other {Heaper}
+	other cast: ExplicitArrangement
+		  into: [:o {ExplicitArrangement} |
+		  	^ myPositions contentsEqual: o positions]
+		  others: [^ false ].
+	^ false "fodder"! !
+
+!ExplicitArrangement methodsFor: #testing!
+{UInt32} hashForEqual
+	^ myPositions contentsHash! !
+
+IntegerArrangement organization addCategory: #testing before: nil!
+
+!IntegerArrangement methodsFor: #testing!
+{UInt32} hashForEqual
+	^ myOrdering hashForEqual + myRegion hashForEqual! !
+
+!IntegerArrangement methodsFor: #testing!
+{BooleanVar} isEqual: other {Heaper}
+	other cast: IntegerArrangement
+		  into: [:o {IntegerArrangement} |
+		  	^ (myOrdering isEqual: o ordering) and: [myRegion isEqual: o region]]
+		  others: [^ false].
+	^ false "fodder"! !
+
+!IntegerArrangement methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^ myOrdering hashForEqual + myRegion hashForEqual! !
+
+!ExplicitArrangement methodsFor: #testing!
+{UInt32} actualHashForEqual
+	^ myPositions contentsHash! !
+
+Heaper subclass: #HashSetCache
+	instanceVariableNames: '
+		mySize {UInt32}
+		myElements {PtrArray}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-Collection-Cache'!
+
+HashSetCache getOrMakeCxxClassDescription attributes: #(CONCRETE COPY EQ )!
+
+((Smalltalk includesKey: #CxxSystemOrganization) ifTrue: [(CxxSystemOrganization getOrMakeFileNamed: 'tclude')  addClass: HashSetCache getOrMakeCxxClassDescription in: #public])!
+
+"----NOTE----"
+
+ChangeLog logNote: 'ericschanges.important'!
+
+'File out on ericchnges.important'!
+
+'File out on next/ech-i.cha'!

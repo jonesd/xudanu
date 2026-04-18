@@ -1,0 +1,167 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define COMDTCTR_SXX
+
+/*----------------------- BEGIN CommFillDetector -----------------------*/
+DEFINE_CLASS_CATEGORY(CommFillDetector,FeFillDetector)
+DEFINE_OPAQUE_TYPE(CommFillDetector);
+
+void CommFillDetector::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of CommFillDetector ====== */
+
+void CommFillDetector::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((CommFillDetector*)origin)->myManager,
+				       (Heaper**)&myManager);
+		Heaplet::forwardToOld ((Heaper**)&((CommFillDetector*)origin)->myTarget,
+				       (Heaper**)&myTarget);
+	} else {
+		myManager.forwardTo (Heaplet::forward (myManager));
+		myTarget.forwardTo (Heaplet::forward (myTarget));
+	}
+}
+
+/*----------------------- END CommFillDetector -----------------------*/
+
+
+/*----------------------- BEGIN CommFillRangeDetector -----------------------*/
+DEFINE_CLASS_CATEGORY(CommFillRangeDetector,FeFillRangeDetector)
+DEFINE_OPAQUE_TYPE(CommFillRangeDetector);
+
+void CommFillRangeDetector::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of CommFillRangeDetector ====== */
+
+void CommFillRangeDetector::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((CommFillRangeDetector*)origin)->myManager,
+				       (Heaper**)&myManager);
+		Heaplet::forwardToOld ((Heaper**)&((CommFillRangeDetector*)origin)->myTarget,
+				       (Heaper**)&myTarget);
+	} else {
+		myManager.forwardTo (Heaplet::forward (myManager));
+		myTarget.forwardTo (Heaplet::forward (myTarget));
+	}
+}
+
+/*----------------------- END CommFillRangeDetector -----------------------*/
+
+
+/*----------------------- BEGIN CommRevisionDetector -----------------------*/
+DEFINE_CLASS_CATEGORY(CommRevisionDetector,FeRevisionDetector)
+DEFINE_OPAQUE_TYPE(CommRevisionDetector);
+
+void CommRevisionDetector::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of CommRevisionDetector ====== */
+
+void CommRevisionDetector::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((CommRevisionDetector*)origin)->myManager,
+				       (Heaper**)&myManager);
+		Heaplet::forwardToOld ((Heaper**)&((CommRevisionDetector*)origin)->myTarget,
+				       (Heaper**)&myTarget);
+	} else {
+		myManager.forwardTo (Heaplet::forward (myManager));
+		myTarget.forwardTo (Heaplet::forward (myTarget));
+	}
+}
+
+/*----------------------- END CommRevisionDetector -----------------------*/
+
+
+/*----------------------- BEGIN CommStatusDetector -----------------------*/
+DEFINE_CLASS_CATEGORY(CommStatusDetector,FeStatusDetector)
+DEFINE_OPAQUE_TYPE(CommStatusDetector);
+
+void CommStatusDetector::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of CommStatusDetector ====== */
+
+void CommStatusDetector::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((CommStatusDetector*)origin)->myManager,
+				       (Heaper**)&myManager);
+		Heaplet::forwardToOld ((Heaper**)&((CommStatusDetector*)origin)->myTarget,
+				       (Heaper**)&myTarget);
+	} else {
+		myManager.forwardTo (Heaplet::forward (myManager));
+		myTarget.forwardTo (Heaplet::forward (myTarget));
+	}
+}
+
+/*----------------------- END CommStatusDetector -----------------------*/
+
+
+/*----------------------- BEGIN CommWaitDetector -----------------------*/
+DEFINE_CLASS_CATEGORY(CommWaitDetector,FeWaitDetector)
+DEFINE_OPAQUE_TYPE(CommWaitDetector);
+
+void CommWaitDetector::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of CommWaitDetector ====== */
+
+void CommWaitDetector::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((CommWaitDetector*)origin)->myManager,
+				       (Heaper**)&myManager);
+	} else {
+		myManager.forwardTo (Heaplet::forward (myManager));
+	}
+}
+
+/*----------------------- END CommWaitDetector -----------------------*/
+
+
+/*----------------------- BEGIN DetectorEvent -----------------------*/
+DEFINE_CLASS_CATEGORY(DetectorEvent,Heaper)
+DEFINE_OPAQUE_TYPE(DetectorEvent);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of DetectorEvent ====== */
+
+void DetectorEvent::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((DetectorEvent*)origin)->myNext,
+				       (Heaper**)&myNext);
+	} else {
+		myNext.forwardTo (Heaplet::forward (myNext));
+	}
+}
+
+/*----------------------- END DetectorEvent -----------------------*/
+

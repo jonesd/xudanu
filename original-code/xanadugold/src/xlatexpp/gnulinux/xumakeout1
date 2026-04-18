@@ -1,0 +1,12 @@
+../inttabx.cxx:823: warning: comparison between signed and unsigned
+../inttabx.cxx:829: warning: comparison between signed and unsigned
+../arrayx.cxx:375: warning: comparison between signed and unsigned
+../arrayx.cxx:441: warning: comparison between signed and unsigned
+../arrayx.cxx:452: warning: comparison between signed and unsigned
+../gchooksx.cxx:180: warning: implicit declaration of function `int bcopy(...)'
+../primvalx.cxx:534: warning: suggest parentheses around assignment used as truth value
+../stepperx.cxx:584: warning: comparison between signed and unsigned
+../stepperx.cxx:593: warning: comparison between signed and unsigned
+../setx.cxx:1493: warning: unsigned int format, long unsigned int arg (arg 3)
+../tabtoolx.cxx:90: warning: comparison between signed and unsigned
+../tabtoolx.cxx:119: warning: comparison between signed and unsigned

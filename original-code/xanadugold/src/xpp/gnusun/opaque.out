@@ -1,0 +1,43 @@
+
+Testing SPTR() and SPTR()/* == and !=
+
+fooP == fooP = TRUE
+fooP == barP = FALSE
+barP == fooP = FALSE
+barP == bazP = FALSE
+(Foo *)fooP == fooP = TRUE
+(Foo *)fooP == barP = FALSE
+(Bar *)barP == fooP = FALSE
+(Bar *)barP == bazP = FALSE
+fooP == (Foo *)fooP = TRUE
+fooP == (Bar *)barP = FALSE
+barP == (Foo *)fooP = FALSE
+barP == (Baz *)bazP = FALSE
+(Foo *)fooP == (Foo *)fooP = TRUE
+(Foo *)fooP == (Bar *)barP = FALSE
+(Bar *)barP == (Foo *)fooP = FALSE
+(barP != fooP && barP == bazP) = FALSE
+NULL == fooP = FALSE
+barP == NULL = FALSE
+NULL != fooP = TRUE
+barP != NULL = TRUE
+
+Testing SPTR()/CHKPTR() == and !=
+
+(barP != myFooP && myBarP == bazP) = FALSE
+
+Testing GPTR() and CHKPTR() destroyIt()
+
+(destroyItTester1P == NULL) = FALSE
+(destroyItTester2P == NULL) = FALSE
+(destroyItTester1P == NULL) = TRUE
+(destroyItTester2P == NULL) = FALSE
+(myDestroyItTesterP == NULL) = FALSE
+(myDestroyItTesterP == NULL) = TRUE
+now (myDestroyItTesterP == NULL) = TRUE
+(destroyItTester1P == NULL) = TRUE
+(destroyItTester2P == NULL) = TRUE
+initTest
+argTest1
+argTest2
+returnTest

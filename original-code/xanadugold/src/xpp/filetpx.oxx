@@ -1,0 +1,25 @@
+/* Copyright Xanadu Operating Company.  All Rights Reserved.
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+*/
+
+#ifndef FILETPX_OXX
+#define FILETPX_OXX
+
+/* $Id: filetpx.oxx,v 2.4 1992/11/25 23:26:13 eric Exp $ */
+
+class XnWriteFile;
+extern Category * cat_XnWriteFile;
+class XnReadFile;
+extern Category * cat_XnReadFile;
+
+#endif /* FILETPX_OXX */
+

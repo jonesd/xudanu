@@ -1,0 +1,224 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define ARRAYP_SXX
+
+/*----------------------- BEGIN ActualArray -----------------------*/
+DEFINE_CLASS_CATEGORY(ActualArray,MuArray)
+DEFINE_OPAQUE_TYPE(ActualArray);
+
+void ActualArray::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "ActualArray" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void ActualArray::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(elements);
+    xmtr->sendUInt32(tally);
+}
+
+ActualArray::ActualArray (APTR(Rcvr) receiver, TCSJ)
+{
+    elements = CAST(PtrArray, receiver->receiveHeaper());
+    tally = receiver->receiveUInt32();
+}
+
+
+void parseInto_ActualArray (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) ActualArray (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe ActualArray_recipe(cat_ActualArray, &XppCuisine, parseInto_ActualArray);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of ActualArray ====== */
+
+void ActualArray::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ActualArray*)origin)->elements,
+				       (Heaper**)&elements);
+	} else {
+		elements.forwardTo (Heaplet::forward (elements));
+	}
+}
+
+/*----------------------- END ActualArray -----------------------*/
+
+
+/*----------------------- BEGIN ArrayAccumulator -----------------------*/
+DEFINE_CLASS_CATEGORY(ArrayAccumulator,TableAccumulator)
+
+void ArrayAccumulator::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of ArrayAccumulator ====== */
+
+void ArrayAccumulator::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ArrayAccumulator*)origin)->arrayInternal,
+				       (Heaper**)&arrayInternal);
+	} else {
+		arrayInternal.forwardTo (Heaplet::forward (arrayInternal));
+	}
+}
+
+/*----------------------- END ArrayAccumulator -----------------------*/
+
+
+/*----------------------- BEGIN ArrayStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(ArrayStepper,TableStepper)
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of ArrayStepper ====== */
+
+void ArrayStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ArrayStepper*)origin)->arrayInternal,
+				       (Heaper**)&arrayInternal);
+	} else {
+		arrayInternal.forwardTo (Heaplet::forward (arrayInternal));
+	}
+}
+
+/*----------------------- END ArrayStepper -----------------------*/
+
+
+/*----------------------- BEGIN AscendingArrayStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(AscendingArrayStepper,ArrayStepper)
+
+void AscendingArrayStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END AscendingArrayStepper -----------------------*/
+
+
+/*----------------------- BEGIN OffsetArrayStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(OffsetArrayStepper,TableStepper)
+
+void OffsetArrayStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of OffsetArrayStepper ====== */
+
+void OffsetArrayStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((OffsetArrayStepper*)origin)->myArrayStepper,
+				       (Heaper**)&myArrayStepper);
+		Heaplet::forwardToOld ((Heaper**)&((OffsetArrayStepper*)origin)->myDsp,
+				       (Heaper**)&myDsp);
+	} else {
+		myArrayStepper.forwardTo (Heaplet::forward (myArrayStepper));
+		myDsp.forwardTo (Heaplet::forward (myDsp));
+	}
+}
+
+/*----------------------- END OffsetArrayStepper -----------------------*/
+
+
+/*----------------------- BEGIN OffsetScruArray -----------------------*/
+DEFINE_CLASS_CATEGORY(OffsetScruArray,ScruTable)
+
+void OffsetScruArray::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "OffsetScruArray" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void OffsetScruArray::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(myArray);
+    xmtr->sendHeaper(myDsp);
+}
+
+OffsetScruArray::OffsetScruArray (APTR(Rcvr) receiver, TCSJ)
+{
+    myArray = CAST(MuArray, receiver->receiveHeaper());
+    myDsp = CAST(Dsp, receiver->receiveHeaper());
+}
+
+
+void parseInto_OffsetScruArray (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) OffsetScruArray (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe OffsetScruArray_recipe(cat_OffsetScruArray, &XppCuisine, parseInto_OffsetScruArray);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of OffsetScruArray ====== */
+
+void OffsetScruArray::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((OffsetScruArray*)origin)->myArray,
+				       (Heaper**)&myArray);
+		Heaplet::forwardToOld ((Heaper**)&((OffsetScruArray*)origin)->myDsp,
+				       (Heaper**)&myDsp);
+	} else {
+		myArray.forwardTo (Heaplet::forward (myArray));
+		myDsp.forwardTo (Heaplet::forward (myDsp));
+	}
+}
+
+/*----------------------- END OffsetScruArray -----------------------*/
+

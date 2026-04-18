@@ -1,0 +1,170 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define WRAPPERX_SXX
+
+/*----------------------- BEGIN FeWrapper -----------------------*/
+DEFINE_CLASS_CATEGORY(FeWrapper,Heaper)
+DEFINE_OPAQUE_TYPE(FeWrapper);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FeWrapper" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+BooleanVar FeWrapper::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 FeWrapper::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of FeWrapper ====== */
+
+void FeWrapper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((FeWrapper*)origin)->myEdition,
+				       (Heaper**)&myEdition);
+		Heaplet::forwardToOld ((Heaper**)&((FeWrapper*)origin)->myInner,
+				       (Heaper**)&myInner);
+		Heaplet::forwardToOld ((Heaper**)&((FeWrapper*)origin)->mySpec,
+				       (Heaper**)&mySpec);
+	} else {
+		myEdition.forwardTo (Heaplet::forward (myEdition));
+		myInner.forwardTo (Heaplet::forward (myInner));
+		mySpec.forwardTo (Heaplet::forward (mySpec));
+	}
+}
+
+/*----------------------- END FeWrapper -----------------------*/
+
+
+/*----------------------- BEGIN FeSet -----------------------*/
+DEFINE_CLASS_CATEGORY(FeSet,FeWrapper)
+DEFINE_OPAQUE_TYPE(FeSet);
+
+void FeSet::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FeSet" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END FeSet -----------------------*/
+
+
+/*----------------------- BEGIN FeText -----------------------*/
+DEFINE_CLASS_CATEGORY(FeText,FeWrapper)
+DEFINE_OPAQUE_TYPE(FeText);
+
+void FeText::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FeText" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END FeText -----------------------*/
+
+
+/*----------------------- BEGIN FeWrapperSpec -----------------------*/
+DEFINE_CLASS_CATEGORY(FeWrapperSpec,Heaper)
+DEFINE_OPAQUE_TYPE(FeWrapperSpec);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FeWrapperSpec" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+BooleanVar FeWrapperSpec::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 FeWrapperSpec::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of FeWrapperSpec ====== */
+
+void FeWrapperSpec::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((FeWrapperSpec*)origin)->myDef,
+				       (Heaper**)&myDef);
+		Heaplet::forwardToOld ((Heaper**)&((FeWrapperSpec*)origin)->myEndorsements,
+				       (Heaper**)&myEndorsements);
+		Heaplet::forwardToOld ((Heaper**)&((FeWrapperSpec*)origin)->myFilter,
+				       (Heaper**)&myFilter);
+		Heaplet::forwardToOld ((Heaper**)&((FeWrapperSpec*)origin)->mySuperSpec,
+				       (Heaper**)&mySuperSpec);
+	} else {
+		myDef.forwardTo (Heaplet::forward (myDef));
+		myEndorsements.forwardTo (Heaplet::forward (myEndorsements));
+		myFilter.forwardTo (Heaplet::forward (myFilter));
+		mySuperSpec.forwardTo (Heaplet::forward (mySuperSpec));
+	}
+}
+
+/*----------------------- END FeWrapperSpec -----------------------*/
+

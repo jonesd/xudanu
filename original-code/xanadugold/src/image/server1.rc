@@ -1,0 +1,9 @@
+WorksBootMaker();
+FromDiskPlan(
+	Category(BeGrandMap),
+	"ent.ent");
+IPRendezvousListener(65001);
+EchoThunk("Starting server loop");
+SelectServerLoop(Category(FeServer));
+EchoThunk("Left server loop");
+NULL;

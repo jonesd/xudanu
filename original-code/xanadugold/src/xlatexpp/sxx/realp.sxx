@@ -1,0 +1,470 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define REALP_SXX
+
+/*----------------------- BEGIN IEEE32Pos -----------------------*/
+DEFINE_CLASS_CATEGORY(IEEE32Pos,RealPos)
+DEFINE_OPAQUE_TYPE(IEEE32Pos);
+
+void IEEE32Pos::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IEEE32Pos" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IEEE32Pos::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    RealPos::sendSelfTo (xmtr);
+    xmtr->sendIEEEDoubleVar(myValue);
+}
+
+IEEE32Pos::IEEE32Pos (APTR(Rcvr) receiver, TCSJ)
+  : RealPos (receiver, tcsj) {
+    myValue = receiver->receiveIEEEDoubleVar();
+}
+
+
+void parseInto_IEEE32Pos (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IEEE32Pos (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe IEEE32Pos_recipe(cat_IEEE32Pos, &XppCuisine, parseInto_IEEE32Pos);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END IEEE32Pos -----------------------*/
+
+
+/*----------------------- BEGIN IEEE64Pos -----------------------*/
+DEFINE_CLASS_CATEGORY(IEEE64Pos,RealPos)
+DEFINE_OPAQUE_TYPE(IEEE64Pos);
+
+void IEEE64Pos::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IEEE64Pos" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IEEE64Pos::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    RealPos::sendSelfTo (xmtr);
+    xmtr->sendIEEEDoubleVar(myValue);
+}
+
+IEEE64Pos::IEEE64Pos (APTR(Rcvr) receiver, TCSJ)
+  : RealPos (receiver, tcsj) {
+    myValue = receiver->receiveIEEEDoubleVar();
+}
+
+
+void parseInto_IEEE64Pos (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IEEE64Pos (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe IEEE64Pos_recipe(cat_IEEE64Pos, &XppCuisine, parseInto_IEEE64Pos);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END IEEE64Pos -----------------------*/
+
+
+/*----------------------- BEGIN IEEE8Pos -----------------------*/
+DEFINE_CLASS_CATEGORY(IEEE8Pos,RealPos)
+DEFINE_OPAQUE_TYPE(IEEE8Pos);
+
+void IEEE8Pos::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IEEE8Pos" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IEEE8Pos::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    RealPos::sendSelfTo (xmtr);
+    xmtr->sendInt8(myValue);
+}
+
+IEEE8Pos::IEEE8Pos (APTR(Rcvr) receiver, TCSJ)
+  : RealPos (receiver, tcsj) {
+    myValue = receiver->receiveInt8();
+}
+
+
+void parseInto_IEEE8Pos (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IEEE8Pos (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe IEEE8Pos_recipe(cat_IEEE8Pos, &XppCuisine, parseInto_IEEE8Pos);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END IEEE8Pos -----------------------*/
+
+
+/*----------------------- BEGIN RealDsp -----------------------*/
+DEFINE_CLASS_CATEGORY(RealDsp,IdentityDsp)
+
+void RealDsp::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "RealDsp" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void RealDsp::sendSelfTo (APTR(Xmtr) xmtr)
+{
+}
+
+RealDsp::RealDsp (APTR(Rcvr) receiver, TCSJ)
+{
+}
+
+
+void parseInto_RealDsp (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) RealDsp (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe RealDsp_recipe(cat_RealDsp, &XppCuisine, parseInto_RealDsp);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END RealDsp -----------------------*/
+
+
+/*----------------------- BEGIN RealEdge -----------------------*/
+DEFINE_CLASS_CATEGORY(RealEdge,TransitionEdge)
+DEFINE_OPAQUE_TYPE(RealEdge);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "RealEdge" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void RealEdge::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    TransitionEdge::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myPos);
+}
+
+RealEdge::RealEdge (APTR(Rcvr) receiver, TCSJ)
+  : TransitionEdge (receiver, tcsj) {
+    myPos = CAST(RealPos, receiver->receiveHeaper());
+}
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of RealEdge ====== */
+
+void RealEdge::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((RealEdge*)origin)->myPos,
+				       (Heaper**)&myPos);
+	} else {
+		myPos.forwardTo (Heaplet::forward (myPos));
+	}
+}
+
+/*----------------------- END RealEdge -----------------------*/
+
+
+/*----------------------- BEGIN AfterReal -----------------------*/
+DEFINE_CLASS_CATEGORY(AfterReal,RealEdge)
+
+void AfterReal::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "AfterReal" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void AfterReal::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    RealEdge::sendSelfTo (xmtr);
+}
+
+AfterReal::AfterReal (APTR(Rcvr) receiver, TCSJ)
+  : RealEdge (receiver, tcsj) {
+}
+
+
+void parseInto_AfterReal (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) AfterReal (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe AfterReal_recipe(cat_AfterReal, &XppCuisine, parseInto_AfterReal);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END AfterReal -----------------------*/
+
+
+/*----------------------- BEGIN BeforeReal -----------------------*/
+DEFINE_CLASS_CATEGORY(BeforeReal,RealEdge)
+
+void BeforeReal::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "BeforeReal" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void BeforeReal::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    RealEdge::sendSelfTo (xmtr);
+}
+
+BeforeReal::BeforeReal (APTR(Rcvr) receiver, TCSJ)
+  : RealEdge (receiver, tcsj) {
+}
+
+
+void parseInto_BeforeReal (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) BeforeReal (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe BeforeReal_recipe(cat_BeforeReal, &XppCuisine, parseInto_BeforeReal);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END BeforeReal -----------------------*/
+
+
+/*----------------------- BEGIN RealManager -----------------------*/
+DEFINE_CLASS_CATEGORY(RealManager,EdgeManager)
+DEFINE_OPAQUE_TYPE(RealManager);
+
+void RealManager::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "RealManager" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void RealManager::sendSelfTo (APTR(Xmtr) xmtr)
+{
+}
+
+RealManager::RealManager (APTR(Rcvr) receiver, TCSJ)
+{
+}
+
+
+void parseInto_RealManager (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) RealManager (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe RealManager_recipe(cat_RealManager, &XppCuisine, parseInto_RealManager);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END RealManager -----------------------*/
+
+
+/*----------------------- BEGIN RealStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(RealStepper,Stepper)
+
+void RealStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END RealStepper -----------------------*/
+
+
+/*----------------------- BEGIN RealUpOrder -----------------------*/
+DEFINE_CLASS_CATEGORY(RealUpOrder,OrderSpec)
+
+void RealUpOrder::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "RealUpOrder" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void RealUpOrder::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    OrderSpec::sendSelfTo (xmtr);
+}
+
+RealUpOrder::RealUpOrder (APTR(Rcvr) receiver, TCSJ)
+  : OrderSpec (receiver, tcsj) {
+}
+
+
+void parseInto_RealUpOrder (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) RealUpOrder (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe RealUpOrder_recipe(cat_RealUpOrder, &XppCuisine, parseInto_RealUpOrder);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END RealUpOrder -----------------------*/
+

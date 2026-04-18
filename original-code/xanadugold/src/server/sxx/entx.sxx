@@ -1,0 +1,271 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define ENTX_SXX
+
+/*----------------------- BEGIN Fluid_CurrentTrace -----------------------*/
+
+/*----------------------- END Fluid_CurrentTrace -----------------------*/
+
+
+/*----------------------- BEGIN CurrentTrace_Bomb -----------------------*/
+
+/*----------------------- END CurrentTrace_Bomb -----------------------*/
+
+
+/*----------------------- BEGIN Fluid_CurrentBertCrum -----------------------*/
+
+/*----------------------- END Fluid_CurrentBertCrum -----------------------*/
+
+
+/*----------------------- BEGIN CurrentBertCrum_Bomb -----------------------*/
+
+/*----------------------- END CurrentBertCrum_Bomb -----------------------*/
+
+
+/*----------------------- BEGIN Ent -----------------------*/
+DEFINE_CLASS_CATEGORY(Ent,Abraham)
+DEFINE_OPAQUE_TYPE(Ent);
+
+void Ent::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "Ent" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void Ent::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Abraham::sendSelfTo (xmtr);
+    xmtr->sendHeaper(fulltrace);
+}
+
+Ent::Ent (APTR(Rcvr) receiver, TCSJ)
+  : Abraham (receiver, tcsj) {
+    fulltrace = CAST(DagWood, receiver->receiveHeaper());
+}
+
+
+void parseInto_Ent (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) Ent (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe Ent_recipe(cat_Ent, &DiskCuisine, parseInto_Ent);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Shepherd Patriarch Class "Ent" ======= */
+
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Shepherd Stub Class "EntStub" ======= */
+
+
+#ifndef DISKMANX_HXX
+#include "diskmanx.hxx" 
+#define DISKMANX_HXX
+#endif /* DISKMANX_HXX */
+
+extern Category * cat_EntStub;
+
+CLASS(EntStub,Ent) {
+	CONCRETE(EntStub)
+	MANUAL_GC(EntStub)
+	NOT_A_TYPE(EntStub)
+  public:
+	inline EntStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+          :  Ent(shepFlag, aHash, info)  {   }
+
+	virtual void		printOn(ostream&);
+
+    RSP2_TracePosition newTrace() {
+    return (this)->getReal()->newTrace();
+    }
+
+    UInt32 contentsHash() {
+    return (this)->getReal()->contentsHash();
+    }
+
+    void dismantle() {
+    ((this)->getReal());
+    this->dismantle();
+    }
+
+    void diskUpdate() {
+    ((this)->getReal());
+    this->diskUpdate();
+    }
+
+    void destroy() {
+    (this)->getReal()->destroy();
+    }
+
+    BooleanVar isPurgeable() {
+    return (this)->getReal()->isPurgeable();
+    }
+
+    BooleanVar isUnlocked() {
+    return (this)->getReal()->isUnlocked();
+    }
+
+    void restartAbraham(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartAbraham(arg1);
+    }
+
+    UInt32 hashForEqual() {
+    return (this)->getReal()->hashForEqual();
+    }
+
+    void printContentsOn(ostream& arg1) {
+    (this)->getReal()->printContentsOn(arg1);
+    }
+
+    void changeClassToThatOf(WSP2_Heaper arg1) {
+    (this)->getReal()->changeClassToThatOf(arg1);
+    }
+
+    void sendSelfTo(WSP2_Xmtr arg1) {
+    (this)->getReal()->sendSelfTo(arg1);
+    }
+
+
+    private:
+      Ent *	getReal();  // just * in case not a type
+
+	// Stripped-down COPY(EntStub): Just migrate
+    public:
+	// Suppress migrate, so we don't have to clear the pointers.
+	// We need to make sure that any stub-specific state is marked.
+	LEAF void migrate(void * origin, BooleanVar destinationIsOld) {
+		this->Abraham::migrate(origin, destinationIsOld);
+	}
+	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+        LEAF void becomeStub () { }
+        LEAF BooleanVar isStub() { return TRUE; }
+};
+
+Category * Ent::getShepherdStubCategory () CONST
+{
+        return cat_EntStub;
+}
+
+void Ent::becomeStub () 
+{
+    UInt32 hash = this->hashForEqual();
+    WPTR(FlockInfo) info = this->fetchInfo();
+    new (this) EntStub (shepFlag, hash, info);
+}
+
+/* ===== EntStub Implementations ==== */
+
+void EntStub::
+printOn(ostream& oo)
+{
+	oo << this->getCategory()->name();
+	oo << "@";
+     /* what are sequenceNumber and SeqNumKludge ? */
+//	oo << sequenceNumber((void *)this) - SeqNumKludge;
+	oo << "()";
+}
+
+Ent * EntStub::
+getReal() {
+    CurrentPacker.fluidGet()->makeReal(this->fetchInfo());
+    return this;
+}
+
+BooleanVar EntStub::
+isKindOf(Category * aCategory) CONST
+{
+	if (cat_EntStub->isEqualOrSubclassOf(aCategory)) {
+		return TRUE;
+	} else if (aCategory->isEqualOrSubclassOf(cat_Ent)) {
+		return ((EntStub *)this)->getReal()->isKindOf(aCategory);
+	} else {
+		return FALSE;
+	}
+}
+
+DEFINE_CLASS_CATEGORY(EntStub,Ent)
+
+void EntStub::deferredHack () { /* intentionally blank */ }
+
+/* #ifdef WITH_RPC */
+/* ====== Stub Recipe for Ent ====== */
+
+#ifndef STUBRCPX_HXX
+#include "stubrcpx.hxx"
+#define STUBRCPX_HXX
+#endif /* STUBRCPX_HXX */
+
+RPTR(Heaper) parseStub_Ent (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+	RETURN_CONSTRUCT(EntStub, (shepFlag, hash, NULL));
+}
+
+extern Recipe * DiskCuisine;
+ActualStubRecipe EntStub_recipe(cat_EntStub, &DiskCuisine, parseStub_Ent);
+
+/* #endif */ /* WITH_RPC */
+
+/* ===== mayBecome support between stub and concrete Shepherd Prototype ===== */
+
+DEFINE_MAY_BECOME(Ent,EntStub)
+DEFINE_MAY_BECOME(EntStub,Ent)
+
+/* ====== Object Migrator for Scavenging of Ent ====== */
+
+void Ent::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->Abraham::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((Ent*)origin)->fulltrace,
+				       (Heaper**)&fulltrace);
+	} else {
+		fulltrace.forwardTo (Heaplet::forward (fulltrace));
+	}
+}
+
+/*----------------------- END Ent -----------------------*/
+

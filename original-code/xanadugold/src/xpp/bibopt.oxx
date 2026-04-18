@@ -1,0 +1,32 @@
+/* ===========================================================================
+//
+//	Copyright (c) 1992 by Xanadu Operating Company
+//
+// ===========================================================================
+//
+// The information contained herein is confidential, proprietary to Xanadu
+// Operating Company, and considered a trade secret as defined in section
+// 499C of the penal code of the State of California.
+//
+// Use of this information by anyone other than authorized employees of
+// Xanadu is granted only under a written nondisclosure agreement,
+// expressly prescribing the scope and manner of such use.
+//
+// The above copyright notice is not to be construed as evidence of
+// publication or the intent to publish.
+//
+// =========================================================================== */
+
+#ifndef BIBOPT_OXX
+#define BIBOPT_OXX
+
+OPAQUE_TYPE_2(Live,Heaper);
+OPAQUE_TYPE_2(Zero,Heaper);
+OPAQUE_TYPE_2(One,Heaper);
+OPAQUE_TYPE_2(Two,Heaper);
+OPAQUE_TYPE_2(Three,Heaper);
+OPAQUE_TYPE_2(Six,Heaper);
+OPAQUE_TYPE_2(Thirteen,Heaper);
+OPAQUE_TYPE_2(TwentyFive,Heaper);
+
+#endif /* BIBOPT_OXX */

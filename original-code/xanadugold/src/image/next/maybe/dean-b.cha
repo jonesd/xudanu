@@ -1,0 +1,577 @@
+'From Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989 on 3 May 1993 at 3:19:55 pm'!
+
+ChangeLog user: #dean!
+
+'File out on next/dean-a.cha'!
+
+ListenerEmulsion class removeSelector: #make!
+
+FluidVar class removeSelector: #make:!
+
+FluidVar class removeSelector: #make:with:!
+
+Heaper class removeSelector: #makeFillTable:!
+
+SouthRecorderChecker class removeSelector: #make:with:with:with:!
+
+OPartialLoaf class removeSelector: #make:with:with:!
+
+RecorderFossil class removeSelector: #make:with:with:!
+
+IDSpace class removeSelector: #iDFilterSpace!
+
+IDSpace class removeSelector: #openIDFilter!
+
+FePlaceHolder class removeSelector: #grand:!
+
+FeServer class removeSelector: #current!
+
+FeServer class removeSelector: #nullClubID!
+
+FeWrapper class removeSelector: #checkSubSetEdition:with:with:with:!
+
+FeClubDescription class removeSelector: #make:with:with:!
+
+FHash class removeSelector: #fastHash.UInt1Array.Int:with:!
+
+FHash class removeSelector: #fastHash.UInt4:!
+
+FHash class removeSelector: #fastHash.UInt8Array.Int:with:!
+
+MainDummy class removeSelector: #main:with:!
+
+Mapping class removeSelector: #make.Region:with:!
+
+IDDsp class removeSelector: #make!
+
+OrderSpec class removeSelector: #ascending:!
+
+OrderSpec class removeSelector: #descending:!
+
+ID class removeSelector: #key:!
+
+ID class removeSelector: #make:!
+
+ID class removeSelector: #make:with:!
+
+IntegerVarArray class removeSelector: #make:!
+
+IntegerVarArray class removeSelector: #make:with:!
+
+PtrArray class removeSelector: #make:!
+
+PtrArray class removeSelector: #make:with:!
+
+SharedPtrArray class removeSelector: #make:with:!
+
+PromiseManager class removeSelector: #force:!
+
+PromiseManager class removeSelector: #waive:!
+
+BertProp class removeSelector: #sensorWaitingProp!
+
+PropFinder class removeSelector: #partialityFinder!
+
+PropFinder class removeSelector: #recorderFinder.RegionDelta:with.RegionDelta:!
+
+PropFinder class removeSelector: #recorderFinder.RegionDelta:with.XuRegion:!
+
+PropFinder class removeSelector: #recorderFinder.XuRegion:with.RegionDelta:!
+
+PropFinder class removeSelector: #recorderPFinder:with:with:!
+
+Response class removeSelector: #int4Response:!
+
+Response class removeSelector: #uInt4Response:!
+
+ImmuSet class removeSelector: #make.Heaper:!
+
+ImmuSet class removeSelector: #with:!
+
+MuSet class removeSelector: #make.Region:!
+
+IntegerTable class removeSelector: #make.ScruTable:!
+
+IntegerTable class removeSelector: #make.WordArray:!
+
+MuWordArray class removeSelector: #make.UInt1Array:!
+
+ActualWordArray class removeSelector: #make.UInt1Array:!
+
+Tester class removeSelector: #doLinkTime!
+
+PrWorksTester class removeSelector: #uInt8Spec!
+
+AttributedTextModel class removeSelector: #make:with:!
+
+ConnectorModel class removeSelector: #make!
+
+IDRegion class removeSelector: #make!
+
+IDRegion class removeSelector: #make.ID:!
+
+IDRegion class removeSelector: #make.ScruSet:!
+
+SequenceRegion class removeSelector: #with:!
+
+HxxPrintStream class removeSelector: #strip:!
+
+BeGrandMap removeSelector: #iDSpace:!
+
+BeRangeElement removeSelector: #becomeOther:!
+
+BeRangeElement removeSelector: #checkRecorders:with:with:!
+
+BeRangeElement removeSelector: #delayedStoreBackfollow:with:with:!
+
+BeRangeElement removeSelector: #storeBackfollow:with:with:!
+
+BeEdition removeSelector: #detectors!
+
+BeEdition removeSelector: #fetchOrMakeBeRangeElement:!
+
+BeEdition removeSelector: #parcelAt:!
+
+BeEdition removeSelector: #parcels!
+
+BeEdition removeSelector: #scheduleDelayedBackfollow:!
+
+BeEdition removeSelector: #scheduleImmediateBackfollow:!
+
+BeEdition removeSelector: #setAllOwners:!
+
+BeEdition removeSelector: #setAllOwners:with:!
+
+BeEdition removeSelector: #unendorse:!
+
+BeEdition removeSelector: #wait:!
+
+BeWork removeSelector: #addSponsors:!
+
+BeWork removeSelector: #removeSponsors:!
+
+BeWork removeSelector: #unendorse:!
+
+BranchDescription removeSelector: #=!
+
+SensorCrum removeSelector: #checkRecorders:with:with:!
+
+SensorCrum removeSelector: #fetchNextAfterTriggeringRecorders:with:with:!
+
+SensorCrum removeSelector: #record:!
+
+SensorCrum removeSelector: #triggerRecorders:with:with:!
+
+Ent removeSelector: #mapJoin:with:!
+
+Ent removeSelector: #mapTable:with:!
+
+Ent removeSelector: #newOrglRoot:with:!
+
+Ent removeSelector: #newPartialOrglRoot:!
+
+Fossil removeSelector: #emptyWaldoSocket!
+
+Fossil removeSelector: #makeGrabber:!
+
+Fossil removeSelector: #waldo!
+
+Fossil removeSelector: #waldoSocket!
+
+HRoot removeSelector: #storeBackfollow:with:with:!
+
+OPart removeSelector: #wait:!
+
+Loaf removeSelector: #checkChildRecorders:with:!
+
+Loaf removeSelector: #checkRecorders:with:with:!
+
+Loaf removeSelector: #delayedStoreMatching:with:with:!
+
+Loaf removeSelector: #inform:with:with:!
+
+Loaf removeSelector: #storeMatching:with:with:!
+
+Loaf removeSelector: #wait:!
+
+InnerLoaf removeSelector: #wait:!
+
+DspLoaf removeSelector: #wait:!
+
+SplitLoaf removeSelector: #wait:!
+
+OExpandingLoaf removeSelector: #wait:!
+
+OPartialLoaf removeSelector: #inform:with:with:!
+
+OPartialLoaf removeSelector: #wait:!
+
+OVirtualLoaf removeSelector: #wait:!
+
+RegionLoaf removeSelector: #wait:!
+
+OrglRoot removeSelector: #asDataTable!
+
+OrglRoot removeSelector: #asTable!
+
+OrglRoot removeSelector: #checkRecorders:with:with:!
+
+OrglRoot removeSelector: #delayedFindMatching:with:!
+
+OrglRoot removeSelector: #fetch:!
+
+OrglRoot removeSelector: #findMatching:!
+
+OrglRoot removeSelector: #inform:with:!
+
+OrglRoot removeSelector: #introduceStamp:!
+
+OrglRoot removeSelector: #propChanged:!
+
+OrglRoot removeSelector: #removeStamp:!
+
+OrglRoot removeSelector: #wait:!
+
+ActualOrglRoot removeSelector: #inform:with:!
+
+ActualOrglRoot removeSelector: #wait:!
+
+EmptyOrglRoot removeSelector: #inform:with:!
+
+EmptyOrglRoot removeSelector: #propBy:!
+
+EmptyOrglRoot removeSelector: #unpropBy:!
+
+EmptyOrglRoot removeSelector: #wait:!
+
+SimpleTurtle removeSelector: #newCounter:!
+
+SetAccumulator removeSelector: #get!
+
+CoordinateSpace removeSelector: #importMapping:with:!
+
+CoordinateSpace removeSelector: #importOrderSpec:!
+
+CoordinateSpace removeSelector: #importRegion:!
+
+CoordinateSpace removeSelector: #mapping:!
+
+CoordinateSpace removeSelector: #mapping:with:!
+
+CoordinateSpace removeSelector: #orderSpec:!
+
+CoordinateSpace removeSelector: #region:!
+
+CrossSpace removeSelector: #count!
+
+CrossSpace removeSelector: #intCount!
+
+CrossSpace removeSelector: #makeCrossMapping:!
+
+CrossSpace removeSelector: #makeCrossOrderSpec:with:!
+
+CrossSpace removeSelector: #makeCrossRegion:!
+
+CrossSpace removeSelector: #makeTuple:!
+
+CrossSpace removeSelector: #subSpace:!
+
+CrossSpace removeSelector: #subSpaces!
+
+ActualCrossSpace removeSelector: #create:!
+
+IDSpace removeSelector: #oldID:!
+
+IntegerSpace removeSelector: #integer:!
+
+PathSpace removeSelector: #create:!
+
+SequenceSpace removeSelector: #sequence:with:!
+
+SequenceSpace removeSelector: #sequencesAfter:!
+
+SequenceSpace removeSelector: #sequencesBefore:!
+
+SequenceSpace removeSelector: #sequencesPrefixedBy:with:!
+
+SequenceSpace removeSelector: #shiftAndTranslation!
+
+SequenceSpace removeSelector: #shiftAndTranslation:!
+
+SequenceSpace removeSelector: #shiftAndTranslation:with:!
+
+CounterTable removeSelector: #count:with:!
+
+DiskManager removeSelector: #consistent:!
+
+DiskManager removeSelector: #consistent:with:!
+
+DiskManager removeSelector: #makeConsistent!
+
+DiskManager removeSelector: #makeConsistentBegin:!
+
+DiskManager removeSelector: #makeConsistentEnd!
+
+SnarfPacker removeSelector: #consistent:with:!
+
+TestPacker removeSelector: #makeConsistent!
+
+FeAdminer removeSelector: #clearProfile!
+
+FeAdminer removeSelector: #consistencyCheck!
+
+FeAdminer removeSelector: #defaultLockSmith!
+
+FeAdminer removeSelector: #disableAccess:!
+
+FeAdminer removeSelector: #enableAccess:!
+
+FeAdminer removeSelector: #nameClub:with:!
+
+FeAdminer removeSelector: #renameClub:with:!
+
+FeAdminer removeSelector: #setDefaultLockSmith:!
+
+FeAdminer removeSelector: #shutDown!
+
+FeAdminer removeSelector: #unnameClub:!
+
+FeAdminer removeSelector: #writeProfile!
+
+FeFillRangeDetector removeSelector: #allFilled:!
+
+FeKeyMaster removeSelector: #removeAuthority:!
+
+FeRangeElement removeSelector: #becomeOther:!
+
+FeRangeElement removeSelector: #isSameAs:!
+
+FeEdition removeSelector: #addCompletionDetector:!
+
+FeEdition removeSelector: #addFillInDetector:!
+
+FeEdition removeSelector: #allBecome:with:!
+
+FeEdition removeSelector: #asArray:with:!
+
+FeEdition removeSelector: #keysLabelled:!
+
+FeEdition removeSelector: #parcelAt:!
+
+FeEdition removeSelector: #parcels!
+
+FeEdition removeSelector: #removeCompletionDetector:!
+
+FeEdition removeSelector: #removeFillInDetector:!
+
+FeEdition removeSelector: #setAllOwners:with:!
+
+FeEdition removeSelector: #transclusions:with:with:with:with:!
+
+FeEdition removeSelector: #unendorse:!
+
+FeEdition removeSelector: #zoneAt:!
+
+FeEdition removeSelector: #zoneOf:!
+
+FeEdition removeSelector: #zones:!
+
+FeWork removeSelector: #addSponsors:!
+
+FeWork removeSelector: #currentAuthor!
+
+FeWork removeSelector: #lock!
+
+FeWork removeSelector: #lockingClub!
+
+FeWork removeSelector: #removeSponsors:!
+
+FeWork removeSelector: #requestLock!
+
+FeWork removeSelector: #unendorse:!
+
+FeWork removeSelector: #unlock!
+
+FeClubDescription removeSelector: #home!
+
+FeClubDescription removeSelector: #withHome:!
+
+FePath removeSelector: #first!
+
+FePath removeSelector: #replaceIn:with:!
+
+FePath removeSelector: #rest!
+
+FePath removeSelector: #withFirst:!
+
+FePath removeSelector: #withLast:!
+
+FeSet removeSelector: #count:!
+
+FeSet removeSelector: #countEditions:!
+
+FeSet removeSelector: #iDs!
+
+ClickAction removeSelector: #create:with:!
+
+HistoryCrum removeSelector: #actualDelayedStoreBackfollow:with:with:!
+
+HistoryCrum removeSelector: #actualStoreBackfollow:with:with:!
+
+HistoryCrum removeSelector: #delayedStoreBackfollow:with:with:!
+
+HistoryCrum removeSelector: #hCrums!
+
+HistoryCrum removeSelector: #storeBackfollow:with:with:!
+
+HBottomCrum removeSelector: #introduceStamp:!
+
+HBottomCrum removeSelector: #propChanged:!
+
+HBottomCrum removeSelector: #removeStamp:!
+
+Lock removeSelector: #loginClubID!
+
+Mapping removeSelector: #export!
+
+CrossMapping removeSelector: #subDsp:!
+
+CrossMapping removeSelector: #subDsps!
+
+OrderSpec removeSelector: #export!
+
+Orgl removeSelector: #combine:with:!
+
+Orgl removeSelector: #copy:with:!
+
+Orgl removeSelector: #transform:with:!
+
+Orgl removeSelector: #without:with:!
+
+Orgl removeSelector: #withoutAll:with:!
+
+ActualOrgl removeSelector: #makeDerivedOrgl:with:!
+
+Orientation removeSelector: #orient:!
+
+Orientation removeSelector: #primary:!
+
+Orientation removeSelector: #secondary:!
+
+Pair removeSelector: #create:!
+
+Position removeSelector: #isAfterOrEqual:!
+
+Position removeSelector: #isGE:!
+
+FilterPosition removeSelector: #region!
+
+RealPos removeSelector: #exponent!
+
+RealPos removeSelector: #isIEEE!
+
+RealPos removeSelector: #mantissa!
+
+Sequence removeSelector: #isEmpty!
+
+Sequence removeSelector: #numberAt:!
+
+Sequence removeSelector: #numbers!
+
+PrimFloatArray removeSelector: #precision!
+
+PrimIntArray removeSelector: #precision!
+
+PtrArray removeSelector: #array!
+
+PrimFloatSpec removeSelector: #precision!
+
+PrimIntegerSpec removeSelector: #precision!
+
+PrimFloatValue removeSelector: #isNumber!
+
+PrimFloatValue removeSelector: #precision!
+
+PrimIntValue removeSelector: #precision!
+
+SensorProp removeSelector: #endorsementsFilter!
+
+SensorProp removeSelector: #permissionsFilter!
+
+PropChange removeSelector: #fetchFinder:with:!
+
+PropChange removeSelector: #finderPartFrom:!
+
+AbstractRecorderFinder removeSelector: #checkStamp:with:!
+
+AbstractRecorderFinder removeSelector: #checkStamp:with:with:!
+
+SensorPropJoint removeSelector: #endorsementsFilter!
+
+SensorPropJoint removeSelector: #permissionsFilter!
+
+BackfollowRecorder removeSelector: #checkStamp:with:!
+
+BackfollowRecorder removeSelector: #checkStamp:with:with:!
+
+ImmuTable removeSelector: #with:!
+
+ActualWordArray removeSelector: #asUInt1Array!
+
+ActualWordArray removeSelector: #with:!
+
+SnarfRecord removeSelector: #fetchForward:!
+
+SnarfRecord removeSelector: #forgottenFlocks!
+
+SnarfRecord removeSelector: #isForgotten:!
+
+SnarfRecord removeSelector: #isPurgeable!
+
+Stepper removeSelector: #asArray:!
+
+Warp removeSelector: #boundingBox!
+
+Warp removeSelector: #copyBits:from:at:clippingBox:rule:mask:!
+
+Warp removeSelector: #darkGray!
+
+Warp removeSelector: #gray!
+
+Warp removeSelector: #ink:!
+
+Warp removeSelector: #lightGray!
+
+Warp removeSelector: #reverse!
+
+Warp removeSelector: #veryLightGray!
+
+Filter2ReferencesSchnert removeSelector: #create:with:with:!
+
+ItemSelectionViewer removeSelector: #displayIsAdditive:!
+
+XnRegion removeSelector: #asArray:!
+
+PointRegion removeSelector: #insetBy:!
+
+SlicePointRegion removeSelector: #insetBy:!
+
+IDRegion removeSelector: #identifiers!
+
+IntegerRegion removeSelector: #startsInside!
+
+Logger removeSelector: #register!
+
+HxxPrintStream removeSelector: #defBlast:!
+
+HxxPrintStream removeSelector: #printChooseFor:args:!
+
+HxxPrintStream removeSelector: #strip:!
+
+FeWork removeSelector: #setKeyMaster:!
+
+"----NOTE----"
+
+ChangeLog logNote: 'remove all the passe methods'!
+
+'File out on next/dean-b.cha'!

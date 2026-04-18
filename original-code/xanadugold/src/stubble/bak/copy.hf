@@ -1,0 +1,173 @@
+$//
+$//     Moved this stuff to this separate file.  Old comments remain
+$//     in StubbleForm.f
+$//             -cth    12/13/90
+$//
+$// MODIFIED FOR NEW FORMIC - rek Nov '91
+$//
+$// - removed ':'s from all 0-place predicates
+$// - changed substring wildcard from '+' to '%' (string comparison)
+$// - removed $ESAC
+$// - $(VAR name: *+) changed to $(VAR name mod: ^*/), etc. (string output)
+$// - in '$(FOR VARS/FUNCS attr:)' 'attr:' changed to 'spec:'	
+$// - changed '$(CLASS attr: COPY)'  to '$(CLASS attr:arg: COPY 1)'
+$//
+$// - made it to be an error to copy through wimpy ptrs
+$//	-ech Sep 2 1992
+$//
+/* $$Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $$ */
+$(IF CLASS | attr: COPY attr: PSEUDO_COPY)$// ** copy class **
+#ifndef WITH_BACKEND_HOOKS
+/* ====== Copy Class "$(CLASS)" ======= */
+#else
+#include "backend1.hf"
+#endif /* WITH_BACKEND_HOOKS */
+
+/* $#ifdef WITH_RPC */
+
+$#ifndef COPYRCPX_HXX
+$#include "copyrcpx.hxx"
+$#define COPYRCPX_HXX
+$#endif /* COPYRCPX_HXX */
+
+$#ifndef NXCVRX_HXX
+$#include "nxcvrx.hxx"
+$#define NXCVRX_HXX
+$#endif /* NXCVRX_HXX */
+
+$(FI CLASS | attr: COPY attr: PSEUDO_COPY)$// ** copy class **
+$(IF CLASS attr: COPY)$// ** actual copy class
+void $(CLASS)::sendSelfTo (APTR(Xmtr) xmtr)
+{
+$(  IF CLASS baseattr: COPY)
+    $(CLASS base)::sendSelfTo (xmtr);
+$(  FI)
+$//
+$(  FOR VARS ! | spec: NOCOPY spec: static)
+$(    SWITCH VAR)
+$(      CASE root: IntegerVar)
+    xmtr->sendIntegerVar($(VAR));
+$(      CASE root: IEEEDoubleVar)
+    xmtr->sendIEEEDoubleVar($(VAR));
+$(      CASE root: IEEE32)
+    xmtr->sendIEEEDoubleVar($(VAR));
+$(      CASE root: IEEE64)
+    xmtr->sendIEEEDoubleVar($(VAR));
+$(      CASE root: UInt32)
+    xmtr->sendUInt32($(VAR));
+$(      CASE root: Int32)
+    xmtr->sendInt32($(VAR));
+$(      CASE root: Int8)
+    xmtr->sendInt8($(VAR));
+$(      CASE root: UInt8)
+    xmtr->sendUInt8($(VAR));
+$(      CASE type: char)
+    xmtr->sendUInt8($(VAR));
+$(      CASE & ptr root: char)
+    xmtr->sendString($(VAR name mod: ^*/));
+$(      CASE root: BooleanVar)
+    xmtr->sendBooleanVar($(VAR));
+$(      CASE kind: Heaper)
+    xmtr->sendHeaper($(VAR name mod: ^*/));
+$(      CASE type: WP2_%)
+$#error: Not allowed to copy through UNPTRs
+$(      CASE type: CP2_%)
+    xmtr->sendHeaper($(VAR));
+$(      CASE type: friend)
+  /*  Stubble is working around a formic bug.   friend $(VAR)  */
+$(      DEFAULT)
+$#error: Unrecognized inst-var receive case for $(VAR type) $(VAR)
+
+$(    HCTIWS)
+$(  ROF)
+$(  FOR FUNCS spec: SEND_HOOK)
+    this->$(FUNC)(xmtr);
+$(  ROF)
+}
+
+$(CLASS)::$(CLASS) (APTR(Rcvr) receiver, TCSJ)
+$(  IF CLASS & baseattr: COPY kind: Heaper)
+  : $(CLASS base) (receiver, tcsj) $//
+$(  FI)
+{
+$(  FOR VARS ! | spec: NOCOPY spec: static)$// ** copy vars **
+$(    SWITCH VAR)
+$(      CASE root: IntegerVar)
+    $(VAR) = receiver->receiveIntegerVar();
+$(      CASE root: IEEEDoubleVar)
+    $(VAR) = receiver->receiveIEEEDoubleVar();
+$(      CASE root: IEEE32)
+    $(VAR) = receiver->receiveIEEEDoubleVar();
+$(      CASE root: IEEE64)
+    $(VAR) = receiver->receiveIEEEDoubleVar();
+$(      CASE root: UInt32)
+    $(VAR) = receiver->receiveUInt32();
+$(      CASE root: Int32)
+    $(VAR) = receiver->receiveInt32();
+$(      CASE root: Int8)
+    $(VAR) = receiver->receiveInt8();
+$(      CASE root: UInt8)
+    $(VAR) = receiver->receiveUInt8();
+$(      CASE type: char)
+    $(VAR) = receiver->receivechar();
+$(      CASE & ptr root: char)
+    $(VAR name mod: ^*/) = receiver->receiveString();
+$(      CASE root: BooleanVar)
+    $(VAR) = receiver->receiveBooleanVar();
+$(      CASE kind: Heaper)
+    $(VAR name mod: ^*/) = CAST($(VAR root), receiver->receiveHeaper());
+$(      CASE type: WP2_%)
+$#error: Not allowed to copy through UNPTRs
+$(      CASE type: CP2_%)
+    $(VAR) = CAST($(VAR type mod: ^CP2_/), receiver->receiveHeaper());
+$(     CASE type: friend)
+  /*  Stubble is working around a formic bug.   friend $(VAR)  */
+$(      DEFAULT)
+$#error: Unrecognized inst-var receive case for $(VAR type) $(VAR)
+
+$(    HCTIWS)
+$(  ROF ** copy vars **)
+$//
+$(  FOR FUNCS spec: RECEIVE_HOOK)
+    this->$(FUNC)(receiver);
+$(  ROF)
+}
+
+$(IF CLASS & ! attr: DEFERRED 
+           & ! attr: PROXY
+             ! attr: MANUAL_RECIPE)$/// ** non-deferred class **
+$//
+
+void parseInto_$(CLASS) (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) $(CLASS) (rcvr, tcsj);
+}
+
+extern Recipe * $(CLASS attr:arg: COPY 1);
+ActualCopyRecipe $(CLASS)_recipe(cat_$(CLASS), &$(CLASS attr:arg: COPY 1), parseInto_$(CLASS));
+
+$//
+$(FI ** non-deferred class **)
+
+/* $#endif */ /* WITH_RPC */
+$//
+$//==============================================================
+$//
+#ifdef WITH_BACKEND_HOOKS
+#include "backend2.hf"
+#endif /* WITH_BACKEND_HOOKS */
+$//
+$//==============================================================
+$//
+$(FI ** copy class **)
+$(IF CLASS attr: PSEUDO_COPY)$// ** pseudo-copy class
+void $(CLASS)::sendSelfTo (APTR(Xmtr) xmtr)
+{
+$(  FOR FUNCS spec: SEND_HOOK)
+    this->$(FUNC)(xmtr);
+$(  ROF)
+}
+
+extern Recipe * $(CLASS attr:arg: PSEUDO_COPY 1);
+PseudoCopyRecipe $(CLASS)_recipe(cat_$(CLASS), &$(CLASS attr:arg: PSEUDO_COPY 1), $(CLASS)::make);
+
+$(FI ** pseudo copy class **)

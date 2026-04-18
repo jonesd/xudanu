@@ -1,0 +1,71 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define BIN2COMX_SXX
+
+/*----------------------- BEGIN Binary2XcvrMaker -----------------------*/
+DEFINE_CLASS_CATEGORY(Binary2XcvrMaker,XcvrMaker)
+
+void Binary2XcvrMaker::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "Binary2XcvrMaker" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void Binary2XcvrMaker::sendSelfTo (APTR(Xmtr) xmtr)
+{
+}
+
+Binary2XcvrMaker::Binary2XcvrMaker (APTR(Rcvr) receiver, TCSJ)
+{
+}
+
+
+void parseInto_Binary2XcvrMaker (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) Binary2XcvrMaker (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe Binary2XcvrMaker_recipe(cat_Binary2XcvrMaker, &XppCuisine, parseInto_Binary2XcvrMaker);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END Binary2XcvrMaker -----------------------*/
+

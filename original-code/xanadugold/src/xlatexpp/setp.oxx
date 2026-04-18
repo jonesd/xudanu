@@ -1,0 +1,41 @@
+/* Copyright Xanadu Operating Company.  All Rights Reserved. */
+
+/******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+#ifndef SETP_OXX
+#define SETP_OXX
+
+
+#ifndef SETP_OXX
+#include "setp.oxx"
+#endif /* SETP_OXX */
+
+#ifndef SETX_OXX
+#include "setx.oxx"
+#endif /* SETX_OXX */
+
+
+
+class EmptyImmuSet;
+extern Category * cat_EmptyImmuSet;
+OPAQUE_TYPE_4(HashSet,MuSet,ScruSet,Heaper);
+OPAQUE_TYPE_5(ActualHashSet,HashSet,MuSet,ScruSet,Heaper);
+class HashSetStepper;
+extern Category * cat_HashSetStepper;
+class ImmuSetOnMu;
+extern Category * cat_ImmuSetOnMu;
+class TinyImmuSet;
+extern Category * cat_TinyImmuSet;
+#endif /* SETP_OXX */
+

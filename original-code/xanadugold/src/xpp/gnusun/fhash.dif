@@ -1,0 +1,56 @@
+51,57c51,57
+< 'foo'->388849591
+< 'oof'->269167325
+< 'bar'->431996218
+< 'car'->54572706
+< 'cars'->286243663
+< 'this is a long string to hash'->181960449
+< 'this is a longer string to hash'->96608153
+---
+> 'foo'->135434203
+> 'oof'->455680101
+> 'bar'->533927645
+> 'car'->239871339
+> 'cars'->377098548
+> 'this is a long string to hash'->250279921
+> 'this is a longer string to hash'->227117818
+59,65c59,65
+< 'foo', 0, 3 ->388849591
+< 'oof', 0, 3 ->269167325
+< 'bar', 0, 3 ->431996218
+< 'car', 0, 3 ->54572706
+< 'cars', 0, 4 ->286243663
+< 'this is a long string to hash', 0, 29 ->181960449
+< 'this is a longer string to hash', 0, 31 ->96608153
+---
+> 'foo', 0, 3 ->135434203
+> 'oof', 0, 3 ->455680101
+> 'bar', 0, 3 ->533927645
+> 'car', 0, 3 ->239871339
+> 'cars', 0, 4 ->377098548
+> 'this is a long string to hash', 0, 29 ->250279921
+> 'this is a longer string to hash', 0, 31 ->227117818
+67c67
+< 'abc_this is a longer string to hash_xyz', 4, 31 ->96608153
+---
+> 'abc_this is a longer string to hash_xyz', 4, 31 ->227117818
+69,73c69,73
+< 'abc/this is a longer string to hash_xyz', 4, 31 ->96608153
+< 'abc_this is a longer string to hash/xyz', 4, 31 ->96608153
+< 'abc_/his is a longer string to hash_xyz', 4, 31 ->439418521
+< 'abc_this is a longer string to has/_xyz', 4, 31 ->362444258
+< 'abc_this is a longer*string to hash_xyz', 4, 31 ->360105113
+---
+> 'abc/this is a longer string to hash_xyz', 4, 31 ->227117818
+> 'abc_this is a longer string to hash/xyz', 4, 31 ->227117818
+> 'abc_/his is a longer string to hash_xyz', 4, 31 ->137927298
+> 'abc_this is a longer string to has/_xyz', 4, 31 ->192696549
+> 'abc_this is a longer*string to hash_xyz', 4, 31 ->321596970
+79,81c79,81
+< 'abc_this is a longer', 4, 31 ->245895059
+< 'abc_this is a longer', 4, 31 ->245895059
+< 'abc_this is a longer', 4, 31 ->58374106
+---
+> 'abc_this is a longer', 4, 31 ->264241617
+> 'abc_this is a longer', 4, 31 ->264241617
+> 'abc_this is a longer', 4, 31 ->154524622

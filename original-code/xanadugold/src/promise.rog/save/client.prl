@@ -1,0 +1,251 @@
+#!/usr/local/bin/perl
+
+local (%extra,%before,%special);
+
+require("clientp.prl");
+
+open(H,">xanadu.h");
+print H $before{"H"};
+
+open(OXX,">xanadu.oxx");
+print OXX $before{"OXX"};
+
+open(HXX,">xanadu.hxx");
+print HXX $before{"HXX"};
+
+open(IXX,">xanadu.ixx");
+print IXX $before{"IXX"};
+
+open(CXX,">xanadu.cxx");
+print CXX $before{"CXX"};
+
+while (<>) {
+
+if (/^constant/) {
+		local ($value, $constant) =
+			/constant\s+(\w+)\s+(\w+)/;
+		print H "#define XU_$constant $value\n";
+} elsif (/^class/) {
+	local ($cnumber, $class, $super, $cattr) =
+		/class\s+(\d+)\s+(\w+)\s+(\w+)\s+(.*){/;
+	if ($super eq "Root") {
+		$super = "Counted";
+	}
+	local ($uclass, $usuper, $superchain);
+	($uclass = $class) =~ tr/a-z/A-Z/;
+	($usuper = $super) =~ tr/a-z/A-Z/;
+	$super{$class} = $super;
+	@superchain = &superchain($class);
+
+	print H
+"
+#define XU_${uclass}_CLASS $cnumber
+";
+
+	print OXX "XU_TYPE_",int(@superchain),"(",join(",",@superchain),")\n\n"
+		unless $special{$class} =~ /\bptrvar\b/;
+
+	print CXX "XU_DEFINE_TYPE(Xu$class,Xu$super)\n";
+
+	print HXX $before{$class};
+
+	print HXX
+"
+class Xu$class : public Xu$super {
+
+		XU_PROLOGUE(Xu$class)
+
+	public: /* types */
+
+		static XU_INLINE2 Xu${class}P cast (XuPromiseP promise);
+		static XU_INLINE2 XuBooleanValueP isTypeOf (XuPromiseP promise);
+
+#ifdef XU_PRINTON_VERBOSE
+	protected: /* printing */
+
+		virtual void printContentsOn (ostream& oo);
+#endif /* XU_PRINTON_VERBOSE */
+
+	public: /* requests */
+
+";
+
+	print IXX
+"
+XU_INLINE2 Xu${class}P Xu$class::cast (XuPromiseP promise) {
+	return (Xu$class *) XuPromise::actualCast (Xu$class::Spec, promise).asPointer();
+}
+
+XU_INLINE2 XuBooleanValueP Xu$class::isTypeOf (XuPromiseP promise) {
+	return XuPromise::actualIsTypeOf (Xu$class::Spec, promise);
+}
+";
+
+REQUEST: while (<>) {
+
+		last REQUEST if /}/;
+
+		local ($rtype, $rest) = /\s*(\w+)\s*(.*)/;
+
+		if ($rtype eq "event") {
+
+			local ($rnumber, $return, $response, $args) =
+				$rest =~ /(\d+)\s+(\w+)\s+(\w+)\s+(\w+)\s*\((.*)\)/;
+			local ($urequest, $requestdef,$returntype, @args);
+			# thingToDo: remember and use argument names
+			$args =~ s/\s+\w+,/,/g;
+			@args = split(/\s*,\s*/,$args);
+			($uresponse = $response) =~ tr/a-z/A-Z/;
+			$responsedef = "XU_${uclass}_${uresponse}_".int(@args)."_RESPONSE";
+
+			print H "#define $responsedef $rnumber\n";
+
+		} elsif ($rtype eq "message" || $rtype eq "function") {
+
+			local ($rnumber, $return, $request, $args) =
+				$rest =~ /(\d+)\s+(\w+)\s+(\w+)\s*\((.*)\)/;
+			local ($urequest, $requestdef,$returntype, @args);
+			# thingToDo: remember and use argument names
+			$args .= ",";
+			$args =~ s/\s+\w+,/,/g;
+			chop $args;
+			@args = split(/\s*\,\s*/,$args);
+			($urequest = $request) =~ tr/a-z/A-Z/;
+
+			local ($i);
+			@argnames = $cattr =~ /\bimplicit\b/ || $rtype eq "function" 
+					? () : ("this");
+			$i = 1;
+			for (@args) {
+				push(@argnames,"arg$i");
+				$i++;
+			}
+
+			$requestdef = "XU_${uclass}_${urequest}_".int(@args)."_REQUEST";
+
+			print H "#define $requestdef $rnumber\n";
+
+			next REQUEST
+				if ($special{"$class::$request"} =~ /\bomit\b/ ||
+					$return eq "NOACK");
+
+			$returntype = "Xu${return}P";
+
+			print HXX "\n\t\t",
+				(($rtype eq "function")
+					? "static " : ""),
+				"XU_INLINE2 $returntype $request (",
+				((@args) ? ("const Xu" , join("P&, const Xu",@args) , "P&") : ""),
+				");\n";
+
+			next REQUEST
+				if ($special{"$class::$request"} =~ /\bmanual\b/);
+
+			print IXX
+				"\n\nXU_INLINE2 $returntype Xu$class::$request (";
+			$i = 1;
+			for (@args) {
+				print IXX (($i > 1) ? ", " : ""),
+					"const Xu",$_,"P& arg",$i;
+				$i++;
+			}
+			print IXX ") {\n",
+				"\treturn Xu${return}P( XuConnection::current ()->request",
+					int(@argnames),
+					" (\n\t\tXu$return::Spec,\n\t\t$requestdef";
+			for (@argnames) {
+				print IXX ",\n\t\t$_";
+			}
+			print IXX "), xuTCS);\n}\n";
+		}
+	}
+
+	print HXX $extra{$class};
+
+	if ($special{$class} =~ /\bmanual\b/) {
+		$inline = "";
+	} else {
+		$inline = "XU_INLINE2";
+	}
+
+	print HXX
+"
+	public: /* INTERNAL: types */
+		static const XuPromiseSpecP Spec;
+		virtual XuPromiseSpecP promiseSpec ();
+	public: /* INTERNAL: create */
+		static Xu${class}P generate ();
+
+		static Xu${class}P newPromise (XuIntVar seq);
+		static Xu${class}P newExcused (XuPromiseP exc);
+		static Xu${class}P newBroken (XuIntVar seq,XuIntVar prob,XuIntVar src);
+
+	protected: /* INTERNAL: create */
+		$inline Xu$class (XuIntVar seq, XuTCS);
+		$inline Xu$class (XuIntVar seq, XuPromiseP exc);
+		$inline Xu$class (XuIntVar seq, XuIntVar prob, XuIntVar src);
+};
+";
+
+	print CXX
+"
+
+const XuPromiseSpecP Xu$class::Spec = XuPromiseSpec::make (
+		XU_${uclass}_CLASS,
+		&Xu$class::Cat,
+		(XuPromiseP (*)(XuIntVar))			&Xu$class::newPromise,
+		(XuPromiseP (*)(XuPromiseP))			&Xu$class::newExcused,
+		(XuPromiseP (*)(XuIntVar,XuIntVar,XuIntVar))	&Xu$class::newBroken);
+
+XuPromiseSpecP Xu$class::promiseSpec () {
+	return Xu$class::Spec;
+}
+
+Xu${class}P Xu$class::generate () {
+	return Xu${class}P (Xu$class::Spec->generate(), xuTCS);
+}
+
+Xu${class}P Xu$class::newPromise (XuIntVar seq) {
+	return new Xu$class (seq,xuTCS);
+}
+
+Xu${class}P Xu$class::newExcused (XuPromiseP exc) {
+	return new Xu$class (exc->sequence(), exc);
+}
+
+Xu${class}P Xu$class::newBroken (XuIntVar seq, XuIntVar prob, XuIntVar src) {
+	return new Xu$class (seq, prob, src);
+}
+";
+	print IXX
+"
+XU_INLINE2 Xu$class::Xu$class (XuIntVar seq,XuTCS tcs)
+	: Xu$super (seq,tcs) {
+}
+
+XU_INLINE2 Xu$class::Xu$class (XuIntVar seq, XuPromiseP exc)
+	: Xu$super (seq, exc) {
+}
+
+XU_INLINE2 Xu$class::Xu$class (XuIntVar seq, XuIntVar prob, XuIntVar src)
+	: Xu$super (seq, prob, src) {
+}
+" unless ($special{$class} =~ /\bmanual\b/);
+
+}
+}
+
+print H $extra{"H"};
+print HXX $extra{"HXX"};
+print IXX $extra{"IXX"};
+print CXX $extra{"CXX"};
+print OXX $extra{"OXX"};
+
+sub superchain {
+	local (@result,$c); @result = (); $c = $_[0];
+	while ($c) {
+		push(@result,"Xu$c");
+		$c = $super{$c};
+	}
+	return @result;
+}

@@ -1,0 +1,143 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define GCHOOKSX_SXX
+
+/*----------------------- BEGIN CloseExecutor -----------------------*/
+DEFINE_CLASS_CATEGORY(CloseExecutor,XnExecutor)
+
+void CloseExecutor::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+BooleanVar CloseExecutor::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 CloseExecutor::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+
+
+/*----------------------- END CloseExecutor -----------------------*/
+
+
+/*----------------------- BEGIN DeleteExecutor -----------------------*/
+DEFINE_CLASS_CATEGORY(DeleteExecutor,XnExecutor)
+
+void DeleteExecutor::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+BooleanVar DeleteExecutor::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 DeleteExecutor::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+
+
+/*----------------------- END DeleteExecutor -----------------------*/
+
+
+/*----------------------- BEGIN RepairEngineer -----------------------*/
+DEFINE_CLASS_CATEGORY(RepairEngineer,Heaper)
+DEFINE_OPAQUE_TYPE(RepairEngineer);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+BooleanVar RepairEngineer::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 RepairEngineer::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of RepairEngineer ====== */
+
+void RepairEngineer::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((RepairEngineer*)origin)->myNext,
+				       (Heaper**)&myNext);
+	} else {
+		myNext.forwardTo (Heaplet::forward (myNext));
+	}
+}
+
+/*----------------------- END RepairEngineer -----------------------*/
+
+
+/*----------------------- BEGIN SanitationEngineer -----------------------*/
+DEFINE_CLASS_CATEGORY(SanitationEngineer,Heaper)
+DEFINE_OPAQUE_TYPE(SanitationEngineer);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+BooleanVar SanitationEngineer::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 SanitationEngineer::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of SanitationEngineer ====== */
+
+void SanitationEngineer::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((SanitationEngineer*)origin)->myNext,
+				       (Heaper**)&myNext);
+	} else {
+		myNext.forwardTo (Heaplet::forward (myNext));
+	}
+}
+
+/*----------------------- END SanitationEngineer -----------------------*/
+
+
+/*----------------------- BEGIN StackExaminer -----------------------*/
+DEFINE_CLASS_CATEGORY(StackExaminer,Heaper)
+DEFINE_OPAQUE_TYPE(StackExaminer);
+
+void StackExaminer::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END StackExaminer -----------------------*/
+

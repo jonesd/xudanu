@@ -1,0 +1,352 @@
+/* cOpyright Xanadu Operating Company.  All Rights Reserved. */
+
+/******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+#ifndef BRANCHX_CXX
+#define BRANCHX_CXX
+
+
+#ifndef CHOOSEX_HXX
+#include "choosex.hxx"
+#endif /* CHOOSEX_HXX */
+
+#ifndef BRANCHX_HXX
+#include "branchx.hxx"
+#endif /* BRANCHX_HXX */
+
+#ifndef BRANCHX_IXX
+#include "branchx.ixx"
+#endif /* BRANCHX_IXX */
+
+
+#ifndef PRIMTABX_HXX
+#include "primtabx.hxx"
+#endif /* PRIMTABX_HXX */
+
+#ifndef SETX_HXX
+#include "setx.hxx"
+#endif /* SETX_HXX */
+
+
+
+
+/* ************************************************************************ *
+ * 
+ *                    Class BranchDescription 
+ *
+ * ************************************************************************ */
+
+
+/* instance creation */
+
+
+RPTR(BranchDescription) BranchDescription::make (APTR(DagWood) xfulltrace){
+	RETURN_CONSTRUCT(RootBranch,(xfulltrace, tcsj));
+}
+
+
+RPTR(BranchDescription) BranchDescription::make (APTR(DagWood) xfulltrace, APTR(TracePosition) parent){
+	RETURN_CONSTRUCT(TreeBranch,(xfulltrace, parent));
+}
+
+
+RPTR(BranchDescription) BranchDescription::make (
+		APTR(DagWood) xfulltrace, 
+		APTR(TracePosition) parent1, 
+		APTR(TracePosition) parent2)
+{
+	RETURN_CONSTRUCT(DagBranch,(xfulltrace, parent1, parent2));
+}
+/* Instances of subclasses describe the different kinds of paths in a 
+traceDag.  The 
+three kinds are root (no parent), tree (one parent) and dag (two 
+parent) branches.  
+The dag caching routine chases up the dag finding the max of all 
+paths.  The special 
+case of chasing up the hierarchy is probably not worth the code.
+
+At the moment, these never go away!!! */
+
+
+/* testing */
+
+
+UInt32 BranchDescription::contentsHash (){
+	return this->Abraham::contentsHash() ^ myLeft->hashForEqual() ^ myRight->hashForEqual() ^ fulltrace->hashForEqual();
+}
+
+
+BooleanVar BranchDescription::doesInclude (UInt32 position, APTR(TracePosition) tracePos){
+	IntegerVar mark;
+	
+	
+	mark = fulltrace->cacheTracePos(tracePos)->fetch(this);
+	{	BooleanVar crutch_Flag;
+		/* mark != NULL && IntegerVar(position) <= mark */
+		
+		crutch_Flag = mark != NULL;
+		if(crutch_Flag) {
+			crutch_Flag = IntegerVar(position) <= mark;
+		}
+		return crutch_Flag;
+	}
+}
+/* deferred accessing */
+/* accessing */
+
+
+void BranchDescription::addSuccessorsTo (APTR(MuSet) set){
+	/* Add the first useable positions for all successor branches 
+	to the set. */
+	
+	set->store(TracePosition::make (this, 3));
+	if (myLeft != NULL) {
+		myLeft->addSuccessorsTo(set);
+	}
+	if (myRight != NULL) {
+		myRight->addSuccessorsTo(set);
+	}
+}
+
+
+RPTR(ImmuSet) BranchDescription::successorsOf (APTR(BoundedTrace) trace){
+	SPTR(MuSet) set;
+	
+	set = fulltrace->successorsOf(trace);
+	if (trace->position() != lastPosition) {
+		set->store(TracePosition::make (this, trace->position() + 1));
+	}
+	WPTR(ImmuSet) 	returnValue;
+	returnValue = set->asImmuSet();
+	return returnValue;
+}
+/* position making */
+
+GPTR(BranchDescription) Checkbranch = 0;
+RPTR(TracePosition) BranchDescription::createAfteprint *brr (APTR(BoundedTrace) trace){
+	/* Return a new successor to the receiver. The first 
+	successor is on the 
+		same branch with a higher position. Further successors are allocated 
+		in a binary-tree fashion along a new branch. */
+    if(Checkbranch == NULL) {
+	Checkbranch = this;
+    }
+	if (lastPosition == trace->position()) {
+		WPTR(TracePosition) 	returnValue;
+		returnValue = this->nextPosition();
+		return returnValue;
+	} else {
+		SPTR(BranchDescription) branch;
+		
+		branch = BranchDescription::make (fulltrace, trace);
+		fulltrace->installBranchAfter(branch, trace);
+
+		WPTR(TracePosition) 	returnValue;
+		returnValue = branch->nextPosition();
+		return returnValue;
+	}
+}
+
+
+void BranchDescription::installBranch (APTR(BranchDescription) branch){
+	/* Install branch as a descendant branch of myself. Walk down 
+	the binary tree of 
+		branches to find a place to lodge it. This gets called if 
+	there was already a 
+		branch existing off my root. */
+    //if(Checkbranch == NULL) {
+	//Checkbranch = this;
+    //}
+	if (branch->isEqual(this)) {
+		return;
+		
+	}
+	this->diskUpdate();
+
+	if (myLeft == NULL) {
+		myLeft = branch;
+	} else {
+		SPTR(BranchDescription) tmpBr;
+		
+		myLeft->installBranch(branch);
+		tmpBr = myLeft;
+		myLeft = myRight;
+		myRight = tmpBr;
+	}
+}
+
+void setbranch(BranchDescription *  tmp){
+
+// 	 if(Checkbranch == NULL) {
+        Checkbranch = tmp;
+//    }
+
+}
+void checkthefuckingbranches(){
+  if(Checkbranch  != NULL){
+((BranchDescription * )Checkbranch)->walkBranch();
+ }
+
+}
+void BranchDescription::walkBranch (){
+	if(myLeft != NULL){
+		myLeft->walkBranch();
+	}
+	if(myRight != NULL){
+		myRight->walkBranch();
+	}
+
+}
+void BranchDescription::installBranchAfter (APTR(BranchDescription) branch, APTR(TracePosition) trace){
+	fulltrace->installBranchAfter(branch, trace);
+}
+
+
+RPTR(BranchDescription) BranchDescription::makeBranch (APTR(TracePosition) trace1, APTR(TracePosition) trace2){
+	/* Create a dag branch that succeeds both trace1 and trace2. */
+	
+	WPTR(BranchDescription) 	returnValue;
+	returnValue = BranchDescription::make (fulltrace, trace1, trace2);
+	return returnValue;
+}
+
+
+RPTR(TracePosition) BranchDescription::nextPosition (){
+	/* Return the first available tracePosition on this branch. */
+	
+	lastPosition += 1;
+	this->diskUpdate();
+	WPTR(TracePosition) 	returnValue;
+	returnValue = TracePosition::make (this, lastPosition);
+	return returnValue;
+}
+/* protected: protected create */
+
+
+BranchDescription::BranchDescription (APTR(DagWood) ft, TCSJ) {
+	fulltrace = ft;
+	myLeft = NULL;
+	myRight = NULL;
+	lastPosition = 2;
+}
+/* printing */
+
+
+void BranchDescription::printOn (ostream& aStream){
+	aStream << this->hashForEqual();
+}
+
+
+
+/* ************************************************************************ *
+ * 
+ *                    Class   DagBranch 
+ *
+ * ************************************************************************ */
+
+
+/* caching */
+
+
+void DagBranch::cacheRecur (APTR(PrimIndexTable) navCache){
+	parent1->cacheIn(navCache);
+	parent2->cacheIn(navCache);
+}
+/* create */
+
+
+DagBranch::DagBranch (
+		APTR(DagWood) ft, 
+		APTR(TracePosition) p1, 
+		APTR(TracePosition) p2) 
+
+	: BranchDescription(ft, tcsj) {
+	parent1 = p1;
+	parent2 = p2;
+	this->newShepherd();
+	this->remember();
+}
+/* testing */
+
+
+UInt32 DagBranch::contentsHash (){
+	return this->BranchDescription::contentsHash() ^ parent1->hashForEqual() ^ parent2->hashForEqual();
+}
+
+
+
+/* ************************************************************************ *
+ * 
+ *                    Class   RootBranch 
+ *
+ * ************************************************************************ */
+
+
+/* caching */
+
+
+void RootBranch::cacheRecur (APTR(PrimIndexTable) navCache){
+	/* The recursion ends here. */
+	
+	
+}
+/* create */
+
+
+RootBranch::RootBranch (APTR(DagWood) ft, TCSJ) 
+	: BranchDescription(ft, tcsj) {
+	this->newShepherd();
+	this->remember();
+
+}
+
+
+
+/* ************************************************************************ *
+ * 
+ *                    Class   TreeBranch 
+ *
+ * ************************************************************************ */
+
+
+/* caching */
+
+
+void TreeBranch::cacheRecur (APTR(PrimIndexTable) navCache){
+	parent->cacheIn(navCache);
+}
+/* create */
+
+
+TreeBranch::TreeBranch (APTR(DagWood) ft, APTR(TracePosition) p) 
+	: BranchDescription(ft, tcsj) {
+	parent = p;
+	this->newShepherd();
+	this->remember();
+}
+/* testing */
+
+
+UInt32 TreeBranch::contentsHash (){
+	return this->BranchDescription::contentsHash() ^ parent->hashForEqual();
+}
+
+#ifndef BRANCHX_SXX
+#include "branchx.sxx"
+#endif /* BRANCHX_SXX */
+
+
+
+#endif /* BRANCHX_CXX */
+

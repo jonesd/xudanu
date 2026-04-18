@@ -1,0 +1,3 @@
+EchoThunk("Building URDI file--this will take a while");
+BuildUrdiFile("ent.ent",32768,400,75);
+NULL;

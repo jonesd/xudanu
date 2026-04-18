@@ -1,0 +1,7 @@
+#ifndef PARRAYT_OXX
+#define PARRAYT_OXX
+static char parrayt_oxx_id[] = "$Id: parrayt.oxx,v 2.2 1992/08/14 22:09:59 shap Exp $";
+
+OPAQUE_TYPE_2(PrimArrayTester,Heaper);
+
+#endif /* PARRAYT_OXX */

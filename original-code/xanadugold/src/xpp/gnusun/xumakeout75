@@ -1,0 +1,6 @@
+===> /Fhypatia/roger/prod/xhs/src/xpp/gnusun
+../../stubble/gnusun/stubble  -I. -I.. -I../../xpp -I../../xlatexpp -I../../disk -I../../comm -I../../server -I../../disk -I../../urdi -I../sxx -I/usr/local/lib/g++-include  -I/usr/local/lib/g++-include/sys -I/usr/local/lib/gcc-lib/sparc-sun-sunos4.1.4/2.7.1/include  -I/usr/local/lib/gcc-lib/sparc-sun-sunos4.1.4/2.7.1/include/sys  -DUSE_INLINE -DGNUSUN  -DGNUSUN_TEST -DGNU  -Dsparc -Dunix -DHIGHC ../tofux.hxx -o../sxx/tofux.sxx
+../opaquex.hxx: 144: syntax error (in preprocessor if)
+stubble: preprocessor failed for ../tofux.hxx
+*** Error code 1
+make: Fatal error: Command failed for target `../sxx/tofux.sxx'

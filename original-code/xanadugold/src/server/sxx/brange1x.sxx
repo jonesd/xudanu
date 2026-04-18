@@ -1,0 +1,1372 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define BRANGE1X_SXX
+
+/*----------------------- BEGIN BeCarrier -----------------------*/
+DEFINE_CLASS_CATEGORY(BeCarrier,Heaper)
+DEFINE_OPAQUE_TYPE(BeCarrier);
+
+void BeCarrier::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "BeCarrier" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of BeCarrier ====== */
+
+void BeCarrier::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((BeCarrier*)origin)->myLabel,
+				       (Heaper**)&myLabel);
+		Heaplet::forwardToOld ((Heaper**)&((BeCarrier*)origin)->myRangeElement,
+				       (Heaper**)&myRangeElement);
+	} else {
+		myLabel.forwardTo (Heaplet::forward (myLabel));
+		myRangeElement.forwardTo (Heaplet::forward (myRangeElement));
+	}
+}
+
+/*----------------------- END BeCarrier -----------------------*/
+
+
+/*----------------------- BEGIN BeRangeElement -----------------------*/
+DEFINE_CLASS_CATEGORY(BeRangeElement,Abraham)
+DEFINE_OPAQUE_TYPE(BeRangeElement);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "BeRangeElement" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void BeRangeElement::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Abraham::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myHCrum);
+    xmtr->sendHeaper(mySensorCrum);
+    xmtr->sendHeaper(myOwner);
+}
+
+BeRangeElement::BeRangeElement (APTR(Rcvr) receiver, TCSJ)
+  : Abraham (receiver, tcsj) {
+    myHCrum = CAST(HUpperCrum, receiver->receiveHeaper());
+    mySensorCrum = CAST(SensorCrum, receiver->receiveHeaper());
+    myOwner = CAST(ID, receiver->receiveHeaper());
+    this->restartRE(receiver);
+}
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Shepherd Ancestor Class "BeRangeElement" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of BeRangeElement ====== */
+
+void BeRangeElement::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->Abraham::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((BeRangeElement*)origin)->myHCrum,
+				       (Heaper**)&myHCrum);
+		Heaplet::forwardToOld ((Heaper**)&((BeRangeElement*)origin)->mySensorCrum,
+				       (Heaper**)&mySensorCrum);
+		Heaplet::forwardToOld ((Heaper**)&((BeRangeElement*)origin)->myOwner,
+				       (Heaper**)&myOwner);
+		Heaplet::forwardToOld ((Heaper**)&((BeRangeElement*)origin)->myFeRangeElements,
+				       (Heaper**)&myFeRangeElements);
+	} else {
+		myHCrum.forwardTo (Heaplet::forward (myHCrum));
+		mySensorCrum.forwardTo (Heaplet::forward (mySensorCrum));
+		myOwner.forwardTo (Heaplet::forward (myOwner));
+		myFeRangeElements.forwardTo (Heaplet::forward (myFeRangeElements));
+	}
+}
+
+/*----------------------- END BeRangeElement -----------------------*/
+
+
+/*----------------------- BEGIN BeDataHolder -----------------------*/
+DEFINE_CLASS_CATEGORY(BeDataHolder,BeRangeElement)
+DEFINE_OPAQUE_TYPE(BeDataHolder);
+
+void BeDataHolder::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "BeDataHolder" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void BeDataHolder::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    BeRangeElement::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myValue);
+}
+
+BeDataHolder::BeDataHolder (APTR(Rcvr) receiver, TCSJ)
+  : BeRangeElement (receiver, tcsj) {
+    myValue = CAST(PrimValue, receiver->receiveHeaper());
+}
+
+
+void parseInto_BeDataHolder (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) BeDataHolder (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe BeDataHolder_recipe(cat_BeDataHolder, &DiskCuisine, parseInto_BeDataHolder);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Shepherd Patriarch Class "BeDataHolder" ======= */
+
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Shepherd Stub Class "BeDataHolderStub" ======= */
+
+
+#ifndef DISKMANX_HXX
+#include "diskmanx.hxx" 
+#define DISKMANX_HXX
+#endif /* DISKMANX_HXX */
+
+extern Category * cat_BeDataHolderStub;
+
+CLASS(BeDataHolderStub,BeDataHolder) {
+	CONCRETE(BeDataHolderStub)
+	MANUAL_GC(BeDataHolderStub)
+	NOT_A_TYPE(BeDataHolderStub)
+  public:
+	inline BeDataHolderStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+          :  BeDataHolder(shepFlag, aHash, info)  {   }
+
+	virtual void		printOn(ostream&);
+
+    RSP2_FeRangeElement makeFe(WSP2_BeLabel arg1) {
+    return (this)->getReal()->makeFe(arg1);
+    }
+
+    RSP2_PrimValue value() {
+    return (this)->getReal()->value();
+    }
+
+    void addFeRangeElement(WSP2_FeRangeElement arg1) {
+    (this)->getReal()->addFeRangeElement(arg1);
+    }
+
+    BooleanVar isPurgeable() {
+    return (this)->getReal()->isPurgeable();
+    }
+
+    BooleanVar makeIdentical(WSP2_BeRangeElement arg1) {
+    return (this)->getReal()->makeIdentical(arg1);
+    }
+
+    RSP2_ID owner() {
+    return (this)->getReal()->owner();
+    }
+
+    void removeFeRangeElement(WSP2_FeRangeElement arg1) {
+    (this)->getReal()->removeFeRangeElement(arg1);
+    }
+
+    void setOwner(WSP2_ID arg1) {
+    (this)->getReal()->setOwner(arg1);
+    }
+
+    void addOParent(WSP2_Loaf arg1) {
+    (this)->getReal()->addOParent(arg1);
+    }
+
+    BooleanVar anyPasses(WSP2_PropFinder arg1) {
+    return (this)->getReal()->anyPasses(arg1);
+    }
+
+    RSP2_BertCrum bertCrum() {
+    return (this)->getReal()->bertCrum();
+    }
+
+    void checkRecorders(WSP2_PropFinder arg1, WSP2_SensorCrum arg2) {
+    (this)->getReal()->checkRecorders(arg1, arg2);
+    }
+
+    UInt32 contentsHash() {
+    return (this)->getReal()->contentsHash();
+    }
+
+    void delayedStoreBackfollow(WSP2_PropFinder arg1, WSP2_RecorderFossil arg2, WSP2_ResultRecorder arg3, WSP2_HashSetCache arg4) {
+    (this)->getReal()->delayedStoreBackfollow(arg1, arg2, arg3, arg4);
+    }
+
+    RSP2_PrimSet feRangeElements() {
+    return (this)->getReal()->feRangeElements();
+    }
+
+    RSP2_HistoryCrum hCrum() {
+    return (this)->getReal()->hCrum();
+    }
+
+    BooleanVar inTrace(WSP2_TracePosition arg1) {
+    return (this)->getReal()->inTrace(arg1);
+    }
+
+    RSP2_Mapping mappingTo(WSP2_TracePosition arg1, WSP2_Mapping arg2) {
+    return (this)->getReal()->mappingTo(arg1, arg2);
+    }
+
+    void removeOParent(WSP2_OPart arg1) {
+    (this)->getReal()->removeOParent(arg1);
+    }
+
+    RSP2_SensorCrum sensorCrum() {
+    return (this)->getReal()->sensorCrum();
+    }
+
+    BooleanVar updateBCrumTo(WSP2_BertCrum arg1) {
+    return (this)->getReal()->updateBCrumTo(arg1);
+    }
+
+    void dismantle() {
+    ((this)->getReal());
+    this->dismantle();
+    }
+
+    void restartRE(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartRE(arg1);
+    }
+
+    RSP2_BeEdition works(WSP2_IDRegion arg1, WSP2_Filter arg2, Int32 arg3) {
+    return (this)->getReal()->works(arg1, arg2, arg3);
+    }
+
+    void diskUpdate() {
+    ((this)->getReal());
+    this->diskUpdate();
+    }
+
+    void destroy() {
+    (this)->getReal()->destroy();
+    }
+
+    BooleanVar isUnlocked() {
+    return (this)->getReal()->isUnlocked();
+    }
+
+    void restartAbraham(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartAbraham(arg1);
+    }
+
+    UInt32 hashForEqual() {
+    return (this)->getReal()->hashForEqual();
+    }
+
+    void printContentsOn(ostream& arg1) {
+    (this)->getReal()->printContentsOn(arg1);
+    }
+
+    void changeClassToThatOf(WSP2_Heaper arg1) {
+    (this)->getReal()->changeClassToThatOf(arg1);
+    }
+
+    void sendSelfTo(WSP2_Xmtr arg1) {
+    (this)->getReal()->sendSelfTo(arg1);
+    }
+
+
+    private:
+      BeDataHolder *	getReal();  // just * in case not a type
+
+	// Stripped-down COPY(BeDataHolderStub): Just migrate
+    public:
+	// Suppress migrate, so we don't have to clear the pointers.
+	// We need to make sure that any stub-specific state is marked.
+	LEAF void migrate(void * origin, BooleanVar destinationIsOld) {
+		this->Abraham::migrate(origin, destinationIsOld);
+	}
+	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+        LEAF void becomeStub () { }
+        LEAF BooleanVar isStub() { return TRUE; }
+};
+
+Category * BeDataHolder::getShepherdStubCategory () CONST
+{
+        return cat_BeDataHolderStub;
+}
+
+void BeDataHolder::becomeStub () 
+{
+    UInt32 hash = this->hashForEqual();
+    WPTR(FlockInfo) info = this->fetchInfo();
+    new (this) BeDataHolderStub (shepFlag, hash, info);
+}
+
+/* ===== BeDataHolderStub Implementations ==== */
+
+void BeDataHolderStub::
+printOn(ostream& oo)
+{
+	oo << this->getCategory()->name();
+	oo << "@";
+     /* what are sequenceNumber and SeqNumKludge ? */
+//	oo << sequenceNumber((void *)this) - SeqNumKludge;
+	oo << "()";
+}
+
+BeDataHolder * BeDataHolderStub::
+getReal() {
+    CurrentPacker.fluidGet()->makeReal(this->fetchInfo());
+    return this;
+}
+
+BooleanVar BeDataHolderStub::
+isKindOf(Category * aCategory) CONST
+{
+	if (cat_BeDataHolderStub->isEqualOrSubclassOf(aCategory)) {
+		return TRUE;
+	} else if (aCategory->isEqualOrSubclassOf(cat_BeDataHolder)) {
+		return ((BeDataHolderStub *)this)->getReal()->isKindOf(aCategory);
+	} else {
+		return FALSE;
+	}
+}
+
+DEFINE_CLASS_CATEGORY(BeDataHolderStub,BeDataHolder)
+
+void BeDataHolderStub::deferredHack () { /* intentionally blank */ }
+
+/* #ifdef WITH_RPC */
+/* ====== Stub Recipe for BeDataHolder ====== */
+
+#ifndef STUBRCPX_HXX
+#include "stubrcpx.hxx"
+#define STUBRCPX_HXX
+#endif /* STUBRCPX_HXX */
+
+RPTR(Heaper) parseStub_BeDataHolder (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+	RETURN_CONSTRUCT(BeDataHolderStub, (shepFlag, hash, NULL));
+}
+
+extern Recipe * DiskCuisine;
+ActualStubRecipe BeDataHolderStub_recipe(cat_BeDataHolderStub, &DiskCuisine, parseStub_BeDataHolder);
+
+/* #endif */ /* WITH_RPC */
+
+/* ===== mayBecome support between stub and concrete Shepherd Prototype ===== */
+
+DEFINE_MAY_BECOME(BeDataHolder,BeDataHolderStub)
+DEFINE_MAY_BECOME(BeDataHolderStub,BeDataHolder)
+
+/* ====== Object Migrator for Scavenging of BeDataHolder ====== */
+
+void BeDataHolder::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->BeRangeElement::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((BeDataHolder*)origin)->myValue,
+				       (Heaper**)&myValue);
+	} else {
+		myValue.forwardTo (Heaplet::forward (myValue));
+	}
+}
+
+/*----------------------- END BeDataHolder -----------------------*/
+
+
+/*----------------------- BEGIN BeIDHolder -----------------------*/
+DEFINE_CLASS_CATEGORY(BeIDHolder,BeRangeElement)
+DEFINE_OPAQUE_TYPE(BeIDHolder);
+
+void BeIDHolder::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "BeIDHolder" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void BeIDHolder::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    BeRangeElement::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myID);
+}
+
+BeIDHolder::BeIDHolder (APTR(Rcvr) receiver, TCSJ)
+  : BeRangeElement (receiver, tcsj) {
+    myID = CAST(ID, receiver->receiveHeaper());
+}
+
+
+void parseInto_BeIDHolder (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) BeIDHolder (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe BeIDHolder_recipe(cat_BeIDHolder, &DiskCuisine, parseInto_BeIDHolder);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Shepherd Patriarch Class "BeIDHolder" ======= */
+
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Shepherd Stub Class "BeIDHolderStub" ======= */
+
+
+#ifndef DISKMANX_HXX
+#include "diskmanx.hxx" 
+#define DISKMANX_HXX
+#endif /* DISKMANX_HXX */
+
+extern Category * cat_BeIDHolderStub;
+
+CLASS(BeIDHolderStub,BeIDHolder) {
+	CONCRETE(BeIDHolderStub)
+	MANUAL_GC(BeIDHolderStub)
+	NOT_A_TYPE(BeIDHolderStub)
+  public:
+	inline BeIDHolderStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+          :  BeIDHolder(shepFlag, aHash, info)  {   }
+
+	virtual void		printOn(ostream&);
+
+    RSP2_ID iD() {
+    return (this)->getReal()->iD();
+    }
+
+    RSP2_FeRangeElement makeFe(WSP2_BeLabel arg1) {
+    return (this)->getReal()->makeFe(arg1);
+    }
+
+    void dismantle() {
+    ((this)->getReal());
+    this->dismantle();
+    }
+
+    void addFeRangeElement(WSP2_FeRangeElement arg1) {
+    (this)->getReal()->addFeRangeElement(arg1);
+    }
+
+    BooleanVar isPurgeable() {
+    return (this)->getReal()->isPurgeable();
+    }
+
+    BooleanVar makeIdentical(WSP2_BeRangeElement arg1) {
+    return (this)->getReal()->makeIdentical(arg1);
+    }
+
+    RSP2_ID owner() {
+    return (this)->getReal()->owner();
+    }
+
+    void removeFeRangeElement(WSP2_FeRangeElement arg1) {
+    (this)->getReal()->removeFeRangeElement(arg1);
+    }
+
+    void setOwner(WSP2_ID arg1) {
+    (this)->getReal()->setOwner(arg1);
+    }
+
+    void addOParent(WSP2_Loaf arg1) {
+    (this)->getReal()->addOParent(arg1);
+    }
+
+    BooleanVar anyPasses(WSP2_PropFinder arg1) {
+    return (this)->getReal()->anyPasses(arg1);
+    }
+
+    RSP2_BertCrum bertCrum() {
+    return (this)->getReal()->bertCrum();
+    }
+
+    void checkRecorders(WSP2_PropFinder arg1, WSP2_SensorCrum arg2) {
+    (this)->getReal()->checkRecorders(arg1, arg2);
+    }
+
+    UInt32 contentsHash() {
+    return (this)->getReal()->contentsHash();
+    }
+
+    void delayedStoreBackfollow(WSP2_PropFinder arg1, WSP2_RecorderFossil arg2, WSP2_ResultRecorder arg3, WSP2_HashSetCache arg4) {
+    (this)->getReal()->delayedStoreBackfollow(arg1, arg2, arg3, arg4);
+    }
+
+    RSP2_PrimSet feRangeElements() {
+    return (this)->getReal()->feRangeElements();
+    }
+
+    RSP2_HistoryCrum hCrum() {
+    return (this)->getReal()->hCrum();
+    }
+
+    BooleanVar inTrace(WSP2_TracePosition arg1) {
+    return (this)->getReal()->inTrace(arg1);
+    }
+
+    RSP2_Mapping mappingTo(WSP2_TracePosition arg1, WSP2_Mapping arg2) {
+    return (this)->getReal()->mappingTo(arg1, arg2);
+    }
+
+    void removeOParent(WSP2_OPart arg1) {
+    (this)->getReal()->removeOParent(arg1);
+    }
+
+    RSP2_SensorCrum sensorCrum() {
+    return (this)->getReal()->sensorCrum();
+    }
+
+    BooleanVar updateBCrumTo(WSP2_BertCrum arg1) {
+    return (this)->getReal()->updateBCrumTo(arg1);
+    }
+
+    void restartRE(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartRE(arg1);
+    }
+
+    RSP2_BeEdition works(WSP2_IDRegion arg1, WSP2_Filter arg2, Int32 arg3) {
+    return (this)->getReal()->works(arg1, arg2, arg3);
+    }
+
+    void diskUpdate() {
+    ((this)->getReal());
+    this->diskUpdate();
+    }
+
+    void destroy() {
+    (this)->getReal()->destroy();
+    }
+
+    BooleanVar isUnlocked() {
+    return (this)->getReal()->isUnlocked();
+    }
+
+    void restartAbraham(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartAbraham(arg1);
+    }
+
+    UInt32 hashForEqual() {
+    return (this)->getReal()->hashForEqual();
+    }
+
+    void printContentsOn(ostream& arg1) {
+    (this)->getReal()->printContentsOn(arg1);
+    }
+
+    void changeClassToThatOf(WSP2_Heaper arg1) {
+    (this)->getReal()->changeClassToThatOf(arg1);
+    }
+
+    void sendSelfTo(WSP2_Xmtr arg1) {
+    (this)->getReal()->sendSelfTo(arg1);
+    }
+
+
+    private:
+      BeIDHolder *	getReal();  // just * in case not a type
+
+	// Stripped-down COPY(BeIDHolderStub): Just migrate
+    public:
+	// Suppress migrate, so we don't have to clear the pointers.
+	// We need to make sure that any stub-specific state is marked.
+	LEAF void migrate(void * origin, BooleanVar destinationIsOld) {
+		this->Abraham::migrate(origin, destinationIsOld);
+	}
+	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+        LEAF void becomeStub () { }
+        LEAF BooleanVar isStub() { return TRUE; }
+};
+
+Category * BeIDHolder::getShepherdStubCategory () CONST
+{
+        return cat_BeIDHolderStub;
+}
+
+void BeIDHolder::becomeStub () 
+{
+    UInt32 hash = this->hashForEqual();
+    WPTR(FlockInfo) info = this->fetchInfo();
+    new (this) BeIDHolderStub (shepFlag, hash, info);
+}
+
+/* ===== BeIDHolderStub Implementations ==== */
+
+void BeIDHolderStub::
+printOn(ostream& oo)
+{
+	oo << this->getCategory()->name();
+	oo << "@";
+     /* what are sequenceNumber and SeqNumKludge ? */
+//	oo << sequenceNumber((void *)this) - SeqNumKludge;
+	oo << "()";
+}
+
+BeIDHolder * BeIDHolderStub::
+getReal() {
+    CurrentPacker.fluidGet()->makeReal(this->fetchInfo());
+    return this;
+}
+
+BooleanVar BeIDHolderStub::
+isKindOf(Category * aCategory) CONST
+{
+	if (cat_BeIDHolderStub->isEqualOrSubclassOf(aCategory)) {
+		return TRUE;
+	} else if (aCategory->isEqualOrSubclassOf(cat_BeIDHolder)) {
+		return ((BeIDHolderStub *)this)->getReal()->isKindOf(aCategory);
+	} else {
+		return FALSE;
+	}
+}
+
+DEFINE_CLASS_CATEGORY(BeIDHolderStub,BeIDHolder)
+
+void BeIDHolderStub::deferredHack () { /* intentionally blank */ }
+
+/* #ifdef WITH_RPC */
+/* ====== Stub Recipe for BeIDHolder ====== */
+
+#ifndef STUBRCPX_HXX
+#include "stubrcpx.hxx"
+#define STUBRCPX_HXX
+#endif /* STUBRCPX_HXX */
+
+RPTR(Heaper) parseStub_BeIDHolder (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+	RETURN_CONSTRUCT(BeIDHolderStub, (shepFlag, hash, NULL));
+}
+
+extern Recipe * DiskCuisine;
+ActualStubRecipe BeIDHolderStub_recipe(cat_BeIDHolderStub, &DiskCuisine, parseStub_BeIDHolder);
+
+/* #endif */ /* WITH_RPC */
+
+/* ===== mayBecome support between stub and concrete Shepherd Prototype ===== */
+
+DEFINE_MAY_BECOME(BeIDHolder,BeIDHolderStub)
+DEFINE_MAY_BECOME(BeIDHolderStub,BeIDHolder)
+
+/* ====== Object Migrator for Scavenging of BeIDHolder ====== */
+
+void BeIDHolder::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->BeRangeElement::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((BeIDHolder*)origin)->myID,
+				       (Heaper**)&myID);
+	} else {
+		myID.forwardTo (Heaplet::forward (myID));
+	}
+}
+
+/*----------------------- END BeIDHolder -----------------------*/
+
+
+/*----------------------- BEGIN BeLabel -----------------------*/
+DEFINE_CLASS_CATEGORY(BeLabel,BeRangeElement)
+DEFINE_OPAQUE_TYPE(BeLabel);
+
+void BeLabel::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "BeLabel" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void BeLabel::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    BeRangeElement::sendSelfTo (xmtr);
+}
+
+BeLabel::BeLabel (APTR(Rcvr) receiver, TCSJ)
+  : BeRangeElement (receiver, tcsj) {
+}
+
+
+void parseInto_BeLabel (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) BeLabel (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe BeLabel_recipe(cat_BeLabel, &DiskCuisine, parseInto_BeLabel);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Shepherd Patriarch Class "BeLabel" ======= */
+
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Shepherd Stub Class "BeLabelStub" ======= */
+
+
+#ifndef DISKMANX_HXX
+#include "diskmanx.hxx" 
+#define DISKMANX_HXX
+#endif /* DISKMANX_HXX */
+
+extern Category * cat_BeLabelStub;
+
+CLASS(BeLabelStub,BeLabel) {
+	CONCRETE(BeLabelStub)
+	MANUAL_GC(BeLabelStub)
+	NOT_A_TYPE(BeLabelStub)
+  public:
+	inline BeLabelStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+          :  BeLabel(shepFlag, aHash, info)  {   }
+
+	virtual void		printOn(ostream&);
+
+    RSP2_FeRangeElement makeFe(WSP2_BeLabel arg1) {
+    return (this)->getReal()->makeFe(arg1);
+    }
+
+    void addFeRangeElement(WSP2_FeRangeElement arg1) {
+    (this)->getReal()->addFeRangeElement(arg1);
+    }
+
+    BooleanVar isPurgeable() {
+    return (this)->getReal()->isPurgeable();
+    }
+
+    BooleanVar makeIdentical(WSP2_BeRangeElement arg1) {
+    return (this)->getReal()->makeIdentical(arg1);
+    }
+
+    RSP2_ID owner() {
+    return (this)->getReal()->owner();
+    }
+
+    void removeFeRangeElement(WSP2_FeRangeElement arg1) {
+    (this)->getReal()->removeFeRangeElement(arg1);
+    }
+
+    void setOwner(WSP2_ID arg1) {
+    (this)->getReal()->setOwner(arg1);
+    }
+
+    void addOParent(WSP2_Loaf arg1) {
+    (this)->getReal()->addOParent(arg1);
+    }
+
+    BooleanVar anyPasses(WSP2_PropFinder arg1) {
+    return (this)->getReal()->anyPasses(arg1);
+    }
+
+    RSP2_BertCrum bertCrum() {
+    return (this)->getReal()->bertCrum();
+    }
+
+    void checkRecorders(WSP2_PropFinder arg1, WSP2_SensorCrum arg2) {
+    (this)->getReal()->checkRecorders(arg1, arg2);
+    }
+
+    UInt32 contentsHash() {
+    return (this)->getReal()->contentsHash();
+    }
+
+    void delayedStoreBackfollow(WSP2_PropFinder arg1, WSP2_RecorderFossil arg2, WSP2_ResultRecorder arg3, WSP2_HashSetCache arg4) {
+    (this)->getReal()->delayedStoreBackfollow(arg1, arg2, arg3, arg4);
+    }
+
+    RSP2_PrimSet feRangeElements() {
+    return (this)->getReal()->feRangeElements();
+    }
+
+    RSP2_HistoryCrum hCrum() {
+    return (this)->getReal()->hCrum();
+    }
+
+    BooleanVar inTrace(WSP2_TracePosition arg1) {
+    return (this)->getReal()->inTrace(arg1);
+    }
+
+    RSP2_Mapping mappingTo(WSP2_TracePosition arg1, WSP2_Mapping arg2) {
+    return (this)->getReal()->mappingTo(arg1, arg2);
+    }
+
+    void removeOParent(WSP2_OPart arg1) {
+    (this)->getReal()->removeOParent(arg1);
+    }
+
+    RSP2_SensorCrum sensorCrum() {
+    return (this)->getReal()->sensorCrum();
+    }
+
+    BooleanVar updateBCrumTo(WSP2_BertCrum arg1) {
+    return (this)->getReal()->updateBCrumTo(arg1);
+    }
+
+    void dismantle() {
+    ((this)->getReal());
+    this->dismantle();
+    }
+
+    void restartRE(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartRE(arg1);
+    }
+
+    RSP2_BeEdition works(WSP2_IDRegion arg1, WSP2_Filter arg2, Int32 arg3) {
+    return (this)->getReal()->works(arg1, arg2, arg3);
+    }
+
+    void diskUpdate() {
+    ((this)->getReal());
+    this->diskUpdate();
+    }
+
+    void destroy() {
+    (this)->getReal()->destroy();
+    }
+
+    BooleanVar isUnlocked() {
+    return (this)->getReal()->isUnlocked();
+    }
+
+    void restartAbraham(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartAbraham(arg1);
+    }
+
+    UInt32 hashForEqual() {
+    return (this)->getReal()->hashForEqual();
+    }
+
+    void printContentsOn(ostream& arg1) {
+    (this)->getReal()->printContentsOn(arg1);
+    }
+
+    void changeClassToThatOf(WSP2_Heaper arg1) {
+    (this)->getReal()->changeClassToThatOf(arg1);
+    }
+
+    void sendSelfTo(WSP2_Xmtr arg1) {
+    (this)->getReal()->sendSelfTo(arg1);
+    }
+
+
+    private:
+      BeLabel *	getReal();  // just * in case not a type
+
+	// Stripped-down COPY(BeLabelStub): Just migrate
+    public:
+	// Suppress migrate, so we don't have to clear the pointers.
+	// We need to make sure that any stub-specific state is marked.
+	LEAF void migrate(void * origin, BooleanVar destinationIsOld) {
+		this->Abraham::migrate(origin, destinationIsOld);
+	}
+	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+        LEAF void becomeStub () { }
+        LEAF BooleanVar isStub() { return TRUE; }
+};
+
+Category * BeLabel::getShepherdStubCategory () CONST
+{
+        return cat_BeLabelStub;
+}
+
+void BeLabel::becomeStub () 
+{
+    UInt32 hash = this->hashForEqual();
+    WPTR(FlockInfo) info = this->fetchInfo();
+    new (this) BeLabelStub (shepFlag, hash, info);
+}
+
+/* ===== BeLabelStub Implementations ==== */
+
+void BeLabelStub::
+printOn(ostream& oo)
+{
+	oo << this->getCategory()->name();
+	oo << "@";
+     /* what are sequenceNumber and SeqNumKludge ? */
+//	oo << sequenceNumber((void *)this) - SeqNumKludge;
+	oo << "()";
+}
+
+BeLabel * BeLabelStub::
+getReal() {
+    CurrentPacker.fluidGet()->makeReal(this->fetchInfo());
+    return this;
+}
+
+BooleanVar BeLabelStub::
+isKindOf(Category * aCategory) CONST
+{
+	if (cat_BeLabelStub->isEqualOrSubclassOf(aCategory)) {
+		return TRUE;
+	} else if (aCategory->isEqualOrSubclassOf(cat_BeLabel)) {
+		return ((BeLabelStub *)this)->getReal()->isKindOf(aCategory);
+	} else {
+		return FALSE;
+	}
+}
+
+DEFINE_CLASS_CATEGORY(BeLabelStub,BeLabel)
+
+void BeLabelStub::deferredHack () { /* intentionally blank */ }
+
+/* #ifdef WITH_RPC */
+/* ====== Stub Recipe for BeLabel ====== */
+
+#ifndef STUBRCPX_HXX
+#include "stubrcpx.hxx"
+#define STUBRCPX_HXX
+#endif /* STUBRCPX_HXX */
+
+RPTR(Heaper) parseStub_BeLabel (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+	RETURN_CONSTRUCT(BeLabelStub, (shepFlag, hash, NULL));
+}
+
+extern Recipe * DiskCuisine;
+ActualStubRecipe BeLabelStub_recipe(cat_BeLabelStub, &DiskCuisine, parseStub_BeLabel);
+
+/* #endif */ /* WITH_RPC */
+
+/* ===== mayBecome support between stub and concrete Shepherd Prototype ===== */
+
+DEFINE_MAY_BECOME(BeLabel,BeLabelStub)
+DEFINE_MAY_BECOME(BeLabelStub,BeLabel)
+
+
+
+/*----------------------- END BeLabel -----------------------*/
+
+
+/*----------------------- BEGIN BePlaceHolder -----------------------*/
+DEFINE_CLASS_CATEGORY(BePlaceHolder,BeRangeElement)
+DEFINE_OPAQUE_TYPE(BePlaceHolder);
+
+void BePlaceHolder::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "BePlaceHolder" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void BePlaceHolder::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    BeRangeElement::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myTrailBlazer);
+}
+
+BePlaceHolder::BePlaceHolder (APTR(Rcvr) receiver, TCSJ)
+  : BeRangeElement (receiver, tcsj) {
+    myTrailBlazer = CAST(TrailBlazer, receiver->receiveHeaper());
+    this->restartP(receiver);
+}
+
+
+void parseInto_BePlaceHolder (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) BePlaceHolder (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe BePlaceHolder_recipe(cat_BePlaceHolder, &DiskCuisine, parseInto_BePlaceHolder);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Shepherd Patriarch Class "BePlaceHolder" ======= */
+
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Shepherd Stub Class "BePlaceHolderStub" ======= */
+
+
+#ifndef DISKMANX_HXX
+#include "diskmanx.hxx" 
+#define DISKMANX_HXX
+#endif /* DISKMANX_HXX */
+
+extern Category * cat_BePlaceHolderStub;
+
+CLASS(BePlaceHolderStub,BePlaceHolder) {
+	CONCRETE(BePlaceHolderStub)
+	MANUAL_GC(BePlaceHolderStub)
+	NOT_A_TYPE(BePlaceHolderStub)
+  public:
+	inline BePlaceHolderStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+          :  BePlaceHolder(shepFlag, aHash, info)  {   }
+
+	virtual void		printOn(ostream&);
+
+    void addDetector(WSP2_FeFillDetector arg1) {
+    (this)->getReal()->addDetector(arg1);
+    }
+
+    BooleanVar isPurgeable() {
+    return (this)->getReal()->isPurgeable();
+    }
+
+    RSP2_FeRangeElement makeFe(WSP2_BeLabel arg1) {
+    return (this)->getReal()->makeFe(arg1);
+    }
+
+    BooleanVar makeIdentical(WSP2_BeRangeElement arg1) {
+    return (this)->getReal()->makeIdentical(arg1);
+    }
+
+    void removeDetector(WSP2_FeFillDetector arg1) {
+    (this)->getReal()->removeDetector(arg1);
+    }
+
+    void removeLastDetector() {
+    (this)->getReal()->removeLastDetector();
+    }
+
+    void attachTrailBlazer(WSP2_TrailBlazer arg1) {
+    (this)->getReal()->attachTrailBlazer(arg1);
+    }
+
+    void checkTrailBlazer(WSP2_TrailBlazer arg1) {
+    (this)->getReal()->checkTrailBlazer(arg1);
+    }
+
+    RSP2_TrailBlazer fetchTrailBlazer() {
+    return (this)->getReal()->fetchTrailBlazer();
+    }
+
+    void restartP(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartP(arg1);
+    }
+
+    void addFeRangeElement(WSP2_FeRangeElement arg1) {
+    (this)->getReal()->addFeRangeElement(arg1);
+    }
+
+    RSP2_ID owner() {
+    return (this)->getReal()->owner();
+    }
+
+    void removeFeRangeElement(WSP2_FeRangeElement arg1) {
+    (this)->getReal()->removeFeRangeElement(arg1);
+    }
+
+    void setOwner(WSP2_ID arg1) {
+    (this)->getReal()->setOwner(arg1);
+    }
+
+    void addOParent(WSP2_Loaf arg1) {
+    (this)->getReal()->addOParent(arg1);
+    }
+
+    BooleanVar anyPasses(WSP2_PropFinder arg1) {
+    return (this)->getReal()->anyPasses(arg1);
+    }
+
+    RSP2_BertCrum bertCrum() {
+    return (this)->getReal()->bertCrum();
+    }
+
+    void checkRecorders(WSP2_PropFinder arg1, WSP2_SensorCrum arg2) {
+    (this)->getReal()->checkRecorders(arg1, arg2);
+    }
+
+    UInt32 contentsHash() {
+    return (this)->getReal()->contentsHash();
+    }
+
+    void delayedStoreBackfollow(WSP2_PropFinder arg1, WSP2_RecorderFossil arg2, WSP2_ResultRecorder arg3, WSP2_HashSetCache arg4) {
+    (this)->getReal()->delayedStoreBackfollow(arg1, arg2, arg3, arg4);
+    }
+
+    RSP2_PrimSet feRangeElements() {
+    return (this)->getReal()->feRangeElements();
+    }
+
+    RSP2_HistoryCrum hCrum() {
+    return (this)->getReal()->hCrum();
+    }
+
+    BooleanVar inTrace(WSP2_TracePosition arg1) {
+    return (this)->getReal()->inTrace(arg1);
+    }
+
+    RSP2_Mapping mappingTo(WSP2_TracePosition arg1, WSP2_Mapping arg2) {
+    return (this)->getReal()->mappingTo(arg1, arg2);
+    }
+
+    void removeOParent(WSP2_OPart arg1) {
+    (this)->getReal()->removeOParent(arg1);
+    }
+
+    RSP2_SensorCrum sensorCrum() {
+    return (this)->getReal()->sensorCrum();
+    }
+
+    BooleanVar updateBCrumTo(WSP2_BertCrum arg1) {
+    return (this)->getReal()->updateBCrumTo(arg1);
+    }
+
+    void dismantle() {
+    ((this)->getReal());
+    this->dismantle();
+    }
+
+    void restartRE(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartRE(arg1);
+    }
+
+    RSP2_BeEdition works(WSP2_IDRegion arg1, WSP2_Filter arg2, Int32 arg3) {
+    return (this)->getReal()->works(arg1, arg2, arg3);
+    }
+
+    void diskUpdate() {
+    ((this)->getReal());
+    this->diskUpdate();
+    }
+
+    void destroy() {
+    (this)->getReal()->destroy();
+    }
+
+    BooleanVar isUnlocked() {
+    return (this)->getReal()->isUnlocked();
+    }
+
+    void restartAbraham(WSP2_Rcvr arg1) {
+    (this)->getReal()->restartAbraham(arg1);
+    }
+
+    UInt32 hashForEqual() {
+    return (this)->getReal()->hashForEqual();
+    }
+
+    void printContentsOn(ostream& arg1) {
+    (this)->getReal()->printContentsOn(arg1);
+    }
+
+    void changeClassToThatOf(WSP2_Heaper arg1) {
+    (this)->getReal()->changeClassToThatOf(arg1);
+    }
+
+    void sendSelfTo(WSP2_Xmtr arg1) {
+    (this)->getReal()->sendSelfTo(arg1);
+    }
+
+
+    private:
+      BePlaceHolder *	getReal();  // just * in case not a type
+
+	// Stripped-down COPY(BePlaceHolderStub): Just migrate
+    public:
+	// Suppress migrate, so we don't have to clear the pointers.
+	// We need to make sure that any stub-specific state is marked.
+	LEAF void migrate(void * origin, BooleanVar destinationIsOld) {
+		this->Abraham::migrate(origin, destinationIsOld);
+	}
+	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+        LEAF void becomeStub () { }
+        LEAF BooleanVar isStub() { return TRUE; }
+};
+
+Category * BePlaceHolder::getShepherdStubCategory () CONST
+{
+        return cat_BePlaceHolderStub;
+}
+
+void BePlaceHolder::becomeStub () 
+{
+    UInt32 hash = this->hashForEqual();
+    WPTR(FlockInfo) info = this->fetchInfo();
+    new (this) BePlaceHolderStub (shepFlag, hash, info);
+}
+
+/* ===== BePlaceHolderStub Implementations ==== */
+
+void BePlaceHolderStub::
+printOn(ostream& oo)
+{
+	oo << this->getCategory()->name();
+	oo << "@";
+     /* what are sequenceNumber and SeqNumKludge ? */
+//	oo << sequenceNumber((void *)this) - SeqNumKludge;
+	oo << "()";
+}
+
+BePlaceHolder * BePlaceHolderStub::
+getReal() {
+    CurrentPacker.fluidGet()->makeReal(this->fetchInfo());
+    return this;
+}
+
+BooleanVar BePlaceHolderStub::
+isKindOf(Category * aCategory) CONST
+{
+	if (cat_BePlaceHolderStub->isEqualOrSubclassOf(aCategory)) {
+		return TRUE;
+	} else if (aCategory->isEqualOrSubclassOf(cat_BePlaceHolder)) {
+		return ((BePlaceHolderStub *)this)->getReal()->isKindOf(aCategory);
+	} else {
+		return FALSE;
+	}
+}
+
+DEFINE_CLASS_CATEGORY(BePlaceHolderStub,BePlaceHolder)
+
+void BePlaceHolderStub::deferredHack () { /* intentionally blank */ }
+
+/* #ifdef WITH_RPC */
+/* ====== Stub Recipe for BePlaceHolder ====== */
+
+#ifndef STUBRCPX_HXX
+#include "stubrcpx.hxx"
+#define STUBRCPX_HXX
+#endif /* STUBRCPX_HXX */
+
+RPTR(Heaper) parseStub_BePlaceHolder (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+	RETURN_CONSTRUCT(BePlaceHolderStub, (shepFlag, hash, NULL));
+}
+
+extern Recipe * DiskCuisine;
+ActualStubRecipe BePlaceHolderStub_recipe(cat_BePlaceHolderStub, &DiskCuisine, parseStub_BePlaceHolder);
+
+/* #endif */ /* WITH_RPC */
+
+/* ===== mayBecome support between stub and concrete Shepherd Prototype ===== */
+
+DEFINE_MAY_BECOME(BePlaceHolder,BePlaceHolderStub)
+DEFINE_MAY_BECOME(BePlaceHolderStub,BePlaceHolder)
+
+/* ====== Object Migrator for Scavenging of BePlaceHolder ====== */
+
+void BePlaceHolder::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->BeRangeElement::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((BePlaceHolder*)origin)->myTrailBlazer,
+				       (Heaper**)&myTrailBlazer);
+		Heaplet::forwardToOld ((Heaper**)&((BePlaceHolder*)origin)->myDetectors,
+				       (Heaper**)&myDetectors);
+	} else {
+		myTrailBlazer.forwardTo (Heaplet::forward (myTrailBlazer));
+		myDetectors.forwardTo (Heaplet::forward (myDetectors));
+	}
+}
+
+/*----------------------- END BePlaceHolder -----------------------*/
+

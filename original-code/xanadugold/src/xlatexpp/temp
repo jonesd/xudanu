@@ -1,0 +1,143 @@
+primtabx.cxx:	Int32 loc;
+primtabx.cxx:						Int32 loc;
+primtabx.cxx:	Int32 loc;
+primtabx.cxx:			loc = Int32Zero;
+setx.cxx:	Int32 loc;
+setx.cxx:		if ((loc = this->hashFind(elem)) >= Int32Zero) {
+setx.cxx:			this->hashRemove((UInt32 ) loc);
+setx.cxx:	Int32 loc;
+setx.cxx:	if ((loc = this->hashFind(anElement)) >= Int32Zero) {
+setx.cxx:		this->hashRemove((UInt32 ) loc);
+setx.cxx:	Int32 loc;
+setx.cxx:	if ((loc = this->hashFind(anElement)) >= Int32Zero) {
+setx.cxx:		this->hashRemove((UInt32 ) loc);
+setx.cxx:		UInt32 loc, 
+setp.hxx:			UInt32 ARG(loc), 
+grantabx.cxx:	Int32 localIndex;
+grantabx.cxx:	UInt32 localIndex;
+grantabx.cxx:	Int32 localIndex;
+grantabx.cxx:	Int32 localIndex;
+grantabx.cxx:	Int32 localIndex;
+grantabx.cxx:	Int32 localIndex;
+consistt.cxx:void CBlockTracker::track (char * fileName, Int32 lineNo){
+consistt.cxx:Int32 CBlockTracker::lineNo (){
+consistt.cxx:UInt32 CBlockTracker::actualHashForEqual (){
+consistt.cxx:void CBlockTrackingPacker::consistentBlockAt (char * fileName, Int32 lineNo){
+consistt.cxx:void CBlockTrackingPacker::dropFlock (Int32 token){
+consistt.cxx:UInt32 CBlockTrackingPacker::nextHashForEqual (){
+diskmanx.cxx:void DiskManager::consistentBlockAt (char * /* fileName */, Int32 /* lineNo */){
+dstatx.cxx:					Int32 flocks;
+dstatx.cxx:					forwards = forgets = forgetSpace = flocks = liveSpace = Int32Zero;
+fakedskx.cxx:void FakePacker::dropFlock (Int32 token){
+flkinfox.cxx:RPTR(FlockLocation) FlockLocation::make (Int32 snarfID, Int32 index){
+flkinfox.cxx:void FlockLocation::index (Int32 anIndex){
+flkinfox.cxx:FlockLocation::FlockLocation (Int32 snarfID, Int32 index) {
+flkinfox.cxx:	RETURN_CONSTRUCT(FlockInfo,(shep, snarfID, index, FlockInfo::forgottenMask(), Int32Zero));
+flkinfox.cxx:	RETURN_CONSTRUCT(FlockInfo,(shep, Int32Zero, index.asLong(), (FlockInfo::contentsDirty() | FlockInfo::forgottenStateDirty()) & ~FlockInfo::forgottenMask() | FlockInfo::isNewMask(), Int32Zero));
+flkinfox.cxx:	RETURN_CONSTRUCT(FlockInfo,(shep, snarfID, index, UInt32Zero, Int32Zero));
+flkinfox.cxx:RPTR(FlockInfo) FlockInfo::getInfo (Int32 index){
+flkinfox.cxx:void FlockInfo::removeInfo (Int32 token){
+flkinfox.cxx:	return (myFlags & FlockInfo::contentsDirty()) != UInt32Zero;
+flkinfox.cxx:	return (myFlags & FlockInfo::destroyed()) != UInt32Zero;
+flkinfox.cxx:	return (myFlags & (FlockInfo::isNewMask() | FlockInfo::contentsDirty() | FlockInfo::forgottenStateDirty())) != UInt32Zero;
+flkinfox.cxx:	return (myFlags & FlockInfo::dismantled()) != UInt32Zero;
+flkinfox.cxx:	return (myFlags & FlockInfo::forgottenStateDirty()) != UInt32Zero;
+flkinfox.cxx:	return (myFlags & FlockInfo::forwarded()) != UInt32Zero;
+flkinfox.cxx:	return (myFlags & FlockInfo::isNewMask()) != UInt32Zero;
+flkinfox.cxx:	return (myFlags & FlockInfo::forgottenMask()) != UInt32Zero;
+flkinfox.cxx:	return (myFlags & FlockInfo::shepNullInPersistent()) != UInt32Zero;
+flkinfox.cxx:Int32 FlockInfo::flags (){
+flkinfox.cxx:void FlockInfo::forward (Int32 index){
+flkinfox.cxx:Int32 FlockInfo::oldSize (){
+flkinfox.cxx:void FlockInfo::setSize (Int32 size){
+flkinfox.cxx:Int32 FlockInfo::token (){
+packert.cxx:RPTR(DoublingFlock) DoublingFlock::make (UInt32 hash){
+packert.cxx:RPTR(DoublingFlock) DoublingFlock::make (UInt32 hash, Int32 count){
+packert.cxx:Int32 DoublingFlock::count (){
+packert.cxx:DoublingFlock::DoublingFlock (UInt32 hash, TCSJ) 
+packert.cxx:DoublingFlock::DoublingFlock (UInt32 hash, Int32 count) 
+packert.cxx:UInt32 DoublingFlock::contentsHash (){
+packert.cxx:UInt32 PairFlock::contentsHash (){
+packert.cxx:	RETURN_CONSTRUCT(TestFlockInfo,(shep, Int32Zero, index.asLong(), (FlockInfo::contentsDirty() | FlockInfo::forgottenStateDirty()) & ~FlockInfo::forgottenMask() | FlockInfo::isNewMask()));
+packert.cxx:	RETURN_CONSTRUCT(TestFlockInfo,(shep, snarfID, index, UInt32Zero));
+packert.cxx:void TestPacker::dropFlock (Int32 token){
+packert.cxx:Int32 TestPacker::computeSize (APTR(Abraham) flock){
+packert.cxx:UInt32 TestPacker::computeHash (APTR(Abraham) flock){
+packerx.cxx:void SnarfPacker::dropFlock (Int32 token){
+packerx.cxx:	handler->allocate(Int32Zero, length);
+packerx.cxx:Int32 SnarfPacker::computeSize (APTR(Abraham) flock){
+packerx.cxx:RPTR(MuSet) OF1(IntegerPos) SnarfPacker::forgottenFlocks (Int32 snarfID){
+packerx.cxx:RPTR(Abraham) SnarfPacker::getFlock (Int32 snarfID, Int32 index){
+packerx.cxx:	myAllocationSnarf = Int32Zero;
+packerx.cxx:Int32 DiskCountSpecialist::MaxFlocks = 3000000;
+packerx.cxx:				xmtr->sendUInt32(DiskCountSpecialist::MaxFlocks);
+packerx.cxx:				FlockInfo::remembered(Pumpkin::TheGreatPumpkin, Int32Zero, Int32Zero));
+packerx.cxx:Int32 SnarfRecord::allocate (Int32 size, APTR(Abraham) shep){
+packerx.cxx:void SnarfRecord::changedFlock (Int32 index, APTR(Abraham) shep){
+packerx.cxx:Int32 SpareStageSpace::FlocksPerSnarf = 100;
+packerx.cxx:Int32 SpareStageSpace::flocksPerSnarfGuess (){
+snfinfox.cxx:RPTR(FlockLocation) OR(NULL) SnarfHandler::fetchForward (Int32 index){
+snfinfox.cxx:Int32 SnarfHandler::flockSize (Int32 index){
+snfinfox.cxx:void SnarfHandler::allocate (IntegerVar ind, Int32 flockSize){
+snfinfox.cxx:	if ( ! (flockSize > Int32Zero) ) {
+snfinfox.cxx:Int32 SnarfHandler::nearestFlock (){
+snfinfox.cxx:Int32 SnarfHandler::flockOffset (Int32 index){
+snfinfox.cxx:Int32 SnarfHandler::flocksEnd (){
+snfinfox.cxx:Int32 SnarfInfoHandler::locate (Int32 snarfID){
+consistt.hxx:	virtual void consistentBlockAt (char * ARG(fileName), Int32 ARG(lineNo));
+consistt.hxx:	virtual void dropFlock (Int32 ARG(token));
+diskmanx.hxx:	virtual void dropFlock (Int32 ARG(token)) DEFERRED_SUBR;
+diskmanx.hxx:	virtual void consistentBlockAt (char * ARG(fileName), Int32 ARG(lineNo));
+fakedskp.hxx:	virtual void dropFlock (Int32 ARG(token));
+flkinfox.hxx:	static RPTR(FlockLocation) make (Int32 ARG(snarfID), Int32 ARG(index));
+flkinfox.hxx:	FlockLocation (Int32 ARG(snarfID), Int32 ARG(index));
+flkinfox.hxx:	static RPTR(FlockInfo) getInfo (Int32 ARG(index));
+packerp.hxx:	static Int32 MaxFlocks;
+packerp.hxx:	virtual Int32 allocate (Int32 ARG(size), APTR(Abraham) ARG(shep));
+packerp.hxx:	virtual void changedFlock (Int32 ARG(index), APTR(Abraham) ARG(shep));
+packerp.hxx:	static Int32 flocksPerSnarfGuess ();
+packerp.hxx:	Int32 myFlocksPerSnarf;
+packerp.hxx:	static Int32 FlocksPerSnarf;
+packert.hxx:	static RPTR(DoublingFlock) make (UInt32 ARG(hash));
+packert.hxx:	static RPTR(DoublingFlock) make (UInt32 ARG(hash), Int32 ARG(count));
+packert.hxx:	DoublingFlock (UInt32 ARG(hash), TCSJ);
+packert.hxx:	DoublingFlock (UInt32 ARG(hash), Int32 ARG(count));
+packert.hxx:	virtual void dropFlock (Int32 ARG(token));
+packert.hxx:	virtual Int32 computeSize (APTR(Abraham) ARG(flock));
+packert.hxx:	virtual UInt32 computeHash (APTR(Abraham) ARG(flock));
+packerx.hxx:	virtual void dropFlock (Int32 ARG(token));
+packerx.hxx:	virtual Int32 computeSize (APTR(Abraham) ARG(flock));
+packerx.hxx:	virtual RPTR(MuSet) OF1(IntegerPos) forgottenFlocks (Int32 ARG(snarfID));
+packerx.hxx:	virtual RPTR(Abraham) getFlock (Int32 ARG(snarfID), Int32 ARG(index));
+packerx.hxx:	Int32 myAllocationSnarf;
+snfinfox.hxx:	virtual RPTR(FlockLocation) OR(NULL) fetchForward (Int32 ARG(index));
+snfinfox.hxx:	virtual Int32 flockSize (Int32 ARG(index));
+snfinfox.hxx:	virtual void allocate (IntegerVar ARG(ind), Int32 ARG(flockSize));
+snfinfox.hxx:	virtual Int32 nearestFlock ();
+snfinfox.hxx:	virtual Int32 flockOffset (Int32 ARG(index));
+snfinfox.hxx:	virtual Int32 flocksEnd ();
+snfinfox.hxx:	virtual Int32 locate (Int32 ARG(snarfID));
+flkinfox.ixx:INLINE Int32 FlockLocation::index (){
+flkinfox.ixx:INLINE Int32 FlockLocation::snarfID (){
+flkinfox.ixx:INLINE UInt32 FlockInfo::contentsDirty (){
+flkinfox.ixx:INLINE UInt32 FlockInfo::destroyed (){
+flkinfox.ixx:INLINE UInt32 FlockInfo::dismantled (){
+flkinfox.ixx:INLINE UInt32 FlockInfo::forgottenMask (){
+flkinfox.ixx:INLINE UInt32 FlockInfo::forgottenStateDirty (){
+flkinfox.ixx:INLINE UInt32 FlockInfo::forwarded (){
+flkinfox.ixx:INLINE UInt32 FlockInfo::isNewMask (){
+flkinfox.ixx:INLINE UInt32 FlockInfo::shepNullInPersistent (){
+sxx/diskmant.sxx:	inline MultiCounterStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+sxx/flkinfox.sxx:UInt32 FlockLocation::actualHashForEqual ()
+sxx/packerp.sxx:    xmtr->sendInt32(myFlocksPerSnarf);
+sxx/packerp.sxx:    myFlocksPerSnarf = receiver->receiveInt32();
+sxx/packert.sxx:	inline DoublingFlockStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+sxx/packert.sxx:RPTR(Heaper) parseStub_DoublingFlock (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+sxx/packert.sxx:UInt32 DoublingFlock::actualHashForEqual ()
+sxx/packert.sxx:	inline PairFlockStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+sxx/packert.sxx:RPTR(Heaper) parseStub_PairFlock (APTR(Rcvr) /*rcvr*/, UInt32 hash) {
+sxx/packert.sxx:UInt32 PairFlock::actualHashForEqual ()
+sxx/turtlex.sxx:	inline AgendaItemStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+sxx/turtlex.sxx:	inline AgendaStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+sxx/turtlex.sxx:	inline SequencerStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 
+sxx/turtlex.sxx:	inline TurtleStub(ShepFlag, UInt32 aHash, APTR(FlockInfo) info) 

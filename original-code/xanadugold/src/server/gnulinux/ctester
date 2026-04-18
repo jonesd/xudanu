@@ -1,0 +1,10 @@
+#!/usr/local/bin/ksh
+n=8
+#csh -c 'time febet.exe ../init.rc'
+while [ ! -f core ] ; do
+	n=`expr 1 + $n`
+	cp ent.ent ent.save
+	echo Run $n
+	csh -c "(time febet.exe ../consist.rc) |& tee con && (grep CBlock con|sort>c$n)"
+done
+echo Crashed on run $n

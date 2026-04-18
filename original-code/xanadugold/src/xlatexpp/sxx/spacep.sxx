@@ -1,0 +1,369 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define SPACEP_SXX
+
+/*----------------------- BEGIN CompositeMapping -----------------------*/
+DEFINE_CLASS_CATEGORY(CompositeMapping,Mapping)
+
+void CompositeMapping::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "CompositeMapping" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void CompositeMapping::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(myCS);
+    xmtr->sendHeaper(myRS);
+    xmtr->sendHeaper(myMappings);
+}
+
+CompositeMapping::CompositeMapping (APTR(Rcvr) receiver, TCSJ)
+{
+    myCS = CAST(CoordinateSpace, receiver->receiveHeaper());
+    myRS = CAST(CoordinateSpace, receiver->receiveHeaper());
+    myMappings = CAST(ImmuSet, receiver->receiveHeaper());
+}
+
+
+void parseInto_CompositeMapping (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) CompositeMapping (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe CompositeMapping_recipe(cat_CompositeMapping, &XppCuisine, parseInto_CompositeMapping);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of CompositeMapping ====== */
+
+void CompositeMapping::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((CompositeMapping*)origin)->myCS,
+				       (Heaper**)&myCS);
+		Heaplet::forwardToOld ((Heaper**)&((CompositeMapping*)origin)->myRS,
+				       (Heaper**)&myRS);
+		Heaplet::forwardToOld ((Heaper**)&((CompositeMapping*)origin)->myMappings,
+				       (Heaper**)&myMappings);
+	} else {
+		myCS.forwardTo (Heaplet::forward (myCS));
+		myRS.forwardTo (Heaplet::forward (myRS));
+		myMappings.forwardTo (Heaplet::forward (myMappings));
+	}
+}
+
+/*----------------------- END CompositeMapping -----------------------*/
+
+
+/*----------------------- BEGIN ConstantMapping -----------------------*/
+DEFINE_CLASS_CATEGORY(ConstantMapping,Mapping)
+
+void ConstantMapping::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "ConstantMapping" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void ConstantMapping::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(myCoordinateSpace);
+    xmtr->sendHeaper(myValues);
+}
+
+ConstantMapping::ConstantMapping (APTR(Rcvr) receiver, TCSJ)
+{
+    myCoordinateSpace = CAST(CoordinateSpace, receiver->receiveHeaper());
+    myValues = CAST(XnRegion, receiver->receiveHeaper());
+}
+
+
+void parseInto_ConstantMapping (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) ConstantMapping (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe ConstantMapping_recipe(cat_ConstantMapping, &XppCuisine, parseInto_ConstantMapping);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of ConstantMapping ====== */
+
+void ConstantMapping::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ConstantMapping*)origin)->myCoordinateSpace,
+				       (Heaper**)&myCoordinateSpace);
+		Heaplet::forwardToOld ((Heaper**)&((ConstantMapping*)origin)->myValues,
+				       (Heaper**)&myValues);
+	} else {
+		myCoordinateSpace.forwardTo (Heaplet::forward (myCoordinateSpace));
+		myValues.forwardTo (Heaplet::forward (myValues));
+	}
+}
+
+/*----------------------- END ConstantMapping -----------------------*/
+
+
+/*----------------------- BEGIN DisjointRegionStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(DisjointRegionStepper,Stepper)
+
+void DisjointRegionStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of DisjointRegionStepper ====== */
+
+void DisjointRegionStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((DisjointRegionStepper*)origin)->myValue,
+				       (Heaper**)&myValue);
+		Heaplet::forwardToOld ((Heaper**)&((DisjointRegionStepper*)origin)->myRegion,
+				       (Heaper**)&myRegion);
+		Heaplet::forwardToOld ((Heaper**)&((DisjointRegionStepper*)origin)->myOrder,
+				       (Heaper**)&myOrder);
+	} else {
+		myValue.forwardTo (Heaplet::forward (myValue));
+		myRegion.forwardTo (Heaplet::forward (myRegion));
+		myOrder.forwardTo (Heaplet::forward (myOrder));
+	}
+}
+
+/*----------------------- END DisjointRegionStepper -----------------------*/
+
+
+/*----------------------- BEGIN EmptyMapping -----------------------*/
+DEFINE_CLASS_CATEGORY(EmptyMapping,Mapping)
+
+void EmptyMapping::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "EmptyMapping" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void EmptyMapping::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(myCS);
+    xmtr->sendHeaper(myRS);
+}
+
+EmptyMapping::EmptyMapping (APTR(Rcvr) receiver, TCSJ)
+{
+    myCS = CAST(CoordinateSpace, receiver->receiveHeaper());
+    myRS = CAST(CoordinateSpace, receiver->receiveHeaper());
+}
+
+
+void parseInto_EmptyMapping (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) EmptyMapping (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe EmptyMapping_recipe(cat_EmptyMapping, &XppCuisine, parseInto_EmptyMapping);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of EmptyMapping ====== */
+
+void EmptyMapping::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((EmptyMapping*)origin)->myCS,
+				       (Heaper**)&myCS);
+		Heaplet::forwardToOld ((Heaper**)&((EmptyMapping*)origin)->myRS,
+				       (Heaper**)&myRS);
+	} else {
+		myCS.forwardTo (Heaplet::forward (myCS));
+		myRS.forwardTo (Heaplet::forward (myRS));
+	}
+}
+
+/*----------------------- END EmptyMapping -----------------------*/
+
+
+/*----------------------- BEGIN ReverseOrder -----------------------*/
+DEFINE_CLASS_CATEGORY(ReverseOrder,OrderSpec)
+
+void ReverseOrder::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "ReverseOrder" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void ReverseOrder::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    OrderSpec::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myOrder);
+}
+
+ReverseOrder::ReverseOrder (APTR(Rcvr) receiver, TCSJ)
+  : OrderSpec (receiver, tcsj) {
+    myOrder = CAST(OrderSpec, receiver->receiveHeaper());
+}
+
+
+void parseInto_ReverseOrder (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) ReverseOrder (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe ReverseOrder_recipe(cat_ReverseOrder, &XppCuisine, parseInto_ReverseOrder);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of ReverseOrder ====== */
+
+void ReverseOrder::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ReverseOrder*)origin)->myOrder,
+				       (Heaper**)&myOrder);
+	} else {
+		myOrder.forwardTo (Heaplet::forward (myOrder));
+	}
+}
+
+/*----------------------- END ReverseOrder -----------------------*/
+
+
+/*----------------------- BEGIN SimpleMapping -----------------------*/
+DEFINE_CLASS_CATEGORY(SimpleMapping,Mapping)
+DEFINE_OPAQUE_TYPE(SimpleMapping);
+
+void SimpleMapping::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "SimpleMapping" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void SimpleMapping::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(myRegion);
+    xmtr->sendHeaper(myMapping);
+}
+
+SimpleMapping::SimpleMapping (APTR(Rcvr) receiver, TCSJ)
+{
+    myRegion = CAST(XnRegion, receiver->receiveHeaper());
+    myMapping = CAST(Mapping, receiver->receiveHeaper());
+}
+
+
+void parseInto_SimpleMapping (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) SimpleMapping (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe SimpleMapping_recipe(cat_SimpleMapping, &XppCuisine, parseInto_SimpleMapping);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of SimpleMapping ====== */
+
+void SimpleMapping::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((SimpleMapping*)origin)->myRegion,
+				       (Heaper**)&myRegion);
+		Heaplet::forwardToOld ((Heaper**)&((SimpleMapping*)origin)->myMapping,
+				       (Heaper**)&myMapping);
+	} else {
+		myRegion.forwardTo (Heaplet::forward (myRegion));
+		myMapping.forwardTo (Heaplet::forward (myMapping));
+	}
+}
+
+/*----------------------- END SimpleMapping -----------------------*/
+

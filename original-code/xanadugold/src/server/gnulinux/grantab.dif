@@ -1,0 +1,80 @@
+7c7
+< GrandHashTable(0 entries over 32 nodes)
+---
+> 0x76876c
+9c9
+< GrandHashTable(0 entries over 4 nodes)
+---
+> 0x76a3f4
+13c13
+< Test introduce: GrandHashTable(2 entries over 32 nodes), table count now: 2
+---
+> Test introduce: 0x76876c, table count now: 2
+15c15
+< Test introduce: GrandHashTable(3 entries over 32 nodes), table count now: 3
+---
+> Test introduce: 0x76876c, table count now: 3
+17c17
+< Test introduce: GrandHashTable(4 entries over 32 nodes), table count now: 4
+---
+> Test introduce: 0x76876c, table count now: 4
+21c21
+< GrandHashTable(4 entries over 32 nodes)
+---
+> 0x76876c
+31c31
+< GrandHashTable(4 entries over 32 nodes)
+---
+> 0x76aaf8
+34c34
+< GrandHashTable(4 entries over 32 nodes) and table count: 4
+---
+> 0x76aaf8 and table count: 4
+37c37
+< GrandHashTable(4 entries over 32 nodes)
+---
+> 0x76aaf8
+45c45
+< GrandHashTable(4 entries over 32 nodes)
+---
+> 0x76cb68
+49c49
+< GrandHashTable(4 entries over 32 nodes) and table count: 4
+---
+> 0x76cb68 and table count: 4
+55c55
+< GrandHashTable(5 entries over 32 nodes) and table count: 5
+---
+> 0x76cb68 and table count: 5
+61c61
+< GrandHashTable(5 entries over 32 nodes)
+---
+> 0x76cb68
+71c71
+< GrandHashTable(4 entries over 32 nodes)
+---
+> 0x76ea74
+77c77
+< {[-1, 2), [27, 28)}
+---
+> 0x770b58
+79c79
+< Test get(1) filly
+---
+> Test get(1) 0x77082c
+85c85
+< GrandHashTable(4 entries over 32 nodes)
+---
+> 0x76ea74
+95c95
+< GrandHashTable(4 entries over 32 nodes)
+---
+> 0x770b90
+103c103
+< GrandHashTable(3 entries over 32 nodes)
+---
+> 0x770b90
+111c111
+< GrandHashTable(3 entries over 32 nodes)
+---
+> 0x770b90

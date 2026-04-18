@@ -1,0 +1,43 @@
+/* Copyright Xanadu Operating Company.  All Rights Reserved. */
+
+/******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+#ifndef PARRAYX_OXX
+#define PARRAYX_OXX
+VERSION_ID(parrayx_oxx,
+	"$Id: parrayx.oxx,v 3.5 1992/08/14 22:10:21 shap Exp $")
+
+#ifndef PARRAYX_OXX
+#include "parrayx.oxx"
+#endif /* PARRAYX_OXX */
+
+OPAQUE_TYPE_2(PrimArray,Heaper);
+OPAQUE_TYPE_3(PrimDataArray,PrimArray,Heaper);
+OPAQUE_TYPE_4(PrimFloatArray,PrimDataArray,PrimArray,Heaper);
+OPAQUE_TYPE_5(IEEE32Array,PrimFloatArray,PrimDataArray,PrimArray,Heaper);
+OPAQUE_TYPE_5(IEEE64Array,PrimFloatArray,PrimDataArray,PrimArray,Heaper);
+OPAQUE_TYPE_4(PrimIntegerArray,PrimDataArray,PrimArray,Heaper);
+OPAQUE_TYPE_5(IntegerVarArray,PrimIntegerArray,PrimDataArray,PrimArray,Heaper);
+OPAQUE_TYPE_5(PrimIntArray,PrimIntegerArray,PrimDataArray,PrimArray,Heaper);
+OPAQUE_TYPE_6(Int32Array,PrimIntArray,PrimIntegerArray,PrimDataArray
+	      ,PrimArray,Heaper);
+OPAQUE_TYPE_6(UInt32Array,PrimIntArray,PrimIntegerArray,PrimDataArray
+	      ,PrimArray,Heaper);
+OPAQUE_TYPE_6(UInt8Array,PrimIntArray,PrimIntegerArray,PrimDataArray
+	      ,PrimArray,Heaper);
+OPAQUE_TYPE_3(PtrArray,PrimArray,Heaper);
+OPAQUE_TYPE_4(SharedPtrArray,PtrArray,PrimArray,Heaper);
+
+#endif /* PARRAYX_OXX */
+
