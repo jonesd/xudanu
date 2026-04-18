@@ -1,0 +1,189 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define CANOPYP_SXX
+
+/*----------------------- BEGIN CanopyCache -----------------------*/
+DEFINE_CLASS_CATEGORY(CanopyCache,Heaper)
+DEFINE_OPAQUE_TYPE(CanopyCache);
+
+void CanopyCache::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "CanopyCache" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of CanopyCache ====== */
+
+void CanopyCache::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((CanopyCache*)origin)->myCachedCrum,
+				       (Heaper**)&myCachedCrum);
+		Heaplet::forwardToOld ((Heaper**)&((CanopyCache*)origin)->myCachedRoot,
+				       (Heaper**)&myCachedRoot);
+		Heaplet::forwardToOld ((Heaper**)&((CanopyCache*)origin)->myCachedPath,
+				       (Heaper**)&myCachedPath);
+	} else {
+		myCachedCrum.forwardTo (Heaplet::forward (myCachedCrum));
+		myCachedRoot.forwardTo (Heaplet::forward (myCachedRoot));
+		myCachedPath.forwardTo (Heaplet::forward (myCachedPath));
+	}
+}
+
+/*----------------------- END CanopyCache -----------------------*/
+
+
+/*----------------------- BEGIN Heaper2UInt32Cache -----------------------*/
+DEFINE_CLASS_CATEGORY(Heaper2UInt32Cache,Heaper)
+DEFINE_OPAQUE_TYPE(Heaper2UInt32Cache);
+
+void Heaper2UInt32Cache::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "Heaper2UInt32Cache" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+BooleanVar Heaper2UInt32Cache::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 Heaper2UInt32Cache::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of Heaper2UInt32Cache ====== */
+
+void Heaper2UInt32Cache::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((Heaper2UInt32Cache*)origin)->myKeys,
+				       (Heaper**)&myKeys);
+		Heaplet::forwardToOld ((Heaper**)&((Heaper2UInt32Cache*)origin)->myValues,
+				       (Heaper**)&myValues);
+	} else {
+		myKeys.forwardTo (Heaplet::forward (myKeys));
+		myValues.forwardTo (Heaplet::forward (myValues));
+	}
+}
+
+/*----------------------- END Heaper2UInt32Cache -----------------------*/
+
+
+/*----------------------- BEGIN HeightChanger -----------------------*/
+DEFINE_CLASS_CATEGORY(HeightChanger,PropChanger)
+DEFINE_OPAQUE_TYPE(HeightChanger);
+
+void HeightChanger::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "HeightChanger" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void HeightChanger::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    PropChanger::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myChange);
+}
+
+HeightChanger::HeightChanger (APTR(Rcvr) receiver, TCSJ)
+  : PropChanger (receiver, tcsj) {
+    myChange = CAST(PropChange, receiver->receiveHeaper());
+}
+
+
+void parseInto_HeightChanger (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) HeightChanger (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe HeightChanger_recipe(cat_HeightChanger, &DiskCuisine, parseInto_HeightChanger);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "HeightChanger" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ===== mayBecome support between stub and concrete Shepherd ===== */
+
+extern Category * cat_PropChangerStub;
+DEFINE_MAY_BECOME(HeightChanger,PropChangerStub)
+DEFINE_MAY_BECOME(PropChangerStub,HeightChanger)
+
+/* ====== Object Migrator for Scavenging of HeightChanger ====== */
+
+void HeightChanger::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->PropChanger::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((HeightChanger*)origin)->myChange,
+				       (Heaper**)&myChange);
+	} else {
+		myChange.forwardTo (Heaplet::forward (myChange));
+	}
+}
+
+/*----------------------- END HeightChanger -----------------------*/
+

@@ -1,0 +1,3 @@
+CAT(foo,bar)
+foobar
+./ccompatt.exe

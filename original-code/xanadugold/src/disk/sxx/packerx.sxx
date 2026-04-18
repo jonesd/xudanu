@@ -1,0 +1,94 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define PACKERX_SXX
+
+/*----------------------- BEGIN ResetCommit_Bomb -----------------------*/
+
+/*----------------------- END ResetCommit_Bomb -----------------------*/
+
+
+/*----------------------- BEGIN SnarfPacker -----------------------*/
+DEFINE_CLASS_CATEGORY(SnarfPacker,DiskManager)
+DEFINE_OPAQUE_TYPE(SnarfPacker);
+
+void SnarfPacker::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "SnarfPacker" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of SnarfPacker ====== */
+
+void SnarfPacker::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->DiskManager::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((SnarfPacker*)origin)->mySnarfInfo,
+				       (Heaper**)&mySnarfInfo);
+		Heaplet::forwardToOld ((Heaper**)&((SnarfPacker*)origin)->myTurtle,
+				       (Heaper**)&myTurtle);
+		Heaplet::forwardToOld ((Heaper**)&((SnarfPacker*)origin)->mySnarfMap,
+				       (Heaper**)&mySnarfMap);
+		Heaplet::forwardToOld ((Heaper**)&((SnarfPacker*)origin)->myFlocks,
+				       (Heaper**)&myFlocks);
+		Heaplet::forwardToOld ((Heaper**)&((SnarfPacker*)origin)->myNewFlocks,
+				       (Heaper**)&myNewFlocks);
+		Heaplet::forwardToOld ((Heaper**)&((SnarfPacker*)origin)->myDestroyedFlocks,
+				       (Heaper**)&myDestroyedFlocks);
+		Heaplet::forwardToOld ((Heaper**)&((SnarfPacker*)origin)->myXcvrMaker,
+				       (Heaper**)&myXcvrMaker);
+		Heaplet::forwardToOld ((Heaper**)&((SnarfPacker*)origin)->myBook,
+				       (Heaper**)&myBook);
+		Heaplet::forwardToOld ((Heaper**)&((SnarfPacker*)origin)->myNextHash,
+				       (Heaper**)&myNextHash);
+		Heaplet::forwardToOld ((Heaper**)&((SnarfPacker*)origin)->myPurgeror,
+				       (Heaper**)&myPurgeror);
+		Heaplet::forwardToOld ((Heaper**)&((SnarfPacker*)origin)->myRepairer,
+				       (Heaper**)&myRepairer);
+	} else {
+		mySnarfInfo.forwardTo (Heaplet::forward (mySnarfInfo));
+		myTurtle.forwardTo (Heaplet::forward (myTurtle));
+		mySnarfMap.forwardTo (Heaplet::forward (mySnarfMap));
+		myFlocks.forwardTo (Heaplet::forward (myFlocks));
+		myNewFlocks.forwardTo (Heaplet::forward (myNewFlocks));
+		myDestroyedFlocks.forwardTo (Heaplet::forward (myDestroyedFlocks));
+		myXcvrMaker.forwardTo (Heaplet::forward (myXcvrMaker));
+		myBook.forwardTo (Heaplet::forward (myBook));
+		myNextHash.forwardTo (Heaplet::forward (myNextHash));
+		myPurgeror.forwardTo (Heaplet::forward (myPurgeror));
+		myRepairer.forwardTo (Heaplet::forward (myRepairer));
+	}
+}
+
+/*----------------------- END SnarfPacker -----------------------*/
+

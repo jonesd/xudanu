@@ -1,0 +1,48 @@
+'From Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989 on 22 March 1995 at 9:08:25 pm'!
+
+RequestHandler subclass: #VHHHandler
+	instanceVariableNames: '
+		myFn {VHHFn var}
+		myType1 {Category}
+		myType2 {Category}'
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Xanadu-proman'!
+
+(VHHHandler getOrMakeCxxClassDescription)
+	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+
+!VHHHandler methodsFor: 'request handling'!
+
+{void} handleRequest: pm {PromiseManager}
+	
+	| arg1 {Heaper} arg2 {Heaper} |
+	arg1 _ pm fetchNonNullHeaper: myType1.
+	arg2 _ pm fetchNonNullHeaper: myType2.
+	pm noErrors ifTrue:
+		[(myFn invokeFunction: arg1 with: arg2).
+		pm respondVoid]! !
+
+!VHHHandler methodsFor: 'creation'!
+
+create: fn {VHHFn var} with: type1 {Category} with: type2 {Category}
+	super create.
+	myFn _ fn.
+	myType1 _ type1.
+	myType2 _ type2.! !
+"-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+
+VHHHandler class
+	instanceVariableNames: ''!
+
+(VHHHandler getOrMakeCxxClassDescription)
+	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+
+!VHHHandler class methodsFor: 'creation'!
+
+{RequestHandler} make: fn {VHHFn var} with: type1 {Category} with: type2 {Category}
+	^self create: fn with: type1 with: type2! !
+
+!VHHHandler class methodsFor: 'generated:'!
+
+isGenerated ^true! !

@@ -1,0 +1,34 @@
+/* Copyright Xanadu Operating Company.  All Rights Reserved. */
+
+/******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+#ifndef STEPPERP_OXX
+#define STEPPERP_OXX
+
+
+#ifndef STEPPERX_OXX
+#include "stepperx.oxx"
+#endif /* STEPPERX_OXX */
+
+
+
+class EmptyStepper;
+extern Category * cat_EmptyStepper;
+class ItemStepper;
+extern Category * cat_ItemStepper;
+class PtrArrayAccumulator;
+extern Category * cat_PtrArrayAccumulator;
+OPAQUE_TYPE_4(PtrArrayStepper,TableStepper,Stepper,Heaper);
+#endif /* STEPPERP_OXX */
+

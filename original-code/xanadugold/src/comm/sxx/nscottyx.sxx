@@ -1,0 +1,78 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define NSCOTTYX_SXX
+
+/*----------------------- BEGIN XnReadStream -----------------------*/
+DEFINE_CLASS_CATEGORY(XnReadStream,Heaper)
+DEFINE_OPAQUE_TYPE(XnReadStream);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END XnReadStream -----------------------*/
+
+
+/*----------------------- BEGIN XnWriteStream -----------------------*/
+DEFINE_CLASS_CATEGORY(XnWriteStream,Heaper)
+DEFINE_OPAQUE_TYPE(XnWriteStream);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END XnWriteStream -----------------------*/
+
+
+/*----------------------- BEGIN WriteVariableArrayStream -----------------------*/
+DEFINE_CLASS_CATEGORY(WriteVariableArrayStream,XnWriteStream)
+DEFINE_OPAQUE_TYPE(WriteVariableArrayStream);
+
+void WriteVariableArrayStream::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+BooleanVar WriteVariableArrayStream::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 WriteVariableArrayStream::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of WriteVariableArrayStream ====== */
+
+void WriteVariableArrayStream::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((WriteVariableArrayStream*)origin)->myCollection,
+				       (Heaper**)&myCollection);
+	} else {
+		myCollection.forwardTo (Heaplet::forward (myCollection));
+	}
+}
+
+/*----------------------- END WriteVariableArrayStream -----------------------*/
+

@@ -1,0 +1,160 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define NEGOTI8P_SXX
+
+/*----------------------- BEGIN ProtocolItem -----------------------*/
+DEFINE_CLASS_CATEGORY(ProtocolItem,Heaper)
+DEFINE_OPAQUE_TYPE(ProtocolItem);
+
+void ProtocolItem::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of ProtocolItem ====== */
+
+void ProtocolItem::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ProtocolItem*)origin)->myNext,
+				       (Heaper**)&myNext);
+		Heaplet::forwardToOld ((Heaper**)&((ProtocolItem*)origin)->myItem,
+				       (Heaper**)&myItem);
+	} else {
+		myNext.forwardTo (Heaplet::forward (myNext));
+		myItem.forwardTo (Heaplet::forward (myItem));
+	}
+}
+
+/*----------------------- END ProtocolItem -----------------------*/
+
+
+/*----------------------- BEGIN SetCommProtocol -----------------------*/
+DEFINE_CLASS_CATEGORY(SetCommProtocol,Thunk)
+
+void SetCommProtocol::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "SetCommProtocol" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void SetCommProtocol::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendString(myName);
+}
+
+SetCommProtocol::SetCommProtocol (APTR(Rcvr) receiver, TCSJ)
+{
+    myName = receiver->receiveString();
+}
+
+
+void parseInto_SetCommProtocol (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) SetCommProtocol (rcvr, tcsj);
+}
+
+extern Recipe * BootCuisine;
+ActualCopyRecipe SetCommProtocol_recipe(cat_SetCommProtocol, &BootCuisine, parseInto_SetCommProtocol);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of SetCommProtocol ====== */
+
+void SetCommProtocol::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END SetCommProtocol -----------------------*/
+
+
+/*----------------------- BEGIN SetDiskProtocol -----------------------*/
+DEFINE_CLASS_CATEGORY(SetDiskProtocol,Thunk)
+
+void SetDiskProtocol::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "SetDiskProtocol" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void SetDiskProtocol::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendString(myName);
+}
+
+SetDiskProtocol::SetDiskProtocol (APTR(Rcvr) receiver, TCSJ)
+{
+    myName = receiver->receiveString();
+}
+
+
+void parseInto_SetDiskProtocol (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) SetDiskProtocol (rcvr, tcsj);
+}
+
+extern Recipe * BootCuisine;
+ActualCopyRecipe SetDiskProtocol_recipe(cat_SetDiskProtocol, &BootCuisine, parseInto_SetDiskProtocol);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of SetDiskProtocol ====== */
+
+void SetDiskProtocol::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END SetDiskProtocol -----------------------*/
+

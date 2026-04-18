@@ -1,0 +1,183 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define COUNTERP_SXX
+
+/*----------------------- BEGIN BatchCounter -----------------------*/
+DEFINE_CLASS_CATEGORY(BatchCounter,Counter)
+
+void BatchCounter::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "BatchCounter" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void BatchCounter::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Counter::sendSelfTo (xmtr);
+    xmtr->sendIntegerVar(myPersistentCount);
+    xmtr->sendIntegerVar(myBatchCount);
+}
+
+BatchCounter::BatchCounter (APTR(Rcvr) receiver, TCSJ)
+  : Counter (receiver, tcsj) {
+    myPersistentCount = receiver->receiveIntegerVar();
+    myBatchCount = receiver->receiveIntegerVar();
+    this->restartBatchCounter(receiver);
+}
+
+
+void parseInto_BatchCounter (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) BatchCounter (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe BatchCounter_recipe(cat_BatchCounter, &DiskCuisine, parseInto_BatchCounter);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "BatchCounter" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ===== mayBecome support between stub and concrete Shepherd ===== */
+
+extern Category * cat_CounterStub;
+DEFINE_MAY_BECOME(BatchCounter,CounterStub)
+DEFINE_MAY_BECOME(CounterStub,BatchCounter)
+
+/* ====== Object Migrator for Scavenging of BatchCounter ====== */
+
+void BatchCounter::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->Counter::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((BatchCounter*)origin)->myMutex,
+				       (Heaper**)&myMutex);
+	} else {
+		myMutex.forwardTo (Heaplet::forward (myMutex));
+	}
+}
+
+/*----------------------- END BatchCounter -----------------------*/
+
+
+/*----------------------- BEGIN SingleCounter -----------------------*/
+DEFINE_CLASS_CATEGORY(SingleCounter,Counter)
+
+void SingleCounter::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "SingleCounter" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void SingleCounter::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Counter::sendSelfTo (xmtr);
+    xmtr->sendIntegerVar(myCount);
+}
+
+SingleCounter::SingleCounter (APTR(Rcvr) receiver, TCSJ)
+  : Counter (receiver, tcsj) {
+    myCount = receiver->receiveIntegerVar();
+    this->restartSingleCounter(receiver);
+}
+
+
+void parseInto_SingleCounter (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) SingleCounter (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe SingleCounter_recipe(cat_SingleCounter, &DiskCuisine, parseInto_SingleCounter);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "SingleCounter" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ===== mayBecome support between stub and concrete Shepherd ===== */
+
+extern Category * cat_CounterStub;
+DEFINE_MAY_BECOME(SingleCounter,CounterStub)
+DEFINE_MAY_BECOME(CounterStub,SingleCounter)
+
+/* ====== Object Migrator for Scavenging of SingleCounter ====== */
+
+void SingleCounter::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->Counter::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((SingleCounter*)origin)->myMutex,
+				       (Heaper**)&myMutex);
+	} else {
+		myMutex.forwardTo (Heaplet::forward (myMutex));
+	}
+}
+
+/*----------------------- END SingleCounter -----------------------*/
+

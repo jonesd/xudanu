@@ -1,0 +1,24 @@
+1c1
+< 'From Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989 on 22 March 1995 at 9:03:21 pm'!
+---
+> 'From Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989 on 22 March 1995 at 9:50:07 pm'!
+93c93
+< !Heaper methodsFor: 'testing'!
+---
+> !Heaper methodsFor: 'accessing'!
+95,96c95,96
+< {UInt32} actualHashForEqual
+< 	^ self asOop!
+---
+> {Category} getCategory
+> 	^ self class!
+99c99
+< 	^ self actualHashForEqual!
+---
+> 	self subclassResponsibility!
+104,108d103
+< 
+< !Heaper methodsFor: 'accessing'!
+< 
+< {Category} getCategory
+< 	^ self class! !

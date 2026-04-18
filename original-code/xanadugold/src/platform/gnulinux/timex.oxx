@@ -1,0 +1,7 @@
+#ifndef TIMEX_OXX
+#define TIMEX_OXX
+static char timex_oxx_id[] = "$Id: timex.oxx,v 2.2 1992/08/14 22:04:24 shap Exp $";
+
+class TimeVar;
+
+#endif /* TIMEX_OXX */

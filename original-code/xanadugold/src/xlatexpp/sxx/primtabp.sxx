@@ -1,0 +1,116 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define PRIMTABP_SXX
+
+/*----------------------- BEGIN PrimPtrTableExecutor -----------------------*/
+DEFINE_CLASS_CATEGORY(PrimPtrTableExecutor,XnExecutor)
+DEFINE_OPAQUE_TYPE(PrimPtrTableExecutor);
+
+void PrimPtrTableExecutor::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of PrimPtrTableExecutor ====== */
+
+void PrimPtrTableExecutor::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((PrimPtrTableExecutor*)origin)->myTable,
+				       (Heaper**)&myTable);
+		Heaplet::forwardToOld ((Heaper**)&((PrimPtrTableExecutor*)origin)->myFollower,
+				       (Heaper**)&myFollower);
+	} else {
+		myTable.forwardTo (Heaplet::forward (myTable));
+		myFollower.forwardTo (Heaplet::forward (myFollower));
+	}
+}
+
+/*----------------------- END PrimPtrTableExecutor -----------------------*/
+
+
+/*----------------------- BEGIN PrimRemovedObject -----------------------*/
+DEFINE_CLASS_CATEGORY(PrimRemovedObject,Heaper)
+
+void PrimRemovedObject::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+BooleanVar PrimRemovedObject::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 PrimRemovedObject::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+
+
+/*----------------------- END PrimRemovedObject -----------------------*/
+
+
+/*----------------------- BEGIN PrimSetExecutor -----------------------*/
+DEFINE_CLASS_CATEGORY(PrimSetExecutor,XnExecutor)
+DEFINE_OPAQUE_TYPE(PrimSetExecutor);
+
+void PrimSetExecutor::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of PrimSetExecutor ====== */
+
+void PrimSetExecutor::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((PrimSetExecutor*)origin)->mySet,
+				       (Heaper**)&mySet);
+	} else {
+		mySet.forwardTo (Heaplet::forward (mySet));
+	}
+}
+
+/*----------------------- END PrimSetExecutor -----------------------*/
+
+
+/*----------------------- BEGIN PrimSetStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(PrimSetStepper,Stepper)
+DEFINE_OPAQUE_TYPE(PrimSetStepper);
+
+void PrimSetStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of PrimSetStepper ====== */
+
+void PrimSetStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((PrimSetStepper*)origin)->myPtrs,
+				       (Heaper**)&myPtrs);
+	} else {
+		myPtrs.forwardTo (Heaplet::forward (myPtrs));
+	}
+}
+
+/*----------------------- END PrimSetStepper -----------------------*/
+

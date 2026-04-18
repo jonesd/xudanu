@@ -1,0 +1,3312 @@
+# 1 "../tofux.hxx" 
+/*
+      (C) Copyright 1988, 89 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+**************************************************************************** */
+//
+//	Hacked for Transceiver -> Xcvr mod
+//		- michael Jun 14 1990
+//
+//	Eliminated SELF_COPY
+//		- michael Jun 28 1990
+//
+//	Exposed sendSelfTo() and makeProxy()
+//	Killed sendThingTo() and makeProxyFunc()
+//	Removed remaining traces of actualSize()
+//		- michael Jun 30 1990
+//
+//	Merged to wjr''s alpha-6, which has diverged significantly
+//	from hill''s alpha-6 version.
+//		- michael Jun 30 1990
+//
+//      Removed declarations for Heaper::makeProxy (obsolete). Replaced 
+//      them with declarations for new Heaper::sendProxyTo message.
+//              - wjr Jul 22 1990
+//
+//      Added declarations for getProxyCategory and isByProxy.
+//              - wjr Jul 26 1990
+//
+//	Remerged hill''s alpha-6 and (wjr/michael)''s alpha-6
+//	Non-RPC cases have been removed here.
+//		- ech Jul 31 1990
+//
+//	New constructor bomb stuff
+//
+//	Made CheckedPtrVar into root class & removed unused comm stuff from
+//	CheckedPtrVar.
+//		- ech Aug 6 1990
+//
+//	Started on changes for supporting become:
+//	    Size info in Categories
+//	    Passing Categories from the CONSTRUCT macros
+//		- msm - Aug 8 1990
+//
+//	Removed Var
+//		- msm - Aug 14 1990
+//
+//	Merged previous two comments+stuff from Markm
+//		- ech Sep 1 1990
+//
+//	Merged markm''s sep19 changes.
+//	Introduced "destruct" as replacement for C++ destructors.
+//		- ech Sep 25 1990
+//
+//	Merged markm''s sep19 changes: [into michael''s working copy -ech]
+//	 - turned off PRIVATE_PROTECTED_KLUDGE
+//	 - made Heaper() and ~Heaper() protected:
+//	 - made (Garbage)Heap a friend class of Heaper.
+//		- michael Sep 29 1990
+//
+//	Added CONSTRUCT_ON(), RETURN_CONSTRUCT_ON() macros,
+//	and a supporting Heaper::operator new()
+//		- michael Oct 21 1990  (again Nov 5)
+//
+//	Added NOT_A_TYPE versions of CHECKED_CLASS macros, and related support
+//		- michael Oct 23 1990  (again Nov 5)
+//
+//	Got bored with "merged from/with" comments unless merged item was
+//	not previously commented.
+//		- ech Nov 9 1990
+//
+//	(Me, too.  But they''re handy when I''m trying to figure out whether
+//	 I''ve done the right thing to my compile environment.
+//		- michael Nov 12 1990)
+//
+//	Made isKindOf and destroy virtual, not LEAF, so others may override.
+//	Fixed SPTR, CHKPTR, and WPTR macros to have whitespace tails, so that
+//	the apparently correct SPTR(FooClass)foo won''t be an error.
+//		- ech Nov 11 1990
+//
+//	Added fakeGetCategory() to DEFINE_CHECKED_CLASS_NOT_A_TYPE()
+//	Removed remaining traces of PRIVATE_PROTECTED_KLUDGE
+//		- michael Nov 12 1990
+//
+//	Renamed fakeGetCategory() to getConcreteCategory()
+//		- michael Nov 13 1990
+//
+//	Changed hashForEqual return type unsigned long -> UInt32
+//	(Also hashedName and argument to findCategory(hashedName))
+//		- michael Nov 18 1990
+//
+//	Eliminated becomeDestruct()
+//		- michael Dec  4 1990
+//	Finally removed Aug 21 1991 - ech
+//
+//	Removed PRIVATE_PROTECTED_KLUDGE
+//		- ech Nov 18 1990
+//
+//	Rearranged and added comments for automatic documentation generating
+//	tool.
+//		- ech Nov 30 1990
+//
+//	Merged attribute and changeClass support stuff from Chris.
+//		- ech Dec 10 1990
+//   Added Package and Hook macros and classes
+//		- ravi Feb 15-22 1991
+//   Moved above to pkx*xx to separate packageability
+//		- ech Mar 19 1991
+//
+//   Added / merged Jigs
+//		- michael Jun 29 1991  (Merged again Jul 22.)
+//
+//   Wrapped PROXY specific stuff with #ifndef NO_RPC
+//		- ech Aug 30 1991
+//
+//    - Split off opaque2x.ixx from opaquex.ixx (containing only those
+//      routines that need to call routines in Heaper.)
+//      The routines that need to call heaper inline routines will not be
+//      inlined for those pointer classes that must be defined before Tofu
+//      and Heaper.  (Currently, that''s destroyIt() in pointer to Heaper,
+//      Xmtr, and Rcvr.)
+//    - Made corresponding changes in the include directives.
+//    This fixes bug MB30 (SPTR()s [to Heaper] aren''t being inlined.)
+//            - michael Oct 10 1991
+//
+//   Changed CONSTRUCT macros to use canonical constructor bomb name
+//            - michael Jan 11 1992 (Merged Feb 17)
+//
+//   Uncommented changes between a16 and a0.4:
+//    - Category declaration removed from CLASS() macro.  (.oxx files now
+//      take care of this - the CLASS() macro is now reduced to a class
+//      declaration and can be retired.)
+//    - Statistics collecting variables and member functions were added
+//      to the Category class.
+//            - detected by michael, Feb 17 1992
+//
+//    Added PURE_VIRTUAL_BUG to switch RUN_TIME_DEFERRED remotely from the
+//    xcompatx.hxx module.  (Mainly for SGI port)
+//            michael Aug 29 1991  (Merged Mar 24 1992)
+//
+//   Added ARG() macro so argument names in deferred contract-defining
+//   member functions can be exposed to the documentation tools but
+//   hidden from the pure-virtual-bug hack.
+//
+//   Added InstanceCache as a friend of Heaper so it can call destruct
+//   on objects being cached.
+//	- ech Feb 16 1993
+//
+//   Took out packages
+//	- ech Feb 27 1993
+
+
+
+
+# 1 "../xcompatx.hxx" 1
+/*
+      (C) Copyright 1988, 89 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+**************************************************************************** */
+
+
+/* It is intended for this file to provide portable functionality */
+/*  to needed non-portable constructs.  Mostly this file provides */
+/* portability between various C++ compilers */
+/* This file should be acceptable to various C++s */
+/*
+ * CONST now always const.  Formic has been upgraded with "const:", so
+ * stubble can do the right thing.
+ *	- michael Nov 14 1990
+ *
+ * CONST now always '', because making it const breaks backend diskfulness.
+ *	- michael Dec  3 1990
+ *
+ * Shut up xlint "hard cast" complaints at uint1() and character()
+ *	- michael Apr 21 1991
+  *
+  * - Added PURE_VIRTUAL_BUG definition to move compatibility switching from
+  *   tofu to here.  Initially defined for sgi only.
+ */
+
+
+
+
+# 40 "../xcompatx.hxx" 
+
+
+# 45 "../xcompatx.hxx" 
+
+
+
+
+
+
+# 1 "../ccompatc.h" 1
+/*
+      (C) Copyright 1988, 89 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*									     *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+**************************************************************************** */
+
+
+/* It is intended for this file to provide portable functionality */
+/*  to needed non-portable constructs. */
+/* This file should be acceptable to both C & C++ */
+/****
+ *
+ *	Added CAT3 (Hopefully compatible with WJR's, which I was surprised not
+ *	 to find in the file)  
+ *		-- MarkM 8/10/90
+ *
+ *	Made BooleanVar into a nice transmittable UInt1
+ *	Added ALERT_CHAR
+ *	Added VOLATILE
+ *		-- MarkM 8/22/1990
+ *
+ *	Made BooleanVar into an 'int', exactly the type returned by
+ *	operators ||, &&, ==, !=, etc.
+ *	Made possible by elimination of overloading in comm stuff.
+ *	Also, any sane binary comm code should not use more than
+ *	one byte to send the values 0 and 1.
+ *		-- ECH 5/15/91
+ *    - Moved macro overrides for bcopy and memmove from scattered places
+ *	to here, now that both macintosh and sgi need them.
+ *    - Added #deinfe of STD_CPP if sgi is defined.
+ *    - Added definition of _environ, which is missing from sgi's libc.h
+ *     (Check that this is still needed!!!!)
+ *	      - michael Aug 29/Sep 5 1991 (Merged Mar 24 1992)
+ *
+ ****/
+
+
+
+
+
+
+# 52 "../ccompatc.h" 
+
+
+# 58 "../ccompatc.h" 
+
+
+# 62 "../ccompatc.h" 
+
+
+
+
+/* CAT must be up here for the VERSION_ID macros */
+
+/* CAT concatenates its arguments so they can form a single token */
+# 87 "../ccompatc.h" 
+
+# 94 "../ccompatc.h" 
+
+
+
+
+
+
+
+
+
+
+/*			\
+static char VERSION_ID_STRING(file)[] = string;	\
+static char *VERSION_ID_FUNC(file)() {		\
+	return VERSION_ID_STRING(file);		\
+    }
+*/
+
+# 111 "../ccompatc.h" 
+
+
+
+
+
+typedef long /* int */		Int4;
+
+
+
+typedef unsigned long /* int */	UInt4;
+
+typedef char			Int1;
+
+typedef unsigned char		UInt1;
+
+
+typedef long		Int32;
+
+
+
+
+typedef unsigned long	UInt32;
+
+
+
+
+typedef char		Int8;
+
+
+
+
+typedef unsigned char	UInt8;
+
+
+
+
+/* typedef enum {FALSE = 0, TRUE = 1} BooleanVar; */
+
+typedef int BooleanVar; 
+
+
+
+
+
+
+
+
+# 162 "../ccompatc.h" 
+
+
+
+
+/* const void * NULL = 0; */
+
+
+typedef double IEEEDoubleVar; /* IEEE format double precision variable */
+typedef struct { unsigned char bytes [8]; } IEEE128;
+typedef double IEEE64;
+typedef float  IEEE32;
+typedef struct {
+	unsigned int sign :	 1 ;
+	unsigned int exponent :  8 ;
+	unsigned int mantissa : 23 ;
+} IEEE32_fields;
+
+typedef struct {
+	unsigned int sign :	  1 ;
+	unsigned int exponent :  11 ;
+	unsigned int mantissaH : 20 ;
+	unsigned int mantissaL : 32 ;
+} IEEE64_fields;
+
+# 189 "../ccompatc.h" 
+# 188 "../ccompatc.h" 
+
+
+
+
+
+
+
+# 197 "../ccompatc.h" 
+
+
+/* C Preprocessor macros */
+
+/* STR stringifies its argument */
+# 204 "../ccompatc.h" 
+
+# 207 "../ccompatc.h" 
+
+
+
+
+
+
+
+
+/* OUT is included in a parameter list to separate input from output */
+/*  parameters */
+# 219 "../ccompatc.h" 
+
+
+
+/* memmove is the ANSI memory copying operation--sun doesn''t have it */
+# 233 "../ccompatc.h" 
+
+# 243 "../ccompatc.h" 
+
+# 253 "../ccompatc.h" 
+
+
+# 257 "../ccompatc.h" 
+
+/*	extern char * sbrk PROTO_ARGS((unsigned incr)); */
+
+
+
+
+
+
+
+# 275 "../ccompatc.h" 
+
+
+
+
+
+# 282 "../ccompatc.h" 
+
+
+/* SGI won''t give us sigvec unless we want BSD_SIGNALS or BSD_COMPAT */
+# 287 "../ccompatc.h" 
+
+
+extern unsigned long alignUp (unsigned long offset);
+  /* round up offset to the next worst case alignment boundary */
+  /*  of the current machine. */
+
+
+/* DOES_MOD_OK should be defined if the underlying C compiler's modulus */
+/* operator doews the right thing. The right thing is defined as */
+/* satisfying the equation: a % b == a-(a/b)*b. regardless of the sign of */
+/* the operands. This can also be stated as "The sign of the result is the */
+/* same as the left operand". This is used by IntegerVars. */
+
+
+# 303 "../ccompatc.h" 
+
+
+
+
+
+/************************ VOLATILE ***********************
+
+The ANSI C spec says for "longjmp":
+
+"All accessible objects have values as of the time longjmp was called,
+except that objects of automatic storage duration that are local to
+the function containing the invocation of the corresponding setjmp
+macro that do not have volatile-qualified type and have been changed
+between the setjmp invocation and longjmp call are indeterminate."
+
+"setjmp"s are necessarily present in X++ in the expansion of a
+SHIELD_UP.  Unfortunately, some compilers (such as the Mac) do not
+recognize the setjmp keyword, so we need to provide some other way to
+force the storage for the variable onto the stack (as opposed to being
+in a register).  If the Mac case below isn't sufficient, more extreme
+measures should be taken.  
+
+Note:  It is unspecified whether 
+
+	VOLATILE(Foo,foo,expr);
+
+means
+
+	volatile Foo foo = (expr);
+
+or
+
+	volatile Foo foo;
+	foo = (expr);
+
+These mean different things in C++ (constructor vs operator= invocation).
+
+
+***********/
+
+extern void doNothingWith (void * ptr);
+
+
+# 350 "../ccompatc.h" 
+# 353 "../ccompatc.h" 
+
+
+
+
+
+
+
+/* as in Foo* OR(NULL).  This may need to be changed to less common name */
+
+
+
+
+# 52 "../xcompatx.hxx" 2
+
+
+
+# 55 "../xcompatx.hxx" 
+
+
+
+
+class ostream;
+class istream;
+
+# 64 "../xcompatx.hxx" 
+
+
+
+
+
+/*   fake conversion functions so that we can treat UInt8 and char as different
+     types.
+*/
+
+inline UInt8 uint8(char ch) { return((UInt8) ch); }
+inline char character(UInt8 ui) { return((char) ui); }
+
+
+
+
+# 81 "../xcompatx.hxx" 
+
+
+# 91 "../xcompatx.hxx" 
+
+
+
+
+
+
+
+
+
+
+/*********
+The interpretation of the above is NOT a claim that all will compile
+as is in a C++ with parameterized types by just turning the flag on;
+rather it is simply a structured comment that makes a claim about what
+the run time types of various data must be.  It does also give us a
+leg up on coverting to parameterized types, but this is besides the
+point.  
+*******/
+
+
+/* The following turns off multiple inheritance when possible */
+
+# 119 "../xcompatx.hxx" 
+
+
+
+
+
+/* Inline switches */
+
+
+
+
+
+
+
+
+# 135 "../xcompatx.hxx" 
+
+# 138 "../xcompatx.hxx" 
+
+
+
+
+
+
+
+
+
+/* Once we have an xlint++ to check that LEAF member functions in fact */
+/*  aren't redefined in any subclass, then we can safely turn the above */
+/*  into: */
+/*    #define LEAF */
+/*  to make production code faster & smaller.  This will also reduce the */
+/*  effectiveness of tombstone checking. */
+
+
+
+# 161 "../xcompatx.hxx" 
+
+
+
+
+
+# 163 "../tofux.hxx" 2
+
+
+# 165 "../tofux.hxx" 
+
+
+# 1 "../xunewx.hxx" 1
+/*
+      (C) Copyright 1988, 89 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+**************************************************************************** */
+//
+//	Added count of Lions/Tigers/Bears vs Christians
+//		- michael Aug  5 1991
+//
+//	Piled lions on top of tigers and finally removed extinct bears
+//	Note that all christians caused by bears are also gone.
+//		- ech Mar 11 1992
+
+
+
+/* =========================================================================
+   |			    new & delete		                   |
+   ========================================================================= */
+
+
+
+
+# 1 "../xcompatx.hxx" 1
+/*
+      (C) Copyright 1988, 89 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+**************************************************************************** */
+
+
+/* It is intended for this file to provide portable functionality */
+/*  to needed non-portable constructs.  Mostly this file provides */
+/* portability between various C++ compilers */
+/* This file should be acceptable to various C++s */
+/*
+ * CONST now always const.  Formic has been upgraded with "const:", so
+ * stubble can do the right thing.
+ *	- michael Nov 14 1990
+ *
+ * CONST now always '', because making it const breaks backend diskfulness.
+ *	- michael Dec  3 1990
+ *
+ * Shut up xlint "hard cast" complaints at uint1() and character()
+ *	- michael Apr 21 1991
+  *
+  * - Added PURE_VIRTUAL_BUG definition to move compatibility switching from
+  *   tofu to here.  Initially defined for sgi only.
+ */
+
+# 165 "../xcompatx.hxx" 
+
+# 32 "../xunewx.hxx" 2
+
+
+# 34 "../xunewx.hxx" 
+
+
+
+# 1 "/xuenv/build-env/sun/usr/include/CC-2.0//stddef.h" 1
+/*	@(#)stddef.h 1.3 89/10/04 SMI	*/
+
+
+
+
+# 1 "/xuenv/build-env/sun/usr/include/CC-2.0//sys/stdtypes.h" 1
+/*    @(#)stdtypes.h 1.6 90/01/04 SMI */
+
+/*
+ * Suppose you have an ANSI C or POSIX thingy that needs a typedef
+ * for thingy_t.  Put it here and include this file wherever you
+ * define the thingy.  This is used so that we don't have size_t in
+ * N (N > 1) different places and so that we don't have to have
+ * types.h included all the time and so that we can include this in
+ * the lint libs instead of termios.h which conflicts with ioctl.h.
+ */
+
+
+
+typedef	int		sigset_t;	/* signal mask - may change */
+
+typedef	unsigned int	speed_t;	/* tty speeds */
+typedef	unsigned long	tcflag_t;	/* tty line disc modes */
+typedef	unsigned char	cc_t;		/* tty control char */
+typedef	int		pid_t;		/* process id */
+
+typedef	unsigned short	mode_t;		/* file mode bits */
+typedef	short		nlink_t;	/* links to a file */
+
+typedef	long		clock_t;	/* units=ticks (typically 60/sec) */
+typedef	long		time_t;		/* value = secs since epoch */
+
+typedef	unsigned int	size_t;		/* unsigned int for C++ */
+typedef int		ptrdiff_t;	/* result of subtracting two pointers */
+
+typedef	unsigned short	wchar_t;	/* big enough for biggest char set */
+
+
+# 7 "/xuenv/build-env/sun/usr/include/CC-2.0//stddef.h" 2
+
+# 10 "/xuenv/build-env/sun/usr/include/CC-2.0//stddef.h" 
+
+
+
+
+
+# 38 "../xunewx.hxx" 2
+
+
+enum AllocType { PERSISTENT = 0,
+		 OTHER = 1,
+		 YOUR_CHOICE = 2 /* To be determined according to fluid
+		                     allocationType. */
+		 };
+
+UInt32	tigers();
+UInt32	christians();
+
+
+# 168 "../tofux.hxx" 2
+# 1 "../bombx.hxx" 1
+/* ========================================================================== */
+//
+//	Copyright (c) 1989 by Xanadu Operating Company, All Rights Reserved.
+//
+/* ========================================================================== */
+//
+// The information contained herein is confidential, proprietary to Xanadu
+// Operating Company, and considered a trade secret as defined in section
+// 499C of the penal code of the State of California.
+//
+// Use of this information by anyone other than authorized employees of
+// Xanadu is granted only under a written nondisclosure agreement,
+// expressly prescribing the scope and manner of such use.
+//
+// The above copyright notice is not to be construed as evidence of
+// publication or the intent to publish.
+//
+/* ========================================================================== */
+//
+//				bombx.hxx
+//
+//		The bailout bomb macros and their associated objects.
+//
+//		By Michael McClary		1989
+//
+/* ========================================================================== */
+//
+//	NOTE: Taking an error exit in (or in something called by) the
+//	constructor of a heap-allocated object causes a memory leak.
+//
+//	Overloadings of operator new() can be used to solve this problem.
+//	(See test file for some examples.)
+//
+/* ========================================================================== */
+//
+//
+//	Merged:
+//	 - alpha-6 (which has a do-nothing BombStringDetonator(int, int) for
+//	   constructing the initial detonator, so it wouldn't snip off the
+//	   fuse when its turn comes in static construction - safe because
+//	   uninitted statics are initted zero and in C++ NULL is zero) with
+//	 - my Mar 12 (with SHIELD_{BREAK/CONTINUE/RETURN()/VOID})
+//		-michael  Jul 26 1990
+//
+//	Cleaning up accumulated changes:
+//		- michael Apr  9 1991
+//
+//	Merge with alpha-12:  change const -> CONST
+//		-michael Apr 18 1991
+//
+//	Reorganized for clarity.
+//	Added more comments.
+//	Added opaque declarations for several classes.
+//	Fixed BOOBY_TRAP macro to use SHIELD_BREAK.
+//	Changed Shield from a struct to a class.
+//		-michael Apr 20 1991
+//
+//	Adding Doomsday Bombs
+//		-michael Apr 21 1991
+//
+//	Initial inlining
+//		- eric Apr 30 1991
+//
+//	Changed from arming-ordered detonation to construction-ordered
+//	detonation.  (This matches the implementation that can be built on
+//	the proposed standard, and works natuarally with a single-linked
+//	list, eliminating two member variables and considerable overhead
+//	in BombSuperclass and its children (i.e. strong pointers).)
+//
+//	Also "broke" the BombSuperclass default copy constructor (to
+//	increase type paranoia).
+//		- michael Jun 21 1991
+//
+//	Added ROOTCLASS for MacSingleInheritance
+//		- ech Aug 30 1991
+//
+//	- Split out bombc.h, containing:
+//	   - BOMB_REPORT_LINE switch
+//	   - PROBLEM_LIST macros
+//	   - SourceOfDetonationSignal enum
+//	  which were needed for c bombs.
+//	- Added BombStringDetonator::fetchFirstP(), ditto
+//	- Eliminated unnecessary setjmp() call etc. from DOOMSDAY_BOMB
+//		- michael - Nov 2 1991  (merged Feb 17)
+//
+//	Modifications for begin/end style:
+//	 - Eliminated EXPORT (which was unused)
+//	 - Converted DESIGN to equivalent of old EXPORT (more work needed
+//	   because this breaks some inlining!!!!  Fixing it will also improve
+//	   the performance of the ORDER-in-hxx/BUILD-in-cxx form.)
+//	 - Installed begin/end code.
+//		- michael Feb 24 1992
+//
+//	Made bombStringDetonatorP a static member variable (renamed currentP).
+//	Made initialBombStringDetonator ditto (renamed firstInstance).
+//	Deleted obsolete shield-ordering stub macros.
+//		- michael Feb 27 1992
+//
+//	Switched to inline bombs.  BUILD_BOMB() stuff moved from cxx to ixx
+//		- michael Mar 2 1992
+//
+//	Added BombStringDetonator::previousDetonatorP and fetch...()
+//	to fix GC-during-blasting bug.
+//		- michael Mar  6 1992
+//
+//	Removed obsolete DEFINE_BOMB and non BEGIN/END bomb builds.
+//	Added TRY/CATCH
+//		- michael Mar 12 1992
+//
+//	Removed LEAF from removeFromMidString
+//		- ech Apr 21, 1992
+//
+//	Changed _shieldList to be a function to suppress defined but not used
+//	warnings from 2.1 compiler
+//		- ech Oct 1, 1992
+//
+//	Made DOOMSDAY_shieldList be in C linkage because of 2.1 mismatch rule
+//		- ech Oct 2, 1992
+//
+//	Added print method to Problem that does not require allocation
+//		- ech Mar 22, 1993
+/* ========================================================================== */
+//
+//	Repitition suppression switch
+//
+/* ========================================================================== */
+
+
+
+
+/* ========================================================================== */
+//
+//	Includes
+//
+/* ========================================================================== */
+
+# 139 "../bombx.hxx" 
+
+
+
+# 142 "../bombx.hxx" 
+
+
+  	/* so xlint doesn't gripe about system includes */
+
+# 152 "../bombx.hxx" 
+
+	typedef	int	jmp_buf[9];	/* !!!! */
+
+
+
+
+/* ========================================================================== */
+//
+//	Includes shared with C interface to bombs:
+//		BOMB_REPORT_LINE sharp-define
+//		SourceOfDetonationSignal enum
+//		PROBLEM_LIST() sharp-define
+//
+/* ========================================================================== */
+
+# 1 "../bombc.h" 1
+/* ==========================================================================
+ *
+ *	Copyright (c) 1989 by Xanadu Operating Company, All Rights Reserved.
+ *
+ * ==========================================================================
+ *
+ * The information contained herein is confidential, proprietary to Xanadu
+ * Operating Company, and considered a trade secret as defined in section
+ * 499C of the penal code of the State of California.
+ *
+ * Use of this information by anyone other than authorized employees of
+ * Xanadu is granted only under a written nondisclosure agreement,
+ * expressly prescribing the scope and manner of such use.
+ *
+ * The above copyright notice is not to be construed as evidence of
+ * publication or the intent to publish.
+ *
+ * ==========================================================================
+ *
+ *				bombc.h
+ *
+ *	The bailout bomb declarations which are exported to C clients.
+ *
+ *		By Michael McClary		1991
+ *
+ * ==========================================================================
+ *
+ *	Cloned from bombx.hxx
+ *	Edited down to just what was needed both by c++ and c bombs
+ *		- michael Oct 27 1991
+ *
+ * ========================================================================== */
+/* ==========================================================================
+ *
+ *	Repitition suppression switch
+ *
+ * ========================================================================== */
+
+
+
+/* ==========================================================================
+ *
+ *	Includes
+ *
+ * ========================================================================== */
+
+# 49 "../bombc.h" 
+
+
+static char *bombc_h_version() {
+    return "$Id: bombc.h,v 2.3 1992/11/25 23:25:56 eric Exp $";
+}
+
+/* ==========================================================================
+ *
+ *	#define BOMB_REPORT_LINE if file and line numbers are to be
+ *	displayed in error messages.
+ *
+ * ========================================================================== */
+
+
+
+/* ==========================================================================
+ *
+ *	BOMBs are the objects which do the cleanup actions.  They are strung
+ *	on a "fuse" which grows or shrinks as the program flow goes deeper
+ *	or shallower in block/subroutine nesting, and they "detonate"
+ *	sequentially when an exception exit bypasses ordinary program flow.
+ *
+ * ==========================================================================
+ *
+ *	Arguments to detonateBomb()
+ *	  - Generally: the reason the bomb is being detonated.
+ *	  - BLASTING_STOPS is a special case of BLASTING that is passed
+ *	    to the SHIELD that catches the blast.
+ *
+ * ========================================================================== */
+
+enum SourceOfDetonationSignal {
+	  LEFT_AREA
+	, BLASTING
+	, BLASTING_STOPS
+	, LOCAL_DETONATE
+	, REARMED
+};
+/* ==========================================================================
+ *
+ *	PROBLEM_LIST(LTAG,NUMBER,(LIST)):
+ *
+ *	A (set of) macro(s) to generate the list of problems that a SHIELD
+ *	catches.
+ *
+ *	LTAG:	An identifier to be used in the SHIELD_UP() macro.
+ *	NUMBER:	The number of problems in LIST.
+ *	LIST:	A (paren)-enclosed, comma-separated, list of problems.
+ *
+ *	(The problems in LIST may be any string, but by convention are
+ *	 suitable for use as manefest constants in a #define, i.e.
+ *	 ALL_CAPS_UNDERSCORES_FOR_BLANKS.)
+ *
+ *	"ALL_BUT" in the first position of LIST says to invert sense on
+ *	the rest of test.
+ *
+ *	"DOOMSDAY" in the first position of LIST says the SHIELD is really
+ *	a DOOMSDAY_BOMB.
+ *
+ *	(Though problem lists are only defined for a limited number of
+ *	 problems, adding more, should they become necessary, is trivial.)
+ *
+ * ========================================================================== */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 168 "../bombx.hxx" 2
+
+/* ========================================================================== */
+//
+//	Opaque declarations of the major classes defined in this file.
+//	(Declared here so they can point at each other.)
+//
+/* ========================================================================== */
+
+class BombSuperclass;		// The superclass of bombs and bomb-like things
+				// which are strung together on a fuse.
+
+class BombStringDetonator;	// The object that inspects and lights the fuse.
+
+class Problem;			// The "flame" that is passed down the "burning
+				// fuse" from the BombStringDetonator.
+
+class Shield;			// The lvalue squirreled away in a SHIELD
+				// construct.  Contains a pointer to an error
+				// list, a jmp_buf, and storage for a copy of
+				// a Problem instance.
+/* ========================================================================== */
+//
+//	The Problem class:
+//
+//	(A token to be passed to whatever does the error processing,
+//	 telling it what the problem is and perhaps where it occurred.)
+//
+//	NOTE:  Bare problem objects live on the stack, and go away
+//	       (without destruction) when the longjmp() makes the
+//	       stack vanish out from under them.
+//
+//	       Problem objects also live in Shield objects, which also
+//	       live on the stack.
+//
+//	NOTE:  Max name sizes are for proxy communication only.
+/* ========================================================================== */
+
+
+
+
+
+
+class Problem  {
+    public:
+	Problem (			// For Problems in local code.
+		   char *	argProblemName
+		,  int	argVal
+
+		,  char *	argFileName
+		, int		argLineNumber
+
+	);
+
+	Problem (			// For Problems that come in on comm.
+		   char *	argProblemName
+		,  int	argVal
+
+		,  char *	argFileName
+		, int		argLineNumber
+
+		, void		(*argSpecialFree)( char *,  char *)
+	);
+
+	Problem();				// For copy in Shield object
+	void 		copyIn(Problem * argProblem);	// Ditto
+	void 		freeStrings();		// Ditto
+
+	void		printOn (ostream& oo);
+	void		printError ();
+	BooleanVar	checkProblem( char * argProblemName);
+
+	 char *	getProblemName();	// Return problemName
+	int		getVal();		// Return val
+	 char *	getFileName();		// Return fileName
+	int		getLineNumber();	// Return lineNumber
+    private:
+	 char *		problemName;
+	int			val;
+
+	 char *		fileName;
+	int			lineNumber;
+
+	void			(*specialFree)( char *,  char *);
+};
+
+ostream&	operator<<(ostream& oo, Problem * argProblemP);
+
+
+/* ========================================================================== */
+//
+//	BOMBs are the objects which do the cleanup actions.  They are strung
+//	on a "fuse" which grows or shrinks as the program flow goes deeper
+//	or shallower in block/subroutine nesting, and they "detonate"
+//	sequentially when an exception exit bypasses ordinary program flow.
+//
+/* ========================================================================== */
+//
+//	The superclass of all bomb objects (and of all bomb-like things which
+//	are strung together on a fuse).
+//
+//	(The superclass does the string linkage/unlinkage and most of
+//	 the decision-making for the objects.)
+//
+/* ========================================================================== */
+
+
+
+class BombSuperclass  {
+
+    protected:
+	int			bombArmed;
+
+    private:
+
+	BombSuperclass *	nextP;
+
+    protected:
+	inline BombSuperclass();
+    private:
+	BombSuperclass(BombSuperclass &){};
+    public:
+	inline ~BombSuperclass();
+    private:
+	virtual Shield *        inspectFuse();
+    public:
+	virtual void *          gCHook();
+	virtual void		gCHook(void * value);
+
+    protected:
+	inline void armBomb();	/* NOT virtual! */
+    public:
+	inline void		disarmBomb();
+	inline virtual void	detonateBomb(SourceOfDetonationSignal SOURCE);
+
+    private:
+	void			removeFromMidString();
+    public:
+
+	
+	friend class		Heaplet;
+	friend class		BombStringDetonator;
+	friend class		BombJig;
+	
+};
+
+/* ========================================================================== */
+//
+//	Internal macros to support the definition of particular BOMBs
+//
+/* ========================================================================== */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ======================================================================== */
+//
+//
+//		ORDER_BOMB(KIND, TYPE);
+//
+//	Declare that a particular KIND of bomb, taking a CHARGE of type TYPE,
+//	exists, and may be used in the module which expands or includes the
+//	expansion of this macro.
+//
+//	BUILD_BOMB_BEGIN(KIND,TYPE) {	    BUILD_SMART_BOMB_BEGIN(KIND,TYPE) {
+//		action;				    action;
+//	} BUILD_BOMB_END(KIND)		    } BUILD_SMART_BOMB_END(KIND)
+//
+//	Define a subclass of BombSuperclass containing the code to do some
+//	particular exception handling.
+//
+/* ========================================================================== */
+//
+//	All bombs make CHARGE available within the action.
+//	Smart bombs also make available the SOURCE of the detonation signal.
+//	The distinction keeps the compiler from complaining about unused
+//	variables.
+//
+/* ========================================================================== */
+//
+//	Typically, ORDER_BOMB() is expanded in the .hxx file, while
+//	BUILD... is expanded in the .ixx.  This makes the bomb available
+//	to clients of the .hxx module which defines them, so they can be
+//	used in macros which are also defined in said .hxx file.
+//
+//	Alternatively, both may be expanded in the .cxx file.  This doesn't
+//	make the bombs of that KIND available to client modules (though it
+//	still uses up a KIND, because KIND is in a global namespace.)
+//
+/* ========================================================================== */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ========================================================================== */
+//
+//	PLANT_BOMB()
+//
+//	Create an (initially disarmed) instance of the subclass.
+//
+//	(Once armed, it will do its particular bomb operation when
+//	its destructor is called, or when and exception that has been
+//	given to BLAST() pops the flow out of this object's scope.)
+//
+//	(Only stack-allocated instances are allowed.  Thus we need not
+//	 figure out whether they need to be unlinked and/or deallocated.)
+//
+/* ========================================================================== */
+
+
+
+
+/* ========================================================================== */
+//
+//	ARM_BOMB()
+//
+//	"Arm" the bomb object.
+//
+/* ========================================================================== */
+
+
+
+
+/* ========================================================================== */
+//
+//	DETONATE_BOMB()
+//
+//	"Trigger" the bomb object early (and disarm it).
+//
+/* ========================================================================== */
+
+
+
+
+/* ========================================================================== */
+//
+//	DISARM_BOMB()
+//
+//	"Disarm" the bomb object without triggering it.
+//
+/* ========================================================================== */
+
+
+
+
+/* ========================================================================== */
+//
+//	Now that ORDER_BOMB() is defined, we can expand it for SHIELDS
+//
+/* ========================================================================== */
+
+	class ShieldFree_Bomb: public BombSuperclass { private:   Problem * CHARGE; public: inline void armBomb(  Problem * argCHARGE);  inline virtual void detonateBomb(SourceOfDetonationSignal); inline ShieldFree_Bomb(); inline ~ShieldFree_Bomb(); };
+/* ========================================================================== */
+//
+//	*_SHIELD()
+//
+//	Catch the detonation propagating up the string of bombs.
+//
+/* ========================================================================== */
+//
+//	Shield:  The lvalue squirreled away in a SHIELD construct.
+//
+/* ========================================================================== */
+
+
+
+class Shield  {
+    public:
+	jmp_buf		jmpBuf;
+	char **		errorListP;
+	Problem		problem;
+
+	Shield();
+};
+
+
+
+/* ========================================================================== */
+//
+//	SHIELDs and LOUD_SHIELDs are special cases of smart bombs, which
+//	addidionally overload the inspectFuse() member function to return
+//	the Shield pointer.  (This allows the detonator to inspect the
+//	bomb string to see if any shields will catch the blast, and
+//	"bomb out" without destroying the state if nobody will.)
+//	
+//	The bombx.cxx file does the equivalent of DESIGNing these
+//	smart bombs.  Clients don't need to ORDER them, because the
+//	following code is equivalent to the expansions of appropriate
+//	ORDER... macros.
+//
+/* ========================================================================== */
+
+class _shield_Bomb: public BombSuperclass {
+    private:
+	Shield *	CHARGE;
+
+    public:
+	void armBomb(Shield * argCHARGE); /* NOT virtual! */
+	virtual void detonateBomb(SourceOfDetonationSignal);
+	virtual Shield * inspectFuse();
+	_shield_Bomb();
+	~_shield_Bomb();
+};
+
+class _lshield_Bomb: public BombSuperclass {
+    private:
+	Shield *	CHARGE;
+
+    public:
+	void armBomb(Shield * argCHARGE); /* NOT virtual! */
+	virtual void detonateBomb(SourceOfDetonationSignal SOURCE);
+	virtual Shield * inspectFuse();
+	_lshield_Bomb();
+	~_lshield_Bomb();
+};
+/* ========================================================================== */
+//
+//	INSTALL_SHIELD()
+//	INSTALL_LOUD_SHIELD()	Instantiate a shield object.
+//
+/* ========================================================================== */
+
+
+
+
+
+
+
+
+
+/* ========================================================================== */
+//
+//	SHIELD_UP()	Raise (activate) the shield.
+//
+//	(The ShieldFree bomb will be defined after the ORDER_BOMB() macro)
+//	(It is needed to free the storage allocated by incoming letter bombs.)
+//
+/* ========================================================================== */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ========================================================================== */
+//
+//	SHIELD_DOWN()	Lower (deactivate) the shield.
+//
+/* ========================================================================== */
+
+
+
+
+/* ========================================================================== */
+//
+//	Some #defined stuff to be used inside the {ACTION} of a SHIELD_UP()
+//
+/* ========================================================================== */
+//
+//	PROBLEM()	Problem object in current shield.
+//
+/* ========================================================================== */
+
+
+
+/* ========================================================================== */
+//
+//	REBLAST()	Problem object in current shield.
+//
+/* ========================================================================== */
+
+
+
+/* ========================================================================== */
+//
+//		SHIELD_RETURN()
+//		SHIELD_VOID
+//		SHIELD_BREAK
+//		SHIELD_CONTINUE
+//
+//	Because an unconditional return inside a shield causes the ShieldFree
+//	bomb's destructor to be missed, the compiler will warn us that the
+//	statement where it lies is not reached.  "SHIELD_RETURN(retval);"
+//	may be used in place of "return retval;"  to shut the compiler up.
+//
+//	Similarly with "break;" and "SHIELD_BREAK;"
+//	Similarly with "continue;" and "SHIELD_CONTINUE;"
+//
+//	SHIELD_VOID is something to be returned in SHIELD_RETURN() when
+//	used in a routine that doesn't return anything.
+//
+/* ========================================================================== */
+
+
+
+
+
+
+/* ========================================================================== */
+//
+//	A construct useful mainly for test files:
+//
+/* ========================================================================== */
+//
+//	BOOBY_TRAP()	Do {ACTION}.  It should BLAST(ONE_OF_LTAG).
+//			 - If it does, catch it and go on.
+//			 - If it doesn't, BLAST(GRIPE).
+//			{ Requires an INSTALL_SHIELD(BOOBY_TRAPPING) }
+//
+/* ========================================================================== */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ========================================================================== */
+//
+//	TRY:  A variant of SHIELDs with semantics closer to the c++
+//	exception handling proposal.
+//
+//	This code looks very much like a try block with a single catch
+//	clause.  Nest them to emulate multiple catch clauses.  (The code
+//	generated a multiple-catch version would be about the same.)
+//
+//	One major difference between try and TRY is that the set of exceptions
+//	caught is designated by a PROBLEM_LIST rather than a class type.
+//	Another is that this designation occurs near the TRY rather than the
+//	CATCH keyword.  A third is that the returned information is accessed
+//	by the VAL and PROBLEM mechanism from SHIELDS, rather than the dummy
+//	argument of the c++ proposal.
+//
+//	LOUD_TRY is like LOUD_SHIELD.  It additionally prints an error report.
+//
+//	TRY(LTAG) {				LOUD_TRY(LTAG) {
+//		try action;				try action;
+//	} CATCH {				} CATCH {
+//		exception handled here;			exception handled here;
+//	}					}
+//
+/* ========================================================================== */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ========================================================================== */
+//
+//	DOOMSDAY BOMBs are a special case of SHIELD that brings down the
+//	application if the SHIELD would have caught a BLAST().
+//
+/* ========================================================================== */
+//
+//	PLANT_DOOMSDAY_BOMB()	Instantiate a doomsday bomb object.
+//
+/* ========================================================================== */
+
+
+
+/* ========================================================================== */
+//
+//	ARM_DOOMSDAY_BOMB()
+//
+//	Logically identical to: SHIELD_UP(_DOOMSDAY, _DOOMSDAY, {;})
+//	but it never really gets jumped to, so we simplify it massively
+//	(eliminating the setjmp() and the guts) to save time and space.
+//
+/* ========================================================================== */
+
+
+
+
+
+
+
+/* ========================================================================== */
+//
+//	DISARM_DOOMSDAY_BOMB()
+//
+/* ========================================================================== */
+
+
+
+
+extern char **	_DOOMSDAY_shieldList();
+
+/* ========================================================================== */
+//
+//	BombStringDetonator
+//
+//	BombStringDetonators hold the string of bombs (by the end where new
+//	bombs are being strung and unstrung), and mediate the detonation of
+//	the bombs when an exception is BLAST()ed.
+//
+//	BombStringDetonator::currentP designates the BombStringDetonator
+//	on which bombs are currently being strung (on the one-way-linked-list
+//	rooted at firstP).
+//
+//	During the stack-unwinding phase of exception handling, a new
+//	BombStringDetonator is instantiated on the stack, and currentP
+//	is changed to point to it.  This makes the entire exception-handling
+//	mechanism available during exception handling, recursively.
+//
+//	During the stack-unwinding phase, to make the information available
+//	to SMART_BOMBs, problemInstanceP in the NEW instance of
+//	BombStringDetonator points to the instance of the Problem class that
+//	contains the information about the Problem being BLAST()ed.  This
+//	may seem off-by-one, but it simplifies access.
+//
+//	After the stack is unwound, the information is copied into another
+//	instance of the Problem class that is a member of the SHIELD catching
+//	the error.  Thus it remains available (from another source) until
+//	the SHIELD's processing is done.
+//
+//	In this single-threadded implementation, one BombStringDetonator
+//	(firstInstance) is instantiated at static initialization time, and
+//	currentP was already pointed to it at load time.  To modify for
+//	a lightweight-multithreader, instantiate one initial instance per
+//	lightweight task and switch currentP during task switching.
+//
+// !!!!	NOTE:  A nasty trick is played to allow bombs to be used during
+//	static initialization time by those objects that are constructed
+//	before firstInstance.  It depends on the assumption that pointers
+//	in static objects are initialized by the >loader< to a value that
+//	compares equal to the NULL pointer.
+//
+/* ========================================================================== */
+
+class BombStringDetonator  {
+    public:
+	static BombStringDetonator *	currentP;
+    private:
+	static BombStringDetonator	firstInstance;
+
+	BombSuperclass *		firstP;
+	Problem *			problemInstanceP;
+	BombStringDetonator *		previousDetonatorP;
+
+    public:
+
+	BombStringDetonator();
+	BombStringDetonator(int, int);
+
+	Problem *		getProblemInstanceP();
+	void detonateBombString(
+		    Problem *	argProblemInstanceP
+	);
+	BombSuperclass *	fetchFirstP();
+
+    private:
+	BombStringDetonator *	fetchPreviousDetonatorP();	// for GC
+
+	
+	friend class		Heaplet;
+	friend class		BombSuperclass;
+	friend class		BombJig;
+	
+};
+
+/* ========================================================================== */
+//
+//	BLAST()
+//
+//	Detonate a string of bombs, until all blow or one catches the error.
+//
+//	BLAST_FROM_THE_PASSED() allows _FILE_ and _LINE_ to be passed in,
+//	so a subroutine can report the location of the real cause of the error.
+//
+/* ========================================================================== */
+
+extern void blast(Problem * argProblemInstanceP);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 868 "../bombx.hxx" 
+
+
+# 872 "../bombx.hxx" 
+
+
+
+# 169 "../tofux.hxx" 2
+
+/* Type Conversion Suppression Junk */
+
+class TCSJ {};
+
+
+
+
+ extern TCSJ tcsj;
+# 180 "../tofux.hxx" 
+
+
+
+class XCSJ {};
+
+ extern XCSJ xcsj;
+# 188 "../tofux.hxx" 
+
+
+
+
+/* Used to suppress the annoying C++ habit of interpreting single argument */
+/* constructors as implicit type converters */
+
+class Category;
+class CategoryList;
+
+/* A standard C routine for accessing category names */
+
+    char * getCategoryName( void *oop );
+
+
+
+/*  hack to force vtables to appear where we want them */
+
+class VTBL {};
+
+//extern  VTBL VTBL_HACK;//ZZZroger oct 1995
+
+# 212 "../tofux.hxx" 
+
+
+/*  Class attributes */
+
+# 298 "../tofux.hxx" 
+
+
+
+
+
+# 310 "../tofux.hxx" 
+
+
+
+
+
+
+
+
+
+
+# 324 "../tofux.hxx" 
+
+
+class IntegerVar;
+class Heaplet;
+
+# 1 "../scavx.hxx" 1
+/* Copyright (c) 1993, Memex, Inc., All Rights Reserved. */
+
+/*
+		Generation Scavenging Garbage Collector
+*/
+
+/* $Id$ */
+
+
+
+
+# 1 "../xcompatx.hxx" 1
+/*
+      (C) Copyright 1988, 89 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+**************************************************************************** */
+
+
+/* It is intended for this file to provide portable functionality */
+/*  to needed non-portable constructs.  Mostly this file provides */
+/* portability between various C++ compilers */
+/* This file should be acceptable to various C++s */
+/*
+ * CONST now always const.  Formic has been upgraded with "const:", so
+ * stubble can do the right thing.
+ *	- michael Nov 14 1990
+ *
+ * CONST now always '', because making it const breaks backend diskfulness.
+ *	- michael Dec  3 1990
+ *
+ * Shut up xlint "hard cast" complaints at uint1() and character()
+ *	- michael Apr 21 1991
+  *
+  * - Added PURE_VIRTUAL_BUG definition to move compatibility switching from
+  *   tofu to here.  Initially defined for sgi only.
+ */
+
+# 165 "../xcompatx.hxx" 
+
+# 13 "../scavx.hxx" 2
+
+# 1 "/usr/local/lib/gcc-lib/sparc-sun-sunos4.1.4/2.7.1/include/sys/stdtypes.h" 1
+/*	@(#)stdtypes.h 1.6 90/01/04 SMI	*/
+
+/*
+ * Suppose you have an ANSI C or POSIX thingy that needs a typedef
+ * for thingy_t.  Put it here and include this file wherever you
+ * define the thingy.  This is used so that we don't have size_t in
+ * N (N > 1) different places and so that we don't have to have
+ * types.h included all the time and so that we can include this in
+ * the lint libs instead of termios.h which conflicts with ioctl.h.
+ */
+# 52 "/usr/local/lib/gcc-lib/sparc-sun-sunos4.1.4/2.7.1/include/sys/stdtypes.h" 
+
+# 15 "../scavx.hxx" 2
+
+class Heaper;
+
+class PtrArray;
+//#include "wparrayx.oxx"--introduces an inclusion loop
+class WeakPtrArray;
+
+# 1 "../scavx.oxx" 1
+
+
+
+class Heaplet;
+
+
+# 23 "../scavx.hxx" 2
+# 1 "../scavp.oxx" 1
+
+
+
+class HeapletManager;
+class HeapletSet;
+
+
+# 24 "../scavx.hxx" 2
+
+struct ObjHead;
+
+class PointerReferenceSet;
+class ArrayReferenceSet;
+class OutPointerSet;
+class PtrArraySet;
+
+
+/*
+	Class Heaplet
+
+	To allow cheap PrimArrayHeap compaction, the remember set
+	for each page is in two parts: random pointers and pointers
+	inside PtrArrays.  The first are recorded by address, while
+	the later is recorded by array and index.
+*/
+
+class Heaplet  {
+
+ public: /* class stuff */
+
+    /* Acquire storage for a new Heaper in new space. */
+    static void * allocate (size_t nBytes);
+
+    /* Acquire storage for a new Heaper in new space. */
+    static ObjHead * allocateWords (Int32 nInt32s);
+
+    /* Acquire storage for a Heaper migrating to old space. */
+    static ObjHead * allocateOldWords (Int32 nInt32s);
+
+    /* Perform a scavenge over Current */
+    static void garbageCollect ();
+
+    /* Return part of address that specifies page.  Does not check
+       if pointer is actually in a page. */
+    inline static Heaplet * pageOf (void * ptr);
+
+    /* Return TRUE if ptr is in a scavengeable page */
+    static BooleanVar isScavengeable (void * ptr);
+
+    /* Make sure the world is set up for allocation. */
+    inline static void initialize ();
+
+    /* Change the tenuring age.  Return old tenuring age. */
+    static Int32 setTenureAge (Int32 age);
+
+    /* Force all objects to be tenured */
+    static void tenureAll ();
+
+    /* Updates the remembered sets (in-ptrs) for the pages referenced
+       by both the old and new value of the pointer being assigned.
+       The container argument is a pointer within the page holding
+       the object responsible for holding the pointer.  This is
+       necessary as the PrimArray classes keep their storage outside
+       of the Heaplets.
+       */
+    /*INLINE*/ static void checkedStore (Heaper** ptr, 
+				     Heaper* newValue,
+				     void* container);
+
+    /* Updates the array reference set */
+    /*INLINE*/ static void checkedArrayStore (PtrArray* array,
+					      Heaper** ptr,
+					      Heaper* newValue,
+					      Int32 index);
+
+    /* Updates the remembered sets (in-ptrs) for the pages referenced
+       by both the old and new value of the pointer being assigned
+       to a WeakPtrArray. */
+    /*INLINE*/ static void checkedWeakStore (WeakPtrArray* array,
+					     Heaper** ptr, 
+					     Heaper* newValue,
+					     Int32 index);
+
+    /* Removes the pointer from the remembered set of the page it
+       references.
+       The container argument is a pointer within the page holding
+       the object responsible for holding the pointer.  This is
+       necessary as the PrimArray classes keep their storage outside
+       of the Heaplets.
+       */
+    static void forgetPointer (Heaper** ptr, void* container);
+
+    /* Move the object to a new page if it''s still here.
+       Returns the new address. */
+    static Heaper * forward (Heaper* obj);
+
+    /* Return NULL if obj is in CurrentDrainSet and not forwarded,
+       otherwise return the new location. */
+    static Heaper * forwardOrNULL (Heaper * obj);
+
+    static void forwardToOld (Heaper ** oldPtr, Heaper ** newPtr);
+
+ private: /* class stuff */
+
+    /* The out-of-line work function for initialization */
+    static void actualInitialize ();
+
+    static void actualCheckedStore  (Heaper** ptr, 
+				     Heaper* newValue,
+				     void* container);
+
+    static void actualCheckedArrayStore (PtrArray* array,
+					 Heaper** ptr,
+					 Heaper* newValue,
+					 Int32 index);
+
+    static void actualCheckedWeakStore (WeakPtrArray* array,
+					Heaper** ptr, 
+					Heaper* newValue,
+					Int32 index);
+
+public: /* instance stuff */
+
+    /* Attempt to allocate storage in this page. */
+    ObjHead * fetchAlloc (Int32 nInt32s);
+
+    /* Allocate storage associated with this page, going into
+       overflow if necessary.  This is used for interpage
+       reference recording that must not fail. */
+    ObjHead * getWords (Int32 nInt32s);
+
+    /* Allocate storage associated with this page, going into
+       overflow if necessary.  This is used for interpage
+       reference recording that must not fail. */
+    ObjHead * getBytes (Int32 nBytes);
+
+    /* Do a scavenge of this page in new space */
+ /*   void scavengeNew ();*/
+ void scavengeNewRememberSet();
+ void scavengeNewArrayRememberSet();
+ void scavengeNewWeakReferenceSet();
+ void scavengeNewPtrArraySet();
+ void scavengeNewOutPointerSet();
+
+
+    /* Add a pointer to the remember set */
+    void remember (Heaper** ptr);
+
+    /* Remove a pointer from the remember set */
+    void forget (Heaper** ptr);
+
+    /* Change a pointer in the remember set.  Useful for migration */
+    void changeRemembered (Heaper** oldPtr, Heaper** newPtr);
+
+    /* Add a pointer to the array remember set */
+    void rememberArray (PtrArray* array, Int32 index,
+			PtrArray* oldArray = 0);
+
+    /* Remove a pointer from the array remember set */
+    void forgetArray (PtrArray* array, Int32 index);
+
+    /* Change an entry in the array reference set */
+    void changeArray (PtrArray* oldArray, PtrArray* newArray);
+
+    /* Add a pointer to the weak reference set */
+    void rememberWeak (WeakPtrArray* array, Int32 index,
+		       WeakPtrArray* oldArray = 0);
+
+    /* Remove a pointer from the weak reference set */
+    void forgetWeak (WeakPtrArray* array, Int32 index);
+
+    /* Change an entry in the weak reference set */
+    void changeWeak (WeakPtrArray* oldArray, WeakPtrArray* newArray);
+
+    /* Remove all references from page from remember, array, and
+       weak reference sets.  In the weak case this is to prevent
+       bogus finalization if an object is collected after its
+       referencing weak arrays go away. */
+    void forgetFromPage (Heaplet * page);
+
+    /* Add an outward pointer. */
+    void addOutPointer (Heaplet* other);
+
+    /* Remove an outward pointer. */
+    void removeOutPointer (Heaplet* other);
+
+    /* Record that a PtrArray resides in this page. */
+    void registerPtrArray (PtrArray* array);
+
+    /* Remove a PtrArray from this page. */
+    void unregisterPtrArray (PtrArray* array);
+
+    /* Returns TRUE if this page contains ptr. */
+    inline BooleanVar contains (void * ptr);
+
+    /* Returns overflow page; used by release to free group of pages */
+    inline Heaplet * overflow ();
+
+    Heaplet ();
+
+ public: /* class stuff */
+
+    /* The manager for the resevoir of free pages */
+    static HeapletManager * PagePool;
+
+    /* Pages of tenured objects believed not to be garbage */
+    static HeapletSet * Old;
+
+ public: /* fluid-like class variables */
+
+    /* The page currently providing new storage.  This is only NULL prior
+       to initialization of the heap. */
+    static Heaplet * NewPage;
+
+    /* The page current allocating space for Old objects during a migration. */
+    static Heaplet * AltNewPage;
+
+    /* Pages containing new objects to be scrutinized during next scavenge */
+    static HeapletSet * Current;
+
+    /* Pages containing new or old objects survived by current scavenge */
+    static HeapletSet * NextCurrent;
+
+    /* The set from which things are being scavenged */
+    static HeapletSet * CurrentDrainSet;
+
+    /* The age of an object moving to Old space */
+    static Int32 TenureAge;
+
+    static Int32 NumberOfPagesSinceLastCollect;
+
+ private: /* instance stuff */
+
+    /* Head of Heaplet */
+
+    Int32		* myHighWaterMark;
+    Int32		* myLastWord;
+    Heaplet		* myOverflow;
+    PointerReferenceSet * myRememberSet;
+    ArrayReferenceSet   * myArrayRememberSet;
+    ArrayReferenceSet   * myWeakReferenceSet;
+    OutPointerSet	* myOutPointerSet;
+    PtrArraySet		* myPtrArraySet;
+    Int32		myHeap[1];
+
+    friend class ScavengerTester;
+};
+
+
+# 267 "../scavx.hxx" 
+
+
+
+# 330 "../tofux.hxx" 2
+# 1 "../opaquex.hxx" 1
+/* ========================================================================== */
+//
+//	Copyright (c) 1991 by Xanadu Operating Company, All Rights Reserved.
+//
+/* ========================================================================== */
+//
+// The information contained herein is confidential, proprietary to Xanadu
+// Operating Company, and considered a trade secret as defined in section
+// 499C of the penal code of the State of California.
+//
+// Use of this information by anyone other than authorized employees of
+// Xanadu is granted only under a written nondisclosure agreement,
+// expressly prescribing the scope and manner of such use.
+//
+// The above copyright notice is not to be construed as evidence of
+// publication or the intent to publish.
+//
+/* ========================================================================== */
+//
+//				opaquex.hxx
+//
+//	This module allows the declaration of the inheritance relationship
+//	of classes, and the definition of pointers-with-lots-of-behavior-to
+//	instances of those classes, without exposing the implementation
+//	of the classes to which the pointers point.
+//
+//	It is called "opaque" because such declarations-without-exposure
+//	are said to be opaque (though some have suggested it's really
+//	because this module is excessively complex and confusing).
+//
+/* ========================================================================== */
+//
+//	Eliminated StrongPtrVar::inspectFuse() overriding.  (Unnecessary.)
+//	 - michael May  3 1991
+//
+//	Added/merged the "wimpies are really strongs" stuff
+//	(Changed so UNPTRs are WM2_, not WP2_, and true stars art WSP2_, to
+//	 detect any explicit WP2_s in other code and in prep for more types.)
+//		- michael Jun 29 1991
+//
+//	Added 16 methods to fix pointer == and != stuff.
+//		- michael (with markm) Jul 12-14 1991
+//
+//	Added destroyIt() methods.
+//		- michael Jul 15 1991  (Merged Jul 22 1991)
+//
+//	Added casts from TYPE* to Heaper* for store calls in response to error
+//	when USE_INLINES turned on.
+//		- ech Aug 27 1991
+//
+//	Prettified the code (my style) and fixed the xlint hooks in preparation
+//	for surgery during a fix of MB30 (failed inlining of some SPTR()
+//	constructors and destructors.)
+//		- michael Oct  4 1991
+//
+//	Moved remaining inline code to opaquex.ixx, and split off opaque2x.ixx
+//	(containing only those routines that need to call routines in Heaper.)
+//	The routines that need to call heaper inline routines will not be
+//	inlined for those pointer classes that must be defined before Tofu
+//	and Heaper.  (Currently, that's destroyIt() in pointers to Heaper,
+//	Xmtr, and Rcvr.)
+//		- michael Oct 10 1991
+//
+//	RPTRs & GPTRs
+//		- ech Oct 12 1992
+
+
+
+
+/* $Id: opaquex.hxx,v 2.10 1992/12/22 21:42:52 ravi Exp $ */
+
+class Heaper;
+
+/* ===========================================================================
+//
+//      CheckedPtrVar -- this is the pointer type that an instance variable
+//			 must be in order for the garbage collector to
+//			 examine it.
+//
+//	!!!!! These macros do some work that would be done by stubble in
+//	      other circumstances.  They define their own sendSelfTo methods
+//	      and produce their own Recipe objects.  Be careful to keep these
+//	      and the formic script in agreement or bad chaos will occur.
+//
+// ========================================================================= */
+
+class CheckedPtrVar  {
+    public:
+
+// This is needed for the unsafe expansion of CAST since CheckPtrVars
+// cannot in general cast themselves to random pointers.
+
+	inline		operator Heaper*();	/* Not virtual !!! */
+
+
+	void		printOn (ostream&);
+
+
+	inline Heaper *	fetch() ;
+    protected:
+	inline Heaper *	get() ;
+	inline void	store(Heaper * p);
+    public:
+	inline void	forwardTo(Heaper * p);
+	inline void	destroyIt();
+	inline ~CheckedPtrVar();	// to clean up remember sets
+    protected:
+	inline		CheckedPtrVar();
+
+	inline		CheckedPtrVar(Heaper * p);
+
+    public:
+	Heaper *	value;  /* ???? why is this public ECH - inlining bug?*/
+    private:
+	static void nullPointer();
+# 118 "../opaquex.hxx" 
+
+};
+
+
+	extern ostream&	operator<< (ostream& oo, CheckedPtrVar& ptrVar);
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Following will be turned into pointer types later:
+//	WK{M}PTR()		True weak pointer (fixes own dangles)
+//	WO{M}PTR()		Wimpout pointer (complains on dangling deref)
+// Perhaps a third one to complain as soon as dangling, or should that
+// be a mode?  Try getting picky on all non-WK ptrs first...
+//
+// (There are still WPTRs elsewhere in this file.)
+
+# 151 "../opaquex.hxx" 
+# 150 "../opaquex.hxx" 
+
+
+
+# 155 "../opaquex.hxx" 
+
+
+# 159 "../opaquex.hxx" 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 197 "../opaquex.hxx" 
+# 196 "../opaquex.hxx" 
+
+
+
+
+
+
+
+# 205 "../opaquex.hxx" 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 252 "../opaquex.hxx" 
+
+
+
+
+
+
+
+
+
+/* (- Whew!! -) */
+
+
+/* ==========================================================================
+//
+//	GPTR(TYPE) - Global strong pointer to TYPE to be used as a root for garbage
+//		     collection.  These live on the stack as automatic and
+//		     argument variables, in fluid variables, (?) and as globals.
+//
+// ========================================================================== */
+
+class GlobalStrongPtrVar : public BombSuperclass {
+    public:
+
+// This is needed for the unsafe expansion of CAST since GlobalStrongPtrVars
+//  cannot in general cast themselves to random pointers
+
+	inline		operator Heaper* ();	/* Not virtual !!! */
+
+
+	virtual void	printOn (ostream&);
+
+
+	inline Heaper *	fetch() ;
+    public:
+	virtual void *	gCHook ();
+	virtual void	gCHook (void * value);
+    protected:
+	inline Heaper *	get() ;
+	inline void	store(Heaper * p);
+    public:
+	inline void	destroyIt();
+    protected:
+	inline		GlobalStrongPtrVar ();
+    public:
+
+	inline		GlobalStrongPtrVar (Heaper * p);
+
+    public:
+	inline		~GlobalStrongPtrVar ();
+    public:
+	Heaper *	value;
+    private:
+	static void nullPointer();
+	void		badSequenceNumber () ;
+# 308 "../opaquex.hxx" 
+
+};
+
+
+# 314 "../opaquex.hxx" 
+
+
+
+
+
+
+# 325 "../opaquex.hxx" 
+# 324 "../opaquex.hxx" 
+
+
+
+# 329 "../opaquex.hxx" 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 408 "../opaquex.hxx" 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 461 "../opaquex.hxx" 
+
+
+
+
+
+
+
+
+/* (- Whew!! -) */
+
+
+/* ===========================================================================
+//
+//	SPTR(TYPE) - Strong stack pointer to TYPE to be ignored by garbage collector
+//
+// ========================================================================= */
+
+
+
+/* ===========================================================================
+//
+//	WPTR(TYPE) - Wimpy pointer to TYPE to be ignored by garbage collector
+//
+// ========================================================================= */
+
+
+
+/* ===========================================================================
+//
+//	RPTR(TYPE) - Returned pointer to TYPE to be ignored by garbage collector
+//
+// ========================================================================= */
+
+
+
+/* ===========================================================================
+//
+//	OPAQUE_TYPE_N(TYPE0,...,TYPEn-1); declare opaque pointers
+//
+// ========================================================================= */
+
+
+/* 
+We break from our normal convention and include the definition
+directly inside the declaration, because the macro hacking to follow
+our convention just got too painful.  This means that these two
+routines cannot be switched to be defined in only one compilation unit
+(and so cannot be fully supported by most debuggers--try setting a
+breakpoint in an inline routine).
+*/
+
+# 522 "../opaquex.hxx" 
+# 521 "../opaquex.hxx" 
+
+
+
+
+
+
+
+
+
+# 536 "../opaquex.hxx" 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ===========================================================================
+//
+//	APTR(TYPE) - Normal gc-safe Argument pointer
+//
+// ========================================================================= */
+
+
+
+
+
+
+
+# 603 "../opaquex.hxx" 
+
+
+
+/* ========================================================================= */
+//
+//	Pointer comparison operators.
+//
+//	The pointer superclasses are:
+//	 - void *
+//	 - CheckedPtrVar
+//	 - GlobalStrongPtrVar
+//
+//	To support all code generation you need a "==" and a "!=" for:
+//	 - Every pointer superclass (except void *) against itself.
+//	 - Every pairwise combination of two pointer superclasses,
+//	   in both orders.
+//
+//	Note that these are inline even if switchable inlines are off.
+//
+/* ========================================================================== */
+
+inline BooleanVar operator== (
+       CheckedPtrVar&	aLeft
+    ,  CheckedPtrVar&	aRight
+) {
+	return aLeft.fetch() == aRight.fetch();
+}
+
+inline BooleanVar operator!= (
+       CheckedPtrVar&	aLeft
+    ,  CheckedPtrVar&	aRight
+) {
+	return aLeft.fetch() != aRight.fetch();
+}
+
+inline BooleanVar operator== (
+       void *		aLeft
+    ,  CheckedPtrVar&	aRight
+) {
+	return aLeft == aRight.fetch();
+}
+
+inline BooleanVar operator!= (
+       void *		aLeft
+    ,  CheckedPtrVar&	aRight
+) {
+	return aLeft != aRight.fetch();
+}
+
+inline BooleanVar operator== (
+       CheckedPtrVar&	aLeft
+    ,  void *		aRight
+) {
+	return aLeft.fetch() == aRight;
+}
+
+inline BooleanVar operator!= (
+       CheckedPtrVar&	aLeft
+    ,  void *		aRight
+) {
+	return aLeft.fetch() != aRight;
+}
+
+inline BooleanVar operator== (
+       GlobalStrongPtrVar&	aLeft
+    ,  GlobalStrongPtrVar&	aRight
+) {
+	return aLeft.fetch() == aRight.fetch();
+}
+
+inline BooleanVar operator!= (
+       GlobalStrongPtrVar&	aLeft
+    ,  GlobalStrongPtrVar&	aRight
+) {
+	return aLeft.fetch() != aRight.fetch();
+}
+
+inline BooleanVar operator== (
+       void *		aLeft
+    ,  GlobalStrongPtrVar&	aRight
+) {
+	return aLeft == aRight.fetch();
+}
+
+inline BooleanVar operator!= (
+       void *		aLeft
+    ,  GlobalStrongPtrVar&	aRight
+) {
+	return aLeft != aRight.fetch();
+}
+
+inline BooleanVar operator== (
+       GlobalStrongPtrVar&	aLeft
+    ,  void *		aRight
+) {
+	return aLeft.fetch() == aRight;
+}
+
+inline BooleanVar operator!= (
+       GlobalStrongPtrVar&	aLeft
+    ,  void *		aRight
+) {
+	return aLeft.fetch() != aRight;
+}
+
+inline BooleanVar operator== (
+       CheckedPtrVar&	aLeft
+    ,  GlobalStrongPtrVar&	aRight
+) {
+	return aLeft.fetch() == aRight.fetch();
+}
+
+inline BooleanVar operator!= (
+       CheckedPtrVar&	aLeft
+    ,  GlobalStrongPtrVar&	aRight
+) {
+	return aLeft.fetch() != aRight.fetch();
+}
+
+inline BooleanVar operator== (
+       GlobalStrongPtrVar&	aLeft
+    ,  CheckedPtrVar&	aRight
+) {
+	return aLeft.fetch() == aRight.fetch();
+}
+
+inline BooleanVar operator!= (
+       GlobalStrongPtrVar&	aLeft
+    ,  CheckedPtrVar&	aRight
+) {
+	return aLeft.fetch() != aRight.fetch();
+}
+
+
+# 739 "../opaquex.hxx" 
+
+
+// opaque2x.ixx is included explicitly by tofux.hxx after Heaper's inlines
+// are defined.
+
+
+# 331 "../tofux.hxx" 2
+# 1 "../tofux.oxx" 1
+/* Copyright Xanadu Operating Company.  All Rights Reserved.
+	12 February 1991 at 8:00:54 pm
+	From Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989 */
+
+//
+//	Added / merged pointer definitions for Categories, so they can be types.
+//	Fixed CHKPTR(Category).  (How come that worked before)
+//		- michael Jun 29 1991 (Merged Jul 22 1991)
+
+
+
+
+# 13 "../tofux.oxx" 
+
+
+// OPAQUE_TYPE_1(Tofu); /* will go away */
+class Heaper; class GP2_Heaper; extern Category * cat_Heaper; typedef Heaper * SP2_Heaper;  typedef Heaper * WSP2_Heaper; typedef Heaper * RSP2_Heaper; typedef Heaper * WM2_Heaper;   class CP2_Heaper : public CheckedPtrVar { public: CP2_Heaper (VTBL VTBL_HACK); public: inline Heaper* operator-> (); inline Heaper& operator* (); inline CP2_Heaper& operator= (Heaper * other);   inline operator Heaper * (); inline CP2_Heaper (); inline CP2_Heaper (CP2_Heaper& argPtr); inline CP2_Heaper& operator= (CP2_Heaper&other); friend class GP2_Heaper; };  ;   class GP2_Heaper : public GlobalStrongPtrVar { public: GP2_Heaper (VTBL VTBL_HACK); public: inline Heaper* operator-> (); inline Heaper& operator* (); inline GP2_Heaper& operator= (Heaper * other);   inline operator Heaper * ();  inline GP2_Heaper (); inline GP2_Heaper (Heaper * argPtr); inline GP2_Heaper (GP2_Heaper& argPtr); inline GP2_Heaper (CP2_Heaper& argPtr); inline GP2_Heaper& operator= (CP2_Heaper& other); friend class CP2_Heaper; };  ;
+
+extern Category * cat_Category;
+typedef Category * GP2_Category;
+typedef Category * RSP2_Category;
+typedef Category * SP2_Category;
+typedef Category * WSP2_Category;
+typedef Category * CP2_Category;
+
+
+typedef Category * WSP2_Category;
+
+
+
+# 332 "../tofux.hxx" 2
+
+# 1 "../../comm/nxcvrx.oxx" 1
+/* Copyright Xanadu Operating Company.  All Rights Reserved. */
+
+/******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+
+
+
+
+
+class Rcvr; class GP2_Rcvr; extern Category * cat_Rcvr; typedef Rcvr * SP2_Rcvr;  typedef Rcvr * WSP2_Rcvr; typedef Rcvr * RSP2_Rcvr; typedef Rcvr * WM2_Rcvr;   class CP2_Rcvr : public CheckedPtrVar { public: CP2_Rcvr (VTBL VTBL_HACK); public: inline Rcvr* operator-> (); inline Rcvr& operator* (); inline CP2_Rcvr& operator= (Rcvr * other);   inline operator GP2_Heaper () { return (Heaper *) this->fetch(); } inline operator Heaper * () { return (Heaper *) this->fetch (); } inline operator Rcvr * (); inline CP2_Rcvr (); inline CP2_Rcvr (CP2_Rcvr& argPtr); inline CP2_Rcvr& operator= (CP2_Rcvr&other); friend class GP2_Rcvr; };  ;   class GP2_Rcvr : public GlobalStrongPtrVar { public: GP2_Rcvr (VTBL VTBL_HACK); public: inline Rcvr* operator-> (); inline Rcvr& operator* (); inline GP2_Rcvr& operator= (Rcvr * other);   inline operator GP2_Heaper () { return (Heaper *) this->fetch(); } inline operator Heaper * () { return (Heaper *) this->fetch (); } inline operator Rcvr * ();  inline GP2_Rcvr (); inline GP2_Rcvr (Rcvr * argPtr); inline GP2_Rcvr (GP2_Rcvr& argPtr); inline GP2_Rcvr (CP2_Rcvr& argPtr); inline GP2_Rcvr& operator= (CP2_Rcvr& other); friend class CP2_Rcvr; };  ;
+class Xmtr; class GP2_Xmtr; extern Category * cat_Xmtr; typedef Xmtr * SP2_Xmtr;  typedef Xmtr * WSP2_Xmtr; typedef Xmtr * RSP2_Xmtr; typedef Xmtr * WM2_Xmtr;   class CP2_Xmtr : public CheckedPtrVar { public: CP2_Xmtr (VTBL VTBL_HACK); public: inline Xmtr* operator-> (); inline Xmtr& operator* (); inline CP2_Xmtr& operator= (Xmtr * other);   inline operator GP2_Heaper () { return (Heaper *) this->fetch(); } inline operator Heaper * () { return (Heaper *) this->fetch (); } inline operator Xmtr * (); inline CP2_Xmtr (); inline CP2_Xmtr (CP2_Xmtr& argPtr); inline CP2_Xmtr& operator= (CP2_Xmtr&other); friend class GP2_Xmtr; };  ;   class GP2_Xmtr : public GlobalStrongPtrVar { public: GP2_Xmtr (VTBL VTBL_HACK); public: inline Xmtr* operator-> (); inline Xmtr& operator* (); inline GP2_Xmtr& operator= (Xmtr * other);   inline operator GP2_Heaper () { return (Heaper *) this->fetch(); } inline operator Heaper * () { return (Heaper *) this->fetch (); } inline operator Xmtr * ();  inline GP2_Xmtr (); inline GP2_Xmtr (Xmtr * argPtr); inline GP2_Xmtr (GP2_Xmtr& argPtr); inline GP2_Xmtr (CP2_Xmtr& argPtr); inline GP2_Xmtr& operator= (CP2_Xmtr& other); friend class CP2_Xmtr; };  ;
+
+
+# 334 "../tofux.hxx" 2
+
+
+class Tofu  {
+  public:
+    Tofu(VTBL);
+
+    /*
+    	Dynamic type information to support safe cast and CHOOSE
+    */
+
+    virtual Category * getCategory () ;
+    virtual BooleanVar isKindOf (Category * aCategory) ;
+
+    /*
+	Comm and disk support (obsolescent)
+    */
+
+    /* Not declared until leaf, so not really pure virtual, thus vvvv */
+    virtual void sendSelfTo (WSP2_Xmtr) /*CONST*/	;
+    virtual BooleanVar isShepherd();
+
+    /*
+    	Garbage collection support
+    */
+
+    /* Perform the part of object migration that uses special knowledge of
+       instance variables. */
+    virtual void migrate (void * origin,
+			  BooleanVar destinationIsOld);
+
+  protected:
+
+    inline Tofu();
+
+};
+
+# 372 "../tofux.hxx" 
+
+
+extern Category * cat_Tofu;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ========================================================================= */
+
+
+
+
+
+// Stubble puts one of these macro calls in the generated .cxx file
+// to provide the definitions for methods that have been declared by
+// macro expansions in the header file.
+
+
+
+
+
+
+# 416 "../tofux.hxx" 
+
+
+
+
+
+
+
+/* ========================================================================== */
+
+class Heaper : public Tofu {
+    DEFERRED(Heaper)
+    NO_GC(Heaper)
+
+  protected:
+
+    /* Used to produce hashes for EQ objects. */
+    static UInt32 takeOop ();
+
+  public:
+    /* This must not be pure virtual */
+    virtual BooleanVar isEqual (WSP2_Heaper other)	;
+
+    /* The value returned does not change during the life of the object. */
+    UInt32 hashForEqual ();
+
+  protected:
+    /* Defined by subclasses to produce the value returned by hashForEqual.
+       This must not be pure virtual. */
+    virtual UInt32 actualHashForEqual ()		;
+
+  public:
+    /*
+    	Printing -- these print methods are largely intended for diagnostic
+		    output, not as display for casual users.
+    */
+
+    
+
+    /* This should rarely be overridden.  In Tofu, it prints ClassName(...),
+       where ... is either produced by printInsideOn or is ??? if printInsideOn
+       it not overridden.
+    */
+    virtual void printOn (ostream& oo);
+
+    /* Subclasses override this method to customize their printing. */
+    virtual void printContentsOn (ostream& oo);
+
+    
+
+  public:
+
+    /* This is unsafe wrt GC, BLASTs, and BECOMEs.  It shouldn''t be called
+       but references are produced during constructor compilation. */
+    void * operator new (size_t s);
+
+    /* Use when storage is already otherwise allocated */
+    void * operator new (size_t /*s*/, void * storage);
+
+    /* The default invoked from the CONSTRUCT macros.  Has all the safety
+        features built in.  */
+    void * operator new (size_t s, 
+			 XCSJ xcsj,  // instead of calling default new
+			 Category * cat);
+
+    /* From CONSTRUCT_AT - use when storage is already otherwise allocated */
+    void * operator new (size_t /*s*/, void * storage, Category * cat);
+
+    /* Invoked by the CONSTRUCT_ON macros.  Safety AND choice of heap */
+    void * operator new (size_t s, 
+			 AllocType,
+			 XCSJ xcsj,  // instead of calling default new
+			 Category * cat);
+
+  public:
+
+    /* These operators cause all objects allocations to be controlled at
+        Heaper by default.  This default heap is the one that performs
+        garbage collection. */
+    void   operator delete (void *);
+
+    /* to get around various cfront 2.0 bugs with "delete" */
+    virtual void destroy (); 
+
+  protected:
+
+      /* Classes should implement this message rather than a destructor. */
+      /* We use this so the destruction behavior implemented in abstract */
+      /* superclasses can access the vtable of the concrete run-time     */
+      /* type in C++.  Using a message makes C++ parallel the Smalltalk  */
+      /* semantics for delete.  This  manually calls the destructor.     */
+    virtual void destruct ();
+
+      /* These use destruct */
+    friend class InstanceCache;
+
+      /* To suppress a silly warning message from the compiler */
+    inline Heaper ();
+
+      /* To make all destructors virtual */
+      /* This should be in Tofu, except that the AT&T cfront compiler      */
+      /* doesn''t allow temporary objects with destructors in "for" loop    */
+      /* headers. This screws IntegerVar.  Oh well, we only really need it */
+      /* for instances of Heaper anyway. */
+    inline virtual ~Heaper ();
+
+  private:
+    
+    /* Objects (as opposed to Tofus) should never be assigned into */
+    Heaper& operator= (Heaper&);
+    
+
+    
+    friend class HeaperRecipe;
+    
+
+  public: /* class changing */
+    inline void changeClassToThatOf (WSP2_Heaper anInstance);
+
+  private: /* oop */
+
+    static UInt32 TheOopCounter;
+
+    UInt32 myOop;
+};
+
+
+# 544 "../tofux.hxx" 
+
+
+
+/* ================ Categories ================ */
+
+class Category : public Heaper {
+    CONCRETE(Category)
+    NO_GC(Category)
+    NOT_A_TYPE(Category)
+  public:
+    virtual BooleanVar isEqual (WSP2_Heaper other);
+
+    /* hashForEqual and hashedName happen to yield the same value.  The
+       reason for having both is that the contract for "hashForEqual" is
+       the weaker one specified above in Heaper.  "hashedName" gives the
+       stronger guarantee that there won''t be a hash collision.  In
+       addition, "hashForEqual" only has to give consistent results
+       inside one address space and for one version of the program.
+       "hashedName" must give consistent results between address spaces
+       and among compatable versions of the program. */
+    virtual UInt32 actualHashForEqual ();
+    virtual UInt32 hashedName ();
+
+    virtual char * name ();
+    inline BooleanVar isEqualOrSubclassOf (Category * aCategory);
+    virtual Category * fetchSuperCategory();
+    virtual Category * getSuperCategory();
+
+    inline Int32 preorderNumber ();
+    virtual Int32 preorderMax ();
+
+  public:   /* become support: */
+
+      /* must be called only at initialization time so that my instances
+          can be big enough. */
+    virtual void mayBecome (Category * cat);
+
+      /* Like calling 'mayBecome' for cat and each of its subclasses. */
+    virtual void mayBecomeAnySubclassOf (Category * cat);
+
+      /* a query corresponding to the above request. */
+    virtual BooleanVar canYouBecome (Category * cat);
+
+      /* the max of sizes of the transitive closure of this class */
+      /* and the classes it may 'become' */
+    virtual size_t objectSize ();
+		
+  protected: 	/* comm stuff.  Use special hooks in the xmtrs. */
+    friend class CategoryRecipe;
+  public:
+    virtual void sendSelfTo (WSP2_Xmtr xmtr)/* CONST*/;
+
+  private:	/* used for calculations to support become */
+
+    virtual BooleanVar calculateObjectSize ();
+    virtual void checkSuperObjectSize ();
+
+  private:
+
+    size_t myObjectSize; /* the size of the object with all its becomes */
+    CategoryList * myMayBecomes;
+
+
+  protected: /* Become and isKindOf support */
+
+    /* get the next category in depth-first preorder of the subclass tree */
+    virtual Category * fetchNextPreOrder ();
+
+  public:
+    /* this is the amount that actually should be allocated for objects of
+       this type */
+    inline size_t totalSize ();
+
+  private:
+    size_t myTotalSize;
+
+  private:    /* isKindOf support */
+    virtual void registerWithParent ();
+    virtual Category * registerChild (Category * cat);
+    virtual UInt32 preorder (UInt32 mine);
+    friend BooleanVar Tofu::isKindOf (Category *) ;
+
+  public: /* initialization */
+    static void registerAllBecomes ();
+    static void preorderCategories ();
+    static void calculateObjectSizes ();
+
+  public:
+    
+    virtual void printInsideOn (ostream& oo);
+    virtual void printNodeOn (ostream& oo, UInt32 indentation = 0);
+    virtual void printTreeOn (ostream& oo, UInt32 indentation = 0);
+
+# 640 "../tofux.hxx" 
+
+    Category (char *name, size_t selfSize, Category * superCategory);
+
+  private:
+    char *	nameOfCategory;
+    Category *	baseCategory;
+    Category * 	myFirstChild;
+    Category * 	myNextSibling;
+    UInt32	myPreorderNumber;
+    UInt32	myDescendantsMax;
+    UInt32	hashOfCategoryName;
+    Category *	nextHashed;
+
+    size_t mySelfSize;  /* the sizeof the class this Category corresponds to */
+
+  public:
+    void	moreOfThem();
+    void	lessOfThem();
+    void	dumpStatistics(Int32 depth);
+
+  private:
+    Int32	numAllocated;
+    Int32	numFreed;
+    Int32	numOutstanding;
+    Int32	maxOutstanding;
+
+  public:  /* Category lookup */
+
+    static Category * find (char * name);
+    static Category * find (UInt32 hashedName);
+
+  private:
+    virtual Category * nextHashCategory ();
+
+
+    static Category * HashTable[1333];
+    static CategoryList * Becomables;
+};
+
+const long CATEGORY_NAME_HASH_LENGTH = (sizeof(long)+2);
+
+const long MAX_CATEGORY_NAME = 4088; /* From Language Specification */
+
+
+void initializeCategoryInformation ();
+
+/* ================================================================
+
+   DEFINE_MAY_BECOME(becomable,becomee)
+
+   DEFINE_MAY_BECOME_ANY_SUBCLASS_OF(becomeable,becomee)
+
+   These macros are generated by stubble in response to MAY_BECOME
+   and MAY_BECOME_ANY_SUBCLASS_OF macros. They create static objects
+   which link themselves onto a list, and then are activated during
+   init time to tell the categories about become information
+
+   ================================================================ */
+
+# 709 "../tofux.hxx" 
+
+
+
+
+
+
+
+
+
+
+
+class BecomeIniter : public Heaper {
+  NO_GC(BecomeIniter)
+  NOT_A_TYPE(BecomeIniter)
+  DEFERRED(BecomeIniter)
+
+  public:
+    // register the become information
+    virtual void registerBecome () { { Problem problemInstance( "SUBCLASS_RESPONSIBILITY", 1, "../tofux.hxx", 727); blast(&problemInstance); }; };
+
+  protected:
+    BecomeIniter (Category *, Category *);
+    Category * becomeable ();
+    Category * becomee ();
+
+    friend class Category;
+
+    BecomeIniter * fetchNext ();
+    static BecomeIniter * allIniters ();
+
+  private:
+    Category * myBecomeable;
+    Category * myBecomee;
+    BecomeIniter * myNextBecomeIniter;
+
+    static BecomeIniter * AllIniters;
+};
+
+class MayBecomeIniter : public BecomeIniter {
+  NO_GC(MayBecomeIniter)
+  NOT_A_TYPE(MayBecomeIniter)
+  CONCRETE(MayBecomeIniter)
+
+  public:
+    virtual void registerBecome ();
+    MayBecomeIniter (Category *, Category *);
+# 757 "../tofux.hxx" 
+
+};
+
+class MayBecomeAnySubclassOfIniter : public BecomeIniter {
+  NO_GC(MayBecomeAnySubclassOfIniter)
+  NOT_A_TYPE(MayBecomeAnySubclassOfIniter)
+  CONCRETE(MayBecomeAnySubclassOfIniter)
+
+  public:
+    virtual void registerBecome ();
+    MayBecomeAnySubclassOfIniter (Category *, Category *);
+# 770 "../tofux.hxx" 
+
+};
+
+/* ========================================================================== */
+//
+//	CAST()
+//
+//	Cast ptr to (type *), but BLAST() if it isn't safe.
+//
+//	Symbol UNSAFE_CASTING allows individual modules to turn off checkCast
+//	for such purposes as timing measurements.
+//
+/* ========================================================================== */
+
+# 788 "../tofux.hxx" 
+
+
+
+
+
+
+
+
+
+
+
+
+	extern RSP2_Heaper checkCast (
+		  Category *	argCategoryObject
+		, Heaper *	argObject
+		,  char *	argFileName
+		,  int	argLineNumber
+	);
+
+# 820 "../tofux.hxx" 
+
+
+
+
+
+static char ** AllBlastsFilter_shieldList() { static char *local[] = { "ALL_BUT", 0}; return local; };
+
+
+/* ======================================================================== */
+
+
+# 838 "../tofux.hxx" 
+
+
+
+
+
+
+# 847 "../tofux.hxx" 
+
+
+

@@ -1,0 +1,96 @@
+2c2
+< fluidFetch(p1) == NULL
+---
+> fluidFetch(p1) == 0x0
+5c5
+< fluidFetch(p2) == NULL
+---
+> fluidFetch(p2) == 0x0
+9c9
+< fluidFetch(p1) == NULL
+---
+> fluidFetch(p1) == 0x0
+12c12
+< fluidFetch(p2) == NULL
+---
+> fluidFetch(p2) == 0x0
+16c16
+< fluidFetch(p1) == Foo(3)
+---
+> fluidFetch(p1) == 0x278c58
+19c19
+< fluidFetch(p2) == Foo(3)
+---
+> fluidFetch(p2) == 0x278c58
+23c23
+< fluidFetch(p1) == Foo(3)
+---
+> fluidFetch(p1) == 0x278c58
+26c26
+< fluidFetch(p2) == Foo(3)
+---
+> fluidFetch(p2) == 0x278c58
+30c30
+< fluidFetch(p1) == NULL
+---
+> fluidFetch(p1) == 0x0
+33c33
+< fluidFetch(p2) == NULL
+---
+> fluidFetch(p2) == 0x0
+37c37
+< fluidFetch(sp2) == NULL
+---
+> fluidFetch(sp2) == 0x0
+42c42
+< fluidFetch(sp2) == Foo(30)
+---
+> fluidFetch(sp2) == 0x278c68
+47c47
+< fluidFetch(sp2) == NULL
+---
+> fluidFetch(sp2) == 0x0
+52c52
+< fluidFetch(sp2) == Foo(10)
+---
+> fluidFetch(sp2) == 0x278c78
+57c57
+< fluidFetch(sp2) == Foo(30)
+---
+> fluidFetch(sp2) == 0x278c68
+62c62
+< fluidFetch(sp2) == Foo(40)
+---
+> fluidFetch(sp2) == 0x278c88
+67c67
+< fluidFetch(sp2) == NULL
+---
+> fluidFetch(sp2) == 0x0
+72c72
+< fluidFetch(sp2) == Foo(20)
+---
+> fluidFetch(sp2) == 0x278c98
+77c77
+< fluidFetch(sp2) == Foo(10)
+---
+> fluidFetch(sp2) == 0x278c78
+82c82
+< fluidFetch(sp2) == Foo(40)
+---
+> fluidFetch(sp2) == 0x278c88
+87c87
+< fluidFetch(p1) == NULL
+---
+> fluidFetch(p1) == 0x0
+90c90
+< fluidFetch(p2) == NULL
+---
+> fluidFetch(p2) == 0x0
+94c94
+< fluidFetch(p1) == NULL
+---
+> fluidFetch(p1) == 0x0
+97c97
+< fluidFetch(p2) == NULL
+---
+> fluidFetch(p2) == 0x0

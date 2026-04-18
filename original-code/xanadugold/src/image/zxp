@@ -1,0 +1,2183 @@
+1357c1357
+< RequestHandler subclass: #HHHBHandler
+---
+> RequestHandler subclass: #BHHHHandler
+1359c1359
+< 		myFn {HHHBFn var}
+---
+> 		myFn {BHHHFn var}
+1361c1361,1362
+< 		myType2 {Category}'
+---
+> 		myType2 {Category}
+> 		myType3 {Category}'
+1366c1367
+< (HHHBHandler getOrMakeCxxClassDescription)
+---
+> (BHHHHandler getOrMakeCxxClassDescription)
+1369c1370
+< !HHHBHandler methodsFor: 'request handling'!
+---
+> !BHHHHandler methodsFor: 'request handling'!
+1373c1374
+< 	| arg1 {Heaper} arg2 {Heaper} arg3 {BooleanVar} |
+---
+> 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper} |
+1376c1377
+< 	arg3 _ pm fetchBooleanVar.
+---
+> 	arg3 _ pm fetchNonNullHeaper: myType3.
+1378c1379
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3)]! !
+---
+> 		[pm respondBooleanVar: (myFn invokeFunction: arg1 with: arg2 with: arg3)]! !
+1380c1381
+< !HHHBHandler methodsFor: 'creation'!
+---
+> !BHHHHandler methodsFor: 'creation'!
+1382c1383
+< create: fn {HHHBFn var} with: type1 {Category} with: type2 {Category}
+---
+> create: fn {BHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+1386c1387,1388
+< 	myType2 _ type2.! !
+---
+> 	myType2 _ type2.
+> 	myType3 _ type3.! !
+1389c1391
+< HHHBHandler class
+---
+> BHHHHandler class
+1392c1394
+< (HHHBHandler getOrMakeCxxClassDescription)
+---
+> (BHHHHandler getOrMakeCxxClassDescription)
+1395c1397
+< !HHHBHandler class methodsFor: 'creation'!
+---
+> !BHHHHandler class methodsFor: 'creation'!
+1397,1398c1399,1400
+< {RequestHandler} make: fn {HHHBFn var} with: type1 {Category} with: type2 {Category}
+< 	^self create: fn with: type1 with: type2! !
+---
+> {RequestHandler} make: fn {BHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+> 	^self create: fn with: type1 with: type2 with: type3! !
+1400c1402
+< !HHHBHandler class methodsFor: 'generated:'!
+---
+> !BHHHHandler class methodsFor: 'generated:'!
+1404c1406
+< RequestHandler subclass: #HHBHandler
+---
+> RequestHandler subclass: #HHHHHHandler
+1406,1450c1408
+< 		myFn {HHBFn var}
+< 		myType1 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (HHBHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHBHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {BooleanVar} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchBooleanVar.
+< 	pm noErrors ifTrue:
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2)]! !
+< 
+< !HHBHandler methodsFor: 'creation'!
+< 
+< create: fn {HHBFn var} with: type1 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< HHBHandler class
+< 	instanceVariableNames: ''!
+< 
+< (HHBHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHBHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {HHBFn var} with: type1 {Category}
+< 	^self create: fn with: type1! !
+< 
+< !HHBHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #HHNNHHandler
+< 	instanceVariableNames: '
+< 		myFn {HHNNHFn var}
+---
+> 		myFn {HHHHHFn var}
+1459c1417
+< (HHNNHHandler getOrMakeCxxClassDescription)
+---
+> (HHHHHHandler getOrMakeCxxClassDescription)
+1462c1420
+< !HHNNHHandler methodsFor: 'request handling'!
+---
+> !HHHHHHandler methodsFor: 'request handling'!
+1466c1424
+< 	| arg1 {Heaper} arg2 {Heaper | NULL} arg3 {Heaper | NULL} arg4 {Heaper} |
+---
+> 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper} arg4 {Heaper} |
+1468,1469c1426,1427
+< 	arg2 _ pm fetchHeaper: myType2.
+< 	arg3 _ pm fetchHeaper: myType3.
+---
+> 	arg2 _ pm fetchNonNullHeaper: myType2.
+> 	arg3 _ pm fetchNonNullHeaper: myType3.
+1474c1432
+< !HHNNHHandler methodsFor: 'creation'!
+---
+> !HHHHHHandler methodsFor: 'creation'!
+1476c1434
+< create: fn {HHNNHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+---
+> create: fn {HHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+1485c1443
+< HHNNHHandler class
+---
+> HHHHHHandler class
+1488c1446
+< (HHNNHHandler getOrMakeCxxClassDescription)
+---
+> (HHHHHHandler getOrMakeCxxClassDescription)
+1491c1449
+< !HHNNHHandler class methodsFor: 'creation'!
+---
+> !HHHHHHandler class methodsFor: 'creation'!
+1493c1451
+< {RequestHandler} make: fn {HHNNHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+---
+> {RequestHandler} make: fn {HHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+1496c1454
+< !HHNNHHandler class methodsFor: 'generated:'!
+---
+> !HHHHHHandler class methodsFor: 'generated:'!
+1500c1458
+< RequestHandler subclass: #HHNNHNHandler
+---
+> RequestHandler subclass: #VHHandler
+1502,1507c1460,1461
+< 		myFn {HHNNHNFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}
+< 		myType4 {Category}
+< 		myType5 {Category}'
+---
+> 		myFn {VHFn var}
+> 		myType1 {Category}'
+1512c1466
+< (HHNNHNHandler getOrMakeCxxClassDescription)
+---
+> (VHHandler getOrMakeCxxClassDescription)
+1515c1469
+< !HHNNHNHandler methodsFor: 'request handling'!
+---
+> !VHHandler methodsFor: 'request handling'!
+1519c1473
+< 	| arg1 {Heaper} arg2 {Heaper | NULL} arg3 {Heaper | NULL} arg4 {Heaper} arg5 {Heaper | NULL} |
+---
+> 	| arg1 {Heaper} |
+1521,1524d1474
+< 	arg2 _ pm fetchHeaper: myType2.
+< 	arg3 _ pm fetchHeaper: myType3.
+< 	arg4 _ pm fetchNonNullHeaper: myType4.
+< 	arg5 _ pm fetchHeaper: myType5.
+1526c1476,1477
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3 with: arg4 with: arg5)]! !
+---
+> 		[(myFn invokeFunction: arg1).
+> 		pm respondVoid]! !
+1528c1479
+< !HHNNHNHandler methodsFor: 'creation'!
+---
+> !VHHandler methodsFor: 'creation'!
+1530c1481
+< create: fn {HHNNHNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category} with: type5 {Category}
+---
+> create: fn {VHFn var} with: type1 {Category}
+1533,1537c1484
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.
+< 	myType4 _ type4.
+< 	myType5 _ type5.! !
+---
+> 	myType1 _ type1.! !
+1540c1487
+< HHNNHNHandler class
+---
+> VHHandler class
+1543c1490
+< (HHNNHNHandler getOrMakeCxxClassDescription)
+---
+> (VHHandler getOrMakeCxxClassDescription)
+1546c1493
+< !HHNNHNHandler class methodsFor: 'creation'!
+---
+> !VHHandler class methodsFor: 'creation'!
+1548,1549c1495,1496
+< {RequestHandler} make: fn {HHNNHNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category} with: type5 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3 with: type4 with: type5! !
+---
+> {RequestHandler} make: fn {VHFn var} with: type1 {Category}
+> 	^self create: fn with: type1! !
+1551c1498
+< !HHNNHNHandler class methodsFor: 'generated:'!
+---
+> !VHHandler class methodsFor: 'generated:'!
+1555c1502
+< RequestHandler subclass: #ExampleHIHHandler
+---
+> RequestHandler subclass: #BHHHandler
+1557c1504,1505
+< 		myFn {HIHFn}
+---
+> 		myFn {BHHFn var}
+> 		myType1 {Category}
+1563,1594c1511
+< (ExampleHIHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #SMALLTALK.ONLY; yourself)!
+< 
+< !ExampleHIHHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 
+< 	| arg1 {IntegerVar} arg2 {Heaper} |
+< 	arg1 _ self fetchIntegerVar.
+< 	arg2 _ self fetchHeaper: myType2.
+< 	pm noErrors ifTrue:
+< 		[self respondHeaper: (myFn invokeFunction: arg1 with: arg2)]! !
+< 
+< !ExampleHIHHandler methodsFor: 'creation'!
+< 
+< create: fn {HIHFn} with: type2 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType2 _ type2! !
+< 
+< RequestHandler subclass: #HNNNNHandler
+< 	instanceVariableNames: '
+< 		myFn {HNNNNFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}
+< 		myType4 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (HNNNNHandler getOrMakeCxxClassDescription)
+---
+> (BHHHandler getOrMakeCxxClassDescription)
+1597c1514
+< !HNNNNHandler methodsFor: 'request handling'!
+---
+> !BHHHandler methodsFor: 'request handling'!
+1601,1605c1518,1520
+< 	| arg1 {Heaper | NULL} arg2 {Heaper | NULL} arg3 {Heaper | NULL} arg4 {Heaper | NULL} |
+< 	arg1 _ pm fetchHeaper: myType1.
+< 	arg2 _ pm fetchHeaper: myType2.
+< 	arg3 _ pm fetchHeaper: myType3.
+< 	arg4 _ pm fetchHeaper: myType4.
+---
+> 	| arg1 {Heaper} arg2 {Heaper} |
+> 	arg1 _ pm fetchNonNullHeaper: myType1.
+> 	arg2 _ pm fetchNonNullHeaper: myType2.
+1607c1522
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3 with: arg4)]! !
+---
+> 		[pm respondBooleanVar: (myFn invokeFunction: arg1 with: arg2)]! !
+1609c1524
+< !HNNNNHandler methodsFor: 'creation'!
+---
+> !BHHHandler methodsFor: 'creation'!
+1611c1526
+< create: fn {HNNNNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+---
+> create: fn {BHHFn var} with: type1 {Category} with: type2 {Category}
+1615,1617c1530
+< 	myType2 _ type2.
+< 	myType3 _ type3.
+< 	myType4 _ type4.! !
+---
+> 	myType2 _ type2.! !
+1620c1533
+< HNNNNHandler class
+---
+> BHHHandler class
+1623c1536
+< (HNNNNHandler getOrMakeCxxClassDescription)
+---
+> (BHHHandler getOrMakeCxxClassDescription)
+1626c1539
+< !HNNNNHandler class methodsFor: 'creation'!
+---
+> !BHHHandler class methodsFor: 'creation'!
+1628,1629c1541,1542
+< {RequestHandler} make: fn {HNNNNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3 with: type4! !
+---
+> {RequestHandler} make: fn {BHHFn var} with: type1 {Category} with: type2 {Category}
+> 	^self create: fn with: type1 with: type2! !
+1631c1544
+< !HNNNNHandler class methodsFor: 'generated:'!
+---
+> !BHHHandler class methodsFor: 'generated:'!
+1635c1548
+< RequestHandler subclass: #HNHandler
+---
+> RequestHandler subclass: #HHHandler
+1637c1550
+< 		myFn {HNFn var}
+---
+> 		myFn {HHFn var}
+1643c1556
+< (HNHandler getOrMakeCxxClassDescription)
+---
+> (HHHandler getOrMakeCxxClassDescription)
+1646c1559
+< !HNHandler methodsFor: 'request handling'!
+---
+> !HHHandler methodsFor: 'request handling'!
+1650,1651c1563,1564
+< 	| arg1 {Heaper | NULL} |
+< 	arg1 _ pm fetchHeaper: myType1.
+---
+> 	| arg1 {Heaper} |
+> 	arg1 _ pm fetchNonNullHeaper: myType1.
+1655c1568
+< !HNHandler methodsFor: 'creation'!
+---
+> !HHHandler methodsFor: 'creation'!
+1657c1570
+< create: fn {HNFn var} with: type1 {Category}
+---
+> create: fn {HHFn var} with: type1 {Category}
+1663c1576
+< HNHandler class
+---
+> HHHandler class
+1666c1579
+< (HNHandler getOrMakeCxxClassDescription)
+---
+> (HHHandler getOrMakeCxxClassDescription)
+1669c1582
+< !HNHandler class methodsFor: 'creation'!
+---
+> !HHHandler class methodsFor: 'creation'!
+1671c1584
+< {RequestHandler} make: fn {HNFn var} with: type1 {Category}
+---
+> {RequestHandler} make: fn {HHFn var} with: type1 {Category}
+1674c1587
+< !HNHandler class methodsFor: 'generated:'!
+---
+> !HHHandler class methodsFor: 'generated:'!
+1678,1733d1590
+< RequestHandler subclass: #VHHHHHHandler
+< 	instanceVariableNames: '
+< 		myFn {VHHHHHFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}
+< 		myType4 {Category}
+< 		myType5 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (VHHHHHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHHHHHHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper} arg4 {Heaper} arg5 {Heaper} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchNonNullHeaper: myType2.
+< 	arg3 _ pm fetchNonNullHeaper: myType3.
+< 	arg4 _ pm fetchNonNullHeaper: myType4.
+< 	arg5 _ pm fetchNonNullHeaper: myType5.
+< 	pm noErrors ifTrue:
+< 		[(myFn invokeFunction: arg1 with: arg2 with: arg3 with: arg4 with: arg5).
+< 		pm respondVoid]! !
+< 
+< !VHHHHHHandler methodsFor: 'creation'!
+< 
+< create: fn {VHHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category} with: type5 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.
+< 	myType4 _ type4.
+< 	myType5 _ type5.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< VHHHHHHandler class
+< 	instanceVariableNames: ''!
+< 
+< (VHHHHHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHHHHHHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {VHHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category} with: type5 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3 with: type4 with: type5! !
+< 
+< !VHHHHHHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+1767,2020d1623
+< RequestHandler subclass: #VHHNHandler
+< 	instanceVariableNames: '
+< 		myFn {VHHNFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (VHHNHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHHNHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper | NULL} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchNonNullHeaper: myType2.
+< 	arg3 _ pm fetchHeaper: myType3.
+< 	pm noErrors ifTrue:
+< 		[(myFn invokeFunction: arg1 with: arg2 with: arg3).
+< 		pm respondVoid]! !
+< 
+< !VHHNHandler methodsFor: 'creation'!
+< 
+< create: fn {VHHNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< VHHNHandler class
+< 	instanceVariableNames: ''!
+< 
+< (VHHNHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHHNHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {VHHNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3! !
+< 
+< !VHHNHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #HHNNNHandler
+< 	instanceVariableNames: '
+< 		myFn {HHNNNFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}
+< 		myType4 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (HHNNNHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHNNNHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {Heaper | NULL} arg3 {Heaper | NULL} arg4 {Heaper | NULL} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchHeaper: myType2.
+< 	arg3 _ pm fetchHeaper: myType3.
+< 	arg4 _ pm fetchHeaper: myType4.
+< 	pm noErrors ifTrue:
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3 with: arg4)]! !
+< 
+< !HHNNNHandler methodsFor: 'creation'!
+< 
+< create: fn {HHNNNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.
+< 	myType4 _ type4.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< HHNNNHandler class
+< 	instanceVariableNames: ''!
+< 
+< (HHNNNHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHNNNHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {HHNNNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3 with: type4! !
+< 
+< !HHNNNHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #VHHHHandler
+< 	instanceVariableNames: '
+< 		myFn {VHHHFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (VHHHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHHHHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchNonNullHeaper: myType2.
+< 	arg3 _ pm fetchNonNullHeaper: myType3.
+< 	pm noErrors ifTrue:
+< 		[(myFn invokeFunction: arg1 with: arg2 with: arg3).
+< 		pm respondVoid]! !
+< 
+< !VHHHHandler methodsFor: 'creation'!
+< 
+< create: fn {VHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< VHHHHandler class
+< 	instanceVariableNames: ''!
+< 
+< (VHHHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHHHHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {VHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3! !
+< 
+< !VHHHHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #VHNHHHandler
+< 	instanceVariableNames: '
+< 		myFn {VHNHHFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}
+< 		myType4 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (VHNHHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHNHHHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {Heaper | NULL} arg3 {Heaper} arg4 {Heaper} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchHeaper: myType2.
+< 	arg3 _ pm fetchNonNullHeaper: myType3.
+< 	arg4 _ pm fetchNonNullHeaper: myType4.
+< 	pm noErrors ifTrue:
+< 		[(myFn invokeFunction: arg1 with: arg2 with: arg3 with: arg4).
+< 		pm respondVoid]! !
+< 
+< !VHNHHHandler methodsFor: 'creation'!
+< 
+< create: fn {VHNHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.
+< 	myType4 _ type4.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< VHNHHHandler class
+< 	instanceVariableNames: ''!
+< 
+< (VHNHHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHNHHHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {VHNHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3 with: type4! !
+< 
+< !VHNHHHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #HHHHHandler
+< 	instanceVariableNames: '
+< 		myFn {HHHHFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (HHHHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHHHHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchNonNullHeaper: myType2.
+< 	arg3 _ pm fetchNonNullHeaper: myType3.
+< 	pm noErrors ifTrue:
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3)]! !
+< 
+< !HHHHHandler methodsFor: 'creation'!
+< 
+< create: fn {HHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< HHHHHandler class
+< 	instanceVariableNames: ''!
+< 
+< (HHHHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHHHHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {HHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3! !
+< 
+< !HHHHHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+2076c1679
+< RequestHandler subclass: #HHNHHandler
+---
+> RequestHandler subclass: #VHHHHandler
+2078c1681
+< 		myFn {HHNHFn var}
+---
+> 		myFn {VHHHFn var}
+2086c1689
+< (HHNHHandler getOrMakeCxxClassDescription)
+---
+> (VHHHHandler getOrMakeCxxClassDescription)
+2089c1692
+< !HHNHHandler methodsFor: 'request handling'!
+---
+> !VHHHHandler methodsFor: 'request handling'!
+2093c1696
+< 	| arg1 {Heaper} arg2 {Heaper | NULL} arg3 {Heaper} |
+---
+> 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper} |
+2095c1698
+< 	arg2 _ pm fetchHeaper: myType2.
+---
+> 	arg2 _ pm fetchNonNullHeaper: myType2.
+2098c1701,1702
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3)]! !
+---
+> 		[(myFn invokeFunction: arg1 with: arg2 with: arg3).
+> 		pm respondVoid]! !
+2100c1704
+< !HHNHHandler methodsFor: 'creation'!
+---
+> !VHHHHandler methodsFor: 'creation'!
+2102c1706
+< create: fn {HHNHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+---
+> create: fn {VHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+2110c1714
+< HHNHHandler class
+---
+> VHHHHandler class
+2113c1717
+< (HHNHHandler getOrMakeCxxClassDescription)
+---
+> (VHHHHandler getOrMakeCxxClassDescription)
+2116c1720
+< !HHNHHandler class methodsFor: 'creation'!
+---
+> !VHHHHandler class methodsFor: 'creation'!
+2118c1722
+< {RequestHandler} make: fn {HHNHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+---
+> {RequestHandler} make: fn {VHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+2121c1725
+< !HHNHHandler class methodsFor: 'generated:'!
+---
+> !VHHHHandler class methodsFor: 'generated:'!
+2125c1729
+< RequestHandler subclass: #VHNHandler
+---
+> RequestHandler subclass: #HHHHandler
+2127c1731
+< 		myFn {VHNFn var}
+---
+> 		myFn {HHHFn var}
+2134c1738
+< (VHNHandler getOrMakeCxxClassDescription)
+---
+> (HHHHandler getOrMakeCxxClassDescription)
+2137c1741
+< !VHNHandler methodsFor: 'request handling'!
+---
+> !HHHHandler methodsFor: 'request handling'!
+2141c1745
+< 	| arg1 {Heaper} arg2 {Heaper | NULL} |
+---
+> 	| arg1 {Heaper} arg2 {Heaper} |
+2143c1747
+< 	arg2 _ pm fetchHeaper: myType2.
+---
+> 	arg2 _ pm fetchNonNullHeaper: myType2.
+2145,2229d1748
+< 		[(myFn invokeFunction: arg1 with: arg2).
+< 		pm respondVoid]! !
+< 
+< !VHNHandler methodsFor: 'creation'!
+< 
+< create: fn {VHNFn var} with: type1 {Category} with: type2 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< VHNHandler class
+< 	instanceVariableNames: ''!
+< 
+< (VHNHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHNHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {VHNFn var} with: type1 {Category} with: type2 {Category}
+< 	^self create: fn with: type1 with: type2! !
+< 
+< !VHNHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #HHandler
+< 	instanceVariableNames: 'myFn {HFn var}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (HHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	pm noErrors ifTrue:
+< 		[pm respondHeaper: (myFn invokeFunction)]! !
+< 
+< !HHandler methodsFor: 'creation'!
+< 
+< create: fn {HFn var}
+< 	super create.
+< 	myFn _ fn.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< HHandler class
+< 	instanceVariableNames: ''!
+< 
+< (HHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {HFn var}
+< 	^self create: fn! !
+< 
+< !HHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #HHNHandler
+< 	instanceVariableNames: '
+< 		myFn {HHNFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (HHNHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHNHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {Heaper | NULL} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchHeaper: myType2.
+< 	pm noErrors ifTrue:
+2232c1751
+< !HHNHandler methodsFor: 'creation'!
+---
+> !HHHHandler methodsFor: 'creation'!
+2234c1753
+< create: fn {HHNFn var} with: type1 {Category} with: type2 {Category}
+---
+> create: fn {HHHFn var} with: type1 {Category} with: type2 {Category}
+2241c1760
+< HHNHandler class
+---
+> HHHHandler class
+2244c1763
+< (HHNHandler getOrMakeCxxClassDescription)
+---
+> (HHHHandler getOrMakeCxxClassDescription)
+2247c1766
+< !HHNHandler class methodsFor: 'creation'!
+---
+> !HHHHandler class methodsFor: 'creation'!
+2249c1768
+< {RequestHandler} make: fn {HHNFn var} with: type1 {Category} with: type2 {Category}
+---
+> {RequestHandler} make: fn {HHHFn var} with: type1 {Category} with: type2 {Category}
+2252c1771
+< !HHNHandler class methodsFor: 'generated:'!
+---
+> !HHHHandler class methodsFor: 'generated:'!
+2256c1775
+< RequestHandler subclass: #HHHHHHandler
+---
+> RequestHandler subclass: #VHBHandler
+2258,2262c1777,1778
+< 		myFn {HHHHHFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}
+< 		myType4 {Category}'
+---
+> 		myFn {VHBFn var}
+> 		myType1 {Category}'
+2267c1783
+< (HHHHHHandler getOrMakeCxxClassDescription)
+---
+> (VHBHandler getOrMakeCxxClassDescription)
+2270c1786
+< !HHHHHHandler methodsFor: 'request handling'!
+---
+> !VHBHandler methodsFor: 'request handling'!
+2274c1790
+< 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper} arg4 {Heaper} |
+---
+> 	| arg1 {Heaper} arg2 {BooleanVar} |
+2276,2278c1792
+< 	arg2 _ pm fetchNonNullHeaper: myType2.
+< 	arg3 _ pm fetchNonNullHeaper: myType3.
+< 	arg4 _ pm fetchNonNullHeaper: myType4.
+---
+> 	arg2 _ pm fetchBooleanVar.
+2280,2426d1793
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3 with: arg4)]! !
+< 
+< !HHHHHHandler methodsFor: 'creation'!
+< 
+< create: fn {HHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.
+< 	myType4 _ type4.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< HHHHHHandler class
+< 	instanceVariableNames: ''!
+< 
+< (HHHHHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHHHHHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {HHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3 with: type4! !
+< 
+< !HHHHHHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #VHNHHandler
+< 	instanceVariableNames: '
+< 		myFn {VHNHFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (VHNHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHNHHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {Heaper | NULL} arg3 {Heaper} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchHeaper: myType2.
+< 	arg3 _ pm fetchNonNullHeaper: myType3.
+< 	pm noErrors ifTrue:
+< 		[(myFn invokeFunction: arg1 with: arg2 with: arg3).
+< 		pm respondVoid]! !
+< 
+< !VHNHHandler methodsFor: 'creation'!
+< 
+< create: fn {VHNHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< VHNHHandler class
+< 	instanceVariableNames: ''!
+< 
+< (VHNHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHNHHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {VHNHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3! !
+< 
+< !VHNHHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #HHNNHandler
+< 	instanceVariableNames: '
+< 		myFn {HHNNFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (HHNNHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHNNHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {Heaper | NULL} arg3 {Heaper | NULL} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchHeaper: myType2.
+< 	arg3 _ pm fetchHeaper: myType3.
+< 	pm noErrors ifTrue:
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3)]! !
+< 
+< !HHNNHandler methodsFor: 'creation'!
+< 
+< create: fn {HHNNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< HHNNHandler class
+< 	instanceVariableNames: ''!
+< 
+< (HHNNHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHNNHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {HHNNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3! !
+< 
+< !HHNNHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #VHHHandler
+< 	instanceVariableNames: '
+< 		myFn {VHHFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (VHHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHHHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {Heaper} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchNonNullHeaper: myType2.
+< 	pm noErrors ifTrue:
+2430c1797
+< !VHHHandler methodsFor: 'creation'!
+---
+> !VHBHandler methodsFor: 'creation'!
+2432c1799
+< create: fn {VHHFn var} with: type1 {Category} with: type2 {Category}
+---
+> create: fn {VHBFn var} with: type1 {Category}
+2435,2436c1802
+< 	myType1 _ type1.
+< 	myType2 _ type2.! !
+---
+> 	myType1 _ type1.! !
+2439c1805
+< VHHHandler class
+---
+> VHBHandler class
+2442c1808
+< (VHHHandler getOrMakeCxxClassDescription)
+---
+> (VHBHandler getOrMakeCxxClassDescription)
+2445c1811
+< !VHHHandler class methodsFor: 'creation'!
+---
+> !VHBHandler class methodsFor: 'creation'!
+2447,2448c1813,1814
+< {RequestHandler} make: fn {VHHFn var} with: type1 {Category} with: type2 {Category}
+< 	^self create: fn with: type1 with: type2! !
+---
+> {RequestHandler} make: fn {VHBFn var} with: type1 {Category}
+> 	^self create: fn with: type1! !
+2450c1816
+< !VHHHandler class methodsFor: 'generated:'!
+---
+> !VHBHandler class methodsFor: 'generated:'!
+2497c1863
+< RequestHandler subclass: #BHHHandler
+---
+> RequestHandler subclass: #VHHHHHandler
+2499c1865
+< 		myFn {BHHFn var}
+---
+> 		myFn {VHHHHFn var}
+2501c1867,1869
+< 		myType2 {Category}'
+---
+> 		myType2 {Category}
+> 		myType3 {Category}
+> 		myType4 {Category}'
+2506c1874
+< (BHHHandler getOrMakeCxxClassDescription)
+---
+> (VHHHHHandler getOrMakeCxxClassDescription)
+2509c1877
+< !BHHHandler methodsFor: 'request handling'!
+---
+> !VHHHHHandler methodsFor: 'request handling'!
+2513c1881
+< 	| arg1 {Heaper} arg2 {Heaper} |
+---
+> 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper} arg4 {Heaper} |
+2515a1884,1885
+> 	arg3 _ pm fetchNonNullHeaper: myType3.
+> 	arg4 _ pm fetchNonNullHeaper: myType4.
+2517c1887,1888
+< 		[pm respondBooleanVar: (myFn invokeFunction: arg1 with: arg2)]! !
+---
+> 		[(myFn invokeFunction: arg1 with: arg2 with: arg3 with: arg4).
+> 		pm respondVoid]! !
+2519c1890
+< !BHHHandler methodsFor: 'creation'!
+---
+> !VHHHHHandler methodsFor: 'creation'!
+2521c1892
+< create: fn {BHHFn var} with: type1 {Category} with: type2 {Category}
+---
+> create: fn {VHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+2525c1896,1898
+< 	myType2 _ type2.! !
+---
+> 	myType2 _ type2.
+> 	myType3 _ type3.
+> 	myType4 _ type4.! !
+2528c1901
+< BHHHandler class
+---
+> VHHHHHandler class
+2531c1904
+< (BHHHandler getOrMakeCxxClassDescription)
+---
+> (VHHHHHandler getOrMakeCxxClassDescription)
+2534c1907
+< !BHHHandler class methodsFor: 'creation'!
+---
+> !VHHHHHandler class methodsFor: 'creation'!
+2536,2537c1909,1910
+< {RequestHandler} make: fn {BHHFn var} with: type1 {Category} with: type2 {Category}
+< 	^self create: fn with: type1 with: type2! !
+---
+> {RequestHandler} make: fn {VHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+> 	^self create: fn with: type1 with: type2 with: type3 with: type4! !
+2539c1912
+< !BHHHandler class methodsFor: 'generated:'!
+---
+> !VHHHHHandler class methodsFor: 'generated:'!
+2543c1916
+< RequestHandler subclass: #VHHandler
+---
+> RequestHandler subclass: #ExampleHIHHandler
+2545,2546c1918,1919
+< 		myFn {VHFn var}
+< 		myType1 {Category}'
+---
+> 		myFn {HIHFn}
+> 		myType2 {Category}'
+2551,2552c1924,1925
+< (VHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+---
+> (ExampleHIHHandler getOrMakeCxxClassDescription)
+> 	attributes: ((Set new) add: #CONCRETE; add: #SMALLTALK.ONLY; yourself)!
+2554c1927
+< !VHHandler methodsFor: 'request handling'!
+---
+> !ExampleHIHHandler methodsFor: 'request handling'!
+2558,2559c1931,1933
+< 	| arg1 {Heaper} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+---
+> 	| arg1 {IntegerVar} arg2 {Heaper} |
+> 	arg1 _ self fetchIntegerVar.
+> 	arg2 _ self fetchHeaper: myType2.
+2561,2562c1935
+< 		[(myFn invokeFunction: arg1).
+< 		pm respondVoid]! !
+---
+> 		[self respondHeaper: (myFn invokeFunction: arg1 with: arg2)]! !
+2564c1937
+< !VHHandler methodsFor: 'creation'!
+---
+> !ExampleHIHHandler methodsFor: 'creation'!
+2566c1939
+< create: fn {VHFn var} with: type1 {Category}
+---
+> create: fn {HIHFn} with: type2 {Category}
+2569,2585c1942
+< 	myType1 _ type1.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< VHHandler class
+< 	instanceVariableNames: ''!
+< 
+< (VHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {VHFn var} with: type1 {Category}
+< 	^self create: fn with: type1! !
+< 
+< !VHHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+---
+> 	myType2 _ type2! !
+2587c1944
+< RequestHandler subclass: #HHNHNHandler
+---
+> RequestHandler subclass: #HHBHandler
+2589,2593c1946,1947
+< 		myFn {HHNHNFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}
+< 		myType4 {Category}'
+---
+> 		myFn {HHBFn var}
+> 		myType1 {Category}'
+2598c1952
+< (HHNHNHandler getOrMakeCxxClassDescription)
+---
+> (HHBHandler getOrMakeCxxClassDescription)
+2601c1955
+< !HHNHNHandler methodsFor: 'request handling'!
+---
+> !HHBHandler methodsFor: 'request handling'!
+2605c1959
+< 	| arg1 {Heaper} arg2 {Heaper | NULL} arg3 {Heaper} arg4 {Heaper | NULL} |
+---
+> 	| arg1 {Heaper} arg2 {BooleanVar} |
+2607,2609c1961
+< 	arg2 _ pm fetchHeaper: myType2.
+< 	arg3 _ pm fetchNonNullHeaper: myType3.
+< 	arg4 _ pm fetchHeaper: myType4.
+---
+> 	arg2 _ pm fetchBooleanVar.
+2611c1963
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3 with: arg4)]! !
+---
+> 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2)]! !
+2613c1965
+< !HHNHNHandler methodsFor: 'creation'!
+---
+> !HHBHandler methodsFor: 'creation'!
+2615c1967
+< create: fn {HHNHNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+---
+> create: fn {HHBFn var} with: type1 {Category}
+2618,2621c1970
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.
+< 	myType4 _ type4.! !
+---
+> 	myType1 _ type1.! !
+2624c1973
+< HHNHNHandler class
+---
+> HHBHandler class
+2627c1976
+< (HHNHNHandler getOrMakeCxxClassDescription)
+---
+> (HHBHandler getOrMakeCxxClassDescription)
+2630c1979
+< !HHNHNHandler class methodsFor: 'creation'!
+---
+> !HHBHandler class methodsFor: 'creation'!
+2632,2633c1981,1982
+< {RequestHandler} make: fn {HHNHNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3 with: type4! !
+---
+> {RequestHandler} make: fn {HHBFn var} with: type1 {Category}
+> 	^self create: fn with: type1! !
+2635c1984
+< !HHNHNHandler class methodsFor: 'generated:'!
+---
+> !HHBHandler class methodsFor: 'generated:'!
+2639c1988
+< RequestHandler subclass: #HHNNNHHandler
+---
+> RequestHandler subclass: #HHHBHandler
+2641c1990
+< 		myFn {HHNNNHFn var}
+---
+> 		myFn {HHHBFn var}
+2643,2697d1991
+< 		myType2 {Category}
+< 		myType3 {Category}
+< 		myType4 {Category}
+< 		myType5 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (HHNNNHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHNNNHHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {Heaper | NULL} arg3 {Heaper | NULL} arg4 {Heaper | NULL} arg5 {Heaper} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchHeaper: myType2.
+< 	arg3 _ pm fetchHeaper: myType3.
+< 	arg4 _ pm fetchHeaper: myType4.
+< 	arg5 _ pm fetchNonNullHeaper: myType5.
+< 	pm noErrors ifTrue:
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3 with: arg4 with: arg5)]! !
+< 
+< !HHNNNHHandler methodsFor: 'creation'!
+< 
+< create: fn {HHNNNHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category} with: type5 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.
+< 	myType4 _ type4.
+< 	myType5 _ type5.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< HHNNNHHandler class
+< 	instanceVariableNames: ''!
+< 
+< (HHNNNHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHNNNHHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {HHNNNHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category} with: type5 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3 with: type4 with: type5! !
+< 
+< !HHNNNHHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #HHHHandler
+< 	instanceVariableNames: '
+< 		myFn {HHHFn var}
+< 		myType1 {Category}
+2703c1997
+< (HHHHandler getOrMakeCxxClassDescription)
+---
+> (HHHBHandler getOrMakeCxxClassDescription)
+2706c2000
+< !HHHHandler methodsFor: 'request handling'!
+---
+> !HHHBHandler methodsFor: 'request handling'!
+2710c2004
+< 	| arg1 {Heaper} arg2 {Heaper} |
+---
+> 	| arg1 {Heaper} arg2 {Heaper} arg3 {BooleanVar} |
+2712a2007
+> 	arg3 _ pm fetchBooleanVar.
+2714c2009
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2)]! !
+---
+> 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3)]! !
+2716c2011
+< !HHHHandler methodsFor: 'creation'!
+---
+> !HHHBHandler methodsFor: 'creation'!
+2718c2013
+< create: fn {HHHFn var} with: type1 {Category} with: type2 {Category}
+---
+> create: fn {HHHBFn var} with: type1 {Category} with: type2 {Category}
+2725c2020
+< HHHHandler class
+---
+> HHHBHandler class
+2728c2023
+< (HHHHandler getOrMakeCxxClassDescription)
+---
+> (HHHBHandler getOrMakeCxxClassDescription)
+2731c2026
+< !HHHHandler class methodsFor: 'creation'!
+---
+> !HHHBHandler class methodsFor: 'creation'!
+2733c2028
+< {RequestHandler} make: fn {HHHFn var} with: type1 {Category} with: type2 {Category}
+---
+> {RequestHandler} make: fn {HHHBFn var} with: type1 {Category} with: type2 {Category}
+2736c2031
+< !HHHHandler class methodsFor: 'generated:'!
+---
+> !HHHBHandler class methodsFor: 'generated:'!
+2740c2035
+< RequestHandler subclass: #BHHHHandler
+---
+> RequestHandler subclass: #HHHHHandler
+2742c2037
+< 		myFn {BHHHFn var}
+---
+> 		myFn {HHHHFn var}
+2750c2045
+< (BHHHHandler getOrMakeCxxClassDescription)
+---
+> (HHHHHandler getOrMakeCxxClassDescription)
+2753c2048
+< !BHHHHandler methodsFor: 'request handling'!
+---
+> !HHHHHandler methodsFor: 'request handling'!
+2762c2057
+< 		[pm respondBooleanVar: (myFn invokeFunction: arg1 with: arg2 with: arg3)]! !
+---
+> 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3)]! !
+2764c2059
+< !BHHHHandler methodsFor: 'creation'!
+---
+> !HHHHHandler methodsFor: 'creation'!
+2766c2061
+< create: fn {BHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+---
+> create: fn {HHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+2774c2069
+< BHHHHandler class
+---
+> HHHHHandler class
+2777c2072
+< (BHHHHandler getOrMakeCxxClassDescription)
+---
+> (HHHHHandler getOrMakeCxxClassDescription)
+2780c2075
+< !BHHHHandler class methodsFor: 'creation'!
+---
+> !HHHHHandler class methodsFor: 'creation'!
+2782c2077
+< {RequestHandler} make: fn {BHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+---
+> {RequestHandler} make: fn {HHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+2785c2080
+< !BHHHHandler class methodsFor: 'generated:'!
+---
+> !HHHHHandler class methodsFor: 'generated:'!
+2789c2084
+< RequestHandler subclass: #HHHNHandler
+---
+> RequestHandler subclass: #VHHHHHHandler
+2791c2086
+< 		myFn {HHHNFn var}
+---
+> 		myFn {VHHHHHFn var}
+2794c2089,2091
+< 		myType3 {Category}'
+---
+> 		myType3 {Category}
+> 		myType4 {Category}
+> 		myType5 {Category}'
+2799c2096
+< (HHHNHandler getOrMakeCxxClassDescription)
+---
+> (VHHHHHHandler getOrMakeCxxClassDescription)
+2802c2099
+< !HHHNHandler methodsFor: 'request handling'!
+---
+> !VHHHHHHandler methodsFor: 'request handling'!
+2806c2103
+< 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper | NULL} |
+---
+> 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper} arg4 {Heaper} arg5 {Heaper} |
+2809c2106,2108
+< 	arg3 _ pm fetchHeaper: myType3.
+---
+> 	arg3 _ pm fetchNonNullHeaper: myType3.
+> 	arg4 _ pm fetchNonNullHeaper: myType4.
+> 	arg5 _ pm fetchNonNullHeaper: myType5.
+2811c2110,2111
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3)]! !
+---
+> 		[(myFn invokeFunction: arg1 with: arg2 with: arg3 with: arg4 with: arg5).
+> 		pm respondVoid]! !
+2813c2113
+< !HHHNHandler methodsFor: 'creation'!
+---
+> !VHHHHHHandler methodsFor: 'creation'!
+2815c2115
+< create: fn {HHHNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+---
+> create: fn {VHHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category} with: type5 {Category}
+2820c2120,2122
+< 	myType3 _ type3.! !
+---
+> 	myType3 _ type3.
+> 	myType4 _ type4.
+> 	myType5 _ type5.! !
+2823c2125
+< HHHNHandler class
+---
+> VHHHHHHandler class
+2826c2128
+< (HHHNHandler getOrMakeCxxClassDescription)
+---
+> (VHHHHHHandler getOrMakeCxxClassDescription)
+2829c2131
+< !HHHNHandler class methodsFor: 'creation'!
+---
+> !VHHHHHHandler class methodsFor: 'creation'!
+2831,2832c2133,2134
+< {RequestHandler} make: fn {HHHNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3! !
+---
+> {RequestHandler} make: fn {VHHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category} with: type5 {Category}
+> 	^self create: fn with: type1 with: type2 with: type3 with: type4 with: type5! !
+2834c2136
+< !HHHNHandler class methodsFor: 'generated:'!
+---
+> !VHHHHHHandler class methodsFor: 'generated:'!
+2838c2140
+< RequestHandler subclass: #HHHandler
+---
+> RequestHandler subclass: #VHHHandler
+2840,2883c2142
+< 		myFn {HHFn var}
+< 		myType1 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (HHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	pm noErrors ifTrue:
+< 		[pm respondHeaper: (myFn invokeFunction: arg1)]! !
+< 
+< !HHHandler methodsFor: 'creation'!
+< 
+< create: fn {HHFn var} with: type1 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< HHHandler class
+< 	instanceVariableNames: ''!
+< 
+< (HHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HHHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {HHFn var} with: type1 {Category}
+< 	^self create: fn with: type1! !
+< 
+< !HHHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #HNNHandler
+< 	instanceVariableNames: '
+< 		myFn {HNNFn var}
+---
+> 		myFn {VHHFn var}
+2890c2149
+< (HNNHandler getOrMakeCxxClassDescription)
+---
+> (VHHHandler getOrMakeCxxClassDescription)
+2893c2152
+< !HNNHandler methodsFor: 'request handling'!
+---
+> !VHHHandler methodsFor: 'request handling'!
+2897,2899c2156,2158
+< 	| arg1 {Heaper | NULL} arg2 {Heaper | NULL} |
+< 	arg1 _ pm fetchHeaper: myType1.
+< 	arg2 _ pm fetchHeaper: myType2.
+---
+> 	| arg1 {Heaper} arg2 {Heaper} |
+> 	arg1 _ pm fetchNonNullHeaper: myType1.
+> 	arg2 _ pm fetchNonNullHeaper: myType2.
+2901c2160,2161
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2)]! !
+---
+> 		[(myFn invokeFunction: arg1 with: arg2).
+> 		pm respondVoid]! !
+2903c2163
+< !HNNHandler methodsFor: 'creation'!
+---
+> !VHHHandler methodsFor: 'creation'!
+2905c2165
+< create: fn {HNNFn var} with: type1 {Category} with: type2 {Category}
+---
+> create: fn {VHHFn var} with: type1 {Category} with: type2 {Category}
+2912c2172
+< HNNHandler class
+---
+> VHHHandler class
+2915c2175
+< (HNNHandler getOrMakeCxxClassDescription)
+---
+> (VHHHandler getOrMakeCxxClassDescription)
+2918c2178
+< !HNNHandler class methodsFor: 'creation'!
+---
+> !VHHHandler class methodsFor: 'creation'!
+2920c2180
+< {RequestHandler} make: fn {HNNFn var} with: type1 {Category} with: type2 {Category}
+---
+> {RequestHandler} make: fn {VHHFn var} with: type1 {Category} with: type2 {Category}
+2923c2183
+< !HNNHandler class methodsFor: 'generated:'!
+---
+> !VHHHandler class methodsFor: 'generated:'!
+2927c2187
+< RequestHandler subclass: #HHNNNHNHandler
+---
+> RequestHandler subclass: #HHHHHHHHandler
+2929c2189
+< 		myFn {HHNNNHNFn var}
+---
+> 		myFn {HHHHHHHFn var}
+2940c2200
+< (HHNNNHNHandler getOrMakeCxxClassDescription)
+---
+> (HHHHHHHHandler getOrMakeCxxClassDescription)
+2943c2203
+< !HHNNNHNHandler methodsFor: 'request handling'!
+---
+> !HHHHHHHHandler methodsFor: 'request handling'!
+2947c2207
+< 	| arg1 {Heaper} arg2 {Heaper | NULL} arg3 {Heaper | NULL} arg4 {Heaper | NULL} arg5 {Heaper} arg6 {Heaper | NULL} |
+---
+> 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper} arg4 {Heaper} arg5 {Heaper} arg6 {Heaper} |
+2949,2951c2209,2211
+< 	arg2 _ pm fetchHeaper: myType2.
+< 	arg3 _ pm fetchHeaper: myType3.
+< 	arg4 _ pm fetchHeaper: myType4.
+---
+> 	arg2 _ pm fetchNonNullHeaper: myType2.
+> 	arg3 _ pm fetchNonNullHeaper: myType3.
+> 	arg4 _ pm fetchNonNullHeaper: myType4.
+2953c2213
+< 	arg6 _ pm fetchHeaper: myType6.
+---
+> 	arg6 _ pm fetchNonNullHeaper: myType6.
+2957c2217
+< !HHNNNHNHandler methodsFor: 'creation'!
+---
+> !HHHHHHHHandler methodsFor: 'creation'!
+2959c2219
+< create: fn {HHNNNHNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category} with: type5 {Category} with: type6 {Category}
+---
+> create: fn {HHHHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category} with: type5 {Category} with: type6 {Category}
+2970c2230
+< HHNNNHNHandler class
+---
+> HHHHHHHHandler class
+2973c2233
+< (HHNNNHNHandler getOrMakeCxxClassDescription)
+---
+> (HHHHHHHHandler getOrMakeCxxClassDescription)
+2976c2236
+< !HHNNNHNHandler class methodsFor: 'creation'!
+---
+> !HHHHHHHHandler class methodsFor: 'creation'!
+2978c2238
+< {RequestHandler} make: fn {HHNNNHNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category} with: type5 {Category} with: type6 {Category}
+---
+> {RequestHandler} make: fn {HHHHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category} with: type5 {Category} with: type6 {Category}
+2981c2241
+< !HHNNNHNHandler class methodsFor: 'generated:'!
+---
+> !HHHHHHHHandler class methodsFor: 'generated:'!
+2985,2988c2245,2246
+< RequestHandler subclass: #VHBHandler
+< 	instanceVariableNames: '
+< 		myFn {VHBFn var}
+< 		myType1 {Category}'
+---
+> RequestHandler subclass: #HHandler
+> 	instanceVariableNames: 'myFn {HFn var}'
+2993c2251
+< (VHBHandler getOrMakeCxxClassDescription)
+---
+> (HHandler getOrMakeCxxClassDescription)
+2996c2254
+< !VHBHandler methodsFor: 'request handling'!
+---
+> !HHandler methodsFor: 'request handling'!
+3000,3002d2257
+< 	| arg1 {Heaper} arg2 {BooleanVar} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchBooleanVar.
+3004,3005c2259
+< 		[(myFn invokeFunction: arg1 with: arg2).
+< 		pm respondVoid]! !
+---
+> 		[pm respondHeaper: (myFn invokeFunction)]! !
+3007c2261
+< !VHBHandler methodsFor: 'creation'!
+---
+> !HHandler methodsFor: 'creation'!
+3009c2263
+< create: fn {VHBFn var} with: type1 {Category}
+---
+> create: fn {HFn var}
+3011,3012c2265
+< 	myFn _ fn.
+< 	myType1 _ type1.! !
+---
+> 	myFn _ fn.! !
+3015c2268
+< VHBHandler class
+---
+> HHandler class
+3018c2271
+< (VHBHandler getOrMakeCxxClassDescription)
+---
+> (HHandler getOrMakeCxxClassDescription)
+3021c2274
+< !VHBHandler class methodsFor: 'creation'!
+---
+> !HHandler class methodsFor: 'creation'!
+3023,3024c2276,2277
+< {RequestHandler} make: fn {VHBFn var} with: type1 {Category}
+< 	^self create: fn with: type1! !
+---
+> {RequestHandler} make: fn {HFn var}
+> 	^self create: fn! !
+3026c2279
+< !VHBHandler class methodsFor: 'generated:'!
+---
+> !HHandler class methodsFor: 'generated:'!
+3030,3131d2282
+< RequestHandler subclass: #VHHHHHandler
+< 	instanceVariableNames: '
+< 		myFn {VHHHHFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}
+< 		myType4 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (VHHHHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHHHHHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper} arg2 {Heaper} arg3 {Heaper} arg4 {Heaper} |
+< 	arg1 _ pm fetchNonNullHeaper: myType1.
+< 	arg2 _ pm fetchNonNullHeaper: myType2.
+< 	arg3 _ pm fetchNonNullHeaper: myType3.
+< 	arg4 _ pm fetchNonNullHeaper: myType4.
+< 	pm noErrors ifTrue:
+< 		[(myFn invokeFunction: arg1 with: arg2 with: arg3 with: arg4).
+< 		pm respondVoid]! !
+< 
+< !VHHHHHandler methodsFor: 'creation'!
+< 
+< create: fn {VHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.
+< 	myType4 _ type4.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< VHHHHHandler class
+< 	instanceVariableNames: ''!
+< 
+< (VHHHHHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !VHHHHHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {VHHHHFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category} with: type4 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3 with: type4! !
+< 
+< !VHHHHHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+< RequestHandler subclass: #HNNNHandler
+< 	instanceVariableNames: '
+< 		myFn {HNNNFn var}
+< 		myType1 {Category}
+< 		myType2 {Category}
+< 		myType3 {Category}'
+< 	classVariableNames: ''
+< 	poolDictionaries: ''
+< 	category: 'Xanadu-proman'!
+< 
+< (HNNNHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HNNNHandler methodsFor: 'request handling'!
+< 
+< {void} handleRequest: pm {PromiseManager}
+< 	
+< 	| arg1 {Heaper | NULL} arg2 {Heaper | NULL} arg3 {Heaper | NULL} |
+< 	arg1 _ pm fetchHeaper: myType1.
+< 	arg2 _ pm fetchHeaper: myType2.
+< 	arg3 _ pm fetchHeaper: myType3.
+< 	pm noErrors ifTrue:
+< 		[pm respondHeaper: (myFn invokeFunction: arg1 with: arg2 with: arg3)]! !
+< 
+< !HNNNHandler methodsFor: 'creation'!
+< 
+< create: fn {HNNNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	super create.
+< 	myFn _ fn.
+< 	myType1 _ type1.
+< 	myType2 _ type2.
+< 	myType3 _ type3.! !
+< "-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- "!
+< 
+< HNNNHandler class
+< 	instanceVariableNames: ''!
+< 
+< (HNNNHandler getOrMakeCxxClassDescription)
+< 	attributes: ((Set new) add: #CONCRETE; add: #NOT.A.TYPE; yourself)!
+< 
+< !HNNNHandler class methodsFor: 'creation'!
+< 
+< {RequestHandler} make: fn {HNNNFn var} with: type1 {Category} with: type2 {Category} with: type3 {Category}
+< 	^self create: fn with: type1 with: type2 with: type3! !
+< 
+< !HNNNHandler class methodsFor: 'generated:'!
+< 
+< isGenerated ^true! !
+< 
+3152c2303
+< 	myTarget _ target!
+---
+> 	myTarget _ target! !
+3154,3158d2304
+< {void} destruct
+< 	(Heaper isDestructed: myTarget)
+< 		ifFalse: [myTarget removeFillDetector: self].
+< 	super destruct! !
+< 
+3748c2894
+< hashForEqual ^self asOop!
+---
+> actualHashForEqual ^self asOop!
+3889c3035
+< 	 ^UInt8Array make: 512!
+---
+> 	 [^UInt8Array make: 512] smalltalkOnly.
+3890a3037,3038
+> 	  ^UInt8Array make: 512 with: ['(void *)falloc(512)' translateOnly]   translateOnly.!
+> 
+3970c3118
+< 	myTarget _ target!
+---
+> 	myTarget _ target! !
+3972,3976d3119
+< {void} destruct
+< 	(Heaper isDestructed: myTarget)
+< 		ifFalse: [myTarget removeStatusDetector: self].
+< 	super destruct! !
+< 
+4031c3174
+< 	myTarget _ target!
+---
+> 	myTarget _ target! !
+4033,4037d3175
+< {void} destruct
+< 	(Heaper isDestructed: myTarget)
+< 		ifFalse: [myTarget removeFillRangeDetector: self].
+< 	super destruct! !
+< 
+4078c3216
+< 	myTarget _ target!
+---
+> 	myTarget _ target! !
+4080,4084d3217
+< {void} destruct
+< 	(Heaper isDestructed: myTarget)
+< 		ifFalse: [myTarget removeRevisionDetector: self].
+< 	super destruct! !
+< 
+4624c3757,3758
+< 	(Heaper isDestructed: myPortal) ifFalse: [myPortal destroy].
+---
+> 	| step {PrimIndexTableStepper} |
+> 	myPortal destroy.
+4626,4627d3759
+< 	(Heaper isDestructed: myRefCounts) ifFalse:
+< 		[| step {PrimIndexTableStepper} |
+4632,4634c3764,3765
+< 			(Heaper isDestructed: detect) ifFalse:
+< 				[detect destroy].
+< 			step step]].
+---
+> 		detect destroy.
+> 		step step].
+5302c4433
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #SequenceSpace.U.mapping.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #SequenceSpace.U.mapping.U.N2:with: with: 'HHHFn')
+5597c4728
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.transcluders.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.transcluders.U.N2:with: with: 'HHHFn')
+5601c4732
+< 		(HHNNHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.transcluders.U.N3:with:with: with: 'HHNNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.transcluders.U.N3:with:with: with: 'HHHHFn')
+5606c4737
+< 		(HHNNHHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.transcluders.U.N4:with:with:with: with: 'HHNNHFn')
+---
+> 		(HHHHHHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.transcluders.U.N4:with:with:with: with: 'HHHHHFn')
+5612c4743
+< 		(HHNNHNHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.transcluders.U.N5:with:with:with:with: with: 'HHNNHNFn')
+---
+> 		(HHHHHHHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.transcluders.U.N5:with:with:with:with: with: 'HHHHHHFn')
+5622c4753
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.works.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.works.U.N2:with: with: 'HHHFn')
+5626c4757
+< 		(HHNHHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.works.U.N3:with:with: with: 'HHNHFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.works.U.N3:with:with: with: 'HHHHFn')
+5631c4762
+< 		(HHNHNHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.works.U.N4:with:with:with: with: 'HHNHNFn')
+---
+> 		(HHHHHHandler make: (RequestHandler pointerToStaticMember: #RangeElement.U.works.U.N4:with:with:with: with: 'HHHHHFn')
+5659c4790
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.fromArray.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.fromArray.U.N2:with: with: 'HHHFn')
+5663c4794
+< 		(HHNNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.fromArray.U.N3:with:with: with: 'HHNNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.fromArray.U.N3:with:with: with: 'HHHHFn')
+5679c4810
+< 		(HHHNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.canMakeRangeIdentical.U.N3:with:with: with: 'HHHNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.canMakeRangeIdentical.U.N3:with:with: with: 'HHHHFn')
+5736c4867
+< 		(HHHNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.makeRangeIdentical.U.N3:with:with: with: 'HHHNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.makeRangeIdentical.U.N3:with:with: with: 'HHHHFn')
+5766c4897
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeOwners.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeOwners.U.N2:with: with: 'HHHFn')
+5773c4904
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeTranscluders.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeTranscluders.U.N2:with: with: 'HHHFn')
+5777c4908
+< 		(HHNNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeTranscluders.U.N3:with:with: with: 'HHNNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeTranscluders.U.N3:with:with: with: 'HHHHFn')
+5782c4913
+< 		(HHNNNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeTranscluders.U.N4:with:with:with: with: 'HHNNNFn')
+---
+> 		(HHHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeTranscluders.U.N4:with:with:with: with: 'HHHHHFn')
+5788c4919
+< 		(HHNNNHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeTranscluders.U.N5:with:with:with:with: with: 'HHNNNHFn')
+---
+> 		(HHHHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeTranscluders.U.N5:with:with:with:with: with: 'HHHHHHFn')
+5795c4926
+< 		(HHNNNHNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeTranscluders.U.N6:with:with:with:with:with: with: 'HHNNNHNFn')
+---
+> 		(HHHHHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeTranscluders.U.N6:with:with:with:with:with: with: 'HHHHHHHFn')
+5806c4937
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeWorks.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeWorks.U.N2:with: with: 'HHHFn')
+5810c4941
+< 		(HHNNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeWorks.U.N3:with:with: with: 'HHNNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeWorks.U.N3:with:with: with: 'HHHHFn')
+5815c4946
+< 		(HHNNHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeWorks.U.N4:with:with:with: with: 'HHNNHFn')
+---
+> 		(HHHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeWorks.U.N4:with:with:with: with: 'HHHHHFn')
+5821c4952
+< 		(HHNNHNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeWorks.U.N5:with:with:with:with: with: 'HHNNHNFn')
+---
+> 		(HHHHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.rangeWorks.U.N5:with:with:with:with: with: 'HHHHHHFn')
+5844c4975
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.retrieve.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.retrieve.U.N2:with: with: 'HHHFn')
+5848c4979
+< 		(HHNNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.retrieve.U.N3:with:with: with: 'HHNNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.retrieve.U.N3:with:with: with: 'HHHHFn')
+5853c4984
+< 		(HHNNHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.retrieve.U.N4:with:with:with: with: 'HHNNHFn')
+---
+> 		(HHHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.retrieve.U.N4:with:with:with: with: 'HHHHHFn')
+5863c4994
+< 		(HHHNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.setRangeOwners.U.N3:with:with: with: 'HHHNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.setRangeOwners.U.N3:with:with: with: 'HHHHFn')
+5889c5020
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.stepper.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.stepper.U.N2:with: with: 'HHHFn')
+5893c5024
+< 		(HHNNHandler make: (RequestHandler pointerToStaticMember: #Edition.U.stepper.U.N3:with:with: with: 'HHNNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #Edition.U.stepper.U.N3:with:with: with: 'HHHHFn')
+6015c5146
+< 		(VHNHandler make: (RequestHandler pointerToStaticMember: #Work.U.setEditClub.U.N2:with: with: 'VHNFn')
+---
+> 		(VHHHandler make: (RequestHandler pointerToStaticMember: #Work.U.setEditClub.U.N2:with: with: 'VHHFn')
+6019c5150
+< 		(VHNHandler make: (RequestHandler pointerToStaticMember: #Work.U.setHistoryClub.U.N2:with: with: 'VHNFn')
+---
+> 		(VHHHandler make: (RequestHandler pointerToStaticMember: #Work.U.setHistoryClub.U.N2:with: with: 'VHHFn')
+6023c5154
+< 		(VHNHandler make: (RequestHandler pointerToStaticMember: #Work.U.setReadClub.U.N2:with: with: 'VHNFn')
+---
+> 		(VHHHandler make: (RequestHandler pointerToStaticMember: #Work.U.setReadClub.U.N2:with: with: 'VHHFn')
+6049c5180
+< 		(VHNHandler make: (RequestHandler pointerToStaticMember: #Club.U.setSignatureClub.U.N2:with: with: 'VHNFn')
+---
+> 		(VHHHandler make: (RequestHandler pointerToStaticMember: #Club.U.setSignatureClub.U.N2:with: with: 'VHHFn')
+6059c5190
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #Club.U.sponsoredWorks.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #Club.U.sponsoredWorks.U.N2:with: with: 'HHHFn')
+6078c5209
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #Server.U.assignID.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #Server.U.assignID.U.N2:with: with: 'HHHFn')
+6218c5349
+< 		(HNNHandler make: (RequestHandler pointerToStaticMember: #ClubDescription.U.make.U.N2:with: with: 'HNNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #ClubDescription.U.make.U.N2:with: with: 'HHHFn')
+6276c5407
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #HyperRef.U.withOriginalContext.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #HyperRef.U.withOriginalContext.U.N2:with: with: 'HHHFn')
+6280c5411
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #HyperRef.U.withPathContext.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #HyperRef.U.withPathContext.U.N2:with: with: 'HHHFn')
+6284c5415
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #HyperRef.U.withWorkContext.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #HyperRef.U.withWorkContext.U.N2:with: with: 'HHHFn')
+6294c5425
+< 		(HNHandler make: (RequestHandler pointerToStaticMember: #MultiRef.U.make.U.N1: with: 'HNFn')
+---
+> 		(HHHandler make: (RequestHandler pointerToStaticMember: #MultiRef.U.make.U.N1: with: 'HHFn')
+6297c5428
+< 		(HNNHandler make: (RequestHandler pointerToStaticMember: #MultiRef.U.make.U.N2:with: with: 'HNNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #MultiRef.U.make.U.N2:with: with: 'HHHFn')
+6301c5432
+< 		(HNNNHandler make: (RequestHandler pointerToStaticMember: #MultiRef.U.make.U.N3:with:with: with: 'HNNNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #MultiRef.U.make.U.N3:with:with: with: 'HHHHFn')
+6306c5437
+< 		(HNNNNHandler make: (RequestHandler pointerToStaticMember: #MultiRef.U.make.U.N4:with:with:with: with: 'HNNNNFn')
+---
+> 		(HHHHHHandler make: (RequestHandler pointerToStaticMember: #MultiRef.U.make.U.N4:with:with:with: with: 'HHHHHFn')
+6338c5469
+< 		(HNHandler make: (RequestHandler pointerToStaticMember: #SingleRef.U.make.U.N1: with: 'HNFn')
+---
+> 		(HHHandler make: (RequestHandler pointerToStaticMember: #SingleRef.U.make.U.N1: with: 'HHFn')
+6341c5472
+< 		(HNNHandler make: (RequestHandler pointerToStaticMember: #SingleRef.U.make.U.N2:with: with: 'HNNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #SingleRef.U.make.U.N2:with: with: 'HHHFn')
+6345c5476
+< 		(HNNNHandler make: (RequestHandler pointerToStaticMember: #SingleRef.U.make.U.N3:with:with: with: 'HNNNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #SingleRef.U.make.U.N3:with:with: with: 'HHHHFn')
+6350c5481
+< 		(HNNNNHandler make: (RequestHandler pointerToStaticMember: #SingleRef.U.make.U.N4:with:with:with: with: 'HNNNNFn')
+---
+> 		(HHHHHHandler make: (RequestHandler pointerToStaticMember: #SingleRef.U.make.U.N4:with:with:with: with: 'HHHHHFn')
+6474c5605
+< 		(HNHandler make: (RequestHandler pointerToStaticMember: #Text.U.make.U.N1: with: 'HNFn')
+---
+> 		(HHHandler make: (RequestHandler pointerToStaticMember: #Text.U.make.U.N1: with: 'HHFn')
+6525c5656
+< 		(HHHNHandler make: (RequestHandler pointerToStaticMember: #Region.U.chooseMany.U.N3:with:with: with: 'HHHNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #Region.U.chooseMany.U.N3:with:with: with: 'HHHHFn')
+6537c5668
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #Region.U.chooseOne.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #Region.U.chooseOne.U.N2:with: with: 'HHHFn')
+6582c5713
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #Region.U.stepper.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #Region.U.stepper.U.N2:with: with: 'HHHFn')
+6654c5785
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #IntegerRegion.U.intervals.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #IntegerRegion.U.intervals.U.N2:with: with: 'HHHFn')
+6679c5810
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #RealRegion.U.intervals.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #RealRegion.U.intervals.U.N2:with: with: 'HHHFn')
+6704c5835
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #SequenceRegion.U.intervals.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #SequenceRegion.U.intervals.U.N2:with: with: 'HHHFn')
+6846c5977
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #Adminer.U.grants.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #Adminer.U.grants.U.N2:with: with: 'HHHFn')
+6850c5981
+< 		(HHNNHandler make: (RequestHandler pointerToStaticMember: #Adminer.U.grants.U.N3:with:with: with: 'HHNNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #Adminer.U.grants.U.N3:with:with: with: 'HHHHFn')
+6878c6009
+< 		(HHNHHandler make: (RequestHandler pointerToStaticMember: #Archiver.U.restore.U.N3:with:with: with: 'HHNHFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #Archiver.U.restore.U.N3:with:with: with: 'HHHHFn')
+6924c6055
+< 		(VHHNHandler make: (RequestHandler pointerToStaticMember: #Array.U.store.U.N3:with:with: with: 'VHHNFn')
+---
+> 		(VHHHHandler make: (RequestHandler pointerToStaticMember: #Array.U.store.U.N3:with:with: with: 'VHHHFn')
+6932c6063
+< 		(VHNHandler make: (RequestHandler pointerToStaticMember: #Array.U.storeAll.U.N2:with: with: 'VHNFn')
+---
+> 		(VHHHandler make: (RequestHandler pointerToStaticMember: #Array.U.storeAll.U.N2:with: with: 'VHHFn')
+6936c6067
+< 		(VHNHHandler make: (RequestHandler pointerToStaticMember: #Array.U.storeAll.U.N3:with:with: with: 'VHNHFn')
+---
+> 		(VHHHHandler make: (RequestHandler pointerToStaticMember: #Array.U.storeAll.U.N3:with:with: with: 'VHHHFn')
+6941c6072
+< 		(VHNHHHandler make: (RequestHandler pointerToStaticMember: #Array.U.storeAll.U.N4:with:with:with: with: 'VHNHHFn')
+---
+> 		(VHHHHHandler make: (RequestHandler pointerToStaticMember: #Array.U.storeAll.U.N4:with:with:with: with: 'VHHHHFn')
+7070c6201
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #CrossSpace.U.crossOfMappings.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #CrossSpace.U.crossOfMappings.U.N2:with: with: 'HHHFn')
+7077c6208
+< 		(HHNHandler make: (RequestHandler pointerToStaticMember: #CrossSpace.U.crossOfOrderSpecs.U.N2:with: with: 'HHNFn')
+---
+> 		(HHHHandler make: (RequestHandler pointerToStaticMember: #CrossSpace.U.crossOfOrderSpecs.U.N2:with: with: 'HHHFn')
+7081c6212
+< 		(HHNNHandler make: (RequestHandler pointerToStaticMember: #CrossSpace.U.crossOfOrderSpecs.U.N3:with:with: with: 'HHNNFn')
+---
+> 		(HHHHHandler make: (RequestHandler pointerToStaticMember: #CrossSpace.U.crossOfOrderSpecs.U.N3:with:with: with: 'HHHHFn')

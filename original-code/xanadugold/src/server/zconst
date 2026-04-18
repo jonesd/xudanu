@@ -1,0 +1,1085 @@
+/Fhypatia/roger/prod/xhs/src/xpp
+/Fhypatia/roger/prod/xhs/src/xpp
+cbombc.h:CONST
+cbombc.h:CONST
+alloct.cxx:  CONSTRUCT(foo,Foo,());
+alloct.cxx:  CONSTRUCT(foo,Foo,());
+bibopx.cxx:void UnallocatedHeaper::markInstances (Heaplet * /* target */) CONST {
+bombt.cxx:	sub7();	// Tests CONSTRUCTOR_BOMB(), which plugs a memory leak
+bombt.cxx:	sub8();	// Tests CONSTRUCTOR_BOMB() interaction with member objects
+bombt.cxx:	cerr << "\nsub7(): Testing CONSTRUCTOR_BOMB()\n";
+bombt.cxx:		BLAST_WITH_VAL(CONSTRUCTOR_DIDNT_BLOW,1);
+bombt.cxx:		BLAST_WITH_VAL(CONSTRUCTOR_DIDNT_BLOW,1);
+bombt.cxx:	cerr << "\nsub8(): Testing CONSTRUCTOR_BOMB()\n";
+bombt.cxx:	BOOBY_TRAP_BEGIN(BLAP,CONSTRUCTOR_DIDNT_BLOW) {
+bombx.cxx://	Merge with alpha-12:  change const -> CONST
+bombx.cxx:bogusFree(CONST char *,CONST char *)
+bombx.cxx:	  CONST char *	argProblemName
+bombx.cxx:	, CONST int	argVal
+bombx.cxx:	, CONST char *	argFileName
+bombx.cxx:	  CONST char *	argProblemName
+bombx.cxx:	, CONST int	argVal
+bombx.cxx:	, CONST char *	argFileName
+bombx.cxx:	, void		(*argSpecialFree)(CONST char *, CONST char *)
+bombx.cxx:checkProblem(CONST char * argProblemName) {
+bombx.cxx:CONST char * Problem::
+bombx.cxx:CONST char * Problem::
+bombx.cxx:	CONST BooleanVar Unexploded_Bomb = FALSE;
+bombx.cxx:	CONST BooleanVar Uncaught_Signal = FALSE;
+bombx.cxx:	CONST BooleanVar Uncaught_Signal_Escaped_Inspection = FALSE;
+bombx.cxx:	CONST BooleanVar Doomsday_Device_Triggered = FALSE;
+bombx.cxx:			CONST BooleanVar Bomb_Missing_From_String = FALSE;
+cbombx.cxx:		CONST BooleanVar
+cbombx.cxx:CONST char * cProblemFetchProblemName(
+cbombx.cxx:CONST char * cProblemFetchFileName(
+cbombx.cxx:		CONST BooleanVar
+cbombx.cxx:			CONST BooleanVar
+chooset.cxx:    CONSTRUCT(temp,Foo,());
+chooset.cxx:    CONSTRUCT(temp,Bar,());
+chooset.cxx:    CONSTRUCT(temp,Baz,());
+choosex.cxx:void unkindBlast (CONST char * argFileName, int argLineNumber) {
+filetpx.cxx:    RETURN_CONSTRUCT(XnWriteFile,(fd, tcsj));
+filetpx.cxx:    RETURN_CONSTRUCT(XnReadFile,(fd, tcsj));
+filetpx.cxx:		CONSTRUCT(exec,FCloseExecutor,());
+fluidt.cxx:    CONSTRUCT(p,Foo,(3));
+fluidt.cxx:    CONSTRUCT(p,Foo,(arg * 10));	// Create an instance to point at
+garbaget.cxx:    CONSTRUCT(consCellP,ConsCell,(NULL,NULL));
+garbagex.cxx:    CONSTRUCT_ON(PERSISTENT,TheHeap->myRepairer,GCNecessity,());
+opaquet.cxx:    CONSTRUCT(barP,Bar,());
+opaquet.cxx:	CONSTRUCT(fooP,Foo,());
+opaquet.cxx:	CONSTRUCT(barP,Bar,());
+opaquet.cxx:	CONSTRUCT(bazP,Baz,());
+opaquet.cxx:	CONSTRUCT(equalCoercionTesterP,EqualCoercionTester,(fooP,barP,bazP));
+opaquet.cxx:	CONSTRUCT(destroyItTester1P,DestroyItTester,(NULL));
+opaquet.cxx:	CONSTRUCT(destroyItTester2P,DestroyItTester,(destroyItTester1P));
+opaquet.cxx:    CONSTRUCT(foo,Foo,());
+opaquex.cxx:void GlobalStrongPtrVar::badSequenceNumber () CONST
+parrayt.cxx:    CONSTRUCT(pat,PrimArrayTester,());
+parrayx.cxx:    RETURN_CONSTRUCT(IEEE32Array,(count,tcsj));
+parrayx.cxx:    RETURN_CONSTRUCT(IEEE32Array,(size, from, sourceOffset, count, destOffset));
+parrayx.cxx:    RETURN_CONSTRUCT(IEEE32Array,(count,buffer));
+parrayx.cxx:    RETURN_CONSTRUCT(IEEE64Array,(count,tcsj));
+parrayx.cxx:    RETURN_CONSTRUCT(IEEE64Array,(size, from, sourceOffset, count, destOffset));
+parrayx.cxx:    RETURN_CONSTRUCT(IEEE64Array,(count,buffer));
+parrayx.cxx:    RETURN_CONSTRUCT(Int32Array,(count,tcsj));
+parrayx.cxx:    RETURN_CONSTRUCT(Int32Array,(size, from, sourceOffset, count, destOffset));
+parrayx.cxx:    RETURN_CONSTRUCT(Int32Array,(count,buffer));
+parrayx.cxx:    RETURN_CONSTRUCT(IntegerVarArray,(count,tcsj));
+parrayx.cxx:    RETURN_CONSTRUCT(IntegerVarArray,(size, from, sourceOffset, count, destOffset));
+parrayx.cxx:    RETURN_CONSTRUCT(IntegerVarArray,(count,buffer));
+parrayx.cxx:    RETURN_CONSTRUCT(UInt32Array,(count,tcsj));
+parrayx.cxx:    RETURN_CONSTRUCT(UInt32Array,(size, from, sourceOffset, count, destOffset));
+parrayx.cxx:    RETURN_CONSTRUCT(UInt32Array,(count,buffer));
+parrayx.cxx:    RETURN_CONSTRUCT(UInt8Array,(count,tcsj));
+parrayx.cxx:    RETURN_CONSTRUCT(UInt8Array,(size, from, sourceOffset, count, destOffset));
+parrayx.cxx:    RETURN_CONSTRUCT(UInt8Array,(count,buffer));
+parrayx.cxx:    RETURN_CONSTRUCT(PtrArray,(count, tcsj));
+parrayx.cxx:    RETURN_CONSTRUCT(PtrArray,(size, from, sourceOffset, count, destOffset));
+parrayx.cxx:    RETURN_CONSTRUCT(PtrArray,(count, buffer));
+parrayx.cxx:    RETURN_CONSTRUCT(PtrArray,(Int32Zero, tcsj));
+parrayx.cxx:    RETURN_CONSTRUCT(SharedPtrArray,(count, tcsj));
+parrayx.cxx:    RETURN_CONSTRUCT(SharedPtrArray,(size, from, sourceOffset, count, destOffset));
+parrayx.cxx:    RETURN_CONSTRUCT(SharedPtrArray,(count, buffer));
+psrandx.cxx:	RETURN_CONSTRUCT(RandomStepper,(seed, 11, 5));
+psrandx.cxx:	RETURN_CONSTRUCT(RandomStepper,(seed, nSeeds, sep));
+psrandx.cxx:	RETURN_CONSTRUCT(RandomStepper,(seeds, nSeeds, p, q, idx));
+scavt.cxx:    RETURN_CONSTRUCT(TConsCell,(car, cdr));
+scavt.cxx:    RETURN_CONSTRUCT (ScavengeTestExecutor,(arrayID));
+sema4x.cxx:    RETURN_CONSTRUCT(Sema4,(initialCount, tcsj));
+sockptlx.cxx:	RETURN_CONSTRUCT(SocketPortal,(socketFD, tcsj));
+sockptlx.cxx:  RETURN_CONSTRUCT(SocketPortal,(fd,tcsj));
+tofut.cxx:	CONSTRUCT(barP,Bar,());
+tofut.cxx:	CONSTRUCT(bazP,Baz,());
+tofut.cxx:  CONSTRUCT(fooP,Bar,());
+tofut.cxx:    CONSTRUCT(b,Blaster,(2));
+tofut.cxx:    CONSTRUCT(b,Blaster,(3));
+tofut.cxx:    RETURN_CONSTRUCT(Blaster,(i));
+tofut.cxx: * (RETURN_)CONSTRUCT(), not the identical cfeature in
+tofut.cxx: * the support for (RETURN_)CONSTRUCT_ON()
+tofut.cxx:    RETURN_CONSTRUCT(Blaster,(earlyDestroy()));
+tofut.cxx:    CONSTRUCT(foo,Foo,());
+tofux.cxx://	    Passing Categories from the CONSTRUCT macros
+tofux.cxx://	Added CONSTRUCT_ON(), RETURN_CONSTRUCT_ON() macros,
+tofux.cxx:Category * Tofu::getCategory () CONST
+tofux.cxx:BooleanVar Tofu::isKindOf (Category * aCategory) CONST
+tofux.cxx:	, CONST char *	argFileName
+tofux.cxx:	, CONST int	argLineNumber
+tofux.cxx:void Tofu::sendSelfTo (Xmtr *) /*CONST*/
+wparrayt.cxx:    RETURN_CONSTRUCT(TestExecutor,());
+wparrayt.cxx:    RETURN_CONSTRUCT(SmallDyingThing,(number));
+wparrayx.cxx:    CONSTRUCT(XnExecutor::TheNoopExecutor,XnExecutor,());
+wparrayx.cxx:	CONSTRUCT(XnExecutor::TheNoopExecutor,XnExecutor,());
+wparrayx.cxx:    RETURN_CONSTRUCT(WeakPtrArray,(executor,size, NULL, 0, -1, 0));
+wparrayx.cxx:    RETURN_CONSTRUCT(WeakPtrArray, (myExecutor, size, CAST(PtrArray,source),
+bibopp.hxx:    void markInstances (Heaplet * target) CONST;
+bombx.hxx://	Merge with alpha-12:  change const -> CONST
+bombx.hxx:		  CONST char *	argProblemName
+bombx.hxx:		, CONST int	argVal
+bombx.hxx:		, CONST char *	argFileName
+bombx.hxx:		  CONST char *	argProblemName
+bombx.hxx:		, CONST int	argVal
+bombx.hxx:		, CONST char *	argFileName
+bombx.hxx:		, void		(*argSpecialFree)(CONST char *, CONST char *)
+bombx.hxx:	BooleanVar	checkProblem(CONST char * argProblemName);
+bombx.hxx:	CONST char *	getProblemName();	// Return problemName
+bombx.hxx:	CONST char *	getFileName();		// Return fileName
+bombx.hxx:	CONST char *		problemName;
+bombx.hxx:	CONST char *		fileName;
+bombx.hxx:	void			(*specialFree)(CONST char *, CONST char *);
+choosex.hxx:extern void unkindBlast (CONST char * argFileName, int argLineNumber);
+intvarx.hxx:    inline long asLong () CONST;
+intvarx.hxx:    inline int asInt () CONST;
+opaquex.hxx:	inline Heaper *	fetch() CONST;
+opaquex.hxx:	inline Heaper *	get() CONST;
+opaquex.hxx:	inline Heaper *	fetch() CONST;
+opaquex.hxx:	inline Heaper *	get() CONST;
+opaquex.hxx:	void		badSequenceNumber () CONST;
+opaquex.hxx:      CONST CheckedPtrVar&	aLeft
+opaquex.hxx:    , CONST CheckedPtrVar&	aRight
+opaquex.hxx:      CONST CheckedPtrVar&	aLeft
+opaquex.hxx:    , CONST CheckedPtrVar&	aRight
+opaquex.hxx:      CONST void *		aLeft
+opaquex.hxx:    , CONST CheckedPtrVar&	aRight
+opaquex.hxx:      CONST void *		aLeft
+opaquex.hxx:    , CONST CheckedPtrVar&	aRight
+opaquex.hxx:      CONST CheckedPtrVar&	aLeft
+opaquex.hxx:    , CONST void *		aRight
+opaquex.hxx:      CONST CheckedPtrVar&	aLeft
+opaquex.hxx:    , CONST void *		aRight
+opaquex.hxx:      CONST GlobalStrongPtrVar&	aLeft
+opaquex.hxx:    , CONST GlobalStrongPtrVar&	aRight
+opaquex.hxx:      CONST GlobalStrongPtrVar&	aLeft
+opaquex.hxx:    , CONST GlobalStrongPtrVar&	aRight
+opaquex.hxx:      CONST void *		aLeft
+opaquex.hxx:    , CONST GlobalStrongPtrVar&	aRight
+opaquex.hxx:      CONST void *		aLeft
+opaquex.hxx:    , CONST GlobalStrongPtrVar&	aRight
+opaquex.hxx:      CONST GlobalStrongPtrVar&	aLeft
+opaquex.hxx:    , CONST void *		aRight
+opaquex.hxx:      CONST GlobalStrongPtrVar&	aLeft
+opaquex.hxx:    , CONST void *		aRight
+opaquex.hxx:      CONST CheckedPtrVar&	aLeft
+opaquex.hxx:    , CONST GlobalStrongPtrVar&	aRight
+opaquex.hxx:      CONST CheckedPtrVar&	aLeft
+opaquex.hxx:    , CONST GlobalStrongPtrVar&	aRight
+opaquex.hxx:      CONST GlobalStrongPtrVar&	aLeft
+opaquex.hxx:    , CONST CheckedPtrVar&	aRight
+opaquex.hxx:      CONST GlobalStrongPtrVar&	aLeft
+opaquex.hxx:    , CONST CheckedPtrVar&	aRight
+tofux.hxx://	    Passing Categories from the CONSTRUCT macros
+tofux.hxx://	Added CONSTRUCT_ON(), RETURN_CONSTRUCT_ON() macros,
+tofux.hxx://   Changed CONSTRUCT macros to use canonical constructor bomb name
+tofux.hxx:        virtual Category * getCategory () CONST;			\
+tofux.hxx:        virtual void deferredHack () CONST DEFERRED_SUBR;               \
+tofux.hxx:        virtual Category * getCategory () CONST;			\
+tofux.hxx:        virtual void deferredHack () CONST SAFE;                        \
+tofux.hxx:       virtual void sendSelfTo (APTR(Xmtr) xmtr)/* CONST*/;		\
+tofux.hxx:       virtual void sendSelfTo (APTR(Xmtr) xmtr)/* CONST*/;		\
+tofux.hxx:    virtual Category * getCategory () CONST;
+tofux.hxx:    virtual BooleanVar isKindOf (Category * aCategory) CONST;
+tofux.hxx:    virtual void sendSelfTo (APTR(Xmtr)) /*CONST*/	RUN_TIME_DEFERRED_DECL;
+tofux.hxx:#define CONSTRUCT(VAR,TYPE,ARGS) {			\
+tofux.hxx:#define CONSTRUCT_ON(HEAP,VAR,TYPE,ARGS) {		\
+tofux.hxx:#define CONSTRUCT_ON_NO_ASSIGN(HEAP,TYPE,ARGS) {	\
+tofux.hxx:#define RETURN_CONSTRUCT(TYPE,ARGS) 			\
+tofux.hxx:#define RETURN_CONSTRUCT_ON(HEAP,TYPE,ARGS)		\
+tofux.hxx:    Category * derived::getCategory () CONST { return CAT(cat_,derived); }
+tofux.hxx:    /* The default invoked from the CONSTRUCT macros.  Has all the safety
+tofux.hxx:    /* From CONSTRUCT_AT - use when storage is already otherwise allocated */
+tofux.hxx:    /* Invoked by the CONSTRUCT_ON macros.  Safety AND choice of heap */
+tofux.hxx:    virtual void sendSelfTo (APTR(Xmtr) xmtr)/* CONST*/;
+tofux.hxx:    friend BooleanVar Tofu::isKindOf (Category *) CONST;
+tofux.hxx:		, CONST char *	argFileName
+tofux.hxx:		, CONST int	argLineNumber
+xcompatx.hxx: * CONST now always const.  Formic has been upgraded with "const:", so
+xcompatx.hxx: * CONST now always '', because making it const breaks backend diskfulness.
+xcompatx.hxx:#	define CONST
+xcompatx.hxx:#	define CONST /*const  confused and broken */
+intvarx.ixx:inline long IntegerVar::asLong () CONST
+intvarx.ixx:inline int IntegerVar::asInt () CONST
+opaquex.ixx:inline Heaper * GlobalStrongPtrVar::fetch() CONST {
+opaquex.ixx:inline Heaper *	GlobalStrongPtrVar::get() CONST {
+opaquex.ixx:inline Heaper * CheckedPtrVar::fetch() CONST {
+opaquex.ixx:inline Heaper * CheckedPtrVar::get() CONST {
+/Fhypatia/roger/prod/xhs/src/xlatexpp
+/Fhypatia/roger/prod/xhs/src/xlatexpp
+arrayx.cxx:	RETURN_CONSTRUCT(ActualArray,(someSize, tcsj));
+arrayx.cxx:	RETURN_CONSTRUCT(ActualArray,(CAST(PtrArray,elements->copy()), tally));
+arrayx.cxx:	RETURN_CONSTRUCT(ArrayAccumulator,(onTable, tcsj));
+arrayx.cxx:	RETURN_CONSTRUCT(AscendingArrayStepper,(array, tcsj));
+arrayx.cxx:	RETURN_CONSTRUCT(AscendingArrayStepper,(array, index));
+arrayx.cxx:	RETURN_CONSTRUCT(AscendingArrayStepper,(array, start, stop));
+arrayx.cxx:	RETURN_CONSTRUCT(OffsetArrayStepper,(arrayStepper, aDsp));
+arrayx.cxx:	RETURN_CONSTRUCT(OffsetScruArray,(array, dsp));
+becomet.cxx:	RETURN_CONSTRUCT(Moth,(4, tcsj));
+cachex.cxx:	RETURN_CONSTRUCT(InstanceCache,(size, tcsj));
+crossx.cxx:	RETURN_CONSTRUCT(GenericCrossDsp,(space, subDs));
+crossx.cxx:	RETURN_CONSTRUCT(CrossOrderSpec,(space, subOrders, lexO));
+crossx.cxx:	RETURN_CONSTRUCT(CrossOrderSpec,(space, result, lex));
+crossx.cxx:	RETURN_CONSTRUCT(CrossOrderSpec,(space, result, lex));
+crossx.cxx:	RETURN_CONSTRUCT(GenericCrossSpace,(CAST(PtrArray,PrimSpec::pointer()->arrayWithTwo(zeroSpace, oneSpace)), tcsj));
+crossx.cxx:	RETURN_CONSTRUCT(ActualTuple,(coordinates, tcsj));
+crossx.cxx:		RETURN_CONSTRUCT(BoxAccumulator,(region, tcsj));
+crossx.cxx:		RETURN_CONSTRUCT(BoxAccumulator,(space, expectedBoxCount));
+crossx.cxx:		RETURN_CONSTRUCT(BoxAccumulator,(mySpace, CAST(PtrArray,myRegions->copy()), myIndex));
+crossx.cxx:		RETURN_CONSTRUCT(BoxProjectionStepper,(region, tcsj));
+crossx.cxx:		RETURN_CONSTRUCT(BoxProjectionStepper,(region, boxIndex, boxLimit));
+crossx.cxx:		RETURN_CONSTRUCT(BoxStepper,(region, tcsj));
+crossx.cxx:		RETURN_CONSTRUCT(BoxStepper,(myRegion, myIndex, myValue));
+crossx.cxx:	RETURN_CONSTRUCT(GenericCrossDsp,(space, result));
+crossx.cxx:	RETURN_CONSTRUCT(GenericCrossDsp,(mySpace, newSubDsps));
+crossx.cxx:	RETURN_CONSTRUCT(GenericCrossRegion,(space, Int32Zero, PtrArray::empty()));
+crossx.cxx:	RETURN_CONSTRUCT(GenericCrossRegion,(space, 1, result));
+crossx.cxx:	RETURN_CONSTRUCT(GenericCrossRegion,(space, count, regions));
+crossx.cxx:	RETURN_CONSTRUCT(GenericCrossSimpleRegionStepper,(space, boxes));
+crossx.cxx:	RETURN_CONSTRUCT(GenericCrossSimpleRegionStepper,(mySpace, myBoxes->copy(), simples));
+crossx.cxx:	RETURN_CONSTRUCT(GenericCrossSpace,(subSpaces, tcsj));
+crossx.cxx:	RETURN_CONSTRUCT(TupleStepper,(space, virginSteppers, steppers, lexO));
+crossx.cxx:	RETURN_CONSTRUCT(TupleStepper,(mySpace, myVirginSteppers, newSteppers, myLexOrder));
+edgex.cxx:		RETURN_CONSTRUCT(EdgeAccumulator,(manager, startsInside));
+edgex.cxx:		RETURN_CONSTRUCT(EdgeAccumulator,(myManager, myStartsInside, myEdges, myIndex, myPending));
+edgex.cxx:	RETURN_CONSTRUCT(EdgeSimpleRegionStepper,(manager, edges));
+edgex.cxx:	RETURN_CONSTRUCT(EdgeSimpleRegionStepper,(myManager, step, mySimple));
+edgex.cxx:		RETURN_CONSTRUCT(EdgeStepper,(entering, edges, edges->count()));
+edgex.cxx:		RETURN_CONSTRUCT(EdgeStepper,(entering, edges, count));
+edgex.cxx:	RETURN_CONSTRUCT(EdgeStepper,(myEntering, myEdges, myEdgesCount, myIndex));
+filterx.cxx:	RETURN_CONSTRUCT(ClosedFilter,(CAST(FilterSpace,cs), tcsj));
+filterx.cxx:	RETURN_CONSTRUCT(NotSubsetFilter,(CAST(FilterSpace,cs), region->complement()));
+filterx.cxx:	RETURN_CONSTRUCT(NotSubsetFilter,(CAST(FilterSpace,cs), region));
+filterx.cxx:	RETURN_CONSTRUCT(NotSupersetFilter,(CAST(FilterSpace,cs), region));
+filterx.cxx:	RETURN_CONSTRUCT(OpenFilter,(CAST(FilterSpace,cs), tcsj));
+filterx.cxx:	RETURN_CONSTRUCT(SubsetFilter,(CAST(FilterSpace,cs), region));
+filterx.cxx:	RETURN_CONSTRUCT(SupersetFilter,(CAST(FilterSpace,cs), region));
+filterx.cxx:	RETURN_CONSTRUCT(AndFilter,(cs, subs));
+filterx.cxx:	RETURN_CONSTRUCT(OrFilter,(cs, subs));
+filterx.cxx:	RETURN_CONSTRUCT(FilterPosition,(region, tcsj));
+filterx.cxx:	RETURN_CONSTRUCT(FilterSpace,(base, tcsj));
+filterx.cxx:	RETURN_CONSTRUCT(Joint,(space->emptyRegion(), space->fullRegion()));
+filterx.cxx:	RETURN_CONSTRUCT(Joint,(left->unioned()->unionWith(right->unioned()), left->intersected()->intersect(right->intersected())));
+filterx.cxx:	RETURN_CONSTRUCT(Joint,(unioned, intersected));
+filterx.cxx:	RETURN_CONSTRUCT(Joint,(both, both));
+filterx.cxx:	RETURN_CONSTRUCT(Joint,(unioned, intersected));
+filterx.cxx:	RETURN_CONSTRUCT(RegionDelta,(before, after));
+filterx.cxx:	RETURN_CONSTRUCT(AndFilter,(cs, subs));
+filterx.cxx:	RETURN_CONSTRUCT(ClosedFilter,(CAST(FilterSpace,space), tcsj));
+filterx.cxx:	RETURN_CONSTRUCT(FilterDsp,(cs, tcsj));
+filterx.cxx:	RETURN_CONSTRUCT(OpenFilter,(CAST(FilterSpace,space), tcsj));
+gchooksx.cxx:		CONSTRUCT(exec,CloseExecutor,());
+gchooksx.cxx:		CONSTRUCT(exec,DeleteExecutor,());
+hashtabx.cxx:	RETURN_CONSTRUCT(ActualHashTable,(SharedPtrArray::make (7), Int32Zero, cs));
+hashtabx.cxx:	RETURN_CONSTRUCT(ActualHashTable,(SharedPtrArray::make (LPPrimeSizeProvider::make ()->uInt32PrimeAfter(size.asLong())), Int32Zero, cs));
+hashtabx.cxx:	RETURN_CONSTRUCT(ActualHashTable,(myHashEntries, this->count().asLong(), this->coordinateSpace()));
+hspacex.cxx:	CONSTRUCT(HeaperSpace::TheHeaperSpace,HeaperSpace,());
+hspacex.cxx:	RETURN_CONSTRUCT(StrongAsPosition,(heaper, tcsj));
+hspacex.cxx:	CONSTRUCT_ON(PERSISTENT,HeaperDsp::theDsp,HeaperDsp,());
+hspacex.cxx:	RETURN_CONSTRUCT(HeaperRegion,(TRUE, ImmuSet::make ()));
+hspacex.cxx:	RETURN_CONSTRUCT(HeaperRegion,(FALSE, ImmuSet::make ()));
+hspacex.cxx:	RETURN_CONSTRUCT(HeaperRegion,(FALSE, ImmuSet::make ()->with(heaper)));
+hspacex.cxx:	RETURN_CONSTRUCT(HeaperRegion,(FALSE, heapers->asImmuSet()));
+hspacex.cxx:	RETURN_CONSTRUCT(HeaperRegion,(isComplement, positions));
+integerx.cxx:	CONSTRUCT_ON(PERSISTENT,IntegerMapping::TheIdentityIntegerMapping,IntegerMapping,(IntegerVar0, tcsj));
+integerx.cxx:		CONSTRUCT(result,IntegerMapping,(translate, tcsj));
+integerx.cxx:		RETURN_CONSTRUCT(IntegerMapping,(translate, tcsj));
+integerx.cxx:	RETURN_CONSTRUCT(IntegerMapping,(IntegerVarZero, tcsj));
+integerx.cxx:	CONSTRUCT(tir,IntegerRegion,(TRUE, Int32Zero, empty));
+integerx.cxx:	CONSTRUCT(tir,IntegerRegion,(FALSE, Int32Zero, empty));
+integerx.cxx:	CONSTRUCT(tir,IntegerRegion,(FALSE, 1, table));
+integerx.cxx:	CONSTRUCT(tir,IntegerRegion,(TRUE, 1, table));
+integerx.cxx:	RETURN_CONSTRUCT(IntegerRegion,(FALSE, 2, ivArray));
+integerx.cxx:	CONSTRUCT(tir,IntegerRegion,(FALSE, 2, table));
+integerx.cxx:	RETURN_CONSTRUCT(IntegerRegion,(FALSE, 2, ivArray));
+integerx.cxx:	RETURN_CONSTRUCT(IntegerRegion,(startsInside, transitionCount, transitions));
+integerx.cxx:	RETURN_CONSTRUCT(IntegerRegion,(!myStartsInside, myTransitionCount, myTransitions));
+integerx.cxx:			RETURN_CONSTRUCT(IntegerRegion,(myStartsInside, myTransitionCount, newTransitions));
+integerx.cxx:	CONSTRUCT(intReg,IntegerRegion,(myStartsInside, 1, myTransitions));
+integerx.cxx:	RETURN_CONSTRUCT(IntegerSimpleRegionStepper,(myTransitions, myTransitionCount, !myStartsInside));
+integerx.cxx:	CONSTRUCT(IntegerSpace::TheIntegerSpace,IntegerSpace,());
+integerx.cxx:		RETURN_CONSTRUCT(AscendingIntegerStepper,(edges, count));
+integerx.cxx:		RETURN_CONSTRUCT(AscendingIntegerStepper,(myEdges, myIndex, myCount, myPosition));
+integerx.cxx:	RETURN_CONSTRUCT(DescendingIntegerStepper,(edges, count));
+integerx.cxx:	RETURN_CONSTRUCT(DescendingIntegerStepper,(myEdges, myIndex, myPosition));
+integerx.cxx:	RETURN_CONSTRUCT(IntegerArrangement,(region, ordering));
+integerx.cxx:		RETURN_CONSTRUCT(IntegerEdgeAccumulator,(startsInside, count));
+integerx.cxx:		RETURN_CONSTRUCT(IntegerEdgeAccumulator,(myStartsInside, myEdges, myIndex, havePending, myPending));
+integerx.cxx:		RETURN_CONSTRUCT(IntegerRegion,(myStartsInside, myIndex + 1, myEdges));
+integerx.cxx:			RETURN_CONSTRUCT(IntegerRegion,(myStartsInside, myIndex, myEdges));
+integerx.cxx:		RETURN_CONSTRUCT(IntegerEdgeStepper,(entering, count, edges));
+integerx.cxx:	RETURN_CONSTRUCT(IntegerEdgeStepper,(myEntering, myIndex, myCount, myEdges));
+integerx.cxx:	RETURN_CONSTRUCT(IntegerSimpleRegionStepper,(myEdges, myIndex, myCount, isLeftBounded, mySimple));
+integerx.cxx:	RETURN_CONSTRUCT(IntegerUpOrder,());
+inttabx.cxx:	RETURN_CONSTRUCT(ActualIntegerTable,());
+inttabx.cxx:	RETURN_CONSTRUCT(ActualIntegerTable,(someSize, tcsj));
+inttabx.cxx:	RETURN_CONSTRUCT(ActualIntegerTable,(fromIdx, toIdx));
+inttabx.cxx:	RETURN_CONSTRUCT(ActualIntegerTable,(reg->start(), reg->stop()));
+inttabx.cxx:				RETURN_CONSTRUCT(ITAscendingStepper,(tab, tcsj));
+inttabx.cxx:				RETURN_CONSTRUCT(ITDescendingStepper,(tab, tcsj));
+inttabx.cxx:				RETURN_CONSTRUCT(ITGenericStepper,(aTable, tcsj));
+inttabx.cxx:				RETURN_CONSTRUCT(ITGenericStepper,(aTable, anOrder));
+inttabx.cxx:			RETURN_CONSTRUCT(ITAscendingStepper,(tab, start, stop));
+inttabx.cxx:			RETURN_CONSTRUCT(ITGenericStepper,(aTable, start, stop, 1));
+inttabx.cxx:	RETURN_CONSTRUCT(ITAscendingStepper,(CAST(OberIntegerTable,arrayInternal->copy()), this->index(), arrayInternal->startIndex() + lastValueInternal));
+inttabx.cxx:	RETURN_CONSTRUCT(ITDescendingStepper,(CAST(ActualIntegerTable,arrayInternal->copy()), this->index(), arrayInternal->startIndex() + lastValueInternal));
+inttabx.cxx:	RETURN_CONSTRUCT(ITGenericStepper,(arrayInternal, indexInternal, lastValueInternal, incrementInternal));
+inttabx.cxx:	RETURN_CONSTRUCT(ActualIntegerTable,(CAST(PtrArray,elements->copy()), start, elemCount, firstElem, lastElem, tally, domainIsSimple));
+inttabx.cxx:			RETURN_CONSTRUCT(ITAscendingStepper,(CAST(OberIntegerTable,this->copy()), start + firstElem, start + lastElem));
+inttabx.cxx:	CONSTRUCT(source,ITAscendingStepper,(this, start + firstElem, start + lastElem));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimIndexTable,(size, FALSE));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimIndexTable,(size, TRUE));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimIndexTableStepper,(myPtrs, myIndices, Int32Zero));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimIndexTableStepper,(myPtrs, myIndices, myIndex));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimPtr2PtrTable,(size, tcsj));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimPtr2PtrTableStepper,(myFromPtrs, myToPtrs, Int32Zero));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimPtr2PtrTableStepper,(myFromPtrs, myToPtrs, myIndex));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimPtrTable,(size, tcsj));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimPtrTable,(size, executor));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimPtrTableStepper,(myIndices, myPtrs, Int32Zero));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimPtrTableStepper,(myIndices, myPtrs, myIndex));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimSet,(7, FALSE));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimSet,(size, FALSE));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimSet,(7, TRUE));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimSet,(size, TRUE));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimSet,(size, exec));
+primtabx.cxx:	RETURN_CONSTRUCT(PrimPtrTableExecutor,(table, follower));
+primtabx.cxx:	CONSTRUCT(PrimRemovedObject::TheRemovedObject,PrimRemovedObject,());
+primtabx.cxx:	RETURN_CONSTRUCT(PrimSetExecutor,(set, tcsj));
+primtabx.cxx:		RETURN_CONSTRUCT(PrimSetStepper,(ptrs, Int32Zero));
+primtabx.cxx:		RETURN_CONSTRUCT(PrimSetStepper,(myPtrs, Int32Zero));
+primvalx.cxx:	CONSTRUCT(PrimSpec::TheUInt8Spec,PrimIntegerSpec,(cat_UInt8Array, 8, FALSE));
+primvalx.cxx:	CONSTRUCT(PrimSpec::TheUInt32Spec,PrimIntegerSpec,(cat_UInt32Array, 32, FALSE));
+primvalx.cxx:	CONSTRUCT(PrimSpec::TheInt32Spec,PrimIntegerSpec,(cat_Int32Array, 32, TRUE));
+primvalx.cxx:	CONSTRUCT(PrimSpec::TheIntegerVarSpec,PrimIntegerSpec,(cat_IntegerVarArray, -1, TRUE));
+primvalx.cxx:	CONSTRUCT(PrimSpec::TheIEEE32Spec,PrimFloatSpec,(cat_IEEE32Array, 32));
+primvalx.cxx:	CONSTRUCT(PrimSpec::TheIEEE64Spec,PrimFloatSpec,(cat_IEEE64Array, 64));
+primvalx.cxx:	CONSTRUCT(PrimSpec::ThePtrSpec,PrimPointerSpec,(cat_PtrArray, tcsj));
+primvalx.cxx:	CONSTRUCT(PrimSpec::TheSharedPtrSpec,PrimPointerSpec,(cat_SharedPtrArray, tcsj));
+primvalx.cxx:	RETURN_CONSTRUCT(PrimIEEE32,(value, tcsj));
+primvalx.cxx:	RETURN_CONSTRUCT(PrimIEEE64,(value, tcsj));
+primvalx.cxx:	RETURN_CONSTRUCT(PrimIntValue,(value, tcsj));
+realx.cxx:	RETURN_CONSTRUCT(IEEE32Pos,(value, tcsj));
+realx.cxx:	RETURN_CONSTRUCT(IEEE64Pos,(value, tcsj));
+realx.cxx:	RETURN_CONSTRUCT(IEEE8Pos,(value, tcsj));
+realx.cxx:	CONSTRUCT(RealRegion::TheManager,RealManager,());
+realx.cxx:	RETURN_CONSTRUCT(RealRegion,(startsInside, vals, flags));
+realx.cxx:	RETURN_CONSTRUCT(RealStepper,(this->secretTransitions(), tcsj));
+realx.cxx:	CONSTRUCT(RealSpace::TheRealSpace,RealSpace,());
+realx.cxx:	CONSTRUCT_ON(PERSISTENT,RealDsp::theDsp,RealDsp,());
+realx.cxx:	RETURN_CONSTRUCT(RealDsp,());
+realx.cxx:	RETURN_CONSTRUCT(AfterReal,(pos, tcsj));
+realx.cxx:	RETURN_CONSTRUCT(BeforeReal,(pos, tcsj));
+realx.cxx:	RETURN_CONSTRUCT(RealUpOrder,());
+sequenct.cxx:	CONSTRUCT(withoutTrailingZeros,Sequence,(IntegerVarZero, CAST(PrimIntegerArray,PrimSpec::integerVar()->arrayWithTwo(PrimSpec::integerVar()->value(5), PrimSpec::integerVar()->value(2)))));
+sequencx.cxx:	CONSTRUCT(Sequence::TheZero,Sequence,(IntegerVarZero, IntegerVarArray::zeros(Int32Zero)));
+sequencx.cxx:	RETURN_CONSTRUCT(Sequence,(first, CAST(PrimIntegerArray,digits->copy(last - first + 1, first))));
+sequencx.cxx:	RETURN_CONSTRUCT(Sequence,(IntegerVarZero, CAST(PrimIntegerArray,PrimSpec::integerVar()->arrayWith(PrimSpec::integerVar()->value(a)))));
+sequencx.cxx:	RETURN_CONSTRUCT(Sequence,(IntegerVarZero, UInt8Array::string(string)));
+sequencx.cxx:	RETURN_CONSTRUCT(Sequence,(IntegerVarZero, CAST(PrimIntegerArray,PrimSpec::integerVar()->arrayWithThree(PrimSpec::integerVar()->value(a), PrimSpec::integerVar()->value(b), PrimSpec::integerVar()->value(c)))));
+sequencx.cxx:	RETURN_CONSTRUCT(Sequence,(IntegerVarZero, CAST(PrimIntegerArray,PrimSpec::integerVar()->arrayWithTwo(PrimSpec::integerVar()->value(a), PrimSpec::integerVar()->value(b)))));
+sequencx.cxx:			RETURN_CONSTRUCT(Sequence,(shift + start, CAST(PrimIntegerArray,numbers->copy(stop - start, start))));
+sequencx.cxx:			RETURN_CONSTRUCT(Sequence,(shift, numbers));
+sequencx.cxx:	RETURN_CONSTRUCT(Sequence,(myShift + offset, myNumbers));
+sequencx.cxx:					RETURN_CONSTRUCT(Sequence,(myShift + 1, CAST(PrimIntegerArray,myNumbers->copy(myNumbers->count() - 1, 1))));
+sequencx.cxx:					RETURN_CONSTRUCT(Sequence,(myShift + 1, CAST(PrimIntegerArray,myNumbers->copy(myNumbers->count() - 1))));
+sequencx.cxx:			RETURN_CONSTRUCT(Sequence,(myShift, myNumbers->hold((index - myShift).asLong(), number)));
+sequencx.cxx:		RETURN_CONSTRUCT(Sequence,(index, result));
+sequencx.cxx:	RETURN_CONSTRUCT(Sequence,(myShift, myNumbers->hold((index - myShift).asLong(), number)));
+sequencx.cxx:	RETURN_CONSTRUCT(Sequence,(myShift, myNumbers->hold(myNumbers->count(), number)));
+sequencx.cxx:	RETURN_CONSTRUCT(Sequence,(myShift, result));
+sequencx.cxx:	RETURN_CONSTRUCT(SequenceMapping,(shift, translation));
+sequencx.cxx:	CONSTRUCT(SequenceRegion::TheManager,SequenceManager,());
+sequencx.cxx:	CONSTRUCT(SequenceRegion::TheEmptySequenceRegion,SequenceRegion,(FALSE, PtrArray::empty()));
+sequencx.cxx:	CONSTRUCT(SequenceRegion::TheFullSequenceRegion,SequenceRegion,(TRUE, PtrArray::empty()));
+sequencx.cxx:	RETURN_CONSTRUCT(SequenceRegion,(FALSE, CAST(PtrArray,PrimSpec::pointer()->arrayWith(BeforeSequence::make (sequence)))));
+sequencx.cxx:	RETURN_CONSTRUCT(SequenceRegion,(TRUE, CAST(PtrArray,PrimSpec::pointer()->arrayWith(AfterSequence::make (sequence)))));
+sequencx.cxx:	RETURN_CONSTRUCT(SequenceRegion,(FALSE, CAST(PtrArray,PrimSpec::pointer()->arrayWithTwo(BeforeSequencePrefix::below(sequence, limit), BeforeSequencePrefix::above(sequence, limit)))));
+sequencx.cxx:	RETURN_CONSTRUCT(SequenceRegion,(FALSE, CAST(PtrArray,PrimSpec::pointer()->arrayWith(AfterSequence::make (sequence)))));
+sequencx.cxx:	RETURN_CONSTRUCT(SequenceRegion,(TRUE, CAST(PtrArray,PrimSpec::pointer()->arrayWith(BeforeSequence::make (sequence)))));
+sequencx.cxx:	RETURN_CONSTRUCT(SequenceRegion,(startsInside, transitions));
+sequencx.cxx:	RETURN_CONSTRUCT(SequenceStepper,(myTransitions, myTransitionsCount));
+sequencx.cxx:	CONSTRUCT(SequenceSpace::TheSequenceSpace,SequenceSpace,());
+sequencx.cxx:	RETURN_CONSTRUCT(AfterSequence,(sequence, tcsj));
+sequencx.cxx:	RETURN_CONSTRUCT(BeforeSequence,(sequence, tcsj));
+sequencx.cxx:		RETURN_CONSTRUCT(BeforeSequencePrefix,(Sequence::usingx(limit, CAST(PrimIntegerArray,PrimSpec::integerVar()->arrayWith(PrimSpec::integerVar()->value(1)))), limit));
+sequencx.cxx:		RETURN_CONSTRUCT(BeforeSequencePrefix,(Sequence::usingx(sequence->shift(), 
+sequencx.cxx:	RETURN_CONSTRUCT(BeforeSequencePrefix,(Sequence::usingx(sequence->shift(), sequence->secretNumbers()->hold((limit - sequence->shift()).asLong(), sequence->integerAt(limit) + 1)), limit));
+sequencx.cxx:		RETURN_CONSTRUCT(BeforeSequencePrefix,(Sequence::zero(), limit));
+sequencx.cxx:		RETURN_CONSTRUCT(BeforeSequencePrefix,(Sequence::usingx(sequence->shift(), CAST(PrimIntegerArray,sequence->secretNumbers()->copy(min(newCount, hisCount), Int32Zero, Int32Zero, max(newCount - hisCount, Int32Zero)))), limit));
+sequencx.cxx:	RETURN_CONSTRUCT(BeforeSequencePrefix,(sequence, limit));
+sequencx.cxx:	RETURN_CONSTRUCT(BeforeSequencePrefix,(CAST(Sequence,dsp->of(this->sequence())), myLimit + dsp->shift()));
+sequencx.cxx:	RETURN_CONSTRUCT(SequenceRegion,(startsInside, transitions, count));
+sequencx.cxx:	RETURN_CONSTRUCT(SequenceStepper,(myIndex, myTransitions, myTransitionsCount));
+sequencx.cxx:	RETURN_CONSTRUCT(SequenceUpOrder,());
+sett.cxx:	CONSTRUCT(aTester,HashSetTester,());
+sett.cxx:	CONSTRUCT(aTester,ImmuSetTester,());
+sett.cxx:	RETURN_CONSTRUCT(SHTO,(pack, aHashVal));
+settabx.cxx:	RETURN_CONSTRUCT(SetTable,(SharedPtrArray::make (size.asLong() | 1), Int32Zero, cs));
+settabx.cxx:		RETURN_CONSTRUCT(SetTableStepper,(array, tcsj));
+settabx.cxx:	RETURN_CONSTRUCT(SetTableStepper,(CAST(PtrArray,myPtrs->copy()), myIndex));
+setx.cxx:	CONSTRUCT_ON(PERSISTENT,ImmuSet::EmptySet,EmptyImmuSet,());
+setx.cxx:	RETURN_CONSTRUCT(SetAccumulator,());
+setx.cxx:	RETURN_CONSTRUCT(SetAccumulator,(initialSet, tcsj));
+setx.cxx:	RETURN_CONSTRUCT(SetAccumulator,(muSet->asMuSet(), tcsj));
+setx.cxx:	RETURN_CONSTRUCT(UnionRecruiter,());
+setx.cxx:	RETURN_CONSTRUCT(ActualHashSet,(Int32Zero, SharedPtrArray::make (7)));
+setx.cxx:	RETURN_CONSTRUCT(ActualHashSet,(Int32Zero, SharedPtrArray::make (LPPrimeSizeProvider::make ()->uInt32PrimeAfter(someSize.asLong()))));
+setx.cxx:	RETURN_CONSTRUCT(ActualHashSet,(myTally, myHashValues, myHashEntries));
+setx.cxx:		RETURN_CONSTRUCT(HashSetStepper,(elements, Int32Zero));
+setx.cxx:		RETURN_CONSTRUCT(HashSetStepper,(myElements, myCurrent));
+setx.cxx:	RETURN_CONSTRUCT(ImmuSetOnMu,(aSet, tcsj));
+setx.cxx:	RETURN_CONSTRUCT(ImmuSetOnMu,(tmp, tcsj));
+setx.cxx:	RETURN_CONSTRUCT(TinyImmuSet,(aHeaper, tcsj));
+spacex.cxx:		RETURN_CONSTRUCT(ConstantMapping,(cs, values));
+spacex.cxx:	RETURN_CONSTRUCT(ExplicitArrangement,(positions, tcsj));
+spacex.cxx:	RETURN_CONSTRUCT(MergeStepper,(a, b, order, NULL));
+spacex.cxx:	RETURN_CONSTRUCT(MergeStepper,(myA->copy(), myB->copy(), myOrder, myValue));
+spacex.cxx:			RETURN_CONSTRUCT(CompositeMapping,(cs, rs, mappings));
+spacex.cxx:	RETURN_CONSTRUCT(DisjointRegionStepper,(region, order));
+spacex.cxx:			CONSTRUCT(EmptyMapping::LastEmptyMapping,EmptyMapping,(cs, rs));
+spacex.cxx:	RETURN_CONSTRUCT(ReverseOrder,(order, tcsj));
+spacex.cxx:		RETURN_CONSTRUCT(SimpleMapping,(region, mapping));
+stepperx.cxx:	CONSTRUCT_ON(PERSISTENT,Stepper::TheEmptyStepper,EmptyStepper,());
+stepperx.cxx:	CONSTRUCT(result,PtrArrayAccumulator,(n, tcsj));
+stepperx.cxx:	CONSTRUCT(result,PtrArrayAccumulator,(n, tcsj));
+stepperx.cxx:		RETURN_CONSTRUCT(ItemStepper,(item, tcsj));
+stepperx.cxx:			RETURN_CONSTRUCT(ItemStepper,(myItem, tcsj));
+stepperx.cxx:	RETURN_CONSTRUCT(PtrArrayAccumulator,(CAST(PtrArray,myValues->copy()), myN));
+stepperx.cxx:	RETURN_CONSTRUCT(PtrArrayStepper,(array, Int32Zero, array->count(), 1));
+stepperx.cxx:	RETURN_CONSTRUCT(PtrArrayStepper,(array, array->count() - 1, -1, -1));
+stepperx.cxx:	RETURN_CONSTRUCT(PtrArrayStepper,(CAST(PtrArray,myArray->copy()), myIndex, myPastEnd, myStep));
+tabentx.cxx:		RETURN_CONSTRUCT(HashIndexEntry,(value, tcsj));
+tabentx.cxx:		RETURN_CONSTRUCT(IndexEntry,(index, value));
+tabentx.cxx:				RETURN_CONSTRUCT(HeaperAsEntry,(value, tcsj));
+tabentx.cxx:				RETURN_CONSTRUCT(PositionEntry,(key, value));
+tabentx.cxx:			RETURN_CONSTRUCT(PositionEntry,(key, value));
+tabentx.cxx:		RETURN_CONSTRUCT(BucketArrayStepper,(entries, NULL, Int32Zero));
+tabentx.cxx:		RETURN_CONSTRUCT(BucketArrayStepper,(myEntries, myEntry, myNextBucket));
+tabentx.cxx:	RETURN_CONSTRUCT(HashIndexEntry,(this->value(), tcsj));
+tabentx.cxx:	RETURN_CONSTRUCT(HeaperAsEntry,(this->value(), tcsj));
+tabentx.cxx:	RETURN_CONSTRUCT(IndexEntry,(myIndex, this->value()));
+tabentx.cxx:	RETURN_CONSTRUCT(PositionEntry,(myKey, this->value()));
+tablesx.cxx:	RETURN_CONSTRUCT(Pair,(left, right));
+tablesx.cxx:	RETURN_CONSTRUCT(Pair,(left, right));
+tablesx.cxx:	RETURN_CONSTRUCT(OffsetScruTable,(this, dsp));
+tablesx.cxx:	RETURN_CONSTRUCT(ImmuTableOnMu,(MuTable::make (cs), tcsj));
+tablesx.cxx:	RETURN_CONSTRUCT(OffsetImmuTable,(aTable, aDsp));
+tablesx.cxx:	RETURN_CONSTRUCT(OffsetImmuTable,(this, dsp));
+tablesx.cxx:	RETURN_CONSTRUCT(ImmuTableOnMu,(CAST(MuTable,this->copy()), tcsj));
+tablesx.cxx:	RETURN_CONSTRUCT(ImmuTableOnMu,(CAST(MuTable,myMuTable->subTable(region)), tcsj));
+tablesx.cxx:	RETURN_CONSTRUCT(ImmuTableOnMu,(newMuTable, tcsj));
+tablesx.cxx:	RETURN_CONSTRUCT(ImmuTableOnMu,(newMuTable, tcsj));
+tablesx.cxx:	RETURN_CONSTRUCT(ImmuTableOnMu,(CAST(MuTable,myMuTable->emptySize(size)), tcsj));
+tablesx.cxx:	RETURN_CONSTRUCT(IntegerScruTable,(fromTable, tcsj));
+tablesx.cxx:	RETURN_CONSTRUCT(IntegerScruTable,(CAST(IntegerTable,tableToScru->copy()), tcsj));
+tablesx.cxx:	RETURN_CONSTRUCT(IntegerScruTable,(CAST(IntegerTable,tableToScru->emptySize(size)), tcsj));
+tablesx.cxx:	RETURN_CONSTRUCT(OffsetScruTable,(myTable->subTable(myDsp->inverseOfAll(encl)), myDsp));
+tablesx.cxx:		RETURN_CONSTRUCT(OffsetScruTable,(myTable, dsp->compose(myDsp)));
+tablesx.cxx:	RETURN_CONSTRUCT(OffsetScruTableStepper,(myTable->stepper(order), myDsp));
+tablesx.cxx:	RETURN_CONSTRUCT(OffsetImmuTable,(newTable->asImmuTable(), myDsp));
+tablesx.cxx:	RETURN_CONSTRUCT(OffsetImmuTable,(myTable->without(myDsp->inverseOf(index)), myDsp));
+tablesx.cxx:	RETURN_CONSTRUCT(OffsetScruTable,(myTable->subTable(myDsp->inverseOfAll(encl)), myDsp));
+tablesx.cxx:		RETURN_CONSTRUCT(OffsetScruTable,(myTable, dsp->compose(myDsp)));
+tablesx.cxx:	RETURN_CONSTRUCT(OffsetScruTable,(myTable->copy(), myDsp));
+tablesx.cxx:	RETURN_CONSTRUCT(OffsetImmuTable,(myTable->asImmuTable(), myDsp));
+tablesx.cxx:	RETURN_CONSTRUCT(OffsetScruTableStepper,(myTable->stepper(order), myDsp));
+tablesx.cxx:	RETURN_CONSTRUCT(OffsetScruTableStepper,(CAST(TableStepper,myTableStepper->copy()), myDsp));
+tabtoolx.cxx:	CONSTRUCT(LPPrimeSizeProvider::MySoleProvider,LPPrimeSizeProvider,(LPPrimeSizeProvider::primeTable(), tcsj));
+tokensx.cxx:	RETURN_CONSTRUCT(TokenSource,());
+sequencx.hxx:	static INLINE CLIENT Int32 EXCLUSIVE () CONST;
+sequencx.hxx:	static INLINE CLIENT Int32 INCLUSIVE () CONST;
+sequencx.hxx:	static INLINE CLIENT Int32 PREFIX () CONST;
+integerx.ixx:	RETURN_CONSTRUCT(IntegerPos,(newValue, tcsj));
+sequencx.ixx:INLINE Int32 SequenceRegion::EXCLUSIVE () CONST{
+sequencx.ixx:INLINE Int32 SequenceRegion::INCLUSIVE () CONST{
+sequencx.ixx:INLINE Int32 SequenceRegion::PREFIX () CONST{
+stepperx.ixx:	RETURN_CONSTRUCT(PtrArrayAccumulator,());
+/Fhypatia/roger/prod/xhs/src/server
+/Fhypatia/roger/prod/xhs/src/server
+branchx.cxx:	RETURN_CONSTRUCT(RootBranch,(xfulltrace, tcsj));
+branchx.cxx:	RETURN_CONSTRUCT(TreeBranch,(xfulltrace, parent));
+branchx.cxx:	RETURN_CONSTRUCT(DagBranch,(xfulltrace, parent1, parent2));
+brange1x.cxx:	RETURN_CONSTRUCT(BeCarrier,(CurrentGrandMap.fluidGet()->newLabel(), element));
+brange1x.cxx:	RETURN_CONSTRUCT(BeCarrier,(NULL, element));
+brange1x.cxx:	RETURN_CONSTRUCT(BeCarrier,(label, element));
+brange1x.cxx:	RETURN_CONSTRUCT(BeIDHolder,(iD, tcsj));
+brange1x.cxx:	RETURN_CONSTRUCT(FillDetectorExecutor,(placeHolder, tcsj));
+brange2x.cxx:		RETURN_CONSTRUCT(BeWork,(edition, FALSE));
+brange2x.cxx:		RETURN_CONSTRUCT(BeClub,(contents, tcsj));
+brange2x.cxx:	RETURN_CONSTRUCT(BeWorkLockExecutor,(work, tcsj));
+brange2x.cxx:	RETURN_CONSTRUCT(RevisionWatcherExecutor,(work, tcsj));
+brange2x.cxx:	RETURN_CONSTRUCT(UpdateTransitiveMemberIDs,(clubs, tcsj));
+brange2x.cxx:	RETURN_CONSTRUCT(UpdateTransitiveSuperClubIDs,(clubs, grandMap));
+brange3x.cxx:		RETURN_CONSTRUCT(BeEdition,(oroot, tcsj));
+brange3x.cxx:	RETURN_CONSTRUCT(BeEditionDetectorExecutor,(edition, tcsj));
+canopyx.cxx:		RETURN_CONSTRUCT(BertCrum,());
+canopyx.cxx:UInt32 BertCrum::isNotPartializableFlag () CONST{
+canopyx.cxx:UInt32 BertCrum::isSensorWaitingFlag () CONST{
+canopyx.cxx:	RETURN_CONSTRUCT(BertCrum,());
+canopyx.cxx:		RETURN_CONSTRUCT(BertCrum,(CAST(BertCrum,first), CAST(BertCrum,second)));
+canopyx.cxx:		RETURN_CONSTRUCT(SensorCrum,());
+canopyx.cxx:		RETURN_CONSTRUCT(SensorCrum,(SensorCrum::isPartialFlag(), tcsj));
+canopyx.cxx:UInt32 SensorCrum::isPartialFlag () CONST{
+canopyx.cxx:		RETURN_CONSTRUCT(SensorCrum,(SensorCrum::isPartialFlag(), tcsj));
+canopyx.cxx:		RETURN_CONSTRUCT(SensorCrum,());
+canopyx.cxx:		RETURN_CONSTRUCT(SensorCrum,(CAST(SensorCrum,first), CAST(SensorCrum,second)));
+canopyx.cxx:		RETURN_CONSTRUCT(HeightChanger,(crum, tcsj));
+canopyx.cxx:		RETURN_CONSTRUCT(ActualPropChanger,(crum, tcsj));
+canopyx.cxx:	RETURN_CONSTRUCT(CanopyCache,());
+canopyx.cxx:	RETURN_CONSTRUCT(Heaper2UInt32Cache,(PrimeSizeProvider::make ()->uInt32PrimeAfter(count), empty));
+canopyx.cxx:		RETURN_CONSTRUCT(HeightChanger,(crum, tcsj));
+counterx.cxx:	RETURN_CONSTRUCT(SingleCounter,());
+counterx.cxx:	RETURN_CONSTRUCT(SingleCounter,(count, tcsj));
+counterx.cxx:	RETURN_CONSTRUCT(BatchCounter,(count, batchCount));
+counterx.cxx:	RETURN_CONSTRUCT(BatchCounter,(count, batchCount, hash));
+counterx.cxx:	RETURN_CONSTRUCT(SingleCounter,());
+counterx.cxx:	RETURN_CONSTRUCT(SingleCounter,(count, tcsj));
+cryptox.cxx:	CONSTRUCT(maker,EncrypterMaker,(constructor, tcsj));
+cryptox.cxx:	RETURN_CONSTRUCT(NoEncrypter,(publicKey, privateKey));
+cryptox.cxx:	RETURN_CONSTRUCT(NoScrambler,());
+entx.cxx:	RETURN_CONSTRUCT(Ent,());
+entx.cxx:	CONSTRUCT(fulltrace,DagWood,());
+granmapx.cxx:	RETURN_CONSTRUCT(BeGrandMap,(Sequence::two(666, 42), tcsj));
+granmapx.cxx:						RETURN_CONSTRUCT(BeDataHolder,(value, tcsj));
+granmapx.cxx:						RETURN_CONSTRUCT(BeLabel,());
+granmapx.cxx:						RETURN_CONSTRUCT(BePlaceHolder,());
+granmapx.cxx:	RETURN_CONSTRUCT(BackendBootMaker,());
+granmapx.cxx:	RETURN_CONSTRUCT(GrantStepper,(grants->retrieve(), clubIDs));
+granmapx.cxx:	RETURN_CONSTRUCT(GrantStepper,(myBundles->copy(), myClubIDs));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandHashSet,(32, tcsj));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandHashSet,(nNodes, tcsj));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandHashSetStepper,(this, tcsj));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandHashTable,(cs, 32));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandHashTable,(cs, nNodes));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandHashTableStepper,(this, tcsj));
+grantabx.cxx:	CONSTRUCT(ExponentialHashMap::TheExponentialMap,ExponentialHashMap,(256, ExponentialHashMap::HashBits + 1));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandDataPage,(nEntries, node, lowHashBits));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandDataPageStepper,(page, entryIndex));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandSetEntry,(value, hash));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandTableEntry,(value, key, hash));
+grantabx.cxx:		CONSTRUCT(nodeStepper,GrandNodeStepper,(set->nodeAt(nodeIndex), tcsj));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandHashSetStepper,(set, nodeStepper, nodeIndex));
+grantabx.cxx:		CONSTRUCT(nodeStepper,GrandNodeStepper,(table->nodeAt(nodeIndex), tcsj));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandHashTableStepper,(table, nodeStepper, nodeIndex));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandNode,());
+grantabx.cxx:			CONSTRUCT(overflowRoot,GrandOverflow,(GrandNode::OverflowPageSize, 1));
+grantabx.cxx:		RETURN_CONSTRUCT(GrandNodeDoubler,(gNode, tcsj));
+grantabx.cxx:		RETURN_CONSTRUCT(GrandNodeReinserter,(gNode, gOverflow));
+grantabx.cxx:		CONSTRUCT(pageStepper,GrandDataPageStepper,(node->pageAt(pageIndex), tcsj));
+grantabx.cxx:				CONSTRUCT(overflowStepper,GrandOverflowStepper,(node->fetchOverflow(), tcsj));
+grantabx.cxx:					CONSTRUCT(overflowStepper,GrandOverflowStepper,(node->fetchOldOverflow(), tcsj));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandNodeStepper,(node, pageStepper, pageIndex, overflowStepper));
+grantabx.cxx:					CONSTRUCT(newChild,GrandOverflow,(numEntries, depth * GrandOverflow::OTreeArity));
+grantabx.cxx:			CONSTRUCT(childStepper,GrandOverflowStepper,(overflow->childAt(childIndex), tcsj));
+grantabx.cxx:	RETURN_CONSTRUCT(GrandOverflowStepper,(overflow, entryIndex, childStepper, childIndex));
+htreex.cxx:		RETURN_CONSTRUCT(HUpperCrum,(CurrentTrace.fluidGet(), CurrentBertCrum.fluidGet()));
+htreex.cxx:	RETURN_CONSTRUCT(HUpperCrum,(CurrentTrace.fluidGet(), bertCrum));
+htreex.cxx:	RETURN_CONSTRUCT(HUpperCrum,(hcrum->hCut(), hcrum->bertCrum()));
+idx.cxx:	RETURN_CONSTRUCT(ID,(space, backend, number));
+idx.cxx:	CONSTRUCT_ON(PERSISTENT,IDDsp::theDsp,IDDsp,());
+idx.cxx:	RETURN_CONSTRUCT(IDDsp,(space, tcsj));
+idx.cxx:	RETURN_CONSTRUCT(IDRegion,(space, localIDs, importedIDs, includesRest));
+idx.cxx:	RETURN_CONSTRUCT(IDRegion,(space, localIDs, importedIDs, includesRest));
+idx.cxx:	RETURN_CONSTRUCT(IDStepper,(this, tcsj));
+idx.cxx:	RETURN_CONSTRUCT(IDSimpleStepper,(this, tcsj));
+idx.cxx:			RETURN_CONSTRUCT(IDSpace,(NULL, number, counter));
+idx.cxx:	RETURN_CONSTRUCT(IDSpace,(identifier, number, counter));
+idx.cxx:	RETURN_CONSTRUCT(IDSimpleStepper,(myRegion, myBackends->copy(), myIDs->copy(), myInexplicit));
+idx.cxx:	RETURN_CONSTRUCT(IDStepper,(myRegion, myBackends->copy(), myIDs->copy()));
+idx.cxx:	RETURN_CONSTRUCT(IDUpOrder,(space, tcsj));
+loavesx.cxx:		RETURN_CONSTRUCT(RegionLoaf,(region, element->fetchLabel(), element->rangeElement(), NULL));
+loavesx.cxx:		RETURN_CONSTRUCT(OPartialLoaf,(region, NULL, SensorCrum::partial()));
+loavesx.cxx:		CONSTRUCT(tmp,SharedData,(values, arrangement));
+loavesx.cxx:		RETURN_CONSTRUCT(OVirtualLoaf,(arrangement->region(), tmp));
+loavesx.cxx:		RETURN_CONSTRUCT(DspLoaf,(newO, dsp));
+loavesx.cxx:		RETURN_CONSTRUCT(SplitLoaf,(newSplit, newIn, newOut));
+loavesx.cxx:		RETURN_CONSTRUCT(SplitLoaf,(newSplit, newIn, newOut, hcrum));
+loavesx.cxx:	RETURN_CONSTRUCT(MergeBundlesStepper,(a, b, order, NULL));
+loavesx.cxx:	RETURN_CONSTRUCT(MergeBundlesStepper,(myA->copy(), myB->copy(), myOrder, myValue));
+loavesx.cxx:								CONSTRUCT(element,BePlaceHolder,(myTrailBlazer, tcsj));
+loavesx.cxx:		CONSTRUCT(tmp1,OPartialLoaf,(this->domain()->intersect(region), HUpperCrum::make (CAST(HUpperCrum,this->hCrum())), CAST(SensorCrum,crums->left()), myOwner, myTrailBlazer));
+loavesx.cxx:		CONSTRUCT(tmp2,OPartialLoaf,(this->domain()->intersect(region->complement()), HUpperCrum::make (CAST(HUpperCrum,this->hCrum())), CAST(SensorCrum,crums->right()), myOwner, myTrailBlazer));
+loavesx.cxx:								CONSTRUCT(element,BeDataHolder,(CAST(PrimValue,myData->fetch(key)), tcsj));
+loavesx.cxx:				CONSTRUCT(tmp1,OVirtualLoaf,(this->domain()->intersect(region), myData, HUpperCrum::make (CAST(HUpperCrum,this->hCrum())), CAST(SensorCrum,crums->left())));
+loavesx.cxx:				CONSTRUCT(tmp2,OVirtualLoaf,(this->domain()->intersect(region->complement()), myData, HUpperCrum::make (CAST(HUpperCrum,this->hCrum())), CAST(SensorCrum,crums->right())));
+loavesx.cxx:		CONSTRUCT(tmp1,RegionLoaf,(this->domain()->intersect(region), myLabel, myRangeElement, HUpperCrum::make (CAST(HUpperCrum,this->hCrum()))));
+loavesx.cxx:		CONSTRUCT(tmp2,RegionLoaf,(this->domain()->intersect(region->complement()), myLabel, myRangeElement, HUpperCrum::make (CAST(HUpperCrum,this->hCrum()))));
+nadminx.cxx:	RETURN_CONSTRUCT(FeClubDescription,(edition, FeClubDescription::spec()));
+nadminx.cxx:	RETURN_CONSTRUCT(FeBooLockSmith,(edition, FeBooLockSmith::spec()));
+nadminx.cxx:	RETURN_CONSTRUCT(FeChallengeLockSmith,(edition, FeChallengeLockSmith::spec()));
+nadminx.cxx:	RETURN_CONSTRUCT(FeMatchLockSmith,(edition, FeMatchLockSmith::spec()));
+nadminx.cxx:	RETURN_CONSTRUCT(FeMultiLockSmith,(edition, FeMultiLockSmith::spec()));
+nadminx.cxx:	RETURN_CONSTRUCT(FeWallLockSmith,(edition, FeWallLockSmith::spec()));
+nadminx.cxx:	RETURN_CONSTRUCT(BooLock,(clubID, lockSmith));
+nadminx.cxx:	RETURN_CONSTRUCT(ChallengeLock,(loginID, lockSmith, Encrypter::make (Sequence::numbers(lockSmith->encrypterName()), lockSmith->publicKey())->encrypt(response), CAST(UInt8Array,response->copy())));
+nadminx.cxx:	RETURN_CONSTRUCT(MatchLock,(clubID, lockSmith));
+nadminx.cxx:	RETURN_CONSTRUCT(MultiLock,(loginID, lockSmith, locks));
+nadminx.cxx:	RETURN_CONSTRUCT(WallLock,(clubID, lockSmith));
+nadminx.cxx:	RETURN_CONSTRUCT(DefaultSession,());
+nkernelt.cxx:	RETURN_CONSTRUCT(WorksTestFillDetector,(oo, tag));
+nkernelt.cxx:	RETURN_CONSTRUCT(WorksTestFillRangeDetector,(oo, tag));
+nkernelt.cxx:	RETURN_CONSTRUCT(WorksTestStatusDetector,(oo, tag));
+nkernelx.cxx:	RETURN_CONSTRUCT(FeArrayBundle,(region, array, order));
+nkernelx.cxx:	RETURN_CONSTRUCT(FeElementBundle,(region, element));
+nkernelx.cxx:	RETURN_CONSTRUCT(FePlaceHolderBundle,(region, tcsj));
+nkernelx.cxx:	CONSTRUCT(result,FeKeyMaster,(loginAuthority, actualAuthority));
+nkernelx.cxx:	RETURN_CONSTRUCT(FeVirtualDataHolder,(value, key, edition));
+nkernelx.cxx:	CONSTRUCT(result,FeActualDataHolder,(be, tcsj));
+nkernelx.cxx:	CONSTRUCT(result,FeEdition,(be, FeLabel::fake()));
+nkernelx.cxx:	CONSTRUCT(result,FeEdition,(be, label));
+nkernelx.cxx:	RETURN_CONSTRUCT(EditionStepper,(theRegion->stepper(ordering), this));
+nkernelx.cxx:	CONSTRUCT(result,FeIDHolder,(be, tcsj));
+nkernelx.cxx:	CONSTRUCT(result,FeLabel,(label, tcsj));
+nkernelx.cxx:	RETURN_CONSTRUCT(FeVirtualPlaceHolder,(edition, key));
+nkernelx.cxx:	CONSTRUCT(result,FeActualPlaceHolder,(be, tcsj));
+nkernelx.cxx:	CONSTRUCT(result,FeWork,(be, tcsj));
+nkernelx.cxx:	CONSTRUCT(result,FeClub,(be, tcsj));
+nkernelx.cxx:	CONSTRUCT(result,FeServer,(Sequence::string("NoEncrypter"), encrypter));
+nkernelx.cxx:	RETURN_CONSTRUCT(EditionStepper,(myKeys->copy(), myEdition));
+nkernelx.cxx:	RETURN_CONSTRUCT(RevisionDetectorExecutor,(work, tcsj));
+nkernelx.cxx:	RETURN_CONSTRUCT(StatusDetectorExecutor,(work, tcsj));
+nlinksx.cxx:	RETURN_CONSTRUCT(FeHyperLink,(edition, FeHyperLink::spec()));
+nlinksx.cxx:	RETURN_CONSTRUCT(FeMultiRef,(edition, FeMultiRef::spec()));
+nlinksx.cxx:	RETURN_CONSTRUCT(FeSingleRef,(edition, FeSingleRef::spec()));
+nlinksx.cxx:	RETURN_CONSTRUCT(FePath,(edition, FePath::spec()));
+orootx.cxx:		RETURN_CONSTRUCT(EmptyOrglRoot,(cs, tcsj));
+orootx.cxx:		RETURN_CONSTRUCT(ActualOrglRoot,(loaf, region));
+orootx.cxx:	RETURN_CONSTRUCT(HBottomCrum,(CurrentTrace.fluidGet(), CurrentBertCrum.fluidGet()));
+propsx.cxx:	RETURN_CONSTRUCT(BertProp,(permissions, endorsements, isSensorWaiting, isNotPartializable));
+propsx.cxx:		CONSTRUCT(SensorProp::TheIdentitySensorProp,SensorProp,(CAST(IDRegion,CurrentGrandMap.fluidGet()->globalIDSpace()->emptyRegion()), CAST(CrossRegion,CurrentGrandMap.fluidGet()->endorsementSpace()->emptyRegion()), FALSE));
+propsx.cxx:	RETURN_CONSTRUCT(SensorProp,(relevantPermissions, relevantEndorsements, isPartial));
+propsx.cxx:		CONSTRUCT(SensorProp::ThePartialSensorProp,SensorProp,(CAST(IDRegion,CurrentGrandMap.fluidGet()->globalIDSpace()->emptyRegion()), CAST(CrossRegion,CurrentGrandMap.fluidGet()->endorsementSpace()->emptyRegion()), TRUE));
+propsx.cxx:	CONSTRUCT(PropChange::TheCannotPartializeChange,CannotPartializeChange,());
+propsx.cxx:	CONSTRUCT(PropChange::TheDetectorWaitingChange,DetectorWaitingChange,());
+propsx.cxx:	CONSTRUCT(PropChange::TheEndorsementsChange,EndorsementsChange,());
+propsx.cxx:	CONSTRUCT(PropChange::TheBertPropChange,BertPropChange,());
+propsx.cxx:	CONSTRUCT(PropChange::TheSensorPropChange,SensorPropChange,());
+propsx.cxx:	CONSTRUCT(PropChange::ThePermissionsChange,PermissionsChange,());
+propsx.cxx:		RETURN_CONSTRUCT(BackfollowPFinder,(
+propsx.cxx:		RETURN_CONSTRUCT(BackfollowPFinder,(
+propsx.cxx:	RETURN_CONSTRUCT(BackfollowFinder,(
+propsx.cxx:	RETURN_CONSTRUCT(CannotPartializeFinder,());
+propsx.cxx:	RETURN_CONSTRUCT(ClosedPropFinder,());
+propsx.cxx:	RETURN_CONSTRUCT(OpenPropFinder,());
+propsx.cxx:	RETURN_CONSTRUCT(SensorFinder,());
+propsx.cxx:	RETURN_CONSTRUCT(AnyRecorderEFinder,(
+propsx.cxx:	RETURN_CONSTRUCT(AnyRecorderPFinder,(
+propsx.cxx:	RETURN_CONSTRUCT(CumulativeRecorderFinder,(f, generators, current, others));
+propsx.cxx:	RETURN_CONSTRUCT(ContainedEditionRecorderEFinder,(
+propsx.cxx:	RETURN_CONSTRUCT(OriginalResultRecorderEFinder,(
+propsx.cxx:	RETURN_CONSTRUCT(ResultRecorderPFinder,(
+shepht.cxx:	RETURN_CONSTRUCT(ShepherdLocked,());
+shepht.cxx:	CONSTRUCT(aLockedShepherd,ShepherdLocked,());
+sysadmx.cxx:	RETURN_CONSTRUCT(FeAdminer,());
+sysadmx.cxx:	RETURN_CONSTRUCT(FeArchiver,());
+tcludex.cxx:	RETURN_CONSTRUCT(HashSetCache,(10, tcsj));
+tcludex.cxx:	RETURN_CONSTRUCT(HashSetCache,(size, tcsj));
+tcludex.cxx:		RETURN_CONSTRUCT(Matcher,(oroot, finder, fossil));
+tcludex.cxx:	RETURN_CONSTRUCT(NorthRecorderChecker,(edition, finder));
+tcludex.cxx:			RETURN_CONSTRUCT(DirectEditionRecorderFossil,(loginAuthority, directFilter, indirectFilter, trailBlazer));
+tcludex.cxx:			RETURN_CONSTRUCT(IndirectEditionRecorderFossil,(loginAuthority, directFilter, indirectFilter, trailBlazer));
+tcludex.cxx:			RETURN_CONSTRUCT(DirectWorkRecorderFossil,(loginAuthority, endorsementsFilter, trailBlazer));
+tcludex.cxx:			RETURN_CONSTRUCT(IndirectWorkRecorderFossil,(loginAuthority, endorsementsFilter, trailBlazer));
+tcludex.cxx:		RETURN_CONSTRUCT(RecorderHoister,(crum, aSetOfRecorders->asMuSet()));
+tcludex.cxx:		RETURN_CONSTRUCT(RecorderTrigger,(fossil, element));
+tcludex.cxx:		RETURN_CONSTRUCT(SouthRecorderChecker,(oroot, finder, scrum));
+tcludex.cxx:		CONSTRUCT(result,TrailBlazer,());
+tcludex.cxx:	RETURN_CONSTRUCT(DirectEditionRecorder,(this->directFilter(), this->indirectFilter(), this->trailBlazer()));
+tcludex.cxx:	RETURN_CONSTRUCT(IndirectEditionRecorder,(this->directFilter(), this->indirectFilter(), this->trailBlazer()));
+tcludex.cxx:	RETURN_CONSTRUCT(DirectWorkRecorder,(this->endorsementsFilter(), this->trailBlazer()));
+tcludex.cxx:	RETURN_CONSTRUCT(IndirectWorkRecorder,(this->endorsementsFilter(), this->trailBlazer()));
+tracepx.cxx:	RETURN_CONSTRUCT(BoundedTrace,(branch, position));
+worksrvx.cxx:	CONSTRUCT(wwd,WorksWaitDetector,(cerr, "WorksInit done!"));
+worksrvx.cxx:	RETURN_CONSTRUCT(WorksWaitDetector,(oo, tag));
+wrapperx.cxx:	RETURN_CONSTRUCT(FeSet,(edition, FeSet::spec()));
+wrapperx.cxx:	RETURN_CONSTRUCT(FeText,(edition, FeText::spec()));
+wrapperx.cxx:	RETURN_CONSTRUCT(FeAbstractWrapperSpec,(def, tcsj));
+wrapperx.cxx:	RETURN_CONSTRUCT(FeDirectWrapperSpec,(def, tcsj));
+wrapperx.cxx:	RETURN_CONSTRUCT(FeIndirectWrapperSpec,(def, tcsj));
+wrapperx.cxx:	RETURN_CONSTRUCT(FeAbstractWrapperDef,(wrapperName, superName, holder));
+wrapperx.cxx:	RETURN_CONSTRUCT(FeDirectWrapperDef,(wrapperName, superName, holder, maker, checker));
+wrapperx.cxx:	RETURN_CONSTRUCT(FeIndirectWrapperDef,(wrapperName, superName, holder, innerName, maker, checker));
+canopyx.hxx:	static UInt32 isNotPartializableFlag () CONST;
+canopyx.hxx:	static UInt32 isSensorWaitingFlag () CONST;
+canopyx.hxx:	static UInt32 isPartialFlag () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 DIRECT_CONTAINERS_ONLY () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 FROM_OTHER_TRANSITIVE_CONTENTS () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 FROM_TRANSITIVE_CONTENTS () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 IGNORE_ARRAY_ORDERING () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 IGNORE_TOTAL_ORDERING () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 LOCAL_PRESENT_ONLY () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 OMIT_SHARED () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 otherTransitiveContents () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 PRORATE_SHARED () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 SEPARATE_OWNERS () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 thisTransitiveContents () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 TO_TRANSITIVE_CONTENTS () CONST;
+nkernelx.hxx:	static CLIENT INLINE Int32 TOTAL_SHARED () CONST;
+shephx.hxx:	   SPTR(Category) getShepherdStubCategory() CONST;			\
+nkernelx.ixx:INLINE Int32 FeEdition::DIRECT_CONTAINERS_ONLY () CONST{
+nkernelx.ixx:INLINE Int32 FeEdition::FROM_OTHER_TRANSITIVE_CONTENTS () CONST{
+nkernelx.ixx:INLINE Int32 FeEdition::FROM_TRANSITIVE_CONTENTS () CONST{
+nkernelx.ixx:INLINE Int32 FeEdition::IGNORE_ARRAY_ORDERING () CONST{
+nkernelx.ixx:INLINE Int32 FeEdition::IGNORE_TOTAL_ORDERING () CONST{
+nkernelx.ixx:INLINE Int32 FeEdition::LOCAL_PRESENT_ONLY () CONST{
+nkernelx.ixx:INLINE Int32 FeEdition::OMIT_SHARED () CONST{
+nkernelx.ixx:INLINE Int32 FeEdition::otherTransitiveContents () CONST{
+nkernelx.ixx:INLINE Int32 FeEdition::PRORATE_SHARED () CONST{
+nkernelx.ixx:INLINE Int32 FeEdition::SEPARATE_OWNERS () CONST{
+nkernelx.ixx:INLINE Int32 FeEdition::thisTransitiveContents () CONST{
+nkernelx.ixx:INLINE Int32 FeEdition::TO_TRANSITIVE_CONTENTS () CONST{
+nkernelx.ixx:INLINE Int32 FeEdition::TOTAL_SHARED () CONST{
+sxx/branchx.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/branchx.sxx:Category * BranchDescription::getShepherdStubCategory () CONST
+sxx/branchx.sxx:isKindOf(Category * aCategory) CONST
+sxx/branchx.sxx:	RETURN_CONSTRUCT(BranchDescriptionStub, (shepFlag, hash, NULL));
+sxx/brange1x.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/brange1x.sxx:Category * BeDataHolder::getShepherdStubCategory () CONST
+sxx/brange1x.sxx:isKindOf(Category * aCategory) CONST
+sxx/brange1x.sxx:	RETURN_CONSTRUCT(BeDataHolderStub, (shepFlag, hash, NULL));
+sxx/brange1x.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/brange1x.sxx:Category * BeIDHolder::getShepherdStubCategory () CONST
+sxx/brange1x.sxx:isKindOf(Category * aCategory) CONST
+sxx/brange1x.sxx:	RETURN_CONSTRUCT(BeIDHolderStub, (shepFlag, hash, NULL));
+sxx/brange1x.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/brange1x.sxx:Category * BeLabel::getShepherdStubCategory () CONST
+sxx/brange1x.sxx:isKindOf(Category * aCategory) CONST
+sxx/brange1x.sxx:	RETURN_CONSTRUCT(BeLabelStub, (shepFlag, hash, NULL));
+sxx/brange1x.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/brange1x.sxx:Category * BePlaceHolder::getShepherdStubCategory () CONST
+sxx/brange1x.sxx:isKindOf(Category * aCategory) CONST
+sxx/brange1x.sxx:	RETURN_CONSTRUCT(BePlaceHolderStub, (shepFlag, hash, NULL));
+sxx/brange2p.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/brange2p.sxx:Category * UpdateTransitiveMemberIDs::getShepherdStubCategory () CONST
+sxx/brange2p.sxx:isKindOf(Category * aCategory) CONST
+sxx/brange2p.sxx:	RETURN_CONSTRUCT(UpdateTransitiveMemberIDsStub, (shepFlag, hash, NULL));
+sxx/brange2p.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/brange2p.sxx:Category * UpdateTransitiveSuperClubIDs::getShepherdStubCategory () CONST
+sxx/brange2p.sxx:isKindOf(Category * aCategory) CONST
+sxx/brange2p.sxx:	RETURN_CONSTRUCT(UpdateTransitiveSuperClubIDsStub, (shepFlag, hash, NULL));
+sxx/brange2x.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/brange2x.sxx:Category * BeWork::getShepherdStubCategory () CONST
+sxx/brange2x.sxx:isKindOf(Category * aCategory) CONST
+sxx/brange2x.sxx:	RETURN_CONSTRUCT(BeWorkStub, (shepFlag, hash, NULL));
+sxx/brange2x.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/brange2x.sxx:Category * BeClub::getShepherdStubCategory () CONST
+sxx/brange2x.sxx:isKindOf(Category * aCategory) CONST
+sxx/brange2x.sxx:	RETURN_CONSTRUCT(BeClubStub, (shepFlag, hash, NULL));
+sxx/brange3x.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/brange3x.sxx:Category * BeEdition::getShepherdStubCategory () CONST
+sxx/brange3x.sxx:isKindOf(Category * aCategory) CONST
+sxx/brange3x.sxx:	RETURN_CONSTRUCT(BeEditionStub, (shepFlag, hash, NULL));
+sxx/canopyr.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/canopyr.sxx:Category * PropChanger::getShepherdStubCategory () CONST
+sxx/canopyr.sxx:isKindOf(Category * aCategory) CONST
+sxx/canopyr.sxx:	RETURN_CONSTRUCT(PropChangerStub, (shepFlag, hash, NULL));
+sxx/canopyx.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/canopyx.sxx:Category * CanopyCrum::getShepherdStubCategory () CONST
+sxx/canopyx.sxx:isKindOf(Category * aCategory) CONST
+sxx/canopyx.sxx:	RETURN_CONSTRUCT(CanopyCrumStub, (shepFlag, hash, NULL));
+sxx/canopyx.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/canopyx.sxx:Category * BertCrum::getShepherdStubCategory () CONST
+sxx/canopyx.sxx:isKindOf(Category * aCategory) CONST
+sxx/canopyx.sxx:	RETURN_CONSTRUCT(BertCrumStub, (shepFlag, hash, NULL));
+sxx/canopyx.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/canopyx.sxx:Category * SensorCrum::getShepherdStubCategory () CONST
+sxx/canopyx.sxx:isKindOf(Category * aCategory) CONST
+sxx/canopyx.sxx:	RETURN_CONSTRUCT(SensorCrumStub, (shepFlag, hash, NULL));
+sxx/counterx.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/counterx.sxx:Category * Counter::getShepherdStubCategory () CONST
+sxx/counterx.sxx:isKindOf(Category * aCategory) CONST
+sxx/counterx.sxx:	RETURN_CONSTRUCT(CounterStub, (shepFlag, hash, NULL));
+sxx/dagwoodx.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/dagwoodx.sxx:Category * DagWood::getShepherdStubCategory () CONST
+sxx/dagwoodx.sxx:isKindOf(Category * aCategory) CONST
+sxx/dagwoodx.sxx:	RETURN_CONSTRUCT(DagWoodStub, (shepFlag, hash, NULL));
+sxx/entx.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/entx.sxx:Category * Ent::getShepherdStubCategory () CONST
+sxx/entx.sxx:isKindOf(Category * aCategory) CONST
+sxx/entx.sxx:	RETURN_CONSTRUCT(EntStub, (shepFlag, hash, NULL));
+sxx/granmapx.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/granmapx.sxx:Category * BeGrandMap::getShepherdStubCategory () CONST
+sxx/granmapx.sxx:isKindOf(Category * aCategory) CONST
+sxx/granmapx.sxx:	RETURN_CONSTRUCT(BeGrandMapStub, (shepFlag, hash, NULL));
+sxx/grantabp.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/grantabp.sxx:Category * GrandDataPage::getShepherdStubCategory () CONST
+sxx/grantabp.sxx:isKindOf(Category * aCategory) CONST
+sxx/grantabp.sxx:	RETURN_CONSTRUCT(GrandDataPageStub, (shepFlag, hash, NULL));
+sxx/grantabp.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/grantabp.sxx:Category * GrandEntry::getShepherdStubCategory () CONST
+sxx/grantabp.sxx:isKindOf(Category * aCategory) CONST
+sxx/grantabp.sxx:	RETURN_CONSTRUCT(GrandEntryStub, (shepFlag, hash, NULL));
+sxx/grantabp.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/grantabp.sxx:Category * GrandNode::getShepherdStubCategory () CONST
+sxx/grantabp.sxx:isKindOf(Category * aCategory) CONST
+sxx/grantabp.sxx:	RETURN_CONSTRUCT(GrandNodeStub, (shepFlag, hash, NULL));
+sxx/grantabp.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/grantabp.sxx:Category * GrandNodeDoubler::getShepherdStubCategory () CONST
+sxx/grantabp.sxx:isKindOf(Category * aCategory) CONST
+sxx/grantabp.sxx:	RETURN_CONSTRUCT(GrandNodeDoublerStub, (shepFlag, hash, NULL));
+sxx/grantabp.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/grantabp.sxx:Category * GrandNodeReinserter::getShepherdStubCategory () CONST
+sxx/grantabp.sxx:isKindOf(Category * aCategory) CONST
+sxx/grantabp.sxx:	RETURN_CONSTRUCT(GrandNodeReinserterStub, (shepFlag, hash, NULL));
+sxx/grantabp.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/grantabp.sxx:Category * GrandOverflow::getShepherdStubCategory () CONST
+sxx/grantabp.sxx:isKindOf(Category * aCategory) CONST
+sxx/grantabp.sxx:	RETURN_CONSTRUCT(GrandOverflowStub, (shepFlag, hash, NULL));
+sxx/loavesp.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/loavesp.sxx:Category * SharedData::getShepherdStubCategory () CONST
+sxx/loavesp.sxx:isKindOf(Category * aCategory) CONST
+sxx/loavesp.sxx:	RETURN_CONSTRUCT(SharedDataStub, (shepFlag, hash, NULL));
+sxx/loavesx.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/loavesx.sxx:Category * Loaf::getShepherdStubCategory () CONST
+sxx/loavesx.sxx:isKindOf(Category * aCategory) CONST
+sxx/loavesx.sxx:	RETURN_CONSTRUCT(LoafStub, (shepFlag, hash, NULL));
+sxx/orootx.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/orootx.sxx:Category * OrglRoot::getShepherdStubCategory () CONST
+sxx/orootx.sxx:isKindOf(Category * aCategory) CONST
+sxx/orootx.sxx:	RETURN_CONSTRUCT(OrglRootStub, (shepFlag, hash, NULL));
+sxx/orootx.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/orootx.sxx:Category * ActualOrglRoot::getShepherdStubCategory () CONST
+sxx/orootx.sxx:isKindOf(Category * aCategory) CONST
+sxx/orootx.sxx:	RETURN_CONSTRUCT(ActualOrglRootStub, (shepFlag, hash, NULL));
+sxx/orootx.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/orootx.sxx:Category * EmptyOrglRoot::getShepherdStubCategory () CONST
+sxx/orootx.sxx:isKindOf(Category * aCategory) CONST
+sxx/orootx.sxx:	RETURN_CONSTRUCT(EmptyOrglRootStub, (shepFlag, hash, NULL));
+sxx/shepht.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/shepht.sxx:Category * ShepherdLocked::getShepherdStubCategory () CONST
+sxx/shepht.sxx:isKindOf(Category * aCategory) CONST
+sxx/shepht.sxx:	RETURN_CONSTRUCT(ShepherdLockedStub, (shepFlag, hash, NULL));
+sxx/tcludep.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/tcludep.sxx:Category * EditionRecorderFossil::getShepherdStubCategory () CONST
+sxx/tcludep.sxx:isKindOf(Category * aCategory) CONST
+sxx/tcludep.sxx:	RETURN_CONSTRUCT(EditionRecorderFossilStub, (shepFlag, hash, NULL));
+sxx/tcludep.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/tcludep.sxx:Category * DirectEditionRecorderFossil::getShepherdStubCategory () CONST
+sxx/tcludep.sxx:isKindOf(Category * aCategory) CONST
+sxx/tcludep.sxx:	RETURN_CONSTRUCT(DirectEditionRecorderFossilStub, (shepFlag, hash, NULL));
+sxx/tcludep.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/tcludep.sxx:Category * IndirectEditionRecorderFossil::getShepherdStubCategory () CONST
+sxx/tcludep.sxx:isKindOf(Category * aCategory) CONST
+sxx/tcludep.sxx:	RETURN_CONSTRUCT(IndirectEditionRecorderFossilStub, (shepFlag, hash, NULL));
+sxx/tcludep.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/tcludep.sxx:Category * WorkRecorderFossil::getShepherdStubCategory () CONST
+sxx/tcludep.sxx:isKindOf(Category * aCategory) CONST
+sxx/tcludep.sxx:	RETURN_CONSTRUCT(WorkRecorderFossilStub, (shepFlag, hash, NULL));
+sxx/tcludep.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/tcludep.sxx:Category * DirectWorkRecorderFossil::getShepherdStubCategory () CONST
+sxx/tcludep.sxx:isKindOf(Category * aCategory) CONST
+sxx/tcludep.sxx:	RETURN_CONSTRUCT(DirectWorkRecorderFossilStub, (shepFlag, hash, NULL));
+sxx/tcludep.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/tcludep.sxx:Category * IndirectWorkRecorderFossil::getShepherdStubCategory () CONST
+sxx/tcludep.sxx:isKindOf(Category * aCategory) CONST
+sxx/tcludep.sxx:	RETURN_CONSTRUCT(IndirectWorkRecorderFossilStub, (shepFlag, hash, NULL));
+sxx/tcludex.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/tcludex.sxx:Category * Matcher::getShepherdStubCategory () CONST
+sxx/tcludex.sxx:isKindOf(Category * aCategory) CONST
+sxx/tcludex.sxx:	RETURN_CONSTRUCT(MatcherStub, (shepFlag, hash, NULL));
+sxx/tcludex.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/tcludex.sxx:Category * NorthRecorderChecker::getShepherdStubCategory () CONST
+sxx/tcludex.sxx:isKindOf(Category * aCategory) CONST
+sxx/tcludex.sxx:	RETURN_CONSTRUCT(NorthRecorderCheckerStub, (shepFlag, hash, NULL));
+sxx/tcludex.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/tcludex.sxx:Category * RecorderFossil::getShepherdStubCategory () CONST
+sxx/tcludex.sxx:isKindOf(Category * aCategory) CONST
+sxx/tcludex.sxx:	RETURN_CONSTRUCT(RecorderFossilStub, (shepFlag, hash, NULL));
+sxx/tcludex.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/tcludex.sxx:Category * RecorderTrigger::getShepherdStubCategory () CONST
+sxx/tcludex.sxx:isKindOf(Category * aCategory) CONST
+sxx/tcludex.sxx:	RETURN_CONSTRUCT(RecorderTriggerStub, (shepFlag, hash, NULL));
+sxx/tcludex.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/tcludex.sxx:Category * SouthRecorderChecker::getShepherdStubCategory () CONST
+sxx/tcludex.sxx:isKindOf(Category * aCategory) CONST
+sxx/tcludex.sxx:	RETURN_CONSTRUCT(SouthRecorderCheckerStub, (shepFlag, hash, NULL));
+sxx/tcludex.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/tcludex.sxx:Category * TrailBlazer::getShepherdStubCategory () CONST
+sxx/tcludex.sxx:isKindOf(Category * aCategory) CONST
+sxx/tcludex.sxx:	RETURN_CONSTRUCT(TrailBlazerStub, (shepFlag, hash, NULL));
+/Fhypatia/roger/prod/xhs/src/disk
+/Fhypatia/roger/prod/xhs/src/disk
+consistt.cxx:	RETURN_CONSTRUCT(CBlockTracker,(dirty, outer));
+consistt.cxx:	RETURN_CONSTRUCT(CBlockTrackingPacker,(subPacker, tcsj));
+diskmant.cxx:	CONSTRUCT(pair,PairFlock,(DoublingFlock::make (1), DoublingFlock::make (2)));
+diskmant.cxx:	RETURN_CONSTRUCT(MultiCounter,());
+diskmant.cxx:	RETURN_CONSTRUCT(MultiCounter,(count, tcsj));
+diskmanx.cxx:	RETURN_CONSTRUCT(ShepherdBootMaker,());
+diskmanx.cxx:	RETURN_CONSTRUCT(Cattleman,(dm, tcsj));
+diskmanx.cxx:	RETURN_CONSTRUCT(DiskConnection,(this->bootCategory(), CurrentPacker.fluidGet()->getInitialFlock()->bootHeaper()));
+fakedskx.cxx:	CONSTRUCT(packer,FakePacker,());
+fakedskx.cxx:	RETURN_CONSTRUCT(MockTurtle,(category, tcsj));
+flkinfox.cxx:	RETURN_CONSTRUCT(FlockLocation,(snarfID, index));
+flkinfox.cxx:	RETURN_CONSTRUCT(FlockInfo,(shep, snarfID, index, FlockInfo::forgottenMask(), Int32Zero));
+flkinfox.cxx:	RETURN_CONSTRUCT(FlockInfo,(shep, Int32Zero, index.asLong(), (FlockInfo::contentsDirty() | FlockInfo::forgottenStateDirty()) & ~FlockInfo::forgottenMask() | FlockInfo::isNewMask(), Int32Zero));
+flkinfox.cxx:	RETURN_CONSTRUCT(FlockInfo,(info->getShepherd(), snarfID, index, info->flags() & ~FlockInfo::isNewMask(), info->oldSize()));
+flkinfox.cxx:	RETURN_CONSTRUCT(FlockInfo,(shep, snarfID, index, UInt32Zero, Int32Zero));
+packert.cxx:	RETURN_CONSTRUCT(DoublingFlock,(hash, tcsj));
+packert.cxx:	RETURN_CONSTRUCT(DoublingFlock,(hash, count));
+packert.cxx:	RETURN_CONSTRUCT(HashStream,());
+packert.cxx:	RETURN_CONSTRUCT(PairFlock,(left, right));
+packert.cxx:	RETURN_CONSTRUCT(TestFlockInfo,(shep, snarfID, index, FlockInfo::forgottenMask()));
+packert.cxx:	RETURN_CONSTRUCT(TestFlockInfo,(shep, Int32Zero, index.asLong(), (FlockInfo::contentsDirty() | FlockInfo::forgottenStateDirty()) & ~FlockInfo::forgottenMask() | FlockInfo::isNewMask()));
+packert.cxx:	RETURN_CONSTRUCT(TestFlockInfo,(info->getShepherd(), snarfID, index, info->flags() & ~FlockInfo::isNewMask(), info->oldSize()));
+packert.cxx:	RETURN_CONSTRUCT(TestFlockInfo,(shep, snarfID, index, UInt32Zero));
+packert.cxx:	CONSTRUCT(result,TestPacker,(blast, persistInterval));
+packerx.cxx:	CONSTRUCT(disk,SnarfPacker,(anUrdi, tcsj));
+packerx.cxx:	RETURN_CONSTRUCT(SnarfPacker,(::urdi(fname, SnarfPacker::LRUCount), tcsj));
+packerx.cxx:		RETURN_CONSTRUCT(CountStream,());
+packerx.cxx:		RETURN_CONSTRUCT(DiskCountSpecialist,(aBook, tcsj));
+packerx.cxx:		RETURN_CONSTRUCT(DiskSpecialist,(book, packer));
+packerx.cxx:		CONSTRUCT(PersistentCleaner::ThePersistentCleaner,PersistentCleaner,());
+packerx.cxx:		CONSTRUCT(Pumpkin::TheGreatPumpkin,Pumpkin,(1, tcsj));
+packerx.cxx:	RETURN_CONSTRUCT(SnarfRecord,(snarfID, packer, spaceLeft));
+purgingx.cxx:	RETURN_CONSTRUCT(LiberalPurgeror,(packer, tcsj));
+purgingx.cxx:	RETURN_CONSTRUCT(Purgeror,(packer, tcsj));
+snfinfox.cxx:	RETURN_CONSTRUCT(SnarfHandler,(snarfHandle, tcsj));
+snfinfox.cxx:	CONSTRUCT(handler,SnarfInfoHandler,(urdi, view));
+snfinfox.cxx:	RETURN_CONSTRUCT(SnarfInfoHandler,(view, urdi));
+turtlex.cxx:		RETURN_CONSTRUCT(Agenda,());
+turtlex.cxx:		RETURN_CONSTRUCT(Sequencer,(first, rest));
+turtlex.cxx:	RETURN_CONSTRUCT(SimpleTurtle,(cookbook, bootCategory, maker));
+sxx/diskmant.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/diskmant.sxx:Category * MultiCounter::getShepherdStubCategory () CONST
+sxx/diskmant.sxx:isKindOf(Category * aCategory) CONST
+sxx/diskmant.sxx:	RETURN_CONSTRUCT(MultiCounterStub, (shepFlag, hash, NULL));
+sxx/packert.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/packert.sxx:Category * DoublingFlock::getShepherdStubCategory () CONST
+sxx/packert.sxx:isKindOf(Category * aCategory) CONST
+sxx/packert.sxx:	RETURN_CONSTRUCT(DoublingFlockStub, (shepFlag, hash, NULL));
+sxx/packert.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/packert.sxx:Category * PairFlock::getShepherdStubCategory () CONST
+sxx/packert.sxx:isKindOf(Category * aCategory) CONST
+sxx/packert.sxx:	RETURN_CONSTRUCT(PairFlockStub, (shepFlag, hash, NULL));
+sxx/turtlex.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/turtlex.sxx:Category * AgendaItem::getShepherdStubCategory () CONST
+sxx/turtlex.sxx:isKindOf(Category * aCategory) CONST
+sxx/turtlex.sxx:	RETURN_CONSTRUCT(AgendaItemStub, (shepFlag, hash, NULL));
+sxx/turtlex.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/turtlex.sxx:Category * Agenda::getShepherdStubCategory () CONST
+sxx/turtlex.sxx:isKindOf(Category * aCategory) CONST
+sxx/turtlex.sxx:	RETURN_CONSTRUCT(AgendaStub, (shepFlag, hash, NULL));
+sxx/turtlex.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/turtlex.sxx:Category * Sequencer::getShepherdStubCategory () CONST
+sxx/turtlex.sxx:isKindOf(Category * aCategory) CONST
+sxx/turtlex.sxx:	RETURN_CONSTRUCT(SequencerStub, (shepFlag, hash, NULL));
+sxx/turtlex.sxx:	LEAF BooleanVar isKindOf(Category * aCategory) CONST;
+sxx/turtlex.sxx:Category * Turtle::getShepherdStubCategory () CONST
+sxx/turtlex.sxx:isKindOf(Category * aCategory) CONST
+sxx/turtlex.sxx:	RETURN_CONSTRUCT(TurtleStub, (shepFlag, hash, NULL));
+/Fhypatia/roger/prod/xhs/src/comm
+/Fhypatia/roger/prod/xhs/src/comm
+bin2comx.cxx:	CONSTRUCT(maker,Binary2XcvrMaker,());
+bin2comx.cxx:	RETURN_CONSTRUCT(Binary2XcvrMaker,());
+bin2comx.cxx:		RETURN_CONSTRUCT(Binary2Rcvr,(specialist, stream));
+bin2comx.cxx:		RETURN_CONSTRUCT(Binary2Xmtr,(specialist, stream));
+bootplnx.cxx:	RETURN_CONSTRUCT(DirectConnection,(this->bootCategory(), this->bootHeaper()));
+bootplnx.cxx:	RETURN_CONSTRUCT(NestedConnection,(cat, heaper, sub));
+comdtctx.cxx:	RETURN_CONSTRUCT(CommFillDetector,(pm, number, target));
+comdtctx.cxx:	RETURN_CONSTRUCT(CommFillRangeDetector,(pm, number, target));
+comdtctx.cxx:	RETURN_CONSTRUCT(CommRevisionDetector,(pm, number, target));
+comdtctx.cxx:	RETURN_CONSTRUCT(CommStatusDetector,(pm, number, target));
+comdtctx.cxx:	RETURN_CONSTRUCT(CommWaitDetector,(pm, number));
+comdtctx.cxx:	RETURN_CONSTRUCT(DoneEvent,(detector, tcsj));
+comdtctx.cxx:	RETURN_CONSTRUCT(FilledEvent,(detector, filling));
+comdtctx.cxx:	RETURN_CONSTRUCT(GrabbedEvent,(detector, work, author, reason));
+comdtctx.cxx:	RETURN_CONSTRUCT(RangeFilledEvent,(detector, filling));
+comdtctx.cxx:	RETURN_CONSTRUCT(ReleasedEvent,(detector, work, reason));
+comdtctx.cxx:	RETURN_CONSTRUCT(RevisedEvent,(detector, work, contents, author, time, sequence));
+cookbkx.cxx:	RETURN_CONSTRUCT(ActualCookbook,(bootCat, id, recipes, count));
+cookbkx.cxx:	RETURN_CONSTRUCT(ActualCookbook,(bootCat, id, recipes, count));
+cookbkx.cxx:	RETURN_CONSTRUCT(ActualCookbook,(bootCat, id, recipes, count));
+cookbkx.cxx:	RETURN_CONSTRUCT(ActualCookbook,(bootCat, id, recipes, count));
+handlrsx.cxx:	RETURN_CONSTRUCT(BHHandler,(fn, type1));
+handlrsx.cxx:	RETURN_CONSTRUCT(BHHHandler,(fn, type1, type2));
+handlrsx.cxx:	RETURN_CONSTRUCT(BHHHHandler,(fn, type1, type2, type3));
+handlrsx.cxx:	RETURN_CONSTRUCT(HHandler,(fn, tcsj));
+handlrsx.cxx:	RETURN_CONSTRUCT(HHBHandler,(fn, type1));
+handlrsx.cxx:	RETURN_CONSTRUCT(HHHandler,(fn, type1));
+handlrsx.cxx:	RETURN_CONSTRUCT(HHHBHandler,(fn, type1, type2));
+handlrsx.cxx:	RETURN_CONSTRUCT(HHHHandler,(fn, type1, type2));
+handlrsx.cxx:	RETURN_CONSTRUCT(HHHHHandler,(fn, type1, type2, type3));
+handlrsx.cxx:	RETURN_CONSTRUCT(HHHHHHandler,(fn, type1, type2, type3, type4));
+handlrsx.cxx:	RETURN_CONSTRUCT(HHHHHHHandler,(fn, type1, type2, type3, type4, type5));
+handlrsx.cxx:	RETURN_CONSTRUCT(HHHHHHHHandler,(fn, type1, type2, type3, type4, type5, type6));
+handlrsx.cxx:	RETURN_CONSTRUCT(VHBHandler,(fn, type1));
+handlrsx.cxx:	RETURN_CONSTRUCT(VHHandler,(fn, type1));
+handlrsx.cxx:	RETURN_CONSTRUCT(VHHHandler,(fn, type1, type2));
+handlrsx.cxx:	RETURN_CONSTRUCT(VHHHHandler,(fn, type1, type2, type3));
+handlrsx.cxx:	RETURN_CONSTRUCT(VHHHHHandler,(fn, type1, type2, type3, type4));
+handlrsx.cxx:	RETURN_CONSTRUCT(VHHHHHHandler,(fn, type1, type2, type3, type4, type5));
+negoti8x.cxx:	CONSTRUCT(ProtocolBroker::CommProtocols,ProtocolItem,(maker->id(), maker, ProtocolBroker::CommProtocols));
+negoti8x.cxx:	CONSTRUCT(ProtocolBroker::DiskProtocols,ProtocolItem,(maker->id(), maker, ProtocolBroker::DiskProtocols));
+nscottyx.cxx:	RETURN_CONSTRUCT(ReadArrayStream,(collection, tcsj));
+nscottyx.cxx:	RETURN_CONSTRUCT(WriteArrayStream,(array, tcsj));
+nscottyx.cxx:	RETURN_CONSTRUCT(WriteVariableArrayStream,(UInt8Array::make (size), tcsj));
+nscottyx.cxx:		RETURN_CONSTRUCT(ReadMemStream,(dataP, start, count));
+nscottyx.cxx:		RETURN_CONSTRUCT(WriteMemStream,(dataP, start, count));
+portalx.cxx:	CONSTRUCT(myReadStream,XnBufferedReadStream,(this, tcsj));
+portalx.cxx:	CONSTRUCT(myWriteStream,XnBufferedWriteStream,(this, tcsj));
+portalx.cxx:	RETURN_CONSTRUCT(PairPortal,(read, write));
+prolstnx.cxx:	RETURN_CONSTRUCT(IPPromiseListener,(aSocket, tcsj));
+prolstnx.cxx:	RETURN_CONSTRUCT(FePromiseSession,(port, listener, manager));
+promant.cxx:	CONSTRUCT(shuffler,SimpleShuffler,());
+promanx.cxx:		CONSTRUCT(shuffler,SimpleShuffler,());
+promanx.cxx:		CONSTRUCT(shuffler,NoShuffler,());
+promanx.cxx:	RETURN_CONSTRUCT(PromiseManager,(portal, target, shuffler));
+promanx.cxx:	RETURN_CONSTRUCT(ExceptionRecord,(promise, ExceptionRecord::badCategory()));
+promanx.cxx:	RETURN_CONSTRUCT(ExceptionRecord,(promise, ExceptionRecord::excused()));
+promanx.cxx:	RETURN_CONSTRUCT(ExceptionRecord,(promise, ExceptionRecord::typeMismatch()));
+promanx.cxx:	RETURN_CONSTRUCT(ExceptionRecord,(promise, ExceptionRecord::wasNull()));
+promanx.cxx:	RETURN_CONSTRUCT(SpecialHandler,(fn, tcsj));
+sktsrvx.cxx:	RETURN_CONSTRUCT(IPRendezvousListener,(anAddress, tcsj));
+sktsrvx.cxx:	RETURN_CONSTRUCT(SelectServerLoop,());
+txtcommx.cxx:	CONSTRUCT(maker,TextyXcvrMaker,());
+txtcommx.cxx:	RETURN_CONSTRUCT(TextyXcvrMaker,());
+txtcommx.cxx:	RETURN_CONSTRUCT(TextyRcvr,(TransferSpecialist::make (Cookbook::make ()), stream));
+txtcommx.cxx:	RETURN_CONSTRUCT(TextyXmtr,(TransferSpecialist::make (Cookbook::make ()), stream));
+txtcommx.cxx:	RETURN_CONSTRUCT(TextyRcvr,(specialist, readStream));
+txtcommx.cxx:	RETURN_CONSTRUCT(TextyXmtr,(specialist, writeStream));
+txtcommx.cxx:	RETURN_CONSTRUCT(TextyRcvr,(specialist, stream));
+txtcommx.cxx:	RETURN_CONSTRUCT(TextyXmtr,(specialist, stream));
+xfrspecx.cxx:	RETURN_CONSTRUCT(TransferGeneralist,(aBook, tcsj));
+xfrspecx.cxx:	RETURN_CONSTRUCT(BogusXcvrMaker,());
+xfrspecx.cxx:	CONSTRUCT(maker,BogusXcvrMaker,());
+xfrspecx.cxx:	RETURN_CONSTRUCT(CommIbid,(number, tcsj));
+xfrspecx.cxx:	RETURN_CONSTRUCT(TransferGeneralist,(aBook, tcsj));
+/Fhypatia/roger/prod/xhs/src/urdi
+/Fhypatia/roger/prod/xhs/src/urdi
+urdi2t.cxx:	CONSTRUCT_ON(PERSISTENT,urdi1,Urdi,(
+urdi2t.cxx:////	CONSTRUCT_ON(PERSISTENT,urdi2,Urdi,(
+urdi3t.cxx:	CONSTRUCT_ON(PERSISTENT,urdi1,Urdi,(
+urdi3t.cxx:////	CONSTRUCT_ON(PERSISTENT,urdi2,Urdi,(
+urdi4t.cxx:	CONSTRUCT_ON(PERSISTENT,urdi1,Urdi,(
+urdi4t.cxx:	CONSTRUCT_ON(PERSISTENT,urdi2,Urdi,(
+urdi5t.cxx:	CONSTRUCT_ON(PERSISTENT,urdi1,Urdi,(
+urdit.cxx://	 - Changed remaining CONSTRUCT_ONs to pseudo-constructor calls
+urdix.cxx://	Removed CONSTRUCTOR_BOMBs.  (They were obsolete once the urdi
+urdix.cxx:	RETURN_CONSTRUCT_ON(PERSISTENT,Urdi,(
+urdix.cxx:	CONSTRUCT_ON(PERSISTENT,viewDummyP,UrdiView,(this, DUMMY_VIEW));
+urdix.cxx:	CONSTRUCT_ON(PERSISTENT,snarfCacheDummyP,SnarfCache,(DUMMY_CACHE, this));	/* !!!! Dummy object */
+urdix.cxx:	CONSTRUCT_ON(PERSISTENT,snarfCacheGoatP,SnarfCache,(GOAT_CACHE, this));
+urdix.cxx:	CONSTRUCT_ON(PERSISTENT,snarfCacheLRUDummyP,SnarfCache,(DUMMY_CACHE, this));
+urdix.cxx:	RETURN_CONSTRUCT_ON(PERSISTENT,Urdi,(
+urdix.cxx:	CONSTRUCT_ON(PERSISTENT,viewDummyP,UrdiView,(this, DUMMY_VIEW));
+urdix.cxx:	CONSTRUCT_ON(PERSISTENT,snarfCacheDummyP,SnarfCache,(DUMMY_CACHE, this));	/* !!!! Dummy object */
+urdix.cxx:	CONSTRUCT_ON(PERSISTENT,snarfCacheGoatP,SnarfCache,(GOAT_CACHE, this));
+urdix.cxx:	CONSTRUCT_ON(PERSISTENT,snarfCacheLRUDummyP,SnarfCache,(DUMMY_CACHE, this));
+urdix.cxx:	RETURN_CONSTRUCT_ON(PERSISTENT,Urdi,(
+urdix.cxx:	CONSTRUCT_ON(PERSISTENT,viewDummyP,UrdiView,(this, DUMMY_VIEW));
+urdix.cxx:	CONSTRUCT_ON(PERSISTENT,snarfCacheDummyP,SnarfCache,(DUMMY_CACHE, this));	/* !!!! Dummy object */
+urdix.cxx:	CONSTRUCT_ON(PERSISTENT,snarfCacheGoatP,SnarfCache,(GOAT_CACHE, this));
+urdix.cxx:	CONSTRUCT_ON(PERSISTENT,snarfCacheLRUDummyP,SnarfCache,(DUMMY_CACHE, this));
+urdix.cxx:		CONSTRUCT_ON(PERSISTENT,tempSnarfCacheP,SnarfCache
+urdix.cxx:	RETURN_CONSTRUCT_ON(PERSISTENT,UrdiView,(this,READ_VIEW));
+urdix.cxx:	RETURN_CONSTRUCT_ON(PERSISTENT,UrdiView,(this,WRITE_VIEW));
+urdix.cxx:				viewType = VIEW_CONSTRUCTOR_FAILED;
+urdix.cxx:		CONSTRUCT_ON(PERSISTENT,snarfHandleDummyP,SnarfHandle,(this,-1,DUMMY_HANDLE));	// ???? if err?
+urdix.cxx:	if (viewType == VIEW_CONSTRUCTOR_FAILED) {
+urdix.cxx:	RETURN_CONSTRUCT_ON(PERSISTENT,SnarfHandle,(this,aSnarfID,READ_HANDLE));
+urdix.cxx:	RETURN_CONSTRUCT_ON(PERSISTENT,SnarfHandle,(this,aSnarfID,WRITE_HANDLE));
+urdix.cxx:					SNARF_HANDLE_CONSTRUCTOR_FAILED;
+urdix.cxx:					SNARF_HANDLE_CONSTRUCTOR_FAILED;
+urdix.cxx:		CONSTRUCT_ON(PERSISTENT,snarfCacheP,SnarfCache,(DATA_CACHE, viewP->urdiP));
+urdix.cxx:			CONSTRUCT_ON(PERSISTENT,snarfCacheP,SnarfCache,(DATA_CACHE, viewP->urdiP));
+urdix.cxx:	if (snarfHandleType == SNARF_HANDLE_CONSTRUCTOR_FAILED) {
+urdix.cxx:		CONSTRUCT_ON(PERSISTENT,tempSnarfCacheP,SnarfCache,(DATA_CACHE, viewP->urdiP));
+urdix.hxx:				VIEW_CONSTRUCTOR_FAILED=3 };
+urdix.hxx:				SNARF_HANDLE_CONSTRUCTOR_FAILED=3 };

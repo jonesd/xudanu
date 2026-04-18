@@ -1,0 +1,53 @@
+/* Copyright Xanadu Operating Company.  All Rights Reserved. */
+
+/******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+#ifndef GRANTABP_OXX
+#define GRANTABP_OXX
+
+
+#ifndef SHEPHX_OXX
+#include "shephx.oxx"
+#endif /* SHEPHX_OXX */
+
+#ifndef STEPPERX_OXX
+#include "stepperx.oxx"
+#endif /* STEPPERX_OXX */
+
+#ifndef TURTLEX_OXX
+#include "turtlex.oxx"
+#endif /* TURTLEX_OXX */
+
+
+
+OPAQUE_TYPE_2(ExponentialHashMap,Heaper);
+OPAQUE_TYPE_3(GrandDataPage,Abraham,Heaper);
+OPAQUE_TYPE_3(GrandDataPageStepper,Stepper,Heaper);
+OPAQUE_TYPE_3(GrandEntry,Abraham,Heaper);
+class GrandSetEntry;
+extern Category * cat_GrandSetEntry;
+class GrandTableEntry;
+extern Category * cat_GrandTableEntry;
+class GrandHashSetStepper;
+extern Category * cat_GrandHashSetStepper;
+class GrandHashTableStepper;
+extern Category * cat_GrandHashTableStepper;
+OPAQUE_TYPE_3(GrandNode,Abraham,Heaper);
+OPAQUE_TYPE_4(GrandNodeDoubler,AgendaItem,Abraham,Heaper);
+OPAQUE_TYPE_4(GrandNodeReinserter,AgendaItem,Abraham,Heaper);
+OPAQUE_TYPE_3(GrandNodeStepper,Stepper,Heaper);
+OPAQUE_TYPE_3(GrandOverflow,Abraham,Heaper);
+OPAQUE_TYPE_3(GrandOverflowStepper,Stepper,Heaper);
+#endif /* GRANTABP_OXX */
+

@@ -1,0 +1,28 @@
+Create arrays
+Creating TestExecutor
+Filling the arrays
+SmallDyingThing #0 is born.
+SmallDyingThing #1 is born.
+SmallDyingThing #2 is born.
+SmallDyingThing #3 is born.
+SmallDyingThing #4 is born.
+SmallDyingThing #5 is born.
+SmallDyingThing #6 is born.
+SmallDyingThing #7 is born.
+SmallDyingThing #8 is born.
+SmallDyingThing #9 is born.
+SmallDyingThing #10 is born.
+SmallDyingThing #11 is born.
+SmallDyingThing #12 is born.
+SmallDyingThing #13 is born.
+SmallDyingThing #14 is born.
+SmallDyingThing #15 is born.
+First GC
+SmallDyingThings weakly at 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 
+NULLing 1 5 9 13 
+Second GC
+SmallDyingThing #1 has passed on.
+SmallDyingThing #5 has passed on.
+SmallDyingThing #9 has passed on.
+SmallDyingThing #13 has passed on.
+SmallDyingThings weakly at 0 2 3 4 6 7 8 10 11 12 14 15 

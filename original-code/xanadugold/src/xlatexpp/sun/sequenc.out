@@ -1,0 +1,3 @@
+Sequence::numbers() correctly counts leading zeros
+Sequence::numbers() correctly counts trailing zeros
+unary regions tests succeeded

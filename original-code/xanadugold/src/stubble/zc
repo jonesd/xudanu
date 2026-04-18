@@ -1,0 +1,10 @@
+backend2.hf:$//	 - Installed code for const handling in shepherd stubs, and discovered
+backend2.hf:$//	   that const should not be used.
+backend2.hf:$// - changed 'FUNC const:' to 'FUNC | spec: const postspec: const' 
+backend2.hf:$(   IF FUNC | spec: const postspec: const)
+backend2.hf:$// #error Shepherd const member function requires getReal() call.
+backend2.hf:)$(IF FUNC | spec: const postspec: const) const$(FI) {
+backend2.hf:$// !!!! NOTE:  In four places below, const protection is overridden
+backend2.hf:$//             with casts, to allow shepherds to swap in when const
+backend2.hf:	    ($(IF FUNC | spec: const postspec: const)($(CLASS)Stub *)$(FI)$///
+backend2.hf:    (($(IF FUNC | spec: const postspec: const)($(CLASS)Stub *)$(FI)this)->getReal());

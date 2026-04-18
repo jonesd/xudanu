@@ -1,0 +1,2 @@
+Let me explore the codebase to gather evidence before answering.
+Let me look at the core source files and any new project code.

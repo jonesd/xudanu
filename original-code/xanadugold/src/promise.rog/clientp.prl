@@ -1,0 +1,714 @@
+$special{"Promise"} = "manual ptrvar";
+
+$special{"Value"} = "ptrvar";
+$special{"IntValue"} = "manual ptrvar";
+$special{"FloatValue"} = "manual ptrvar";
+
+$special{"Position"} = "ptrvar";
+$special{"Integer"} = "ptrvar";
+$special{"Real"} = "ptrvar";
+$special{"Sequence"} = "ptrvar";
+
+$special{"Mapping"} = "ptrvar";
+$special{"IntegerMapping"} = "ptrvar";
+
+$before{"OXX"} = "
+#ifndef XU_XANADU_OXX
+#define XU_XANADU_OXX
+
+#include \"opaque.hxx\"
+#include \"scalar.oxx\"
+
+XU_TYPE_2(XuDetectorHook,XuCounted)
+XU_TYPE_3(XuWaitHook,XuDetectorHook,XuCounted)
+XU_TYPE_3(XuStatusHook,XuDetectorHook,XuCounted)
+XU_TYPE_3(XuRevisionHook,XuDetectorHook,XuCounted)
+XU_TYPE_3(XuFillHook,XuDetectorHook,XuCounted)
+XU_TYPE_3(XuFillRangeHook,XuDetectorHook,XuCounted)
+
+";
+
+$extra{"OXX"} = "
+#endif /* XU_XANADU_OXX */
+";
+
+$before{"H"} = "
+#ifndef XU_XANADU_H
+#define XU_XANADU_H
+
+#define XU_COUNTED_CLASS -1
+
+#define XU_INVALID_PROMISE_SPEC_PROBLEM 1001
+#define XU_HUMBER_TOO_BIG_PROBLEM 1002
+#define XU_STEPPER_EXHAUSTED_PROBLEM 1003
+#define XU_BUFFER_TOO_SMALL_PROBLEM 1004
+#define XU_CONNECTION_TERMINATED_PROBLEM 1005
+#define XU_FATAL_ERROR_PROBLEM 1006
+#define XU_CAST_VIOLATION_PROBLEM 1007
+#define XU_MUST_BE_FULFILLED_PROBLEM 1009
+#define XU_NO_SUCH_TRANSPORT_PROBLEM 1010
+#define XU_COULD_NOT_CONNECT_PROBLEM 1011
+#define XU_COULD_NOT_NEGOTIATE_PROBLEM 1012
+#define XU_MUST_NOT_BE_NULL_PROBLEM 1013
+#define XU_TOO_MANY_DETECTORS_PROBLEM 1014
+#define XU_CANT_NEGOTIATE_PROBLEM 1015
+#define XU_NEGOTIATION_FAILED_PROBLEM 1016
+";
+
+$extra{"H"} = "
+#endif /* XU_XANADU_H */
+";
+
+$before{"HXX"} = "
+#ifndef XU_XANADU_HXX
+#define XU_XANADU_HXX
+
+#include \"compat.hxx\"
+#include \"blasts.h\"
+#include \"opaquep.hxx\"
+#include \"xanadu.h\"
+#include \"xanadu.oxx\"
+#include \"xanadup.oxx\"
+
+#include \"xanadup.hxx\"
+
+class XuDetectorHook : public XuCounted {
+
+		XU_PROLOGUE(XuDetectorHook)
+
+	public: /* delete */
+		~XuDetectorHook ();
+
+	protected: /* create */
+		XuDetectorHook ();
+
+	private: /* special accessing */
+		friend class XuServer;
+		friend class XuWork;
+		friend class XuRangeElement;
+		friend class XuEdition;
+
+		void setDetector (XuPromiseP detector);
+
+	private: /* variables */
+		XuPromiseP myDetector;
+		XuIntVar mySequence; 
+};
+		
+";
+
+$before{"IXX"} =
+"
+#ifndef XU_XANADU_IXX
+#define XU_XANADU_IXX
+
+#include \"xanadu.h\"
+
+";
+
+$extra{"IXX"} =
+"
+
+#endif /* XU_XANADU_IXX */
+";
+
+
+$before{"CXX"} =
+"
+#include <stream.h>
+#include <string.h>
+#include <stdlib.h>
+
+#include \"xanadu.hxx\"
+#include \"xanadup.hxx\"
+#include \"xanadu.ixx\"
+
+ostream& operator<< (ostream& oo, XuCountedP obj)
+{
+    if (obj == XU_NULL) {
+	oo << \"XU_NULL\";
+    } else {
+	obj->printOn (oo);
+    }
+    return oo;
+}
+
+";
+
+$before{"Promise"} = "
+
+ostream& operator << (ostream& oo, XuCountedP obj);
+";
+
+$extra{"Promise"} = "
+	public: /* printing */
+
+		virtual void printOn (ostream& oo);
+
+	public: /* status */
+
+		XuBooleanVar isReady ();
+		/* TRUE if it's ready and broken, otherwise FALSE */
+		XuBooleanVar isBroken ();
+		/* isReady() && ! isBroken() */
+		XuBooleanVar isFulfilled ();
+
+		/* zero if (!isBroken()) */
+		XuIntVar problem ();
+
+		/* for reporting back to customer support - the source of the problem */
+		XuIntVar source ();
+
+		/* NULL unless problem () returns XuBroken_PROMISE */
+		XuPromiseP XU_OR_NULL excuse ();
+
+	public: /* comm */
+
+		/* this will be isReady () afterwards */
+		void force (); /* thingToDo: name? */
+
+		/* all existing promises will be isReady() afterwards */
+		static void forceAll (); /* thingToDo: name, location? */
+
+	/* ------ INTERNAL ------ */
+
+	public: /* storage */
+
+		virtual void destroy ();
+
+
+	public: /* internal comm */
+
+		/* cause an error if not fulfilled */
+		void mustBeFulfilled ();
+
+		/* force this promise if it is not in an XuTry block */
+		void forceIfNeeded ();
+
+		/* remember the sequence->Promise mapping until the next force */
+		void rememberNumber ();
+
+		XuIntVar sequence ();
+
+	protected: /* types */
+
+	/* thingToDo: move to private file as global functions? */
+
+		static XuPromiseP actualCast (XuPromiseSpecP spec, XuPromiseP obj);
+		static XuBooleanValueP actualIsTypeOf (XuPromiseSpecP spec, XuPromiseP obj);
+
+	private: /* accessing */
+
+		friend class XuConnection;
+
+		void beBroken (XuIntVar problem, XuIntVar source);
+		void beExcused (XuPromiseP excuse);
+
+	protected: /* accessing */
+
+		friend class XuConnection;
+		friend class XuPromiseSpec;
+		friend class XuDetectorHook;
+
+	private: /* instance variables */
+
+		XuIntVar mySequence; /* sequence number */
+		XuIntVar myProblem; /* if broken, then the problem number; else 0 */
+		XuIntVar mySource; /* if broken, then a reference number for support; else 0 */
+		XuPromiseP myExcuse; /* if myProblem = XuBroken_PROMISE, then the excuse; else XU_NULL */
+";
+
+$special{"Promise::cast"} = "omit";
+$special{"Promise::isKindOf"} = "omit";
+
+$special{"Adminer::shutdown"} = "omit";
+
+$extra{"Adminer"} =
+"
+	public:
+		void shutdown ();
+";
+
+$special{"IntValue::import"} = "omit";
+$extra{"IntValue"} =
+"
+	public: /* create */
+
+		static XuBooleanValueP true ();
+		static XuBooleanValueP false ();
+		static XuIntValueP zero () {
+			return false ();
+		}
+
+		/* make a new promise which can be sent to the server */
+		static XuIntValueP signedMake (XuIntVar value);
+    		static XuIntValueP unsignedMake (XuUIntVar value);
+
+		/* make a new promise which can be sent to the server */
+		/* makes a copy of the bytes representing the humber */
+		static XuIntValueP humberMake (XuBufferVar value);
+
+	public: /* accessing */
+
+/*		XuIntVar precision (); thingToDo: omit or rename? */
+
+		XuIntVar asInt ();
+
+		XuUIntVar asUInt ();
+
+		XuBooleanVar asBoolean ();
+
+		/* if it is too big to fit in XuIntVar */
+		XuBooleanVar isTooBig ();
+
+		/* how many bytes it takes to store the humber */
+		XuIntVar sizeofHumber ();
+
+		/* put the bytes representing the humber into a buffer */
+		void toBuffer (XuBufferVar humber, XuIntVar size);
+
+	public: /* derived arithmetic */
+
+		XuIntValueP negated ();
+
+		XuBooleanValueP notEquals (XuIntValueP other);
+
+		XuBooleanValueP isLT (XuIntValueP other);
+
+		XuBooleanValueP isGT (XuIntValueP other);
+
+		XuBooleanValueP isLE (XuIntValueP other);
+
+		XuIntValueP rightShift (XuIntValueP other);
+
+		XuIntValueP bitwiseComplement ();
+
+		XuBooleanValueP logicalNot ();
+
+		XuBooleanValueP logicalAnd (XuBooleanValueP other);
+
+		XuBooleanValueP logicalOr (XuBooleanValueP other);
+		
+
+	/* ------ INTERNAL ------ */
+
+	private: /* special accessing */
+
+		friend class XuConnection;
+
+		void setFromInt (XuIntVar value);
+
+		void setValue (XuIntVar value) ;
+		void setTooBig (XuBooleanVar tooBig);
+		void setHumber (XuBufferVar humber);
+
+		static XuIntValueP make (XuIntVar sequence,
+				XuIntVar value,
+				XuBooleanVar isTooBig,
+				XuBufferVar humber);
+
+	public: /* create */
+
+		virtual ~ XuIntValue ();
+
+	private: /* special create */
+
+		XuIntValue (XuIntVar sequence,
+				XuIntVar value,
+				XuBooleanVar isTooBig,
+				XuBufferVar humber);
+
+	private: /* variables */
+
+		XuIntVar myValue; /* if isFullfilled() && ! isTooBig () */
+		XuBooleanVar myIsTooBig; /* if value doesn't fit in XuIntVar */
+		XuBufferVar XU_OR_NULL myHumber; /* NULL until response comes back */
+
+		static XuIntValueP True;
+		static XuIntValueP False;
+";
+
+$special{"FloatValue::import"} = "omit";
+$extra{"FloatValue"} =
+"
+	public: /* create */
+
+		static XuFloatValueP make (XuIEEE8Var value);
+		static XuFloatValueP make (XuIEEE32Var value);
+		static XuFloatValueP make (XuIEEE64Var value);
+		static XuFloatValueP make (XuIEEE128Var value);
+		static XuFloatValueP make (float value);
+		static XuFloatValueP make (double value);
+
+	public: /* accessing */
+
+		XuIEEE8Var asIEEE8 ();
+		XuIEEE32Var asIEEE32 ();
+		XuIEEE64Var asIEEE64 ();
+		XuIEEE128Var asIEEE128 ();
+		float asFloat ();
+		double asDouble ();
+
+/*		XuIntVar precision (); thingToDo: omit or rename? */
+
+	/* ------ INTERNAL ------ */
+
+	private: /* special accessing */
+
+		friend class XuConnection;
+
+		void setValue (XuIEEE8Var value);
+		void setValue (XuIEEE32Var value);
+		void setValue (XuIEEE64Var value);
+		void setValue (XuIEEE128Var value);
+		void setValue (float value);
+		void setValue (double value);
+		void setValue (XuBufferVar value, XuIntVar size);
+
+	private: /* variables */
+
+  		XuBooleanVar myHasValue;
+		char myValue[16];
+		int  mySize;
+";
+
+$before{"WaitDetector"} =
+"
+class XuWaitHook : public XuDetectorHook {
+		XU_PROLOGUE(XuWaitHook)
+	public:
+		XuWaitHook () {};
+		virtual void done () = 0;
+};
+";
+
+$before{"StatusDetector"} =
+"
+class XuStatusHook : public XuDetectorHook {
+		XU_PROLOGUE(XuStatusHook)
+	public:
+		XuStatusHook () {};
+		virtual void grabbed (XuWorkP, XuIDP, XuIntValueP) = 0;
+		virtual void released (XuWorkP, XuIntValueP) = 0;
+};
+";
+
+$before{"RevisionDetector"} =
+"
+class XuRevisionHook : public XuDetectorHook {
+		XU_PROLOGUE(XuRevisionHook)
+	public:
+		XuRevisionHook () {};
+		virtual void revised (XuEditionP, XuIDP, XuIntValueP, XuIntValueP) = 0;
+};
+";
+
+$before{"FillDetector"} =
+"
+class XuFillHook : public XuDetectorHook {
+		XU_PROLOGUE(XuFillHook)
+	public:
+		XuFillHook () {};
+		virtual void filled (XuRangeElementP) = 0;
+};
+";
+
+$before{"FillRangeDetector"} =
+"
+class XuFillRangeHook : public XuDetectorHook {
+		XU_PROLOGUE(XuFillRangeHook)
+	public:
+		XuFillRangeHook () {};
+		virtual void rangeFilled (XuEditionP) = 0;
+};
+";
+
+$special{"Array"} = "ptrvar";
+
+$special{"Array::export"} = "omit";
+
+$extra{"Array"} =
+"
+	public: /* bulk accessing */
+		XuIntValueP export (
+			XuBufferVar buffer,
+			XuIntVar sizeofBuffer);
+		XuIntValueP export (
+			XuBufferVar buffer,
+			XuIntVar sizeofBuffer,
+			XuIntValueP start);
+		XuIntValueP export (
+			XuBufferVar buffer,
+			XuIntVar sizeofBuffer,
+			XuIntValueP start,
+			XuIntValueP count);
+";
+
+$special{"IntArray"} = "ptrvar";
+
+$special{"IntArray::import"} = "omit";
+
+$extra{"IntArray"} = "
+	public: /* create */
+		static XuIntArrayP string (const char * string);
+		static XuIntArrayP import (
+			XuIntVar count,
+			XuIntVar precision,
+			XuBufferVar contents);
+";
+
+$special{"HumberArray::import"} = "omit";
+
+$extra{"HumberArray"} = 
+"
+		static XuHumberArrayP import (XuIntVar count, XuBufferVar * contents);
+";
+
+$special{"FloatArray::import"} = "omit";
+
+$extra{"FloatArray"} =
+"
+		static XuFloatArrayP import (
+			XuIntVar count,
+			XuIntVar bitCount,
+			XuBufferVar contents);
+";
+
+$special{"PtrArray::import"} = "omit";
+
+$extra{"PtrArray"} =
+"
+		static XuPtrArrayP import (XuIntVar count, XuPromiseP * contents);
+
+		static XuPtrArrayP with (XuPromiseP a);
+		static XuPtrArrayP with (XuPromiseP a, XuPromiseP b);
+		static XuPtrArrayP with (XuPromiseP a, XuPromiseP b, XuPromiseP c);
+";
+
+$extra{"Sequence"} = 
+"
+		static XuSequenceP string (XuStringVar);
+";
+
+$extra{"KeyMaster"} =
+"
+	public: /* library */
+
+		static XuKeyMasterP universalPublic ();
+";
+
+$special{"Server::forceAll"} = "omit";
+$special{"Server::release"} = "omit";
+$special{"Server"} = "static";
+
+$special{"Server::waitForWrite"} = "omit";
+$special{"Server::waitForConsequences"} = "omit";
+
+$special{"Server"} = "static";
+
+$extra{"Server"} =
+"
+	public:
+		static XuWaitDetectorP waitForWrite (XuWaitHookP);
+		static XuWaitDetectorP waitForConsequences (XuWaitHookP);
+
+	public: /* library */
+
+		static XuIntVar connect (XuStringVar transport,XuStringVar server);
+
+		static XuIDP clubID (XuSequenceP clubName);
+		static XuSequenceP clubName (XuIDP clubID);
+		static XuSequenceRegionP clubNames ();
+
+	private: /* connect */
+
+		static XuBooleanVar negotiate (XuPortalP, XuStringVar);
+";
+
+$special{"Work::addStatusDetector"} = "omit";
+$special{"Work::addRevisionDetector"} = "omit";
+
+$extra{"Work"} =
+"
+	public:
+		XuStatusDetectorP addStatusDetector (XuStatusHookP);
+		XuRevisionDetectorP addRevisionDetector (XuRevisionHookP);
+";
+
+$special{"RangeElement::addFillDetector"} = "omit";
+
+$extra{"RangeElement"} =
+"
+	public:
+		XuFillDetectorP addFillDetector (XuFillHookP);
+";
+
+$special{"Edition::addFillRangeDetector"} = "omit";
+
+$extra{"Edition"} =
+"
+	public:
+		XuFillRangeDetectorP addFillRangeDetector (XuFillRangeHookP);
+";
+
+$extra{"CrossRegion"} =
+"
+	public: /* library */
+		static XuCrossRegionP endorsements (XuIDRegionP,XuIDRegionP);
+";
+
+$extra{"CrossSpace"} =
+"
+	public: /* library */
+		static XuCrossSpaceP endorsements ();
+";
+
+$extra{"Tuple"} =
+"
+	public: /* library */
+		static XuTupleP endorsement (XuIDP,XuIDP);
+";
+
+$before{"TableStepper"} =
+"
+extern XuIntVar XuEmptyStepperProblems[];
+
+#define XuFor(ValueClass,valueVar,stepper) {					\\
+	XuStepperP xuStepper = (stepper); 					\\
+	XuBooleanVar xuAtEnd = FALSE; 						\\
+	for (;; xuKludgeStep (xuStepper)) { 					\\
+		XU_CAT(ValueClass,P) valueVar; 					\\
+		XuTry(XuEmptyStepperProblems) { 				\\
+			valueVar = ValueClass::cast (xuStepper->get ()); 	\\
+		} XuCatch(xuProblem) { 						\\
+			xuAtEnd = TRUE; 					\\
+		} XuEndTry 							\\
+		if (xuAtEnd) { 							\\
+			break; 							\\
+		} 								\\
+		{
+
+#define XuEndFor } } }
+
+#define XuForPairs(PosClass,posVar,ValueClass,valueVar,stepper) {		\\
+	XuTableStepperP xuStepper = (stepper); 					\\
+	XuBooleanVar xuAtEnd = FALSE; 						\\
+	XuVoidP xuTemp;								\\
+	for (;; xuKludgeStep (xuStepper)) { 					\\
+		XU_CAT(ValueClass,P) valueVar; 					\\
+		XU_CAT(PosClass,P) posVar; 					\\
+		XuTry(XuEmptyStepperProblems) { 				\\
+			posVar = PosClass::cast (xuStepper->position ()); 	\\
+			valueVar = ValueClass::cast (xuStepper->get ()); 	\\
+		} XuCatch(xuProblem) { 						\\
+			xuAtEnd = TRUE; 					\\
+		} XuEndTry 							\\
+		if (xuAtEnd) { 							\\
+			break; 							\\
+		} 								\\
+		{
+
+#define XuEndForPairs } } }
+
+";
+	
+$extra{"HXX"} =
+"
+/*////////////////////////// FLUIDS //////////////////////////////// */
+
+XU_DECLARE_FLUID_TYPE(XuID)
+XU_DECLARE_FLUID_TYPE(XuKeyMaster)
+
+XU_DECLARE_FLUID(XuKeyMaster,XuCurrentKeyMaster)
+XU_DECLARE_FLUID(XuID,XuCurrentAuthor)
+XU_DECLARE_FLUID(XuID,XuInitialOwner)
+XU_DECLARE_FLUID(XuID,XuInitialReadClub)
+XU_DECLARE_FLUID(XuID,XuInitialEditClub)
+XU_DECLARE_FLUID(XuID,XuInitialSponsor)
+
+#define XuBind(VarName,value) 						\\
+	{ 								\\
+		XU_CAT(VarName,Restorer) XU_CAT3(xu,VarName,Restorer) (&VarName,xuTCS); \\
+		VarName.set (value);
+
+#define XuEndBind	 						\\
+	}
+
+/*/////////////////////// DELAY / TRY / CATCH ////////////////////// */
+
+#define XuTry(ProblemList) 						\\
+	{	XuErrorStepperP xuErrors;				\\
+		{	XuErrorCollector xuCollector (ProblemList,xuTCS);\\
+			{
+
+#define XuCatch(Decl) 							\\
+			} 						\\
+			XuPromise::forceAll (); 			\\
+			xuErrors = xuCollector.errors ();	 	\\
+		} 							\\
+		for (; ! xuErrors->atEnd (); xuErrors->step ()) { 	\\
+			XuPromiseP Decl = xuErrors->get ();		\\
+			{
+
+#define XuEndTry 							\\
+			} 						\\
+		} 							\\
+	}
+
+#define XU_ALL_BUT	-1
+extern XuIntVar XuNoProblems[];
+extern XuIntVar XuAllProblems[];
+
+#define XuDelay							\\
+	{	XuErrorCollector xuCollector (XuAllProblems,xuTCS);\\
+		{
+
+#define	XuEndDelay						\\
+		} 						\\
+		XuPromise::forceAll (); 			\\
+	}
+
+
+#define XuIf(expr) 					\\
+	{ XuBooleanValueP xuInternalP;			\\
+	  XuDelay {					\\
+		xuInternalP = (expr); 			\\
+	  } XuEndDelay					\\
+          if (!xuInternalP->isBroken() 			\\
+	      && xuInternalP->asBoolean())
+
+#define XuElse 						\\
+          else if (!xuInternalP->isBroken() 		\\
+	      && !xuInternalP->asBoolean())
+
+#define XuBroken 					\\
+          else if (xuInternalP->isBroken())
+
+#define XuEndIf 					\\
+	}
+
+#define XuSwitch(expr) 					\\
+	{ XuIntValueP xuInternalP;			\\
+	  XuDelay {					\\
+		xuInternalP = (expr); 			\\
+	  } XuEndDelay					\\
+          if (!xuInternalP->isBroken()) 		\\
+	     switch(xuInternalP->asInt())
+
+#define XuEndSwitch 					\\
+	}
+
+
+
+#ifdef XU_USE_INLINE2
+#	include \"xanadu.ixx\"
+#endif /* XU_USE_INLINE2 */
+
+#ifdef XU_USE_INLINE1
+#	include \"scalar.ixx\"
+#endif /* XU_USE_INLINE1 */
+
+
+#endif /* XU_XANADU_HXX */
+";
+

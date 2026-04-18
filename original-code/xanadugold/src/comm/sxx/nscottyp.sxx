@@ -1,0 +1,147 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define NSCOTTYP_SXX
+
+/*----------------------- BEGIN ReadArrayStream -----------------------*/
+DEFINE_CLASS_CATEGORY(ReadArrayStream,XnReadStream)
+
+void ReadArrayStream::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+BooleanVar ReadArrayStream::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 ReadArrayStream::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of ReadArrayStream ====== */
+
+void ReadArrayStream::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ReadArrayStream*)origin)->myBuffer,
+				       (Heaper**)&myBuffer);
+	} else {
+		myBuffer.forwardTo (Heaplet::forward (myBuffer));
+	}
+}
+
+/*----------------------- END ReadArrayStream -----------------------*/
+
+
+/*----------------------- BEGIN ReadMemStream -----------------------*/
+DEFINE_CLASS_CATEGORY(ReadMemStream,XnReadStream)
+
+void ReadMemStream::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+BooleanVar ReadMemStream::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 ReadMemStream::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of ReadMemStream ====== */
+
+void ReadMemStream::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END ReadMemStream -----------------------*/
+
+
+/*----------------------- BEGIN WriteArrayStream -----------------------*/
+DEFINE_CLASS_CATEGORY(WriteArrayStream,XnWriteStream)
+
+void WriteArrayStream::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+BooleanVar WriteArrayStream::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 WriteArrayStream::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of WriteArrayStream ====== */
+
+void WriteArrayStream::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((WriteArrayStream*)origin)->myCollection,
+				       (Heaper**)&myCollection);
+	} else {
+		myCollection.forwardTo (Heaplet::forward (myCollection));
+	}
+}
+
+/*----------------------- END WriteArrayStream -----------------------*/
+
+
+/*----------------------- BEGIN WriteMemStream -----------------------*/
+DEFINE_CLASS_CATEGORY(WriteMemStream,XnWriteStream)
+
+void WriteMemStream::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+BooleanVar WriteMemStream::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 WriteMemStream::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of WriteMemStream ====== */
+
+void WriteMemStream::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END WriteMemStream -----------------------*/
+

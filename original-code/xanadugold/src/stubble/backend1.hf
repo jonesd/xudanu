@@ -1,0 +1,16 @@
+$//
+$//	backend1.hf:  StubbleForm.f additions for shepherds, part 1 of 2
+$//
+$//	Included when WITH_BACKEND_HOOKS is defined via -F
+$//
+$#ifndef BACKEND1_HF_IDENT
+/* $$Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $$ */
+$#define BACKEND1_HF_IDENT
+$#endif /* BACKEND1_HF_IDENT */
+$(  IF CLASS attr: SHEPHERD_PATRIARCH)$//           ** SHEPHERD_PATRIARCH(): **
+/* ====== Shepherd Patriarch Class "$(CLASS)" ======= */
+$(  ELSE)$(IF CLASS attr: SHEPHERD_ANCESTOR)$//     ** SHEPHERD_ANCESTOR(): **
+/* ====== Shepherd Ancestor Class "$(CLASS)" ======= */
+$(  ELSE)$//                                        ** COPY(): **
+/* ====== Copy Class "$(CLASS)" ======= */
+$(  FI) $(FI)

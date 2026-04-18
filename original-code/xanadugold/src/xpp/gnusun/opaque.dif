@@ -1,0 +1,4 @@
+29c29
+< Testing SPTR() and CHKPTR() destroyIt()
+---
+> Testing GPTR() and CHKPTR() destroyIt()

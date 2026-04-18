@@ -1,0 +1,45 @@
+/* Copyright Xanadu Operating Company.  All Rights Reserved. */
+
+/******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+***************************************************************************
+Output from Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989
+*/
+
+#ifndef NADMINX_OXX
+#define NADMINX_OXX
+
+
+#ifndef NADMINX_OXX
+#include "nadminx.oxx"
+#endif /* NADMINX_OXX */
+
+#ifndef WRAPPERX_OXX
+#include "wrapperx.oxx"
+#endif /* WRAPPERX_OXX */
+
+
+
+OPAQUE_TYPE_3(FeClubDescription,FeWrapper,Heaper);
+OPAQUE_TYPE_3(FeLockSmith,FeWrapper,Heaper);
+OPAQUE_TYPE_4(FeBooLockSmith,FeLockSmith,FeWrapper,Heaper);
+OPAQUE_TYPE_4(FeChallengeLockSmith,FeLockSmith,FeWrapper,Heaper);
+OPAQUE_TYPE_4(FeMatchLockSmith,FeLockSmith,FeWrapper,Heaper);
+OPAQUE_TYPE_4(FeMultiLockSmith,FeLockSmith,FeWrapper,Heaper);
+OPAQUE_TYPE_4(FeWallLockSmith,FeLockSmith,FeWrapper,Heaper);
+OPAQUE_TYPE_2(FeSession,Heaper);
+OPAQUE_TYPE_2(Lock,Heaper);
+OPAQUE_TYPE_3(BooLock,Lock,Heaper);
+OPAQUE_TYPE_3(ChallengeLock,Lock,Heaper);
+OPAQUE_TYPE_3(MatchLock,Lock,Heaper);
+OPAQUE_TYPE_3(MultiLock,Lock,Heaper);
+OPAQUE_TYPE_3(WallLock,Lock,Heaper);
+#endif /* NADMINX_OXX */
+

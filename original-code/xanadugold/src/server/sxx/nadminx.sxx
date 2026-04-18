@@ -1,0 +1,412 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define NADMINX_SXX
+
+/*----------------------- BEGIN FeClubDescription -----------------------*/
+DEFINE_CLASS_CATEGORY(FeClubDescription,FeWrapper)
+DEFINE_OPAQUE_TYPE(FeClubDescription);
+
+void FeClubDescription::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FeClubDescription" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END FeClubDescription -----------------------*/
+
+
+/*----------------------- BEGIN FeLockSmith -----------------------*/
+DEFINE_CLASS_CATEGORY(FeLockSmith,FeWrapper)
+DEFINE_OPAQUE_TYPE(FeLockSmith);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FeLockSmith" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END FeLockSmith -----------------------*/
+
+
+/*----------------------- BEGIN FeBooLockSmith -----------------------*/
+DEFINE_CLASS_CATEGORY(FeBooLockSmith,FeLockSmith)
+DEFINE_OPAQUE_TYPE(FeBooLockSmith);
+
+void FeBooLockSmith::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FeBooLockSmith" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END FeBooLockSmith -----------------------*/
+
+
+/*----------------------- BEGIN FeChallengeLockSmith -----------------------*/
+DEFINE_CLASS_CATEGORY(FeChallengeLockSmith,FeLockSmith)
+DEFINE_OPAQUE_TYPE(FeChallengeLockSmith);
+
+void FeChallengeLockSmith::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FeChallengeLockSmith" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END FeChallengeLockSmith -----------------------*/
+
+
+/*----------------------- BEGIN FeMatchLockSmith -----------------------*/
+DEFINE_CLASS_CATEGORY(FeMatchLockSmith,FeLockSmith)
+DEFINE_OPAQUE_TYPE(FeMatchLockSmith);
+
+void FeMatchLockSmith::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FeMatchLockSmith" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END FeMatchLockSmith -----------------------*/
+
+
+/*----------------------- BEGIN FeMultiLockSmith -----------------------*/
+DEFINE_CLASS_CATEGORY(FeMultiLockSmith,FeLockSmith)
+DEFINE_OPAQUE_TYPE(FeMultiLockSmith);
+
+void FeMultiLockSmith::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FeMultiLockSmith" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END FeMultiLockSmith -----------------------*/
+
+
+/*----------------------- BEGIN FeWallLockSmith -----------------------*/
+DEFINE_CLASS_CATEGORY(FeWallLockSmith,FeLockSmith)
+DEFINE_OPAQUE_TYPE(FeWallLockSmith);
+
+void FeWallLockSmith::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FeWallLockSmith" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END FeWallLockSmith -----------------------*/
+
+
+/*----------------------- BEGIN Fluid_CurrentSession -----------------------*/
+
+/*----------------------- END Fluid_CurrentSession -----------------------*/
+
+
+/*----------------------- BEGIN CurrentSession_Bomb -----------------------*/
+
+/*----------------------- END CurrentSession_Bomb -----------------------*/
+
+
+/*----------------------- BEGIN FeSession -----------------------*/
+DEFINE_CLASS_CATEGORY(FeSession,Heaper)
+DEFINE_OPAQUE_TYPE(FeSession);
+
+void FeSession::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "FeSession" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of FeSession ====== */
+
+void FeSession::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((FeSession*)origin)->myInitialLogin,
+				       (Heaper**)&myInitialLogin);
+	} else {
+		myInitialLogin.forwardTo (Heaplet::forward (myInitialLogin));
+	}
+}
+
+/*----------------------- END FeSession -----------------------*/
+
+
+/*----------------------- BEGIN Lock -----------------------*/
+DEFINE_CLASS_CATEGORY(Lock,Heaper)
+DEFINE_OPAQUE_TYPE(Lock);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "Lock" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+BooleanVar Lock::isEqual (Heaper * other)
+{
+    return this == other;
+}
+
+UInt32 Lock::actualHashForEqual ()
+{
+    return Heaper::takeOop ();
+}
+
+/* ====== Object Migrator for Scavenging of Lock ====== */
+
+void Lock::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((Lock*)origin)->myLoginClubID,
+				       (Heaper**)&myLoginClubID);
+		Heaplet::forwardToOld ((Heaper**)&((Lock*)origin)->myLockSmith,
+				       (Heaper**)&myLockSmith);
+	} else {
+		myLoginClubID.forwardTo (Heaplet::forward (myLoginClubID));
+		myLockSmith.forwardTo (Heaplet::forward (myLockSmith));
+	}
+}
+
+/*----------------------- END Lock -----------------------*/
+
+
+/*----------------------- BEGIN BooLock -----------------------*/
+DEFINE_CLASS_CATEGORY(BooLock,Lock)
+DEFINE_OPAQUE_TYPE(BooLock);
+
+void BooLock::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "BooLock" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END BooLock -----------------------*/
+
+
+/*----------------------- BEGIN ChallengeLock -----------------------*/
+DEFINE_CLASS_CATEGORY(ChallengeLock,Lock)
+DEFINE_OPAQUE_TYPE(ChallengeLock);
+
+void ChallengeLock::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "ChallengeLock" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of ChallengeLock ====== */
+
+void ChallengeLock::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->Lock::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ChallengeLock*)origin)->myChallenge,
+				       (Heaper**)&myChallenge);
+		Heaplet::forwardToOld ((Heaper**)&((ChallengeLock*)origin)->myResponse,
+				       (Heaper**)&myResponse);
+	} else {
+		myChallenge.forwardTo (Heaplet::forward (myChallenge));
+		myResponse.forwardTo (Heaplet::forward (myResponse));
+	}
+}
+
+/*----------------------- END ChallengeLock -----------------------*/
+
+
+/*----------------------- BEGIN MatchLock -----------------------*/
+DEFINE_CLASS_CATEGORY(MatchLock,Lock)
+DEFINE_OPAQUE_TYPE(MatchLock);
+
+void MatchLock::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "MatchLock" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END MatchLock -----------------------*/
+
+
+/*----------------------- BEGIN MultiLock -----------------------*/
+DEFINE_CLASS_CATEGORY(MultiLock,Lock)
+DEFINE_OPAQUE_TYPE(MultiLock);
+
+void MultiLock::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "MultiLock" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of MultiLock ====== */
+
+void MultiLock::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	this->Lock::migrate(origin, destinationIsOld);
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((MultiLock*)origin)->myLocks,
+				       (Heaper**)&myLocks);
+	} else {
+		myLocks.forwardTo (Heaplet::forward (myLocks));
+	}
+}
+
+/*----------------------- END MultiLock -----------------------*/
+
+
+/*----------------------- BEGIN WallLock -----------------------*/
+DEFINE_CLASS_CATEGORY(WallLock,Lock)
+DEFINE_OPAQUE_TYPE(WallLock);
+
+void WallLock::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "WallLock" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+
+
+/*----------------------- END WallLock -----------------------*/
+

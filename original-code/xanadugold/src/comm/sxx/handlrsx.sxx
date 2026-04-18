@@ -1,0 +1,352 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define HANDLRSX_SXX
+
+/*----------------------- BEGIN RequestHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(RequestHandler,Heaper)
+DEFINE_OPAQUE_TYPE(RequestHandler);
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END RequestHandler -----------------------*/
+
+
+/*----------------------- BEGIN BHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(BHHandler,RequestHandler)
+
+void BHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of BHHandler ====== */
+
+void BHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END BHHandler -----------------------*/
+
+
+/*----------------------- BEGIN BHHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(BHHHandler,RequestHandler)
+
+void BHHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of BHHHandler ====== */
+
+void BHHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END BHHHandler -----------------------*/
+
+
+/*----------------------- BEGIN BHHHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(BHHHHandler,RequestHandler)
+
+void BHHHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of BHHHHandler ====== */
+
+void BHHHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END BHHHHandler -----------------------*/
+
+
+/*----------------------- BEGIN HHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(HHandler,RequestHandler)
+
+void HHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END HHandler -----------------------*/
+
+
+/*----------------------- BEGIN HHBHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(HHBHandler,RequestHandler)
+
+void HHBHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of HHBHandler ====== */
+
+void HHBHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END HHBHandler -----------------------*/
+
+
+/*----------------------- BEGIN HHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(HHHandler,RequestHandler)
+
+void HHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of HHHandler ====== */
+
+void HHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END HHHandler -----------------------*/
+
+
+/*----------------------- BEGIN HHHBHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(HHHBHandler,RequestHandler)
+
+void HHHBHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of HHHBHandler ====== */
+
+void HHHBHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END HHHBHandler -----------------------*/
+
+
+/*----------------------- BEGIN HHHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(HHHHandler,RequestHandler)
+
+void HHHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of HHHHandler ====== */
+
+void HHHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END HHHHandler -----------------------*/
+
+
+/*----------------------- BEGIN HHHHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(HHHHHandler,RequestHandler)
+
+void HHHHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of HHHHHandler ====== */
+
+void HHHHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END HHHHHandler -----------------------*/
+
+
+/*----------------------- BEGIN HHHHHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(HHHHHHandler,RequestHandler)
+
+void HHHHHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of HHHHHHandler ====== */
+
+void HHHHHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END HHHHHHandler -----------------------*/
+
+
+/*----------------------- BEGIN HHHHHHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(HHHHHHHandler,RequestHandler)
+
+void HHHHHHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of HHHHHHHandler ====== */
+
+void HHHHHHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END HHHHHHHandler -----------------------*/
+
+
+/*----------------------- BEGIN HHHHHHHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(HHHHHHHHandler,RequestHandler)
+
+void HHHHHHHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of HHHHHHHHandler ====== */
+
+void HHHHHHHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END HHHHHHHHandler -----------------------*/
+
+
+/*----------------------- BEGIN VHBHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(VHBHandler,RequestHandler)
+
+void VHBHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of VHBHandler ====== */
+
+void VHBHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END VHBHandler -----------------------*/
+
+
+/*----------------------- BEGIN VHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(VHHandler,RequestHandler)
+
+void VHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of VHHandler ====== */
+
+void VHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END VHHandler -----------------------*/
+
+
+/*----------------------- BEGIN VHHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(VHHHandler,RequestHandler)
+
+void VHHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of VHHHandler ====== */
+
+void VHHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END VHHHandler -----------------------*/
+
+
+/*----------------------- BEGIN VHHHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(VHHHHandler,RequestHandler)
+
+void VHHHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of VHHHHandler ====== */
+
+void VHHHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END VHHHHandler -----------------------*/
+
+
+/*----------------------- BEGIN VHHHHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(VHHHHHandler,RequestHandler)
+
+void VHHHHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of VHHHHHandler ====== */
+
+void VHHHHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END VHHHHHandler -----------------------*/
+
+
+/*----------------------- BEGIN VHHHHHHandler -----------------------*/
+DEFINE_CLASS_CATEGORY(VHHHHHHandler,RequestHandler)
+
+void VHHHHHHandler::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of VHHHHHHandler ====== */
+
+void VHHHHHHandler::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+	} else {
+	}
+}
+
+/*----------------------- END VHHHHHHandler -----------------------*/
+

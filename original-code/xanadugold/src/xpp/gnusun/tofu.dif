@@ -1,0 +1,32 @@
+2,3c2,3
+< Foo(????)
+< Category("Foo", cat_Heaper)
+---
+> 0x278c58
+> 0x25a8c0
+16,19c16,19
+< new Blaster(2)
+< made Blaster(2)
+< destroying Blaster(2)
+< deleting Blaster(2)
+---
+> new 0x278c88
+> made 0x278c88
+> destroying 0x278c88
+> deleting 0x278c88
+21,25c21,25
+< b == NULL
+< new Blaster(2)
+< made Blaster(2)
+< destroying Blaster(2)
+< deleting Blaster(2)
+---
+> b == 0x0
+> new 0x278ca8
+> made 0x278ca8
+> destroying 0x278ca8
+> deleting 0x278ca8
+27c27
+< b == NULL
+---
+> b == 0x0

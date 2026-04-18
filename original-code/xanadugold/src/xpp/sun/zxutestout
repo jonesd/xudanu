@@ -1,0 +1,147 @@
+===> /Fhypatia/roger/prod/xhs/src/xpp/sun
+cc -g -pg -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include  -sun4 -c  ../ccompatt.c
+cc -g -pg -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -target sun4 -o ccompatt.exe ccompatt.o ccompatc.o 
+csh -c './ccompatt.exe >& ccompat.out && true'
+rm ccompatt.exe
+(diff ../ccompat.ref ccompat.out > ccompat.dif) || (sleep 1; touch ccompat.out; false)
+touch ccompat.dif
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../xcompatt.cxx && (ld -r xcompatt.o ; rm -f xcompatt.o ; mv a.out xcompatt.o ; touch xcompatt.o; true)) || (rm -f xcompatt.o; false)
+"../xcompatt.cxx", line 18: warning:  ::xcompatt_cxx_id defined but not used
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -o xcompatt.exe xcompatt.o ccompatc.o -lm  
+csh -c './xcompatt.exe >& xcompat.out && true'
+rm xcompatt.exe
+(diff ../xcompat.ref xcompat.out > xcompat.dif) || (sleep 1; touch xcompat.out; false)
+touch xcompat.dif
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../crutcht.cxx && (ld -r crutcht.o ; rm -f crutcht.o ; mv a.out crutcht.o ; touch crutcht.o; true)) || (rm -f crutcht.o; false)
+CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -o crutcht.exe crutcht.o ccompatc.o -lm  
+csh -c './crutcht.exe >& crutch.out && true'
+rm crutcht.exe
+(diff ../crutch.ref crutch.out > crutch.dif) || (sleep 1; touch crutch.out; false)
+touch crutch.dif
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../bombt.cxx && (ld -r bombt.o ; rm -f bombt.o ; mv a.out bombt.o ; touch bombt.o; true)) || (rm -f bombt.o; false)
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -o bombt.exe bombt.o bombx.o ccompatc.o -lm  
+csh -c './bombt.exe >& bomb.out && true'
+rm bombt.exe
+(diff ../bomb.ref bomb.out > bomb.dif) || (sleep 1; touch bomb.out; false)
+touch bomb.dif
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../fluidt.cxx && (ld -r fluidt.o ; rm -f fluidt.o ; mv a.out fluidt.o ; touch fluidt.o; true)) || (rm -f fluidt.o; false)
+"../fluidt.cxx", line 125: error:  undefined function fcalloc called
+"../fluidt.cxx", line 125: error: bad pointer initializer: bad operator in constant expression 
+"../fluidt.cxx", line 125: error: bad assignment type: void * = int 
+"../fluidt.cxx", line 127: error: bad argument list for TestSpace::fluidSpace() (no match against any  TestSpace::fluidSpace())
+Compilation failed
+*** Error code 1
+cd ../../xlatexpp/sun ; xumake xxpplibx.o || (rm -f ../../xlatexpp/sun/xxpplibx.o ; false)
+===> /Fhypatia/roger/prod/xhs/src/xlatexpp/sun
+`xxpplibx.o' is up to date.
+cd ../../xlatexpp/sun ; xumake spclibx.o || (rm -f ../../xlatexpp/sun/spclibx.o ; false)
+===> /Fhypatia/roger/prod/xhs/src/xlatexpp/sun
+`spclibx.o' is up to date.
+cd ../../comm/sun ; xumake commlibx.o || (rm -f ../../comm/sun/commlibx.o ; false)
+===> /Fhypatia/roger/prod/xhs/src/comm/sun
+`commlibx.o' is up to date.
+make: Warning: Don't know how to make target `fluid.dif'
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../tofut.cxx && (ld -r tofut.o ; rm -f tofut.o ; mv a.out tofut.o ; touch tofut.o; true)) || (rm -f tofut.o; false)
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -o tofut.exe tofut.o xpplibx.o filetpx.o ../../xlatexpp/sun/xxpplibx.o ../../xlatexpp/sun/spclibx.o ../../comm/sun/commlibx.o -lm  
+csh -c './tofut.exe >& tofu.out && true'
+rm tofut.exe
+(diff ../tofu.ref tofu.out > tofu.dif) || (sleep 1; touch tofu.out; false)
+*** Error code 1
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../initt.cxx && (ld -r initt.o ; rm -f initt.o ; mv a.out initt.o ; touch initt.o; true)) || (rm -f initt.o; false)
+"../initt.cxx", line 14: warning:  ::initt_cxx_id defined but not used
+"../initt.hxx", line 17: warning:  ::initt_hxx_id defined but not used
+"../initt.oxx", line 17: warning:  ::initt_oxx_id defined but not used
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -o initt.exe initt.o xpplibx.o filetpx.o ../../xlatexpp/sun/xxpplibx.o ../../xlatexpp/sun/spclibx.o ../../comm/sun/commlibx.o -lm  
+csh -c './initt.exe >& init.out && true'
+rm initt.exe
+(diff ../init.ref init.out > init.dif) || (sleep 1; touch init.out; false)
+touch init.dif
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../intvart.cxx && (ld -r intvart.o ; rm -f intvart.o ; mv a.out intvart.o ; touch intvart.o; true)) || (rm -f intvart.o; false)
+"../intvart.cxx", line 15: warning:  ::intvart_cxx_id defined but not used
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -o intvart.exe intvart.o xpplibx.o filetpx.o ../../xlatexpp/sun/xxpplibx.o ../../xlatexpp/sun/spclibx.o ../../comm/sun/commlibx.o -lm  
+csh -c './intvart.exe >& intvar.out && true'
+rm intvart.exe
+(diff ../intvar.ref intvar.out > intvar.dif) || (sleep 1; touch intvar.out; false)
+touch intvar.dif
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../parrayt.cxx && (ld -r parrayt.o ; rm -f parrayt.o ; mv a.out parrayt.o ; touch parrayt.o; true)) || (rm -f parrayt.o; false)
+"../parrayt.cxx", line 64: error:  member myHeap undefined
+"../parrayt.cxx", line 97: warning:  dst not used
+Compilation failed
+*** Error code 1
+make: Warning: Don't know how to make target `parray.dif'
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../chooset.cxx && (ld -r chooset.o ; rm -f chooset.o ; mv a.out chooset.o ; touch chooset.o; true)) || (rm -f chooset.o; false)
+"../sxx/chooset.sxx", line 48: warning:  origin not used
+"../sxx/chooset.sxx", line 78: warning:  origin not used
+"../sxx/chooset.sxx", line 108: warning:  origin not used
+"../chooset.hxx", line 17: warning:  ::chooset_hxx_id defined but not used
+"../chooset.oxx", line 17: warning:  ::chooset_oxx_id defined but not used
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -o chooset.exe chooset.o xpplibx.o filetpx.o ../../xlatexpp/sun/xxpplibx.o ../../xlatexpp/sun/spclibx.o ../../comm/sun/commlibx.o -lm  
+csh -c './chooset.exe >& choose.out && true'
+rm chooset.exe
+(diff ../choose.ref choose.out > choose.dif) || (sleep 1; touch choose.out; false)
+touch choose.dif
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../alloct.cxx && (ld -r alloct.o ; rm -f alloct.o ; mv a.out alloct.o ; touch alloct.o; true)) || (rm -f alloct.o; false)
+"../alloct.cxx", line 22: warning:  ::alloct_cxx_id defined but not used
+"../alloct.hxx", line 15: warning:  ::alloct_hxx_id defined but not used
+"../alloct.oxx", line 4: warning:  ::alloct_oxx_id defined but not used
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -o alloct.exe alloct.o xpplibx.o filetpx.o ../../xlatexpp/sun/xxpplibx.o ../../xlatexpp/sun/spclibx.o ../../comm/sun/commlibx.o -lm  
+csh -c './alloct.exe >& alloc.out && true'
+rm alloct.exe
+(diff ../alloc.ref alloc.out > alloc.dif) || (sleep 1; touch alloc.out; false)
+*** Error code 1
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../fhasht.cxx && (ld -r fhasht.o ; rm -f fhasht.o ; mv a.out fhasht.o ; touch fhasht.o; true)) || (rm -f fhasht.o; false)
+"../fhasht.cxx", line 1: warning:  ::fhasht_cxx_id defined but not used
+CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -o fhasht.exe fhasht.o fhashx.o hsboxx.o ccompatc.o -lm  
+csh -c './fhasht.exe >& fhash.out && true'
+rm fhasht.exe
+(diff ../fhash.ref fhash.out > fhash.dif) || (sleep 1; touch fhash.out; false)
+*** Error code 1
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../opaquet.cxx && (ld -r opaquet.o ; rm -f opaquet.o ; mv a.out opaquet.o ; touch opaquet.o; true)) || (rm -f opaquet.o; false)
+"../opaquet.cxx", line 119: error:  type mismatch: SP2_Bar   == SP2_Baz 
+"../opaquet.cxx", line 128: error:  type mismatch: Bar *  == SP2_Baz 
+"../opaquet.cxx", line 137: error:  type mismatch: SP2_Bar   == Baz *
+"../opaquet.cxx", line 147: error:  type mismatch: SP2_Bar   == SP2_Baz 
+Compilation failed
+*** Error code 1
+make: Warning: Don't know how to make target `opaque.dif'
+cc -g -pg -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include  -sun4 -c  ../cbombt.c
+"/usr/local/lang/SC1.0/include/CC/stdlib.h", line 64: syntax error at or near type word "char"
+Compilation failed
+*** Error code 1
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../cbombx.cxx && (ld -r cbombx.o ; rm -f cbombx.o ; mv a.out cbombx.o ; touch cbombx.o; true)) || (rm -f cbombx.o; false)
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+cc -g -pg -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include  -sun4 -c  ../bstatic.c
+make: Warning: Don't know how to make target `cbomb.dif'
+(CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -c  ../scavt.cxx && (ld -r scavt.o ; rm -f scavt.o ; mv a.out scavt.o ; touch scavt.o; true)) || (rm -f scavt.o; false)
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+"/usr/local/lang/SC1.0/include/CC/sun4/setjmp.h", line 20: warning: function name expected
+CC -g -pg  -I. -I.. -I../../xpp -I../../xlatexpp -I../../comm -I../sxx -I../../xpp -I../../platform/sun -I../../disk -I/usr/local/lang/SC1.0/include/CC -I/usr/local/lang/SC1.0/include -I/usr/include   -DUSE_INLINE   -sun4 -o scavt.exe scavt.o xpplibx.o filetpx.o ../../xlatexpp/sun/xxpplibx.o ../../xlatexpp/sun/spclibx.o ../../comm/sun/commlibx.o -lm  
+csh -cf './scavt.exe >& scav.out && true'
+Abort
+*** Error code 6
+make: Warning: Don't know how to make target `scav.dif'
+make: Warning: Target `tests' not remade because of errors

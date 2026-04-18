@@ -1,0 +1,211 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define GRANTABX_SXX
+
+/*----------------------- BEGIN GrandHashSet -----------------------*/
+DEFINE_CLASS_CATEGORY(GrandHashSet,MuSet)
+DEFINE_OPAQUE_TYPE(GrandHashSet);
+
+void GrandHashSet::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "GrandHashSet" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void GrandHashSet::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(grandNodes);
+    xmtr->sendInt32(numNodes);
+    xmtr->sendInt32(nodeIndexShift);
+    xmtr->sendHeaper(myTally);
+    xmtr->sendHeaper(myDoublingFrontIndex);
+    xmtr->sendHeaper(myDoublingPasses);
+}
+
+GrandHashSet::GrandHashSet (APTR(Rcvr) receiver, TCSJ)
+{
+    grandNodes = CAST(PtrArray, receiver->receiveHeaper());
+    numNodes = receiver->receiveInt32();
+    nodeIndexShift = receiver->receiveInt32();
+    myTally = CAST(Counter, receiver->receiveHeaper());
+    myDoublingFrontIndex = CAST(Counter, receiver->receiveHeaper());
+    myDoublingPasses = CAST(Counter, receiver->receiveHeaper());
+    this->restartGrandHashSet(receiver);
+}
+
+
+void parseInto_GrandHashSet (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) GrandHashSet (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe GrandHashSet_recipe(cat_GrandHashSet, &DiskCuisine, parseInto_GrandHashSet);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "GrandHashSet" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of GrandHashSet ====== */
+
+void GrandHashSet::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((GrandHashSet*)origin)->grandNodes,
+				       (Heaper**)&grandNodes);
+		Heaplet::forwardToOld ((Heaper**)&((GrandHashSet*)origin)->myTally,
+				       (Heaper**)&myTally);
+		Heaplet::forwardToOld ((Heaper**)&((GrandHashSet*)origin)->myDoublingFrontIndex,
+				       (Heaper**)&myDoublingFrontIndex);
+		Heaplet::forwardToOld ((Heaper**)&((GrandHashSet*)origin)->myDoublingPasses,
+				       (Heaper**)&myDoublingPasses);
+	} else {
+		grandNodes.forwardTo (Heaplet::forward (grandNodes));
+		myTally.forwardTo (Heaplet::forward (myTally));
+		myDoublingFrontIndex.forwardTo (Heaplet::forward (myDoublingFrontIndex));
+		myDoublingPasses.forwardTo (Heaplet::forward (myDoublingPasses));
+	}
+}
+
+/*----------------------- END GrandHashSet -----------------------*/
+
+
+/*----------------------- BEGIN GrandHashTable -----------------------*/
+DEFINE_CLASS_CATEGORY(GrandHashTable,MuTable)
+DEFINE_OPAQUE_TYPE(GrandHashTable);
+
+void GrandHashTable::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "GrandHashTable" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void GrandHashTable::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    MuTable::sendSelfTo (xmtr);
+    xmtr->sendHeaper(grandNodes);
+    xmtr->sendInt32(numNodes);
+    xmtr->sendInt32(nodeIndexShift);
+    xmtr->sendHeaper(myTally);
+    xmtr->sendHeaper(myDoublingFrontIndex);
+    xmtr->sendHeaper(myDoublingPasses);
+    xmtr->sendHeaper(myCs);
+}
+
+GrandHashTable::GrandHashTable (APTR(Rcvr) receiver, TCSJ)
+  : MuTable (receiver, tcsj) {
+    grandNodes = CAST(PtrArray, receiver->receiveHeaper());
+    numNodes = receiver->receiveInt32();
+    nodeIndexShift = receiver->receiveInt32();
+    myTally = CAST(Counter, receiver->receiveHeaper());
+    myDoublingFrontIndex = CAST(Counter, receiver->receiveHeaper());
+    myDoublingPasses = CAST(Counter, receiver->receiveHeaper());
+    myCs = CAST(CoordinateSpace, receiver->receiveHeaper());
+    this->restartGrandHashTable(receiver);
+}
+
+
+void parseInto_GrandHashTable (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) GrandHashTable (rcvr, tcsj);
+}
+
+extern Recipe * DiskCuisine;
+ActualCopyRecipe GrandHashTable_recipe(cat_GrandHashTable, &DiskCuisine, parseInto_GrandHashTable);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+#ifndef BACKEND1_HF_IDENT
+/* $Id: backend1.hf,v 2.5 1992/11/25 23:18:22 eric Exp $ */
+#define BACKEND1_HF_IDENT
+#endif /* BACKEND1_HF_IDENT */
+/* ====== Copy Class "GrandHashTable" ======= */
+ 
+#ifndef BACKEND2_HF_IDENT
+/* $Id: backend2.hf,v 2.14 1992/11/25 23:18:23 eric Exp $ */
+#define BACKEND2_HF_IDENT
+#endif /* BACKEND2_HF_IDENT */
+
+/* ====== Object Migrator for Scavenging of GrandHashTable ====== */
+
+void GrandHashTable::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((GrandHashTable*)origin)->grandNodes,
+				       (Heaper**)&grandNodes);
+		Heaplet::forwardToOld ((Heaper**)&((GrandHashTable*)origin)->myTally,
+				       (Heaper**)&myTally);
+		Heaplet::forwardToOld ((Heaper**)&((GrandHashTable*)origin)->myDoublingFrontIndex,
+				       (Heaper**)&myDoublingFrontIndex);
+		Heaplet::forwardToOld ((Heaper**)&((GrandHashTable*)origin)->myDoublingPasses,
+				       (Heaper**)&myDoublingPasses);
+		Heaplet::forwardToOld ((Heaper**)&((GrandHashTable*)origin)->myCs,
+				       (Heaper**)&myCs);
+	} else {
+		grandNodes.forwardTo (Heaplet::forward (grandNodes));
+		myTally.forwardTo (Heaplet::forward (myTally));
+		myDoublingFrontIndex.forwardTo (Heaplet::forward (myDoublingFrontIndex));
+		myDoublingPasses.forwardTo (Heaplet::forward (myDoublingPasses));
+		myCs.forwardTo (Heaplet::forward (myCs));
+	}
+}
+
+/*----------------------- END GrandHashTable -----------------------*/
+

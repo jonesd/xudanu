@@ -1,0 +1,143 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define STEPPERP_SXX
+
+/*----------------------- BEGIN EmptyStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(EmptyStepper,Stepper)
+
+void EmptyStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+
+
+/*----------------------- END EmptyStepper -----------------------*/
+
+
+/*----------------------- BEGIN ItemStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(ItemStepper,Stepper)
+
+void ItemStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of ItemStepper ====== */
+
+void ItemStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((ItemStepper*)origin)->myItem,
+				       (Heaper**)&myItem);
+	} else {
+		myItem.forwardTo (Heaplet::forward (myItem));
+	}
+}
+
+/*----------------------- END ItemStepper -----------------------*/
+
+
+/*----------------------- BEGIN PtrArrayAccumulator -----------------------*/
+DEFINE_CLASS_CATEGORY(PtrArrayAccumulator,Accumulator)
+
+void PtrArrayAccumulator::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of PtrArrayAccumulator ====== */
+
+void PtrArrayAccumulator::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((PtrArrayAccumulator*)origin)->myValues,
+				       (Heaper**)&myValues);
+	} else {
+		myValues.forwardTo (Heaplet::forward (myValues));
+	}
+}
+
+/*----------------------- END PtrArrayAccumulator -----------------------*/
+
+
+/*----------------------- BEGIN PtrArrayStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(PtrArrayStepper,TableStepper)
+DEFINE_OPAQUE_TYPE(PtrArrayStepper);
+
+void PtrArrayStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "PtrArrayStepper" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void PtrArrayStepper::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    xmtr->sendHeaper(myArray);
+    xmtr->sendInt32(myIndex);
+    xmtr->sendInt32(myPastEnd);
+    xmtr->sendInt32(myStep);
+}
+
+PtrArrayStepper::PtrArrayStepper (APTR(Rcvr) receiver, TCSJ)
+{
+    myArray = CAST(PtrArray, receiver->receiveHeaper());
+    myIndex = receiver->receiveInt32();
+    myPastEnd = receiver->receiveInt32();
+    myStep = receiver->receiveInt32();
+}
+
+
+void parseInto_PtrArrayStepper (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) PtrArrayStepper (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe PtrArrayStepper_recipe(cat_PtrArrayStepper, &XppCuisine, parseInto_PtrArrayStepper);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of PtrArrayStepper ====== */
+
+void PtrArrayStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((PtrArrayStepper*)origin)->myArray,
+				       (Heaper**)&myArray);
+	} else {
+		myArray.forwardTo (Heaplet::forward (myArray));
+	}
+}
+
+/*----------------------- END PtrArrayStepper -----------------------*/
+

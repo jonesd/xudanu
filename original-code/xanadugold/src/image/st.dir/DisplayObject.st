@@ -1,0 +1,270 @@
+'From Objectworks for Smalltalk-80(tm), Version 2.5 of 29 July 1989 on 22 March 1995 at 8:48:46 pm'!
+
+Object subclass: #DisplayObject
+	instanceVariableNames: ''
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Graphics-Display Objects'!
+DisplayObject comment:
+'The abstract class DisplayObject provides the protocol for most display primitives that are used by other objects, such as Views, for presenting information on the screen.  Its subclasses are DisplayMedium, DisplayText, InfiniteForm, OpaqueForm, and Path.
+
+Subclasses must implement methods for 
+	display box access
+		computeBoundingBox
+	displaying
+		displayOn:at:clippingBox:rule:mask:'!
+
+
+!DisplayObject methodsFor: 'accessing'!
+
+extent
+	"Answer the point that represents the width and height of the
+	receiver's bounding box."
+
+	^self boundingBox extent!
+
+height
+	"Answer the number that represents the height of the receiver's bounding box."
+
+	^self boundingBox height!
+
+offset
+	"Answer the amount by which the receiver should be offset when
+	it is displayed or its position is tested."
+
+	self subclassResponsibility!
+
+offset: aPoint 
+	"Set the amount by which the receiver's position is offset."
+
+	^self!
+
+relativeRectangle
+	"Answer a Rectangle whose top left corner is the receiver's offset position
+	and whose width and height are the same as the receiver."
+
+	^Rectangle origin: self offset extent: self extent!
+
+width
+	"Answer the number that represents the width of the receiver's bounding box."
+
+	^self boundingBox width! !
+
+!DisplayObject methodsFor: 'truncation and round off'!
+
+rounded
+	"Convert the offset of the receiver to integer coordinates."
+
+	self offset: self offset rounded! !
+
+!DisplayObject methodsFor: 'display box access'!
+
+boundingBox
+	"Answer the rectangular area that represents the boundaries of the 
+	receiver's space of information."
+
+	^self computeBoundingBox!
+
+computeBoundingBox
+	"Answer the rectangular area that represents the boundaries of the 
+	receiver's area for displaying information.  This is the primitive for computing the
+	area if it is not already known."
+
+	self subclassResponsibility! !
+
+!DisplayObject methodsFor: 'displaying'!
+
+display
+	"Show the receiver on the display screen.  Defaults to showing the receiver
+	in the upper left corner of the screen."
+
+	self displayOn: Display!
+
+displayAt: aDisplayPoint 
+	"Display the receiver located at aDisplayPoint with default settings for the
+	displayMedium, rule and halftone."
+
+	self displayOn: Display
+		at: aDisplayPoint
+		clippingBox: Display boundingBox
+		rule: Form over
+		mask: Form black!
+
+displayOn: aDisplayMedium
+	"Simple default display in order to see the receiver in the upper left corner of 
+	screen."
+
+	self displayOn: aDisplayMedium at: 0 @ 0!
+
+displayOn: aDisplayMedium at: aDisplayPoint 
+	"Display the receiver located at aDisplayPoint with default settings for rule and halftone."
+
+	self displayOn: aDisplayMedium
+		at: aDisplayPoint
+		clippingBox: aDisplayMedium boundingBox
+		rule: Form over
+		mask: Form black!
+
+displayOn: aDisplayMedium at: aDisplayPoint clippingBox: clipRectangle 
+	"Display the receiver located at aDisplayPoint with default settings for rule and
+	halftone.  Information to be displayed must be confined to the area that intersects
+	with clipRectangle."
+
+	self displayOn: aDisplayMedium
+		at: aDisplayPoint
+		clippingBox: clipRectangle
+		rule: Form over
+		mask: Form black!
+
+displayOn: aDisplayMedium at: aDisplayPoint clippingBox: clipRectangle rule: ruleInteger mask: aForm
+	"This is the basic display primitive for graphic display objects.  Display 
+	the receiver located at aDisplayPoint with rule, rule ruleInteger, and mask, 
+	aForm.  Information to be displayed must be confined to the area that 
+	intersects with clipRectangle."
+
+	self subclassResponsibility!
+
+displayOn: aDisplayMedium at: aDisplayPoint rule: ruleInteger
+	"Display the receiver located at aPoint with default setting for the halftone and clippingBox."
+
+	self displayOn: aDisplayMedium
+		at: aDisplayPoint
+		clippingBox: aDisplayMedium boundingBox
+		rule: ruleInteger
+		mask: Form black!
+
+displayOn: aDisplayMedium transformation: displayTransformation clippingBox: clipRectangle 
+	"Display primitive for the receiver where a DisplayTransformation is provided
+	as an argument.  Alignment is defaulted to the receiver's rectangle.  Information
+	to be displayed must be confined to the area that intersects with clipRectangle."
+
+	self displayOn: aDisplayMedium
+		transformation: displayTransformation
+		clippingBox: clipRectangle
+		align: self relativeRectangle center
+		with: self relativeRectangle center
+		rule: Form over
+		mask: Form black!
+
+displayOn: aDisplayMedium transformation: displayTransformation clippingBox: clipRectangle align: alignmentPoint with: relativePoint 
+	"Display primitive where a DisplayTransformation is provided as an argument,
+	rule is over and mask is Form black.  Information to be displayed must be confined
+	to the area that intersects with clipRectangle."
+
+	self displayOn: aDisplayMedium
+		transformation: displayTransformation
+		clippingBox: clipRectangle
+		align: alignmentPoint
+		with: relativePoint
+		rule: Form over
+		mask: Form black!
+
+displayOn: aDisplayMedium transformation: displayTransformation clippingBox: clipRectangle align: alignmentPoint with: relativePoint rule: ruleInteger mask: aForm 
+	"Display the receiver where a DisplayTransformation is provided as an argument,
+	rule is ruleInteger and mask is aForm.  Translate by relativePoint-alignmentPoint.
+	Information to be displayed must be confined to the area that intersects with
+	clipRectangle."
+
+	| absolutePoint |
+	absolutePoint _ displayTransformation applyTo: relativePoint.
+	self displayOn: aDisplayMedium
+		at: (absolutePoint - alignmentPoint) 
+		clippingBox: clipRectangle 
+		rule: ruleInteger 
+		mask: aForm!
+
+displayOn: aDisplayMedium transformation: displayTransformation clippingBox: clipRectangle fixedPoint: aPoint 
+	"Display the receiver where a DisplayTransformation is provided as an argument,
+	rule is over and mask is Form black.  No translation.  Information to be displayed
+	must be confined to the area that intersects with clipRectangle."
+
+	self displayOn: aDisplayMedium
+		transformation: displayTransformation
+		clippingBox: clipRectangle
+		align: aPoint
+		with: aPoint
+		rule: Form over
+		mask: Form black!
+
+displayOn: aDisplayMedium transformation: displayTransformation clippingBox: clipRectangle rule: ruleInteger mask: aForm 
+	"Display the receiver where a DisplayTransformation is provided as an argument,
+	rule is ruleInteger and mask is aForm.  No translation.  Information to be displayed
+	must be confined to the area that intersects with clipRectangle."
+
+	self displayOn: aDisplayMedium
+		transformation: displayTransformation
+		clippingBox: clipRectangle
+		align: self relativeRectangle origin
+		with: self relativeRectangle origin
+		rule: ruleInteger
+		mask: aForm! !
+
+!DisplayObject methodsFor: 'transforming'!
+
+align: alignmentPoint with: relativePoint 
+	"Translate the receiver's offset such that alignmentPoint aligns with relativePoint."
+
+	self offset: (self offset translateBy: relativePoint - alignmentPoint)!
+
+scaleBy: aPoint 
+	"Scale the receiver's offset by the amount of the argument, aPoint."
+
+	self offset: (self offset scaleBy: aPoint)!
+
+translateBy: aPoint 
+	"Translate the receiver's offset by the amount of the argument, aPoint."
+
+	self offset: (self offset translateBy: aPoint)! !
+
+!DisplayObject methodsFor: 'screen'!
+
+backgroundAt: location
+	"Answer a Form containing the contents of the Display which will be altered
+	if the receiver is displayed at location.  The Form remembers the location in its offset."
+
+	^ (Form fromDisplay: (location extent: self extent)) offset: location!
+
+follow: locationBlock while: durationBlock
+	"This method moves an image around on the Display.
+	It restores the background continuously without causing flashing.
+	LocationBlock supplies each new location, and durationBlock supplies
+	true to continue, and then false to stop."
+
+	"See (or run) OpaqueForm starCursor."
+
+	| location background |
+	location _ locationBlock value.
+	background _ self backgroundAt: location.
+	self displayAt: location.
+	[durationBlock value] whileTrue:
+		[self moveTo: locationBlock value restoring: background].
+	background display!
+
+moveTo: newLoc restoring: background
+	"Move an image to a new location on the Display, restoring the background
+	without causing flashing.  Background must be a Form containing
+	the bits to be restored at the previous location (its offset), and this method
+	will update its bits and offset appropriately"
+
+	| location saveAll rect1 rect2 bothRects |
+	(location _ background offset) = newLoc ifTrue: [^background].
+	background offset: 0@0.
+	rect1 _ location extent: self extent.
+	rect2 _ newLoc extent: self extent.
+	bothRects _ rect1 merge: rect2.
+	(rect1 intersects: rect2)
+		ifTrue:  "When overlap, buffer background for both rectangles"
+			[saveAll _ Form fromDisplay: bothRects.
+			background displayOn: saveAll at: rect1 origin - bothRects origin.
+			"now saveAll is clean background; get new bits for background"
+			background copy: (0@0 extent: self extent)
+				from: rect2 origin - bothRects origin
+				in: saveAll
+				rule: Form over.
+			self displayOn: saveAll at: rect2 origin - bothRects origin.
+			saveAll displayOn: Display at: bothRects origin]
+		ifFalse: "If no overlap, do the simple thing (both rects might be too big)"
+			[background displayOn: Display at: location.
+			background fromDisplay: rect2.
+			self displayOn: Display at: newLoc].
+	^ background offset: newLoc! !

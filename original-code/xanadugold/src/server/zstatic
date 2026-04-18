@@ -1,0 +1,293 @@
+/Fhypatia/roger/prod/xhs/src/xpp
+/Fhypatia/roger/prod/xhs/src/xpp
+bombc.h:static char *bombc_h_version() {
+bombc.h: static char ** CAT(LTAG,_shieldList)() { \
+bombc.h:   static char *local[] = { ERRLIST(NUMBER,LIST), 0}; \
+ccompatc.h:static char VERSION_ID_STRING(file)[] = string; \
+ccompatc.h:static char *VERSION_ID_FUNC(file)() { \
+tracerc.c:static int     * pcTraceBuffer;
+tracerc.c:static struct frame * frameP;
+allocx.cxx:static UInt4 serialCounter; /* = 0; */
+allocx.cxx:static Queue freeHeapQueue;
+allocx.cxx:static ABufHead * ourMoreCore (UInt4 bytesNeeded);
+allocx.cxx:static Queue allocQueueArray[MAXALLOCQUEUEARRAY];
+allocx.cxx:static Queue urdiBufferQueue;
+allocx.cxx:static inline ABufHead * allocFromQueue (UInt4 nUnits) {
+allocx.cxx:static ABufHead * ourMoreCore (UInt4 bytesNeeded) {
+bombt.cxx:static char *
+bombx.cxx:  static char * local[] = { ERRLIST(1,(DOOMSDAY)), 0};
+gmonx.cxx:static MonitorClass terminateMonitor;
+initx.cxx:static Initer * initerString = NULL;
+initx.cxx:static Terminator * terminationString = NULL;
+initx.cxx:static ostream& operator<< (ostream& oo, Initer * initer)
+initx.cxx:static int argCount = 0;
+initx.cxx:static char ** argVector = NULL;
+parrayx.cxx:static debugingPrintChar = 'a';
+sboxx.cxx:static char * sboxx_cxx_version() {
+scavt.cxx:  static GPTR(TConsCell) Root = NULL;
+scavt.cxx:  static GPTR(PtrArray) Root = NULL;
+scavx.cxx:/* Obj Header stuff statics */
+sockptlx.cxx:static int logFD = -1;
+sockptlx.cxx: static struct sigvec myVec, oldVec;
+sockptlx.cxx:static
+tofux.cxx:REQUIRE(1,"local static variable")
+tofux.cxx: static int recursionDepth = 0;
+tofux.cxx:PERMIT(0,"local static variable")
+tofux.cxx:static Category secret_Tofu =
+tofux.cxx:static Category secret_Tofu =
+tombx.cxx:static vtbl_entry tombCategory_vtable[MAXVTABLESIZE];
+tombx.cxx: static struct frame * frameP;
+tombx.cxx: static int depth = 0;
+verwrap.cxx:static char VERSION_ID_STRING(file)[] = string; \
+verwrap.cxx:static char *VERSION_ID_FUNC(file)() { \
+wparrayx.cxx:static DepartedObject theSecretDepartedObject;
+wparrayx.cxx:static DepartedObject *Departed = &theSecretDepartedObject;
+xcompatt.cxx:static char xcompatt_cxx_id[]
+xunewx.cxx:static UInt32 Tigers = 0;
+xunewx.cxx:static UInt32 Christians = 0;
+bibopp.hxx:  static UInt8 *ThePageMap;
+bibopp.hxx:  static char * OR(NULL) TheLowestAllocatedMemory;
+bibopp.hxx:  static char * OR(NULL) TheHighestAllocatedMemory;
+bibopp.hxx:  static BibopPage * OR(NULL) ThePagePool;
+bibopt.hxx:  static Zero * make(BibopHeap * aHeap, Int32);
+bibopx.hxx:  static BibopHeap * defaultInitialHeap();
+bombx.hxx: static BombStringDetonator * currentP;
+bombx.hxx: static BombStringDetonator firstInstance;
+choosex.hxx:a) Evaluate "expr" (whose static type must be compatible with pointer
+filetpp.hxx: static FILE ** FDArray;
+filetpp.hxx: static GPTR(WeakPtrArray) FileDescriptorHolders;
+fluidp.hxx:  static Emulsion * TheEmulsion;
+fluidt.hxx:  static TestSpace * Current;
+fluidt.hxx: public: /* static accessing */
+fluidt.hxx:  static Emulsion * get ();
+fluidt.hxx:  static Emulsion * TheTestEmulsion;
+fluidx.hxx:must happen after static initialization time, but may happen
+fluidx.hxx:static initialization. Fluid initialization for each session happens
+fluidx.hxx: | There should be exactly one static instance of a concrete
+garbagex.hxx:  INLINE static Heap * current ();
+garbagex.hxx:  static Heap * TheHeap;
+initx.hxx: code must run after static construction time. Each module's
+initx.hxx: which is associated with the Category cat_cName at static 
+initx.hxx: static CAT3(cName,iName,_Initer) CAT3(theIniter_,cName,iName);
+initx.hxx: static CAT3(cName,eName,_Arnie) CAT3(theArnie_,cName,eName);
+loggerx.hxx:  static Logger * OR(NULL) fetch (char * name);
+loggerx.hxx:  static Logger * get (char * name);
+loggerx.hxx:  static Logger * OR(NULL) MyFirst;
+loggerx.hxx:** doesn't allow both Link time and static time initialization of a class
+parrayp.hxx:  static PrimArrayHeap * FirstHeap; /* list of all PrimArrayHeaps in system */
+sboxx.hxx:static char * sbox_hxx_version() {
+scavp.hxx:  static HeapletManager * make ();
+scavp.hxx:  static int heapletIntersect (HeapletSet * a, HeapletSet * b);
+scavp.hxx:  static PointerReferenceSet * make (Heaplet * page);
+scavp.hxx:  static ArrayReferenceSet * make (Heaplet * page);
+scavp.hxx:  static OutPointerSet * make (Heaplet * page);
+scavp.hxx:  static PtrArraySet * make (Heaplet * page);
+scavx.hxx:  static Heaper * forward (Heaper* obj);
+scavx.hxx:  static Heaper * forwardOrNULL (Heaper * obj);
+scavx.hxx:  static HeapletManager * PagePool;
+scavx.hxx:  static HeapletSet * Old;
+scavx.hxx:  static Heaplet * NewPage;
+scavx.hxx:  static Heaplet * AltNewPage;
+scavx.hxx:  static HeapletSet * Current;
+scavx.hxx:  static HeapletSet * NextCurrent;
+scavx.hxx:  static HeapletSet * CurrentDrainSet;
+tofux.hxx:  static Category CAT(secret_,derived) =   \
+tofux.hxx:  static Category CAT(secret_,derived)  \
+tofux.hxx:  static Category * find (char * name);
+tofux.hxx:  static Category * HashTable[CAT_HASH_TABLE_SIZE];
+tofux.hxx:  static CategoryList * Becomables;
+tofux.hxx:  and MAY_BECOME_ANY_SUBCLASS_OF macros. They create static objects
+tofux.hxx:  static MayBecomeIniter * CAT3(becomeable,_MayBecome_,becomee) = \
+tofux.hxx:  static MayBecomeAnySubclassOfIniter *  \
+tofux.hxx:  static MayBecomeIniter CAT3(becomeable,_MayBecome_,becomee) = \
+tofux.hxx:  static MayBecomeAnySubclassOfIniter   \
+tofux.hxx:  static BecomeIniter * allIniters ();
+tofux.hxx:  static BecomeIniter * AllIniters;
+tofux.hxx:  static MayBecomeIniter * make (Category *, Category *);
+tofux.hxx:  static MayBecomeAnySubclassOfIniter * make (Category *, Category *);
+wparrayx.hxx:  static WeakPtrArray ** Arrays;
+wparrayx.hxx:  static GPTR(XnExecutor) TheNoopExecutor;
+queuesx.ixx: /* This must do nothing or else the allocator will break when its static */
+/Fhypatia/roger/prod/xhs/src/xlatexpp
+/Fhypatia/roger/prod/xhs/src/xlatexpp
+integerx.cxx: /* temp used to get around problem with static members and 
+integerx.cxx: /* temp used to get around static member problem in INIT 
+integerx.cxx: /* temp used to get around problem with static members & INIT 
+integerx.cxx: /* temp used to get around problem with static members and 
+tablesx.cxx:     do a static check, this (normal) pseudo-constructor 
+crossp.hxx: static GPTR(InstanceCache) SomeAccumulators;
+crossp.hxx: static GPTR(InstanceCache) SomeSteppers;
+crossp.hxx: static GPTR(InstanceCache) SomeSteppers;
+edgep.hxx: static GPTR(InstanceCache) SomeAccumulators;
+edgep.hxx: static GPTR(InstanceCache) SomeEdgeSteppers;
+filterp.hxx: static IdentityDsp * theDsp;
+gchooksx.hxx: static GPTR(Int32Array) FDArray;
+gchooksx.hxx: static GPTR(WeakPtrArray) FileDescriptorHolders;
+gchooksx.hxx: static GPTR(WeakPtrArray) StorageHolders;
+gchooksx.hxx: static GPTR(RepairEngineer) FirstEngineer;
+gchooksx.hxx: static GPTR(SanitationEngineer) FirstEngineer;
+gchooksx.hxx: static GPTR(PrimPtrTable) TheStackSet;
+hspacep.hxx: static IdentityDsp * theDsp;
+hspacex.hxx: static GPTR(HeaperSpace) TheHeaperSpace;
+integerp.hxx: static GPTR(InstanceCache) SomeSteppers;
+integerp.hxx: static GPTR(InstanceCache) SomeAccumulators;
+integerp.hxx: static GPTR(InstanceCache) SomeEdgeSteppers;
+integerx.hxx: static IntegerMapping * TheIdentityIntegerMapping;
+integerx.hxx: static GPTR(IntegerPos) TheZero;
+integerx.hxx: static GPTR(IntegerRegion) AllIntegers;
+integerx.hxx: static GPTR(IntegerRegion) EmptyIntegerRegion;
+integerx.hxx: static GPTR(IntegerRegion) LastAfterRegion;
+integerx.hxx: static IntegerVar LastAfterStart;
+integerx.hxx: static IntegerVar LastBeforeEnd;
+integerx.hxx: static GPTR(IntegerRegion) LastBeforeRegion;
+integerx.hxx: static GPTR(IntegerRegion) LastInterval;
+integerx.hxx: static IntegerVar LastLeft;
+integerx.hxx: static IntegerVar LastRight;
+integerx.hxx: static IntegerVar LastSingleton;
+integerx.hxx: static GPTR(IntegerRegion) LastSingletonRegion;
+integerx.hxx: static GPTR(IntegerSpace) TheIntegerSpace;
+primtabp.hxx: static INLINE WPTR(Heaper) make ();
+primtabp.hxx: static GPTR(Heaper) TheRemovedObject;
+primtabp.hxx: static GPTR(InstanceCache) SomeSteppers;
+primvalx.hxx: static GPTR(PrimFloatSpec) TheIEEE32Spec;
+primvalx.hxx: static GPTR(PrimFloatSpec) TheIEEE64Spec;
+primvalx.hxx: static GPTR(PrimIntegerSpec) TheInt32Spec;
+primvalx.hxx: static GPTR(PrimIntegerSpec) TheIntegerVarSpec;
+primvalx.hxx: static GPTR(PrimPointerSpec) ThePtrSpec;
+primvalx.hxx: static GPTR(PrimPointerSpec) TheSharedPtrSpec;
+primvalx.hxx: static GPTR(PrimIntegerSpec) TheUInt32Spec;
+primvalx.hxx: static GPTR(PrimIntegerSpec) TheUInt8Spec;
+realp.hxx: static IdentityDsp * theDsp;
+realx.hxx: static GPTR(RealManager) TheManager;
+realx.hxx: static GPTR(RealSpace) TheRealSpace;
+sequencx.hxx: static GPTR(Sequence) TheZero;
+sequencx.hxx: static GPTR(SequenceRegion) TheEmptySequenceRegion;
+sequencx.hxx: static GPTR(SequenceRegion) TheFullSequenceRegion;
+sequencx.hxx: static GPTR(SequenceManager) TheManager;
+sequencx.hxx: static GPTR(SequenceSpace) TheSequenceSpace;
+setp.hxx: static GPTR(InstanceCache) SomeSteppers;
+settabp.hxx: static GPTR(PtrArray) AnArray;
+settabp.hxx: static GPTR(SetTableStepper) AStepper;
+setx.hxx: static WPTR(ImmuSet) EmptySet;
+spacep.hxx: static GPTR(Mapping) LastEmptyMapping;
+spacep.hxx: static GPTR(CoordinateSpace) LastEmptyMappingCoordinateSpace;
+spacep.hxx: static GPTR(CoordinateSpace) LastEmptyMappingRangeSpace;
+spacer.hxx: static IdentityDsp * theDsp;
+stepperp.hxx: static GPTR(InstanceCache) SomeSteppers;
+stepperx.hxx: static WPTR(Stepper) TheEmptyStepper;
+stepperx.hxx: static knowledge that it's a Position. */
+tabentp.hxx: static GPTR(InstanceCache) SomeSteppers;
+tablesx.hxx:     do a static check, this (normal) pseudo-constructor 
+tabtoolx.hxx: static GPTR(LPPrimeSizeProvider) MySoleProvider;
+/Fhypatia/roger/prod/xhs/src/server
+/Fhypatia/roger/prod/xhs/src/server
+grantabx.cxx:/* static functions */
+canopyx.hxx: static GPTR(PtrArray) OF1(Position OR(XnRegion)) FlagEndorsements;
+canopyx.hxx: static GPTR(IDRegion) OtherClubs;
+canopyx.hxx: static GPTR(CrossRegion) OtherEndorsements;
+canopyx.hxx: static GPTR(Heaper2UInt32Cache) TheEFlagsCache;
+canopyx.hxx: static GPTR(Heaper2UInt32Cache) ThePFlagsCache;
+cryptox.hxx: static GPTR(MuTable) OF2(Sequence,EncrypterMaker) AllEncrypterMakers;
+cryptox.hxx: static GPTR(MuTable) OF2(Sequence,Scrambler) AllScramblers;
+entx.hxx: static INLINE IntegerVar tableSegmentMaxSize ();
+grantabp.hxx: static GPTR(PtrArray) FastHashMap;
+grantabp.hxx: static GPTR(ExponentialHashMap) TheExponentialMap;
+grantabp.hxx: public: /* static functions */
+idx.hxx: static IdentityDsp * theDsp;
+idx.hxx: static GPTR(IntegerRegion) TheGlobalNumbers;
+idx.hxx: static GPTR(IntegerRegion) TheLocalNumbers;
+nadminx.hxx: static GPTR(FeWrapperSpec) TheClubDescriptionSpec;
+nadminx.hxx: static GPTR(FeWrapperSpec) TheLockSmithSpec;
+nadminx.hxx: static GPTR(FeWrapperSpec) TheBooLockSmithSpec;
+nadminx.hxx: static GPTR(FeWrapperSpec) TheChallengeLockSmithSpec;
+nadminx.hxx: static GPTR(FeWrapperSpec) TheMatchLockSmithSpec;
+nadminx.hxx: static GPTR(FeWrapperSpec) TheMultiLockSmithSpec;
+nadminx.hxx: static GPTR(FeWrapperSpec) TheWallLockSmithSpec;
+nkernelt.hxx: static GPTR(WorksTester) TheTester;
+nkernelx.hxx: static CLIENT NOACK force ();
+nkernelx.hxx: static CLIENT NOACK setCurrentAuthor (APTR(ID) ARG(iD));
+nkernelx.hxx: static CLIENT NOACK setCurrentKeyMaster (APTR(FeKeyMaster) ARG(km));
+nkernelx.hxx: static CLIENT NOACK setInitialEditClub (APTR(ID) ARG(iD));
+nkernelx.hxx: static CLIENT NOACK setInitialOwner (APTR(ID) ARG(iD));
+nkernelx.hxx: static CLIENT NOACK setInitialReadClub (APTR(ID) ARG(iD));
+nkernelx.hxx: static CLIENT NOACK setInitialSponsor (APTR(ID) ARG(iD));
+nkernelx.hxx: static CLIENT IntegerVar currentTime ();
+nlinksx.hxx: static GPTR(FeWrapperSpec) TheHyperLinkSpec;
+nlinksx.hxx: static GPTR(FeWrapperSpec) TheHyperRefSpec;
+nlinksx.hxx: static GPTR(FeWrapperSpec) TheMultiRefSpec;
+nlinksx.hxx: static GPTR(FeWrapperSpec) TheSingleRefSpec;
+nlinksx.hxx: static GPTR(FeWrapperSpec) ThePathSpec;
+propsx.hxx: static GPTR(BertProp) TheIdentityBertProp;
+propsx.hxx: static GPTR(SensorProp) TheIdentitySensorProp;
+propsx.hxx: static GPTR(SensorProp) ThePartialSensorProp;
+propsx.hxx: static GPTR(PropChange) TheBertPropChange;
+propsx.hxx: static GPTR(PropChange) TheCannotPartializeChange;
+propsx.hxx: static GPTR(PropChange) TheDetectorWaitingChange;
+propsx.hxx: static GPTR(PropChange) TheEndorsementsChange;
+propsx.hxx: static GPTR(PropChange) ThePermissionsChange;
+propsx.hxx: static GPTR(PropChange) TheSensorPropChange;
+shephx.hxx: static GPTR(TokenSource) TheTokenSource;
+wrapperx.hxx: static GPTR(FeWrapperSpec) TheWrapperSpec;
+wrapperx.hxx: static GPTR(FeWrapperSpec) TheSetSpec;
+wrapperx.hxx: static GPTR(FeWrapperSpec) TheTextSpec;
+wrapperx.hxx: static GPTR(MuTable) OF2(Tumbler,FeWrapperDef) TheWrapperDefs;
+wrapperx.hxx: static GPTR(MuTable) OF2(Tumbler,CrossRegion) TheWrapperEndorsements;
+wrapperx.hxx: static GPTR(MuTable) OF2(Tuple,FeWrapperSpec) TheWrappersFromEndorsements;
+wrapperx.hxx: static GPTR(MuTable) OF2(Tumbler,FeWrapperSpec) TheWrapperSpecs;
+grantabp.ixx:/* static functions */
+/Fhypatia/roger/prod/xhs/src/disk
+/Fhypatia/roger/prod/xhs/src/disk
+consistt.hxx: static GPTR(CBlockTracker) OR(NULL) TheTrackerList;
+diskmanp.hxx: static DiskManagerEmulsion * make ();
+diskmanx.hxx: static Emulsion * emulsion ();
+diskmanx.hxx: static Emulsion * SecretEmulsion;
+packerp.hxx: static GPTR(InstanceCache) SomeStreams;
+packerp.hxx: static GPTR(InstanceCache) SomeSpecialists;
+packerp.hxx: static GPTR(InstanceCache) SomeSpecialists;
+packerp.hxx: static GPTR(PersistentCleaner) ThePersistentCleaner;
+packerp.hxx: static WPTR(Abraham) make ();
+packerp.hxx: static GPTR(Abraham) TheGreatPumpkin;
+packert.hxx: static GPTR(Connection) TheHonestConnection;
+packert.hxx: static GPTR(BeGrandMap) TheHonestGrandMap;
+purgingx.hxx: static IntegerVar PurgeRate;
+snfinfox.hxx: static UInt4 Flag;
+snfinfox.hxx: static Int4 SizeOffset;
+snfinfox.hxx: static UInt4 Value;
+snfinfox.hxx: static Int4 ForgottenFlag;
+snfinfox.hxx: static Int4 SizeMask;
+/Fhypatia/roger/prod/xhs/src/comm
+/Fhypatia/roger/prod/xhs/src/comm
+handlrsx.cxx:pointer to a static member function. */
+sktsrvx.cxx:static fd_set readfds = myFDSet;
+sktsrvx.cxx:static fd_set exceptfds = myFDSet;
+txtcommx.cxx:static char permReceiveStringBuffer[4096];
+bin2comp.hxx: static GPTR(InstanceCache) SomeRcvrs;
+bin2comp.hxx: static UInt8 * NumberBuffer;
+bin2comp.hxx: static GPTR(InstanceCache) SomeXmtrs;
+bootplnx.hxx: static GPTR(PrimPtr2PtrTable) OF2(Category,BootPlan) TheBootPlans;
+cookbkp.hxx: static GPTR(Cookbook) TheCookbooks;
+handlrsx.hxx: wrap a pointer to a static member function. */
+negoti8x.hxx: static GPTR(ProtocolItem) CommProtocols;
+negoti8x.hxx: static GPTR(ProtocolItem) DiskProtocols;
+negoti8x.hxx: static GPTR(XcvrMaker) TheCommProtocol;
+negoti8x.hxx: static GPTR(XcvrMaker) TheDiskProtocol;
+nscottyp.hxx: static GPTR(InstanceCache) SomeStreams;
+nscottyp.hxx: static GPTR(InstanceCache) SomeStreams;
+promanx.hxx: static GPTR(PtrArray) OF1(RequestHandler) AllRequests;
+promanx.hxx: static GPTR(PtrArray) OF1(RequestHandler) LoginRequests;
+promanx.hxx: static GPTR(PtrArray) OF1(Category) PromiseClasses;
+schunkx.hxx: static GPTR(ChunkCleaner) FirstCleaner;
+schunkx.hxx: static Emulsion * emulsion ();
+schunkx.hxx: static Emulsion * SecretEmulsion;
+srvloopx.hxx: static GPTR(ServerLoop) MyServerLoopInstance;
+srvloopx.hxx: static GPTR(MuSet) OF1(ServerChunk) TheChunks;
+txtcommp.hxx: static char* ReceiveStringBuffer;
+txtcommp.hxx: static Int4 ReceiveStringBufferSize;
+xfrspecx.hxx: static GPTR(PtrArray) RcvrIbidCache;
+xfrspecx.hxx: static GPTR(PrimIndexTable) XmtrIbidCache;
+/Fhypatia/roger/prod/xhs/src/urdi
+/Fhypatia/roger/prod/xhs/src/urdi
+urdit.cxx:static Queue * thePersistentHeap;
+urdit.cxx:static Queue * lastUninterestingItem;
+urdit.cxx: static char * boringP = new char[2];
+urdix.cxx: static char string[20];

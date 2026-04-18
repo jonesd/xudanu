@@ -1,0 +1,247 @@
+/*
+      (C) Copyright 1991 by Xanadu Operating Company, All Rights Reserved.
+
+******************************************************************************
+*                                                                            *
+* The information contained herein is confidential, proprietary to Xanadu    *
+* Operating Company, and considered a trade secret as defined in section     * 
+* 499C of the penal code of the State of California.  Use of this information* 
+* by anyone other than authorized employees of Xanadu is granted             *
+* only under a  written non-disclosure agreement, expressly prescribing      * 
+* the scope and  manner of such use.                                         *
+*                                                                            *
+******************************************************************************/
+#ifndef STUBBLEFORM_F_IDENT
+VERSION_ID(StubbleForm_f,
+	"$Id: stubblef.f,v 2.12 1993/03/01 21:28:20 eric Exp $")
+#define STUBBLEFORM_F_IDENT
+#endif /* STUBBLEFORM_F_IDENT */
+#ifndef STUBBLE_HLX_IDENT
+VERSION_ID(Stubble_hlx,
+	"$Id: stubble.hlx,v 2.9 1993/03/01 21:28:18 eric Exp $")
+#define STUBBLE_HLX_IDENT
+#endif /* STUBBLE_HLX_IDENT */
+
+#define INTEGERP_SXX
+
+/*----------------------- BEGIN AscendingIntegerStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(AscendingIntegerStepper,Stepper)
+
+void AscendingIntegerStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of AscendingIntegerStepper ====== */
+
+void AscendingIntegerStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((AscendingIntegerStepper*)origin)->myEdges,
+				       (Heaper**)&myEdges);
+	} else {
+		myEdges.forwardTo (Heaplet::forward (myEdges));
+	}
+}
+
+/*----------------------- END AscendingIntegerStepper -----------------------*/
+
+
+/*----------------------- BEGIN DescendingIntegerStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(DescendingIntegerStepper,Stepper)
+
+void DescendingIntegerStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of DescendingIntegerStepper ====== */
+
+void DescendingIntegerStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((DescendingIntegerStepper*)origin)->myEdges,
+				       (Heaper**)&myEdges);
+	} else {
+		myEdges.forwardTo (Heaplet::forward (myEdges));
+	}
+}
+
+/*----------------------- END DescendingIntegerStepper -----------------------*/
+
+
+/*----------------------- BEGIN IntegerArrangement -----------------------*/
+DEFINE_CLASS_CATEGORY(IntegerArrangement,Arrangement)
+DEFINE_OPAQUE_TYPE(IntegerArrangement);
+
+void IntegerArrangement::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IntegerArrangement" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IntegerArrangement::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    Arrangement::sendSelfTo (xmtr);
+    xmtr->sendHeaper(myOrdering);
+    xmtr->sendHeaper(myRegion);
+}
+
+IntegerArrangement::IntegerArrangement (APTR(Rcvr) receiver, TCSJ)
+  : Arrangement (receiver, tcsj) {
+    myOrdering = CAST(OrderSpec, receiver->receiveHeaper());
+    myRegion = CAST(IntegerRegion, receiver->receiveHeaper());
+}
+
+
+void parseInto_IntegerArrangement (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IntegerArrangement (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe IntegerArrangement_recipe(cat_IntegerArrangement, &XppCuisine, parseInto_IntegerArrangement);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+/* ====== Object Migrator for Scavenging of IntegerArrangement ====== */
+
+void IntegerArrangement::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((IntegerArrangement*)origin)->myOrdering,
+				       (Heaper**)&myOrdering);
+		Heaplet::forwardToOld ((Heaper**)&((IntegerArrangement*)origin)->myRegion,
+				       (Heaper**)&myRegion);
+	} else {
+		myOrdering.forwardTo (Heaplet::forward (myOrdering));
+		myRegion.forwardTo (Heaplet::forward (myRegion));
+	}
+}
+
+/*----------------------- END IntegerArrangement -----------------------*/
+
+
+/*----------------------- BEGIN IntegerEdgeAccumulator -----------------------*/
+DEFINE_CLASS_CATEGORY(IntegerEdgeAccumulator,Accumulator)
+DEFINE_OPAQUE_TYPE(IntegerEdgeAccumulator);
+
+void IntegerEdgeAccumulator::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of IntegerEdgeAccumulator ====== */
+
+void IntegerEdgeAccumulator::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((IntegerEdgeAccumulator*)origin)->myEdges,
+				       (Heaper**)&myEdges);
+	} else {
+		myEdges.forwardTo (Heaplet::forward (myEdges));
+	}
+}
+
+/*----------------------- END IntegerEdgeAccumulator -----------------------*/
+
+
+/*----------------------- BEGIN IntegerEdgeStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(IntegerEdgeStepper,Stepper)
+DEFINE_OPAQUE_TYPE(IntegerEdgeStepper);
+
+void IntegerEdgeStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of IntegerEdgeStepper ====== */
+
+void IntegerEdgeStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((IntegerEdgeStepper*)origin)->myEdges,
+				       (Heaper**)&myEdges);
+	} else {
+		myEdges.forwardTo (Heaplet::forward (myEdges));
+	}
+}
+
+/*----------------------- END IntegerEdgeStepper -----------------------*/
+
+
+/*----------------------- BEGIN IntegerSimpleRegionStepper -----------------------*/
+DEFINE_CLASS_CATEGORY(IntegerSimpleRegionStepper,Stepper)
+
+void IntegerSimpleRegionStepper::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Object Migrator for Scavenging of IntegerSimpleRegionStepper ====== */
+
+void IntegerSimpleRegionStepper::
+migrate (void * origin, BooleanVar destinationIsOld) {
+	if (destinationIsOld) {
+		Heaplet::forwardToOld ((Heaper**)&((IntegerSimpleRegionStepper*)origin)->myEdges,
+				       (Heaper**)&myEdges);
+		Heaplet::forwardToOld ((Heaper**)&((IntegerSimpleRegionStepper*)origin)->mySimple,
+				       (Heaper**)&mySimple);
+	} else {
+		myEdges.forwardTo (Heaplet::forward (myEdges));
+		mySimple.forwardTo (Heaplet::forward (mySimple));
+	}
+}
+
+/*----------------------- END IntegerSimpleRegionStepper -----------------------*/
+
+
+/*----------------------- BEGIN IntegerUpOrder -----------------------*/
+DEFINE_CLASS_CATEGORY(IntegerUpOrder,OrderSpec)
+
+void IntegerUpOrder::deferredHack () { /* intentionally blank */ }
+/* $Id: copy.hf,v 2.11 1992/11/25 23:18:25 eric Exp $ */
+
+/* ====== Copy Class "IntegerUpOrder" ======= */
+
+
+/* #ifdef WITH_RPC */
+
+#ifndef COPYRCPX_HXX
+#include "copyrcpx.hxx"
+#define COPYRCPX_HXX
+#endif /* COPYRCPX_HXX */
+
+#ifndef NXCVRX_HXX
+#include "nxcvrx.hxx"
+#define NXCVRX_HXX
+#endif /* NXCVRX_HXX */
+
+void IntegerUpOrder::sendSelfTo (APTR(Xmtr) xmtr)
+{
+    OrderSpec::sendSelfTo (xmtr);
+}
+
+IntegerUpOrder::IntegerUpOrder (APTR(Rcvr) receiver, TCSJ)
+  : OrderSpec (receiver, tcsj) {
+}
+
+
+void parseInto_IntegerUpOrder (APTR(Rcvr) rcvr, OUT void * storage) {
+  new (storage) IntegerUpOrder (rcvr, tcsj);
+}
+
+extern Recipe * XppCuisine;
+ActualCopyRecipe IntegerUpOrder_recipe(cat_IntegerUpOrder, &XppCuisine, parseInto_IntegerUpOrder);
+
+
+/* #endif */ /* WITH_RPC */
+
+
+
+
+/*----------------------- END IntegerUpOrder -----------------------*/
+

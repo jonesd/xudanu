@@ -1,0 +1,27 @@
+
+Roger, I tracked token 348 across a heap of migrates.  It has no dependent
+object hangins off its branches until after the last migrate.  then it gets
+two objects.  I caused one of them (the one it crashes on) to dump on ever
+heaper alocation.  
+
+It is fairly clear what happens.  the object pointed to by 5588d0 does not
+migrate, and neither do the pointers get put to zero.  so, when the next
+cycle to add a branch comes along, the pointer to the object is pointing
+into an object in a heaplet which has been cleaned out and then reused.  No
+wonder it goes out in the weeds.
+
+at this point, I don't know exactly where to go.  
+
+I reran it again, checking at the 9th and tenth migrates.  It turns out that
+it fails on the pass after the object has become old.  for some reason it does
+not seem to chase down the branch chains beyond an object which has become
+old.  I guess the best approach would be figure out which branch object is
+pointing to the one at 5704f0.  I will try to stop it on the last miagrate
+and see what that object is.
+
+before I went home, I noticed something realy odd.  the same sequence up to the
+crash went on, but the object age was a lot higher.  if you notice, the object
+is now at 27 hex or 39, so it went into old at the same point the other setting
+did.  I have no idea of how to explain this.  
+
+

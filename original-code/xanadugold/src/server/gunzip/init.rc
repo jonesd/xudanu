@@ -1,0 +1,13 @@
+EchoThunk("Building first half of MDSE, please wait");
+SetDiskProtocol("binary2");
+DiskPurgeRate(0);
+WorksBootMaker();
+BackendBootMaker();
+DiskIniter(Category(BeGrandMap),"ent.ent");
+EchoThunk("Initializing FeBe structures");
+ClearPlan(Category(BeGrandMap));
+FromDiskPlan(
+	Category(BeGrandMap),
+	"ent.ent");
+WorksIniter();
+NULL;

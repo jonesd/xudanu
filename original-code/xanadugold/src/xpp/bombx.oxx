@@ -1,0 +1,12 @@
+//
+//  Not used yet - michael, Tue Apr 30 01:12:56 PDT 1991
+//
+
+#ifndef BOMBX_OXX
+#define BOMBX_OXX
+/* $Id: bombx.oxx,v 2.3 1992/11/25 23:26:01 eric Exp $ */
+
+class Problem;
+extern Category * cat_Problem;
+
+#endif /* BOMBX_OXX */
