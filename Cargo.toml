@@ -16,11 +16,11 @@ license = "MIT"
 authors = ["Jonesd"]
 
 [workspace.dependencies]
-xanadu-types = { path = "crates/types" }
-xanadu-core = { path = "crates/core" }
-xanadu-signing = { path = "crates/signing" }
-xanadu-provenance = { path = "crates/provenance" }
-xanadu-sync = { path = "crates/sync" }
+xudanu-types = { path = "crates/types" }
+xudanu-core = { path = "crates/core" }
+xudanu-signing = { path = "crates/signing" }
+xudanu-provenance = { path = "crates/provenance" }
+xudanu-sync = { path = "crates/sync" }
 ed25519-dalek = { version = "2", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"

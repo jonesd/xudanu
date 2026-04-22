@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use xanadu_types::SiteId;
+use xudanu_types::SiteId;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StateVector(BTreeMap<SiteId, u64>);

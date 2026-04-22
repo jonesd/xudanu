@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use xanadu_types::{AuthorId, ItemContent, ItemId};
+use xudanu_types::{AuthorId, ItemContent, ItemId};
 
 #[derive(Debug, Clone)]
 pub struct Attribution {

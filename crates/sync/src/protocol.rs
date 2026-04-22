@@ -1,5 +1,5 @@
-use xanadu_core::state_vector::StateVector;
-use xanadu_types::{Change, ChangeHash, SiteId};
+use xudanu_core::state_vector::StateVector;
+use xudanu_types::{Change, ChangeHash, SiteId};
 
 use crate::message::{
     AckMessage, ChangesMessage, StateVectorMessage, SyncMessage, SyncMessageType,

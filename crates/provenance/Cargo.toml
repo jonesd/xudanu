@@ -1,11 +1,11 @@
 [package]
-name = "xanadu-provenance"
+name = "xudanu-provenance"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-xanadu-types = { workspace = true }
-xanadu-core = { workspace = true }
+xudanu-types = { workspace = true }
+xudanu-core = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 

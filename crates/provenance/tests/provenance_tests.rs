@@ -1,5 +1,5 @@
-use xanadu_provenance::{AttributionEngine, RoyaltyLedger, RoyaltyEntry, RoyaltySource};
-use xanadu_types::*;
+use xudanu_provenance::{AttributionEngine, RoyaltyLedger, RoyaltyEntry, RoyaltySource};
+use xudanu_types::*;
 
 fn make_author(id: u8) -> AuthorId {
     let mut bytes = [0u8; 32];

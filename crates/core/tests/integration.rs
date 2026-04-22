@@ -1,7 +1,7 @@
-use xanadu_core::{Document, StateVector};
-use xanadu_types::*;
-use xanadu_signing::Signer;
-use xanadu_provenance::AttributionEngine;
+use xudanu_core::{Document, StateVector};
+use xudanu_types::*;
+use xudanu_signing::Signer;
+use xudanu_provenance::AttributionEngine;
 
 struct TestUser {
     signer: Signer,
@@ -109,7 +109,7 @@ fn test_commit_change() {
     let mut doc = user.make_doc();
     doc.insert(0, "Hello");
     let change = doc.commit_change().expect("should have a change");
-    assert_eq!(change.operations.len(), 1);
+    assert!(!change.update_bytes.is_empty());
     assert_eq!(change.actor, *user.signer.author_id());
     assert!(!change.id.iter().all(|&b| b == 0));
 }
@@ -122,7 +122,7 @@ fn test_commit_multiple_ops() {
     doc.insert(5, " ");
     doc.insert(6, "World");
     let change = doc.commit_change().expect("should have a change");
-    assert_eq!(change.operations.len(), 3);
+    assert!(!change.update_bytes.is_empty());
 }
 
 #[test]

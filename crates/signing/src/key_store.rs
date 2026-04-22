@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use xanadu_types::{Author, AuthorId, HybridTimestamp};
+use xudanu_types::{Author, AuthorId, HybridTimestamp};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyStore {
