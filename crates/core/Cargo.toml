@@ -1,0 +1,18 @@
+[package]
+name = "xanadu-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+xanadu-types = { workspace = true }
+serde = { workspace = true }
+serde_bytes = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+rand = { workspace = true }
+xanadu-signing = { workspace = true }
+xanadu-provenance = { workspace = true }
+ed25519-dalek = { workspace = true }
