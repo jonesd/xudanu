@@ -14,6 +14,10 @@ pub struct Change {
     pub timestamp: HybridTimestamp,
     pub lamport: u64,
     pub signature: Option<ed25519_dalek::Signature>,
+    #[serde(default)]
+    pub update_bytes: Vec<u8>,
+    #[serde(default)]
+    pub sender_client_id: u64,
 }
 
 impl Change {
@@ -34,6 +38,32 @@ impl Change {
             timestamp,
             lamport,
             signature: None,
+            update_bytes: Vec::new(),
+            sender_client_id: 0,
+        };
+        change.id = change.compute_hash();
+        change
+    }
+
+    pub fn from_update(
+        actor: AuthorId,
+        site: SiteId,
+        deps: Vec<ChangeHash>,
+        update_bytes: Vec<u8>,
+        timestamp: HybridTimestamp,
+        lamport: u64,
+    ) -> Self {
+        let mut change = Self {
+            id: [0u8; 32],
+            actor,
+            site,
+            deps,
+            operations: Vec::new(),
+            timestamp,
+            lamport,
+            signature: None,
+            update_bytes,
+            sender_client_id: 0,
         };
         change.id = change.compute_hash();
         change
@@ -46,6 +76,7 @@ impl Change {
             &self.site,
             &self.deps,
             &self.operations,
+            &self.update_bytes,
             &self.timestamp,
             &self.lamport,
         ))
@@ -63,6 +94,7 @@ impl Change {
         for op in &self.operations {
             hasher.update(bincode::serialize(op).unwrap_or_default());
         }
+        hasher.update(&self.update_bytes);
         hasher.update(self.timestamp.lamport.to_le_bytes());
         hasher.update(self.timestamp.wall_secs.to_le_bytes());
         hasher.update(self.timestamp.wall_nanos.to_le_bytes());

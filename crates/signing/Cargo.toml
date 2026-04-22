@@ -1,10 +1,10 @@
 [package]
-name = "xanadu-signing"
+name = "xudanu-signing"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-xanadu-types = { workspace = true }
+xudanu-types = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core"] }
 serde = { workspace = true }
 serde_bytes = { workspace = true }
@@ -16,4 +16,4 @@ hex = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-xanadu-core = { workspace = true }
+xudanu-core = { workspace = true }

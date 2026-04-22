@@ -1,7 +1,7 @@
 use ed25519_dalek::SigningKey;
-use xanadu_signing::{Signer, KeyStore};
-use xanadu_types::*;
-use xanadu_core::Document;
+use xudanu_signing::{Signer, KeyStore};
+use xudanu_types::*;
+use xudanu_core::Document;
 
 #[test]
 fn test_generate_signer() {
@@ -77,9 +77,9 @@ fn test_signing_key_persistence() {
     let signer = Signer::generate("Alice".to_string());
     let original_fingerprint = signer.author().fingerprint();
 
-    let stored = xanadu_signing::signer::StoredKey::from_signer(&signer);
+    let stored = xudanu_signing::signer::StoredKey::from_signer(&signer);
     let serialized = stored.serialize();
-    let deserialized = xanadu_signing::signer::StoredKey::deserialize(&serialized).unwrap();
+    let deserialized = xudanu_signing::signer::StoredKey::deserialize(&serialized).unwrap();
     let restored = deserialized.load().unwrap();
 
     assert_eq!(restored.author().fingerprint(), original_fingerprint);

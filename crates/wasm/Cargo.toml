@@ -1,5 +1,5 @@
 [package]
-name = "xanadu-wasm"
+name = "xudanu-wasm"
 version.workspace = true
 edition.workspace = true
 
@@ -7,11 +7,11 @@ edition.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-xanadu-types = { workspace = true }
-xanadu-core = { workspace = true }
-xanadu-signing = { workspace = true }
-xanadu-provenance = { workspace = true }
-xanadu-sync = { workspace = true }
+xudanu-types = { workspace = true }
+xudanu-core = { workspace = true }
+xudanu-signing = { workspace = true }
+xudanu-provenance = { workspace = true }
+xudanu-sync = { workspace = true }
 wasm-bindgen = "0.2"
 serde = { workspace = true }
 serde_json = "1"

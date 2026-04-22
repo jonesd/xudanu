@@ -1,5 +1,5 @@
 [package]
-name = "xanadu-types"
+name = "xudanu-types"
 version.workspace = true
 edition.workspace = true
 

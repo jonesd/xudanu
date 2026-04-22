@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use xanadu_types::AuthorId;
+use xudanu_types::AuthorId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AwarenessState {

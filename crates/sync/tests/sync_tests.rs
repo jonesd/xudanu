@@ -1,8 +1,8 @@
-use xanadu_sync::protocol::SyncProtocol;
-use xanadu_sync::awareness::{Awareness, AwarenessState};
-use xanadu_sync::message;
-use xanadu_core::state_vector::StateVector;
-use xanadu_types::*;
+use xudanu_sync::protocol::SyncProtocol;
+use xudanu_sync::awareness::{Awareness, AwarenessState};
+use xudanu_sync::message;
+use xudanu_core::state_vector::StateVector;
+use xudanu_types::*;
 
 fn make_site(id: u8) -> SiteId {
     let mut bytes = [0u8; 32];
@@ -23,7 +23,7 @@ fn test_sync_step1_creation() {
 
     assert_eq!(msg.sender_site, site);
     match &msg.message_type {
-        xanadu_sync::message::SyncMessageType::StateVector(sv_msg) => {
+        xudanu_sync::message::SyncMessageType::StateVector(sv_msg) => {
             assert_eq!(sv_msg.state_vector.len(), 1);
             assert_eq!(sv_msg.state_vector[0], (site, 5));
         }
@@ -39,7 +39,7 @@ fn test_empty_state_vector_sync() {
     let msg = protocol.create_sync_step1(site);
 
     match &msg.message_type {
-        xanadu_sync::message::SyncMessageType::StateVector(sv_msg) => {
+        xudanu_sync::message::SyncMessageType::StateVector(sv_msg) => {
             assert!(sv_msg.state_vector.is_empty());
         }
         _ => panic!("Expected StateVector message"),
@@ -67,7 +67,7 @@ fn test_changes_message() {
     let msg = protocol.create_changes_message(changes, site, author);
 
     match &msg.message_type {
-        xanadu_sync::message::SyncMessageType::Changes(cmsg) => {
+        xudanu_sync::message::SyncMessageType::Changes(cmsg) => {
             assert_eq!(cmsg.changes.len(), 1);
             assert!(cmsg.requires_ack);
         }

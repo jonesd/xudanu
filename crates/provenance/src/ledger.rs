@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use xanadu_types::{AuthorId, DocumentId, SpanRef};
+use xudanu_types::{AuthorId, DocumentId, SpanRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoyaltyEntry {

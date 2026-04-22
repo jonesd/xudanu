@@ -1,6 +1,6 @@
-use xanadu_core::{Document, StateVector};
-use xanadu_types::*;
-use xanadu_signing::Signer;
+use xudanu_core::{Document, StateVector};
+use xudanu_types::*;
+use xudanu_signing::Signer;
 
 struct TestUser {
     signer: Signer,

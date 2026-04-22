@@ -1,12 +1,12 @@
 [package]
-name = "xanadu-sync"
+name = "xudanu-sync"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-xanadu-types = { workspace = true }
-xanadu-core = { workspace = true }
-xanadu-signing = { workspace = true }
+xudanu-types = { workspace = true }
+xudanu-core = { workspace = true }
+xudanu-signing = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

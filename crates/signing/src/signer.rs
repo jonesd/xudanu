@@ -1,7 +1,7 @@
 use ed25519_dalek::{Signer as _, SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
-use xanadu_types::{Author, AuthorId, Change, SignedChange};
+use xudanu_types::{Author, AuthorId, Change, SignedChange};
 
 #[derive(Debug)]
 pub struct Signer {

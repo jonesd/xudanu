@@ -1,4 +1,4 @@
-use xanadu_types::*;
+use xudanu_types::*;
 
 fn make_site(id: u8) -> SiteId {
     let mut bytes = [0u8; 32];

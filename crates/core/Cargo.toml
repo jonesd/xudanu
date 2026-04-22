@@ -1,18 +1,21 @@
 [package]
-name = "xanadu-core"
+name = "xudanu-core"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-xanadu-types = { workspace = true }
+xudanu-types = { workspace = true }
+yrs = "0.25"
 serde = { workspace = true }
 serde_bytes = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
 rand = { workspace = true }
-xanadu-signing = { workspace = true }
-xanadu-provenance = { workspace = true }
+xudanu-signing = { workspace = true }
+xudanu-provenance = { workspace = true }
 ed25519-dalek = { workspace = true }

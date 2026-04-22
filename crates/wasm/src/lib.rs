@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
-use xanadu_core::Document;
-use xanadu_signing::Signer;
-use xanadu_types::SiteId;
+use xudanu_core::Document;
+use xudanu_signing::Signer;
+use xudanu_types::SiteId;
 
 #[wasm_bindgen(start)]
 pub fn init() {
@@ -49,7 +49,7 @@ impl SignedDocument {
     }
 
     pub fn apply_remote(&mut self, change_json: String) -> Result<(), JsValue> {
-        let change: xanadu_types::Change = serde_json::from_str(&change_json)
+        let change: xudanu_types::Change = serde_json::from_str(&change_json)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse change: {}", e)))?;
         self.doc.integrate_change(&change);
         Ok(())
@@ -89,13 +89,13 @@ impl SignedDocument {
 #[wasm_bindgen]
 pub fn generate_keypair(display_name: String) -> Result<Vec<u8>, JsValue> {
     let signer = Signer::generate(display_name);
-    let stored = xanadu_signing::signer::StoredKey::from_signer(&signer);
+    let stored = xudanu_signing::signer::StoredKey::from_signer(&signer);
     Ok(stored.serialize())
 }
 
 #[wasm_bindgen]
 pub fn load_keypair(data: Vec<u8>) -> Result<String, JsValue> {
-    let stored = xanadu_signing::signer::StoredKey::deserialize(&data)
+    let stored = xudanu_signing::signer::StoredKey::deserialize(&data)
         .map_err(|e| JsValue::from_str(&format!("Failed to load key: {}", e)))?;
     let signer = stored.load()
         .map_err(|e| JsValue::from_str(&format!("Invalid key: {}", e)))?;
