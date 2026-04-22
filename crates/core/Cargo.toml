@@ -5,6 +5,8 @@ edition.workspace = true
 
 [dependencies]
 xudanu-types = { workspace = true }
+xudanu-signing = { workspace = true }
+ed25519-dalek = { workspace = true }
 yrs = "0.25"
 serde = { workspace = true }
 serde_bytes = { workspace = true }
@@ -16,6 +18,5 @@ hex = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 rand = { workspace = true }
-xudanu-signing = { workspace = true }
 xudanu-provenance = { workspace = true }
 ed25519-dalek = { workspace = true }
