@@ -1,0 +1,15 @@
+[package]
+name = "xanadu-sync"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+xanadu-types = { workspace = true }
+xanadu-core = { workspace = true }
+xanadu-signing = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

@@ -1,0 +1,34 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/types",
+    "crates/core",
+    "crates/signing",
+    "crates/provenance",
+    "crates/sync",
+    "crates/wasm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Jonesd"]
+
+[workspace.dependencies]
+xanadu-types = { path = "crates/types" }
+xanadu-core = { path = "crates/core" }
+xanadu-signing = { path = "crates/signing" }
+xanadu-provenance = { path = "crates/provenance" }
+xanadu-sync = { path = "crates/sync" }
+ed25519-dalek = { version = "2", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+sha2 = "0.10"
+bincode = "1"
+thiserror = "2"
+tracing = "0.1"
+proptest = "1"
+rand = "0.8"
+hex = "0.4"
+base64 = "0.22"
