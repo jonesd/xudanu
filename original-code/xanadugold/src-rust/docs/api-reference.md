@@ -9,7 +9,7 @@ import init, {
   WasmTracePosition,
   WasmEnt,
   WasmAssertionStore
-} from "./pkg/xanadu_gold.js";
+} from "./pkg/xudanu.js";
 
 await init(); // must be called once before any other API use
 ```

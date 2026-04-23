@@ -533,4 +533,50 @@ mod tests {
         let h2 = store.contents_hash(root_id).unwrap();
         assert_eq!(h1, h2);
     }
+
+    // P6: stress_install_branch_100k — 100,000 children under one parent.
+    // Exercises the recursive insert-with-swap pattern at scale.
+    // Verifies all children are reachable by tree traversal.
+    // Also measures insertion and traversal time separately.
+    #[test]
+    #[ignore]
+    fn stress_install_branch_100k() {
+        use std::time::Instant;
+        let t = Instant::now();
+
+        let mut store = BranchStore::new();
+        let (root_id, _) = store.create_root();
+        let mut child_ids = Vec::new();
+
+        for i in 0..100_000 {
+            let (cid, _) = store.create_root();
+            store.install_branch(root_id, cid).unwrap();
+            child_ids.push(cid);
+            if i > 0 && i % 25_000 == 0 {
+                eprintln!("  P6 inserted {} children in {:.3}s", i, t.elapsed().as_secs_f64());
+            }
+        }
+        eprintln!("  P6 insert 100K children: {:.3}s", t.elapsed().as_secs_f64());
+
+        let t2 = Instant::now();
+        let mut found = std::collections::HashSet::new();
+        fn collect(store: &BranchStore, id: BranchId, found: &mut std::collections::HashSet<BranchId>) {
+            if found.insert(id) {
+                let branch = store.get(id).unwrap();
+                if let Some(l) = branch.left {
+                    collect(store, l, found);
+                }
+                if let Some(r) = branch.right {
+                    collect(store, r, found);
+                }
+            }
+        }
+        collect(&store, root_id, &mut found);
+        eprintln!("  P6 traverse tree ({} nodes): {:.3}s", found.len(), t2.elapsed().as_secs_f64());
+
+        for &cid in &child_ids {
+            assert!(found.contains(&cid), "child {} not reachable from root", cid.raw_for_hash());
+        }
+        eprintln!("  P6 total: {:.3}s", t.elapsed().as_secs_f64());
+    }
 }
