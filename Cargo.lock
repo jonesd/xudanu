@@ -1345,6 +1345,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "xudanu"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "getrandom 0.2.17",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "xudanu-core"
 version = "0.1.0"
 dependencies = [
