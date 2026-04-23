@@ -11,7 +11,7 @@ ordered trace history.
 graph TB
     subgraph "JavaScript / TypeScript"
         APP["Client Application"]
-        APP --> WASM["xanadu_gold.js<br/>(WASM glue)"]
+        APP --> WASM["xudanu.js<br/>(WASM glue)"]
     end
 
     subgraph "WASM Module (Rust)"

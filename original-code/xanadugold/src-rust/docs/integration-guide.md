@@ -14,9 +14,9 @@ wasm-pack build --target web --out-dir pkg -- --features wasm
 ```
 
 This produces a `pkg/` directory containing:
-- `xanadu_gold.js` — ES module loader
-- `xanadu_gold_bg.wasm` — compiled WASM binary
-- `xanadu_gold.d.ts` — TypeScript type definitions
+- `xudanu.js` — ES module loader
+- `xudanu_bg.wasm` — compiled WASM binary
+- `xudanu.d.ts` — TypeScript type definitions
 
 ### 2. Load in Your Application
 
@@ -24,7 +24,7 @@ This produces a `pkg/` directory containing:
 
 ```html
 <script type="module">
-  import init, { WasmDagWood, WasmAssertionStore } from "./pkg/xanadu_gold.js";
+  import init, { WasmDagWood, WasmAssertionStore } from "./pkg/xudanu.js";
   await init();
   // ready to use
 </script>
@@ -37,7 +37,7 @@ wasm-pack build --target bundler --out-dir pkg -- --features wasm
 ```
 
 ```js
-import init, { WasmDagWood, WasmAssertionStore } from "./pkg/xanadu_gold.js";
+import init, { WasmDagWood, WasmAssertionStore } from "./pkg/xudanu.js";
 await init();
 ```
 
@@ -48,12 +48,12 @@ wasm-pack build --target nodejs --out-dir pkg -- --features wasm
 ```
 
 ```js
-const { WasmDagWood, WasmAssertionStore } = require("./pkg/xanadu_gold.js");
+const { WasmDagWood, WasmAssertionStore } = require("./pkg/xudanu.js");
 ```
 
 ### 3. Serve Files
 
-For browser usage, serve both `xanadu_gold.js` and `xanadu_gold_bg.wasm`
+For browser usage, serve both `xudanu.js` and `xudanu_bg.wasm`
 from the same directory. Any static file server works:
 
 ```bash
@@ -68,7 +68,7 @@ Use DagWood to model concurrent edits. Each user's edits go on a separate
 branch; merges resolve conflicts with `AlternativeSet`.
 
 ```js
-import init, { WasmDagWood, WasmAssertionStore } from "./pkg/xanadu_gold.js";
+import init, { WasmDagWood, WasmAssertionStore } from "./pkg/xudanu.js";
 await init();
 
 class CollaborativeDoc {

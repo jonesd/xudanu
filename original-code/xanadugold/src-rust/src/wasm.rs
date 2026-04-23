@@ -202,12 +202,12 @@ impl WasmAssertionStore {
                 String::new()
             };
             console_warn!(
-                "xanadu-gold: Failed to parse assertion payload.\n  Input: {}\n  Error: {}",
+                "xudanu: Failed to parse assertion payload.\n  Input: {}\n  Error: {}",
                 payload,
                 err_str
             );
             if !suggestion.is_empty() {
-                console_warn!("xanadu-gold: {}", suggestion);
+                console_warn!("xudanu: {}", suggestion);
                 JsValue::from_str(&format!("invalid payload: {}.\n{}", err_str, suggestion))
             } else {
                 JsValue::from_str(&format!("invalid payload: {}.\nExpected a JSON object with one of these keys: {}",
@@ -241,7 +241,7 @@ impl WasmAssertionStore {
         );
         if doc.root.is_none() {
             console_warn!(
-                "xanadu-gold: materialize_document({}) returned null root. No CreateNode assertion found for this document ID.",
+                "xudanu: materialize_document({}) returned null root. No CreateNode assertion found for this document ID.",
                 doc_id
             );
         }
@@ -260,7 +260,7 @@ impl WasmAssertionStore {
         );
         if doc.root.is_none() {
             console_warn!(
-                "xanadu-gold: materialize_document_json({}) returned null root. No CreateNode assertion found for this document ID.",
+                "xudanu: materialize_document_json({}) returned null root. No CreateNode assertion found for this document ID.",
                 doc_id
             );
         }
@@ -291,5 +291,144 @@ impl WasmAssertionStore {
             SpanId::new(span_id),
         );
         self.serialize_to_json(&span)
+    }
+}
+
+#[cfg(all(test, feature = "serde_json"))]
+mod wasm_tests {
+    use super::*;
+
+    fn make_store_with_doc(_n_children: usize) -> (WasmDagWood, WasmTracePosition, WasmAssertionStore) {
+        let mut dw = WasmDagWood::new();
+        let store = WasmAssertionStore::new();
+        let root = dw.root();
+        let pos = dw.new_position();
+        (dw, pos, store)
+    }
+
+    #[test]
+    fn wasm_add_valid_payload() {
+        let (dw, pos, mut store) = make_store_with_doc(0);
+        store.add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#).unwrap();
+        assert_eq!(store.assertion_count(), 1);
+    }
+
+    #[test]
+    fn wasm_add_rejects_unknown_variant() {
+        let (dw, pos, mut store) = make_store_with_doc(0);
+        let result = store.add(&pos, r#"{"NotARealThing":{"node_id":1}}"#);
+        assert!(result.is_err());
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(msg.contains("unknown variant"), "should mention unknown variant: {}", msg);
+    }
+
+    #[test]
+    fn wasm_add_rejects_missing_field() {
+        let (dw, pos, mut store) = make_store_with_doc(0);
+        let result = store.add(&pos, r#"{"CreateNode":{"node_id":1}}"#);
+        assert!(result.is_err());
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(msg.contains("missing field"), "should mention missing field: {}", msg);
+    }
+
+    #[test]
+    fn wasm_add_rejects_wrong_type() {
+        let (dw, pos, mut store) = make_store_with_doc(0);
+        let result = store.add(&pos, r#"{"CreateNode":{"node_id":"not_a_number","kind":"doc"}}"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn wasm_add_rejects_invalid_json() {
+        let (dw, pos, mut store) = make_store_with_doc(0);
+        let result = store.add(&pos, r#"not json at all"#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn wasm_materialize_empty_store() {
+        let dw = WasmDagWood::new();
+        let store = WasmAssertionStore::new();
+        let root = dw.root();
+        let view = dw.trace_view(&root);
+        let result = store.materialize_document(&view, 1).unwrap();
+        let doc = js_sys::JSON::stringify(&result).unwrap().as_string().unwrap();
+        assert!(doc.contains("\"doc_id\":1"));
+        assert!(doc.contains("\"root\":null"));
+    }
+
+    #[test]
+    fn wasm_assertion_count_tracks_adds() {
+        let (dw, pos, mut store) = make_store_with_doc(0);
+        assert_eq!(store.assertion_count(), 0);
+        store.add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#).unwrap();
+        assert_eq!(store.assertion_count(), 1);
+        store.add(&pos, r#"{"CreateSpan":{"span_id":10}}"#).unwrap();
+        assert_eq!(store.assertion_count(), 2);
+    }
+
+    #[test]
+    fn wasm_full_pipeline() {
+        let mut dw = WasmDagWood::new();
+        let mut store = WasmAssertionStore::new();
+        let root = dw.root();
+        let pos = dw.new_position();
+
+        store.add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#).unwrap();
+        store.add(&pos, r#"{"CreateSpan":{"span_id":10}}"#).unwrap();
+        store.add(&pos, r#"{"SetSpanText":{"span_id":10,"text":"Hello WASM"}}"#).unwrap();
+        store.add(&pos, r#"{"AttachSpanToNode":{"node_id":1,"span_id":10,"ordinal":1}}"#).unwrap();
+
+        let view = dw.trace_view(&pos);
+        let result = store.materialize_document(&view, 1).unwrap();
+        let doc_str = js_sys::JSON::stringify(&result).unwrap().as_string().unwrap();
+        assert!(doc_str.contains("Hello WASM"));
+        assert!(doc_str.contains("document"));
+    }
+
+    #[test]
+    fn wasm_materialize_document_json_string() {
+        let mut dw = WasmDagWood::new();
+        let mut store = WasmAssertionStore::new();
+        let pos = dw.new_position();
+        store.add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"doc"}}"#).unwrap();
+
+        let view = dw.trace_view(&pos);
+        let json = store.materialize_document_json(&view, 1).unwrap();
+        assert!(json.contains("\"doc_id\":1"));
+        assert!(json.contains("\"kind\":\"doc\""));
+    }
+
+    #[test]
+    fn wasm_large_document_pipeline() {
+        let mut dw = WasmDagWood::new();
+        let mut store = WasmAssertionStore::new();
+        let pos = dw.new_position();
+
+        store.add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#).unwrap();
+
+        for i in 0..200 {
+            let payload = format!(
+                r#"{{"CreateNode":{{"node_id":{},"kind":"paragraph"}}}}"#,
+                100 + i
+            );
+            store.add(&pos, &payload).unwrap();
+            let attach = format!(
+                r#"{{"AttachChild":{{"parent_id":1,"child_id":{},"ordinal":{}}}}}"#,
+                100 + i, i
+            );
+            store.add(&pos, &attach).unwrap();
+        }
+
+        assert_eq!(store.assertion_count(), 401);
+
+        let view = dw.trace_view(&pos);
+        let result = store.materialize_document(&view, 1).unwrap();
+        let doc_str = js_sys::JSON::stringify(&result).unwrap().as_string().unwrap();
+        assert!(doc_str.contains("paragraph"));
+
+        let parsed: serde_json::Value = serde_json::from_str(&doc_str).unwrap();
+        let children = parsed["root"]["children"].as_array().unwrap();
+        assert_eq!(children.len(), 200);
     }
 }

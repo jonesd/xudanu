@@ -1625,4 +1625,267 @@ mod tests {
         serde_round_trip(&EntityId::Span(SpanId::new(2)));
         serde_round_trip(&EntityId::Annotation(AnnotationId::new(3)));
     }
+
+    // =====================================================================
+    // Stress tests (P3, P4, P5)
+    // Run with: cargo test --features "serde,serde_json" -- --ignored
+    // =====================================================================
+
+    // P3: stress_materialize_100k_assertions — 100,000 visible assertions.
+    // 1000 child nodes x 10 spans each x 10 assertions per span.
+    // Materializes the full document. Exercises O(V*N) linear scan.
+    #[test]
+    #[ignore]
+    fn stress_materialize_100k_assertions() {
+        use std::time::Instant;
+        let t = Instant::now();
+        let (dw, positions) = linear_history(3);
+        let pos = positions[1];
+
+        let mut store = AssertionStore::new();
+        let doc_id = DocumentId::new(1);
+        store.add(pos, AssertionPayload::CreateNode { node_id: doc_id.node_id(), kind: "document".into() });
+
+        let n_children = 1000usize;
+        let n_spans = 10usize;
+
+        let mut child_ids = Vec::new();
+        for i in 0..n_children {
+            let nid = NodeId::new(100 + i as u64);
+            child_ids.push(nid);
+            store.add(pos, AssertionPayload::CreateNode { node_id: nid, kind: "paragraph".into() });
+            store.add(pos, AssertionPayload::AttachChild { parent_id: doc_id.node_id(), child_id: nid, ordinal: i as u32 });
+        }
+        eprintln!("  P3 create {} nodes: {:.3}s", n_children, t.elapsed().as_secs_f64());
+
+        for (i, &nid) in child_ids.iter().enumerate() {
+            for j in 0..n_spans {
+                let sid = SpanId::new(10_000 + (i as u64) * 10 + j as u64);
+                store.add(pos, AssertionPayload::CreateSpan { span_id: sid });
+                store.add(pos, AssertionPayload::SetSpanText { span_id: sid, text: format!("text-{}-{}", i, j) });
+                store.add(pos, AssertionPayload::AttachSpanToNode { node_id: nid, span_id: sid, ordinal: j as u32 });
+            }
+        }
+        eprintln!("  P3 {} total assertions added: {:.3}s", store.all_assertions().len(), t.elapsed().as_secs_f64());
+
+        let t2 = Instant::now();
+        let view = dw.trace_view(positions[2]);
+        eprintln!("  P3 TraceView: {:.3}s", t2.elapsed().as_secs_f64());
+
+        let t3 = Instant::now();
+        let doc = materialize_document(&store, &view, doc_id);
+        eprintln!("  P3 materialize: {:.3}s", t3.elapsed().as_secs_f64());
+
+        let root = doc.root.expect("document should have a root");
+        assert_eq!(root.kind, "document");
+        assert_eq!(root.children.len(), n_children);
+        for child in &root.children {
+            assert_eq!(child.spans.len(), n_spans);
+        }
+        eprintln!("  P3 total: {:.3}s", t.elapsed().as_secs_f64());
+    }
+
+    // P4: stress_deep_nesting — deeply nested node levels.
+    // Exercises recursive materialize_node_internal stack depth and
+    // the O(V*D) cost of repeated linear scans. Depth limited to 500
+    // due to default test stack size (2MB); run with RUST_MIN_STACK=64MB
+    // to push higher.
+    #[test]
+    #[ignore]
+    fn stress_deep_nesting() {
+        use std::time::Instant;
+        let t = Instant::now();
+        let (dw, positions) = linear_history(3);
+        let pos = positions[1];
+
+        let depth = 500;
+        let mut store = AssertionStore::new();
+        let mut parent_id = NodeId::new(1);
+        store.add(pos, AssertionPayload::CreateNode { node_id: parent_id, kind: "level_0".into() });
+
+        for d in 1..depth {
+            let child_id = NodeId::new(1 + d as u64);
+            store.add(pos, AssertionPayload::CreateNode { node_id: child_id, kind: format!("level_{}", d) });
+            store.add(pos, AssertionPayload::AttachChild { parent_id, child_id, ordinal: 1 });
+            parent_id = child_id;
+        }
+        eprintln!("  P4 build {} levels ({} assertions): {:.3}s", depth, store.all_assertions().len(), t.elapsed().as_secs_f64());
+
+        let t2 = Instant::now();
+        let view = dw.trace_view(positions[2]);
+        let doc = materialize_document(&store, &view, DocumentId::new(1));
+        eprintln!("  P4 materialize {} levels: {:.3}s", depth, t2.elapsed().as_secs_f64());
+
+        let root = doc.root.expect("should have root");
+        let mut node = &root;
+        for d in 0..depth {
+            assert_eq!(node.kind, format!("level_{}", d), "wrong kind at depth {}", d);
+            if d < depth - 1 {
+                assert_eq!(node.children.len(), 1);
+                node = &node.children[0];
+            } else {
+                assert!(node.children.is_empty());
+            }
+        }
+        eprintln!("  P4 total: {:.3}s", t.elapsed().as_secs_f64());
+        eprintln!("  NOTE: To test deeper nesting (1K+), run with: RUST_MIN_STACK=67108864 cargo test ... --ignored");
+    }
+
+    // P5: stress_10k_branch_alternatives — 10,000 conflicting branches on one span.
+    // Each branch sets different text. All merged via binary tree of merges.
+    // Materialized span should contain all 10K alternatives.
+    #[test]
+    #[ignore]
+    fn stress_10k_branch_alternatives() {
+        use std::time::Instant;
+        let t = Instant::now();
+        let mut dw = DagWood::new();
+        let root = dw.root();
+
+        let span_id = SpanId::new(1);
+        let mut store = AssertionStore::new();
+        store.add(root, AssertionPayload::CreateSpan { span_id });
+
+        let n_branches = 10_000usize;
+        let mut branches: Vec<TracePosition> = Vec::new();
+        for i in 0..n_branches {
+            let branch = dw.new_position();
+            store.add(branch, AssertionPayload::SetSpanText {
+                span_id,
+                text: format!("version_{}", i),
+            });
+            branches.push(branch);
+        }
+        eprintln!("  P5 create {} branches: {:.3}s", n_branches, t.elapsed().as_secs_f64());
+
+        let t2 = Instant::now();
+        while branches.len() > 1 {
+            let mut merged = Vec::new();
+            let mut i = 0;
+            while i + 1 < branches.len() {
+                let m = dw.new_successor_after(branches[i], branches[i + 1]);
+                merged.push(m);
+                i += 2;
+            }
+            if branches.len() % 2 == 1 {
+                merged.push(branches[branches.len() - 1]);
+            }
+            branches = merged;
+        }
+        eprintln!("  P5 merge tree: {:.3}s", t2.elapsed().as_secs_f64());
+
+        let t3 = Instant::now();
+        let view = dw.trace_view(branches[0]);
+        eprintln!("  P5 TraceView: {:.3}s", t3.elapsed().as_secs_f64());
+
+        let t4 = Instant::now();
+        let span = materialize_span(&store, &view, span_id).expect("span should exist");
+        eprintln!("  P5 materialize span: {:.3}s", t4.elapsed().as_secs_f64());
+
+        match &span.text {
+            AlternativeSet::Alternatives(texts) => {
+                assert!(texts.len() >= 9000, "expected ~10K alternatives, got {}", texts.len());
+                for i in 0..n_branches {
+                    let expected = format!("version_{}", i);
+                    assert!(texts.contains(&expected), "missing alternative: {}", expected);
+                }
+            }
+            other => panic!("expected Alternatives, got {:?}", other),
+        }
+        eprintln!("  P5 total: {:.3}s", t.elapsed().as_secs_f64());
+    }
+
+    // =====================================================================
+    // Missing coverage tests
+    // =====================================================================
+
+    #[test]
+    fn materialize_entity_node() {
+        let (dw, positions) = linear_history(3);
+        let mut store = AssertionStore::new();
+        let nid = NodeId::new(1);
+        store.add(positions[1], AssertionPayload::CreateNode { node_id: nid, kind: "doc".into() });
+        let view = dw.trace_view(positions[2]);
+        let entity = materialize_entity(&store, &view, EntityId::Node(nid));
+        match entity {
+            MaterializedEntity::Node(n) => assert_eq!(n.node_id, nid),
+            other => panic!("expected Node, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn materialize_entity_span() {
+        let (dw, positions) = linear_history(3);
+        let mut store = AssertionStore::new();
+        let sid = SpanId::new(1);
+        store.add(positions[1], AssertionPayload::CreateSpan { span_id: sid });
+        store.add(positions[1], AssertionPayload::SetSpanText { span_id: sid, text: "hi".into() });
+        let view = dw.trace_view(positions[2]);
+        let entity = materialize_entity(&store, &view, EntityId::Span(sid));
+        match entity {
+            MaterializedEntity::Span(s) => assert_eq!(s.span_id, sid),
+            other => panic!("expected Span, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn materialize_entity_annotation() {
+        let (dw, positions) = linear_history(3);
+        let mut store = AssertionStore::new();
+        let aid = AnnotationId::new(1);
+        store.add(positions[1], AssertionPayload::CreateAnnotation {
+            annotation_id: aid, kind: "note".into(), payload: "x".into(),
+        });
+        let view = dw.trace_view(positions[2]);
+        let entity = materialize_entity(&store, &view, EntityId::Annotation(aid));
+        match entity {
+            MaterializedEntity::Annotation(a) => assert_eq!(a.annotation_id, aid),
+            other => panic!("expected Annotation, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn materialize_entity_not_found() {
+        let (dw, positions) = linear_history(3);
+        let store = AssertionStore::new();
+        let view = dw.trace_view(positions[2]);
+        let entity = materialize_entity(&store, &view, EntityId::Node(NodeId::new(999)));
+        assert_eq!(entity, MaterializedEntity::NotFound);
+    }
+
+    #[test]
+    fn alternative_set_values() {
+        let single = AlternativeSet::Single("a".to_string());
+        assert_eq!(single.values(), &["a"]);
+        let multi = AlternativeSet::<String>::Alternatives(vec!["x".into(), "y".into()]);
+        assert_eq!(multi.values(), &["x", "y"]);
+    }
+
+    #[test]
+    fn alternative_set_is_single() {
+        assert!(AlternativeSet::Single("a".to_string()).is_single());
+        assert!(!AlternativeSet::<String>::Alternatives(vec!["a".into()]).is_single());
+    }
+
+    #[test]
+    fn alternative_set_single_value() {
+        assert_eq!(AlternativeSet::Single("a".to_string()).single_value(), Some(&"a".to_string()));
+        assert_eq!(AlternativeSet::<String>::Alternatives(vec!["a".into()]).single_value(), None);
+    }
+
+    #[test]
+    fn alternative_set_empty_alternatives() {
+        let empty = AlternativeSet::<String>::Alternatives(vec![]);
+        assert_eq!(empty.values().len(), 0);
+        assert!(!empty.is_single());
+    }
+
+    #[test]
+    fn all_assertions_accessor() {
+        let mut store = AssertionStore::new();
+        assert_eq!(store.all_assertions().len(), 0);
+        let (dw, positions) = linear_history(2);
+        store.add(positions[1], AssertionPayload::CreateNode { node_id: NodeId::new(1), kind: "doc".into() });
+        assert_eq!(store.all_assertions().len(), 1);
+    }
 }
