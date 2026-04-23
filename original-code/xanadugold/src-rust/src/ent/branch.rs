@@ -7,7 +7,8 @@ use std::collections::HashMap;
 // existing pointers to the address saw the new type. Here, identity is an
 // opaque integer; all references resolve through BranchStore.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BranchId(u64);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct BranchId(pub(crate) u64);
 
 impl BranchId {
     // [New Migration Comment] Exposes the raw value for hashing purposes only.
