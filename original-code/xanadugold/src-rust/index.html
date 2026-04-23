@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Xanadu Gold WASM Test</title>
+</head>
+<body>
+    <h1>Xanadu Gold WASM Test</h1>
+    <pre id="output"></pre>
+    <script type="module">
+        import init, { WasmDagWood, WasmEnt, WasmAssertionStore } from "./pkg/xanadu_gold.js";
+
+        const log = (msg) => {
+            document.getElementById("output").textContent += msg + "\n";
+            console.log(msg);
+        };
+
+        async function run() {
+            await init();
+            log("=== WASM loaded ===");
+
+            log("\n--- DagWood ---");
+            const dw = new WasmDagWood();
+            const root = dw.root();
+            log(`root: branch=${root.branch()}, position=${root.position()}`);
+
+            const a = dw.new_position();
+            const b = dw.new_position();
+            const c = dw.new_position_after(a);
+            log(`a: branch=${a.branch()}, position=${a.position()}`);
+            log(`b: branch=${b.branch()}, position=${b.position()}`);
+            log(`c (after a): branch=${c.branch()}, position=${c.position()}`);
+
+            log(`root <= a: ${dw.is_le(root, a)}`);
+            log(`root <= b: ${dw.is_le(root, b)}`);
+            log(`a <= c: ${dw.is_le(a, c)}`);
+            log(`a <= b: ${dw.is_le(a, b)}`);
+            log(`b <= a: ${dw.is_le(b, a)}`);
+
+            const merged = dw.new_successor_after(a, b);
+            log(`merged: branch=${merged.branch()}, position=${merged.position()}`);
+            log(`a <= merged: ${dw.is_le(a, merged)}`);
+            log(`b <= merged: ${dw.is_le(b, merged)}`);
+
+            log("\n--- TraceView (from merged) ---");
+            const view = dw.trace_view(merged);
+            log(`branch_count: ${view.branch_count()}`);
+            log(`root visible: ${view.is_visible(root)}`);
+            log(`a visible: ${view.is_visible(a)}`);
+            log(`b visible: ${view.is_visible(b)}`);
+            log(`merged visible: ${view.is_visible(merged)}`);
+            log(`a visible_max: ${view.visible_max_for(a)}`);
+            log(`b visible_max: ${view.visible_max_for(b)}`);
+            log(`root visible_max: ${view.visible_max_for(root)}`);
+
+            log("\n--- TraceView (from a only) ---");
+            const viewA = dw.trace_view(a);
+            log(`branch_count: ${viewA.branch_count()}`);
+            log(`root visible: ${viewA.is_visible(root)}`);
+            log(`a visible: ${viewA.is_visible(a)}`);
+            log(`b visible: ${viewA.is_visible(b)}`);
+            log(`merged visible: ${viewA.is_visible(merged)}`);
+
+            log("\n--- Ent ---");
+            const ent = new WasmEnt();
+            log(`table_segment_max_size: ${WasmEnt.table_segment_max_size()}`);
+            const t1 = ent.new_trace();
+            const t2 = ent.new_trace();
+            log(`t1: branch=${t1.branch()}, position=${t1.position()}`);
+            log(`t2: branch=${t2.branch()}, position=${t2.position()}`);
+            log(`t1.branch !== t2.branch: ${t1.branch() !== t2.branch()}`);
+
+            log("\n--- Content Layer (serde) ---");
+            const store = new WasmAssertionStore();
+
+            store.add(a, '{"CreateNode":{"node_id":1,"kind":"document"}}');
+            store.add(a, '{"CreateSpan":{"span_id":10}}');
+            store.add(a, '{"SetSpanText":{"span_id":10,"text":"Hello from WASM"}}');
+            store.add(a, '{"AttachSpanToNode":{"node_id":1,"span_id":10,"ordinal":1}}');
+
+            const viewMerged = dw.trace_view(merged);
+            const doc = store.materialize_document(viewMerged, 1);
+            log("materialize_document(1):");
+            log(JSON.stringify(doc, null, 2));
+
+            const span = store.materialize_span(viewMerged, 10);
+            log("\nmaterialize_span(10):");
+            log(JSON.stringify(span, null, 2));
+
+            log("\n--- Cross-branch conflict ---");
+            store.add(b, '{"SetSpanText":{"span_id":10,"text":"Hello from branch B"}}');
+            const doc2 = store.materialize_document(viewMerged, 1);
+            log("After branch B sets different text:");
+            log("span text: " + JSON.stringify(doc2.root.spans[0].text));
+
+            log("\n=== All tests passed ===");
+        }
+
+        run().catch(e => log("ERROR: " + e));
+    </script>
+</body>
+</html>

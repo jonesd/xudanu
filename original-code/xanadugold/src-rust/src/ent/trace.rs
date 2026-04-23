@@ -11,6 +11,7 @@ use crate::ent::branch::BranchId;
 // the position lies."
 // Source: dagwoodx.hxx class comment
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TracePosition {
     branch: BranchId,
     position: u32,

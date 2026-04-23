@@ -8,16 +8,20 @@ use crate::ent::trace::TracePosition;
 // Opaque, stable across history.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DocumentId(u64);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct DocumentId(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NodeId(u64);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct NodeId(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SpanId(u64);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SpanId(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AnnotationId(u64);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct AnnotationId(pub u64);
 
 impl DocumentId {
     pub fn new(id: u64) -> Self {
@@ -49,6 +53,7 @@ impl AnnotationId {
 // === Assertion Payload ===
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AssertionPayload {
     CreateNode {
         node_id: NodeId,
@@ -106,9 +111,11 @@ pub enum AssertionPayload {
 // === Assertion ===
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AssertionId(u64);
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct AssertionId(pub u64);
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Assertion {
     pub id: AssertionId,
     pub position: TracePosition,
@@ -120,6 +127,7 @@ pub struct Assertion {
 // DO NOT silently resolve — preserve all visible alternatives.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AlternativeSet<T> {
     Single(T),
     Alternatives(Vec<T>),
@@ -158,6 +166,7 @@ impl<T: Clone + Eq + std::hash::Hash> AlternativeSet<T> {
 // === Materialized Types ===
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MaterializedAnnotation {
     pub annotation_id: AnnotationId,
     pub kind: String,
@@ -165,6 +174,7 @@ pub struct MaterializedAnnotation {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MaterializedSpan {
     pub span_id: SpanId,
     pub text: AlternativeSet<String>,
@@ -172,6 +182,7 @@ pub struct MaterializedSpan {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MaterializedNode {
     pub node_id: NodeId,
     pub kind: String,
@@ -181,12 +192,14 @@ pub struct MaterializedNode {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MaterializedDocument {
     pub doc_id: DocumentId,
     pub root: Option<MaterializedNode>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum MaterializedEntity {
     Node(MaterializedNode),
     Span(MaterializedSpan),
@@ -286,6 +299,8 @@ pub fn materialize_entity(
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, PartialEq)]
 pub enum EntityId {
     Node(NodeId),
     Span(SpanId),
@@ -1356,5 +1371,258 @@ mod tests {
                 other
             ),
         }
+    }
+
+    // === Serde round-trip tests (S1–S18) ===
+
+    #[cfg(feature = "serde_json")]
+    fn serde_round_trip<T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug>(
+        value: &T,
+    ) {
+        let json = serde_json::to_string(value).unwrap();
+        let back: T = serde_json::from_str(&json).unwrap();
+        assert_eq!(*value, back, "round-trip failed for: {}", json);
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_id_types_round_trip() {
+        assert_eq!(serde_json::to_string(&DocumentId::new(42)).unwrap(), "42");
+        serde_round_trip(&DocumentId::new(0));
+        serde_round_trip(&DocumentId::new(1));
+        serde_round_trip(&DocumentId::new(999));
+        serde_round_trip(&NodeId::new(100));
+        serde_round_trip(&SpanId::new(200));
+        serde_round_trip(&AnnotationId::new(300));
+        serde_round_trip(&AssertionId(400));
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_id_values_are_json_numbers() {
+        assert_eq!(serde_json::to_string(&DocumentId::new(7)).unwrap(), "7");
+        assert_eq!(serde_json::to_string(&NodeId::new(8)).unwrap(), "8");
+        assert_eq!(serde_json::to_string(&SpanId::new(9)).unwrap(), "9");
+        assert_eq!(serde_json::to_string(&AnnotationId::new(10)).unwrap(), "10");
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_payload_all_variants_round_trip() {
+        let payloads = vec![
+            AssertionPayload::CreateNode { node_id: NodeId::new(1), kind: "doc".into() },
+            AssertionPayload::AttachChild { parent_id: NodeId::new(1), child_id: NodeId::new(2), ordinal: 0 },
+            AssertionPayload::DetachChild { parent_id: NodeId::new(1), child_id: NodeId::new(2) },
+            AssertionPayload::DeleteNode { node_id: NodeId::new(1) },
+            AssertionPayload::CreateSpan { span_id: SpanId::new(10) },
+            AssertionPayload::SetSpanText { span_id: SpanId::new(10), text: "hello".into() },
+            AssertionPayload::DeleteSpan { span_id: SpanId::new(10) },
+            AssertionPayload::AttachSpanToNode { node_id: NodeId::new(1), span_id: SpanId::new(10), ordinal: 1 },
+            AssertionPayload::DetachSpanFromNode { node_id: NodeId::new(1), span_id: SpanId::new(10) },
+            AssertionPayload::CreateAnnotation { annotation_id: AnnotationId::new(100), kind: "bold".into(), payload: "true".into() },
+            AssertionPayload::AttachAnnotationToNode { annotation_id: AnnotationId::new(100), node_id: NodeId::new(1) },
+            AssertionPayload::AttachAnnotationToSpan { annotation_id: AnnotationId::new(100), span_id: SpanId::new(10) },
+            AssertionPayload::DeleteAnnotation { annotation_id: AnnotationId::new(100) },
+        ];
+        for payload in &payloads {
+            serde_round_trip(payload);
+        }
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_alternative_set_round_trip() {
+        serde_round_trip(&AlternativeSet::Single("hello".to_string()));
+        serde_round_trip(&AlternativeSet::<String>::Alternatives(vec!["alpha".into(), "beta".into()]));
+        serde_round_trip(&AlternativeSet::<String>::Alternatives(vec![]));
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_alternative_set_json_structure() {
+        let single = serde_json::to_string(&AlternativeSet::Single("hello".to_string())).unwrap();
+        assert!(single.contains("\"Single\""), "Single variant: {}", single);
+        let alt = serde_json::to_string(
+            &AlternativeSet::<String>::Alternatives(vec!["a".into(), "b".into()])
+        ).unwrap();
+        assert!(alt.contains("\"Alternatives\""), "Alternatives variant: {}", alt);
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_full_document_round_trip() {
+        let (dw, positions) = linear_history(3);
+        let doc_id = DocumentId::new(1);
+        let span_id = SpanId::new(10);
+        let ann_id = AnnotationId::new(100);
+        let mut store = AssertionStore::new();
+        store.add(positions[1], AssertionPayload::CreateNode { node_id: doc_id.node_id(), kind: "document".into() });
+        store.add(positions[2], AssertionPayload::CreateSpan { span_id });
+        store.add(positions[2], AssertionPayload::SetSpanText { span_id, text: "Hello".into() });
+        store.add(positions[2], AssertionPayload::AttachSpanToNode { node_id: doc_id.node_id(), span_id, ordinal: 1 });
+        store.add(positions[2], AssertionPayload::CreateAnnotation { annotation_id: ann_id, kind: "bold".into(), payload: "true".into() });
+        store.add(positions[2], AssertionPayload::AttachAnnotationToSpan { annotation_id: ann_id, span_id });
+        let view = dw.trace_view(positions[2]);
+        let doc = materialize_document(&store, &view, doc_id);
+        let json = serde_json::to_string(&doc).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["doc_id"], 1);
+        assert_eq!(parsed["root"]["node_id"], 1);
+        assert_eq!(parsed["root"]["kind"], "document");
+        assert_eq!(parsed["root"]["spans"][0]["span_id"], 10);
+        assert_eq!(parsed["root"]["spans"][0]["text"]["Single"], "Hello");
+        assert_eq!(parsed["root"]["spans"][0]["annotations"][0]["kind"], "bold");
+        let back: MaterializedDocument = serde_json::from_str(&json).unwrap();
+        assert_eq!(doc, back);
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_cross_branch_alternatives() {
+        let mut dw = DagWood::new();
+        let root = dw.root();
+        let a = dw.new_position();
+        let b = dw.new_position();
+        let merged = dw.new_successor_after(a, b);
+        let span_id = SpanId::new(1);
+        let mut store = AssertionStore::new();
+        store.add(root, AssertionPayload::CreateSpan { span_id });
+        store.add(a, AssertionPayload::SetSpanText { span_id, text: "Hello!".into() });
+        store.add(b, AssertionPayload::SetSpanText { span_id, text: "Hello world".into() });
+        let view = dw.trace_view(merged);
+        let span = materialize_span(&store, &view, span_id).unwrap();
+        let json = serde_json::to_string(&span).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed["text"]["Alternatives"].is_array());
+        let alts = parsed["text"]["Alternatives"].as_array().unwrap();
+        assert_eq!(alts.len(), 2);
+        assert!(alts.iter().any(|v| v.as_str() == Some("Hello!")));
+        assert!(alts.iter().any(|v| v.as_str() == Some("Hello world")));
+        let back: MaterializedSpan = serde_json::from_str(&json).unwrap();
+        assert_eq!(span, back);
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_nested_children_round_trip() {
+        let (dw, positions) = linear_history(4);
+        let parent_id = NodeId::new(1);
+        let child_id = NodeId::new(2);
+        let grandchild_id = NodeId::new(3);
+        let mut store = AssertionStore::new();
+        store.add(positions[1], AssertionPayload::CreateNode { node_id: parent_id, kind: "doc".into() });
+        store.add(positions[1], AssertionPayload::CreateNode { node_id: child_id, kind: "para".into() });
+        store.add(positions[1], AssertionPayload::CreateNode { node_id: grandchild_id, kind: "span_node".into() });
+        store.add(positions[1], AssertionPayload::AttachChild { parent_id, child_id, ordinal: 1 });
+        store.add(positions[1], AssertionPayload::AttachChild { parent_id: child_id, child_id: grandchild_id, ordinal: 1 });
+        let view = dw.trace_view(positions[3]);
+        let node = materialize_node(&store, &view, parent_id).unwrap();
+        let json = serde_json::to_string(&node).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["children"][0]["node_id"], 2);
+        assert_eq!(parsed["children"][0]["children"][0]["node_id"], 3);
+        let back: MaterializedNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(node, back);
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_missing_document_null_root() {
+        let (dw, positions) = linear_history(3);
+        let store = AssertionStore::new();
+        let view = dw.trace_view(positions[2]);
+        let doc = materialize_document(&store, &view, DocumentId::new(999));
+        let json = serde_json::to_string(&doc).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["doc_id"], 999);
+        assert!(parsed["root"].is_null());
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_empty_string_preserved() {
+        let (dw, positions) = linear_history(3);
+        let span_id = SpanId::new(1);
+        let mut store = AssertionStore::new();
+        store.add(positions[1], AssertionPayload::CreateSpan { span_id });
+        store.add(positions[1], AssertionPayload::SetSpanText { span_id, text: String::new() });
+        let view = dw.trace_view(positions[2]);
+        let span = materialize_span(&store, &view, span_id).unwrap();
+        let json = serde_json::to_string(&span).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["text"]["Single"].as_str(), Some(""));
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_deleted_entity_is_null() {
+        let (dw, positions) = linear_history(3);
+        let span_id = SpanId::new(1);
+        let mut store = AssertionStore::new();
+        store.add(positions[1], AssertionPayload::CreateSpan { span_id });
+        store.add(positions[2], AssertionPayload::DeleteSpan { span_id });
+        let view = dw.trace_view(positions[2]);
+        assert!(materialize_span(&store, &view, span_id).is_none());
+        assert_eq!(serde_json::to_string(&materialize_span(&store, &view, span_id)).unwrap(), "null");
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_unicode_text_round_trip() {
+        let (dw, positions) = linear_history(3);
+        let span_id = SpanId::new(1);
+        let text = "你好世界 🌍 こんにちは";
+        let mut store = AssertionStore::new();
+        store.add(positions[1], AssertionPayload::CreateSpan { span_id });
+        store.add(positions[1], AssertionPayload::SetSpanText { span_id, text: text.into() });
+        let view = dw.trace_view(positions[2]);
+        let span = materialize_span(&store, &view, span_id).unwrap();
+        let json = serde_json::to_string(&span).unwrap();
+        let back: MaterializedSpan = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.text, AlternativeSet::Single(text.to_string()));
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_payload_from_js_format() {
+        let cases: Vec<(&str, AssertionPayload)> = vec![
+            (r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#,
+             AssertionPayload::CreateNode { node_id: NodeId::new(1), kind: "document".into() }),
+            (r#"{"SetSpanText":{"span_id":10,"text":"Hello"}}"#,
+             AssertionPayload::SetSpanText { span_id: SpanId::new(10), text: "Hello".into() }),
+            (r#"{"DeleteNode":{"node_id":5}}"#,
+             AssertionPayload::DeleteNode { node_id: NodeId::new(5) }),
+            (r#"{"AttachChild":{"parent_id":1,"child_id":2,"ordinal":0}}"#,
+             AssertionPayload::AttachChild { parent_id: NodeId::new(1), child_id: NodeId::new(2), ordinal: 0 }),
+            (r#"{"CreateAnnotation":{"annotation_id":100,"kind":"bold","payload":"true"}}"#,
+             AssertionPayload::CreateAnnotation { annotation_id: AnnotationId::new(100), kind: "bold".into(), payload: "true".into() }),
+        ];
+        for (json, expected) in cases {
+            assert_eq!(serde_json::from_str::<AssertionPayload>(json).unwrap(), expected, "failed: {}", json);
+        }
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_payload_rejects_invalid() {
+        assert!(serde_json::from_str::<AssertionPayload>(r#"{"not_a_variant":true}"#).is_err());
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_annotation_round_trip() {
+        serde_round_trip(&MaterializedAnnotation {
+            annotation_id: AnnotationId::new(42),
+            kind: "comment".into(),
+            payload: "needs review".into(),
+        });
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_entity_id_round_trip() {
+        serde_round_trip(&EntityId::Node(NodeId::new(1)));
+        serde_round_trip(&EntityId::Span(SpanId::new(2)));
+        serde_round_trip(&EntityId::Annotation(AnnotationId::new(3)));
     }
 }

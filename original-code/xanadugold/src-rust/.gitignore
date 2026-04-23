@@ -1,0 +1,5 @@
+target/
+pkg/
+lcov.info
+*.wasm
+*. DS_Store
