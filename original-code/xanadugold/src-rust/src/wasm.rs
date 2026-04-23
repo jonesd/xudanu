@@ -232,16 +232,16 @@ impl WasmAssertionStore {
     pub fn materialize_document(
         &self,
         view: &WasmTraceView,
-        doc_id: u64,
+        doc_id: f64,
     ) -> Result<JsValue, JsValue> {
         let doc = materialize_document(
             &self.inner,
             &view.inner,
-            DocumentId::new(doc_id),
+            DocumentId::new(doc_id as u64),
         );
         if doc.root.is_none() {
             console_warn!(
-                "xudanu: materialize_document({}) returned null root. No CreateNode assertion found for this document ID.",
+                "xudanu: materialize_document({}) returned null root.",
                 doc_id
             );
         }
@@ -251,12 +251,12 @@ impl WasmAssertionStore {
     pub fn materialize_document_json(
         &self,
         view: &WasmTraceView,
-        doc_id: u64,
+        doc_id: f64,
     ) -> Result<String, JsValue> {
         let doc = materialize_document(
             &self.inner,
             &view.inner,
-            DocumentId::new(doc_id),
+            DocumentId::new(doc_id as u64),
         );
         if doc.root.is_none() {
             console_warn!(
@@ -270,12 +270,12 @@ impl WasmAssertionStore {
     pub fn materialize_node(
         &self,
         view: &WasmTraceView,
-        node_id: u64,
+        node_id: f64,
     ) -> Result<JsValue, JsValue> {
         let node = materialize_node(
             &self.inner,
             &view.inner,
-            NodeId::new(node_id),
+            NodeId::new(node_id as u64),
         );
         self.serialize_to_json(&node)
     }
@@ -283,12 +283,12 @@ impl WasmAssertionStore {
     pub fn materialize_span(
         &self,
         view: &WasmTraceView,
-        span_id: u64,
+        span_id: f64,
     ) -> Result<JsValue, JsValue> {
         let span = materialize_span(
             &self.inner,
             &view.inner,
-            SpanId::new(span_id),
+            SpanId::new(span_id as u64),
         );
         self.serialize_to_json(&span)
     }
@@ -395,7 +395,7 @@ mod wasm_tests {
 
         let view = dw.trace_view(&pos);
         let json = store.materialize_document_json(&view, 1).unwrap();
-        assert!(json.contains("\"doc_id\":1"));
+        assert!(json.contains("\"doc_id\":\"1\""));
         assert!(json.contains("\"kind\":\"doc\""));
     }
 

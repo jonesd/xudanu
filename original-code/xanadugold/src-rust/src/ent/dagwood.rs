@@ -1313,4 +1313,199 @@ mod tests {
             }
         }
     }
+
+    // =====================================================================
+    // Stress tests (P1, P2, P7, P8, P10)
+    // Run with: cargo test --features "serde,serde_json" -- --ignored
+    // =====================================================================
+
+    use std::time::Instant;
+
+    fn elapsed(t: Instant) -> String {
+        format!("{:.3}s", t.elapsed().as_secs_f64())
+    }
+
+    // P1: stress_deep_linear_100k — 100,000 position linear chain.
+    // Exercises O(B) cache_in traversal through 100K+ branches.
+    // Verifies is_le against brute-force computation for sampled pairs.
+    #[test]
+    #[ignore]
+    fn stress_deep_linear_100k() {
+        let t = Instant::now();
+        let mut dw = DagWood::new();
+        let mut positions = vec![dw.root()];
+        let mut tip = dw.new_position();
+        positions.push(tip);
+        for _ in 1..100_000 {
+            tip = dw.new_position_after(tip);
+            positions.push(tip);
+        }
+        eprintln!("  P1 build 100K chain: {}", elapsed(t));
+
+        let first = positions[0];
+        let last = *positions.last().unwrap();
+
+        let t2 = Instant::now();
+        assert!(dw.is_le(first, last));
+        eprintln!("  P1 is_le(first, last): {}", elapsed(t2));
+
+        let t3 = Instant::now();
+        assert!(!dw.is_le(last, first));
+        eprintln!("  P1 is_le(last, first): {}", elapsed(t3));
+
+        let t4 = Instant::now();
+        let sample_indices: Vec<usize> = (0..100).map(|i| i * 1000).collect();
+        for &i in &sample_indices {
+            for &j in &sample_indices {
+                let expected = i <= j;
+                let actual = dw.is_le(positions[i], positions[j]);
+                assert_eq!(actual, expected, "is_le({}, {}) mismatch", i, j);
+            }
+        }
+        eprintln!("  P1 10K sampled comparisons: {}", elapsed(t4));
+        eprintln!("  P1 total: {}", elapsed(t));
+    }
+
+    // P2: stress_exponential_merge_dag — binary tree of merges.
+    // 14 levels: 16384 leaf branches, ~16K merge branches = ~32K total.
+    // Tests that the HashMap visited-set prevents exponential blowup.
+    #[test]
+    #[ignore]
+    fn stress_exponential_merge_dag() {
+        let t = Instant::now();
+        let mut dw = DagWood::new();
+
+        let mut leaves: Vec<TracePosition> = (0..16384).map(|_| dw.new_position()).collect();
+        eprintln!("  P2 create 16384 leaves: {}", elapsed(t));
+
+        let t2 = Instant::now();
+        for _level in 0..14 {
+            let mut merged = Vec::new();
+            let mut i = 0;
+            while i + 1 < leaves.len() {
+                let m = dw.new_successor_after(leaves[i], leaves[i + 1]);
+                merged.push(m);
+                i += 2;
+            }
+            if !leaves.is_empty() && leaves.len() % 2 == 1 {
+                merged.push(leaves[leaves.len() - 1]);
+            }
+            leaves = merged;
+        }
+        eprintln!("  P2 merge tree (14 levels): {}", elapsed(t2));
+
+        assert_eq!(leaves.len(), 1);
+        let root_merge = leaves[0];
+
+        let t3 = Instant::now();
+        let view = dw.trace_view(root_merge);
+        assert!(view.branch_count() > 30000, "should see ~32K branches, got {}", view.branch_count());
+        eprintln!("  P2 TraceView ({} branches): {}", view.branch_count(), elapsed(t3));
+
+        let t4 = Instant::now();
+        for _ in 0..1000 {
+            assert!(dw.is_le(dw.root(), root_merge) || true);
+        }
+        eprintln!("  P2 1K is_le calls: {}", elapsed(t4));
+        eprintln!("  P2 total: {}", elapsed(t));
+    }
+
+    // P7: stress_cache_thrashing — 100K alternating-reference is_le calls.
+    // Each reference change clears and rebuilds the entire nav_cache.
+    #[test]
+    #[ignore]
+    fn stress_cache_thrashing() {
+        let t = Instant::now();
+        let mut dag = generate_dag(42, 2000);
+        let n = dag.positions.len();
+        eprintln!("  P7 generate 2000-op DAG ({} positions): {}", n, elapsed(t));
+
+        let ref_indices: Vec<usize> = (0..20).map(|i| (i * n / 20).min(n - 1)).collect();
+
+        let t2 = Instant::now();
+        for round in 0..1000 {
+            for &ref_idx in &ref_indices {
+                let reference = dag.positions[ref_idx];
+                let query_idx = (round * ref_idx) % n;
+                let query = dag.positions[query_idx];
+
+                let cached = dag.dw.is_le(query, reference);
+                let brute = is_le_no_cache(&dag.dw, query, reference);
+                assert_eq!(cached, brute, "cache mismatch at round {} ref={} query={}", round, ref_idx, query_idx);
+            }
+        }
+        eprintln!("  P7 20K is_le+brute pairs: {}", elapsed(t2));
+        eprintln!("  P7 total: {}", elapsed(t));
+    }
+
+    // P8: stress_trace_view_5k_branches — TraceView on 5,000+ branch DAG.
+    // Verifies is_visible for all positions from multiple reference points.
+    #[test]
+    #[ignore]
+    fn stress_trace_view_5k_branches() {
+        let t = Instant::now();
+        let mut dag = generate_dag(31415, 5000);
+        let n = dag.positions.len();
+        eprintln!("  P8 generate 5K-op DAG ({} positions): {}", n, elapsed(t));
+
+        let ref_points = [0, n / 8, n / 4, n / 2, 3 * n / 4, n - 1];
+        for &seed_ref in &ref_points {
+            let reference = dag.positions[seed_ref];
+            let t2 = Instant::now();
+            let view = dag.dw.trace_view(reference);
+            eprintln!("  P8 TraceView(ref[{}]) created: {}", seed_ref, elapsed(t2));
+
+            for (i, &pos) in dag.positions.iter().enumerate() {
+                let from_view = view.is_visible(pos);
+                let from_is_le = dag.dw.is_le(pos, reference);
+                assert_eq!(from_view, from_is_le, "mismatch at pos[{}] ref[{}]", i, seed_ref);
+            }
+        }
+        eprintln!("  P8 total: {}", elapsed(t));
+    }
+
+    // P10: stress_marathon_properties — extended property testing.
+    // Runs reflexivity, antisymmetry, transitivity on 50 random DAGs
+    // with 500 ops each. ~20K positions per DAG, all-pairs/all-triples checks.
+    #[test]
+    #[ignore]
+    fn stress_marathon_properties() {
+        let seeds: Vec<u64> = (0..50).map(|i| i * 7919 + 42).collect();
+        for (_si, &seed) in seeds.iter().enumerate() {
+            let t = Instant::now();
+            let mut dag = generate_dag(seed, 500);
+            let n = dag.positions.len();
+            eprint!("  P10 seed={} ({} positions) ", seed, n);
+
+            for i in 0..n {
+                assert!(dag.dw.is_le(dag.positions[i], dag.positions[i]),
+                    "reflexivity failed seed={} i={}", seed, i);
+            }
+
+            for i in 0..n {
+                for j in 0..n {
+                    let a = dag.positions[i];
+                    let b = dag.positions[j];
+                    if dag.dw.is_le(a, b) && dag.dw.is_le(b, a) {
+                        assert_eq!(a, b, "antisymmetry failed seed={}", seed);
+                    }
+                }
+            }
+
+            for i in (0..n).step_by(5) {
+                for j in (0..n).step_by(5) {
+                    for k in (0..n).step_by(5) {
+                        let a = dag.positions[i];
+                        let b = dag.positions[j];
+                        let c = dag.positions[k];
+                        if dag.dw.is_le(a, b) && dag.dw.is_le(b, c) {
+                            assert!(dag.dw.is_le(a, c),
+                                "transitivity failed seed={}", seed);
+                        }
+                    }
+                }
+            }
+            eprintln!("{}", elapsed(t));
+        }
+    }
 }

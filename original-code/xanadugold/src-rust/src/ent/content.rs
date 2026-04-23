@@ -4,24 +4,54 @@ use crate::ent::branch::BranchId;
 use crate::ent::dagwood::TraceView;
 use crate::ent::trace::TracePosition;
 
+#[cfg(feature = "serde")]
+mod serde_id {
+    use serde::de::Visitor;
+    use std::fmt;
+
+    pub fn serialize_u64_as_string<S: serde::Serializer>(
+        value: &u64,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    pub fn deserialize_string_as_u64<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<u64, D::Error> {
+        struct U64OrString;
+
+        impl<'de> Visitor<'de> for U64OrString {
+            type Value = u64;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "a u64 number or a string containing a u64")
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<u64, E> {
+                Ok(v)
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<u64, E> {
+                v.parse().map_err(serde::de::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_any(U64OrString)
+    }
+}
+
 // === Entity IDs ===
-// Opaque, stable across history.
+// Opaque, stable across history. Serialize as JSON strings to avoid BigInt issues in WASM.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct DocumentId(pub u64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct NodeId(pub u64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct SpanId(pub u64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct AnnotationId(pub u64);
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct DocumentId(
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serde_id::serialize_u64_as_string"))]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_id::deserialize_string_as_u64"))]
+    pub u64,
+);
 
 impl DocumentId {
     pub fn new(id: u64) -> Self {
@@ -32,11 +62,29 @@ impl DocumentId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct NodeId(
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serde_id::serialize_u64_as_string"))]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_id::deserialize_string_as_u64"))]
+    pub u64,
+);
+
 impl NodeId {
     pub fn new(id: u64) -> Self {
         NodeId(id)
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct SpanId(
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serde_id::serialize_u64_as_string"))]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_id::deserialize_string_as_u64"))]
+    pub u64,
+);
 
 impl SpanId {
     pub fn new(id: u64) -> Self {
@@ -44,11 +92,29 @@ impl SpanId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct AnnotationId(
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serde_id::serialize_u64_as_string"))]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_id::deserialize_string_as_u64"))]
+    pub u64,
+);
+
 impl AnnotationId {
     pub fn new(id: u64) -> Self {
         AnnotationId(id)
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+pub struct AssertionId(
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serde_id::serialize_u64_as_string"))]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_id::deserialize_string_as_u64"))]
+    pub u64,
+);
 
 // === Assertion Payload ===
 
@@ -109,10 +175,6 @@ pub enum AssertionPayload {
 }
 
 // === Assertion ===
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct AssertionId(pub u64);
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -258,7 +320,8 @@ pub fn materialize_document(
     doc_id: DocumentId,
 ) -> MaterializedDocument {
     let visible = store.visible_assertions(view);
-    let root = materialize_node_internal(&visible, doc_id.node_id());
+    let idx = VisibleIndex::build(visible);
+    let root = materialize_node_indexed(&idx, doc_id.node_id());
     MaterializedDocument { doc_id, root }
 }
 
@@ -268,7 +331,8 @@ pub fn materialize_node(
     node_id: NodeId,
 ) -> Option<MaterializedNode> {
     let visible = store.visible_assertions(view);
-    materialize_node_internal(&visible, node_id)
+    let idx = VisibleIndex::build(visible);
+    materialize_node_indexed(&idx, node_id)
 }
 
 pub fn materialize_span(
@@ -277,7 +341,8 @@ pub fn materialize_span(
     span_id: SpanId,
 ) -> Option<MaterializedSpan> {
     let visible = store.visible_assertions(view);
-    materialize_span_internal(&visible, span_id)
+    let idx = VisibleIndex::build(visible);
+    materialize_span_indexed(&idx, span_id)
 }
 
 pub fn materialize_entity(
@@ -286,17 +351,8 @@ pub fn materialize_entity(
     entity: EntityId,
 ) -> MaterializedEntity {
     let visible = store.visible_assertions(view);
-    match entity {
-        EntityId::Node(id) => materialize_node_internal(&visible, id)
-            .map(MaterializedEntity::Node)
-            .unwrap_or(MaterializedEntity::NotFound),
-        EntityId::Span(id) => materialize_span_internal(&visible, id)
-            .map(MaterializedEntity::Span)
-            .unwrap_or(MaterializedEntity::NotFound),
-        EntityId::Annotation(id) => materialize_annotation_internal(&visible, id)
-            .map(MaterializedEntity::Annotation)
-            .unwrap_or(MaterializedEntity::NotFound),
-    }
+    let idx = VisibleIndex::build(visible);
+    materialize_entity_indexed(&idx, entity)
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -307,45 +363,124 @@ pub enum EntityId {
     Annotation(AnnotationId),
 }
 
-// --- Internal materialization helpers ---
+// --- VisibleIndex: O(1) lookup index built from visible assertions ---
 
-fn entity_exists(
-    visible: &[&Assertion],
-    is_create: impl Fn(&AssertionPayload) -> bool,
-    is_delete: impl Fn(&AssertionPayload) -> bool,
-) -> bool {
-    let created = visible.iter().any(|a| is_create(&a.payload));
-    let deleted = visible.iter().any(|a| is_delete(&a.payload));
-    created && !deleted
+struct VisibleIndex<'a> {
+    assertions: Vec<&'a Assertion>,
+    create_node: HashMap<NodeId, usize>,
+    delete_node: HashSet<NodeId>,
+    create_span: HashSet<SpanId>,
+    delete_span: HashSet<SpanId>,
+    create_annotation: HashMap<AnnotationId, usize>,
+    delete_annotation: HashSet<AnnotationId>,
+    attach_child: HashMap<NodeId, Vec<usize>>,
+    detach_child: HashMap<NodeId, HashSet<NodeId>>,
+    attach_span: HashMap<NodeId, Vec<usize>>,
+    detach_span: HashMap<NodeId, HashSet<SpanId>>,
+    set_span_text: HashMap<SpanId, Vec<usize>>,
+    attach_annotation_to_node: HashMap<NodeId, Vec<usize>>,
+    attach_annotation_to_span: HashMap<SpanId, Vec<usize>>,
 }
 
-fn materialize_node_internal(
-    visible: &[&Assertion],
-    node_id: NodeId,
-) -> Option<MaterializedNode> {
-    let exists = entity_exists(
-        visible,
-        |p| matches!(p, AssertionPayload::CreateNode { node_id: id, .. } if *id == node_id),
-        |p| matches!(p, AssertionPayload::DeleteNode { node_id: id } if *id == node_id),
-    );
-    if !exists {
+impl<'a> VisibleIndex<'a> {
+    fn build(assertions: Vec<&'a Assertion>) -> Self {
+        let mut idx = VisibleIndex {
+            assertions,
+            create_node: HashMap::new(),
+            delete_node: HashSet::new(),
+            create_span: HashSet::new(),
+            delete_span: HashSet::new(),
+            create_annotation: HashMap::new(),
+            delete_annotation: HashSet::new(),
+            attach_child: HashMap::new(),
+            detach_child: HashMap::new(),
+            attach_span: HashMap::new(),
+            detach_span: HashMap::new(),
+            set_span_text: HashMap::new(),
+            attach_annotation_to_node: HashMap::new(),
+            attach_annotation_to_span: HashMap::new(),
+        };
+        for (i, a) in idx.assertions.iter().enumerate() {
+            match &a.payload {
+                AssertionPayload::CreateNode { node_id, .. } => {
+                    idx.create_node.entry(*node_id).or_insert(i);
+                }
+                AssertionPayload::DeleteNode { node_id } => {
+                    idx.delete_node.insert(*node_id);
+                }
+                AssertionPayload::CreateSpan { span_id } => {
+                    idx.create_span.insert(*span_id);
+                }
+                AssertionPayload::DeleteSpan { span_id } => {
+                    idx.delete_span.insert(*span_id);
+                }
+                AssertionPayload::CreateAnnotation { annotation_id, .. } => {
+                    idx.create_annotation.entry(*annotation_id).or_insert(i);
+                }
+                AssertionPayload::DeleteAnnotation { annotation_id } => {
+                    idx.delete_annotation.insert(*annotation_id);
+                }
+                AssertionPayload::AttachChild { parent_id, .. } => {
+                    idx.attach_child.entry(*parent_id).or_default().push(i);
+                }
+                AssertionPayload::DetachChild { parent_id, child_id } => {
+                    idx.detach_child.entry(*parent_id).or_default().insert(*child_id);
+                }
+                AssertionPayload::AttachSpanToNode { node_id, .. } => {
+                    idx.attach_span.entry(*node_id).or_default().push(i);
+                }
+                AssertionPayload::DetachSpanFromNode { node_id, span_id } => {
+                    idx.detach_span.entry(*node_id).or_default().insert(*span_id);
+                }
+                AssertionPayload::SetSpanText { span_id, .. } => {
+                    idx.set_span_text.entry(*span_id).or_default().push(i);
+                }
+                AssertionPayload::AttachAnnotationToNode { annotation_id, node_id } => {
+                    idx.attach_annotation_to_node.entry(*node_id).or_default().push(i);
+                    let _ = annotation_id;
+                }
+                AssertionPayload::AttachAnnotationToSpan { annotation_id, span_id } => {
+                    idx.attach_annotation_to_span.entry(*span_id).or_default().push(i);
+                    let _ = annotation_id;
+                }
+            }
+        }
+        idx
+    }
+
+    fn node_exists(&self, node_id: NodeId) -> bool {
+        self.create_node.contains_key(&node_id) && !self.delete_node.contains(&node_id)
+    }
+
+    fn span_exists(&self, span_id: SpanId) -> bool {
+        self.create_span.contains(&span_id) && !self.delete_span.contains(&span_id)
+    }
+
+    fn annotation_exists(&self, annotation_id: AnnotationId) -> bool {
+        self.create_annotation.contains_key(&annotation_id)
+            && !self.delete_annotation.contains(&annotation_id)
+    }
+}
+
+// --- Indexed materialization functions ---
+
+fn materialize_node_indexed(idx: &VisibleIndex, node_id: NodeId) -> Option<MaterializedNode> {
+    if !idx.node_exists(node_id) {
         return None;
     }
 
-    let kind = visible
-        .iter()
-        .find_map(|a| match &a.payload {
-            AssertionPayload::CreateNode {
-                node_id: id,
-                kind,
-            } if *id == node_id => Some(kind.clone()),
+    let kind = idx
+        .create_node
+        .get(&node_id)
+        .and_then(|&i| match &idx.assertions[i].payload {
+            AssertionPayload::CreateNode { kind, .. } => Some(kind.clone()),
             _ => None,
         })
         .unwrap_or_default();
 
-    let children = collect_children(visible, node_id);
-    let spans = collect_spans(visible, node_id);
-    let annotations = collect_annotations_for_node(visible, node_id);
+    let children = collect_children_indexed(idx, node_id);
+    let spans = collect_spans_indexed(idx, node_id);
+    let annotations = collect_annotations_for_node_indexed(idx, node_id);
 
     Some(MaterializedNode {
         node_id,
@@ -356,81 +491,81 @@ fn materialize_node_internal(
     })
 }
 
-fn collect_children(visible: &[&Assertion], node_id: NodeId) -> Vec<MaterializedNode> {
-    let attached: HashSet<NodeId> = visible
-        .iter()
-        .filter_map(|a| match &a.payload {
-            AssertionPayload::AttachChild {
-                parent_id,
+fn collect_children_indexed(idx: &VisibleIndex, node_id: NodeId) -> Vec<MaterializedNode> {
+    let mut child_ordinals: HashMap<NodeId, (u32, u32)> = HashMap::new();
+    if let Some(indices) = idx.attach_child.get(&node_id) {
+        for &i in indices {
+            if let AssertionPayload::AttachChild {
                 child_id,
+                ordinal,
                 ..
-            } if *parent_id == node_id => Some(*child_id),
-            _ => None,
-        })
-        .collect();
+            } = &idx.assertions[i].payload
+            {
+                let pos = idx.assertions[i].position.position();
+                let entry = child_ordinals.entry(*child_id).or_insert((0, 0));
+                if pos >= entry.0 {
+                    *entry = (pos, *ordinal);
+                }
+            }
+        }
+    }
 
-    let detached: HashSet<NodeId> = visible
-        .iter()
-        .filter_map(|a| match &a.payload {
-            AssertionPayload::DetachChild {
-                parent_id,
-                child_id,
-            } if *parent_id == node_id => Some(*child_id),
-            _ => None,
-        })
-        .collect();
+    let detached = idx.detach_child.get(&node_id);
 
-    attached
-        .difference(&detached)
-        .filter_map(|&id| materialize_node_internal(visible, id))
+    let mut entries: Vec<(NodeId, u32)> = child_ordinals
+        .into_iter()
+        .filter(|(id, _)| detached.map_or(true, |d| !d.contains(id)))
+        .map(|(id, (_, ord))| (id, ord))
+        .collect();
+    entries.sort_by_key(|(_, ord)| *ord);
+
+    entries
+        .into_iter()
+        .filter_map(|(id, _)| materialize_node_indexed(idx, id))
         .collect()
 }
 
-fn collect_spans(visible: &[&Assertion], node_id: NodeId) -> Vec<MaterializedSpan> {
-    let attached: HashSet<SpanId> = visible
-        .iter()
-        .filter_map(|a| match &a.payload {
-            AssertionPayload::AttachSpanToNode {
-                node_id: nid,
+fn collect_spans_indexed(idx: &VisibleIndex, node_id: NodeId) -> Vec<MaterializedSpan> {
+    let mut span_ordinals: HashMap<SpanId, (u32, u32)> = HashMap::new();
+    if let Some(indices) = idx.attach_span.get(&node_id) {
+        for &i in indices {
+            if let AssertionPayload::AttachSpanToNode {
                 span_id,
+                ordinal,
                 ..
-            } if *nid == node_id => Some(*span_id),
-            _ => None,
-        })
-        .collect();
+            } = &idx.assertions[i].payload
+            {
+                let pos = idx.assertions[i].position.position();
+                let entry = span_ordinals.entry(*span_id).or_insert((0, 0));
+                if pos >= entry.0 {
+                    *entry = (pos, *ordinal);
+                }
+            }
+        }
+    }
 
-    let detached: HashSet<SpanId> = visible
-        .iter()
-        .filter_map(|a| match &a.payload {
-            AssertionPayload::DetachSpanFromNode {
-                node_id: nid,
-                span_id,
-            } if *nid == node_id => Some(*span_id),
-            _ => None,
-        })
-        .collect();
+    let detached = idx.detach_span.get(&node_id);
 
-    attached
-        .difference(&detached)
-        .filter_map(|&id| materialize_span_internal(visible, id))
+    let mut entries: Vec<(SpanId, u32)> = span_ordinals
+        .into_iter()
+        .filter(|(id, _)| detached.map_or(true, |d| !d.contains(id)))
+        .map(|(id, (_, ord))| (id, ord))
+        .collect();
+    entries.sort_by_key(|(_, ord)| *ord);
+
+    entries
+        .into_iter()
+        .filter_map(|(id, _)| materialize_span_indexed(idx, id))
         .collect()
 }
 
-fn materialize_span_internal(
-    visible: &[&Assertion],
-    span_id: SpanId,
-) -> Option<MaterializedSpan> {
-    let exists = entity_exists(
-        visible,
-        |p| matches!(p, AssertionPayload::CreateSpan { span_id: id } if *id == span_id),
-        |p| matches!(p, AssertionPayload::DeleteSpan { span_id: id } if *id == span_id),
-    );
-    if !exists {
+fn materialize_span_indexed(idx: &VisibleIndex, span_id: SpanId) -> Option<MaterializedSpan> {
+    if !idx.span_exists(span_id) {
         return None;
     }
 
-    let text = collect_span_text(visible, span_id);
-    let annotations = collect_annotations_for_span(visible, span_id);
+    let text = collect_span_text_indexed(idx, span_id);
+    let annotations = collect_annotations_for_span_indexed(idx, span_id);
 
     Some(MaterializedSpan {
         span_id,
@@ -439,20 +574,14 @@ fn materialize_span_internal(
     })
 }
 
-// Same-branch: latest position wins (overwrite).
-// Cross-branch: each branch contributes its latest; if branches disagree → alternatives.
-fn collect_span_text(visible: &[&Assertion], span_id: SpanId) -> AlternativeSet<String> {
+fn collect_span_text_indexed(idx: &VisibleIndex, span_id: SpanId) -> AlternativeSet<String> {
     let mut per_branch: HashMap<BranchId, (u32, String)> = HashMap::new();
 
-    for a in visible {
-        if let AssertionPayload::SetSpanText {
-            span_id: sid,
-            text,
-        } = &a.payload
-        {
-            if *sid == span_id {
-                let branch = a.position.branch();
-                let pos = a.position.position();
+    if let Some(indices) = idx.set_span_text.get(&span_id) {
+        for &i in indices {
+            if let AssertionPayload::SetSpanText { text, .. } = &idx.assertions[i].payload {
+                let branch = idx.assertions[i].position.branch();
+                let pos = idx.assertions[i].position.position();
                 match per_branch.get(&branch) {
                     None => {
                         per_branch.insert(branch, (pos, text.clone()));
@@ -474,34 +603,17 @@ fn collect_span_text(visible: &[&Assertion], span_id: SpanId) -> AlternativeSet<
     }
 }
 
-fn materialize_annotation_internal(
-    visible: &[&Assertion],
+fn materialize_annotation_indexed(
+    idx: &VisibleIndex,
     annotation_id: AnnotationId,
 ) -> Option<MaterializedAnnotation> {
-    let exists = entity_exists(
-        visible,
-        |p| {
-            matches!(
-                p,
-                AssertionPayload::CreateAnnotation { annotation_id: id, .. }
-                if *id == annotation_id
-            )
-        },
-        |p| {
-            matches!(
-                p,
-                AssertionPayload::DeleteAnnotation { annotation_id: id }
-                if *id == annotation_id
-            )
-        },
-    );
-    if !exists {
+    if !idx.annotation_exists(annotation_id) {
         return None;
     }
 
-    visible
-        .iter()
-        .find_map(|a| match &a.payload {
+    idx.create_annotation
+        .get(&annotation_id)
+        .and_then(|&i| match &idx.assertions[i].payload {
             AssertionPayload::CreateAnnotation {
                 annotation_id: id,
                 kind,
@@ -515,46 +627,73 @@ fn materialize_annotation_internal(
         })
 }
 
-fn collect_annotations_for_node(
-    visible: &[&Assertion],
+fn collect_annotations_for_node_indexed(
+    idx: &VisibleIndex,
     node_id: NodeId,
 ) -> Vec<MaterializedAnnotation> {
-    let attached: HashSet<AnnotationId> = visible
-        .iter()
-        .filter_map(|a| match &a.payload {
-            AssertionPayload::AttachAnnotationToNode {
-                annotation_id,
-                node_id: nid,
-            } if *nid == node_id => Some(*annotation_id),
-            _ => None,
+    let attached: HashSet<AnnotationId> = idx
+        .attach_annotation_to_node
+        .get(&node_id)
+        .map(|indices| {
+            indices
+                .iter()
+                .filter_map(|&i| match &idx.assertions[i].payload {
+                    AssertionPayload::AttachAnnotationToNode { annotation_id, .. } => {
+                        Some(*annotation_id)
+                    }
+                    _ => None,
+                })
+                .collect()
         })
-        .collect();
+        .unwrap_or_default();
 
     attached
         .into_iter()
-        .filter_map(|id| materialize_annotation_internal(visible, id))
+        .filter_map(|id| materialize_annotation_indexed(idx, id))
         .collect()
 }
 
-fn collect_annotations_for_span(
-    visible: &[&Assertion],
+fn collect_annotations_for_span_indexed(
+    idx: &VisibleIndex,
     span_id: SpanId,
 ) -> Vec<MaterializedAnnotation> {
-    let attached: HashSet<AnnotationId> = visible
-        .iter()
-        .filter_map(|a| match &a.payload {
-            AssertionPayload::AttachAnnotationToSpan {
-                annotation_id,
-                span_id: sid,
-            } if *sid == span_id => Some(*annotation_id),
-            _ => None,
+    let attached: HashSet<AnnotationId> = idx
+        .attach_annotation_to_span
+        .get(&span_id)
+        .map(|indices| {
+            indices
+                .iter()
+                .filter_map(|&i| match &idx.assertions[i].payload {
+                    AssertionPayload::AttachAnnotationToSpan { annotation_id, .. } => {
+                        Some(*annotation_id)
+                    }
+                    _ => None,
+                })
+                .collect()
         })
-        .collect();
+        .unwrap_or_default();
 
     attached
         .into_iter()
-        .filter_map(|id| materialize_annotation_internal(visible, id))
+        .filter_map(|id| materialize_annotation_indexed(idx, id))
         .collect()
+}
+
+fn materialize_entity_indexed(
+    idx: &VisibleIndex,
+    entity: EntityId,
+) -> MaterializedEntity {
+    match entity {
+        EntityId::Node(id) => materialize_node_indexed(idx, id)
+            .map(MaterializedEntity::Node)
+            .unwrap_or(MaterializedEntity::NotFound),
+        EntityId::Span(id) => materialize_span_indexed(idx, id)
+            .map(MaterializedEntity::Span)
+            .unwrap_or(MaterializedEntity::NotFound),
+        EntityId::Annotation(id) => materialize_annotation_indexed(idx, id)
+            .map(MaterializedEntity::Annotation)
+            .unwrap_or(MaterializedEntity::NotFound),
+    }
 }
 
 #[cfg(test)]
@@ -1387,7 +1526,7 @@ mod tests {
     #[cfg(feature = "serde_json")]
     #[test]
     fn serde_id_types_round_trip() {
-        assert_eq!(serde_json::to_string(&DocumentId::new(42)).unwrap(), "42");
+        assert_eq!(serde_json::to_string(&DocumentId::new(42)).unwrap(), "\"42\"");
         serde_round_trip(&DocumentId::new(0));
         serde_round_trip(&DocumentId::new(1));
         serde_round_trip(&DocumentId::new(999));
@@ -1399,11 +1538,21 @@ mod tests {
 
     #[cfg(feature = "serde_json")]
     #[test]
-    fn serde_id_values_are_json_numbers() {
-        assert_eq!(serde_json::to_string(&DocumentId::new(7)).unwrap(), "7");
-        assert_eq!(serde_json::to_string(&NodeId::new(8)).unwrap(), "8");
-        assert_eq!(serde_json::to_string(&SpanId::new(9)).unwrap(), "9");
-        assert_eq!(serde_json::to_string(&AnnotationId::new(10)).unwrap(), "10");
+    fn serde_id_values_are_json_strings() {
+        assert_eq!(serde_json::to_string(&DocumentId::new(7)).unwrap(), "\"7\"");
+        assert_eq!(serde_json::to_string(&NodeId::new(8)).unwrap(), "\"8\"");
+        assert_eq!(serde_json::to_string(&SpanId::new(9)).unwrap(), "\"9\"");
+        assert_eq!(serde_json::to_string(&AnnotationId::new(10)).unwrap(), "\"10\"");
+        assert_eq!(serde_json::to_string(&AssertionId(11)).unwrap(), "\"11\"");
+    }
+
+    #[cfg(feature = "serde_json")]
+    #[test]
+    fn serde_id_accepts_both_string_and_number() {
+        assert_eq!(serde_json::from_str::<DocumentId>("\"42\"").unwrap(), DocumentId::new(42));
+        assert_eq!(serde_json::from_str::<DocumentId>("42").unwrap(), DocumentId::new(42));
+        assert_eq!(serde_json::from_str::<NodeId>("\"100\"").unwrap(), NodeId::new(100));
+        assert_eq!(serde_json::from_str::<NodeId>("100").unwrap(), NodeId::new(100));
     }
 
     #[cfg(feature = "serde_json")]
@@ -1466,10 +1615,10 @@ mod tests {
         let doc = materialize_document(&store, &view, doc_id);
         let json = serde_json::to_string(&doc).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed["doc_id"], 1);
-        assert_eq!(parsed["root"]["node_id"], 1);
+        assert_eq!(parsed["doc_id"].as_str(), Some("1"));
+        assert_eq!(parsed["root"]["node_id"].as_str(), Some("1"));
         assert_eq!(parsed["root"]["kind"], "document");
-        assert_eq!(parsed["root"]["spans"][0]["span_id"], 10);
+        assert_eq!(parsed["root"]["spans"][0]["span_id"].as_str(), Some("10"));
         assert_eq!(parsed["root"]["spans"][0]["text"]["Single"], "Hello");
         assert_eq!(parsed["root"]["spans"][0]["annotations"][0]["kind"], "bold");
         let back: MaterializedDocument = serde_json::from_str(&json).unwrap();
@@ -1519,8 +1668,8 @@ mod tests {
         let node = materialize_node(&store, &view, parent_id).unwrap();
         let json = serde_json::to_string(&node).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed["children"][0]["node_id"], 2);
-        assert_eq!(parsed["children"][0]["children"][0]["node_id"], 3);
+        assert_eq!(parsed["children"][0]["node_id"].as_str(), Some("2"));
+        assert_eq!(parsed["children"][0]["children"][0]["node_id"].as_str(), Some("3"));
         let back: MaterializedNode = serde_json::from_str(&json).unwrap();
         assert_eq!(node, back);
     }
@@ -1534,7 +1683,7 @@ mod tests {
         let doc = materialize_document(&store, &view, DocumentId::new(999));
         let json = serde_json::to_string(&doc).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed["doc_id"], 999);
+        assert_eq!(parsed["doc_id"].as_str(), Some("999"));
         assert!(parsed["root"].is_null());
     }
 
@@ -1884,8 +2033,77 @@ mod tests {
     fn all_assertions_accessor() {
         let mut store = AssertionStore::new();
         assert_eq!(store.all_assertions().len(), 0);
-        let (dw, positions) = linear_history(2);
+        let (_dw, positions) = linear_history(2);
         store.add(positions[1], AssertionPayload::CreateNode { node_id: NodeId::new(1), kind: "doc".into() });
         assert_eq!(store.all_assertions().len(), 1);
+    }
+
+    // === Ordinal ordering tests ===
+
+    #[test]
+    fn children_ordered_by_ordinal() {
+        let (dw, positions) = linear_history(3);
+        let pos = positions[1];
+        let parent = NodeId::new(1);
+        let mut store = AssertionStore::new();
+        store.add(pos, AssertionPayload::CreateNode { node_id: parent, kind: "doc".into() });
+        let child_ids: Vec<NodeId> = (0..5).map(|i| NodeId::new(100 + i)).collect();
+        let ordinals = [4u32, 2, 5, 1, 3];
+        for (i, &ord) in ordinals.iter().enumerate() {
+            store.add(pos, AssertionPayload::CreateNode { node_id: child_ids[i], kind: format!("c{}", i) });
+            store.add(pos, AssertionPayload::AttachChild { parent_id: parent, child_id: child_ids[i], ordinal: ord });
+        }
+
+        let view = dw.trace_view(positions[2]);
+        let node = materialize_node(&store, &view, parent).unwrap();
+        assert_eq!(node.children.len(), 5);
+        let actual: Vec<u64> = node.children.iter().map(|c| c.node_id.0).collect();
+        assert_eq!(actual, vec![103, 101, 104, 100, 102],
+            "children should be sorted by ordinal [1,2,3,4,5] not insertion order, got {:?}", actual);
+    }
+
+    #[test]
+    fn spans_ordered_by_ordinal() {
+        let (dw, positions) = linear_history(3);
+        let pos = positions[1];
+        let parent = NodeId::new(1);
+        let mut store = AssertionStore::new();
+        store.add(pos, AssertionPayload::CreateNode { node_id: parent, kind: "doc".into() });
+        let span_ids: Vec<SpanId> = (0..5).map(|i| SpanId::new(100 + i)).collect();
+        let ordinals = [4u32, 2, 5, 1, 3];
+        for (i, &ord) in ordinals.iter().enumerate() {
+            store.add(pos, AssertionPayload::CreateSpan { span_id: span_ids[i] });
+            store.add(pos, AssertionPayload::SetSpanText { span_id: span_ids[i], text: format!("s{}", i) });
+            store.add(pos, AssertionPayload::AttachSpanToNode { node_id: parent, span_id: span_ids[i], ordinal: ord });
+        }
+
+        let view = dw.trace_view(positions[2]);
+        let node = materialize_node(&store, &view, parent).unwrap();
+        assert_eq!(node.spans.len(), 5);
+        let actual: Vec<u64> = node.spans.iter().map(|s| s.span_id.0).collect();
+        assert_eq!(actual, vec![103, 101, 104, 100, 102],
+            "spans should be sorted by ordinal [1,2,3,4,5], got {:?}", actual);
+    }
+
+    #[test]
+    fn ordinal_latest_position_wins_across_branches() {
+        let mut dw = DagWood::new();
+        let root = dw.root();
+        let branch_a = dw.new_position();
+        let branch_b = dw.new_position();
+        let merged = dw.new_successor_after(branch_a, branch_b);
+
+        let parent = NodeId::new(1);
+        let child = NodeId::new(10);
+        let mut store = AssertionStore::new();
+        store.add(root, AssertionPayload::CreateNode { node_id: parent, kind: "doc".into() });
+        store.add(root, AssertionPayload::CreateNode { node_id: child, kind: "para".into() });
+        store.add(branch_a, AssertionPayload::AttachChild { parent_id: parent, child_id: child, ordinal: 5 });
+        store.add(branch_b, AssertionPayload::AttachChild { parent_id: parent, child_id: child, ordinal: 99 });
+
+        let view = dw.trace_view(merged);
+        let node = materialize_node(&store, &view, parent).unwrap();
+        assert_eq!(node.children.len(), 1);
+        assert_eq!(node.children[0].node_id, child);
     }
 }
