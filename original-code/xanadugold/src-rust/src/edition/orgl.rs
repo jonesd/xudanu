@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::range_element::Carrier;
+use super::range_element::{Carrier, RangeElement};
 use super::xn_region::XnRegion;
 
 const MAX_LEAF_SIZE: usize = 16384;
@@ -91,6 +91,15 @@ impl Loaf {
                 in_child.is_empty() && out_child.is_empty()
             }
             Loaf::Dsp { child, .. } => child.is_empty(),
+        }
+    }
+
+    fn default_value(&self) -> Option<RangeElement> {
+        match self {
+            Loaf::Leaf { default: Some(c), .. } => Some(c.element.clone()),
+            Loaf::Leaf { default: None, .. } => None,
+            Loaf::Split { in_child, .. } => in_child.default_value().or_else(|| None),
+            Loaf::Dsp { child, .. } => child.default_value(),
         }
     }
 
@@ -604,6 +613,13 @@ impl OrglRoot {
         match &self.inner {
             OrglInner::Empty => false,
             OrglInner::Actual { loaf, .. } => loaf.is_infinite(),
+        }
+    }
+
+    pub fn default_value(&self) -> Option<RangeElement> {
+        match &self.inner {
+            OrglInner::Empty => None,
+            OrglInner::Actual { loaf, .. } => loaf.default_value(),
         }
     }
 

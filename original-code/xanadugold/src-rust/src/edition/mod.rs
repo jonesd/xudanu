@@ -5,6 +5,8 @@ pub mod edition;
 pub mod grandmap;
 pub mod links;
 pub mod orgl;
+#[cfg(feature = "serde")]
+pub mod persistent;
 pub mod pool;
 pub mod props;
 pub mod range_element;
