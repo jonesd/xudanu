@@ -118,6 +118,11 @@ impl Work {
     pub fn remove_sponsor(&mut self, club: BeId) {
         self.sponsors.retain(|s| *s != club);
     }
+
+    pub fn set_revision_history(&mut self, count: u64, history: BTreeMap<u64, Edition>) {
+        self.revision_count = count;
+        self.revision_history = history;
+    }
 }
 
 #[cfg(test)]

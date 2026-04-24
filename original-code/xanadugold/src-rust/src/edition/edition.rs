@@ -98,6 +98,10 @@ impl Edition {
         self.orgl.is_infinite()
     }
 
+    pub fn default_value(&self) -> Option<RangeElement> {
+        self.orgl.default_value()
+    }
+
     pub fn count(&self) -> u64 {
         self.orgl.count()
     }
