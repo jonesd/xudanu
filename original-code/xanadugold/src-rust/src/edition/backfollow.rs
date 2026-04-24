@@ -5,6 +5,7 @@ use std::rc::Rc;
 use super::canopy::{BertCanopy, CanopyCrumData, SensorCanopy, compute_join, propagate_flags};
 use super::edition::Edition;
 use super::grandmap::GrandMap;
+use super::links::{HyperLink, HyperRef};
 use super::props::{BertProp, PropFinder};
 use super::range_element::RangeElement;
 use super::transclusion::{TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery};
@@ -115,8 +116,10 @@ pub struct BackfollowEngine {
     edition_metas: std::collections::HashMap<u64, EditionMeta>,
     edition_storage: std::collections::HashMap<u64, Edition>,
     work_storage: std::collections::HashMap<u64, Work>,
+    link_storage: std::collections::HashMap<u64, HyperLink>,
     next_edition_id: u64,
     next_work_id: u64,
+    next_link_id: u64,
 }
 
 impl BackfollowEngine {
@@ -129,8 +132,10 @@ impl BackfollowEngine {
             edition_metas: std::collections::HashMap::new(),
             edition_storage: std::collections::HashMap::new(),
             work_storage: std::collections::HashMap::new(),
+            link_storage: std::collections::HashMap::new(),
             next_edition_id: 1,
             next_work_id: 1,
+            next_link_id: 1,
         }
     }
 
@@ -349,6 +354,102 @@ impl BackfollowEngine {
 
     pub fn work_count(&self) -> usize {
         self.work_storage.len()
+    }
+
+    pub fn alloc_link_id(&mut self) -> u64 {
+        let id = self.next_link_id;
+        self.next_link_id += 1;
+        id
+    }
+
+    pub fn register_link(&mut self, link: HyperLink, link_id: u64) {
+        let content = link.all_referenced_content();
+        for element in content {
+            let link_elem = RangeElement::label(link_id, RangeElement::text("link"));
+            self.transclusion_index.register_edition(
+                &Edition::from_one(0, element.clone()),
+                &link_elem,
+                None,
+            );
+        }
+        self.link_storage.insert(link_id, link);
+    }
+
+    pub fn unregister_link(&mut self, link_id: u64) {
+        self.link_storage.remove(&link_id);
+    }
+
+    pub fn get_link(&self, link_id: u64) -> Option<&HyperLink> {
+        self.link_storage.get(&link_id)
+    }
+
+    pub fn update_link(&mut self, link_id: u64, new_link: HyperLink) {
+        if self.link_storage.contains_key(&link_id) {
+            self.link_storage.insert(link_id, new_link);
+        }
+    }
+
+    pub fn rebuild_link_index(&mut self) {
+        for (link_id, link) in &self.link_storage {
+            let content = link.all_referenced_content();
+            for element in content {
+                let link_elem = RangeElement::label(*link_id, RangeElement::text("link"));
+                self.transclusion_index.register_edition(
+                    &Edition::from_one(0, element.clone()),
+                    &link_elem,
+                    None,
+                );
+            }
+        }
+    }
+
+    pub fn link_count(&self) -> usize {
+        self.link_storage.len()
+    }
+
+    pub fn find_links_to_content(&self, content: &RangeElement) -> Vec<u64> {
+        let mut result = Vec::new();
+        for (link_id, link) in &self.link_storage {
+            let referenced = link.all_referenced_content();
+            if referenced.iter().any(|e| e == content) {
+                result.push(*link_id);
+            }
+        }
+        result
+    }
+
+    pub fn find_links_referencing_edition(&self, edition_id: u64) -> Vec<u64> {
+        let mut result = Vec::new();
+        for (link_id, link) in &self.link_storage {
+            for end in link.ends().values() {
+                if let Some(excerpt) = end.excerpt() {
+                    for (_, carrier) in excerpt.all_entries() {
+                        if let Some(eid) = carrier.element.as_edition_id() {
+                            if eid == edition_id {
+                                if !result.contains(link_id) {
+                                    result.push(*link_id);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    pub fn find_links_from_work(&self, work_id: u64) -> Vec<u64> {
+        let mut result = Vec::new();
+        for (link_id, link) in &self.link_storage {
+            for end in link.ends().values() {
+                if end.work_context() == Some(work_id) {
+                    if !result.contains(link_id) {
+                        result.push(*link_id);
+                    }
+                }
+            }
+        }
+        result
     }
 
     pub fn delayed_store_backfollow_for_edition(
@@ -777,5 +878,136 @@ mod tests {
         let query = TransclusionQuery::all();
         let results = engine.find_transcluders(&RangeElement::text("common"), &query);
         assert_eq!(results.len(), num_editions as usize);
+    }
+
+    #[test]
+    fn backfollow_engine_register_link() {
+        let mut engine = BackfollowEngine::new();
+        let left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("source"))), None, None, None);
+        let right = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("target"))), None, None, None);
+        let link = HyperLink::make(vec![], left, right);
+        let lid = engine.alloc_link_id();
+        engine.register_link(link, lid);
+        assert_eq!(engine.link_count(), 1);
+    }
+
+    #[test]
+    fn backfollow_engine_find_links_to_content() {
+        let mut engine = BackfollowEngine::new();
+        let left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("source"))), None, None, None);
+        let right = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("target"))), None, None, None);
+        let link = HyperLink::make(vec![], left, right);
+        let lid = engine.alloc_link_id();
+        engine.register_link(link, lid);
+
+        let found = engine.find_links_to_content(&RangeElement::text("source"));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0], lid);
+
+        let not_found = engine.find_links_to_content(&RangeElement::text("absent"));
+        assert!(not_found.is_empty());
+    }
+
+    #[test]
+    fn backfollow_engine_find_links_referencing_edition() {
+        let mut engine = BackfollowEngine::new();
+        let eid = engine.alloc_edition_id();
+        let edition = Edition::from_one(0, RangeElement::edition(eid));
+        engine.register_edition(Edition::from_one(0, RangeElement::text("data")), eid, BertProp::make());
+
+        let left = HyperRef::single(Some(edition), None, None, None);
+        let right = HyperRef::single(Some(Edition::from_text("target")), None, None, None);
+        let link = HyperLink::make(vec![], left, right);
+        let lid = engine.alloc_link_id();
+        engine.register_link(link, lid);
+
+        let found = engine.find_links_referencing_edition(eid);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0], lid);
+    }
+
+    #[test]
+    fn backfollow_engine_find_links_from_work() {
+        let mut engine = BackfollowEngine::new();
+        let left = HyperRef::single(Some(Edition::from_text("source")), Some(42), None, None);
+        let right = HyperRef::single(Some(Edition::from_text("target")), None, None, None);
+        let link = HyperLink::make(vec![], left, right);
+        let lid = engine.alloc_link_id();
+        engine.register_link(link, lid);
+
+        let found = engine.find_links_from_work(42);
+        assert_eq!(found.len(), 1);
+
+        let not_found = engine.find_links_from_work(99);
+        assert!(not_found.is_empty());
+    }
+
+    #[test]
+    fn backfollow_engine_unregister_link() {
+        let mut engine = BackfollowEngine::new();
+        let left = HyperRef::single(Some(Edition::from_text("source")), None, None, None);
+        let right = HyperRef::single(Some(Edition::from_text("target")), None, None, None);
+        let link = HyperLink::make(vec![], left, right);
+        let lid = engine.alloc_link_id();
+        engine.register_link(link, lid);
+        assert_eq!(engine.link_count(), 1);
+
+        engine.unregister_link(lid);
+        assert_eq!(engine.link_count(), 0);
+    }
+
+    #[test]
+    fn backfollow_engine_update_link() {
+        let mut engine = BackfollowEngine::new();
+        let left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("source"))), None, None, None);
+        let right = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("target"))), None, None, None);
+        let link = HyperLink::make(vec![], left, right);
+        let lid = engine.alloc_link_id();
+        engine.register_link(link, lid);
+
+        let updated_left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("new_source"))), None, None, None);
+        let new_link = engine.get_link(lid).unwrap().with_end("LeftEnd", updated_left);
+        engine.update_link(lid, new_link);
+
+        let found = engine.find_links_to_content(&RangeElement::text("new_source"));
+        assert_eq!(found.len(), 1);
+    }
+
+    #[test]
+    fn gold_link_transclusion_integration() {
+        let mut engine = BackfollowEngine::new();
+        let e1 = engine.alloc_edition_id();
+        let e2 = engine.alloc_edition_id();
+        engine.register_edition(Edition::from_one(0, RangeElement::text("docA")), e1, BertProp::make());
+        engine.register_edition(Edition::from_one(0, RangeElement::text("docB")), e2, BertProp::make());
+
+        let left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("docA"))), None, None, None);
+        let right = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("docB"))), None, None, None);
+        let link = HyperLink::make(vec![], left, right);
+        let lid = engine.alloc_link_id();
+        engine.register_link(link, lid);
+
+        let links_to_a = engine.find_links_to_content(&RangeElement::text("docA"));
+        let links_to_b = engine.find_links_to_content(&RangeElement::text("docB"));
+        assert_eq!(links_to_a.len(), 1);
+        assert_eq!(links_to_b.len(), 1);
+
+        let transcluders = engine.find_transcluders(&RangeElement::text("docA"), &TransclusionQuery::all());
+        assert!(transcluders.len() >= 1);
+    }
+
+    #[test]
+    fn gold_multi_ended_link_find() {
+        let mut engine = BackfollowEngine::new();
+        let left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("A"))), None, None, None);
+        let right = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("B"))), None, None, None);
+        let note = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("C"))), None, None, None);
+        let link = HyperLink::make(vec![], left, right).with_end("Note", note);
+        let lid = engine.alloc_link_id();
+        engine.register_link(link, lid);
+
+        assert_eq!(engine.find_links_to_content(&RangeElement::text("A")).len(), 1);
+        assert_eq!(engine.find_links_to_content(&RangeElement::text("B")).len(), 1);
+        assert_eq!(engine.find_links_to_content(&RangeElement::text("C")).len(), 1);
     }
 }
