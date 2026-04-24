@@ -130,6 +130,22 @@ impl Edition {
         self.orgl.has_position(position)
     }
 
+    pub fn all_entries(&self) -> Vec<(i64, Arc<Carrier>)> {
+        self.orgl.all_entries()
+    }
+
+    pub fn fetch_all(&self) -> Vec<(i64, Arc<Carrier>)> {
+        self.orgl.all_entries()
+    }
+
+    pub fn fetch_range(&self, region: &XnRegion) -> Vec<(i64, Arc<Carrier>)> {
+        self.orgl
+            .all_entries()
+            .into_iter()
+            .filter(|(pos, _)| region.contains(*pos))
+            .collect()
+    }
+
     pub fn carrier_at(&self, position: i64) -> Option<Arc<Carrier>> {
         self.orgl.fetch(position)
     }
