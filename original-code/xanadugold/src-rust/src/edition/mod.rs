@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod backfollow;
 pub mod canopy;
 pub mod edition;
 pub mod grandmap;
@@ -11,6 +12,7 @@ pub mod work;
 pub mod xn_region;
 
 pub use backend::{BeStorage, BeRangeElement, InMemoryBeStorage, BeId};
+pub use backfollow::{BackfollowEngine, EditionMeta};
 pub use canopy::{BertCanopy, CanopyCrumData, CanopyCrumKind, SensorCanopy};
 pub use edition::Edition;
 pub use grandmap::{GrandMap, Id, IdSpace, IdSpaceId};
