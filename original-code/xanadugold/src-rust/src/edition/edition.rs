@@ -1,203 +1,231 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use super::orgl::OrglRoot;
 use super::range_element::{Carrier, RangeElement};
 use super::xn_region::XnRegion;
 
-#[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
 pub struct Edition {
-    entries: BTreeMap<i64, Carrier>,
+    pub(crate) orgl: OrglRoot,
+}
+
+impl PartialEq for Edition {
+    fn eq(&self, other: &Self) -> bool {
+        if self.orgl.count() != other.orgl.count() {
+            return false;
+        }
+        let my_entries = self.orgl.all_entries();
+        let other_entries = other.orgl.all_entries();
+        if my_entries.len() != other_entries.len() {
+            return false;
+        }
+        for (a, b) in my_entries.iter().zip(other_entries.iter()) {
+            if a.0 != b.0 || *a.1 != *b.1 {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 impl Edition {
     pub fn empty() -> Self {
         Edition {
-            entries: BTreeMap::new(),
+            orgl: OrglRoot::empty(),
         }
     }
 
     pub fn from_one(position: i64, value: RangeElement) -> Self {
-        let mut entries = BTreeMap::new();
-        entries.insert(position, Carrier::new(value));
-        Edition { entries }
+        let orgl = OrglRoot::empty().with(position, Arc::new(Carrier::new(value)));
+        Edition { orgl }
     }
 
     pub fn from_all(region: &XnRegion, value: RangeElement) -> Self {
-        let mut entries = BTreeMap::new();
+        if !region.is_finite() {
+            let orgl = OrglRoot::with_default(region.clone(), Arc::new(Carrier::new(value)));
+            return Edition { orgl };
+        }
+        let mut orgl = OrglRoot::empty();
         for (start, stop) in region.intervals() {
             for pos in start..stop {
-                entries.insert(pos, Carrier::new(value.clone()));
+                orgl = orgl.with(pos, Arc::new(Carrier::new(value.clone())));
             }
         }
-        Edition { entries }
+        Edition { orgl }
     }
 
     pub fn from_text(text: &str) -> Self {
-        let mut entries = BTreeMap::new();
+        let mut orgl = OrglRoot::empty();
         for (i, ch) in text.chars().enumerate() {
             let mut buf = [0u8; 4];
             let s = ch.encode_utf8(&mut buf);
-            entries.insert(i as i64, Carrier::new(RangeElement::text(s.to_string())));
+            orgl = orgl.with(i as i64, Arc::new(Carrier::new(RangeElement::text(s.to_string()))));
         }
-        Edition { entries }
+        Edition { orgl }
     }
 
     pub fn from_text_elements(elements: &[RangeElement]) -> Self {
-        let mut entries = BTreeMap::new();
+        let mut orgl = OrglRoot::empty();
         for (i, e) in elements.iter().enumerate() {
-            entries.insert(i as i64, Carrier::new(e.clone()));
+            orgl = orgl.with(i as i64, Arc::new(Carrier::new(e.clone())));
         }
-        Edition { entries }
+        Edition { orgl }
     }
 
     pub fn place_holders(region: &XnRegion) -> Self {
-        let mut entries = BTreeMap::new();
+        let mut orgl = OrglRoot::empty();
         let mut next_id = 0u64;
         for (start, stop) in region.intervals() {
             for pos in start..stop {
-                entries.insert(
-                    pos,
-                    Carrier::new(RangeElement::placeholder(next_id)),
-                );
+                orgl = orgl.with(pos, Arc::new(Carrier::new(RangeElement::placeholder(next_id))));
                 next_id += 1;
             }
         }
-        Edition { entries }
+        Edition { orgl }
+    }
+
+    pub fn with_default(region: XnRegion, value: RangeElement) -> Self {
+        let orgl = OrglRoot::with_default(region, Arc::new(Carrier::new(value)));
+        Edition { orgl }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.orgl.is_empty()
+    }
+
+    pub fn is_infinite(&self) -> bool {
+        self.orgl.is_infinite()
     }
 
     pub fn count(&self) -> u64 {
-        self.entries.len() as u64
+        self.orgl.count()
+    }
+
+    pub fn is_finite(&self) -> bool {
+        !self.orgl.is_infinite() && !self.orgl.is_empty()
     }
 
     pub fn domain(&self) -> XnRegion {
-        if self.entries.is_empty() {
-            return XnRegion::empty();
-        }
-        let mut region = XnRegion::empty();
-        for &pos in self.entries.keys() {
-            region = region.with(pos);
-        }
-        region
+        self.orgl.domain()
     }
 
-    pub fn fetch(&self, position: i64) -> Option<&RangeElement> {
-        self.entries.get(&position).map(|c| &c.element)
+    pub fn fetch(&self, position: i64) -> Option<RangeElement> {
+        self.orgl.fetch(position).map(|c| c.element.clone())
     }
 
-    pub fn get(&self, position: i64) -> &RangeElement {
-        self.entries
-            .get(&position)
-            .map(|c| &c.element)
-            .expect("position not in edition")
+    pub fn fetch_owned(&self, position: i64) -> Option<Arc<Carrier>> {
+        self.orgl.fetch(position)
+    }
+
+    pub fn get(&self, position: i64) -> RangeElement {
+        self.orgl.fetch(position).expect("position not in edition").element.clone()
+    }
+
+    pub fn get_owned(&self, position: i64) -> Arc<Carrier> {
+        self.orgl.fetch(position).expect("position not in edition")
     }
 
     pub fn has_position(&self, position: i64) -> bool {
-        self.entries.contains_key(&position)
+        self.orgl.has_position(position)
     }
 
-    pub fn carrier_at(&self, position: i64) -> Option<&Carrier> {
-        self.entries.get(&position)
+    pub fn carrier_at(&self, position: i64) -> Option<Arc<Carrier>> {
+        self.orgl.fetch(position)
     }
 
     pub fn with(&self, position: i64, value: RangeElement) -> Self {
-        let mut new = self.clone();
-        new.entries.insert(position, Carrier::new(value));
-        new
+        Edition {
+            orgl: self.orgl.with(position, Arc::new(Carrier::new(value))),
+        }
     }
 
     pub fn with_all(&self, region: &XnRegion, value: RangeElement) -> Self {
-        let mut new = self.clone();
+        let mut orgl = self.orgl.clone();
         for (start, stop) in region.intervals() {
             for pos in start..stop {
-                new.entries.insert(pos, Carrier::new(value.clone()));
+                orgl = orgl.with(pos, Arc::new(Carrier::new(value.clone())));
             }
         }
-        new
+        Edition { orgl }
     }
 
     pub fn without(&self, position: i64) -> Self {
-        let mut new = self.clone();
-        new.entries.remove(&position);
-        new
+        Edition {
+            orgl: self.orgl.without(position),
+        }
     }
 
     pub fn without_all(&self, region: &XnRegion) -> Self {
-        let new_entries: BTreeMap<i64, Carrier> = self
-            .entries
-            .iter()
-            .filter(|(&pos, _)| !region.contains(pos))
-            .map(|(&pos, c)| (pos, c.clone()))
-            .collect();
+        let keep_region = self.domain().minus(region);
         Edition {
-            entries: new_entries,
+            orgl: self.orgl.copy(&keep_region),
         }
     }
 
     pub fn combine(&self, other: &Edition) -> Result<Edition, CombineConflict> {
-        let mut new = self.clone();
-        for (&pos, carrier) in &other.entries {
-            if let Some(existing) = new.entries.get(&pos) {
-                if existing.element != carrier.element {
+        let my_entries = self.orgl.all_entries();
+        let other_entries = other.orgl.all_entries();
+        for (pos, carrier) in &my_entries {
+            if let Some(idx) = other_entries.binary_search_by_key(pos, |(p, _)| *p).ok() {
+                if *carrier != other_entries[idx].1 {
                     return Err(CombineConflict {
-                        position: pos,
-                        left: existing.element.clone(),
-                        right: carrier.element.clone(),
+                        position: *pos,
+                        left: carrier.element.clone(),
+                        right: other_entries[idx].1.element.clone(),
                     });
                 }
-            } else {
-                new.entries.insert(pos, carrier.clone());
             }
         }
-        Ok(new)
+        match self.orgl.combine(&other.orgl) {
+            Ok(combined) => Ok(Edition { orgl: combined }),
+            Err(_) => {
+                let mut orgl = self.orgl.clone();
+                for (pos, carrier) in other_entries {
+                    if !orgl.has_position(pos) {
+                        orgl = orgl.with(pos, carrier);
+                    }
+                }
+                Ok(Edition { orgl })
+            }
+        }
     }
 
     pub fn replace(&self, other: &Edition) -> Edition {
-        let mut new = self.clone();
-        for (&pos, carrier) in &other.entries {
-            new.entries.insert(pos, carrier.clone());
+        Edition {
+            orgl: self.orgl.replace(&other.orgl),
         }
-        new
     }
 
     pub fn copy(&self, region: &XnRegion) -> Edition {
-        let mut new_entries = BTreeMap::new();
-        for (&pos, carrier) in &self.entries {
-            if region.contains(pos) {
-                new_entries.insert(pos, carrier.clone());
-            }
-        }
         Edition {
-            entries: new_entries,
+            orgl: self.orgl.copy(region),
         }
     }
 
     pub fn transformed_by(&self, offset: i64) -> Edition {
-        let mut new_entries = BTreeMap::new();
-        for (&pos, carrier) in &self.entries {
-            new_entries.insert(pos + offset, carrier.clone());
-        }
         Edition {
-            entries: new_entries,
+            orgl: self.orgl.transformed_by(offset),
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&i64, &Carrier)> {
-        self.entries.iter()
+    pub fn iter(&self) -> impl Iterator<Item = (i64, Arc<Carrier>)> {
+        self.orgl.all_entries().into_iter()
     }
 
-    pub fn entries(&self) -> &BTreeMap<i64, Carrier> {
-        &self.entries
+    pub fn entries_btreemap(&self) -> BTreeMap<i64, Carrier> {
+        self.orgl
+            .all_entries()
+            .into_iter()
+            .map(|(p, c)| (p, (*c).clone()))
+            .collect()
     }
 
     pub fn to_text(&self) -> String {
         let mut result = String::new();
         for i in 0..self.count() as i64 {
-            if let Some(elem) = self.fetch(i) {
-                if let Some(s) = elem.as_text() {
+            if let Some(carrier) = self.orgl.fetch(i) {
+                if let Some(s) = carrier.element.as_text() {
                     result.push_str(s);
                 }
             }
@@ -206,56 +234,47 @@ impl Edition {
     }
 
     pub fn shared_region(&self, other: &Edition) -> XnRegion {
-        let mut shared = XnRegion::empty();
-        for (&pos, carrier) in &self.entries {
-            if let Some(other_carrier) = other.entries.get(&pos) {
-                if carrier.element == other_carrier.element {
-                    shared = shared.with(pos);
-                }
-            }
-        }
-        shared
+        self.orgl.shared_region(&other.orgl)
     }
 
     pub fn shared_with(&self, other: &Edition) -> Edition {
-        let mut new_entries = BTreeMap::new();
-        for (&pos, carrier) in &self.entries {
-            if let Some(other_carrier) = other.entries.get(&pos) {
-                if carrier.element == other_carrier.element {
-                    new_entries.insert(pos, carrier.clone());
+        let my_entries = self.orgl.all_entries();
+        let other_entries = other.orgl.all_entries();
+        let mut orgl = OrglRoot::empty();
+        for (pos, carrier) in &my_entries {
+            if let Some(idx) = other_entries.binary_search_by_key(pos, |(p, _)| *p).ok() {
+                if *carrier == other_entries[idx].1 {
+                    orgl = orgl.with(*pos, carrier.clone());
                 }
             }
         }
-        Edition {
-            entries: new_entries,
-        }
+        Edition { orgl }
     }
 
     pub fn not_shared_with(&self, other: &Edition) -> Edition {
-        let mut new_entries = BTreeMap::new();
-        for (&pos, carrier) in &self.entries {
-            match other.entries.get(&pos) {
-                None => {
-                    new_entries.insert(pos, carrier.clone());
-                }
-                Some(other_carrier) => {
-                    if carrier.element != other_carrier.element {
-                        new_entries.insert(pos, carrier.clone());
-                    }
-                }
+        let my_entries = self.orgl.all_entries();
+        let other_entries = other.orgl.all_entries();
+        let mut orgl = OrglRoot::empty();
+        for (pos, carrier) in &my_entries {
+            let differs = match other_entries.binary_search_by_key(pos, |(p, _)| *p) {
+                Ok(idx) => *carrier != other_entries[idx].1,
+                Err(_) => true,
+            };
+            if differs {
+                orgl = orgl.with(*pos, carrier.clone());
             }
         }
-        Edition {
-            entries: new_entries,
-        }
+        Edition { orgl }
     }
 
     pub fn map_shared_to(&self, other: &Edition) -> BTreeMap<i64, i64> {
+        let my_entries = self.orgl.all_entries();
+        let other_entries = other.orgl.all_entries();
         let mut mapping = BTreeMap::new();
-        for (&pos, carrier) in &self.entries {
-            for (&other_pos, other_carrier) in &other.entries {
-                if carrier.element == other_carrier.element {
-                    mapping.insert(pos, other_pos);
+        for (pos, carrier) in &my_entries {
+            for (other_pos, other_carrier) in &other_entries {
+                if *carrier == *other_carrier {
+                    mapping.insert(*pos, *other_pos);
                 }
             }
         }
@@ -263,13 +282,7 @@ impl Edition {
     }
 
     pub fn positions_of(&self, value: &RangeElement) -> XnRegion {
-        let mut region = XnRegion::empty();
-        for (&pos, carrier) in &self.entries {
-            if &carrier.element == value {
-                region = region.with(pos);
-            }
-        }
-        region
+        self.orgl.positions_of(&Carrier::new(value.clone()))
     }
 
     pub fn is_range_identical(&self, other: &Edition, region: Option<&XnRegion>) -> bool {
@@ -279,8 +292,8 @@ impl Edition {
         };
         for (start, stop) in dom.intervals() {
             for pos in start..stop {
-                let a = self.fetch(pos);
-                let b = other.fetch(pos);
+                let a = self.orgl.fetch(pos);
+                let b = other.orgl.fetch(pos);
                 if a != b {
                     return false;
                 }
@@ -309,13 +322,17 @@ impl std::error::Error for CombineConflict {}
 mod tests {
     use super::*;
 
+    fn fetch_text(edition: &Edition, pos: i64) -> Option<String> {
+        edition.fetch(pos).and_then(|e| e.as_text().map(|s| s.to_string()))
+    }
+
     #[test]
     fn empty_edition() {
         let e = Edition::empty();
         assert!(e.is_empty());
         assert_eq!(e.count(), 0);
         assert!(e.domain().is_empty());
-        assert!(e.fetch(0).is_none());
+        assert!(e.fetch_owned(0).is_none());
     }
 
     #[test]
@@ -325,7 +342,7 @@ mod tests {
         assert_eq!(e.count(), 1);
         assert!(e.has_position(5));
         assert!(!e.has_position(4));
-        assert_eq!(e.fetch(5).unwrap().as_text(), Some("x"));
+        assert_eq!(fetch_text(&e, 5), Some("x".to_string()));
     }
 
     #[test]
@@ -351,8 +368,8 @@ mod tests {
     fn with_adds_position() {
         let e = Edition::empty().with(0, RangeElement::text("a")).with(1, RangeElement::text("b"));
         assert_eq!(e.count(), 2);
-        assert_eq!(e.fetch(0).unwrap().as_text(), Some("a"));
-        assert_eq!(e.fetch(1).unwrap().as_text(), Some("b"));
+        assert_eq!(fetch_text(&e, 0), Some("a".to_string()));
+        assert_eq!(fetch_text(&e, 1), Some("b".to_string()));
     }
 
     #[test]
@@ -371,7 +388,7 @@ mod tests {
         let e = Edition::empty().with_all(&region, RangeElement::text("x"));
         assert_eq!(e.count(), 5);
         for i in 0..5 {
-            assert_eq!(e.fetch(i).unwrap().as_text(), Some("x"));
+            assert_eq!(fetch_text(&e, i), Some("x".to_string()));
         }
     }
 
@@ -394,8 +411,8 @@ mod tests {
         let b = Edition::from_one(1, RangeElement::text("b"));
         let c = a.combine(&b).unwrap();
         assert_eq!(c.count(), 2);
-        assert_eq!(c.fetch(0).unwrap().as_text(), Some("a"));
-        assert_eq!(c.fetch(1).unwrap().as_text(), Some("b"));
+        assert_eq!(fetch_text(&c, 0), Some("a".to_string()));
+        assert_eq!(fetch_text(&c, 1), Some("b".to_string()));
     }
 
     #[test]
@@ -462,8 +479,8 @@ mod tests {
         let b = Edition::from_text("xbc");
         let shared = a.shared_with(&b);
         assert_eq!(shared.count(), 2);
-        assert_eq!(shared.fetch(1).unwrap().as_text(), Some("b"));
-        assert_eq!(shared.fetch(2).unwrap().as_text(), Some("c"));
+        assert_eq!(fetch_text(&shared, 1), Some("b".to_string()));
+        assert_eq!(fetch_text(&shared, 2), Some("c".to_string()));
     }
 
     #[test]
@@ -472,7 +489,7 @@ mod tests {
         let b = Edition::from_text("xbc");
         let diff = a.not_shared_with(&b);
         assert_eq!(diff.count(), 1);
-        assert_eq!(diff.fetch(0).unwrap().as_text(), Some("a"));
+        assert_eq!(fetch_text(&diff, 0), Some("a".to_string()));
     }
 
     #[test]
@@ -539,7 +556,7 @@ mod tests {
     fn immutability_original_unchanged() {
         let e = Edition::from_text("abc");
         let _e2 = e.with(0, RangeElement::text("X"));
-        assert_eq!(e.fetch(0).unwrap().as_text(), Some("a"));
+        assert_eq!(fetch_text(&e, 0), Some("a".to_string()));
     }
 
     #[test]
@@ -547,18 +564,7 @@ mod tests {
         let region = XnRegion::interval(0, 4);
         let e = Edition::from_all(&region, RangeElement::text("z"));
         for i in 0..4 {
-            assert_eq!(e.fetch(i).unwrap().as_text(), Some("z"));
-        }
-    }
-
-    #[test]
-    fn serde_round_trip() {
-        #[cfg(feature = "serde")]
-        {
-            let e = Edition::from_text("hello");
-            let json = serde_json::to_string(&e).unwrap();
-            let e2: Edition = serde_json::from_str(&json).unwrap();
-            assert_eq!(e, e2);
+            assert_eq!(fetch_text(&e, i), Some("z".to_string()));
         }
     }
 
@@ -666,5 +672,101 @@ mod tests {
         assert_eq!(mapping.get(&0), Some(&10));
         assert_eq!(mapping.get(&1), Some(&11));
         assert_eq!(mapping.get(&2), Some(&12));
+    }
+
+    #[test]
+    fn stress_large_edition_otree() {
+        let mut e = Edition::empty();
+        for i in 0..50_000 {
+            e = e.with(i, RangeElement::text(format!("{i}")));
+        }
+        assert_eq!(e.count(), 50_000);
+        assert!(e.has_position(25_000));
+        assert_eq!(fetch_text(&e, 25_000), Some("25000".to_string()));
+    }
+
+    #[test]
+    fn stress_splay_on_large_edition() {
+        let mut e = Edition::empty();
+        for i in 0..10_000 {
+            e = e.with(i, RangeElement::text(format!("{i}")));
+        }
+        use crate::edition::orgl::SplayResult;
+        let mut orgl = e.orgl.clone();
+        let result = orgl.splay(&XnRegion::interval(1000, 2000));
+        assert_eq!(result, SplayResult::Partial);
+    }
+
+    // === Infinite domain tests ===
+
+    #[test]
+    fn infinite_edition_from_all() {
+        let e = Edition::from_all(&XnRegion::above(0), RangeElement::text("."));
+        assert!(e.is_infinite());
+        assert!(!e.is_finite());
+        assert!(e.has_position(0));
+        assert!(e.has_position(1000000));
+        assert_eq!(fetch_text(&e, 42), Some(".".to_string()));
+    }
+
+    #[test]
+    fn infinite_edition_override() {
+        let e = Edition::from_all(&XnRegion::above(0), RangeElement::text("."))
+            .with(5, RangeElement::text("X"));
+        assert_eq!(fetch_text(&e, 5), Some("X".to_string()));
+        assert_eq!(fetch_text(&e, 6), Some(".".to_string()));
+    }
+
+    #[test]
+    fn infinite_edition_without() {
+        let e = Edition::from_all(&XnRegion::above(0), RangeElement::text("."))
+            .without(5);
+        assert!(!e.has_position(5));
+        assert!(e.has_position(4));
+        assert!(e.has_position(6));
+    }
+
+    #[test]
+    fn infinite_edition_with_default() {
+        let e = Edition::with_default(XnRegion::interval(0, 100), RangeElement::text("?"));
+        assert!(!e.is_infinite());
+        assert!(e.has_position(50));
+        assert_eq!(fetch_text(&e, 50), Some("?".to_string()));
+    }
+
+    #[test]
+    fn infinite_edition_transformed() {
+        let e = Edition::from_all(&XnRegion::above(0), RangeElement::text("."))
+            .transformed_by(100);
+        assert!(e.has_position(100));
+        assert!(!e.has_position(0));
+        assert_eq!(fetch_text(&e, 150), Some(".".to_string()));
+    }
+
+    #[test]
+    fn infinite_edition_copy() {
+        let e = Edition::from_all(&XnRegion::above(0), RangeElement::text("."));
+        let sub = e.copy(&XnRegion::interval(0, 10));
+        assert!(sub.has_position(5));
+        assert!(!sub.has_position(10));
+    }
+
+    // === DspLoaf through Edition ===
+
+    #[test]
+    fn transformed_by_is_lazy_dsp() {
+        let e = Edition::from_text("abc");
+        let shifted = e.transformed_by(10);
+        assert_eq!(shifted.count(), 3);
+        assert!(shifted.has_position(10));
+        assert_eq!(fetch_text(&shifted, 10), Some("a".to_string()));
+    }
+
+    #[test]
+    fn transformed_chain_is_efficient() {
+        let e = Edition::from_text("hello");
+        let result = e.transformed_by(10).transformed_by(10).transformed_by(10);
+        assert_eq!(fetch_text(&result, 30), Some("h".to_string()));
+        assert_eq!(fetch_text(&result, 34), Some("o".to_string()));
     }
 }
