@@ -3,6 +3,7 @@ pub mod backfollow;
 pub mod canopy;
 pub mod edition;
 pub mod grandmap;
+pub mod links;
 pub mod orgl;
 pub mod pool;
 pub mod props;
@@ -16,6 +17,7 @@ pub use backfollow::{BackfollowEngine, EditionMeta};
 pub use canopy::{BertCanopy, CanopyCrumData, CanopyCrumKind, SensorCanopy};
 pub use edition::Edition;
 pub use grandmap::{GrandMap, Id, IdSpace, IdSpaceId};
+pub use links::{HyperLink, HyperRef, HyperRefKind, Path};
 pub use orgl::{OrglRoot, SplayResult};
 pub use pool::{ContentHash, ContentPool};
 pub use props::{

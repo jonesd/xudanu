@@ -84,7 +84,7 @@ The O-tree is Gold's persistent splay tree for Edition content. Our Rust port:
 | Canopy tree (Bert/Sensor) | `CanopyCrum`, `BertCrum`, `SensorCrum` | Done — Rc<RefCell<>> balanced binary tree with flag propagation | Complete |
 | H-tree (version tracking) | `HistoryCrum`, `HUpperCrum`, `HBottomCrum` | Done — HUpperCrumData with delayed_store_backfollow walk | Complete |
 | Backfollow engine | `RecorderFossil`, `ResultRecorder`, `Matcher`, `TrailBlazer` | Done — synchronous in-memory BackfollowEngine | Complete |
-| Label propagation | `positionsLabelled()`, `rebind()`, label identity tracking | Label exists on Carrier but no propagation API | Add in Phase 4-5 |
+| Label propagation | `positionsLabelled()`, `rebind()`, label identity tracking | Label exists on Carrier but no propagation API | Add in future phase |
 | DspLoaf (transform wrapper) | Lazy displacement without rebuilding tree | Done — `Loaf::Dsp` variant | Complete |
 
 ### Enhancement ideas for future phases
@@ -120,3 +120,4 @@ The O-tree is Gold's persistent splay tree for Edition content. Our Rust port:
 | DspLoaf + Infinite + Fe/Be | 245 | DspLoaf lazy transforms, infinite domains, backend traits |
 | Phase 3: GrandMap/Work/Pool | 285 | GrandMap, Work, ContentPool, identity-based shared_region |
 | Phase 4: Transclusion | 367 | Props, Canopy, H-tree, TransclusionIndex, BackfollowEngine, EditionMeta |
+| Phase 5: Links | 401 | HyperLink, HyperRef (Single/Multi), Path, link-aware transclusion queries |
