@@ -70,7 +70,8 @@ The O-tree is Gold's persistent splay tree for Edition content. Our Rust port:
 | Gap | Gold Feature | Rust Status | Plan |
 |---|---|---|---|
 | Infinite-domain Editions | Editions can map infinite regions (e.g., `above(5) → constant`) | Done — Leaf default + tombstone entries | Complete |
-| H-tree / history tracking | Version tracking parallel to O-tree for backfollow | Not implemented | Phase 4 (Transclusion) |
+| H-tree / history tracking | Version tracking parallel to O-tree for backfollow | Done — `HUpperCrumData` with canopy integration | Complete |
+| Sensor crum / Bert crum (canopy indices) | Canopy trees for filtering transclusion queries | Done — `BertCanopy`/`SensorCanopy` with flag propagation | Complete |
 | CoordinateSpace abstraction | Generic Position/Region across IntegerSpace, RealSpace, SequenceSpace, CrossSpace | Only integer positions (i64) | Add when needed; integer is the dominant case |
 | Stepper / retrieve | `edition->stepper(region, order)` for filtered iteration | `iter()` only, no region filter | Add `iter_in_region()` method |
 | Bundle retrieval | `retrieve()` returns Array/Element/PlaceHolder bundles | Not implemented | Add when needed for bulk reads |
@@ -78,8 +79,11 @@ The O-tree is Gold's persistent splay tree for Edition content. Our Rust port:
 | Work (mutable container) | `FeWork` holds current edition + revision history | Done — `Work` with revise/history/clubs/sponsors | Complete |
 | GrandMap (ID registry) | `BeGrandMap` bidirectional ID ↔ BeRangeElement | Done — `GrandMap` with IdSpace, assign_id, fetch | Complete |
 | Content Pool | Content-addressed storage for RangeElements | Done — `ContentPool` with hash-based store/retrieve/find | Complete |
-| Transclusion queries | `transcluders()`, `works()`, `rangeTranscluders()` | Not yet implemented | Phase 4 (Transclusion) |
-| Permissions / endorsements | `BertProp`, `SensorProp`, endorsement/permission spaces | Not yet implemented | Phase 5 or later |
+| Transclusion queries | `transcluders()`, `works()`, `rangeTranscluders()` | Done — `BackfollowEngine` orchestrates full query pipeline | Complete |
+| Permissions / endorsements | `BertProp`, `SensorProp`, endorsement/permission spaces | Done — flag-based props with endorsement bit allocation | Complete |
+| Canopy tree (Bert/Sensor) | `CanopyCrum`, `BertCrum`, `SensorCrum` | Done — Rc<RefCell<>> balanced binary tree with flag propagation | Complete |
+| H-tree (version tracking) | `HistoryCrum`, `HUpperCrum`, `HBottomCrum` | Done — HUpperCrumData with delayed_store_backfollow walk | Complete |
+| Backfollow engine | `RecorderFossil`, `ResultRecorder`, `Matcher`, `TrailBlazer` | Done — synchronous in-memory BackfollowEngine | Complete |
 | Label propagation | `positionsLabelled()`, `rebind()`, label identity tracking | Label exists on Carrier but no propagation API | Add in Phase 4-5 |
 | DspLoaf (transform wrapper) | Lazy displacement without rebuilding tree | Done — `Loaf::Dsp` variant | Complete |
 
@@ -115,3 +119,4 @@ The O-tree is Gold's persistent splay tree for Edition content. Our Rust port:
 | Foundation hardening | 212 | O-tree based Edition, all Gold tests preserved |
 | DspLoaf + Infinite + Fe/Be | 245 | DspLoaf lazy transforms, infinite domains, backend traits |
 | Phase 3: GrandMap/Work/Pool | 285 | GrandMap, Work, ContentPool, identity-based shared_region |
+| Phase 4: Transclusion | 367 | Props, Canopy, H-tree, TransclusionIndex, BackfollowEngine, EditionMeta |

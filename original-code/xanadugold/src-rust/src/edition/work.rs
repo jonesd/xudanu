@@ -58,6 +58,14 @@ impl Work {
         &self.current_edition
     }
 
+    pub fn current_edition(&self) -> &Edition {
+        &self.current_edition
+    }
+
+    pub fn current_edition_id(&self) -> Option<u64> {
+        None
+    }
+
     pub fn revision_count(&self) -> u64 {
         self.revision_count
     }

@@ -207,7 +207,7 @@ impl CanopyCrumData {
         self.parent = p;
     }
 
-    fn set_own_flags(&mut self, new_flags: u32) {
+    pub fn set_own_flags(&mut self, new_flags: u32) {
         self.own_flags = new_flags;
     }
 

@@ -98,6 +98,20 @@ impl RangeElement {
             _ => None,
         }
     }
+
+    pub fn as_edition_id(&self) -> Option<u64> {
+        match self {
+            RangeElement::Edition { edition_id } => Some(edition_id.0),
+            _ => None,
+        }
+    }
+
+    pub fn as_work_id(&self) -> Option<u64> {
+        match self {
+            RangeElement::Work { work_id } => Some(work_id.0),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
