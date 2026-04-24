@@ -57,7 +57,7 @@ The O-tree is Gold's persistent splay tree for Edition content. Our Rust port:
 
 | Gold Feature | Rust Status |
 |---|---|
-| DspLoaf (transform wrapper) | Not yet; `transformed_by` rebuilds the tree |
+| DspLoaf (transform wrapper) | Done — `Loaf::Dsp` variant, `transformed_by` returns O(1) Dsp |
 | OPartialLoaf (placeholder with TrailBlazer) | Simplified: Leaf stores explicit entries |
 | OVirtualLoaf (backed by SharedData) | Simplified: Leaf stores explicit entries |
 | RegionLoaf (points to BeRangeElement) | Simplified: Leaf stores explicit entries |
@@ -69,31 +69,35 @@ The O-tree is Gold's persistent splay tree for Edition content. Our Rust port:
 
 | Gap | Gold Feature | Rust Status | Plan |
 |---|---|---|---|
-| Infinite-domain Editions | Editions can map infinite regions (e.g., `above(5) → constant`) | Edition only stores finite entries | Future: lazy/functional representation for infinite domains |
+| Infinite-domain Editions | Editions can map infinite regions (e.g., `above(5) → constant`) | Done — Leaf default + tombstone entries | Complete |
 | H-tree / history tracking | Version tracking parallel to O-tree for backfollow | Not implemented | Phase 4 (Transclusion) |
 | CoordinateSpace abstraction | Generic Position/Region across IntegerSpace, RealSpace, SequenceSpace, CrossSpace | Only integer positions (i64) | Add when needed; integer is the dominant case |
 | Stepper / retrieve | `edition->stepper(region, order)` for filtered iteration | `iter()` only, no region filter | Add `iter_in_region()` method |
 | Bundle retrieval | `retrieve()` returns Array/Element/PlaceHolder bundles | Not implemented | Add when needed for bulk reads |
-| Fe/Be split | FrontEnd (session) / BackEnd (persistent) object split | Single unified struct | Next tranche |
-| Work (mutable container) | `FeWork` holds current edition + revision history | Not yet implemented | Phase 3 (GrandMap) |
+| Fe/Be split | FrontEnd (session) / BackEnd (persistent) object split | Done — `BeRangeElement` trait + `InMemoryBeStorage` | Disk backing in Phase 6 |
+| Work (mutable container) | `FeWork` holds current edition + revision history | Done — `Work` with revise/history/clubs/sponsors | Complete |
+| GrandMap (ID registry) | `BeGrandMap` bidirectional ID ↔ BeRangeElement | Done — `GrandMap` with IdSpace, assign_id, fetch | Complete |
+| Content Pool | Content-addressed storage for RangeElements | Done — `ContentPool` with hash-based store/retrieve/find | Complete |
 | Transclusion queries | `transcluders()`, `works()`, `rangeTranscluders()` | Not yet implemented | Phase 4 (Transclusion) |
 | Permissions / endorsements | `BertProp`, `SensorProp`, endorsement/permission spaces | Not yet implemented | Phase 5 or later |
 | Label propagation | `positionsLabelled()`, `rebind()`, label identity tracking | Label exists on Carrier but no propagation API | Add in Phase 4-5 |
-| DspLoaf (transform wrapper) | Lazy displacement without rebuilding tree | `transformed_by` rebuilds | Add when needed for performance |
+| DspLoaf (transform wrapper) | Lazy displacement without rebuilding tree | Done — `Loaf::Dsp` variant | Complete |
 
 ### Enhancement ideas for future phases
 
 1. **yrs/CRDT as transport layer**: The Edition model maps naturally to yrs `Doc` with `Text` sequences. An Edition could be materialized into a yrs document for real-time sync, while maintaining the Gold partial ordering for conflict preservation.
 
-2. **Content-addressed storage**: RangeElements with identical content should be deduplicated via content hashing (like Git's blob storage). This is the foundation for transclusion.
+2. **Content-addressed storage**: Done — `ContentPool` implements hash-based store/retrieve/find_by_content.
 
 3. **Compressed transition arrays**: For very large regions, run-length encoding with 32-bit deltas could reduce memory usage.
 
-4. **DspLoaf for lazy transforms**: Instead of rebuilding the entire tree on `transformed_by`, wrap the root in a DspLoaf that applies the offset lazily. This is how Gold does it.
+4. **DspLoaf for lazy transforms**: Done — `Loaf::Dsp` wraps child with offset. Splay materializes back to concrete nodes.
 
 5. **Parallel region operations**: `merge_transitions` could be parallelized for large regions using rayon.
 
-6. **Fe/Be trait boundary**: Define `BeRangeElement` trait with identity, owner, stub/materialize protocol. Keep everything in-memory with `InMemoryBeStorage` (HashMap-backed). The disk serialization layer plugs in later.
+6. **Fe/Be trait boundary**: Done — `BeRangeElement` trait with identity, owner, clone_boxed. `InMemoryBeStorage` (HashMap-backed) with `Clone` for GrandMap integration.
+
+7. **Identity-based shared_region**: Done — `Edition::identity_shared_region(other, id_eq)` compares by identity (be_id) instead of value (PartialEq).foundation for transclusion.
 
 ### Gold test cases ported
 
@@ -109,3 +113,5 @@ The O-tree is Gold's persistent splay tree for Edition content. Our Rust port:
 |---|---|---|
 | Phase 2 initial | 189 | BTreeMap-based Edition |
 | Foundation hardening | 212 | O-tree based Edition, all Gold tests preserved |
+| DspLoaf + Infinite + Fe/Be | 245 | DspLoaf lazy transforms, infinite domains, backend traits |
+| Phase 3: GrandMap/Work/Pool | 285 | GrandMap, Work, ContentPool, identity-based shared_region |
