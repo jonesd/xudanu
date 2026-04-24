@@ -69,7 +69,7 @@ pub trait BeStorage: std::fmt::Debug + Send + Sync {
     fn contains(&self, id: BeId) -> bool;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InMemoryBeStorage {
     elements: HashMap<BeId, Box<dyn BeRangeElement>>,
     next_id: BeId,

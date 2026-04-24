@@ -237,6 +237,23 @@ impl Edition {
         self.orgl.shared_region(&other.orgl)
     }
 
+    pub fn identity_shared_region<F>(&self, other: &Edition, id_eq: F) -> XnRegion
+    where
+        F: Fn(&Carrier, &Carrier) -> bool,
+    {
+        let my_entries = self.orgl.all_entries();
+        let other_entries = other.orgl.all_entries();
+        let mut region = XnRegion::empty();
+        for (pos, carrier) in &my_entries {
+            if let Some(idx) = other_entries.binary_search_by_key(pos, |(p, _)| *p).ok() {
+                if id_eq(carrier, &other_entries[idx].1) {
+                    region = region.with(*pos);
+                }
+            }
+        }
+        region
+    }
+
     pub fn shared_with(&self, other: &Edition) -> Edition {
         let my_entries = self.orgl.all_entries();
         let other_entries = other.orgl.all_entries();
@@ -768,5 +785,41 @@ mod tests {
         let result = e.transformed_by(10).transformed_by(10).transformed_by(10);
         assert_eq!(fetch_text(&result, 30), Some("h".to_string()));
         assert_eq!(fetch_text(&result, 34), Some("o".to_string()));
+    }
+
+    #[test]
+    fn identity_shared_region_by_be_id() {
+        let e1 = Edition::from_one(0, RangeElement::edition(1))
+            .with(1, RangeElement::edition(2))
+            .with(2, RangeElement::edition(3));
+        let e2 = Edition::from_one(0, RangeElement::edition(1))
+            .with(1, RangeElement::edition(99))
+            .with(2, RangeElement::edition(3));
+        let id_eq = |a: &Carrier, b: &Carrier| match (&a.element, &b.element) {
+            (
+                RangeElement::Edition { edition_id: id_a },
+                RangeElement::Edition { edition_id: id_b },
+            ) => id_a == id_b,
+            _ => false,
+        };
+        let region = e1.identity_shared_region(&e2, id_eq);
+        assert!(region.contains(0));
+        assert!(!region.contains(1));
+        assert!(region.contains(2));
+    }
+
+    #[test]
+    fn identity_shared_region_empty_on_no_match() {
+        let e1 = Edition::from_one(0, RangeElement::edition(1));
+        let e2 = Edition::from_one(0, RangeElement::edition(2));
+        let id_eq = |a: &Carrier, b: &Carrier| match (&a.element, &b.element) {
+            (
+                RangeElement::Edition { edition_id: id_a },
+                RangeElement::Edition { edition_id: id_b },
+            ) => id_a == id_b,
+            _ => false,
+        };
+        let region = e1.identity_shared_region(&e2, id_eq);
+        assert!(region.is_empty());
     }
 }
