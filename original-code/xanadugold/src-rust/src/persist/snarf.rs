@@ -1,5 +1,4 @@
 use std::io::{self, Cursor, Read};
-use std::path::Path;
 
 use super::persistent::FlockLocation;
 use super::urdi::UrdiFile;

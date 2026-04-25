@@ -15,7 +15,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 
 use crate::edition::BeId;
-use super::audit::{AuditEventKind, ThreatLevel};
+use super::audit::ThreatLevel;
 use super::channel::{ChannelDetector, EventMessage};
 use super::codec::{BinaryCodec, JsonCodec, WireCodec};
 use super::dispatch;
@@ -57,9 +57,9 @@ async fn ws_handler(
 }
 
 async fn perform_handshake(
-    codec: &Box<dyn WireCodec>,
+    _codec: &Box<dyn WireCodec>,
     ws_sender: &mut futures_util::stream::SplitSink<WebSocket, Message>,
-    ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>,
+    _ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>,
     client_version: u8,
     is_text: bool,
 ) -> Option<u8> {
@@ -162,6 +162,8 @@ async fn handle_socket(
     let writer_task = tokio::spawn(async move {
         loop {
             tokio::select! {
+                biased;
+
                 Some(bytes) = out_rx.recv() => {
                     let msg = if is_text_writer {
                         Message::Text(String::from_utf8_lossy(&bytes).into_owned().into())
@@ -260,7 +262,7 @@ async fn handle_socket(
                         | WireRequest::SessionLoginByName { .. }
                         | WireRequest::SessionAuthenticate { .. }
                 );
-                let is_permission_op = matches!(
+                let _is_permission_op = matches!(
                     &parsed.inner,
                     WireRequest::WorkGrab { .. }
                         | WireRequest::WorkRevise { .. }

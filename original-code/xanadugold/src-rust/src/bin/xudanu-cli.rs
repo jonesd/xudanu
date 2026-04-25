@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
 use futures_util::{SinkExt, StreamExt};

@@ -3,184 +3,212 @@
 <head>
 <title>xudanu</title>
 <style>
-body { font-family: monospace; max-width: 80em; margin: 2em auto; background: #1a1a2e; color: #e0e0e0; }
-h1 { color: #e94560; }
-#log { background: #16213e; border: 1px solid #0f3460; padding: 1em; height: 30em; overflow-y: auto; white-space: pre-wrap; font-size: 13px; }
-#input { display: flex; gap: 0.5em; margin-top: 1em; }
-#cmd { flex: 1; background: #16213e; color: #e0e0e0; border: 1px solid #0f3460; padding: 0.5em; font-family: monospace; font-size: 14px; }
-button { background: #e94560; color: white; border: none; padding: 0.5em 1.5em; cursor: pointer; font-family: monospace; }
-button:hover { background: #c73e54; }
-.prompt { color: #e94560; }
-.error { color: #ff6b6b; }
-.info { color: #4ecdc4; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Menlo', 'Consolas', monospace; background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
+header { background: #16213e; padding: 8px 16px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #0f3460; }
+header h1 { color: #e94560; font-size: 16px; }
+#status { font-size: 12px; color: #4ecdc4; }
+.main { display: flex; flex: 1; overflow: hidden; }
+.sidebar { width: 220px; background: #16213e; border-right: 1px solid #0f3460; overflow-y: auto; }
+.sidebar h2 { font-size: 11px; color: #e94560; padding: 8px; text-transform: uppercase; letter-spacing: 1px; }
+.sidebar .item { padding: 6px 8px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #0f3460; }
+.sidebar .item:hover { background: #0f3460; }
+.sidebar .item.active { background: #e94560; color: white; }
+.sidebar .item .id { color: #4ecdc4; }
+.center { flex: 1; display: flex; flex-direction: column; }
+.toolbar { background: #16213e; padding: 6px 12px; display: flex; gap: 8px; border-bottom: 1px solid #0f3460; font-size: 12px; align-items: center; }
+.toolbar button { background: #0f3460; color: #e0e0e0; border: none; padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
+.toolbar button:hover { background: #e94560; }
+.toolbar button:disabled { opacity: 0.4; cursor: default; }
+.toolbar .rev { color: #4ecdc4; }
+#docview { flex: 1; padding: 16px; overflow-y: auto; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+#docview .placeholder { color: #555; font-style: italic; }
+.right { width: 240px; background: #16213e; border-left: 1px solid #0f3460; overflow-y: auto; }
+.right h2 { font-size: 11px; color: #e94560; padding: 8px; text-transform: uppercase; letter-spacing: 1px; }
+.right .link-item { padding: 6px 8px; font-size: 12px; border-bottom: 1px solid #0f3460; cursor: pointer; }
+.right .link-item:hover { background: #0f3460; }
+.right .link-item .arrow { color: #e94560; }
+.footer { background: #16213e; border-top: 1px solid #0f3460; padding: 6px 12px; display: flex; gap: 8px; }
+#cmd { flex: 1; background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; padding: 6px 10px; font-family: inherit; font-size: 13px; }
+#cmd:focus { border-color: #e94560; outline: none; }
+.footer button { background: #e94560; color: white; border: none; padding: 6px 16px; cursor: pointer; font-family: inherit; }
+.footer button:hover { background: #c73e54; }
+#log { display: none; background: #111; color: #888; padding: 8px; font-size: 11px; max-height: 120px; overflow-y: auto; }
 </style>
 </head>
 <body>
-<h1>xudanu</h1>
-<div id="status">Not connected</div>
-<div id="log"></div>
-<div id="input">
-<input id="cmd" placeholder="Type a command... (help for list)" autofocus />
-<button onclick="sendCmd()">Send</button>
-<button onclick="connectWs()">Connect</button>
+<header>
+  <h1>xudanu</h1>
+  <div id="status">connecting...</div>
+</header>
+<div class="main">
+  <div class="sidebar">
+    <h2>Works</h2>
+    <div id="worklist"></div>
+  </div>
+  <div class="center">
+    <div class="toolbar">
+      <button onclick="doCreate()">+ New</button>
+      <button onclick="doEdit()" id="btnEdit">Edit</button>
+      <button onclick="doSave()" id="btnSave" disabled>Save</button>
+      <button onclick="doCancel()" id="btnCancel" disabled>Cancel</button>
+      <span id="revInfo" class="rev"></span>
+    </div>
+    <div id="docview"><span class="placeholder">Select or create a document.</span></div>
+    <div id="log"></div>
+  </div>
+  <div class="right">
+    <h2>Links</h2>
+    <div id="linklist"></div>
+  </div>
+</div>
+<div class="footer">
+  <input id="cmd" placeholder="Type a command... (help for list)" autofocus />
+  <button onclick="sendCmd()">Run</button>
 </div>
 <script>
-let ws = null;
-let nextId = 1;
-let sessionId = null;
-let loggedIn = false;
-const log = document.getElementById('log');
-const cmd = document.getElementById('cmd');
-const status = document.getElementById('status');
+let ws=null, nextId=1, sessionId=null, loggedIn=false;
+let works=[], currentWork=null, currentRev=0, totalRevs=0, editing=false;
+const $=id=>document.getElementById(id);
 
-function append(text, cls) {
-  const d = document.createElement('div');
-  if (cls) d.className = cls;
-  d.textContent = text;
-  log.appendChild(d);
-  log.scrollTop = log.scrollHeight;
-}
-
-function connectWs() {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(proto + '//' + location.host + '/xudanu?format=json&version=2');
-  ws.onopen = () => { status.textContent = 'Connected'; append('Connected to server.', 'info'); };
-  ws.onmessage = (ev) => {
-    const msg = JSON.parse(ev.data);
-    if (msg.type === 'handshake') {
-      append('Handshake: server v' + msg.payload.server_version + ' capabilities: ' + msg.payload.server_capabilities.join(', '), 'info');
-      doConnect();
-    } else if (msg.type === 'response') {
-      handleResponse(msg);
-    } else if (msg.type === 'error') {
-      append('Error: ' + (msg.message || msg.code || JSON.stringify(msg)), 'error');
-    } else if (msg.type === 'event') {
-      append('Event: ' + JSON.stringify(msg.event), 'info');
-    } else {
-      append(JSON.stringify(msg, null, 2));
-    }
+function connectWs(){
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  ws=new WebSocket(proto+'//'+location.host+'/xudanu?format=json&version=2');
+  ws.onopen=()=>{$('status').textContent='Connected';};
+  ws.onmessage=ev=>{
+    const msg=JSON.parse(ev.data);
+    if(msg.type==='handshake'){doConnect();return;}
+    if(msg.type==='response'){handleResp(msg);return;}
+    if(msg.type==='event'){log('Event: '+JSON.stringify(msg.event));return;}
+    if(msg.type==='error'){log('Error: '+(msg.message||msg.code));return;}
   };
-  ws.onclose = () => { status.textContent = 'Disconnected'; append('Disconnected.', 'error'); };
-  ws.onerror = () => { append('Connection error.', 'error'); };
+  ws.onclose=()=>{$('status').textContent='Disconnected';};
+  ws.onerror=()=>{$('status').textContent='Error';};
 }
 
-function sendReq(op, payload) {
-  const id = nextId++;
-  const frame = {v:2, type:'request', id, op};
-  if (payload) frame.payload = payload;
-  ws.send(JSON.stringify(frame));
-  return id;
+function req(op,payload){
+  const id=nextId++;
+  const f={v:2,type:'request',id,op};
+  if(payload)f.payload=payload;
+  ws.send(JSON.stringify(f));
 }
 
-function doConnect() {
-  sendReq('session_connect');
-}
+function doConnect(){req('session_connect');}
 
-function handleResponse(msg) {
-  const v = msg.value;
-  if (v && v.value !== undefined && typeof v.value === 'number' && !sessionId) {
-    sessionId = v.value;
-    append('Session: ' + sessionId, 'info');
-    sendReq('session_login_public');
-    return;
+function handleResp(msg){
+  const v=msg.value;
+  if(v&&v.value!==undefined&&typeof v.value==='number'&&!sessionId){
+    sessionId=v.value;req('session_login_public');return;
   }
-  if (!loggedIn && sessionId) {
-    loggedIn = true;
-    append('Logged in.', 'info');
-    append('Type commands like: create-work hello, list-works, grab 42, revise 42 new text, create-link 42 43', 'info');
-    return;
+  if(!loggedIn&&sessionId){loggedIn=true;refresh();return;}
+  if(v&&v.type==='work_list'){works=v.value;renderWorkList();return;}
+  if(v&&v.type==='edition'){
+    renderEdition(v.value);return;
   }
-  append(formatValue(v));
+  if(v&&v.type==='humber'){
+    if(currentOp==='create'){currentWork=v.value;currentRev=0;totalRevs=1;editing=false;refresh();showWork(currentWork);return;}
+    if(currentOp==='revise'){currentRev=v.value;totalRevs=v.value;editing=false;refresh();showWork(currentWork);return;}
+  }
+  if(v&&v.type==='link_list'){renderLinks(v.value);return;}
+  if(v&&v.type==='boolean'&&currentOp==='grab'){editing=true;updateToolbar();return;}
+  if(v&&v.type==='void'){
+    if(currentOp==='release'){editing=false;updateToolbar();return;}
+    refresh();return;
+  }
+  if(v&&v.type==='id'){refresh();return;}
+  log(JSON.stringify(v));
 }
 
-function formatValue(v) {
-  if (!v) return '';
-  if (v.type === 'edition') {
-    return formatEdition(v.value);
-  }
-  if (v.type === 'work_list') {
-    return formatWorkList(v.value);
-  }
-  if (v.type === 'link_list') {
-    return formatLinkList(v.value);
-  }
-  if (v.type === 'club_names') {
-    return formatTable(v.value.map(p => [p[0], p[1]]));
-  }
-  return JSON.stringify(v, null, 2);
-}
+let currentOp='';
+const origReq=req;
+req=function(op,payload){currentOp=op;origReq(op,payload);};
 
-function formatEdition(ed) {
-  if (!ed) return '(empty)';
-  if (ed.text) return ed.text;
-  if (ed.entries) {
-    return ed.entries.map(e => {
-      const elem = e[1];
-      if (elem.Text) return elem.Text.text || '';
-      return '[' + JSON.stringify(elem) + ']';
-    }).join('');
-  }
-  return JSON.stringify(ed);
-}
+function refresh(){req('work_list');if(currentWork)req('link_list_for_work',{work_id:currentWork});}
 
-function formatWorkList(entries) {
-  if (!entries || entries.length === 0) return 'No works.';
-  let s = pad('ID',8) + pad('OWNER',8) + pad('REVS',6) + 'GRABBED\n';
-  for (const e of entries) {
-    s += pad(e.work_id,8) + pad(e.owner||0,8) + pad(e.revision_count,6) + (e.is_grabbed?'yes':'no') + '\n';
-  }
-  return s;
-}
-
-function formatLinkList(links) {
-  if (!links || links.length === 0) return 'No links.';
-  let s = pad('LINK',8) + pad('FROM',8) + 'TO\n';
-  for (const l of links) {
-    s += pad(l.link_id,8) + pad(l.origin,8) + l.destination + '\n';
-  }
-  return s;
-}
-
-function formatTable(rows) {
-  return rows.map(r => r.join('\t')).join('\n');
-}
-
-function pad(s, n) {
-  s = String(s);
-  while (s.length < n) s += ' ';
-  return s;
-}
-
-function sendCmd() {
-  const text = cmd.value.trim();
-  if (!text) return;
-  cmd.value = '';
-  append('> ' + text, 'prompt');
-  const parts = text.split(/\s+/);
-  const c = parts[0].toLowerCase();
-  const a = parts.slice(1);
-  switch(c) {
-    case 'create-work': sendReq('work_create', {edition: {text: a.join(' ') || 'empty'}}); break;
-    case 'get-work': sendReq('work_get_edition', {work_id: +a[0]}); break;
-    case 'list-works': sendReq('work_list'); break;
-    case 'grab': sendReq('work_grab', {work_id: +a[0]}); break;
-    case 'revise': sendReq('work_revise', {work_id: +a[0], edition: {text: a.slice(1).join(' ') || ''}}); break;
-    case 'release': sendReq('work_release', {work_id: +a[0]}); break;
-    case 'history': sendReq('work_revision_count', {work_id: +a[0]}); break;
-    case 'create-link': sendReq('link_create', {origin: +a[0], destination: +a[1]}); break;
-    case 'get-link': sendReq('link_get', {link_id: +a[0]}); break;
-    case 'list-links': sendReq('link_list_for_work', {work_id: +a[0]}); break;
-    case 'delete-link': sendReq('link_delete', {link_id: +a[0]}); break;
-    case 'find-content': sendReq('find_works_for_content', {content_be_id: +a[0]}); break;
-    case 'club-create': if (a[0]) sendReq('club_create_named', {name: a[0], description: 'empty'}); else sendReq('club_create', {description: 'empty'}); break;
-    case 'club-list': sendReq('club_names'); break;
-    case 'info': sendReq('server_stats'); break;
-    case 'help': append('Commands: create-work <text>, get-work <id>, list-works, grab <id>, revise <id> <text>, release <id>, history <id>, create-link <origin> <dest>, get-link <id>, list-links <work-id>, delete-link <id>, find-content <be-id>, club-create [name], club-list, info', 'info'); break;
-    default: append('Unknown: ' + c + '. Type help.', 'error');
+function renderWorkList(){
+  const el=$('worklist');el.innerHTML='';
+  if(!works.length){el.innerHTML='<div class="item" style="color:#555">No works yet</div>';return;}
+  for(const w of works){
+    const d=document.createElement('div');
+    d.className='item'+(w.work_id===currentWork?' active':'');
+    d.innerHTML='<span class="id">'+w.work_id+'</span> '+(w.is_grabbed?'<span style="color:#e94560">editing</span> ':'')+'r'+w.revision_count;
+    d.onclick=()=>{currentWork=w.work_id;currentRev=w.revision_count;totalRevs=w.revision_count;editing=false;showWork(w.work_id);refresh();};
+    el.appendChild(d);
   }
 }
 
-cmd.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendCmd(); });
+function showWork(id){
+  req('work_get_edition',{work_id:id});
+  req('link_list_for_work',{work_id:id});
+  updateToolbar();
+}
+
+function renderEdition(ed){
+  if(!ed){$('docview').innerHTML='<span class="placeholder">Empty</span>';return;}
+  let text='';
+  if(ed.text)text=ed.text;
+  else if(ed.entries)text=ed.entries.map(e=>{const el=e[1];return el.Text?el.Text.text:'['+JSON.stringify(el)+']';}).join('');
+  else if(ed.empty)text='';
+  else text=JSON.stringify(ed);
+  $('docview').textContent=text;
+  updateToolbar();
+}
+
+function renderLinks(links){
+  const el=$('linklist');el.innerHTML='';
+  if(!links||!links.length){el.innerHTML='<div style="padding:8px;color:#555;font-size:12px">No links</div>';return;}
+  for(const l of links){
+    const d=document.createElement('div');d.className='link-item';
+    const other=l.origin===currentWork?l.destination:l.origin;
+    d.innerHTML='<span class="id">'+l.link_id+'</span> <span class="arrow">&rarr;</span> <span class="id">'+other+'</span>';
+    d.onclick=()=>{currentWork=other;editing=false;showWork(other);refresh();};
+    el.appendChild(d);
+  }
+}
+
+function updateToolbar(){
+  $('btnEdit').disabled=!currentWork||editing;
+  $('btnSave').disabled=!editing;
+  $('btnCancel').disabled=!editing;
+  $('revInfo').textContent=currentWork?'rev '+currentRev+'/'+totalRevs+(editing?' EDITING':''):'';
+}
+
+function doCreate(){const name=prompt('Text for new document:');if(name===null)return;req('work_create',{edition:{text:name}});}
+function doEdit(){if(!currentWork)return;req('work_grab',{work_id:currentWork});}
+function doSave(){
+  if(!currentWork)return;
+  const text=$('docview').textContent;
+  req('work_revise',{work_id:currentWork,edition:{text}});
+}
+function doCancel(){if(!currentWork)return;req('work_release',{work_id:currentWork});}
+
+function sendCmd(){
+  const text=$('cmd').value.trim();if(!text)return;$('cmd').value='';
+  const parts=text.split(/\s+/),c=parts[0].toLowerCase(),a=parts.slice(1);
+  switch(c){
+    case'create-work':req('work_create',{edition:{text:a.join(' ')||'empty'}});break;
+    case'get-work':req('work_get_edition',{work_id:+a[0]});break;
+    case'list-works':req('work_list');break;
+    case'grab':req('work_grab',{work_id:+a[0]});break;
+    case'revise':req('work_revise',{work_id:+a[0],edition:{text:a.slice(1).join(' ')||''}});break;
+    case'release':req('work_release',{work_id:+a[0]});break;
+    case'history':req('work_revision_count',{work_id:+a[0]});break;
+    case'create-link':req('link_create',{origin:+a[0],destination:+a[1]});break;
+    case'get-link':req('link_get',{link_id:+a[0]});break;
+    case'list-links':req('link_list_for_work',{work_id:+a[0]});break;
+    case'delete-link':req('link_delete',{link_id:+a[0]});break;
+    case'find-content':req('find_works_for_content',{content_be_id:+a[0]});break;
+    case'club-create':if(a[0])req('club_create_named',{name:a[0],description:'empty'});else req('club_create',{description:'empty'});break;
+    case'club-list':req('club_names');break;
+    case'info':req('server_stats');break;
+    case'help':alert('Commands: create-work, get-work, list-works, grab, revise, release, history, create-link, get-link, list-links, delete-link, find-content, club-create, club-list, info');break;
+    default:log('Unknown: '+c);
+  }
+}
+function log(t){const d=$('d');d.style.display='block';d.innerHTML+=t+'<br>';}
+
+$('cmd').addEventListener('keydown',e=>{if(e.key==='Enter')sendCmd();});
+$('docview').contentEditable=false;
 connectWs();
 </script>
 </body>

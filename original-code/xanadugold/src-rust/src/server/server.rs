@@ -3,9 +3,8 @@ use std::collections::HashMap;
 use crate::edition::{
     BeId, Edition, GrandMap, RangeElement, Work,
 };
-use crate::edition::backfollow::BackfollowEngine;
 use crate::edition::links::{HyperLink, HyperRef};
-use crate::edition::transclusion::{TransclusionQuery, WorkQuery};
+use crate::edition::transclusion::{TransclusionIndex, TransclusionQuery, WorkQuery};
 use super::admin::{AdminState, IdGrant, SessionInfo};
 use super::club::Club;
 use super::detector::{Detector, DetectorList, Event};
@@ -14,8 +13,6 @@ use super::keymaster::KeyMaster;
 use super::lock::{Lock, LockCredential, BooLockSmith, LockSmith};
 use super::session::{Session, SessionId};
 
-#[cfg(feature = "server")]
-use crate::persist::file_storage::FileBackedStorage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -59,6 +56,7 @@ pub struct Server {
     admin: AdminState,
     links: HashMap<BeId, LinkState>,
     link_counter: BeId,
+    transclusion_index: TransclusionIndex,
 }
 
 #[derive(Debug)]
@@ -139,6 +137,7 @@ impl Server {
             admin: AdminState::new(),
             links: HashMap::new(),
             link_counter: 0,
+            transclusion_index: TransclusionIndex::new(),
         };
 
         let pub_club = Club::new_with_owner(
@@ -410,6 +409,11 @@ impl Server {
             revision_detectors: DetectorList::new(),
         };
         self.works.insert(be_id, ws);
+
+        let edition = self.works[&be_id].work.edition().clone();
+        let work_elem = RangeElement::work(be_id);
+        self.transclusion_index.register_work(&edition, &work_elem);
+
         Ok(be_id)
     }
 
@@ -456,6 +460,10 @@ impl Server {
             revision,
             session_id,
         });
+
+        let updated_edition = ws.work.edition().clone();
+        let work_elem = RangeElement::work(work_be_id);
+        self.transclusion_index.register_work(&updated_edition, &work_elem);
 
         Ok(revision)
     }
@@ -947,46 +955,26 @@ impl Server {
     // === Transclusion queries ===
 
     pub fn find_transcluders(&self, content_be_id: BeId) -> Vec<(String, BeId, bool)> {
-        let mut results = Vec::new();
-        for (wid, ws) in &self.works {
-            let edition = ws.work.edition();
-            for (pos, carrier) in edition.all_entries() {
-                if carrier.element.as_edition_id() == Some(content_be_id)
-                    || carrier.element.as_work_id() == Some(content_be_id)
-                {
-                    results.push(("work".to_string(), *wid, true));
-                    break;
-                }
+        let content = RangeElement::edition(content_be_id);
+        let query = TransclusionQuery::all();
+        let results = self.transclusion_index.find_transcluders(&content, &query);
+        results.into_iter().map(|r| {
+            let elem = &r.element;
+            if let Some(wid) = elem.as_work_id() {
+                ("work".to_string(), wid, r.is_direct)
+            } else if let Some(eid) = elem.as_edition_id() {
+                ("edition".to_string(), eid, r.is_direct)
+            } else {
+                ("unknown".to_string(), 0, r.is_direct)
             }
-        }
-        for (eid, ed) in &self.standalone_editions {
-            for (pos, carrier) in ed.all_entries() {
-                if carrier.element.as_edition_id() == Some(content_be_id)
-                    || carrier.element.as_work_id() == Some(content_be_id)
-                {
-                    results.push(("edition".to_string(), *eid, true));
-                    break;
-                }
-            }
-        }
-        results
+        }).collect()
     }
 
     pub fn find_works_for_content(&self, content_be_id: BeId) -> Vec<BeId> {
-        let mut work_ids = Vec::new();
-        for (wid, ws) in &self.works {
-            let edition = ws.work.edition();
-            for (_pos, carrier) in edition.all_entries() {
-                if carrier.element.as_edition_id() == Some(content_be_id)
-                    || carrier.element.as_work_id() == Some(content_be_id)
-                    || carrier.element.as_text().map(|t| t == &content_be_id.to_string()).unwrap_or(false)
-                {
-                    work_ids.push(*wid);
-                    break;
-                }
-            }
-        }
-        work_ids
+        let content = RangeElement::edition(content_be_id);
+        let query = WorkQuery::all();
+        let elems = self.transclusion_index.find_works(&content, &query);
+        elems.into_iter().filter_map(|e| e.as_work_id()).collect()
     }
 
     // === Detectors ===
@@ -1148,7 +1136,7 @@ impl Server {
 #[cfg(feature = "server")]
 mod persist_snapshot {
     use super::*;
-    use crate::edition::persistent::{deserialize_edition, deserialize_work, EditionSnapshot, WorkSnapshot};
+    use crate::edition::persistent::{EditionSnapshot, WorkSnapshot};
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     struct WorkStateSnapshot {
@@ -1268,6 +1256,7 @@ mod persist_snapshot {
                 admin: AdminState::new(),
                 links: HashMap::new(),
                 link_counter: snapshot.link_counter,
+                transclusion_index: TransclusionIndex::new(),
             };
 
             for club_snap in &snapshot.clubs {
@@ -1325,6 +1314,12 @@ mod persist_snapshot {
                     origin: ls.origin,
                     destination: ls.destination,
                 });
+            }
+
+            for (wid, ws) in &server.works {
+                let edition = ws.work.edition().clone();
+                let elem = RangeElement::work(*wid);
+                server.transclusion_index.register_work(&edition, &elem);
             }
 
             server
