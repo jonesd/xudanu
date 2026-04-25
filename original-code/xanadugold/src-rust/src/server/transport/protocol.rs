@@ -172,12 +172,14 @@ impl OperationCode {
             0x030B => Some(OperationCode::WorkSetEditClub),
             0x030C => Some(OperationCode::WorkReadClub),
             0x030D => Some(OperationCode::WorkEditClub),
-            0x0310 => Some(OperationCode::WorkList),
-            0x0311 => Some(OperationCode::WorkListByOwner),
+            0x030E => Some(OperationCode::WorkRevisionCount),
+            0x030F => Some(OperationCode::WorkFetchRevision),
             0x0310 => Some(OperationCode::WorkSponsor),
             0x0311 => Some(OperationCode::WorkUnsponsor),
             0x0312 => Some(OperationCode::WorkSponsors),
             0x0313 => Some(OperationCode::WorkOwner),
+            0x0314 => Some(OperationCode::WorkList),
+            0x0315 => Some(OperationCode::WorkListByOwner),
 
             0x0401 => Some(OperationCode::EditionStore),
             0x0402 => Some(OperationCode::EditionGet),
@@ -190,9 +192,6 @@ impl OperationCode {
             0x0506 => Some(OperationCode::AdminRevokeGrant),
             0x0507 => Some(OperationCode::AdminGrants),
             0x0508 => Some(OperationCode::AdminServerInfo),
-
-            0x0310 => Some(OperationCode::WorkList),
-            0x0311 => Some(OperationCode::WorkListByOwner),
 
             0x0701 => Some(OperationCode::LinkCreate),
             0x0702 => Some(OperationCode::LinkGet),
@@ -261,8 +260,8 @@ impl OperationCode {
             OperationCode::AdminGrants                => 0x0507,
             OperationCode::AdminServerInfo            => 0x0508,
 
-            OperationCode::WorkList                    => 0x0310,
-            OperationCode::WorkListByOwner             => 0x0311,
+            OperationCode::WorkList                    => 0x0314,
+            OperationCode::WorkListByOwner             => 0x0315,
 
             OperationCode::LinkCreate                  => 0x0701,
             OperationCode::LinkGet                     => 0x0702,

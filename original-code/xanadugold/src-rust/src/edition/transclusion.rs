@@ -1,9 +1,8 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use super::edition::Edition;
-use super::grandmap::{GrandMap, Id};
-use super::range_element::{Carrier, RangeElement};
+use super::grandmap::Id;
+use super::range_element::RangeElement;
 use super::xn_region::XnRegion;
 use crate::edition::props::FilterRegion;
 

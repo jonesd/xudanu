@@ -4,9 +4,9 @@ use std::path::Path;
 use super::engine::{StorageEngine, StorageError, StorageResult};
 use super::packer::SnarfStorage;
 use super::persistent::{FlockFlags, FlockId, FlockInfo, FlockLocation};
-use super::snarf::{SnarfStore, SNARF_INFO_COUNT};
-use super::traits::{Persistent, PersistentRegistry, TypeRegistry, DeserializerFn};
-use super::urdi::{UrdiFile, UrdiHeader, DEFAULT_DATA_START, DEFAULT_INITIAL_COUNT, DEFAULT_SNARF_SIZE_FILE, DEFAULT_STAGE_COUNT};
+use super::snarf::SnarfStore;
+use super::traits::{Persistent, PersistentRegistry, DeserializerFn};
+use super::urdi::{UrdiFile, DEFAULT_DATA_START, DEFAULT_INITIAL_COUNT, DEFAULT_SNARF_SIZE_FILE, DEFAULT_STAGE_COUNT};
 
 const META_SNARF_ID: u32 = 0;
 const DATA_SNARF_OFFSET: u32 = DEFAULT_DATA_START;
@@ -125,7 +125,7 @@ impl FileBackedStorage {
 
     pub fn open(path: &Path) -> io::Result<Self> {
         let mut urdi = UrdiFile::open(path)?;
-        let snarf_size = urdi.snarf_size();
+        let _snarf_size = urdi.snarf_size();
         let data_count = urdi.snarf_count().saturating_sub(DATA_SNARF_OFFSET);
         let mut store = SnarfStore::load_from_urdi_with_offset(&mut urdi, DATA_SNARF_OFFSET)?;
         store.ensure_capacity(data_count);

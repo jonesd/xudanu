@@ -26,7 +26,7 @@ impl EditionSnapshot {
         let entries: Vec<(i64, RangeElement)> = edition
             .all_entries()
             .into_iter()
-            .filter(|(pos, c)| {
+            .filter(|(_pos, c)| {
                 if let Some(default) = &edition.default_value() {
                     if c.element == *default {
                         return false;

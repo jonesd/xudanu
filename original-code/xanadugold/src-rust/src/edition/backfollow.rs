@@ -202,6 +202,12 @@ impl BackfollowEngine {
         self.work_storage.insert(work_id, work);
     }
 
+    pub fn update_work(&mut self, work_id: u64, new_work: Work) {
+        let _edition = new_work.current_edition().clone();
+        self.work_storage.insert(work_id, new_work);
+        self.rebuild_index();
+    }
+
     pub fn unregister_edition(&mut self, edition_id: u64) {
         if let Some(meta) = self.edition_metas.remove(&edition_id) {
             self.edition_storage.remove(&edition_id);

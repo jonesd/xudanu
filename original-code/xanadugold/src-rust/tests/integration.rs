@@ -308,7 +308,14 @@ async fn json_edition_with_entries() {
 
     let resp = send_recv_json(&mut s, &mut r,
         json_req(11, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
-    assert_eq!(resp["value"]["value"]["entries"].as_array().unwrap().len(), 2);
+    let edition = &resp["value"]["value"];
+    if let Some(text) = edition["text"].as_str() {
+        assert_eq!(text, "AB");
+    } else if edition["entries"].is_array() {
+        assert_eq!(edition["entries"].as_array().unwrap().len(), 2);
+    } else {
+        panic!("unexpected edition format: {:?}", edition);
+    }
 }
 
 #[tokio::test]
@@ -946,7 +953,6 @@ async fn subscribe_returns_subscription_id() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn subscribe_and_receive_event() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;

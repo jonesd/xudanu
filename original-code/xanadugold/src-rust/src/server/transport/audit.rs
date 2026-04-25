@@ -584,7 +584,7 @@ impl SecurityMonitor {
         &mut self,
         session_id: SessionId,
         remote: Option<std::net::SocketAddr>,
-        detail: String,
+        _detail: String,
     ) {
         let ikey = self.ikey(remote);
         let count = self.active_sessions_per_ip.entry(ikey.clone()).or_insert(0);
