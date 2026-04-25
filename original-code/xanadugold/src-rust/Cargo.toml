@@ -6,9 +6,14 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "xudanu-server"
+required-features = ["server"]
+
 [features]
 default = []
 wasm = ["wasm-bindgen", "console_error_panic_hook", "serde", "serde_json", "js-sys"]
+server = ["tokio", "axum", "postcard", "tracing", "tracing-subscriber", "serde", "serde_json", "futures-util"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
@@ -20,3 +25,19 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 js-sys = { version = "0.3", optional = true }
 bitflags = "2"
+tokio = { version = "1", features = ["full"], optional = true }
+axum = { version = "0.8", features = ["ws"], optional = true }
+postcard = { version = "1", features = ["alloc"], optional = true }
+tracing = { version = "0.1", optional = true }
+futures-util = { version = "0.3", optional = true }
+tracing-subscriber = { version = "0.3", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.29"
+futures-util = "0.3"
+serde_json = "1"
+
+[[test]]
+name = "integration"
+required-features = ["server"]

@@ -6,6 +6,7 @@ use super::error::ServerError;
 use super::keymaster::KeyMaster;
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum LockCredential {
     Boo,
     ChallengeResponse(Vec<u8>),

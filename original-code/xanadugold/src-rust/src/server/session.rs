@@ -6,6 +6,7 @@ use crate::edition::BeId;
 use super::keymaster::KeyMaster;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SessionId(pub u64);
 
 impl SessionId {

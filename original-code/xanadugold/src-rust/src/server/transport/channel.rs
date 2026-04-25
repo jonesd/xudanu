@@ -1,0 +1,44 @@
+use crate::server::SessionId;
+use crate::server::detector::Detector;
+use super::protocol::EventPayload;
+
+#[derive(Debug, Clone)]
+pub struct EventMessage {
+    pub session_id: SessionId,
+    pub event: EventPayload,
+}
+
+pub struct ChannelDetector {
+    session_id: SessionId,
+    sender: tokio::sync::mpsc::UnboundedSender<EventMessage>,
+}
+
+impl ChannelDetector {
+    pub fn new(
+        session_id: SessionId,
+        sender: tokio::sync::mpsc::UnboundedSender<EventMessage>,
+    ) -> Self {
+        ChannelDetector {
+            session_id,
+            sender,
+        }
+    }
+}
+
+impl Detector for ChannelDetector {
+    fn on_event(&mut self, event: &crate::server::Event) {
+        let msg = EventMessage {
+            session_id: self.session_id,
+            event: EventPayload::from_event(event),
+        };
+        let _ = self.sender.send(msg);
+    }
+}
+
+impl std::fmt::Debug for ChannelDetector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChannelDetector")
+            .field("session_id", &self.session_id)
+            .finish()
+    }
+}
