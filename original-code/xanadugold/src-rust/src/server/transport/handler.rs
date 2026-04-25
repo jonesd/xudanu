@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU16, Ordering};
 
 use axum::{
     extract::{
@@ -21,17 +22,27 @@ use super::dispatch;
 use super::protocol::*;
 use super::shared::SharedState;
 
+static SUBSCRIPTION_COUNTER: AtomicU16 = AtomicU16::new(1);
+
 #[derive(Debug, serde::Deserialize)]
 pub struct WsQuery {
     pub format: Option<String>,
+    pub version: Option<u8>,
 }
 
 pub fn build_router(state: SharedState) -> Router {
     Router::new()
         .route("/xudanu", get(ws_handler))
         .route("/xudanu/", get(ws_handler))
-        .route("/", get(ws_handler))
+        .route("/", get(index_handler))
         .with_state(state)
+}
+
+async fn index_handler() -> impl IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        include_str!("../../../static/index.html"),
+    )
 }
 
 async fn ws_handler(
@@ -41,7 +52,64 @@ async fn ws_handler(
     State(state): State<SharedState>,
 ) -> impl IntoResponse {
     let format = query.format.as_deref().unwrap_or("binary").to_string();
-    ws.on_upgrade(move |socket| handle_socket(socket, state, format, Some(addr)))
+    let client_version = query.version.unwrap_or(PROTOCOL_VERSION);
+    ws.on_upgrade(move |socket| handle_socket(socket, state, format, Some(addr), client_version))
+}
+
+async fn perform_handshake(
+    codec: &Box<dyn WireCodec>,
+    ws_sender: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+    ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>,
+    client_version: u8,
+    is_text: bool,
+) -> Option<u8> {
+    let hs_resp = HandshakeResponse::accepted(client_version);
+    if client_version < MIN_SUPPORTED_VERSION || client_version > PROTOCOL_VERSION {
+        let msg = if is_text {
+            Message::Text(
+                serde_json::to_string(&serde_json::json!({
+                    "type": "error",
+                    "code": "unsupported_version",
+                    "message": format!("client version {} not in [{}, {}]", client_version, MIN_SUPPORTED_VERSION, PROTOCOL_VERSION)
+                })).unwrap().into()
+            )
+        } else {
+            Message::Binary(axum::body::Bytes::new())
+        };
+        let _ = ws_sender.send(msg).await;
+        return None;
+    }
+
+    let negotiated = hs_resp.negotiated_version;
+    let resp_bytes = if is_text {
+        serde_json::to_vec(&serde_json::json!({
+            "type": "handshake",
+            "v": negotiated,
+            "payload": {
+                "server_version": hs_resp.server_version,
+                "negotiated_version": hs_resp.negotiated_version,
+                "server_id": hs_resp.server_id,
+                "server_capabilities": hs_resp.server_capabilities,
+            }
+        })).unwrap()
+    } else {
+        let mut buf = vec![PROTOCOL_VERSION, MessageType::Handshake.as_byte(), 0x00, 0x00];
+        let payload = serde_json::to_vec(&hs_resp).unwrap();
+        super::varint::encode_varint(payload.len() as u64, &mut buf);
+        buf.extend_from_slice(&payload);
+        buf
+    };
+
+    let msg = if is_text {
+        Message::Text(String::from_utf8_lossy(&resp_bytes).into_owned().into())
+    } else {
+        Message::Binary(resp_bytes.into())
+    };
+    if ws_sender.send(msg).await.is_err() {
+        return None;
+    }
+
+    Some(negotiated)
 }
 
 async fn handle_socket(
@@ -49,6 +117,7 @@ async fn handle_socket(
     state: SharedState,
     format: String,
     remote_addr: Option<SocketAddr>,
+    client_version: u8,
 ) {
     let is_text = format == "json";
     let codec: Box<dyn WireCodec> = if is_text {
@@ -57,6 +126,27 @@ async fn handle_socket(
         Box::new(BinaryCodec)
     };
 
+    {
+        let accepting = state.server.with_server_ref(|srv| srv.admin_is_accepting_connections());
+        if !accepting {
+            let (mut sender, _) = socket.split();
+            let msg = if is_text {
+                Message::Text(r#"{"type":"error","code":"not_accepting_connections"}"#.into())
+            } else {
+                Message::Binary(axum::body::Bytes::new())
+            };
+            let _ = sender.send(msg).await;
+            return;
+        }
+    }
+
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+
+    let negotiated = perform_handshake(&codec, &mut ws_sender, &mut ws_receiver, client_version, is_text).await;
+    if negotiated.is_none() {
+        return;
+    }
+
     let session_id = state.server.with_server(|srv| srv.connect());
 
     {
@@ -64,16 +154,16 @@ async fn handle_socket(
         sec.on_session_opened(session_id, remote_addr, format!("session opened from {}", remote_addr.map(|a| a.to_string()).unwrap_or_default()));
     }
 
-    let (mut ws_sender, mut ws_receiver) = socket.split();
-
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<EventMessage>();
 
+    let out_tx_clone = out_tx.clone();
+    let is_text_writer = is_text;
     let writer_task = tokio::spawn(async move {
         loop {
             tokio::select! {
                 Some(bytes) = out_rx.recv() => {
-                    let msg = if is_text {
+                    let msg = if is_text_writer {
                         Message::Text(String::from_utf8_lossy(&bytes).into_owned().into())
                     } else {
                         Message::Binary(bytes.into())
@@ -83,18 +173,18 @@ async fn handle_socket(
                     }
                 }
                 Some(ev) = event_rx.recv() => {
-                    let event_codec: Box<dyn WireCodec> = if is_text {
+                    let event_codec: Box<dyn WireCodec> = if is_text_writer {
                         Box::new(JsonCodec)
                     } else {
                         Box::new(BinaryCodec)
                     };
                     let wire_event = WireEvent {
-                        subscription_id: 0,
+                        subscription_id: ev.subscription_id,
                         event: ev.event,
                     };
                     match event_codec.encode_event(&wire_event) {
                         Ok(bytes) => {
-                            let msg = if is_text {
+                            let msg = if is_text_writer {
                                 Message::Text(String::from_utf8_lossy(&bytes).into_owned().into())
                             } else {
                                 Message::Binary(bytes.into())
@@ -111,9 +201,16 @@ async fn handle_socket(
         }
     });
 
-    let _subscriptions: HashMap<u16, (DetectorType, BeId)> = HashMap::new();
+    let mut subscriptions: HashMap<u16, (DetectorType, BeId)> = HashMap::new();
 
     while let Some(Ok(msg)) = ws_receiver.next().await {
+        {
+            let shutting_down = state.server.with_server_ref(|srv| srv.is_shutdown_requested());
+            if shutting_down {
+                break;
+            }
+        }
+
         {
             let mut sec = state.security.lock().unwrap();
             let threat = sec.on_request(session_id, remote_addr);
@@ -216,9 +313,10 @@ async fn handle_socket(
                 let req_id = parsed.request_id;
                 let target_id = parsed.subscribe.target_id;
                 let det_type = parsed.subscribe.detector_type;
+                let sub_id = SUBSCRIPTION_COUNTER.fetch_add(1, Ordering::Relaxed);
 
                 let detector: Box<dyn crate::server::Detector> = Box::new(
-                    ChannelDetector::new(session_id, event_tx.clone()),
+                    ChannelDetector::new_with_sub(session_id, sub_id, event_tx.clone()),
                 );
 
                 let result = match det_type {
@@ -235,7 +333,8 @@ async fn handle_socket(
 
                 let resp = match result {
                     Ok(()) => {
-                        codec.encode_response(req_id, &ResponseValue::Humber(req_id as u64))
+                        subscriptions.insert(sub_id, (det_type, target_id));
+                        codec.encode_response(req_id, &ResponseValue::Humber(sub_id as u64))
                     }
                     Err(err) => {
                         let code = ErrorCode::from_server_error(&err);
@@ -247,8 +346,9 @@ async fn handle_socket(
                 }
             }
             IncomingMessage::Unsubscribe(parsed) => {
-                if let Ok(b) = codec.encode_response(parsed.request_id, &ResponseValue::Void) {
-                    let _ = out_tx.send(b);
+                let req_id = parsed.request_id;
+                if let Ok(bytes) = codec.encode_response(req_id, &ResponseValue::Void) {
+                    let _ = out_tx.send(bytes);
                 }
             }
         }
@@ -262,4 +362,5 @@ async fn handle_socket(
         let mut sec = state.security.lock().unwrap();
         sec.on_session_closed(session_id, remote_addr, "connection closed".to_string());
     }
+    drop(out_tx_clone);
 }

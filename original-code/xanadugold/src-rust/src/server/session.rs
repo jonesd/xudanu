@@ -84,6 +84,12 @@ impl Session {
         self.key_master = Some(km);
     }
 
+    pub fn incorporate_authority(&mut self, other: &KeyMaster) {
+        if let Some(ref mut km) = self.key_master {
+            km.incorporate(other);
+        }
+    }
+
     pub fn clear_key_master(&mut self) {
         self.key_master = None;
     }

@@ -3,11 +3,13 @@ use serde::{Deserialize, Serialize};
 use crate::edition::{BeId, Edition, RangeElement, XnRegion};
 use crate::server::lock::LockCredential;
 
-pub const PROTOCOL_VERSION: u8 = 0x01;
+pub const PROTOCOL_VERSION: u8 = 0x02;
+pub const MIN_SUPPORTED_VERSION: u8 = 0x01;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MessageType {
+    Handshake   = 0x00,
     Request     = 0x01,
     Response    = 0x02,
     Error       = 0x03,
@@ -20,6 +22,7 @@ pub enum MessageType {
 impl MessageType {
     pub fn from_byte(b: u8) -> Option<Self> {
         match b {
+            0x00 => Some(MessageType::Handshake),
             0x01 => Some(MessageType::Request),
             0x02 => Some(MessageType::Response),
             0x03 => Some(MessageType::Error),
@@ -33,6 +36,37 @@ impl MessageType {
 
     pub fn as_byte(self) -> u8 {
         self as u8
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandshakeRequest {
+    pub client_version: u8,
+    pub client_capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandshakeResponse {
+    pub server_version: u8,
+    pub negotiated_version: u8,
+    pub server_id: String,
+    pub server_capabilities: Vec<String>,
+}
+
+impl HandshakeResponse {
+    pub fn accepted(client_version: u8) -> Self {
+        let negotiated = client_version.min(PROTOCOL_VERSION);
+        HandshakeResponse {
+            server_version: PROTOCOL_VERSION,
+            negotiated_version: negotiated.max(MIN_SUPPORTED_VERSION),
+            server_id: format!("xudanu-{}", env!("CARGO_PKG_VERSION")),
+            server_capabilities: vec![
+                "json".to_string(),
+                "binary".to_string(),
+                "detector_events".to_string(),
+                "admin".to_string(),
+            ],
+        }
     }
 }
 
@@ -79,6 +113,29 @@ pub enum OperationCode {
 
     EditionStore,
     EditionGet,
+
+    AdminAcceptConnections,
+    AdminIsAcceptingConnections,
+    AdminActiveSessions,
+    AdminShutdown,
+    AdminGrant,
+    AdminRevokeGrant,
+    AdminGrants,
+    AdminServerInfo,
+
+    WorkList,
+    WorkListByOwner,
+
+    LinkCreate,
+    LinkGet,
+    LinkUpdate,
+    LinkDelete,
+    LinkListForWork,
+
+    FindTranscluders,
+    FindWorksForContent,
+
+    ServerStats,
 }
 
 impl OperationCode {
@@ -115,8 +172,8 @@ impl OperationCode {
             0x030B => Some(OperationCode::WorkSetEditClub),
             0x030C => Some(OperationCode::WorkReadClub),
             0x030D => Some(OperationCode::WorkEditClub),
-            0x030E => Some(OperationCode::WorkRevisionCount),
-            0x030F => Some(OperationCode::WorkFetchRevision),
+            0x0310 => Some(OperationCode::WorkList),
+            0x0311 => Some(OperationCode::WorkListByOwner),
             0x0310 => Some(OperationCode::WorkSponsor),
             0x0311 => Some(OperationCode::WorkUnsponsor),
             0x0312 => Some(OperationCode::WorkSponsors),
@@ -124,6 +181,29 @@ impl OperationCode {
 
             0x0401 => Some(OperationCode::EditionStore),
             0x0402 => Some(OperationCode::EditionGet),
+
+            0x0501 => Some(OperationCode::AdminAcceptConnections),
+            0x0502 => Some(OperationCode::AdminIsAcceptingConnections),
+            0x0503 => Some(OperationCode::AdminActiveSessions),
+            0x0504 => Some(OperationCode::AdminShutdown),
+            0x0505 => Some(OperationCode::AdminGrant),
+            0x0506 => Some(OperationCode::AdminRevokeGrant),
+            0x0507 => Some(OperationCode::AdminGrants),
+            0x0508 => Some(OperationCode::AdminServerInfo),
+
+            0x0310 => Some(OperationCode::WorkList),
+            0x0311 => Some(OperationCode::WorkListByOwner),
+
+            0x0701 => Some(OperationCode::LinkCreate),
+            0x0702 => Some(OperationCode::LinkGet),
+            0x0703 => Some(OperationCode::LinkUpdate),
+            0x0704 => Some(OperationCode::LinkDelete),
+            0x0705 => Some(OperationCode::LinkListForWork),
+
+            0x0801 => Some(OperationCode::FindTranscluders),
+            0x0802 => Some(OperationCode::FindWorksForContent),
+
+            0x0601 => Some(OperationCode::ServerStats),
 
             _ => None,
         }
@@ -171,6 +251,29 @@ impl OperationCode {
 
             OperationCode::EditionStore => 0x0401,
             OperationCode::EditionGet   => 0x0402,
+
+            OperationCode::AdminAcceptConnections    => 0x0501,
+            OperationCode::AdminIsAcceptingConnections => 0x0502,
+            OperationCode::AdminActiveSessions        => 0x0503,
+            OperationCode::AdminShutdown              => 0x0504,
+            OperationCode::AdminGrant                 => 0x0505,
+            OperationCode::AdminRevokeGrant           => 0x0506,
+            OperationCode::AdminGrants                => 0x0507,
+            OperationCode::AdminServerInfo            => 0x0508,
+
+            OperationCode::WorkList                    => 0x0310,
+            OperationCode::WorkListByOwner             => 0x0311,
+
+            OperationCode::LinkCreate                  => 0x0701,
+            OperationCode::LinkGet                     => 0x0702,
+            OperationCode::LinkUpdate                  => 0x0703,
+            OperationCode::LinkDelete                  => 0x0704,
+            OperationCode::LinkListForWork             => 0x0705,
+
+            OperationCode::FindTranscluders            => 0x0801,
+            OperationCode::FindWorksForContent         => 0x0802,
+
+            OperationCode::ServerStats => 0x0601,
         }
     }
 }
@@ -225,6 +328,29 @@ pub enum WireRequest {
 
     EditionStore { edition: EditionPayload },
     EditionGet { be_id: BeId },
+
+    AdminAcceptConnections { accept: bool },
+    AdminIsAcceptingConnections,
+    AdminActiveSessions,
+    AdminShutdown,
+    AdminGrant { club_id: BeId, region_start: i64, region_end: i64 },
+    AdminRevokeGrant { club_id: BeId },
+    AdminGrants,
+    AdminServerInfo,
+
+    WorkList,
+    WorkListByOwner { owner: BeId },
+
+    LinkCreate { origin: BeId, destination: BeId, origin_ref: Option<HyperRefPayload>, destination_ref: Option<HyperRefPayload> },
+    LinkGet { link_id: BeId },
+    LinkUpdate { link_id: BeId, origin_ref: Option<HyperRefPayload>, destination_ref: Option<HyperRefPayload> },
+    LinkDelete { link_id: BeId },
+    LinkListForWork { work_id: BeId },
+
+    FindTranscluders { content_be_id: BeId },
+    FindWorksForContent { content_be_id: BeId },
+
+    ServerStats,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -233,6 +359,21 @@ pub enum EditionPayload {
     Text(String),
     Entries(Vec<(i64, RangeElement)>),
     Empty,
+}
+
+fn is_contiguous_text(entries: &[(i64, RangeElement)]) -> bool {
+    if entries.is_empty() {
+        return true;
+    }
+    for (i, (pos, elem)) in entries.iter().enumerate() {
+        if *pos != i as i64 {
+            return false;
+        }
+        if elem.as_text().is_none() {
+            return false;
+        }
+    }
+    true
 }
 
 impl EditionPayload {
@@ -258,6 +399,11 @@ impl EditionPayload {
             .collect();
         if entries.is_empty() {
             EditionPayload::Empty
+        } else if is_contiguous_text(&entries) {
+            let s: String = entries.iter().map(|(_, e)| {
+                e.as_text().unwrap_or("")
+            }).collect();
+            EditionPayload::Text(s)
         } else {
             EditionPayload::Entries(entries)
         }
@@ -277,6 +423,81 @@ pub enum ResponseValue {
     Region(XnRegion),
     Ids(Vec<BeId>),
     ClubNames(Vec<(String, BeId)>),
+    SessionInfos(Vec<SessionInfoPayload>),
+    ServerInfo(ServerInfoPayload),
+    Grants(Vec<GrantPayload>),
+    WorkList(Vec<WorkListEntry>),
+    LinkInfo(LinkPayload),
+    LinkList(Vec<LinkPayload>),
+    TransclusionResults(Vec<TransclusionResultPayload>),
+    WorkIds(Vec<BeId>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkListEntry {
+    pub work_id: BeId,
+    pub owner: Option<BeId>,
+    pub revision_count: u64,
+    pub is_grabbed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkPayload {
+    pub link_id: BeId,
+    pub origin: BeId,
+    pub destination: BeId,
+    pub origin_ref: Option<HyperRefPayload>,
+    pub destination_ref: Option<HyperRefPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HyperRefPayload {
+    pub kind: String,
+    pub work_context: Option<BeId>,
+    pub original_context: Option<BeId>,
+}
+
+impl HyperRefPayload {
+    pub fn from_hyper_ref(hr: &crate::edition::links::HyperRef) -> Self {
+        HyperRefPayload {
+            kind: if hr.is_single() { "single".to_string() } else { "multi".to_string() },
+            work_context: hr.work_context(),
+            original_context: hr.original_context(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransclusionResultPayload {
+    pub element_type: String,
+    pub element_id: BeId,
+    pub is_direct: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionInfoPayload {
+    pub session_id: u64,
+    pub is_logged_in: bool,
+    pub authority_clubs: Vec<BeId>,
+    pub initial_login: Option<BeId>,
+    pub grabbed_work_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerInfoPayload {
+    pub version: String,
+    pub session_count: usize,
+    pub work_count: usize,
+    pub club_count: usize,
+    pub edition_count: usize,
+    pub is_accepting_connections: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GrantPayload {
+    pub club_id: BeId,
+    pub region_start: i64,
+    pub region_end: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -297,6 +518,9 @@ pub enum ErrorCode {
     EditionNotFound,
     Internal,
     ProtocolError,
+    AdminRequired,
+    ServerShuttingDown,
+    NotAcceptingConnections,
 }
 
 impl ErrorCode {
@@ -316,6 +540,9 @@ impl ErrorCode {
             crate::server::ServerError::ClubNotFound(_) => ErrorCode::ClubNotFound,
             crate::server::ServerError::EditionNotFound(_) => ErrorCode::EditionNotFound,
             crate::server::ServerError::Internal(_) => ErrorCode::Internal,
+            crate::server::ServerError::AdminRequired => ErrorCode::AdminRequired,
+            crate::server::ServerError::ServerShuttingDown => ErrorCode::ServerShuttingDown,
+            crate::server::ServerError::NotAcceptingConnections => ErrorCode::NotAcceptingConnections,
         }
     }
 }

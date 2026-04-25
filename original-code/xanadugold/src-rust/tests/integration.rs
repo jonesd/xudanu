@@ -38,10 +38,40 @@ type SplitSender = futures_util::stream::SplitSink<WsStream, Message>;
 type SplitReceiver = futures_util::stream::SplitStream<WsStream>;
 
 async fn connect(srv: &TestServer, format: &str) -> (SplitSender, SplitReceiver) {
-    let (stream, _) = tokio_tungstenite::connect_async(&srv.ws_url(format))
+    let url = format!("ws://{}/xudanu?format={}&version={}", srv.addr, format, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url)
         .await
         .unwrap();
     stream.split()
+}
+
+async fn recv_handshake(receiver: &mut SplitReceiver) -> serde_json::Value {
+    let msg = receiver.next().await.unwrap().unwrap();
+    match msg {
+        Message::Text(t) => serde_json::from_str(&t).unwrap(),
+        Message::Binary(b) => serde_json::from_slice(&b).unwrap(),
+        other => panic!("expected handshake, got: {:?}", other),
+    }
+}
+
+async fn connect_with_handshake(srv: &TestServer, format: &str) -> (SplitSender, SplitReceiver) {
+    let (s, mut r) = connect(srv, format).await;
+    let hs = recv_handshake(&mut r).await;
+    assert_eq!(hs["type"], "handshake", "expected handshake, got: {:?}", hs);
+    (s, r)
+}
+
+async fn connect_binary_with_handshake(srv: &TestServer) -> (SplitSender, SplitReceiver) {
+    let (s, mut r) = connect(srv, "binary").await;
+    let msg = r.next().await.unwrap().unwrap();
+    match msg {
+        Message::Binary(b) => {
+            assert!(b.len() >= 4);
+            assert_eq!(b[1], MessageType::Handshake as u8);
+        }
+        other => panic!("expected binary handshake, got: {:?}", other),
+    }
+    (s, r)
 }
 
 async fn send_recv(sender: &mut SplitSender, receiver: &mut SplitReceiver, msg: Message) -> Message {
@@ -64,7 +94,7 @@ async fn send_recv_json(
 }
 
 fn json_req(id: u16, op: &str, payload: Option<serde_json::Value>) -> serde_json::Value {
-    let mut f = serde_json::json!({"v": 1, "type": "request", "id": id, "op": op});
+    let mut f = serde_json::json!({"v": PROTOCOL_VERSION, "type": "request", "id": id, "op": op});
     if let Some(p) = payload {
         f["payload"] = p;
     }
@@ -72,12 +102,30 @@ fn json_req(id: u16, op: &str, payload: Option<serde_json::Value>) -> serde_json
 }
 
 async fn json_setup(srv: &TestServer) -> (SplitSender, SplitReceiver, u64) {
-    let (mut s, mut r) = connect(srv, "json").await;
-    let sid = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None))
-        .await["value"]["value"]
+    let (mut s, mut r) = connect_with_handshake(srv, "json").await;
+    let sid = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await
+        ["value"]["value"]
         .as_u64()
         .unwrap();
     send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+    (s, r, sid)
+}
+
+async fn json_admin_login(srv: &TestServer) -> (SplitSender, SplitReceiver, u64) {
+    let (mut s, mut r) = connect_with_handshake(srv, "json").await;
+    let sid = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await
+        ["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let admin_club_id = send_recv_json(&mut s, &mut r, json_req(2, "club_id_by_name", Some(
+        serde_json::json!({"name": "admin"})
+    ))).await["value"]["value"].as_u64().unwrap();
+    send_recv_json(&mut s, &mut r, json_req(3, "session_login", Some(
+        serde_json::json!({"club_id": admin_club_id})
+    ))).await;
+    send_recv_json(&mut s, &mut r, json_req(4, "session_authenticate", Some(
+        serde_json::json!({"club_id": admin_club_id, "credential": "Boo"})
+    ))).await;
     (s, r, sid)
 }
 
@@ -104,7 +152,7 @@ fn parse_header(data: &[u8]) -> (u8, u8, u16) {
 #[tokio::test]
 async fn json_session_lifecycle() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "json").await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
     let resp = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
     assert_eq!(resp["type"], "response");
@@ -329,9 +377,9 @@ async fn json_work_grabber_tracking() {
 #[tokio::test]
 async fn json_heartbeat() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "json").await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
-    let resp = send_recv_json(&mut s, &mut r, serde_json::json!({"v":1,"type":"heartbeat","id":0})).await;
+    let resp = send_recv_json(&mut s, &mut r, serde_json::json!({"v":2,"type":"heartbeat","id":0})).await;
     assert_eq!(resp["type"], "heartbeat");
 }
 
@@ -373,7 +421,7 @@ async fn json_multi_session_editing() {
 #[tokio::test]
 async fn binary_session_connect_and_login() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "binary").await;
+    let (mut s, mut r) = connect_binary_with_handshake(&srv).await;
 
     let resp = send_recv(&mut s, &mut r,
         Message::Binary(build_binary_request(1, OperationCode::SessionConnect, &[]).into()))
@@ -395,7 +443,7 @@ async fn binary_session_connect_and_login() {
 #[tokio::test]
 async fn binary_heartbeat() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "binary").await;
+    let (mut s, mut r) = connect_binary_with_handshake(&srv).await;
 
     let hb = vec![PROTOCOL_VERSION, MessageType::Heartbeat as u8, 0x00, 0x00];
     let resp = send_recv(&mut s, &mut r, Message::Binary(hb.into())).await;
@@ -411,7 +459,7 @@ async fn binary_heartbeat() {
 #[tokio::test]
 async fn err_not_logged_in_cannot_create_work() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "json").await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
     send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
 
@@ -565,7 +613,7 @@ async fn err_wrong_session_revises() {
 #[tokio::test]
 async fn adversarial_malformed_json() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "json").await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
     let resp = send_recv(&mut s, &mut r, Message::Text("{not valid json".into())).await;
     let text = match resp {
@@ -580,7 +628,7 @@ async fn adversarial_malformed_json() {
 #[tokio::test]
 async fn adversarial_empty_payload() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "json").await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
     let resp = send_recv_json(&mut s, &mut r,
         json_req(1, "work_create", Some(serde_json::json!({})))).await;
@@ -590,10 +638,10 @@ async fn adversarial_empty_payload() {
 #[tokio::test]
 async fn adversarial_unknown_operation() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "json").await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
     let resp = send_recv_json(&mut s, &mut r,
-        serde_json::json!({"v":1,"type":"request","id":1,"op":"nonexistent_operation","payload":{}}))
+        serde_json::json!({"v":2,"type":"request","id":1,"op":"nonexistent_operation","payload":{}}))
         .await;
     assert_eq!(resp["type"], "error");
 }
@@ -601,17 +649,17 @@ async fn adversarial_unknown_operation() {
 #[tokio::test]
 async fn adversarial_unknown_message_type() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "json").await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
     let resp = send_recv_json(&mut s, &mut r,
-        serde_json::json!({"v":1,"type":"bogus","id":1})).await;
+        serde_json::json!({"v":2,"type":"bogus","id":1})).await;
     assert_eq!(resp["type"], "error");
 }
 
 #[tokio::test]
 async fn adversarial_wrong_version() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "json").await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
     let resp = send_recv_json(&mut s, &mut r,
         serde_json::json!({"v":99,"type":"request","id":1,"op":"session_connect"})).await;
@@ -621,7 +669,7 @@ async fn adversarial_wrong_version() {
 #[tokio::test]
 async fn adversarial_binary_unknown_op() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "binary").await;
+    let (mut s, mut r) = connect_binary_with_handshake(&srv).await;
 
     let mut frame = vec![PROTOCOL_VERSION, MessageType::Request as u8, 0x00, 0x01];
     varint::encode_varint(0xFFFF, &mut frame);
@@ -634,7 +682,7 @@ async fn adversarial_binary_unknown_op() {
 #[tokio::test]
 async fn adversarial_binary_truncated_frame() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "binary").await;
+    let (mut s, mut r) = connect_binary_with_handshake(&srv).await;
 
     let resp = send_recv(&mut s, &mut r, Message::Binary(vec![PROTOCOL_VERSION].into())).await;
     let resp_bytes = match resp { Message::Binary(b) => b.to_vec(), other => panic!("{:?}", other) };
@@ -645,7 +693,7 @@ async fn adversarial_binary_truncated_frame() {
 #[tokio::test]
 async fn adversarial_binary_wrong_version() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "binary").await;
+    let (mut s, mut r) = connect_binary_with_handshake(&srv).await;
 
     let frame = vec![0xFF, MessageType::Request as u8, 0x00, 0x01, 0x01];
     let resp = send_recv(&mut s, &mut r, Message::Binary(frame.into())).await;
@@ -706,7 +754,7 @@ async fn adversarial_rapid_fire_requests() {
 #[tokio::test]
 async fn adversarial_connect_without_login_then_operate() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "json").await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
     send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
 
@@ -724,11 +772,347 @@ async fn adversarial_connect_without_login_then_operate() {
 #[tokio::test]
 async fn adversarial_double_login() {
     let srv = TestServer::start().await;
-    let (mut s, mut r) = connect(&srv, "json").await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
     send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
     send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
     let resp = send_recv_json(&mut s, &mut r, json_req(3, "session_login_public", None)).await;
     assert_eq!(resp["type"], "response");
+}
+
+// ============================================================
+// Phase 10: Handshake, Admin, Detector Events
+// ============================================================
+
+#[tokio::test]
+async fn handshake_receives_server_info() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect(&srv, "json").await;
+    let hs = recv_handshake(&mut r).await;
+    assert_eq!(hs["type"], "handshake");
+    assert!(hs["payload"]["server_version"].as_u64().unwrap() >= 2);
+    assert!(hs["payload"]["server_capabilities"].is_array());
+    drop(s);
+}
+
+#[tokio::test]
+async fn handshake_binary_format() {
+    let srv = TestServer::start().await;
+    let (s, mut r) = connect(&srv, "binary").await;
+    let msg = r.next().await.unwrap().unwrap();
+    match msg {
+        Message::Binary(b) => {
+            assert!(b.len() >= 4);
+            assert_eq!(b[1], MessageType::Handshake as u8);
+        }
+        other => panic!("expected binary handshake, got: {:?}", other),
+    }
+    drop(s);
+}
+
+#[tokio::test]
+async fn handshake_wrong_version_rejected() {
+    let srv = TestServer::start().await;
+    let url = format!("ws://{}/xudanu?format=json&version=99", srv.addr);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    let msg = r.next().await.unwrap().unwrap();
+    let resp: serde_json::Value = match msg {
+        Message::Text(t) => serde_json::from_str(&t).unwrap(),
+        Message::Binary(b) => serde_json::from_slice(&b).unwrap(),
+        other => panic!("{:?}", other),
+    };
+    assert_eq!(resp["type"], "error");
+    assert_eq!(resp["code"], "unsupported_version");
+    drop(s);
+}
+
+#[tokio::test]
+async fn admin_server_info() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(50, "admin_server_info", None)).await;
+    assert_eq!(resp["type"], "response");
+    assert!(resp["value"]["value"]["session_count"].as_u64().unwrap() >= 1);
+    assert!(resp["value"]["value"]["work_count"].as_u64().unwrap() >= 0);
+    assert!(resp["value"]["value"]["is_accepting_connections"].as_bool().unwrap());
+}
+
+#[tokio::test]
+async fn admin_active_sessions() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(50, "admin_active_sessions", None)).await;
+    assert_eq!(resp["type"], "response");
+    let sessions = resp["value"]["value"].as_array().unwrap();
+    assert!(!sessions.is_empty());
+    assert!(sessions[0]["is_logged_in"].as_bool().unwrap());
+}
+
+#[tokio::test]
+async fn admin_accept_connections_toggle() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(50, "admin_is_accepting_connections", None)).await;
+    assert_eq!(resp["value"]["value"], true);
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(51, "admin_accept_connections", Some(serde_json::json!({"accept": false})))).await;
+    assert_eq!(resp["type"], "response");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(52, "admin_is_accepting_connections", None)).await;
+    assert_eq!(resp["value"]["value"], false);
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(53, "admin_accept_connections", Some(serde_json::json!({"accept": true})))).await;
+    assert_eq!(resp["type"], "response");
+}
+
+#[tokio::test]
+async fn admin_grant_revoke() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(50, "admin_grant", Some(serde_json::json!({
+            "club_id": 100, "region_start": 1000, "region_end": 2000
+        })))).await;
+    assert_eq!(resp["type"], "response");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(51, "admin_grants", None)).await;
+    assert_eq!(resp["type"], "response");
+    let grants = resp["value"]["value"].as_array().unwrap();
+    assert!(!grants.is_empty());
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(52, "admin_revoke_grant", Some(serde_json::json!({"club_id": 100})))).await;
+    assert_eq!(resp["value"]["value"], true);
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(53, "admin_grants", None)).await;
+    assert!(resp["value"]["value"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn admin_shutdown() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(50, "admin_shutdown", None)).await;
+    assert_eq!(resp["type"], "response");
+}
+
+#[tokio::test]
+async fn server_stats() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(50, "server_stats", None)).await;
+    assert_eq!(resp["type"], "response");
+    assert!(resp["value"]["value"]["session_count"].as_u64().unwrap() >= 1);
+}
+
+#[tokio::test]
+async fn subscribe_returns_subscription_id() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "test"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let sub_frame = serde_json::json!({
+        "v": PROTOCOL_VERSION,
+        "type": "subscribe",
+        "id": 20,
+        "payload": {
+            "detector_type": "status",
+            "target_id": work_id
+        }
+    });
+    let resp = send_recv_json(&mut s, &mut r, sub_frame).await;
+    assert_eq!(resp["type"], "response");
+    let sub_id = resp["value"]["value"].as_u64().unwrap();
+    assert!(sub_id > 0);
+}
+
+#[tokio::test]
+#[ignore]
+async fn subscribe_and_receive_event() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "test"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let sub_frame = serde_json::json!({
+        "v": PROTOCOL_VERSION,
+        "type": "subscribe",
+        "id": 20,
+        "payload": {
+            "detector_type": "status",
+            "target_id": work_id
+        }
+    });
+    let resp = send_recv_json(&mut s, &mut r, sub_frame).await;
+    assert_eq!(resp["type"], "response");
+    let sub_id = resp["value"]["value"].as_u64().unwrap();
+    assert!(sub_id > 0);
+
+    send_recv_json(&mut s, &mut r,
+        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    let deadline = std::time::Duration::from_secs(3);
+    let mut received_event = false;
+    let start = std::time::Instant::now();
+    while start.elapsed() < deadline {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), r.next()).await {
+            Ok(Some(Ok(msg))) => {
+                let val: serde_json::Value = match msg {
+                    Message::Text(t) => serde_json::from_str(&t).unwrap(),
+                    Message::Binary(b) => serde_json::from_slice(&b).unwrap(),
+                    _ => continue,
+                };
+                if val["type"] == "event" {
+                    received_event = true;
+                    break;
+                }
+            }
+            _ => continue,
+        }
+    }
+    assert!(received_event, "expected to receive a detector event within 3s");
+}
+
+// ============================================================
+// Phase 11: Work listing, Links, Transclusion
+// ============================================================
+
+#[tokio::test]
+async fn work_list_empty() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(50, "work_list", None)).await;
+    assert_eq!(resp["type"], "response");
+    assert!(resp["value"]["value"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn work_list_after_create() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "doc1"}})))).await;
+    send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "doc2"}})))).await;
+
+    let resp = send_recv_json(&mut s, &mut r, json_req(50, "work_list", None)).await;
+    let entries = resp["value"]["value"].as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(entries[0]["work_id"].as_u64().unwrap() > 0);
+    assert!(entries[0]["revision_count"].as_u64().unwrap() >= 0);
+    assert_eq!(entries[0]["is_grabbed"].as_bool().unwrap(), false);
+}
+
+#[tokio::test]
+async fn work_list_by_owner() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let owner = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "owned"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(50, "work_list_by_owner", Some(serde_json::json!({"owner": owner})))).await;
+    assert_eq!(resp["type"], "response");
+}
+
+#[tokio::test]
+async fn link_create_get_delete() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_a = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "source"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+    let work_b = send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "target"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let link_id = send_recv_json(&mut s, &mut r,
+        json_req(20, "link_create", Some(serde_json::json!({
+            "origin": work_a, "destination": work_b
+        })))).await["value"]["value"].as_u64().unwrap();
+    assert!(link_id > 0);
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(21, "link_get", Some(serde_json::json!({"link_id": link_id})))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["origin"], work_a);
+    assert_eq!(resp["value"]["value"]["destination"], work_b);
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(22, "link_delete", Some(serde_json::json!({"link_id": link_id})))).await;
+    assert_eq!(resp["type"], "response");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(23, "link_get", Some(serde_json::json!({"link_id": link_id})))).await;
+    assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn link_list_for_work() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_a = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "a"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+    let work_b = send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "b"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    send_recv_json(&mut s, &mut r,
+        json_req(20, "link_create", Some(serde_json::json!({
+            "origin": work_a, "destination": work_b
+        })))).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(30, "link_list_for_work", Some(serde_json::json!({"work_id": work_a})))).await;
+    assert_eq!(resp["type"], "response");
+    let links = resp["value"]["value"].as_array().unwrap();
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0]["origin"], work_a);
+    assert_eq!(links[0]["destination"], work_b);
+}
+
+#[tokio::test]
+async fn find_works_for_content() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let content_ed = send_recv_json(&mut s, &mut r,
+        json_req(10, "edition_store", Some(serde_json::json!({"edition": {"text": "shared content"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(20, "find_works_for_content", Some(serde_json::json!({
+            "content_be_id": content_ed
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert!(resp["value"]["value"].as_array().unwrap().is_empty());
 }

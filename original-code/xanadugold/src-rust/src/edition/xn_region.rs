@@ -220,6 +220,17 @@ impl XnRegion {
         let ivs = self.intervals();
         ivs.len() <= 1
     }
+
+    pub fn as_interval(&self) -> Option<(i64, i64)> {
+        let ivs = self.intervals();
+        if ivs.len() == 1 {
+            Some(ivs[0])
+        } else if self.is_empty() {
+            None
+        } else {
+            None
+        }
+    }
 }
 
 impl Default for XnRegion {

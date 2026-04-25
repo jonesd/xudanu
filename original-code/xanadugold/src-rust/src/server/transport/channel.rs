@@ -5,11 +5,13 @@ use super::protocol::EventPayload;
 #[derive(Debug, Clone)]
 pub struct EventMessage {
     pub session_id: SessionId,
+    pub subscription_id: u16,
     pub event: EventPayload,
 }
 
 pub struct ChannelDetector {
     session_id: SessionId,
+    subscription_id: u16,
     sender: tokio::sync::mpsc::UnboundedSender<EventMessage>,
 }
 
@@ -20,6 +22,19 @@ impl ChannelDetector {
     ) -> Self {
         ChannelDetector {
             session_id,
+            subscription_id: 0,
+            sender,
+        }
+    }
+
+    pub fn new_with_sub(
+        session_id: SessionId,
+        subscription_id: u16,
+        sender: tokio::sync::mpsc::UnboundedSender<EventMessage>,
+    ) -> Self {
+        ChannelDetector {
+            session_id,
+            subscription_id,
             sender,
         }
     }
@@ -29,6 +44,7 @@ impl Detector for ChannelDetector {
     fn on_event(&mut self, event: &crate::server::Event) {
         let msg = EventMessage {
             session_id: self.session_id,
+            subscription_id: self.subscription_id,
             event: EventPayload::from_event(event),
         };
         let _ = self.sender.send(msg);
@@ -39,6 +55,7 @@ impl std::fmt::Debug for ChannelDetector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ChannelDetector")
             .field("session_id", &self.session_id)
+            .field("subscription_id", &self.subscription_id)
             .finish()
     }
 }
