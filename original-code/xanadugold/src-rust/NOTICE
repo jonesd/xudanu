@@ -1,0 +1,25 @@
+xudanu – Rust/WASM evolution of Xanadu (Udanax Gold)
+
+This project is derived from and inspired by Udanax Gold (Xanadu 92.1),
+originally developed by Autodesk and contributors to the Xanadu project.
+
+The original system introduced novel data structures and algorithms
+for generalized hypertext systems.
+
+This implementation:
+
+* Reinterprets and translates those concepts into Rust and WebAssembly
+* Includes modifications, optimizations, and new architectural elements
+
+While the core ideas originate from the Xanadu project, this codebase
+represents a modern reimplementation and evolution of those concepts.
+
+Original Udanax Gold components remain subject to their original
+Xanadu X11 license.
+
+All new and modified code in this repository is licensed under
+the Apache License, Version 2.0.
+
+This project is not affiliated with or endorsed by Autodesk or the
+original Xanadu project contributors.
+
