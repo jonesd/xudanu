@@ -3,6 +3,10 @@ use std::collections::HashMap;
 use crate::edition::{
     BeId, Edition, GrandMap, RangeElement, Work,
 };
+use crate::edition::backfollow::BackfollowEngine;
+use crate::edition::links::{HyperLink, HyperRef};
+use crate::edition::transclusion::{TransclusionQuery, WorkQuery};
+use super::admin::{AdminState, IdGrant, SessionInfo};
 use super::club::Club;
 use super::detector::{Detector, DetectorList, Event};
 use super::error::ServerError;
@@ -52,6 +56,16 @@ pub struct Server {
     edition_detectors: HashMap<BeId, DetectorList>,
     system_clubs: SystemClubs,
     operation_counter: u64,
+    admin: AdminState,
+    links: HashMap<BeId, LinkState>,
+    link_counter: BeId,
+}
+
+#[derive(Debug)]
+struct LinkState {
+    link: HyperLink,
+    origin: BeId,
+    destination: BeId,
 }
 
 impl Default for Server {
@@ -122,6 +136,9 @@ impl Server {
             edition_detectors: HashMap::new(),
             system_clubs,
             operation_counter: 0,
+            admin: AdminState::new(),
+            links: HashMap::new(),
+            link_counter: 0,
         };
 
         let pub_club = Club::new_with_owner(
@@ -139,6 +156,9 @@ impl Server {
         );
         server.clubs.insert(admin_club, adm_club);
         server.club_names.insert("admin".to_string(), admin_club);
+        if let Some(c) = server.clubs.get_mut(&admin_club) {
+            c.set_read_club(Some(public_club));
+        }
 
         let acc_club = Club::new_with_owner(
             access_club,
@@ -668,6 +688,30 @@ impl Server {
         self.works.len()
     }
 
+    pub fn list_works(&self) -> Vec<(BeId, Option<BeId>, u64, bool)> {
+        self.works
+            .iter()
+            .map(|(id, ws)| {
+                let owner = ws.work.owner();
+                let rev_count = ws.work.revision_count();
+                let grabbed = ws.grabber.is_some();
+                (*id, owner, rev_count, grabbed)
+            })
+            .collect()
+    }
+
+    pub fn list_works_by_owner(&self, owner: BeId) -> Vec<(BeId, Option<BeId>, u64, bool)> {
+        self.works
+            .iter()
+            .filter(|(_, ws)| ws.work.owner() == Some(owner))
+            .map(|(id, ws)| {
+                let rev_count = ws.work.revision_count();
+                let grabbed = ws.grabber.is_some();
+                (*id, ws.work.owner(), rev_count, grabbed)
+            })
+            .collect()
+    }
+
     // === Edition operations ===
 
     pub fn store_edition(
@@ -705,6 +749,244 @@ impl Server {
         self.grand_map
             .fetch_by_be_id(be_id)
             .map(|elem| elem.as_range_element())
+    }
+
+    // === Admin operations ===
+
+    pub fn admin(&self) -> &AdminState {
+        &self.admin
+    }
+
+    pub fn admin_mut(&mut self) -> &mut AdminState {
+        &mut self.admin
+    }
+
+    pub fn ensure_admin(&self, session_id: SessionId) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        let session = self.sessions.get(&session_id).unwrap();
+        if session.has_authority(self.system_clubs.admin_club)
+            || session.has_authority(self.system_clubs.access_club)
+        {
+            Ok(())
+        } else {
+            Err(ServerError::AdminRequired)
+        }
+    }
+
+    pub fn grant_admin_authority(&mut self, session_id: SessionId) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        let admin_club = self.system_clubs.admin_club;
+        let admin_km = KeyMaster::make(admin_club);
+        if let Some(session) = self.sessions.get_mut(&session_id) {
+            session.incorporate_authority(&admin_km);
+        }
+        Ok(())
+    }
+
+    pub fn admin_accept_connections(
+        &mut self,
+        session_id: SessionId,
+        accept: bool,
+    ) -> Result<(), ServerError> {
+        self.ensure_admin(session_id)?;
+        self.admin.set_accepting_connections(accept);
+        Ok(())
+    }
+
+    pub fn admin_is_accepting_connections(&self) -> bool {
+        self.admin.is_accepting_connections()
+    }
+
+    pub fn admin_active_sessions(&self, session_id: SessionId) -> Result<Vec<SessionInfo>, ServerError> {
+        self.ensure_admin(session_id)?;
+        let infos: Vec<SessionInfo> = self
+            .sessions
+            .values()
+            .filter(|s| s.is_connected())
+            .map(|s| {
+                let grabbed_count = self
+                    .works
+                    .values()
+                    .filter(|ws| ws.grabber == Some(s.id()))
+                    .count();
+                SessionInfo {
+                    session_id: s.id().as_u64(),
+                    is_logged_in: s.is_logged_in(),
+                    authority_clubs: s.authority_clubs().into_iter().collect(),
+                    initial_login: s.initial_login(),
+                    has_grabbed_works: grabbed_count > 0,
+                }
+            })
+            .collect();
+        Ok(infos)
+    }
+
+    pub fn admin_shutdown(&mut self, session_id: SessionId) -> Result<(), ServerError> {
+        self.ensure_admin(session_id)?;
+        self.admin.request_shutdown();
+        Ok(())
+    }
+
+    pub fn admin_grant(
+        &mut self,
+        session_id: SessionId,
+        club_id: BeId,
+        region: crate::edition::XnRegion,
+    ) -> Result<(), ServerError> {
+        self.ensure_admin(session_id)?;
+        self.admin.grant(club_id, region);
+        Ok(())
+    }
+
+    pub fn admin_revoke_grant(
+        &mut self,
+        session_id: SessionId,
+        club_id: BeId,
+    ) -> Result<bool, ServerError> {
+        self.ensure_admin(session_id)?;
+        Ok(self.admin.revoke_grant(club_id))
+    }
+
+    pub fn admin_grants(&self, session_id: SessionId) -> Result<&[IdGrant], ServerError> {
+        self.ensure_admin(session_id)?;
+        Ok(self.admin.grants())
+    }
+
+    pub fn is_shutdown_requested(&self) -> bool {
+        self.admin.is_shutdown_requested()
+    }
+
+    pub fn bump_operation(&mut self) -> u64 {
+        self.operation_counter += 1;
+        self.operation_counter
+    }
+
+    pub fn operation_count(&self) -> u64 {
+        self.operation_counter
+    }
+
+    pub fn edition_count(&self) -> usize {
+        self.standalone_editions.len()
+    }
+
+    // === Link operations ===
+
+    pub fn create_link(
+        &mut self,
+        _session_id: SessionId,
+        origin: BeId,
+        destination: BeId,
+        origin_ref: Option<HyperRef>,
+        destination_ref: Option<HyperRef>,
+    ) -> Result<BeId, ServerError> {
+        self.ensure_session(_session_id)?;
+        let _ = self.work(origin)?;
+        let _ = self.work(destination)?;
+
+        self.link_counter += 1;
+        let link_id = self.link_counter;
+
+        let link = if let (Some(o_ref), Some(d_ref)) = (origin_ref, destination_ref) {
+            HyperLink::make(vec![], o_ref, d_ref)
+        } else {
+            let o_ref = HyperRef::single(None, Some(origin), None, None);
+            let d_ref = HyperRef::single(None, Some(destination), None, None);
+            HyperLink::make(vec![], o_ref, d_ref)
+        };
+
+        let ls = LinkState { link, origin, destination };
+        self.links.insert(link_id, ls);
+        Ok(link_id)
+    }
+
+    pub fn get_link(&self, link_id: BeId) -> Result<(BeId, BeId, &HyperLink), ServerError> {
+        let ls = self.links.get(&link_id)
+            .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+        Ok((ls.origin, ls.destination, &ls.link))
+    }
+
+    pub fn update_link(
+        &mut self,
+        _session_id: SessionId,
+        link_id: BeId,
+        origin_ref: Option<HyperRef>,
+        destination_ref: Option<HyperRef>,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(_session_id)?;
+        let ls = self.links.get_mut(&link_id)
+            .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+        if let Some(o_ref) = origin_ref {
+            ls.link = ls.link.with_end("LeftEnd", o_ref);
+        }
+        if let Some(d_ref) = destination_ref {
+            ls.link = ls.link.with_end("RightEnd", d_ref);
+        }
+        Ok(())
+    }
+
+    pub fn delete_link(&mut self, _session_id: SessionId, link_id: BeId) -> Result<(), ServerError> {
+        self.ensure_session(_session_id)?;
+        if self.links.remove(&link_id).is_none() {
+            return Err(ServerError::NotFound(format!("link {}", link_id)));
+        }
+        Ok(())
+    }
+
+    pub fn list_links_for_work(&self, work_id: BeId) -> Vec<(BeId, BeId, BeId)> {
+        self.links
+            .iter()
+            .filter(|(_, ls)| ls.origin == work_id || ls.destination == work_id)
+            .map(|(id, ls)| (*id, ls.origin, ls.destination))
+            .collect()
+    }
+
+    pub fn link_count(&self) -> usize {
+        self.links.len()
+    }
+
+    // === Transclusion queries ===
+
+    pub fn find_transcluders(&self, content_be_id: BeId) -> Vec<(String, BeId, bool)> {
+        let mut results = Vec::new();
+        for (wid, ws) in &self.works {
+            let edition = ws.work.edition();
+            for (pos, carrier) in edition.all_entries() {
+                if carrier.element.as_edition_id() == Some(content_be_id)
+                    || carrier.element.as_work_id() == Some(content_be_id)
+                {
+                    results.push(("work".to_string(), *wid, true));
+                    break;
+                }
+            }
+        }
+        for (eid, ed) in &self.standalone_editions {
+            for (pos, carrier) in ed.all_entries() {
+                if carrier.element.as_edition_id() == Some(content_be_id)
+                    || carrier.element.as_work_id() == Some(content_be_id)
+                {
+                    results.push(("edition".to_string(), *eid, true));
+                    break;
+                }
+            }
+        }
+        results
+    }
+
+    pub fn find_works_for_content(&self, content_be_id: BeId) -> Vec<BeId> {
+        let mut work_ids = Vec::new();
+        for (wid, ws) in &self.works {
+            let edition = ws.work.edition();
+            for (_pos, carrier) in edition.all_entries() {
+                if carrier.element.as_edition_id() == Some(content_be_id)
+                    || carrier.element.as_work_id() == Some(content_be_id)
+                    || carrier.element.as_text().map(|t| t == &content_be_id.to_string()).unwrap_or(false)
+                {
+                    work_ids.push(*wid);
+                    break;
+                }
+            }
+        }
+        work_ids
     }
 
     // === Detectors ===
@@ -890,6 +1172,20 @@ mod persist_snapshot {
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct LinkSnapshot {
+        link_id: BeId,
+        origin: BeId,
+        destination: BeId,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct AdminSnapshot {
+        accepting_connections: bool,
+        shutdown_requested: bool,
+        grants: Vec<(BeId, i64, i64)>,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     pub struct ServerSnapshot {
         grand_map_id_counter: BeId,
         session_counter: u64,
@@ -898,6 +1194,9 @@ mod persist_snapshot {
         works: Vec<(BeId, WorkStateSnapshot)>,
         clubs: Vec<ClubSnapshot>,
         standalone_editions: Vec<StandaloneEditionSnapshot>,
+        links: Vec<LinkSnapshot>,
+        link_counter: BeId,
+        admin: AdminSnapshot,
     }
 
     impl Server {
@@ -934,6 +1233,20 @@ mod persist_snapshot {
                 works,
                 clubs,
                 standalone_editions,
+                links: self.links.iter().map(|(id, ls)| LinkSnapshot {
+                    link_id: *id,
+                    origin: ls.origin,
+                    destination: ls.destination,
+                }).collect(),
+                link_counter: self.link_counter,
+                admin: AdminSnapshot {
+                    accepting_connections: self.admin.is_accepting_connections(),
+                    shutdown_requested: self.admin.is_shutdown_requested(),
+                    grants: self.admin.grants().iter().map(|g| {
+                        let (start, end) = g.region.as_interval().unwrap_or((0, 0));
+                        (g.club_id, start, end)
+                    }).collect(),
+                },
             }
         }
 
@@ -952,6 +1265,9 @@ mod persist_snapshot {
                 edition_detectors: HashMap::new(),
                 system_clubs: snapshot.system_clubs,
                 operation_counter: snapshot.operation_counter,
+                admin: AdminState::new(),
+                links: HashMap::new(),
+                link_counter: snapshot.link_counter,
             };
 
             for club_snap in &snapshot.clubs {
@@ -990,6 +1306,25 @@ mod persist_snapshot {
             for se_snap in &snapshot.standalone_editions {
                 let edition = se_snap.edition.to_edition();
                 server.standalone_editions.insert(se_snap.be_id, edition);
+            }
+
+            server.admin.set_accepting_connections(snapshot.admin.accepting_connections);
+            if snapshot.admin.shutdown_requested {
+                server.admin.request_shutdown();
+            }
+            for (club_id, start, end) in &snapshot.admin.grants {
+                server.admin.grant(*club_id, crate::edition::XnRegion::interval(*start, *end));
+            }
+
+            for ls in &snapshot.links {
+                let o_ref = HyperRef::single(None, Some(ls.origin), None, None);
+                let d_ref = HyperRef::single(None, Some(ls.destination), None, None);
+                let link = HyperLink::make(vec![], o_ref, d_ref);
+                server.links.insert(ls.link_id, LinkState {
+                    link,
+                    origin: ls.origin,
+                    destination: ls.destination,
+                });
             }
 
             server

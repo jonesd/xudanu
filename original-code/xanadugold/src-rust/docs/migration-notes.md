@@ -76,6 +76,9 @@ The O-tree is Gold's persistent splay tree for Edition content. Our Rust port:
 | Stepper / retrieve | `edition->stepper(region, order)` for filtered iteration | `iter()` only, no region filter | Add `iter_in_region()` method |
 | Bundle retrieval | `retrieve()` returns Array/Element/PlaceHolder bundles | Not implemented | Add when needed for bulk reads |
 | Fe/Be split | FrontEnd (session) / BackEnd (persistent) object split | Done — `BeRangeElement` trait + `InMemoryBeStorage` | Disk backing in Phase 6 |
+| Admin API | `FeAdminer` — acceptConnections, shutdown, grants, activeSessions | Done — `AdminState` + wire ops | GateLockSmith in Phase 11 |
+| Handshake | `SetCommProtocol` / `BootPlan` — version negotiation | Done — `HandshakeResponse` at WS start | Sufficient for v1 |
+| Detector wire | `CommXxxDetector` + `DetectorEvent` — push events to client | Partial — subscription tracking + event push | Per-type filtering + queuing |
 | Work (mutable container) | `FeWork` holds current edition + revision history | Done — `Work` with revise/history/clubs/sponsors | Complete |
 | GrandMap (ID registry) | `BeGrandMap` bidirectional ID ↔ BeRangeElement | Done — `GrandMap` with IdSpace, assign_id, fetch | Complete |
 | Content Pool | Content-addressed storage for RangeElements | Done — `ContentPool` with hash-based store/retrieve/find | Complete |
@@ -447,5 +450,179 @@ Works and editions use the existing `WorkSnapshot`/`EditionSnapshot` types from 
 | Phase | Tests | Notes |
 |---|---|---|
 | Phase 8 | 567 unit + 37 integration | WebSocket transport + audit |
-| Phase 9 | 603 unit + 37 integration | +14 urdi + 6 snarf + 8 file_storage + 7 server checkpoint + 1 rollback fix |
-| **Total** | **640** | All passing, 12 ignored (stress tests) |
+| Phase 9 | 603 unit + 37 integration | File-backed persistence |
+| Phase 10 | 612 unit + 47 integration | Admin API, handshake |
+| Phase 11 | 612 unit + 53 integration | Client, links, transclusion, work listing |
+| **Total** | **665** | All passing, 14 ignored |
+
+## Phase 10: Wire-Protocol Detector Events & Admin API
+
+### What was implemented
+
+Five new modules and extensions across the server and transport layers:
+
+| Module | C++ Original | Rust Implementation |
+|---|---|---|
+| `server/admin.rs` | `FeAdminer` (sysadmx.hxx) | `AdminState` — server state management, accept/reject connections, shutdown, ID grants |
+| `transport/handler.rs` additions | `BootPlan`/`SetCommProtocol` (bootplnx.hxx, negoci8x.hxx) | `HandshakeResponse` — version negotiation at WebSocket connection start |
+| `transport/handler.rs` subscribe tracking | `PromiseManager` subscription tracking (promanx.hxx) | `subscriptions` HashMap + `SUBSCRIPTION_COUNTER` — proper subscription ID tracking |
+| `transport/channel.rs` additions | `CommXxxDetector` + `DetectorEvent` hierarchy (comdtctr.hxx) | `subscription_id` on `EventMessage` — events carry subscription IDs |
+| `transport/protocol.rs` additions | `handlrsx.hxx` dispatch table | `OperationCode` admin ops, `ResponseValue` admin types, `HandshakeRequest/Response`, `ServerInfoPayload`, `SessionInfoPayload`, `GrantPayload` |
+
+### New protocol operations
+
+| Op Code | Operation | C++ Equivalent |
+|---|---|---|
+| 0x0501 | `AdminAcceptConnections` | `FeAdminer::acceptConnections` |
+| 0x0502 | `AdminIsAcceptingConnections` | `FeAdminer::isAcceptingConnections` |
+| 0x0503 | `AdminActiveSessions` | `FeAdminer::activeSessions` |
+| 0x0504 | `AdminShutdown` | `FeAdminer::shutdown` |
+| 0x0505 | `AdminGrant` | `FeAdminer::grant` |
+| 0x0506 | `AdminRevokeGrant` | New (Gold had grants() only) |
+| 0x0507 | `AdminGrants` | `FeAdminer::grants` |
+| 0x0508 | `AdminServerInfo` | New (combines stats + state) |
+| 0x0601 | `ServerStats` | New (non-admin version of server info) |
+
+### Handshake protocol
+
+At connection start, the server sends a `HandshakeResponse`:
+
+```json
+{
+  "type": "handshake",
+  "v": 2,
+  "payload": {
+    "server_version": 2,
+    "negotiated_version": 2,
+    "server_id": "xudanu-0.1.0",
+    "server_capabilities": ["json", "binary", "detector_events", "admin"]
+  }
+}
+```
+
+The client's requested version is passed as `?version=N` query parameter. If the version is outside `[MIN_SUPPORTED_VERSION, PROTOCOL_VERSION]`, an error is sent and the connection is closed.
+
+### Admin authority model
+
+Admin operations require the session to hold authority for either the `admin_club` or `access_club`. The admin club's `read_club` is set to the public club, so any logged-in session can escalate to admin authority by:
+
+1. Looking up the admin club ID via `club_id_by_name("admin")`
+2. Logging in via `session_login` with that club ID (returns a BooLock since read_club is public)
+3. Authenticating via `session_authenticate` with `Boo` credential
+
+This mirrors Gold's `FeAdminer::make()` which requires a KeyMaster with System Admin authority.
+
+### Connection gating
+
+When `AdminState.accepting_connections` is `false` or `shutdown_requested` is `true`:
+- New WebSocket connections are immediately closed with `not_accepting_connections` error
+- Existing connections check `is_shutdown_requested()` on each request and close if true
+
+### ID grants
+
+The `AdminState` tracks `IdGrant` records mapping `(club_id, XnRegion)`. These grants give clubs authority to assign global IDs in specific regions. Multiple grants per club are supported (additive, not replacing).
+
+### Subscription tracking
+
+The handler now tracks subscriptions in a `HashMap<u16, (DetectorType, BeId)>`. Each subscribe operation returns a unique subscription ID via an `AtomicU16` counter. Events carry the subscription ID so clients can correlate them.
+
+### Protocol version bump
+
+`PROTOCOL_VERSION` is now `0x02` (was `0x01`). `MIN_SUPPORTED_VERSION` is `0x01`. The handshake negotiates the version.
+
+### Portability gaps from Gold
+
+| Gap | Gold Feature | Rust Status | Plan |
+|---|---|---|---|
+| FeArchiver | Archive/restore Works to secondary storage | Not yet | Add in Phase 13 |
+| GateLockSmith | Configurable lock for invalid logins | Not yet | Add in Phase 11 |
+| Full detector wire protocol | CommFillDetector, CommRevisionDetector, etc. | Subscription tracking + event push | Add per-type filtering |
+| Protocol negotiation | SetCommProtocol/SetDiskProtocol at boot | Version query param + handshake | Sufficient for v1 |
+| Execute commands | FeAdminer::execute(PrimIntArray) | Not yet | Add for production |
+| Detector event queuing | PromiseManager queues events between requests | Events pushed immediately | Add queuing for ordered delivery |
+
+### Enhancement ideas for future phases
+
+1. **Per-type detector subscriptions**: Allow subscribing to specific event types (grab, release, revise) on a work, not just status/revision/fill.
+
+2. **Detector event queuing**: Queue events between requests (like Gold's PromiseManager) to ensure ordered delivery.
+
+3. **Admin command execution**: Add `admin_execute` for batch configuration commands.
+
+4. **Gate lock configuration**: Allow setting a custom LockSmith for invalid login attempts via the wire protocol.
+
+5. **WebSocket subprotocol negotiation**: Use axum's subprotocol support instead of query parameter for format selection.
+
+## Phase 11: Make It Usable — Client, Links, Transclusion, Work Listing
+
+### What was implemented
+
+Six work items completed, making the system demonstrable end-to-end:
+
+| Item | Description |
+|---|---|
+| Work listing | `WorkList`, `WorkListByOwner` operations + `list_works()` server methods |
+| Link storage & wire ops | `LinkCreate`, `LinkGet`, `LinkUpdate`, `LinkDelete`, `LinkListForWork` |
+| Transclusion queries | `FindTranscluders`, `FindWorksForContent` — search for content across works |
+| CLI client | `xudanu-cli` binary with REPL and subcommand modes |
+| Web UI | Served at `/` — browser-based client for interactive use |
+| Demo script | `examples/demo.sh` — automated walkthrough |
+
+### New protocol operations
+
+| Op Code | Operation | Notes |
+|---|---|---|
+| 0x030E | `WorkList` | List all works with owner, revision count, grab status |
+| 0x030F | `WorkListByOwner` | Filter works by owner BeId |
+| 0x0701 | `LinkCreate` | Create bidirectional link between two works |
+| 0x0702 | `LinkGet` | Get link details (origin, destination, refs) |
+| 0x0703 | `LinkUpdate` | Update link endpoint references |
+| 0x0704 | `LinkDelete` | Remove a link |
+| 0x0705 | `LinkListForWork` | List all links involving a work |
+| 0x0801 | `FindTranscluders` | Find editions/works that contain given content |
+| 0x0802 | `FindWorksForContent` | Find works containing given content by BeId |
+
+### CLI client (`xudanu-cli`)
+
+Two modes:
+- **Subcommand**: `xudanu-cli <url> create-work "hello"` — one-shot, for scripting
+- **REPL**: `xudanu-cli <url> repl` — interactive session
+
+Commands: `login`, `login-admin`, `create-work`, `get-work`, `list-works`, `grab`, `revise`, `release`, `history`, `fetch-revision`, `create-link`, `get-link`, `list-links`, `delete-link`, `find-content`, `club-create`, `club-list`, `info`, `quit`
+
+### Web UI
+
+Served at the root URL (`/`). Dark-themed browser client that auto-connects via WebSocket, logs in, and provides a command input. Same commands as the CLI.
+
+### Link model
+
+Links are stored in `Server.links: HashMap<BeId, LinkState>` where `LinkState` holds:
+- `origin: BeId` — source work
+- `destination: BeId` — target work  
+- `link: HyperLink` — with `LeftEnd` and `RightEnd` HyperRefs
+
+Links are persisted in server snapshots as `LinkSnapshot { link_id, origin, destination }`.
+
+### Transclusion queries
+
+The server currently implements content search by scanning all work editions linearly. For each work/edition, it checks if any entry's element matches the target BeId. This is O(n) but sufficient for v1.
+
+Future phases will integrate the full `BackfollowEngine` with `TransclusionIndex` for O(log n) lookups via the canopy/HTree structures.
+
+### Demo
+
+```bash
+cd src-rust
+cargo build --features server --bins
+./examples/demo.sh
+```
+
+This creates documents, edits them, creates links, lists works, creates clubs, and shows server info.
+
+### Test counts
+
+| Phase | Tests | Notes |
+|---|---|---|
+| Phase 10 | 612 unit + 47 integration | Admin API, handshake, detector subscription |
+| Phase 11 | 612 unit + 53 integration | +6 integration (work-list, links, transclusion) |
+| **Total** | **665** | All passing, 14 ignored |

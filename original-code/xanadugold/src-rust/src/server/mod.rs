@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod club;
 pub mod detector;
 pub mod error;

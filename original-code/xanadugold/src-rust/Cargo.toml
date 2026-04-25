@@ -10,10 +10,14 @@ crate-type = ["cdylib", "rlib"]
 name = "xudanu-server"
 required-features = ["server"]
 
+[[bin]]
+name = "xudanu-cli"
+required-features = ["server"]
+
 [features]
 default = []
 wasm = ["wasm-bindgen", "console_error_panic_hook", "serde", "serde_json", "js-sys"]
-server = ["tokio", "axum", "postcard", "tracing", "tracing-subscriber", "serde", "serde_json", "futures-util"]
+server = ["tokio", "axum", "postcard", "tracing", "tracing-subscriber", "serde", "serde_json", "futures-util", "tokio-tungstenite"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
@@ -31,6 +35,7 @@ postcard = { version = "1", features = ["alloc"], optional = true }
 tracing = { version = "0.1", optional = true }
 futures-util = { version = "0.3", optional = true }
 tracing-subscriber = { version = "0.3", optional = true }
+tokio-tungstenite = { version = "0.29", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

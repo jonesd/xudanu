@@ -10,7 +10,10 @@ pub fn dispatch(
     session_id: crate::server::SessionId,
     request: WireRequest,
 ) -> Result<ResponseValue, crate::server::ServerError> {
-    handle.with_server(|srv| dispatch_inner(srv, session_id, request))
+    handle.with_server(|srv| {
+        srv.bump_operation();
+        dispatch_inner(srv, session_id, request)
+    })
 }
 
 fn dispatch_inner(
@@ -195,6 +198,141 @@ fn dispatch_inner(
                 Some(ed) => Ok(ResponseValue::Edition(EditionPayload::from_edition(&ed))),
                 None => Ok(ResponseValue::Void),
             }
+        }
+
+        WireRequest::AdminAcceptConnections { accept } => {
+            srv.admin_accept_connections(session_id, accept)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::AdminIsAcceptingConnections => {
+            let accepting = srv.admin_is_accepting_connections();
+            Ok(ResponseValue::Boolean(accepting))
+        }
+        WireRequest::AdminActiveSessions => {
+            let infos = srv.admin_active_sessions(session_id)?;
+            let payloads = infos.into_iter().map(|si| {
+                super::protocol::SessionInfoPayload {
+                    session_id: si.session_id,
+                    is_logged_in: si.is_logged_in,
+                    authority_clubs: si.authority_clubs,
+                    initial_login: si.initial_login,
+                    grabbed_work_count: if si.has_grabbed_works { 1 } else { 0 },
+                }
+            }).collect();
+            Ok(ResponseValue::SessionInfos(payloads))
+        }
+        WireRequest::AdminShutdown => {
+            srv.admin_shutdown(session_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::AdminGrant { club_id, region_start, region_end } => {
+            let region = crate::edition::XnRegion::interval(region_start, region_end);
+            srv.admin_grant(session_id, club_id, region)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::AdminRevokeGrant { club_id } => {
+            let revoked = srv.admin_revoke_grant(session_id, club_id)?;
+            Ok(ResponseValue::Boolean(revoked))
+        }
+        WireRequest::AdminGrants => {
+            let grants = srv.admin_grants(session_id)?;
+            let payloads = grants.iter().map(|g| {
+                let (start, end) = g.region.as_interval().unwrap_or((0, 0));
+                super::protocol::GrantPayload {
+                    club_id: g.club_id,
+                    region_start: start,
+                    region_end: end,
+                }
+            }).collect();
+            Ok(ResponseValue::Grants(payloads))
+        }
+        WireRequest::AdminServerInfo => {
+            Ok(ResponseValue::ServerInfo(super::protocol::ServerInfoPayload {
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                session_count: srv.session_count(),
+                work_count: srv.work_count(),
+                club_count: srv.club_count(),
+                edition_count: srv.edition_count(),
+                is_accepting_connections: srv.admin_is_accepting_connections(),
+            }))
+        }
+
+        WireRequest::ServerStats => {
+            Ok(ResponseValue::ServerInfo(super::protocol::ServerInfoPayload {
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                session_count: srv.session_count(),
+                work_count: srv.work_count(),
+                club_count: srv.club_count(),
+                edition_count: srv.edition_count(),
+                is_accepting_connections: srv.admin_is_accepting_connections(),
+            }))
+        }
+
+        WireRequest::WorkList => {
+            let entries = srv.list_works().into_iter().map(|(work_id, owner, revision_count, is_grabbed)| {
+                super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed }
+            }).collect();
+            Ok(ResponseValue::WorkList(entries))
+        }
+        WireRequest::WorkListByOwner { owner } => {
+            let entries = srv.list_works_by_owner(owner).into_iter().map(|(work_id, owner, revision_count, is_grabbed)| {
+                super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed }
+            }).collect();
+            Ok(ResponseValue::WorkList(entries))
+        }
+
+        WireRequest::LinkCreate { origin, destination, origin_ref, destination_ref } => {
+            let o_ref = origin_ref.map(|hr| {
+                crate::edition::links::HyperRef::single(None, hr.work_context, hr.original_context, None)
+            });
+            let d_ref = destination_ref.map(|hr| {
+                crate::edition::links::HyperRef::single(None, hr.work_context, hr.original_context, None)
+            });
+            let link_id = srv.create_link(session_id, origin, destination, o_ref, d_ref)?;
+            Ok(ResponseValue::Id(link_id))
+        }
+        WireRequest::LinkGet { link_id } => {
+            let (origin, destination, link) = srv.get_link(link_id)?;
+            let o_ref = link.end_at("LeftEnd").map(super::protocol::HyperRefPayload::from_hyper_ref);
+            let d_ref = link.end_at("RightEnd").map(super::protocol::HyperRefPayload::from_hyper_ref);
+            Ok(ResponseValue::LinkInfo(super::protocol::LinkPayload {
+                link_id, origin, destination, origin_ref: o_ref, destination_ref: d_ref,
+            }))
+        }
+        WireRequest::LinkUpdate { link_id, origin_ref, destination_ref } => {
+            let o_ref = origin_ref.map(|hr| {
+                crate::edition::links::HyperRef::single(None, hr.work_context, hr.original_context, None)
+            });
+            let d_ref = destination_ref.map(|hr| {
+                crate::edition::links::HyperRef::single(None, hr.work_context, hr.original_context, None)
+            });
+            srv.update_link(session_id, link_id, o_ref, d_ref)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LinkDelete { link_id } => {
+            srv.delete_link(session_id, link_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LinkListForWork { work_id } => {
+            let links = srv.list_links_for_work(work_id).into_iter().map(|(link_id, origin, destination)| {
+                super::protocol::LinkPayload {
+                    link_id, origin, destination,
+                    origin_ref: None,
+                    destination_ref: None,
+                }
+            }).collect();
+            Ok(ResponseValue::LinkList(links))
+        }
+
+        WireRequest::FindTranscluders { content_be_id } => {
+            let results = srv.find_transcluders(content_be_id).into_iter().map(|(element_type, element_id, is_direct)| {
+                super::protocol::TransclusionResultPayload { element_type, element_id, is_direct }
+            }).collect();
+            Ok(ResponseValue::TransclusionResults(results))
+        }
+        WireRequest::FindWorksForContent { content_be_id } => {
+            let work_ids = srv.find_works_for_content(content_be_id);
+            Ok(ResponseValue::WorkIds(work_ids))
         }
     }
 }

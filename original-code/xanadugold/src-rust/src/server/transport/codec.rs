@@ -403,6 +403,13 @@ impl JsonCodec {
             OperationCode::SessionDisconnect,
             OperationCode::SessionLoginPublic,
             OperationCode::ClubNames,
+            OperationCode::AdminIsAcceptingConnections,
+            OperationCode::AdminActiveSessions,
+            OperationCode::AdminShutdown,
+            OperationCode::AdminGrants,
+            OperationCode::AdminServerInfo,
+            OperationCode::ServerStats,
+            OperationCode::WorkList,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -410,6 +417,13 @@ impl JsonCodec {
                 OperationCode::SessionDisconnect => Ok(WireRequest::SessionDisconnect),
                 OperationCode::SessionLoginPublic => Ok(WireRequest::SessionLoginPublic),
                 OperationCode::ClubNames => Ok(WireRequest::ClubNames),
+                OperationCode::AdminIsAcceptingConnections => Ok(WireRequest::AdminIsAcceptingConnections),
+                OperationCode::AdminActiveSessions => Ok(WireRequest::AdminActiveSessions),
+                OperationCode::AdminShutdown => Ok(WireRequest::AdminShutdown),
+                OperationCode::AdminGrants => Ok(WireRequest::AdminGrants),
+                OperationCode::AdminServerInfo => Ok(WireRequest::AdminServerInfo),
+                OperationCode::ServerStats => Ok(WireRequest::ServerStats),
+                OperationCode::WorkList => Ok(WireRequest::WorkList),
                 _ => unreachable!(),
             };
         }
@@ -634,6 +648,101 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::EditionGet { be_id: args.be_id })
+            }
+            OperationCode::AdminAcceptConnections => {
+                #[derive(Deserialize)]
+                struct Args { accept: bool }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AdminAcceptConnections { accept: args.accept })
+            }
+            OperationCode::AdminIsAcceptingConnections => {
+                Ok(WireRequest::AdminIsAcceptingConnections)
+            }
+            OperationCode::AdminActiveSessions => {
+                Ok(WireRequest::AdminActiveSessions)
+            }
+            OperationCode::AdminShutdown => {
+                Ok(WireRequest::AdminShutdown)
+            }
+            OperationCode::AdminGrant => {
+                #[derive(Deserialize)]
+                struct Args { club_id: BeId, region_start: i64, region_end: i64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AdminGrant { club_id: args.club_id, region_start: args.region_start, region_end: args.region_end })
+            }
+            OperationCode::AdminRevokeGrant => {
+                #[derive(Deserialize)]
+                struct Args { club_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AdminRevokeGrant { club_id: args.club_id })
+            }
+            OperationCode::AdminGrants => {
+                Ok(WireRequest::AdminGrants)
+            }
+            OperationCode::AdminServerInfo => {
+                Ok(WireRequest::AdminServerInfo)
+            }
+            OperationCode::ServerStats => {
+                Ok(WireRequest::ServerStats)
+            }
+            OperationCode::WorkListByOwner => {
+                #[derive(Deserialize)]
+                struct Args { owner: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkListByOwner { owner: args.owner })
+            }
+            OperationCode::LinkCreate => {
+                #[derive(Deserialize)]
+                struct Args { origin: BeId, destination: BeId, origin_ref: Option<HyperRefPayload>, destination_ref: Option<HyperRefPayload> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkCreate { origin: args.origin, destination: args.destination, origin_ref: args.origin_ref, destination_ref: args.destination_ref })
+            }
+            OperationCode::LinkGet => {
+                #[derive(Deserialize)]
+                struct Args { link_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkGet { link_id: args.link_id })
+            }
+            OperationCode::LinkUpdate => {
+                #[derive(Deserialize)]
+                struct Args { link_id: BeId, origin_ref: Option<HyperRefPayload>, destination_ref: Option<HyperRefPayload> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkUpdate { link_id: args.link_id, origin_ref: args.origin_ref, destination_ref: args.destination_ref })
+            }
+            OperationCode::LinkDelete => {
+                #[derive(Deserialize)]
+                struct Args { link_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkDelete { link_id: args.link_id })
+            }
+            OperationCode::LinkListForWork => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkListForWork { work_id: args.work_id })
+            }
+            OperationCode::FindTranscluders => {
+                #[derive(Deserialize)]
+                struct Args { content_be_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::FindTranscluders { content_be_id: args.content_be_id })
+            }
+            OperationCode::FindWorksForContent => {
+                #[derive(Deserialize)]
+                struct Args { content_be_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::FindWorksForContent { content_be_id: args.content_be_id })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }

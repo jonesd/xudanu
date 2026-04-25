@@ -17,6 +17,9 @@ pub enum ServerError {
     ClubNotFound(BeId),
     EditionNotFound(BeId),
     Internal(String),
+    AdminRequired,
+    ServerShuttingDown,
+    NotAcceptingConnections,
 }
 
 impl std::fmt::Display for ServerError {
@@ -40,6 +43,9 @@ impl std::fmt::Display for ServerError {
             ServerError::ClubNotFound(id) => write!(f, "club not found: {}", id),
             ServerError::EditionNotFound(id) => write!(f, "edition not found: {}", id),
             ServerError::Internal(s) => write!(f, "internal error: {}", s),
+            ServerError::AdminRequired => write!(f, "admin authority required"),
+            ServerError::ServerShuttingDown => write!(f, "server is shutting down"),
+            ServerError::NotAcceptingConnections => write!(f, "server is not accepting connections"),
         }
     }
 }
