@@ -1,6 +1,6 @@
-use std::cell::RefCell;
+use std::sync::Mutex;
 use std::collections::HashSet;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::edition::canopy::{compute_join, is_le, BertCanopy, CanopyCrumData};
 use crate::edition::props::PropFinder;
@@ -15,8 +15,8 @@ fn next_hcrum_sequence() -> u32 {
     }
 }
 
-pub trait HPart: std::fmt::Debug {
-    fn h_crum(&self) -> Option<Rc<RefCell<HUpperCrumData>>>;
+pub trait HPart: std::fmt::Debug + Send {
+    fn h_crum(&self) -> Option<Arc<Mutex<HUpperCrumData>>>;
 }
 
 #[derive(Debug)]
@@ -39,8 +39,8 @@ impl HistoryCrumBase {
 #[derive(Debug)]
 pub struct HUpperCrumData {
     hcut: TracePosition,
-    o_parents: Vec<Rc<RefCell<dyn HPart>>>,
-    bert_crum: Rc<RefCell<CanopyCrumData>>,
+    o_parents: Vec<Arc<Mutex<dyn HPart>>>,
+    bert_crum: Arc<Mutex<CanopyCrumData>>,
     base: HistoryCrumBase,
     bert_canopy: BertCanopy,
 }
@@ -48,10 +48,10 @@ pub struct HUpperCrumData {
 impl HUpperCrumData {
     pub fn new(
         hcut: TracePosition,
-        bert_crum: Rc<RefCell<CanopyCrumData>>,
+        bert_crum: Arc<Mutex<CanopyCrumData>>,
         bert_canopy: BertCanopy,
     ) -> Self {
-        bert_crum.borrow_mut().add_pointer();
+        bert_crum.lock().unwrap().add_pointer();
         HUpperCrumData {
             hcut,
             o_parents: Vec::new(),
@@ -62,23 +62,23 @@ impl HUpperCrumData {
     }
 
     pub fn from_two(
-        first: Rc<RefCell<dyn HPart>>,
-        second: Rc<RefCell<dyn HPart>>,
+        first: Arc<Mutex<dyn HPart>>,
+        second: Arc<Mutex<dyn HPart>>,
         hcut: TracePosition,
         bert_canopy: BertCanopy,
     ) -> Self {
         let first_bert = first
-            .borrow()
+            .lock().unwrap()
             .h_crum()
-            .map(|c| c.borrow().bert_crum.clone())
+            .map(|c| c.lock().unwrap().bert_crum.clone())
             .unwrap_or_else(|| bert_canopy.make_crum(0));
         let second_bert = second
-            .borrow()
+            .lock().unwrap()
             .h_crum()
-            .map(|c| c.borrow().bert_crum.clone())
+            .map(|c| c.lock().unwrap().bert_crum.clone())
             .unwrap_or_else(|| bert_canopy.make_crum(0));
         let bert_crum = compute_join(&first_bert, &second_bert);
-        bert_crum.borrow_mut().add_pointer();
+        bert_crum.lock().unwrap().add_pointer();
 
         let mut data = HUpperCrumData {
             hcut,
@@ -96,23 +96,23 @@ impl HUpperCrumData {
         self.hcut
     }
 
-    pub fn bert_crum(&self) -> &Rc<RefCell<CanopyCrumData>> {
+    pub fn bert_crum(&self) -> &Arc<Mutex<CanopyCrumData>> {
         &self.bert_crum
     }
 
-    pub fn o_parents(&self) -> &[Rc<RefCell<dyn HPart>>] {
+    pub fn o_parents(&self) -> &[Arc<Mutex<dyn HPart>>] {
         &self.o_parents
     }
 
-    pub fn add_o_parent(&mut self, new_parent: Rc<RefCell<dyn HPart>>) {
-        if let Some(hc) = new_parent.borrow().h_crum() {
-            self.update_bert_canopy(&hc.borrow().bert_crum.clone());
+    pub fn add_o_parent(&mut self, new_parent: Arc<Mutex<dyn HPart>>) {
+        if let Some(hc) = new_parent.lock().unwrap().h_crum() {
+            self.update_bert_canopy(&hc.lock().unwrap().bert_crum.clone());
         }
         self.o_parents.push(new_parent);
     }
 
-    pub fn remove_o_parent(&mut self, parent: &Rc<RefCell<dyn HPart>>) {
-        self.o_parents.retain(|p| !Rc::ptr_eq(p, parent));
+    pub fn remove_o_parent(&mut self, parent: &Arc<Mutex<dyn HPart>>) {
+        self.o_parents.retain(|p| !Arc::ptr_eq(p, parent));
     }
 
     pub fn is_empty(&self) -> bool {
@@ -124,8 +124,8 @@ impl HUpperCrumData {
             return true;
         }
         for op in &self.o_parents {
-            if let Some(hc) = op.borrow().h_crum() {
-                if hc.borrow().in_trace(trace) {
+            if let Some(hc) = op.lock().unwrap().h_crum() {
+                if hc.lock().unwrap().in_trace(trace) {
                     return true;
                 }
             }
@@ -134,13 +134,13 @@ impl HUpperCrumData {
     }
 
     pub fn any_passes(&self, finder: &PropFinder) -> bool {
-        let flags = self.bert_crum.borrow().flags();
+        let flags = self.bert_crum.lock().unwrap().flags();
         if !finder.does_pass(flags) {
             return false;
         }
         for op in &self.o_parents {
-            if let Some(hc) = op.borrow().h_crum() {
-                if hc.borrow().any_passes(finder) {
+            if let Some(hc) = op.lock().unwrap().h_crum() {
+                if hc.lock().unwrap().any_passes(finder) {
                     return true;
                 }
             }
@@ -149,12 +149,12 @@ impl HUpperCrumData {
     }
 
     pub fn delayed_store_backfollow(
-        crum: &Rc<RefCell<HUpperCrumData>>,
+        crum: &Arc<Mutex<HUpperCrumData>>,
         finder: &PropFinder,
         hcrum_cache: &mut HashSet<u32>,
-        visitor: &mut dyn FnMut(&Rc<RefCell<HUpperCrumData>>),
+        visitor: &mut dyn FnMut(&Arc<Mutex<HUpperCrumData>>),
     ) {
-        let hash = crum.borrow().base.hash;
+        let hash = crum.lock().unwrap().base.hash;
         if hcrum_cache.contains(&hash) {
             return;
         }
@@ -163,14 +163,14 @@ impl HUpperCrumData {
     }
 
     fn actual_delayed_store_backfollow(
-        crum: &Rc<RefCell<HUpperCrumData>>,
+        crum: &Arc<Mutex<HUpperCrumData>>,
         finder: &PropFinder,
         hcrum_cache: &mut HashSet<u32>,
-        visitor: &mut dyn FnMut(&Rc<RefCell<HUpperCrumData>>),
+        visitor: &mut dyn FnMut(&Arc<Mutex<HUpperCrumData>>),
     ) {
         let new_finder = {
-            let data = crum.borrow();
-            let crum_flags = data.bert_crum.borrow().flags();
+            let data = crum.lock().unwrap();
+            let crum_flags = data.bert_crum.lock().unwrap().flags();
             finder.pass(crum_flags)
         };
         if new_finder.is_empty() {
@@ -178,16 +178,16 @@ impl HUpperCrumData {
         }
         visitor(crum);
 
-        let o_parents: Vec<Rc<RefCell<dyn HPart>>> =
-            crum.borrow().o_parents.clone();
+        let o_parents: Vec<Arc<Mutex<dyn HPart>>> =
+            crum.lock().unwrap().o_parents.clone();
         for loaf in &o_parents {
-            if let Some(hc) = loaf.borrow().h_crum() {
+            if let Some(hc) = loaf.lock().unwrap().h_crum() {
                 Self::delayed_store_backfollow(&hc, &new_finder, hcrum_cache, visitor);
             }
         }
     }
 
-    pub fn propagate_b_crum(&mut self, new_b_crum: &Rc<RefCell<CanopyCrumData>>) -> bool {
+    pub fn propagate_b_crum(&mut self, new_b_crum: &Arc<Mutex<CanopyCrumData>>) -> bool {
         if is_le(&self.bert_crum, new_b_crum) {
             return false;
         }
@@ -195,12 +195,12 @@ impl HUpperCrumData {
         true
     }
 
-    fn update_bert_canopy(&mut self, b_crum: &Rc<RefCell<CanopyCrumData>>) {
+    fn update_bert_canopy(&mut self, b_crum: &Arc<Mutex<CanopyCrumData>>) {
         if !is_le(&self.bert_crum, b_crum) {
             let old = self.bert_crum.clone();
             self.bert_crum = compute_join(&old, b_crum);
-            self.bert_crum.borrow_mut().add_pointer();
-            old.borrow_mut().remove_pointer();
+            self.bert_crum.lock().unwrap().add_pointer();
+            old.lock().unwrap().remove_pointer();
         }
     }
 }
@@ -222,13 +222,13 @@ mod tests {
         let canopy = BertCanopy::new();
         let bert = canopy.make_crum(PUBLIC_CLUB_FLAG);
         let trace = make_trace(1);
-        let hcrum = Rc::new(RefCell::new(HUpperCrumData::new(
+        let hcrum = Arc::new(Mutex::new(HUpperCrumData::new(
             trace,
             bert,
             BertCanopy::new(),
         )));
-        assert!(hcrum.borrow().is_empty());
-        assert_eq!(hcrum.borrow().o_parents().len(), 0);
+        assert!(hcrum.lock().unwrap().is_empty());
+        assert_eq!(hcrum.lock().unwrap().o_parents().len(), 0);
     }
 
     #[test]
@@ -239,10 +239,10 @@ mod tests {
 
         #[derive(Debug)]
         struct MockPart {
-            hcrum: Option<Rc<RefCell<HUpperCrumData>>>,
+            hcrum: Option<Arc<Mutex<HUpperCrumData>>>,
         }
         impl HPart for MockPart {
-            fn h_crum(&self) -> Option<Rc<RefCell<HUpperCrumData>>> {
+            fn h_crum(&self) -> Option<Arc<Mutex<HUpperCrumData>>> {
                 self.hcrum.clone()
             }
         }
@@ -250,12 +250,12 @@ mod tests {
         let mut hcrum = HUpperCrumData::new(trace, bert, BertCanopy::new());
         let trace2 = make_trace(2);
         let bert2 = canopy.make_crum(0);
-        let child_hcrum = Rc::new(RefCell::new(HUpperCrumData::new(
+        let child_hcrum = Arc::new(Mutex::new(HUpperCrumData::new(
             trace2,
             bert2,
             BertCanopy::new(),
         )));
-        let part: Rc<RefCell<dyn HPart>> = Rc::new(RefCell::new(MockPart {
+        let part: Arc<Mutex<dyn HPart>> = Arc::new(Mutex::new(MockPart {
             hcrum: Some(child_hcrum),
         }));
         hcrum.add_o_parent(part.clone());
@@ -271,12 +271,12 @@ mod tests {
         let canopy = BertCanopy::new();
         let trace = make_trace(5);
         let bert = canopy.make_crum(0);
-        let hcrum = Rc::new(RefCell::new(HUpperCrumData::new(
+        let hcrum = Arc::new(Mutex::new(HUpperCrumData::new(
             trace,
             bert,
             BertCanopy::new(),
         )));
-        assert!(hcrum.borrow().in_trace(&make_trace(5)));
+        assert!(hcrum.lock().unwrap().in_trace(&make_trace(5)));
     }
 
     #[test]
@@ -284,7 +284,7 @@ mod tests {
         let canopy = BertCanopy::new();
         let trace = make_trace(1);
         let bert = canopy.make_crum(PUBLIC_CLUB_FLAG);
-        let hcrum = Rc::new(RefCell::new(HUpperCrumData::new(
+        let hcrum = Arc::new(Mutex::new(HUpperCrumData::new(
             trace,
             bert,
             BertCanopy::new(),
@@ -294,7 +294,7 @@ mod tests {
         let mut cache = HashSet::new();
         let mut visited = Vec::new();
         HUpperCrumData::delayed_store_backfollow(&hcrum, &finder, &mut cache, &mut |c| {
-            visited.push(c.borrow().base.hash);
+            visited.push(c.lock().unwrap().base.hash);
         });
         assert_eq!(visited.len(), 1);
     }
@@ -304,7 +304,7 @@ mod tests {
         let canopy = BertCanopy::new();
         let trace = make_trace(1);
         let bert = canopy.make_crum(PUBLIC_CLUB_FLAG);
-        let hcrum = Rc::new(RefCell::new(HUpperCrumData::new(
+        let hcrum = Arc::new(Mutex::new(HUpperCrumData::new(
             trace,
             bert,
             BertCanopy::new(),
@@ -312,10 +312,10 @@ mod tests {
 
         let finder = PropFinder::open();
         let mut cache = HashSet::new();
-        cache.insert(hcrum.borrow().base.hash);
+        cache.insert(hcrum.lock().unwrap().base.hash);
         let mut visited = Vec::new();
         HUpperCrumData::delayed_store_backfollow(&hcrum, &finder, &mut cache, &mut |c| {
-            visited.push(c.borrow().base.hash);
+            visited.push(c.lock().unwrap().base.hash);
         });
         assert_eq!(visited.len(), 0);
     }
@@ -356,13 +356,13 @@ mod tests {
         #[derive(Debug)]
         struct LeafPart;
         impl HPart for LeafPart {
-            fn h_crum(&self) -> Option<Rc<RefCell<HUpperCrumData>>> {
+            fn h_crum(&self) -> Option<Arc<Mutex<HUpperCrumData>>> {
                 None
             }
         }
 
         let mut hcrum = HUpperCrumData::new(trace, bert, BertCanopy::new());
-        let child: Rc<RefCell<dyn HPart>> = Rc::new(RefCell::new(LeafPart));
+        let child: Arc<Mutex<dyn HPart>> = Arc::new(Mutex::new(LeafPart));
         hcrum.add_o_parent(child);
 
         let finder = PropFinder::open();
@@ -380,13 +380,13 @@ mod tests {
         let canopy = BertCanopy::new();
         let trace = make_trace(1);
         let bert = canopy.make_crum(PUBLIC_CLUB_FLAG);
-        let hcrum = Rc::new(RefCell::new(HUpperCrumData::new(
+        let hcrum = Arc::new(Mutex::new(HUpperCrumData::new(
             trace,
             bert,
             BertCanopy::new(),
         )));
 
         let finder = PropFinder::open();
-        assert!(!hcrum.borrow().any_passes(&finder));
+        assert!(!hcrum.lock().unwrap().any_passes(&finder));
     }
 }
