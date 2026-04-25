@@ -1,6 +1,6 @@
-use std::cell::RefCell;
+use std::sync::Mutex;
 use std::collections::HashSet;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use super::canopy::{BertCanopy, CanopyCrumData, SensorCanopy, compute_join, propagate_flags};
 use super::edition::Edition;
@@ -16,9 +16,9 @@ use crate::ent::trace::TracePosition;
 #[derive(Debug)]
 pub struct EditionMeta {
     edition_id: u64,
-    bert_crum: Rc<RefCell<CanopyCrumData>>,
-    sensor_crum: Rc<RefCell<CanopyCrumData>>,
-    h_crum: Option<Rc<RefCell<HUpperCrumData>>>,
+    bert_crum: Arc<Mutex<CanopyCrumData>>,
+    sensor_crum: Arc<Mutex<CanopyCrumData>>,
+    h_crum: Option<Arc<Mutex<HUpperCrumData>>>,
     prop: BertProp,
     trace_position: Option<TracePosition>,
     works: Vec<u64>,
@@ -27,8 +27,8 @@ pub struct EditionMeta {
 impl EditionMeta {
     pub fn new(
         edition_id: u64,
-        bert_crum: Rc<RefCell<CanopyCrumData>>,
-        sensor_crum: Rc<RefCell<CanopyCrumData>>,
+        bert_crum: Arc<Mutex<CanopyCrumData>>,
+        sensor_crum: Arc<Mutex<CanopyCrumData>>,
         prop: BertProp,
     ) -> Self {
         EditionMeta {
@@ -46,15 +46,15 @@ impl EditionMeta {
         self.edition_id
     }
 
-    pub fn bert_crum(&self) -> &Rc<RefCell<CanopyCrumData>> {
+    pub fn bert_crum(&self) -> &Arc<Mutex<CanopyCrumData>> {
         &self.bert_crum
     }
 
-    pub fn sensor_crum(&self) -> &Rc<RefCell<CanopyCrumData>> {
+    pub fn sensor_crum(&self) -> &Arc<Mutex<CanopyCrumData>> {
         &self.sensor_crum
     }
 
-    pub fn h_crum(&self) -> Option<&Rc<RefCell<HUpperCrumData>>> {
+    pub fn h_crum(&self) -> Option<&Arc<Mutex<HUpperCrumData>>> {
         self.h_crum.as_ref()
     }
 
@@ -62,7 +62,7 @@ impl EditionMeta {
         &self.prop
     }
 
-    pub fn set_h_crum(&mut self, h_crum: Rc<RefCell<HUpperCrumData>>) {
+    pub fn set_h_crum(&mut self, h_crum: Arc<Mutex<HUpperCrumData>>) {
         self.h_crum = Some(h_crum);
     }
 
@@ -77,7 +77,7 @@ impl EditionMeta {
     pub fn update_prop(&mut self, new_prop: BertProp) {
         self.prop = new_prop;
         let flags = self.prop.flags();
-        self.bert_crum.borrow_mut().set_own_flags(flags);
+        self.bert_crum.lock().unwrap().set_own_flags(flags);
         propagate_flags(&self.bert_crum);
     }
 
@@ -96,12 +96,12 @@ impl EditionMeta {
     }
 
     pub fn any_passes(&self, finder: &PropFinder) -> bool {
-        let flags = self.bert_crum.borrow().flags();
+        let flags = self.bert_crum.lock().unwrap().flags();
         if !finder.does_pass(flags) {
             return false;
         }
         if let Some(ref hc) = self.h_crum {
-            return hc.borrow().any_passes(finder);
+            return hc.lock().unwrap().any_passes(finder);
         }
         true
     }
@@ -180,7 +180,7 @@ impl BackfollowEngine {
         let meta = EditionMeta::new(edition_id, bert_crum, sensor_crum, prop);
         if let Some(parent_meta) = self.edition_metas.get(&parent_id) {
             if let Some(ref parent_hc) = parent_meta.h_crum {
-                let parent_bert = parent_hc.borrow().bert_crum().clone();
+                let parent_bert = parent_hc.lock().unwrap().bert_crum().clone();
                 let _joined = compute_join(&meta.bert_crum, &parent_bert);
             }
         }
@@ -286,11 +286,11 @@ impl BackfollowEngine {
                             &finder,
                             &mut hcrum_cache,
                             &mut |visited_hc| {
-                                let visited_flags = visited_hc.borrow().bert_crum().borrow().flags();
+                                let visited_flags = visited_hc.lock().unwrap().bert_crum().lock().unwrap().flags();
                                 if finder.does_pass(visited_flags) {
                                     for (eid, em) in &self.edition_metas {
                                         if let Some(ref em_hc) = em.h_crum() {
-                                            if Rc::ptr_eq(em_hc, visited_hc) {
+                                            if Arc::ptr_eq(em_hc, visited_hc) {
                                                 let elem = RangeElement::edition(*eid);
                                                 trail.record_element(&elem);
                                             }
@@ -477,11 +477,11 @@ impl BackfollowEngine {
                     finder,
                     hcrum_cache,
                     &mut |visited_hc| {
-                        let flags = visited_hc.borrow().bert_crum().borrow().flags();
+                        let flags = visited_hc.lock().unwrap().bert_crum().lock().unwrap().flags();
                         if finder.does_pass(flags) {
                             for (eid, em) in &self.edition_metas {
                                 if let Some(ref em_hc) = em.h_crum() {
-                                    if Rc::ptr_eq(em_hc, visited_hc) {
+                                    if Arc::ptr_eq(em_hc, visited_hc) {
                                         let e = RangeElement::edition(*eid);
                                         trail.record_element(&e);
                                     }
@@ -661,13 +661,13 @@ mod tests {
         engine.register_edition(edition, id, BertProp::make());
 
         let meta = engine.get_edition_meta(id).unwrap();
-        assert_eq!(meta.bert_crum().borrow().flags(), 0);
+        assert_eq!(meta.bert_crum().lock().unwrap().flags(), 0);
 
         let new_prop = BertProp::permissions_prop(vec![Id::global(0)]);
         engine.update_edition_prop(id, new_prop);
 
         let meta = engine.get_edition_meta(id).unwrap();
-        assert_eq!(meta.bert_crum().borrow().own_flags(), PUBLIC_CLUB_FLAG);
+        assert_eq!(meta.bert_crum().lock().unwrap().own_flags(), PUBLIC_CLUB_FLAG);
     }
 
     #[test]
@@ -707,9 +707,9 @@ mod tests {
         let sensor_crum = sensor.make_crum(0);
         let mut meta = EditionMeta::new(1, bert.clone(), sensor_crum, BertProp::make());
 
-        assert_eq!(bert.borrow().flags(), 0);
+        assert_eq!(bert.lock().unwrap().flags(), 0);
         meta.update_prop(BertProp::permissions_prop(vec![Id::global(0)]));
-        assert_eq!(bert.borrow().own_flags(), PUBLIC_CLUB_FLAG);
+        assert_eq!(bert.lock().unwrap().own_flags(), PUBLIC_CLUB_FLAG);
     }
 
     #[test]

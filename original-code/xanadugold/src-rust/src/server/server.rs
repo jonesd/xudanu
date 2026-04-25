@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::edition::{
     BeId, Edition, GrandMap, RangeElement, Work,
 };
+use crate::edition::backfollow::BackfollowEngine;
 use crate::edition::links::{HyperLink, HyperRef};
 use crate::edition::transclusion::{TransclusionIndex, TransclusionQuery, WorkQuery};
 use super::admin::{AdminState, IdGrant, SessionInfo};
@@ -56,6 +57,7 @@ pub struct Server {
     admin: AdminState,
     links: HashMap<BeId, LinkState>,
     link_counter: BeId,
+    backfollow: BackfollowEngine,
     transclusion_index: TransclusionIndex,
 }
 
@@ -138,6 +140,7 @@ impl Server {
             links: HashMap::new(),
             link_counter: 0,
             transclusion_index: TransclusionIndex::new(),
+            backfollow: BackfollowEngine::new(),
         };
 
         let pub_club = Club::new_with_owner(
@@ -413,6 +416,8 @@ impl Server {
         let edition = self.works[&be_id].work.edition().clone();
         let work_elem = RangeElement::work(be_id);
         self.transclusion_index.register_work(&edition, &work_elem);
+        let work = Work::new_with_owner(be_id, owner, edition);
+        self.backfollow.register_work(work, be_id, None);
 
         Ok(be_id)
     }
@@ -464,6 +469,8 @@ impl Server {
         let updated_edition = ws.work.edition().clone();
         let work_elem = RangeElement::work(work_be_id);
         self.transclusion_index.register_work(&updated_edition, &work_elem);
+        let updated_work = Work::new_with_owner(work_be_id, ws.work.owner(), updated_edition);
+        self.backfollow.update_work(work_be_id, updated_work);
 
         Ok(revision)
     }
@@ -732,6 +739,9 @@ impl Server {
         let (be_id, elem) = self.grand_map.new_edition_element();
         self.grand_map.assign_new_id(elem);
         self.standalone_editions.insert(be_id, edition);
+        let edition = self.standalone_editions.get(&be_id).unwrap().clone();
+        let edition_elem = RangeElement::edition(be_id);
+        self.transclusion_index.register_edition(&edition, &edition_elem, None);
         Ok(be_id)
     }
 
@@ -904,6 +914,17 @@ impl Server {
 
         let ls = LinkState { link, origin, destination };
         self.links.insert(link_id, ls);
+        let link_elem = RangeElement::work(link_id);
+        let origin_elem = RangeElement::work(origin);
+        let dest_elem = RangeElement::work(destination);
+        self.transclusion_index.register_work(
+            &crate::edition::Edition::from_one(0, origin_elem.clone()),
+            &link_elem,
+        );
+        self.transclusion_index.register_work(
+            &crate::edition::Edition::from_one(0, dest_elem.clone()),
+            &link_elem,
+        );
         Ok(link_id)
     }
 
@@ -957,6 +978,19 @@ impl Server {
     pub fn find_transcluders(&self, content_be_id: BeId) -> Vec<(String, BeId, bool)> {
         let content = RangeElement::edition(content_be_id);
         let query = TransclusionQuery::all();
+        let results = self.backfollow.find_transcluders(&content, &query);
+        if !results.is_empty() {
+            return results.into_iter().map(|r| {
+                let elem = &r.element;
+                if let Some(wid) = elem.as_work_id() {
+                    ("work".to_string(), wid, r.is_direct)
+                } else if let Some(eid) = elem.as_edition_id() {
+                    ("edition".to_string(), eid, r.is_direct)
+                } else {
+                    ("unknown".to_string(), 0, r.is_direct)
+                }
+            }).collect();
+        }
         let results = self.transclusion_index.find_transcluders(&content, &query);
         results.into_iter().map(|r| {
             let elem = &r.element;
@@ -973,6 +1007,10 @@ impl Server {
     pub fn find_works_for_content(&self, content_be_id: BeId) -> Vec<BeId> {
         let content = RangeElement::edition(content_be_id);
         let query = WorkQuery::all();
+        let elems = self.backfollow.find_works_for_content(&content, &query);
+        if !elems.is_empty() {
+            return elems;
+        }
         let elems = self.transclusion_index.find_works(&content, &query);
         elems.into_iter().filter_map(|e| e.as_work_id()).collect()
     }
@@ -1257,6 +1295,7 @@ mod persist_snapshot {
                 links: HashMap::new(),
                 link_counter: snapshot.link_counter,
                 transclusion_index: TransclusionIndex::new(),
+                backfollow: BackfollowEngine::new(),
             };
 
             for club_snap in &snapshot.clubs {
