@@ -110,6 +110,14 @@ impl GrandMap {
         id
     }
 
+    pub fn id_counter(&self) -> BeId {
+        self.id_counter
+    }
+
+    pub fn set_id_counter(&mut self, counter: BeId) {
+        self.id_counter = counter;
+    }
+
     pub fn assign_id(&mut self, id: &Id, element: Box<dyn BeRangeElement>) -> bool {
         let be_id = element.be_id();
         self.id_holders.insert(id.clone(), be_id);

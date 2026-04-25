@@ -33,6 +33,32 @@ impl Loaf {
         Loaf::Leaf { region, entries: Vec::new(), default: Some(default) }
     }
 
+    fn build_bulk(sorted_entries: Vec<(i64, Arc<Carrier>)>, default: Option<Arc<Carrier>>, region: XnRegion) -> Self {
+        if sorted_entries.is_empty() && default.is_none() {
+            return Loaf::empty_leaf();
+        }
+        if sorted_entries.is_empty() {
+            return Loaf::Leaf { region, entries: sorted_entries, default };
+        }
+        if sorted_entries.len() <= MAX_LEAF_SIZE {
+            let first = sorted_entries.first().unwrap().0;
+            let last = sorted_entries.last().unwrap().0;
+            let entry_region = XnRegion::interval(first, last + 1);
+            let leaf_region = if default.is_some() { region } else { entry_region };
+            return Loaf::Leaf { region: leaf_region, entries: sorted_entries, default };
+        }
+        let mid = sorted_entries.len() / 2;
+        let split_pos = sorted_entries[mid].0;
+        let in_entries = sorted_entries[..mid].to_vec();
+        let out_entries = sorted_entries[mid..].to_vec();
+        let split = XnRegion::below(split_pos);
+        let in_region = region.intersect(&split);
+        let out_region = region.intersect(&XnRegion::above(split_pos));
+        let in_child = Box::new(Loaf::build_bulk(in_entries, default.clone(), in_region));
+        let out_child = Box::new(Loaf::build_bulk(out_entries, default.clone(), out_region));
+        Loaf::Split { split, in_child, out_child }
+    }
+
     fn empty_leaf() -> Self {
         Loaf::Leaf {
             region: XnRegion::empty(),
@@ -571,6 +597,13 @@ impl OrglRoot {
     pub(crate) fn from_loaf(loaf: Loaf) -> Self {
         let domain = loaf.domain();
         OrglRoot { inner: OrglInner::Actual { loaf, simple_domain: domain } }
+    }
+
+    pub fn from_bulk_entries(entries: Vec<(i64, Arc<Carrier>)>, default: Option<Arc<Carrier>>, region: XnRegion) -> Self {
+        if entries.is_empty() && default.is_none() {
+            return OrglRoot::empty();
+        }
+        OrglRoot::from_loaf(Loaf::build_bulk(entries, default, region))
     }
 
     pub fn with_default(region: XnRegion, default: Arc<Carrier>) -> Self {
