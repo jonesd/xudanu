@@ -53,6 +53,22 @@ impl SnarfStorage {
         }
     }
 
+    pub fn from_store(snarf_store: SnarfStore) -> Self {
+        SnarfStorage {
+            registry: PersistentRegistry::new(),
+            type_registry: TypeRegistry::new(),
+            flock_infos: HashMap::new(),
+            locations: HashMap::new(),
+            snarf_store,
+            hash_counter: 1,
+            token_counter: 0,
+            in_transaction: false,
+            dirty_set: Vec::new(),
+            new_flocks: Vec::new(),
+            destroy_queue: Vec::new(),
+        }
+    }
+
     pub fn register_type(&mut self, type_tag: &'static str, deserializer: super::traits::DeserializerFn) {
         self.type_registry.register(type_tag, deserializer);
     }
@@ -120,6 +136,61 @@ impl SnarfStorage {
             }
         }
         Ok(())
+    }
+
+    pub fn snarf_store_mut(&mut self) -> &mut SnarfStore {
+        &mut self.snarf_store
+    }
+
+    pub fn snapshot_meta(&self) -> super::file_storage::MetaRecord {
+        let flocks = self.flock_infos.iter()
+            .filter(|(_, info)| !info.is_destroyed())
+            .map(|(id, info)| {
+                let loc = self.locations.get(id).cloned();
+                (*id, loc, info.flags, info.old_size)
+            })
+            .collect();
+        super::file_storage::MetaRecord {
+            hash_counter: self.hash_counter,
+            token_counter: self.token_counter,
+            flocks,
+        }
+    }
+
+    pub fn restore_counters(&mut self, hash_counter: u64, token_counter: u32) {
+        self.hash_counter = hash_counter;
+        self.token_counter = token_counter;
+    }
+
+    pub fn restore_flock_info(
+        &mut self,
+        flock_id: FlockId,
+        location: Option<FlockLocation>,
+        flags: super::persistent::FlockFlags,
+        old_size: u32,
+    ) {
+        let mut info = FlockInfo::new(flock_id);
+        info.location = location.clone();
+        info.flags = flags & !super::persistent::FlockFlags::CONTENTS_DIRTY & !super::persistent::FlockFlags::IS_NEW;
+        info.old_size = old_size;
+        self.flock_infos.insert(flock_id, info);
+        if let Some(loc) = location {
+            self.locations.insert(flock_id, loc);
+        }
+    }
+
+    pub fn has_flock_info(&self, flock_id: &FlockId) -> bool {
+        self.flock_infos.contains_key(flock_id)
+    }
+
+    pub fn flock_location(&self, flock_id: &FlockId) -> Option<FlockLocation> {
+        self.locations.get(flock_id).cloned()
+    }
+
+    pub fn flock_info_count(&self) -> usize {
+        self.flock_infos.values()
+            .filter(|info| !info.is_destroyed())
+            .count()
     }
 }
 
@@ -281,10 +352,16 @@ impl StorageEngine for SnarfStorage {
     }
 
     fn rollback(&mut self) -> StorageResult<()> {
-        for flock_id in self.new_flocks.drain(..) {
-            self.registry.unregister(&flock_id);
-            self.flock_infos.remove(&flock_id);
-            self.locations.remove(&flock_id);
+        let rolled_back: Vec<FlockId> = self.new_flocks.drain(..).collect();
+        for flock_id in &rolled_back {
+            if let Some(loc) = self.locations.get(flock_id) {
+                if let Some(snarf) = self.snarf_store.get_mut(loc.snarf_id) {
+                    snarf.wipe_flock(loc.index as usize);
+                }
+            }
+            self.registry.unregister(flock_id);
+            self.flock_infos.remove(flock_id);
+            self.locations.remove(flock_id);
         }
         self.dirty_set.clear();
         self.destroy_queue.clear();

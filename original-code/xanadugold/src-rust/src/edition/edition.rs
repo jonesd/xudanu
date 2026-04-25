@@ -56,33 +56,37 @@ impl Edition {
     }
 
     pub fn from_text(text: &str) -> Self {
-        let mut orgl = OrglRoot::empty();
-        for (i, ch) in text.chars().enumerate() {
-            let mut buf = [0u8; 4];
-            let s = ch.encode_utf8(&mut buf);
-            orgl = orgl.with(i as i64, Arc::new(Carrier::new(RangeElement::text(s.to_string()))));
-        }
-        Edition { orgl }
+        let entries: Vec<(i64, Arc<Carrier>)> = text.chars().enumerate()
+            .map(|(i, ch)| {
+                let mut buf = [0u8; 4];
+                let s = ch.encode_utf8(&mut buf);
+                (i as i64, Arc::new(Carrier::new(RangeElement::text(s.to_string()))))
+            })
+            .collect();
+        let n = entries.len();
+        let region = if n > 0 { XnRegion::interval(0, n as i64) } else { XnRegion::empty() };
+        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region) }
     }
 
     pub fn from_text_elements(elements: &[RangeElement]) -> Self {
-        let mut orgl = OrglRoot::empty();
-        for (i, e) in elements.iter().enumerate() {
-            orgl = orgl.with(i as i64, Arc::new(Carrier::new(e.clone())));
-        }
-        Edition { orgl }
+        let entries: Vec<(i64, Arc<Carrier>)> = elements.iter().enumerate()
+            .map(|(i, e)| (i as i64, Arc::new(Carrier::new(e.clone()))))
+            .collect();
+        let n = entries.len();
+        let region = if n > 0 { XnRegion::interval(0, n as i64) } else { XnRegion::empty() };
+        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region) }
     }
 
     pub fn place_holders(region: &XnRegion) -> Self {
-        let mut orgl = OrglRoot::empty();
         let mut next_id = 0u64;
+        let mut entries = Vec::new();
         for (start, stop) in region.intervals() {
             for pos in start..stop {
-                orgl = orgl.with(pos, Arc::new(Carrier::new(RangeElement::placeholder(next_id))));
+                entries.push((pos, Arc::new(Carrier::new(RangeElement::placeholder(next_id)))));
                 next_id += 1;
             }
         }
-        Edition { orgl }
+        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region.clone()) }
     }
 
     pub fn with_default(region: XnRegion, value: RangeElement) -> Self {
@@ -841,5 +845,64 @@ mod tests {
         };
         let region = e1.identity_shared_region(&e2, id_eq);
         assert!(region.is_empty());
+    }
+
+    #[test]
+    #[ignore]
+    fn bench_old_vs_bulk_construction() {
+        use std::time::Instant;
+        use std::sync::Arc;
+        use crate::edition::orgl::OrglRoot;
+        use crate::edition::range_element::Carrier;
+
+        let sizes = [1_000, 10_000, 50_000, 100_000];
+
+        println!("\n{:>10} | {:>12} | {:>12} | {:>8} | {}",
+            "Size", "Old (ms)", "Bulk (ms)", "Speedup", "Count OK");
+        println!("{:-<10}-+-{:-<12}-+-{:-<12}-+-{:-<8}-+-{:-<10}",
+            "", "", "", "", "");
+
+        for &n in &sizes {
+            let entries: Vec<(i64, RangeElement)> = (0..n)
+                .map(|i| (i as i64, RangeElement::text(format!("v{}", i))))
+                .collect();
+
+            let carriers: Vec<(i64, Arc<Carrier>)> = entries.iter()
+                .map(|(pos, elem)| (*pos, Arc::new(Carrier::new(elem.clone()))))
+                .collect();
+
+            let start = Instant::now();
+            let mut old_edition = Edition::empty();
+            for (pos, elem) in &entries {
+                old_edition = old_edition.with(*pos, elem.clone());
+            }
+            let old_dur = start.elapsed();
+            let old_count = old_edition.count();
+
+            let start = Instant::now();
+            let region = XnRegion::interval(0, n as i64);
+            let orgl = OrglRoot::from_bulk_entries(carriers.clone(), None, region);
+            let bulk_edition = Edition { orgl };
+            let bulk_dur = start.elapsed();
+            let bulk_count = bulk_edition.count();
+
+            let old_ms = old_dur.as_secs_f64() * 1000.0;
+            let bulk_ms = bulk_dur.as_secs_f64() * 1000.0;
+            let speedup = old_ms / bulk_ms.max(0.001);
+
+            assert_eq!(old_count, bulk_count);
+            assert_eq!(old_count, n as u64);
+
+            println!("{:>10} | {:>12.2} | {:>12.2} | {:>7.1}x | old={} bulk={}",
+                n, old_ms, bulk_ms, speedup, old_count, bulk_count);
+
+            for i in (0..n).step_by(n / 10.max(1)) {
+                let old_val = old_edition.fetch(i as i64);
+                let bulk_val = bulk_edition.fetch(i as i64);
+                assert!(old_val.is_some(), "old missing at {}", i);
+                assert!(bulk_val.is_some(), "bulk missing at {}", i);
+                assert_eq!(old_val, bulk_val, "mismatch at position {}", i);
+            }
+        }
     }
 }

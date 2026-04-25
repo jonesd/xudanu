@@ -10,7 +10,11 @@ use super::keymaster::KeyMaster;
 use super::lock::{Lock, LockCredential, BooLockSmith, LockSmith};
 use super::session::{Session, SessionId};
 
+#[cfg(feature = "server")]
+use crate::persist::file_storage::FileBackedStorage;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SystemClubs {
     pub public_club: BeId,
     pub admin_club: BeId,
@@ -859,6 +863,154 @@ impl Server {
     }
 }
 
+#[cfg(feature = "server")]
+mod persist_snapshot {
+    use super::*;
+    use crate::edition::persistent::{deserialize_edition, deserialize_work, EditionSnapshot, WorkSnapshot};
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct WorkStateSnapshot {
+        work: WorkSnapshot,
+        grabber: Option<u64>,
+        last_revision_author: Option<BeId>,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct ClubSnapshot {
+        be_id: BeId,
+        name: Option<String>,
+        signature_club: Option<BeId>,
+        work: WorkSnapshot,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct StandaloneEditionSnapshot {
+        be_id: BeId,
+        edition: EditionSnapshot,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    pub struct ServerSnapshot {
+        grand_map_id_counter: BeId,
+        session_counter: u64,
+        operation_counter: u64,
+        system_clubs: SystemClubs,
+        works: Vec<(BeId, WorkStateSnapshot)>,
+        clubs: Vec<ClubSnapshot>,
+        standalone_editions: Vec<StandaloneEditionSnapshot>,
+    }
+
+    impl Server {
+        pub fn to_snapshot(&self) -> ServerSnapshot {
+            let works = self.works.iter().map(|(id, ws)| {
+                (*id, WorkStateSnapshot {
+                    work: WorkSnapshot::from_work(&ws.work),
+                    grabber: ws.grabber.map(|s| s.0),
+                    last_revision_author: ws.last_revision_author,
+                })
+            }).collect();
+
+            let clubs = self.clubs.iter().map(|(id, club)| {
+                ClubSnapshot {
+                    be_id: *id,
+                    name: club.name().map(|s| s.to_string()),
+                    signature_club: club.signature_club(),
+                    work: WorkSnapshot::from_work(club.work()),
+                }
+            }).collect();
+
+            let standalone_editions = self.standalone_editions.iter().map(|(id, ed)| {
+                StandaloneEditionSnapshot {
+                    be_id: *id,
+                    edition: EditionSnapshot::from_edition(ed),
+                }
+            }).collect();
+
+            ServerSnapshot {
+                grand_map_id_counter: self.grand_map.id_counter(),
+                session_counter: self.session_counter,
+                operation_counter: self.operation_counter,
+                system_clubs: self.system_clubs,
+                works,
+                clubs,
+                standalone_editions,
+            }
+        }
+
+        pub fn from_snapshot(snapshot: &ServerSnapshot) -> Self {
+            let mut grand_map = GrandMap::new();
+            grand_map.set_id_counter(snapshot.grand_map_id_counter);
+
+            let mut server = Server {
+                grand_map,
+                sessions: HashMap::new(),
+                session_counter: snapshot.session_counter,
+                clubs: HashMap::new(),
+                club_names: HashMap::new(),
+                works: HashMap::new(),
+                standalone_editions: HashMap::new(),
+                edition_detectors: HashMap::new(),
+                system_clubs: snapshot.system_clubs,
+                operation_counter: snapshot.operation_counter,
+            };
+
+            for club_snap in &snapshot.clubs {
+                let work = club_snap.work.to_work(
+                    crate::persist::FlockId::new(club_snap.be_id, 0),
+                    None,
+                ).work().clone();
+                let mut club = Club::new_with_owner(
+                    club_snap.be_id,
+                    work.owner(),
+                    work.edition().clone(),
+                );
+                club.set_signature_club(club_snap.signature_club);
+                if let Some(ref name) = club_snap.name {
+                    club.set_name(name.clone());
+                    server.club_names.insert(name.clone(), club_snap.be_id);
+                }
+                server.clubs.insert(club_snap.be_id, club);
+            }
+
+            for (id, ws_snap) in &snapshot.works {
+                let work = ws_snap.work.to_work(
+                    crate::persist::FlockId::new(*id, 0),
+                    None,
+                ).work().clone();
+                let ws = WorkState {
+                    work,
+                    grabber: None,
+                    last_revision_author: ws_snap.last_revision_author,
+                    status_detectors: DetectorList::new(),
+                    revision_detectors: DetectorList::new(),
+                };
+                server.works.insert(*id, ws);
+            }
+
+            for se_snap in &snapshot.standalone_editions {
+                let edition = se_snap.edition.to_edition();
+                server.standalone_editions.insert(se_snap.be_id, edition);
+            }
+
+            server
+        }
+
+        pub fn checkpoint_to_file(&self, path: &std::path::Path) -> std::io::Result<()> {
+            let snapshot = self.to_snapshot();
+            let json = serde_json::to_string_pretty(&snapshot)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            std::fs::write(path, json.as_bytes())
+        }
+
+        pub fn restore_from_file(path: &std::path::Path) -> std::io::Result<Self> {
+            let json = std::fs::read_to_string(path)?;
+            let snapshot: ServerSnapshot = serde_json::from_str(&json)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            Ok(Self::from_snapshot(&snapshot))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1546,5 +1698,187 @@ mod tests {
 
         server.disconnect(sid).unwrap();
         assert!(!server.work_is_grabbed(doc).unwrap());
+    }
+
+    #[cfg(feature = "server")]
+    struct TempDir(std::path::PathBuf);
+
+    #[cfg(feature = "server")]
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "xudanu_server_test_{}_{}", name, std::process::id()
+            ));
+            let _ = std::fs::create_dir_all(&dir);
+            TempDir(dir)
+        }
+        fn snapshot_path(&self) -> std::path::PathBuf {
+            self.0.join("server.json")
+        }
+    }
+
+    #[cfg(feature = "server")]
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn server_checkpoint_restore_empty() {
+        let dir = TempDir::new("empty");
+        let server = Server::new();
+        server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+
+        let restored = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+        assert_eq!(restored.work_count(), 0);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn server_checkpoint_restore_with_works() {
+        let dir = TempDir::new("with_works");
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc_id = server.create_work(sid, Edition::from_text("hello world")).unwrap();
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+        }
+        {
+            let mut server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+            assert_eq!(server.work_count(), 1);
+            assert_eq!(server.work_edition(doc_id).unwrap().to_text(), "hello world");
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn server_checkpoint_restore_multiple_revisions() {
+        let dir = TempDir::new("revisions");
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc_id = server.create_work(sid, Edition::from_text("v1")).unwrap();
+            server.work_grab(sid, doc_id).unwrap();
+            server.work_revise(sid, doc_id, Edition::from_text("v2")).unwrap();
+            server.work_release(sid, doc_id).unwrap();
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+        }
+        {
+            let server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+            assert_eq!(server.work_edition(doc_id).unwrap().to_text(), "v2");
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn server_checkpoint_restore_multiple_works() {
+        let dir = TempDir::new("multi_works");
+
+        let doc1;
+        let doc2;
+        let doc3;
+        {
+            let mut server = Server::new();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc1 = server.create_work(sid, Edition::from_text("doc1")).unwrap();
+            doc2 = server.create_work(sid, Edition::from_text("doc2")).unwrap();
+            doc3 = server.create_work(sid, Edition::from_text("doc3")).unwrap();
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+        }
+        {
+            let server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+            assert_eq!(server.work_count(), 3);
+            assert_eq!(server.work_edition(doc1).unwrap().to_text(), "doc1");
+            assert_eq!(server.work_edition(doc2).unwrap().to_text(), "doc2");
+            assert_eq!(server.work_edition(doc3).unwrap().to_text(), "doc3");
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn server_checkpoint_restore_grabs_not_preserved() {
+        let dir = TempDir::new("grabs");
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc_id = server.create_work(sid, Edition::from_text("data")).unwrap();
+            server.work_grab(sid, doc_id).unwrap();
+            assert!(server.work_is_grabbed(doc_id).unwrap());
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+        }
+        {
+            let server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+            assert!(!server.work_is_grabbed(doc_id).unwrap());
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn server_checkpoint_restore_system_clubs() {
+        let dir = TempDir::new("sys_clubs");
+
+        let original = Server::new();
+        let pub_id = original.public_club_id();
+        let adm_id = original.admin_club_id();
+        original.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+
+        let restored = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+        assert_eq!(restored.public_club_id(), pub_id);
+        assert_eq!(restored.admin_club_id(), adm_id);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn server_checkpoint_restore_with_editions() {
+        let dir = TempDir::new("editions");
+
+        {
+            let mut server = Server::new();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            let ed = Edition::from_text("standalone");
+            let be_id = server.store_edition(sid, ed).unwrap();
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+        }
+        {
+            let server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn server_checkpoint_restore_id_counter_preserved() {
+        let dir = TempDir::new("id_counter");
+
+        let mut last_id = 0u64;
+        {
+            let mut server = Server::new();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            for _ in 0..5 {
+                last_id = server.create_work(sid, Edition::from_text("x")).unwrap();
+            }
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+        }
+        {
+            let mut server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let new_id = server.create_work(sid, Edition::from_text("y")).unwrap();
+            assert!(new_id > last_id, "new id {} should be > last {}", new_id, last_id);
+        }
     }
 }

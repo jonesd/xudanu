@@ -1,6 +1,8 @@
 use std::io::{self, Cursor, Read};
+use std::path::Path;
 
 use super::persistent::FlockLocation;
+use super::urdi::UrdiFile;
 
 const FLAG_BIT: u32 = 1 << 25;
 const VALUE_MASK: u32 = (1 << 25) - 1;
@@ -74,6 +76,7 @@ pub struct Snarf {
     snarf_size: usize,
     map_cells: Vec<MapCell>,
     data: Vec<u8>,
+    dirty: bool,
 }
 
 impl Snarf {
@@ -85,6 +88,7 @@ impl Snarf {
             snarf_size,
             map_cells: Vec::new(),
             data,
+            dirty: true,
         }
     }
 
@@ -112,11 +116,20 @@ impl Snarf {
             snarf_size,
             map_cells,
             data,
+            dirty: false,
         })
     }
 
     pub fn to_bytes(&self) -> &[u8] {
         &self.data
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    pub fn clear_dirty(&mut self) {
+        self.dirty = false;
     }
 
     pub fn space_left(&self) -> u32 {
@@ -129,6 +142,7 @@ impl Snarf {
     }
 
     pub fn allocate(&mut self, index: usize, flock_size: u32) -> bool {
+        self.dirty = true;
         let needed = flock_size as usize;
 
         while index >= self.map_cells.len() {
@@ -158,6 +172,7 @@ impl Snarf {
     }
 
     pub fn write_flock(&mut self, index: usize, data: &[u8]) -> io::Result<()> {
+        self.dirty = true;
         if index >= self.map_cells.len() {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "index out of range"));
         }
@@ -191,6 +206,7 @@ impl Snarf {
     }
 
     pub fn wipe_flock(&mut self, index: usize) {
+        self.dirty = true;
         if index >= self.map_cells.len() {
             return;
         }
@@ -205,6 +221,7 @@ impl Snarf {
     }
 
     pub fn store_forget(&mut self, index: usize, forgotten: bool) {
+        self.dirty = true;
         if index >= self.map_cells.len() {
             return;
         }
@@ -220,6 +237,7 @@ impl Snarf {
     }
 
     pub fn forward_to(&mut self, index: usize, new_snarf_id: u32, new_index: u32) {
+        self.dirty = true;
         if index >= self.map_cells.len() {
             return;
         }
@@ -255,6 +273,7 @@ impl Snarf {
     }
 
     pub fn compact(&mut self) {
+        self.dirty = true;
         let mut allocated: Vec<(usize, u32, u32, bool)> = self.map_cells.iter()
             .enumerate()
             .filter(|(_, c)| c.is_allocated() && !c.is_forwarded())
@@ -427,6 +446,56 @@ impl SnarfStore {
         snarf.write_flock(index, flock_data).ok()?;
         Some(FlockLocation::new(snarf_id, index as u32))
     }
+
+    pub fn dirty_snarf_ids(&self) -> Vec<u32> {
+        self.snarfs.iter()
+            .enumerate()
+            .filter(|(_, s)| s.is_dirty())
+            .map(|(i, _)| i as u32)
+            .collect()
+    }
+
+    pub fn flush_to_urdi(&mut self, urdi: &mut UrdiFile) -> io::Result<()> {
+        self.flush_to_urdi_with_offset(urdi, 0)
+    }
+
+    pub fn flush_to_urdi_with_offset(&mut self, urdi: &mut UrdiFile, offset: u32) -> io::Result<()> {
+        for (id, snarf) in self.snarfs.iter_mut().enumerate() {
+            if snarf.is_dirty() {
+                urdi.write_snarf(offset + id as u32, snarf.to_bytes())?;
+                snarf.clear_dirty();
+            }
+        }
+        urdi.flush()?;
+        Ok(())
+    }
+
+    pub fn load_from_urdi(urdi: &mut UrdiFile) -> io::Result<Self> {
+        Self::load_from_urdi_with_offset(urdi, 0)
+    }
+
+    pub fn load_from_urdi_with_offset(urdi: &mut UrdiFile, offset: u32) -> io::Result<Self> {
+        let snarf_size = urdi.snarf_size();
+        let count = urdi.snarf_count().saturating_sub(offset);
+        let mut snarfs = Vec::with_capacity(count as usize);
+        for id in 0..count {
+            match urdi.read_snarf(offset + id)? {
+                Some(data) => {
+                    snarfs.push(Snarf::from_bytes(snarf_size, data)?);
+                }
+                None => {
+                    snarfs.push(Snarf::new(snarf_size));
+                }
+            }
+        }
+        Ok(SnarfStore { snarfs, snarf_size })
+    }
+
+    pub fn ensure_capacity(&mut self, min_count: u32) {
+        while self.snarfs.len() < min_count as usize {
+            self.snarfs.push(Snarf::new(self.snarf_size));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -577,5 +646,136 @@ mod tests {
         snarf.allocate(0, 42);
         assert_eq!(snarf.flock_size(0), Some(42));
         assert_eq!(snarf.flock_size(1), None);
+    }
+
+    #[test]
+    fn snarf_dirty_tracking() {
+        let mut snarf = Snarf::new(256);
+        assert!(snarf.is_dirty());
+        snarf.clear_dirty();
+        assert!(!snarf.is_dirty());
+        snarf.allocate(0, 16);
+        assert!(snarf.is_dirty());
+    }
+
+    #[test]
+    fn snarf_write_marks_dirty() {
+        let mut snarf = Snarf::new(256);
+        snarf.allocate(0, 16);
+        snarf.clear_dirty();
+        assert!(!snarf.is_dirty());
+        snarf.write_flock(0, &vec![1u8; 16]).unwrap();
+        assert!(snarf.is_dirty());
+    }
+
+    #[test]
+    fn snarf_wipe_marks_dirty() {
+        let mut snarf = Snarf::new(256);
+        snarf.allocate(0, 16);
+        snarf.clear_dirty();
+        snarf.wipe_flock(0);
+        assert!(snarf.is_dirty());
+    }
+
+    struct TempDir(std::path::PathBuf);
+
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "xudanu_snarf_test_{}_{}", name, std::process::id()
+            ));
+            let _ = std::fs::create_dir_all(&dir);
+            TempDir(dir)
+        }
+        fn join(&self, name: &str) -> std::path::PathBuf {
+            self.0.join(name)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn snarf_store_flush_and_load() {
+        let dir = TempDir::new("flush_load");
+        let path = dir.join("test.xu");
+        let snarf_size = 256;
+
+        let loc1;
+        let loc2;
+        {
+            let mut store = SnarfStore::new(snarf_size);
+            loc1 = store.allocate_and_write(&vec![0xAAu8; 20]).unwrap();
+            loc2 = store.allocate_and_write(&vec![0xBBu8; 30]).unwrap();
+
+            let mut urdi = UrdiFile::create(
+                &path, snarf_size as u32, store.snarf_count(), 0, SNARF_INFO_COUNT,
+            ).unwrap();
+            store.flush_to_urdi(&mut urdi).unwrap();
+            urdi.sync_all().unwrap();
+        }
+        {
+            let mut urdi = UrdiFile::open(&path).unwrap();
+            let mut store = SnarfStore::load_from_urdi(&mut urdi).unwrap();
+            assert_eq!(store.read_flock(&loc1).unwrap(), vec![0xAAu8; 20]);
+            assert_eq!(store.read_flock(&loc2).unwrap(), vec![0xBBu8; 30]);
+        }
+    }
+
+    #[test]
+    fn snarf_store_incremental_flush() {
+        let dir = TempDir::new("incremental");
+        let path = dir.join("test.xu");
+        let snarf_size = 256;
+
+        let loc1;
+        let loc2;
+        {
+            let mut store = SnarfStore::new(snarf_size);
+            let mut urdi = UrdiFile::create(
+                &path, snarf_size as u32, 8, 0, SNARF_INFO_COUNT,
+            ).unwrap();
+
+            loc1 = store.allocate_and_write(&vec![1u8; 10]).unwrap();
+            store.flush_to_urdi(&mut urdi).unwrap();
+            urdi.sync_all().unwrap();
+
+            assert!(store.dirty_snarf_ids().is_empty());
+
+            loc2 = store.allocate_and_write(&vec![2u8; 10]).unwrap();
+            assert!(!store.dirty_snarf_ids().is_empty());
+            store.flush_to_urdi(&mut urdi).unwrap();
+            urdi.sync_all().unwrap();
+        }
+        {
+            let mut urdi = UrdiFile::open(&path).unwrap();
+            let store = SnarfStore::load_from_urdi(&mut urdi).unwrap();
+            assert_eq!(store.read_flock(&loc1).unwrap(), vec![1u8; 10]);
+            assert_eq!(store.read_flock(&loc2).unwrap(), vec![2u8; 10]);
+        }
+    }
+
+    #[test]
+    fn snarf_store_load_empty_slots() {
+        let dir = TempDir::new("empty_slots");
+        let path = dir.join("test.xu");
+        let snarf_size = 256;
+
+        {
+            let mut store = SnarfStore::new(snarf_size);
+            let mut urdi = UrdiFile::create(
+                &path, snarf_size as u32, store.snarf_count(), 0, SNARF_INFO_COUNT,
+            ).unwrap();
+            store.flush_to_urdi(&mut urdi).unwrap();
+            urdi.sync_all().unwrap();
+        }
+        {
+            let mut urdi = UrdiFile::open(&path).unwrap();
+            let store = SnarfStore::load_from_urdi(&mut urdi).unwrap();
+            assert_eq!(store.snarf_count(), SNARF_INFO_COUNT);
+        }
     }
 }

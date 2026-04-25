@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::edition::backend::BeId;
 use crate::edition::edition::Edition;
+use crate::edition::orgl::OrglRoot;
 use crate::edition::range_element::{Carrier, RangeElement};
 use crate::edition::work::Work;
 use crate::edition::xn_region::XnRegion;
@@ -13,7 +14,7 @@ use crate::persist::traits::Persistent;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-struct EditionSnapshot {
+pub struct EditionSnapshot {
     entries: Vec<(i64, RangeElement)>,
     default: Option<RangeElement>,
     domain_start: Option<i64>,
@@ -21,7 +22,7 @@ struct EditionSnapshot {
 }
 
 impl EditionSnapshot {
-    fn from_edition(edition: &Edition) -> Self {
+    pub fn from_edition(edition: &Edition) -> Self {
         let entries: Vec<(i64, RangeElement)> = edition
             .all_entries()
             .into_iter()
@@ -47,31 +48,37 @@ impl EditionSnapshot {
         }
     }
 
-    fn to_edition(&self) -> Edition {
+    pub fn to_edition(&self) -> Edition {
         if let Some(ref default) = self.default {
             let region = if self.domain_infinite_above {
                 XnRegion::above(self.domain_start.unwrap_or(0))
             } else {
                 XnRegion::empty()
             };
-            let mut edition = Edition::with_default(region, default.clone());
-            for (pos, elem) in &self.entries {
-                edition = edition.with(*pos, elem.clone());
-            }
-            edition
+            let carriers: Vec<(i64, Arc<Carrier>)> = self.entries.iter()
+                .map(|(pos, elem)| (*pos, Arc::new(Carrier::new(elem.clone()))))
+                .collect();
+            Edition { orgl: OrglRoot::from_bulk_entries(carriers, Some(Arc::new(Carrier::new(default.clone()))), region) }
         } else {
-            let mut edition = Edition::empty();
-            for (pos, elem) in &self.entries {
-                edition = edition.with(*pos, elem.clone());
-            }
-            edition
+            let carriers: Vec<(i64, Arc<Carrier>)> = self.entries.iter()
+                .map(|(pos, elem)| (*pos, Arc::new(Carrier::new(elem.clone()))))
+                .collect();
+            let n = carriers.len();
+            let region = if n > 0 {
+                let first = carriers.first().unwrap().0;
+                let last = carriers.last().unwrap().0;
+                XnRegion::interval(first, last + 1)
+            } else {
+                XnRegion::empty()
+            };
+            Edition { orgl: OrglRoot::from_bulk_entries(carriers, None, region) }
         }
     }
 }
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-struct WorkSnapshot {
+pub struct WorkSnapshot {
     be_id: BeId,
     owner: Option<BeId>,
     revision_count: u64,
@@ -83,7 +90,7 @@ struct WorkSnapshot {
 }
 
 impl WorkSnapshot {
-    fn from_work(work: &Work) -> Self {
+    pub fn from_work(work: &Work) -> Self {
         WorkSnapshot {
             be_id: work.be_id(),
             owner: work.owner(),
@@ -100,7 +107,7 @@ impl WorkSnapshot {
         }
     }
 
-    fn to_work(&self, flock_id: FlockId, info: Option<FlockInfo>) -> PersistentWork {
+    pub fn to_work(&self, flock_id: FlockId, info: Option<FlockInfo>) -> PersistentWork {
         let current = self.current.to_edition();
         let history: BTreeMap<u64, Edition> = self.history
             .iter()

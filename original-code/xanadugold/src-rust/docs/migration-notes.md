@@ -337,3 +337,115 @@ Connect with any WebSocket client:
 5. **Auth tokens**: After login, issue a session token that can be passed in WS upgrade headers for reconnection.
 
 6. **Heartbeat timeout**: Close connections that don't send heartbeats within a configurable interval.
+
+## Phase 9: File-Backed Persistence
+
+### What was implemented
+
+Four new modules under `src/persist/` and server integration:
+
+| Module | C++ Original | Rust Implementation |
+|---|---|---|
+| `persist/urdi.rs` | `Urdi` / `UrdiView` / `SnarfHandle` (urdix.hxx) | `UrdiFile` — file-backed snarf read/write with guard records |
+| `persist/file_storage.rs` | `SnarfPacker` + `Turtle` (packerx.hxx, turtlex.hxx) | `FileBackedStorage` — combines SnarfStorage + UrdiFile with meta record |
+| `snarf.rs` extensions | `SnarfHandler::commitWrite()` (snfinfox.hxx) | Dirty tracking + `flush_to_urdi`/`load_from_urdi` on SnarfStore |
+| `server/server.rs` additions | `FromDiskPlan::connection()` + `DiskConnection` (diskmanx.hxx) | `Server::to_snapshot()`/`from_snapshot()` + `checkpoint_to_file()`/`restore_from_file()` |
+| `bin/xudanu-server.rs` | `BuildUrdiFile` + server main (buildx.cxx) | CLI with `init`/`run`/`verify` subcommands + graceful shutdown |
+
+### On-disk format (`.xu` file)
+
+```
+┌──────────────────────────────────────┐
+│ File Header (32 bytes)                │
+│   magic: "XUD1" | version: 1         │
+│   snarf_size, snarf_count            │
+│   stage_count, data_start             │
+│   header_crc (FNV-1a)                │
+├──────────────────────────────────────┤
+│ Meta Snarf 0 (guard + data)           │  MetaRecord: counters + flock index
+│ Reserved Snarf 1                      │  Future: Turtle root object
+├──────────────────────────────────────┤
+│ Data Snarf 0 (guard + data)           │  Flock data
+│ Data Snarf 1                          │
+│ ...                                   │
+├──────────────────────────────────────┤
+│ Stage Area (stage_count snarfs)       │  Future: double-buffer
+└──────────────────────────────────────┘
+```
+
+Each snarf has a 32-byte guard record: magic, snarf_id, cycle, data_len, data_hash (FNV-1a), flags, guard_crc. Guards detect partial writes and corruption.
+
+### Server snapshot format
+
+The server state is serialized as JSON to `<data-dir>/server.json`:
+
+```json
+{
+  "grand_map_id_counter": 1005,
+  "session_counter": 2,
+  "operation_counter": 42,
+  "system_clubs": { "public_club": 1000, "admin_club": 1001, ... },
+  "works": [
+    { "work": { "be_id": 1004, "current": { "entries": [...], ... }, ... }, "grabber": null, ... }
+  ],
+  "clubs": [...],
+  "standalone_editions": [...]
+}
+```
+
+Works and editions use the existing `WorkSnapshot`/`EditionSnapshot` types from `edition/persistent.rs`.
+
+### Key design decisions
+
+1. **Buffered I/O, not mmap** — `UrdiFile` uses `std::fs::File` with seek+read+write. Simpler, more portable, no page fault surprises. mmap can be added later as an optimization.
+
+2. **Guard records per snarf** — 32-byte header with FNV-1a hash, magic `XNSR`, snarf ID, cycle counter. Detects partial writes and corruption on each individual snarf.
+
+3. **SnarfStore offset from UrdiFile** — The first `DATA_SNARF_OFFSET` (2) UrdiFile slots are reserved for system use (meta, turtle). SnarfStore snarfs are offset by this amount. This prevents the SnarfStore's info snarfs from colliding with the meta record.
+
+4. **Meta record replaces Turtle** — A `MetaRecord` struct stores the hash/token counters and flock index (FlockId → FlockLocation + FlockFlags). This serves the same role as Gold's Turtle for v1. A full Turtle object graph can be added later.
+
+5. **Lazy loading in FileBackedStorage** — `fetch()` first checks the in-memory registry, then falls through to reading from the snarf store. Objects are deserialized on first access, not all at startup. This avoids requiring type registration before opening.
+
+6. **Server snapshot is JSON, not flock-based** — The server state is serialized as a single JSON file, not as individual flocks in the storage engine. This is simpler for v1. A future phase can migrate to per-object persistence using FileBackedStorage.
+
+7. **Grabs not preserved across restart** — Sessions are ephemeral. `WorkState.grabber` is always set to `None` during restore. Any work that was grabbed at checkpoint time is released on restart.
+
+8. **Rollback wipes snarf cells** — Fixed a gap where `SnarfStorage::rollback()` previously only removed metadata for new flocks. Now also wipes the actual snarf cell data, preventing leaked space.
+
+9. **CLI subcommands** — `xudanu-server init <dir>` creates a new data directory, `xudanu-server run [addr] [dir>` starts the server with optional persistence, `xudanu-server verify <dir>` checks snapshot integrity. SIGINT triggers a checkpoint before exit.
+
+### Portability gaps from Gold
+
+| Gap | Gold Feature | Rust Status | Plan |
+|---|---|---|---|
+| Staging area double-buffer | Write to staging snarfs, then atomically swap | Guard records provide crash detection but no double-buffer | Add staging area for stronger atomicity |
+| Full Turtle object graph | Turtle holds boot category + cookbook + protocol | MetaRecord stores counters + flock index | Add Turtle for complex boot scenarios |
+| Purger | Converts clean shepherds to stubs, evicts from RAM | Everything in-memory, no stubs | Add when memory-constrained |
+| Agenda | Persistent work queue processed at endConsistent | Not yet | Add for production |
+| Per-object disk persistence | Each Work/Edition is a separate flock on disk | Single JSON snapshot for entire server | Migrate to per-object persistence |
+| Write-ahead log | Ongoing operations logged for crash recovery | Checkpoint-based (write+sync) | Add WAL for sub-second recovery |
+| Urdi device partition | Raw disk device access | Regular file I/O | Not needed for modern systems |
+| Endian detection | Multi-endian guard records | Little-endian only | Add if cross-platform needed |
+
+### Enhancement ideas for future phases
+
+1. **Per-object persistence**: Store each Work/Edition as a separate flock in FileBackedStorage instead of a single JSON blob. Enables incremental checkpointing and lower memory usage on load.
+
+2. **Write-ahead log**: Log each mutation before applying it. On crash, replay the WAL to recover. Sub-second recovery instead of losing the last checkpoint interval.
+
+3. **mmap optimization**: Replace `std::fs::File` with `memmap2` for snarf access. Avoids explicit read/write syscalls for frequently accessed snarfs.
+
+4. **Incremental checkpoint**: Only write changed objects since last checkpoint. Reduces I/O for large stores with frequent checkpoints.
+
+5. **Compression**: Snarf-level LZ4/Zstd compression for flocks that haven't changed recently.
+
+6. **File locking**: Use `flock(2)` or `fcntl(F_SETLK)` to prevent multiple server instances from opening the same data directory.
+
+### Test counts
+
+| Phase | Tests | Notes |
+|---|---|---|
+| Phase 8 | 567 unit + 37 integration | WebSocket transport + audit |
+| Phase 9 | 603 unit + 37 integration | +14 urdi + 6 snarf + 8 file_storage + 7 server checkpoint + 1 rollback fix |
+| **Total** | **640** | All passing, 12 ignored (stress tests) |
