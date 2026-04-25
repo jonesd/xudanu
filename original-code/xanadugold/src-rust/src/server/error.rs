@@ -1,6 +1,7 @@
 use crate::edition::BeId;
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ServerError {
     NotAuthorized,
     NotFound(String),
@@ -9,7 +10,7 @@ pub enum ServerError {
     AlreadyGrabbed { work: BeId, by: Option<super::session::SessionId> },
     SessionRequired,
     InvalidArgument(String),
-    TypeMismatch { expected: &'static str, found: &'static str },
+    TypeMismatch { expected: String, found: String },
     LockFailed(String),
     SessionNotFound(super::session::SessionId),
     WorkNotFound(BeId),

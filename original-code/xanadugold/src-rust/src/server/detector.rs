@@ -2,6 +2,7 @@ use crate::edition::BeId;
 use crate::edition::XnRegion;
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Event {
     WorkGrabbed {
         work_be_id: BeId,

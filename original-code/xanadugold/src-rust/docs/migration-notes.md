@@ -237,3 +237,103 @@ A new `src/server/` module with 7 files:
 5. **Rate limiting**: Add rate limiting per session to prevent abuse. Not needed in Gold (trusted local connections).
 
 6. **Audit log**: Record all mutations (create, revise, grab, release) with session and timestamp. Gold doesn't have this explicitly but the revision history captures some of it.
+
+## Phase 8: WebSocket Transport Layer
+
+### What was implemented
+
+A new `src/server/transport/` module with 7 files, gated behind the `server` feature:
+
+| Module | Purpose |
+|---|---|
+| `varint.rs` | LEB128 varint encoding/decoding (replaces Gold's humber encoding) |
+| `protocol.rs` | Wire types: `WireRequest`, `ResponseValue`, `WireEvent`, `OperationCode`, `ErrorCode`, `EditionPayload`, `WireFrame`, `SubscribeRequest`, `DetectorType`, `EventPayload` |
+| `codec.rs` | `WireCodec` trait + `BinaryCodec` (postcard) + `JsonCodec` (serde_json) — dual format support |
+| `shared.rs` | `AppState`, `ServerHandle` (Arc<Mutex<Server>>), `SharedState` |
+| `channel.rs` | `ChannelDetector` — bridges sync Detector trait to async mpsc channel |
+| `dispatch.rs` | `dispatch()` — maps WireRequest variants to Server method calls |
+| `handler.rs` | axum WS upgrade handler, read/write loops, subscription management |
+
+Plus `src/bin/xudanu-server.rs` — the standalone server binary entry point.
+
+### Key design decisions
+
+1. **Dual-format WireCodec**: The `WireCodec` trait abstracts serialization. `BinaryCodec` uses a 4-byte header + LEB128 varint + postcard binary encoding (compact). `JsonCodec` uses human-readable JSON text frames (easy for third-party integrations). Selection happens at WebSocket upgrade time via `?format=json` query parameter.
+
+2. **Arc<Mutex<Server>>**: The synchronous Server is wrapped in `std::sync::Mutex` (not tokio's async Mutex). Since all Server methods are synchronous with no await points, std Mutex prevents lock-held-across-yield bugs and has lower overhead.
+
+3. **Single writer task**: All outgoing messages (responses, events, heartbeats) flow through a single `mpsc::unbounded_channel` to a dedicated writer task that owns the WS sender. This avoids split-borrow issues and ensures ordered message delivery.
+
+4. **ChannelDetector bridge**: The sync `Detector` trait sends events through an `mpsc::UnboundedSender<EventMessage>`. The writer task receives and encodes them for the wire.
+
+5. **Operation codes**: Numeric for binary (`0x0303` = WorkRevise), string for JSON (`"work_revise"`). Both map to the same `OperationCode` enum which drives the dispatch.
+
+6. **EditionPayload**: Editions are serialized as either `Text(String)`, `Entries(Vec<(i64, RangeElement)>)`, or `Empty`. This avoids serializing the O-tree directly — only the logical content crosses the wire.
+
+7. **All new deps optional**: tokio, axum, postcard, futures-util, tracing, tracing-subscriber are all behind the `server` feature flag. The core crate remains WASM-friendly.
+
+### Binary frame layout
+
+```
+[1B version][1B msg_type][2B request_id BE][payload...]
+
+REQUEST:  [varint op_code][varint payload_len][postcard payload]
+RESPONSE: [varint payload_len][postcard ResponseValue]
+ERROR:    [1B error_code][varint msg_len][UTF-8 message]
+EVENT:    [varint payload_len][postcard WireEvent]
+SUBSCRIBE:[varint payload_len][postcard SubscribeRequest]
+```
+
+### JSON frame layout
+
+```json
+{"v":1,"type":"request","id":42,"op":"work_revise","payload":{"work_id":123,"edition":{...}}}
+{"v":1,"type":"response","id":42,"value":{"type":"humber","value":2}}
+{"v":1,"type":"error","id":42,"code":"not_grabbed","message":"work 123 not grabbed"}
+{"v":1,"type":"event","id":7,"event":{"type":"work_revised","payload":{...}}}
+```
+
+### Running the server
+
+```bash
+cargo run --features server --bin xudanu-server
+# listens on 127.0.0.1:8080
+
+cargo run --features server --bin xudanu-server 0.0.0.0:3000
+# custom address
+```
+
+Connect with any WebSocket client:
+- `ws://127.0.0.1:8080/xudanu` — binary protocol
+- `ws://127.0.0.1:8080/xudanu?format=json` — JSON protocol
+
+### Test counts
+
+- Without `server` feature: 513 pass, 0 fail
+- With `server` feature: 553 pass, 0 fail (+40 new transport tests)
+
+### Portability gaps from Gold
+
+| Gap | Gold Feature | Rust Status | Plan |
+|---|---|---|---|
+| Custom binary protocol | Binary2 over raw TCP with humber encoding | WebSocket + postcard or JSON | More accessible; same semantic coverage |
+| Promise/future system | XuPromise with lazy evaluation | Synchronous dispatch; Result<T> | Add async client SDK |
+| Wire request numbering | 470+ numbered message handlers | ~40 OperationCode variants | Expand as needed |
+| MultiLock auth over wire | Full auth protocol | Simplified; BooLock/MatchLock/ChallengeLock supported | Add complete auth flow |
+| Subprotocol negotiation | WS subprotocol header | Query parameter `?format=json` | Add subprotocol support |
+| TLS | Not in original (trusted network) | Not yet | Add with `axum-server` + rustls |
+| Connection multiplexing | Single TCP connection for all ops | Single WS per client | Sufficient for Phase 8 |
+
+### Enhancement ideas
+
+1. **Integration tests with real WS client**: Add `tokio-tungstenite` as a dev-dependency for end-to-end tests that spin up the server and exercise the full JSON and binary protocol.
+
+2. **REST API**: Add HTTP routes on the same axum Router for read-only queries (`GET /works/{id}`, `GET /clubs`). Useful for monitoring and tooling.
+
+3. **TLS**: Add `axum-server` with rustls for `wss://` support.
+
+4. **Subprotocol negotiation**: Use `Sec-WebSocket-Protocol` header instead of query parameter for format selection.
+
+5. **Auth tokens**: After login, issue a session token that can be passed in WS upgrade headers for reconnection.
+
+6. **Heartbeat timeout**: Close connections that don't send heartbeats within a configurable interval.
