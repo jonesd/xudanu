@@ -1,214 +1,546 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>xudanu</title>
 <style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --bg4: #30363d;
+  --fg: #e6edf3; --fg2: #8b949e; --fg3: #484f58;
+  --accent: #58a6ff; --green: #3fb950; --red: #f85149; --orange: #d29922;
+  --purple: #bc8cff; --cyan: #39d353;
+  --radius: 6px;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Menlo', 'Consolas', monospace; background: #1a1a2e; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
-header { background: #16213e; padding: 8px 16px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #0f3460; }
-header h1 { color: #e94560; font-size: 16px; }
-#status { font-size: 12px; color: #4ecdc4; }
-.main { display: flex; flex: 1; overflow: hidden; }
-.sidebar { width: 220px; background: #16213e; border-right: 1px solid #0f3460; overflow-y: auto; }
-.sidebar h2 { font-size: 11px; color: #e94560; padding: 8px; text-transform: uppercase; letter-spacing: 1px; }
-.sidebar .item { padding: 6px 8px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #0f3460; }
-.sidebar .item:hover { background: #0f3460; }
-.sidebar .item.active { background: #e94560; color: white; }
-.sidebar .item .id { color: #4ecdc4; }
-.center { flex: 1; display: flex; flex-direction: column; }
-.toolbar { background: #16213e; padding: 6px 12px; display: flex; gap: 8px; border-bottom: 1px solid #0f3460; font-size: 12px; align-items: center; }
-.toolbar button { background: #0f3460; color: #e0e0e0; border: none; padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px; }
-.toolbar button:hover { background: #e94560; }
-.toolbar button:disabled { opacity: 0.4; cursor: default; }
-.toolbar .rev { color: #4ecdc4; }
-#docview { flex: 1; padding: 16px; overflow-y: auto; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
-#docview .placeholder { color: #555; font-style: italic; }
-.right { width: 240px; background: #16213e; border-left: 1px solid #0f3460; overflow-y: auto; }
-.right h2 { font-size: 11px; color: #e94560; padding: 8px; text-transform: uppercase; letter-spacing: 1px; }
-.right .link-item { padding: 6px 8px; font-size: 12px; border-bottom: 1px solid #0f3460; cursor: pointer; }
-.right .link-item:hover { background: #0f3460; }
-.right .link-item .arrow { color: #e94560; }
-.footer { background: #16213e; border-top: 1px solid #0f3460; padding: 6px 12px; display: flex; gap: 8px; }
-#cmd { flex: 1; background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; padding: 6px 10px; font-family: inherit; font-size: 13px; }
-#cmd:focus { border-color: #e94560; outline: none; }
-.footer button { background: #e94560; color: white; border: none; padding: 6px 16px; cursor: pointer; font-family: inherit; }
-.footer button:hover { background: #c73e54; }
-#log { display: none; background: #111; color: #888; padding: 8px; font-size: 11px; max-height: 120px; overflow-y: auto; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--fg); height: 100vh; display: flex; flex-direction: column; }
+a { color: var(--accent); }
+
+header { background: var(--bg2); padding: 8px 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--bg3); flex-shrink: 0; }
+header .logo { font-weight: 700; font-size: 15px; color: var(--accent); letter-spacing: -0.5px; }
+header .status { font-size: 12px; color: var(--fg2); }
+header .status.connected { color: var(--green); }
+header .spacer { flex: 1; }
+header .session-info { font-size: 11px; color: var(--fg2); background: var(--bg3); padding: 3px 8px; border-radius: var(--radius); }
+
+.layout { display: flex; flex: 1; overflow: hidden; }
+
+.sidebar { width: 240px; background: var(--bg2); border-right: 1px solid var(--bg3); display: flex; flex-direction: column; flex-shrink: 0; }
+.sidebar-header { padding: 12px 12px 8px; display: flex; align-items: center; justify-content: space-between; }
+.sidebar-header h2 { font-size: 11px; color: var(--fg2); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+.sidebar-header button { background: var(--accent); color: var(--bg); border: none; padding: 4px 10px; border-radius: var(--radius); cursor: pointer; font-size: 12px; font-weight: 600; }
+.sidebar-header button:hover { opacity: 0.85; }
+.work-list { flex: 1; overflow-y: auto; }
+.work-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--bg3); display: flex; align-items: center; gap: 8px; }
+.work-item:hover { background: var(--bg3); }
+.work-item.active { background: var(--bg3); border-left: 2px solid var(--accent); }
+.work-item .id { font-size: 10px; color: var(--fg3); font-family: 'SF Mono', Menlo, monospace; }
+.work-item .meta { font-size: 12px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.work-item .rev { font-size: 10px; color: var(--fg3); }
+.work-item .badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+.badge-editing { background: var(--orange); color: var(--bg); }
+.badge-locked { background: var(--red); color: white; }
+
+.center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+.toolbar { background: var(--bg2); padding: 6px 12px; display: flex; gap: 6px; border-bottom: 1px solid var(--bg3); align-items: center; flex-shrink: 0; }
+.toolbar button { background: var(--bg3); color: var(--fg); border: none; padding: 5px 12px; border-radius: var(--radius); cursor: pointer; font-size: 12px; font-family: inherit; }
+.toolbar button:hover { background: var(--bg4); }
+.toolbar button:disabled { opacity: 0.35; cursor: default; }
+.toolbar button.primary { background: var(--green); color: var(--bg); font-weight: 600; }
+.toolbar button.primary:hover { opacity: 0.85; }
+.toolbar button.danger { background: var(--red); color: white; }
+.toolbar .sep { width: 1px; height: 20px; background: var(--bg4); margin: 0 4px; }
+.toolbar .rev-info { font-size: 11px; color: var(--fg2); font-family: 'SF Mono', Menlo, monospace; margin-left: auto; }
+.toolbar .rev-info .editing { color: var(--orange); font-weight: 600; }
+
+.presence-bar { background: var(--bg2); padding: 4px 12px; border-bottom: 1px solid var(--bg3); display: flex; gap: 8px; align-items: center; flex-shrink: 0; min-height: 28px; }
+.presence-bar .label { font-size: 10px; color: var(--fg3); text-transform: uppercase; }
+.presence-user { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+
+.revision-slider { background: var(--bg2); padding: 6px 12px; border-bottom: 1px solid var(--bg3); display: none; align-items: center; gap: 8px; flex-shrink: 0; }
+.revision-slider.visible { display: flex; }
+.revision-slider label { font-size: 11px; color: var(--fg2); white-space: nowrap; }
+.revision-slider input[type=range] { flex: 1; accent-color: var(--accent); }
+.revision-slider .rev-num { font-size: 11px; color: var(--accent); font-family: 'SF Mono', Menlo, monospace; min-width: 50px; text-align: right; }
+.revision-slider button { background: var(--bg3); color: var(--fg); border: none; padding: 3px 8px; border-radius: var(--radius); cursor: pointer; font-size: 11px; }
+
+.editor-area { flex: 1; overflow-y: auto; position: relative; }
+.editor-content { padding: 20px 24px; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-wrap: break-word; min-height: 100%; outline: none; }
+.editor-content:empty::before { content: 'Select or create a document...'; color: var(--fg3); }
+.editor-content[contenteditable=true] { background: var(--bg); }
+.placeholder-text { color: var(--fg3); font-style: italic; }
+
+.right-panel { width: 260px; background: var(--bg2); border-left: 1px solid var(--bg3); display: flex; flex-direction: column; flex-shrink: 0; }
+.right-panel .panel-header { padding: 12px 12px 8px; }
+.right-panel h2 { font-size: 11px; color: var(--fg2); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+.link-list { flex: 1; overflow-y: auto; }
+.link-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--bg3); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.link-item:hover { background: var(--bg3); }
+.link-item .arrow { color: var(--accent); }
+.link-item .id { font-size: 10px; color: var(--fg3); font-family: 'SF Mono', Menlo, monospace; }
+
+.footer { background: var(--bg2); border-top: 1px solid var(--bg3); padding: 6px 12px; display: flex; gap: 8px; flex-shrink: 0; }
+#cmd { flex: 1; background: var(--bg); color: var(--fg); border: 1px solid var(--bg4); padding: 6px 10px; border-radius: var(--radius); font-family: 'SF Mono', Menlo, monospace; font-size: 12px; }
+#cmd:focus { border-color: var(--accent); outline: none; }
+.footer button { background: var(--bg4); color: var(--fg); border: none; padding: 6px 14px; border-radius: var(--radius); cursor: pointer; font-family: inherit; font-size: 12px; }
+
+.toast { position: fixed; bottom: 50px; right: 16px; background: var(--bg3); color: var(--fg); padding: 8px 16px; border-radius: var(--radius); font-size: 12px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 100; }
+.toast.show { opacity: 1; }
+
+.color-legend { padding: 12px; border-top: 1px solid var(--bg3); }
+.color-legend h3 { font-size: 10px; color: var(--fg3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-bottom: 3px; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 2px; }
+
+@media (max-width: 900px) {
+  .sidebar { width: 180px; }
+  .right-panel { width: 200px; }
+}
+@media (max-width: 700px) {
+  .sidebar, .right-panel { display: none; }
+}
 </style>
 </head>
 <body>
 <header>
-  <h1>xudanu</h1>
-  <div id="status">connecting...</div>
+  <span class="logo">xudanu</span>
+  <span class="status" id="status">connecting...</span>
+  <span class="spacer"></span>
+  <span class="session-info" id="sessionInfo"></span>
 </header>
-<div class="main">
+
+<div class="layout">
   <div class="sidebar">
-    <h2>Works</h2>
-    <div id="worklist"></div>
-  </div>
-  <div class="center">
-    <div class="toolbar">
+    <div class="sidebar-header">
+      <h2>Documents</h2>
       <button onclick="doCreate()">+ New</button>
-      <button onclick="doEdit()" id="btnEdit">Edit</button>
-      <button onclick="doSave()" id="btnSave" disabled>Save</button>
-      <button onclick="doCancel()" id="btnCancel" disabled>Cancel</button>
-      <span id="revInfo" class="rev"></span>
     </div>
-    <div id="docview"><span class="placeholder">Select or create a document.</span></div>
-    <div id="log"></div>
+    <div class="work-list" id="worklist"></div>
   </div>
-  <div class="right">
-    <h2>Links</h2>
-    <div id="linklist"></div>
+
+  <div class="center">
+    <div class="toolbar" id="toolbar">
+      <button id="btnEdit" onclick="doEdit()" disabled>Edit</button>
+      <button id="btnSave" onclick="doSave()" class="primary" disabled>Save</button>
+      <button id="btnCancel" onclick="doCancel()" class="danger" disabled>Cancel</button>
+      <div class="sep"></div>
+      <button id="btnHistory" onclick="toggleHistory()" disabled>History</button>
+      <button id="btnLinks" onclick="toggleLinks()" disabled>Links</button>
+      <span class="rev-info" id="revInfo"></span>
+    </div>
+    <div class="presence-bar" id="presenceBar" style="display:none">
+      <span class="label">Editors</span>
+      <div id="presenceUsers"></div>
+    </div>
+    <div class="revision-slider" id="revSlider">
+      <label>Revision</label>
+      <input type="range" id="revRange" min="0" max="0" value="0" oninput="onRevSlide(this.value)">
+      <span class="rev-num" id="revNum">0</span>
+      <button onclick="closeHistory()">Back to current</button>
+    </div>
+    <div class="editor-area">
+      <div class="editor-content" id="editor"></div>
+    </div>
+  </div>
+
+  <div class="right-panel" id="rightPanel" style="display:none">
+    <div class="panel-header"><h2>Links</h2></div>
+    <div class="link-list" id="linklist"></div>
+    <div class="color-legend">
+      <h3>Author Colors</h3>
+      <div id="legendItems"></div>
+    </div>
   </div>
 </div>
+
 <div class="footer">
-  <input id="cmd" placeholder="Type a command... (help for list)" autofocus />
+  <input id="cmd" placeholder="Type a command..." autofocus>
   <button onclick="sendCmd()">Run</button>
 </div>
+<div class="toast" id="toast"></div>
+
 <script>
+const AUTHOR_COLORS = [
+  '#58a6ff','#3fb950','#d29922','#f85149','#bc8cff',
+  '#39d353','#79c0ff','#ffa657','#ff7b72','#d2a8ff',
+  '#56d4dd','#7ee787','#e3b341','#ffa198','#b392f0'
+];
+
 let ws=null, nextId=1, sessionId=null, loggedIn=false;
-let works=[], currentWork=null, currentRev=0, totalRevs=0, editing=false;
+let works=[], currentWork=null, currentRev=0, totalRevs=0;
+let isEditing=false, viewingHistory=false;
+let subscriptions={};
+let presence={};
+let authorColors={};
+let authorMap={};
+let colorIdx=0;
+let pendingReq={};
+
 const $=id=>document.getElementById(id);
 
-function connectWs(){
-  const proto=location.protocol==='https:'?'wss:':'ws:';
-  ws=new WebSocket(proto+'//'+location.host+'/xudanu?format=json&version=2');
-  ws.onopen=()=>{$('status').textContent='Connected';};
-  ws.onmessage=ev=>{
-    const msg=JSON.parse(ev.data);
-    if(msg.type==='handshake'){doConnect();return;}
-    if(msg.type==='response'){handleResp(msg);return;}
-    if(msg.type==='event'){log('Event: '+JSON.stringify(msg.event));return;}
-    if(msg.type==='error'){log('Error: '+(msg.message||msg.code));return;}
-  };
-  ws.onclose=()=>{$('status').textContent='Disconnected';};
-  ws.onerror=()=>{$('status').textContent='Error';};
+function getAuthorColor(sessionId) {
+  if (!authorColors[sessionId]) {
+    authorColors[sessionId] = AUTHOR_COLORS[colorIdx % AUTHOR_COLORS.length];
+    colorIdx++;
+  }
+  return authorColors[sessionId];
 }
 
-function req(op,payload){
-  const id=nextId++;
-  const f={v:2,type:'request',id,op};
-  if(payload)f.payload=payload;
+function getAuthorName(sid) {
+  if (sid === sessionId) return 'You';
+  if (authorMap[sid]) return authorMap[sid];
+  return 'User ' + sid;
+}
+
+function toast(msg) {
+  const t=$('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2500);
+}
+
+function connectWs() {
+  const proto = location.protocol==='https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto+'//'+location.host+'/xudanu?format=json&version=2');
+  ws.onopen = () => { $('status').textContent='Connected'; $('status').className='status connected'; };
+  ws.onmessage = ev => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type==='handshake') { doConnect(); return; }
+    if (msg.type==='response') { handleResp(msg); return; }
+    if (msg.type==='event') { handleEvent(msg); return; }
+    if (msg.type==='error') { toast('Error: '+(msg.message||msg.code)); return; }
+  };
+  ws.onclose = () => { $('status').textContent='Disconnected'; $('status').className='status'; };
+  ws.onerror = () => { $('status').textContent='Error'; $('status').className='status'; };
+}
+
+function req(op, payload) {
+  const id = nextId++;
+  const f = {v:2, type:'request', id, op};
+  if (payload) f.payload = payload;
+  pendingReq[id] = op;
+  ws.send(JSON.stringify(f));
+  return id;
+}
+
+function subscribe(detType, targetId) {
+  const id = nextId++;
+  const f = {v:2, type:'subscribe', id, payload:{detector_type:detType, target_id:targetId}};
+  ws.send(JSON.stringify(f));
+  return id;
+}
+
+function unsubscribe(subId) {
+  const f = {v:2, type:'unsubscribe', id:subId};
   ws.send(JSON.stringify(f));
 }
 
-function doConnect(){req('session_connect');}
+function doConnect() { req('session_connect'); }
 
-function handleResp(msg){
-  const v=msg.value;
-  if(v&&v.value!==undefined&&typeof v.value==='number'&&!sessionId){
-    sessionId=v.value;req('session_login_public');return;
+function handleResp(msg) {
+  const op = pendingReq[msg.id];
+  delete pendingReq[msg.id];
+  const v = msg.value;
+
+  if (v && v.type==='humber' && !sessionId) {
+    sessionId = v.value;
+    $('sessionInfo').textContent = 'session '+sessionId;
+    req('session_login_public');
+    return;
   }
-  if(!loggedIn&&sessionId){loggedIn=true;refresh();return;}
-  if(v&&v.type==='work_list'){works=v.value;renderWorkList();return;}
-  if(v&&v.type==='edition'){
-    renderEdition(v.value);return;
+  if (!loggedIn && sessionId) { loggedIn=true; refresh(); return; }
+
+  if (v && v.type==='work_list') {
+    works = v.value;
+    renderWorkList();
+    return;
   }
-  if(v&&v.type==='humber'){
-    if(currentOp==='create'){currentWork=v.value;currentRev=0;totalRevs=1;editing=false;refresh();showWork(currentWork);return;}
-    if(currentOp==='revise'){currentRev=v.value;totalRevs=v.value;editing=false;refresh();showWork(currentWork);return;}
+  if (v && v.type==='edition') {
+    renderEdition(v.value, op==='history_fetch');
+    return;
   }
-  if(v&&v.type==='link_list'){renderLinks(v.value);return;}
-  if(v&&v.type==='boolean'&&currentOp==='grab'){editing=true;updateToolbar();return;}
-  if(v&&v.type==='void'){
-    if(currentOp==='release'){editing=false;updateToolbar();return;}
-    refresh();return;
+  if (v && v.type==='humber') {
+    if (op==='work_create') {
+      currentWork = v.value; currentRev=0; totalRevs=1; isEditing=false;
+      refresh(); showWork(currentWork);
+      toast('Document created');
+      return;
+    }
+    if (op==='work_revise') {
+      currentRev = v.value; totalRevs = v.value; isEditing=false;
+      updateToolbar();
+      toast('Saved revision '+v.value);
+      return;
+    }
   }
-  if(v&&v.type==='id'){refresh();return;}
-  log(JSON.stringify(v));
+  if (v && v.type==='link_list') { renderLinks(v.value); return; }
+  if (v && v.type==='boolean' && op==='work_grab') {
+    isEditing=true; updateToolbar();
+    $('editor').contentEditable='true'; $('editor').focus();
+    toast('Editing - type your changes');
+    return;
+  }
+  if (v && v.type==='void' && op==='work_release') {
+    isEditing=false; updateToolbar();
+    $('editor').contentEditable='false';
+    return;
+  }
+  if (v && v.type==='id') { refresh(); return; }
 }
 
-let currentOp='';
-const origReq=req;
-req=function(op,payload){currentOp=op;origReq(op,payload);};
+function handleEvent(msg) {
+  const ev = msg.event;
+  if (!ev) return;
 
-function refresh(){req('work_list');if(currentWork)req('link_list_for_work',{work_id:currentWork});}
+  if (ev.type==='work_revised') {
+    if (ev.payload.work_be_id === currentWork && !isEditing && !viewingHistory) {
+      currentRev = ev.payload.revision;
+      totalRevs = ev.payload.revision;
+      req('work_get_edition', {work_id: currentWork});
+      updateRevInfo();
+    } else if (ev.payload.work_be_id === currentWork) {
+      totalRevs = ev.payload.revision;
+      updateRevInfo();
+    }
+    if (ev.payload.session_id) {
+      const sid = ev.payload.session_id;
+      if (sid !== sessionId) {
+        const color = getAuthorColor(sid);
+        authorMap[sid] = authorMap[sid] || ('User '+sid);
+        toast(getAuthorName(sid)+' saved revision '+ev.payload.revision);
+      }
+    }
+  }
+  if (ev.type==='work_grabbed' && ev.payload.work_be_id === currentWork) {
+    const sid = ev.payload.session_id;
+    if (sid !== sessionId) {
+      presence[sid] = {editing: true};
+      updatePresence();
+      toast(getAuthorName(sid)+' started editing');
+    }
+  }
+  if (ev.type==='work_released' && ev.payload.work_be_id === currentWork) {
+    const sid = ev.payload.session_id;
+    if (sid !== sessionId) {
+      delete presence[sid];
+      updatePresence();
+    }
+  }
+}
 
-function renderWorkList(){
-  const el=$('worklist');el.innerHTML='';
-  if(!works.length){el.innerHTML='<div class="item" style="color:#555">No works yet</div>';return;}
-  for(const w of works){
-    const d=document.createElement('div');
-    d.className='item'+(w.work_id===currentWork?' active':'');
-    d.innerHTML='<span class="id">'+w.work_id+'</span> '+(w.is_grabbed?'<span style="color:#e94560">editing</span> ':'')+'r'+w.revision_count;
-    d.onclick=()=>{currentWork=w.work_id;currentRev=w.revision_count;totalRevs=w.revision_count;editing=false;showWork(w.work_id);refresh();};
+function refresh() {
+  req('work_list');
+  if (currentWork) req('link_list_for_work', {work_id: currentWork});
+}
+
+function showWork(id) {
+  Object.values(subscriptions).forEach(subId => unsubscribe(subId));
+  subscriptions = {};
+  presence = {};
+
+  currentWork = id; isEditing=false; viewingHistory=false;
+  $('editor').contentEditable='false';
+  closeHistory();
+
+  const s1 = subscribe('revision', id);
+  const s2 = subscribe('status', id);
+  subscriptions = {revision: s1, status: s2};
+
+  req('work_get_edition', {work_id: id});
+  req('link_list_for_work', {work_id: id});
+  req('work_revision_count', {work_id: id});
+  updateToolbar();
+}
+
+function renderWorkList() {
+  const el = $('worklist'); el.innerHTML='';
+  if (!works.length) { el.innerHTML='<div style="padding:12px;color:var(--fg3);font-size:12px">No documents yet</div>'; return; }
+  for (const w of works) {
+    const d = document.createElement('div');
+    d.className = 'work-item'+(w.work_id===currentWork?' active':'');
+    let badge = '';
+    if (w.is_grabbed) badge = '<span class="badge badge-editing">editing</span>';
+    d.innerHTML = '<span class="id">'+w.work_id+'</span><span class="meta">'+badge+'</span><span class="rev">r'+w.revision_count+'</span>';
+    d.onclick = () => { currentWork=w.work_id; currentRev=w.revision_count; totalRevs=w.revision_count; showWork(w.work_id); };
     el.appendChild(d);
   }
 }
 
-function showWork(id){
-  req('work_get_edition',{work_id:id});
-  req('link_list_for_work',{work_id:id});
-  updateToolbar();
+function renderEdition(ed, isHistoryView) {
+  const el = $('editor');
+  if (!ed || ed.empty!==undefined) {
+    el.innerHTML = '<span class="placeholder-text">Empty document</span>';
+    updateLegend();
+    return;
+  }
+  let text = '';
+  if (ed.text) text = ed.text;
+  else if (ed.entries) text = ed.entries.map(e => {
+    const el = e[1];
+    return el.Text ? el.Text.text : '['+JSON.stringify(el)+']';
+  }).join('');
+  else text = JSON.stringify(ed);
+
+  if (isHistoryView) {
+    el.innerHTML = '';
+    const span = document.createElement('span');
+    span.style.opacity = '0.6';
+    span.textContent = text;
+    el.appendChild(span);
+  } else {
+    el.textContent = text;
+  }
+  updateLegend();
 }
 
-function renderEdition(ed){
-  if(!ed){$('docview').innerHTML='<span class="placeholder">Empty</span>';return;}
-  let text='';
-  if(ed.text)text=ed.text;
-  else if(ed.entries)text=ed.entries.map(e=>{const el=e[1];return el.Text?el.Text.text:'['+JSON.stringify(el)+']';}).join('');
-  else if(ed.empty)text='';
-  else text=JSON.stringify(ed);
-  $('docview').textContent=text;
-  updateToolbar();
-}
-
-function renderLinks(links){
-  const el=$('linklist');el.innerHTML='';
-  if(!links||!links.length){el.innerHTML='<div style="padding:8px;color:#555;font-size:12px">No links</div>';return;}
-  for(const l of links){
-    const d=document.createElement('div');d.className='link-item';
-    const other=l.origin===currentWork?l.destination:l.origin;
-    d.innerHTML='<span class="id">'+l.link_id+'</span> <span class="arrow">&rarr;</span> <span class="id">'+other+'</span>';
-    d.onclick=()=>{currentWork=other;editing=false;showWork(other);refresh();};
+function renderLinks(links) {
+  const el = $('linklist'); el.innerHTML='';
+  if (!links||!links.length) { el.innerHTML='<div style="padding:12px;color:var(--fg3);font-size:12px">No links</div>'; return; }
+  for (const l of links) {
+    const d = document.createElement('div'); d.className='link-item';
+    const other = l.origin===currentWork ? l.destination : l.origin;
+    d.innerHTML = '<span class="id">'+l.link_id+'</span> <span class="arrow">&rarr;</span> <span class="id">'+other+'</span>';
+    d.onclick = () => { currentWork=other; showWork(other); refresh(); };
     el.appendChild(d);
   }
 }
 
-function updateToolbar(){
-  $('btnEdit').disabled=!currentWork||editing;
-  $('btnSave').disabled=!editing;
-  $('btnCancel').disabled=!editing;
-  $('revInfo').textContent=currentWork?'rev '+currentRev+'/'+totalRevs+(editing?' EDITING':''):'';
+function updatePresence() {
+  const bar = $('presenceBar');
+  const users = $('presenceUsers');
+  const keys = Object.keys(presence);
+  if (!keys.length && !isEditing) { bar.style.display='none'; return; }
+  bar.style.display='flex';
+  users.innerHTML = '';
+  if (isEditing) {
+    const s = document.createElement('span');
+    s.className = 'presence-user';
+    s.style.background = getAuthorColor(sessionId)+'22';
+    s.style.color = getAuthorColor(sessionId);
+    s.textContent = 'You (editing)';
+    users.appendChild(s);
+  }
+  for (const sid of keys) {
+    const s = document.createElement('span');
+    s.className = 'presence-user';
+    const c = getAuthorColor(parseInt(sid));
+    s.style.background = c+'22';
+    s.style.color = c;
+    s.textContent = getAuthorName(parseInt(sid)) + (presence[sid].editing ? ' (editing)' : '');
+    users.appendChild(s);
+  }
+  updateLegend();
 }
 
-function doCreate(){const name=prompt('Text for new document:');if(name===null)return;req('work_create',{edition:{text:name}});}
-function doEdit(){if(!currentWork)return;req('work_grab',{work_id:currentWork});}
-function doSave(){
-  if(!currentWork)return;
-  const text=$('docview').textContent;
-  req('work_revise',{work_id:currentWork,edition:{text}});
-}
-function doCancel(){if(!currentWork)return;req('work_release',{work_id:currentWork});}
-
-function sendCmd(){
-  const text=$('cmd').value.trim();if(!text)return;$('cmd').value='';
-  const parts=text.split(/\s+/),c=parts[0].toLowerCase(),a=parts.slice(1);
-  switch(c){
-    case'create-work':req('work_create',{edition:{text:a.join(' ')||'empty'}});break;
-    case'get-work':req('work_get_edition',{work_id:+a[0]});break;
-    case'list-works':req('work_list');break;
-    case'grab':req('work_grab',{work_id:+a[0]});break;
-    case'revise':req('work_revise',{work_id:+a[0],edition:{text:a.slice(1).join(' ')||''}});break;
-    case'release':req('work_release',{work_id:+a[0]});break;
-    case'history':req('work_revision_count',{work_id:+a[0]});break;
-    case'create-link':req('link_create',{origin:+a[0],destination:+a[1]});break;
-    case'get-link':req('link_get',{link_id:+a[0]});break;
-    case'list-links':req('link_list_for_work',{work_id:+a[0]});break;
-    case'delete-link':req('link_delete',{link_id:+a[0]});break;
-    case'find-content':req('find_works_for_content',{content_be_id:+a[0]});break;
-    case'club-create':if(a[0])req('club_create_named',{name:a[0],description:'empty'});else req('club_create',{description:'empty'});break;
-    case'club-list':req('club_names');break;
-    case'info':req('server_stats');break;
-    case'help':alert('Commands: create-work, get-work, list-works, grab, revise, release, history, create-link, get-link, list-links, delete-link, find-content, club-create, club-list, info');break;
-    default:log('Unknown: '+c);
+function updateLegend() {
+  const el = $('legendItems'); el.innerHTML='';
+  if (!Object.keys(authorMap).length && !sessionId) return;
+  const me = document.createElement('div'); me.className='legend-item';
+  me.innerHTML = '<span class="legend-swatch" style="background:'+getAuthorColor(sessionId)+'"></span>You';
+  el.appendChild(me);
+  for (const [sid, name] of Object.entries(authorMap)) {
+    const d = document.createElement('div'); d.className='legend-item';
+    d.innerHTML = '<span class="legend-swatch" style="background:'+getAuthorColor(parseInt(sid))+'"></span>'+name;
+    el.appendChild(d);
   }
 }
-function log(t){const d=$('d');d.style.display='block';d.innerHTML+=t+'<br>';}
 
-$('cmd').addEventListener('keydown',e=>{if(e.key==='Enter')sendCmd();});
-$('docview').contentEditable=false;
+function updateToolbar() {
+  $('btnEdit').disabled = !currentWork || isEditing;
+  $('btnSave').disabled = !isEditing;
+  $('btnCancel').disabled = !isEditing;
+  $('btnHistory').disabled = !currentWork || isEditing;
+  $('btnLinks').disabled = !currentWork;
+  updateRevInfo();
+  updatePresence();
+}
+
+function updateRevInfo() {
+  const info = $('revInfo');
+  if (!currentWork) { info.innerHTML=''; return; }
+  let html = '<span>rev '+currentRev+'/'+totalRevs+'</span>';
+  if (isEditing) html += ' <span class="editing">EDITING</span>';
+  info.innerHTML = html;
+  const range = $('revRange');
+  range.max = totalRevs;
+  range.value = currentRev;
+  $('revNum').textContent = currentRev;
+}
+
+function doCreate() {
+  const text = prompt('New document text:');
+  if (text === null) return;
+  req('work_create', {edition:{text: text||''}});
+}
+
+function doEdit() {
+  if (!currentWork) return;
+  req('work_grab', {work_id: currentWork});
+}
+
+function doSave() {
+  if (!currentWork) return;
+  const text = $('editor').textContent;
+  req('work_revise', {work_id: currentWork, edition:{text}});
+  $('editor').contentEditable='false';
+}
+
+function doCancel() {
+  if (!currentWork) return;
+  req('work_release', {work_id: currentWork});
+  req('work_get_edition', {work_id: currentWork});
+  $('editor').contentEditable='false';
+}
+
+function toggleHistory() {
+  const slider = $('revSlider');
+  if (slider.classList.contains('visible')) { closeHistory(); return; }
+  slider.classList.add('visible');
+  viewingHistory = true;
+  $('revRange').max = totalRevs;
+  $('revRange').value = totalRevs;
+  $('revNum').textContent = totalRevs;
+}
+
+function closeHistory() {
+  $('revSlider').classList.remove('visible');
+  viewingHistory = false;
+  if (currentWork) req('work_get_edition', {work_id: currentWork});
+}
+
+function onRevSlide(val) {
+  $('revNum').textContent = val;
+  req('work_fetch_revision', {work_id: currentWork, number: parseInt(val)});
+}
+
+function toggleLinks() {
+  const p = $('rightPanel');
+  p.style.display = p.style.display==='none' ? 'flex' : 'none';
+}
+
+function sendCmd() {
+  const text = $('cmd').value.trim();
+  if (!text) return;
+  $('cmd').value = '';
+  const parts = text.split(/\s+/), c = parts[0].toLowerCase(), a = parts.slice(1);
+  switch(c) {
+    case 'create': req('work_create',{edition:{text:a.join(' ')||''}}); break;
+    case 'list': req('work_list'); break;
+    case 'open': if(a[0]) { currentWork=parseInt(a[0]); showWork(currentWork); refresh(); } break;
+    case 'grab': req('work_grab',{work_id:+a[0]}); break;
+    case 'revise': req('work_revise',{work_id:+a[0],edition:{text:a.slice(1).join(' ')||''}}); break;
+    case 'release': req('work_release',{work_id:+a[0]}); break;
+    case 'link': req('link_create',{origin:+a[0],destination:+a[1]}); break;
+    case 'links': req('link_list_for_work',{work_id:+a[0]}); break;
+    case 'club': if(a[0]) req('club_create_named',{name:a[0],description:{text:'club'}}); break;
+    case 'info': req('server_stats'); break;
+    case 'help':
+      toast('Commands: create <text>, list, open <id>, grab <id>, revise <id> <text>, release <id>, link <from> <to>, links <id>, club <name>, info');
+      break;
+    default: toast('Unknown: '+c);
+  }
+}
+
+$('cmd').addEventListener('keydown', e => { if(e.key==='Enter') sendCmd(); });
 connectWs();
 </script>
 </body>
