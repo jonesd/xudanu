@@ -53,6 +53,7 @@ header .session-info { font-size: 11px; color: var(--fg2); background: var(--bg3
 .toolbar .sep { width: 1px; height: 20px; background: var(--bg4); margin: 0 4px; }
 .toolbar .rev-info { font-size: 11px; color: var(--fg2); font-family: 'SF Mono', Menlo, monospace; margin-left: auto; }
 .toolbar .rev-info .editing { color: var(--orange); font-weight: 600; }
+.toolbar .rev-info .saving { color: var(--accent); }
 
 .presence-bar { background: var(--bg2); padding: 4px 12px; border-bottom: 1px solid var(--bg3); display: flex; gap: 8px; align-items: center; flex-shrink: 0; min-height: 28px; }
 .presence-bar .label { font-size: 10px; color: var(--fg3); text-transform: uppercase; }
@@ -176,6 +177,9 @@ let authorColors={};
 let authorMap={};
 let colorIdx=0;
 let pendingReq={};
+let lastKnownText='';
+let autoSaveTimer=null;
+const AUTO_SAVE_MS=1500;
 
 const $=id=>document.getElementById(id);
 
@@ -255,6 +259,18 @@ function handleResp(msg) {
     return;
   }
   if (v && v.type==='edition') {
+    if (op==='work_revise_delta') {
+      let text = '';
+      const ed = v.value;
+      if (ed && ed.text) text = ed.text;
+      else if (ed && ed.entries) text = ed.entries.map(e => e[1].Text ? e[1].Text.text : '').join('');
+      $('editor').textContent = text;
+      lastKnownText = text;
+      currentRev = totalRevs;
+      toast('Conflict resolved - document updated');
+      updateRevInfo();
+      return;
+    }
     renderEdition(v.value, op==='history_fetch');
     return;
   }
@@ -269,6 +285,12 @@ function handleResp(msg) {
       currentRev = v.value; totalRevs = v.value; isEditing=false;
       updateToolbar();
       toast('Saved revision '+v.value);
+      return;
+    }
+    if (op==='work_revise_delta') {
+      currentRev = v.value; totalRevs = v.value;
+      updateRevInfo();
+      toast('Auto-saved revision '+v.value);
       return;
     }
   }
@@ -388,6 +410,7 @@ function renderEdition(ed, isHistoryView) {
     el.appendChild(span);
   } else {
     el.textContent = text;
+    if (isEditing) lastKnownText = text;
   }
   updateLegend();
 }
@@ -474,21 +497,82 @@ function doCreate() {
 
 function doEdit() {
   if (!currentWork) return;
+  lastKnownText = $('editor').textContent;
   req('work_grab', {work_id: currentWork});
 }
 
 function doSave() {
   if (!currentWork) return;
+  if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer=null; }
   const text = $('editor').textContent;
-  req('work_revise', {work_id: currentWork, edition:{text}});
+  if (text === lastKnownText) {
+    req('work_release', {work_id: currentWork});
+    $('editor').contentEditable='false';
+    isEditing=false;
+    updateToolbar();
+    return;
+  }
+  const ops = computeDelta(lastKnownText, text);
+  req('work_revise_delta', {work_id: currentWork, base_revision: currentRev, ops});
+  lastKnownText = text;
   $('editor').contentEditable='false';
 }
 
 function doCancel() {
   if (!currentWork) return;
+  if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer=null; }
   req('work_release', {work_id: currentWork});
-  req('work_get_edition', {work_id: currentWork});
+  $('editor').textContent = lastKnownText;
   $('editor').contentEditable='false';
+  isEditing=false;
+  updateToolbar();
+}
+
+function scheduleAutoSave() {
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    if (!isEditing || !currentWork) return;
+    const text = $('editor').textContent;
+    if (text === lastKnownText) return;
+    const ops = computeDelta(lastKnownText, text);
+    req('work_revise_delta', {work_id: currentWork, base_revision: currentRev, ops});
+    lastKnownText = text;
+  }, AUTO_SAVE_MS);
+}
+
+function computeDelta(oldText, newText) {
+  const ops = [];
+  let oi = 0, ni = 0;
+  const ol = oldText.length, nl = newText.length;
+  while (oi < ol || ni < nl) {
+    let commonLen = 0;
+    const maxCommon = Math.min(ol - oi, nl - ni);
+    while (commonLen < maxCommon && oldText.charCodeAt(oi + commonLen) === newText.charCodeAt(ni + commonLen)) {
+      commonLen++;
+    }
+    if (commonLen > 0) {
+      ops.push({type:'retain', count:commonLen});
+      oi += commonLen;
+      ni += commonLen;
+    }
+    let deleteLen = 0;
+    while (oi + deleteLen < ol && (ni >= nl || oldText.charCodeAt(oi + deleteLen) !== newText.charCodeAt(ni))) {
+      deleteLen++;
+    }
+    if (deleteLen > 0) {
+      ops.push({type:'delete', count:deleteLen});
+      oi += deleteLen;
+    }
+    let insertLen = 0;
+    while (ni + insertLen < nl && (oi >= ol || oldText.charCodeAt(oi) !== newText.charCodeAt(ni + insertLen))) {
+      insertLen++;
+    }
+    if (insertLen > 0) {
+      ops.push({type:'insert', text: newText.substring(ni, ni + insertLen)});
+      ni += insertLen;
+    }
+  }
+  return ops;
 }
 
 function toggleHistory() {
@@ -541,6 +625,7 @@ function sendCmd() {
 }
 
 $('cmd').addEventListener('keydown', e => { if(e.key==='Enter') sendCmd(); });
+$('editor').addEventListener('input', () => { if(isEditing) scheduleAutoSave(); });
 connectWs();
 </script>
 </body>

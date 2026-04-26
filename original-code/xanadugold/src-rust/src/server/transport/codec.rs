@@ -523,6 +523,14 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::WorkRevise { work_id: args.work_id, edition: args.edition })
             }
+            OperationCode::WorkReviseDelta => {
+                use super::protocol::TextDeltaOp;
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, base_revision: u64, ops: Vec<TextDeltaOp> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkReviseDelta { work_id: args.work_id, base_revision: args.base_revision, ops: args.ops })
+            }
             OperationCode::WorkGrab => {
                 #[derive(Deserialize)]
                 struct Args { work_id: BeId }
