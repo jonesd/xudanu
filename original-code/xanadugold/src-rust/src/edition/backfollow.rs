@@ -109,7 +109,7 @@ impl EditionMeta {
 
 #[derive(Debug)]
 pub struct BackfollowEngine {
-    grand_map: GrandMap,
+    _grand_map: GrandMap,
     transclusion_index: TransclusionIndex,
     bert_canopy: BertCanopy,
     sensor_canopy: SensorCanopy,
@@ -125,7 +125,7 @@ pub struct BackfollowEngine {
 impl BackfollowEngine {
     pub fn new() -> Self {
         BackfollowEngine {
-            grand_map: GrandMap::new(),
+            _grand_map: GrandMap::new(),
             transclusion_index: TransclusionIndex::new(),
             bert_canopy: BertCanopy::new(),
             sensor_canopy: SensorCanopy::new(),

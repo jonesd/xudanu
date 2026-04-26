@@ -42,7 +42,7 @@ pub struct HUpperCrumData {
     o_parents: Vec<Arc<Mutex<dyn HPart>>>,
     bert_crum: Arc<Mutex<CanopyCrumData>>,
     base: HistoryCrumBase,
-    bert_canopy: BertCanopy,
+    _bert_canopy: BertCanopy,
 }
 
 impl HUpperCrumData {
@@ -57,7 +57,7 @@ impl HUpperCrumData {
             o_parents: Vec::new(),
             bert_crum,
             base: HistoryCrumBase::new(),
-            bert_canopy,
+            _bert_canopy: bert_canopy,
         }
     }
 
@@ -85,7 +85,7 @@ impl HUpperCrumData {
             o_parents: Vec::new(),
             bert_crum,
             base: HistoryCrumBase::new(),
-            bert_canopy,
+            _bert_canopy: bert_canopy,
         };
         data.add_o_parent(first);
         data.add_o_parent(second);

@@ -1156,7 +1156,7 @@ impl Server {
         }
     }
 
-    fn find_grabbed_works(&self, session_id: SessionId) -> Option<Vec<BeId>> {
+    fn _find_grabbed_works(&self, session_id: SessionId) -> Option<Vec<BeId>> {
         let grabbed: Vec<BeId> = self
             .works
             .iter()

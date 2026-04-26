@@ -5,7 +5,7 @@ use super::urdi::UrdiFile;
 
 const FLAG_BIT: u32 = 1 << 25;
 const VALUE_MASK: u32 = (1 << 25) - 1;
-const MAP_OVERHEAD: usize = 8;
+const _MAP_OVERHEAD: usize = 8;
 const MAP_CELL_SIZE: usize = 8;
 const HEADER_SIZE: usize = 8;
 
@@ -40,7 +40,7 @@ impl MapCell {
         self.size & VALUE_MASK
     }
 
-    fn set_forwarded(&mut self, snarf_id: u32) {
+    fn _set_forwarded(&mut self, snarf_id: u32) {
         self.offset = (snarf_id & VALUE_MASK) | FLAG_BIT;
     }
 

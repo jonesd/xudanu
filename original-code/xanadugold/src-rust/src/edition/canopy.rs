@@ -22,7 +22,7 @@ impl CanopyCacheInner {
         }
     }
 
-    fn clear(&mut self) {
+    fn _clear(&mut self) {
         self.cached_crum = None;
         self.cached_root = None;
         self.cached_path.clear();
@@ -51,7 +51,7 @@ impl CanopyCacheInner {
         self.cached_root.clone().unwrap_or_else(|| crum.clone())
     }
 
-    fn update_cache_for_parent(
+    fn _update_cache_for_parent(
         &mut self,
         child: &Arc<Mutex<CanopyCrumData>>,
         parent: &Arc<Mutex<CanopyCrumData>>,
@@ -68,10 +68,10 @@ impl CanopyCacheInner {
         }
     }
 
-    fn update_cache_for(&mut self, crum: &Arc<Mutex<CanopyCrumData>>) {
+    fn _update_cache_for(&mut self, crum: &Arc<Mutex<CanopyCrumData>>) {
         if let Some(ref cached) = self.cached_crum {
             if Arc::ptr_eq(cached, crum) {
-                self.clear();
+                self._clear();
             }
         }
     }}
@@ -188,7 +188,7 @@ impl CanopyCrumData {
         self.child2.as_ref()
     }
 
-    fn clone_shallow(&self) -> Self {
+    fn _clone_shallow(&self) -> Self {
         CanopyCrumData {
             child1: self.child1.clone(),
             child2: self.child2.clone(),
@@ -203,7 +203,7 @@ impl CanopyCrumData {
         }
     }
 
-    fn set_parent(&mut self, p: Option<Arc<Mutex<CanopyCrumData>>>) {
+    fn _set_parent(&mut self, p: Option<Arc<Mutex<CanopyCrumData>>>) {
         self.parent = p;
     }
 

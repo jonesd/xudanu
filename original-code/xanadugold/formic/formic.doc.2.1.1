@@ -1,0 +1,846 @@
+*** COMMAND LINE ***
+
+formic <format_file> -i <input_file> [-D <defined>=<definer>] [-F <source_file_name>] [-r]
+
+format_file         formic script
+input_file          X++ source
+defined/definer     defines variable 'defined' with value 'definer'
+source_file_name    adds 'source_file_name' to list of files to select from
+
+
+The 'format_file' is obligatory.  If there is no 'input_file' then Formic
+takes input from stdin. Both -D and -F are optional and  may be repeated any
+number of times.
+
+-D <defined>=<definer> is equivalent to $(SET <defined> <definer>), q.v.
+
+-F <source_file_name> adds file names to a selection list.  The 'infiles' predicate, q.v.,
+uses this list to restrict selection of items.  This mechanism allows Formic to ignore
+classes and functions that occur in preprocessed C++ source, but are irrelevant for
+present purposes.
+
+If there is no -F on the command line the default is to select from _all_ files
+in the input.
+
+-r changes the expected line separator character from '\n' to '\r'.
+
+*** HEADER LINES ***
+
+These occur at the beginning of a Formic script and their
+effects are global. They are not output and their newlines
+are dropped.
+
+
+** Lexical Extensions **
+
+$LEX xpp_type instance
+
+xpp_type:
+	PROTECTION_TYPE
+	STORAGE_CLASS
+	FUNCTION_SPEC
+	TYPE_NAME
+	CLASS_ATTRIBUTE
+	PRE_INSTANCE_ATTRIBUTE
+	POST_INSTANCE_ATTRIBUTE
+	PRE_METHOD_ATTRIBUTE
+	POST_METHOD_ATTRIBUTE
+
+instance:
+	(any alphanumeric string)
+
+Before the X++ program is parsed 'instance' is added to the list
+of tokens of type 'xpp_type'.
+
+
+** Comment Substitutions **
+
+$COMMENT_STUB "old_string" "new_string"
+
+When class or function comments are output, 'new_string' is
+substituted for 'old_string'.  This substitution is useful
+when extracting comments from code to include in documentation
+that is to be printed with a text-formatting tool.  The double
+quotes around 'old_string' and 'new_string' are obligatory.
+A literal double quote in a string can be escaped as '\"'. 
+The C++ escape sequences '\n', '\t' and '\ddd' are expanded.
+
+
+*** FORMATTING ***
+
+** Comments **
+
+$/   <text>          The remainder of the line is ignored by formic
+
+$//  <text>          The remainder of the line and the followng \n is ignored
+
+$/// <text>          The remainder of the line, the followng \n and all
+                     following whitespace is ignored.
+
+
+White space between the segments of ants is ignored.
+
+If an ant occurs at the end of a line, the following newline
+is dropped.  If the newline is desired in the output it can be
+preserved by following the ant with $/.
+
+Example:
+
+	$	(FOR CLASSES)
+	$		(CLASS)$/
+	$		(FOR FUNCS)
+		$		(FUNC)$/
+	$		(ROF)
+	$	(ROF)
+
+run over
+
+	class foo {
+		int ff1();
+		int ff2();
+	};
+
+	class bar {
+		int bf1();
+		int bf2();
+	};
+
+yields
+
+	foo
+		ff1
+		ff2
+	bar
+		bf1
+		bf2
+
+The indentation pattern of left parens reflects the structure
+of the Formic program, the indentation pattern of dollar signs,
+that of the output.
+
+The point here is that by judicious use of these formatting
+devices it is possible to write a Formic script so that it can be
+read as a program for generating derived text or as an abstract
+example of the text to be generated, whichever seems appropriate.
+In some cases (not all, unfortunately) it is possible to write
+the Formic script so it can be read either way.
+
+
+
+** Escape Sequences **
+
+
+$$					escape sequence for '$'
+
+$#					escape sequence for '#'
+
+
+Formic scripts can be processed with cpp to take advantage
+of its macro expansion and file inclusion features.
+If this is done the $# sequence can be used to shield any '#'
+that is intended to remain in the formic script.
+
+Example:
+
+	foo.f contains:
+
+		this is foo
+
+	bar.f contains:
+
+		#include foo.f
+		$#include foo.h
+		etc ...
+
+	'cpp bar.f > Bar.F' yields
+
+		this is foo
+		$#include foo.h
+		etc ...
+
+	formic Bar.F -i ... yields
+
+		this is foo
+		#include foo.h
+		etc ...
+
+BUG NOTE: '#' is treated specially by cpp only at the
+beginning of a line, but it must be escaped in Formic
+wherever it occurs (except inside an ant).
+ 
+
+*** ANNOTATED SYNTAX ***
+
+format:
+	fcode(opt)
+
+fcode:
+	fcode(opt) item
+
+item:
+	for_clause
+	if_clause
+	switch_clause
+	break_ant
+	var_ant
+	assig_ant
+	sep_ant
+
+
+** For Loops **
+
+for_clause:
+	for_ant fcode(opt) rof_ant
+
+for_ant:
+	$ ( FOR plural ordering(opt) criterion(opt) )
+
+ordering:
+	BY predicate_0
+
+rof_ant:
+	$ ( ROF text(opt) )
+
+break_ant:
+	$ ( BREAK text(opt) )
+
+text:
+	(any sequence of characters except $, parentheses, and 
+	angle brackets) 
+	
+A FOR ant selects a list of items from the X++ source.
+The type of item in the list is determined by the 'plural',
+the selection of items by the 'criterion' and the sequence
+by the 'ordering'.
+
+The name of the iteration variable is that of the type 
+associated with the 'plural', normally the corresponding
+singular word in ordinary English.  This variable is referred
+to in these notes as the "current" class, function, etc.
+
+A break_ant causes an exit from the immediately enclosing loop.
+
+The 'text' in BREAK, ROF and other cases mentioned below is
+ignored by Formic.  It may be used optionally to comment
+the ends of nested constructs.
+
+Example:
+
+	$(FOR CLASSES BY name base: Foo)
+	$	(CLASS)$/
+	$	(IF CLASS name: Bar)
+	$		(BREAK)
+	$	(FI)
+	$(ROF CLASSES)
+
+The 'for_ant' produces a list of classes in alphabetic order
+by name, which are subclasses of the class Foo.  The 'for_clause' 
+iterates over this list printing names until it prints the name
+Bar, then exits.
+
+
+** If Branches **
+
+if_clause:
+	if_ant fcode(opt)                     fi_ant
+	if_ant fcode(opt) else_ant fcode(opt) fi_ant
+
+if_ant:
+	$ ( IF singular criterion(opt) )
+	$ ( IF plural   criterion(opt) )
+
+else_ant:
+	$ ( ELSE text(opt) )
+
+fi_ant:
+	$ ( FI text(opt) )
+
+
+The 'if_ant' produces a boolean value that controls branching. 
+
+In 'singular' case  the value of the 'if_ant' is TRUE if the criterion
+rpoduces a boolean that equals TRUE or if it produces a string that is non-null.
+In 'plural' case the value is TRUE if the criterion produces a non-empty list.
+
+Example:
+
+	$(FOR CLASSES)
+	$	(IF CLASS base)$///						singular - criterion has string value
+			$(CLASS) has a superclass $//
+	$	(FI)
+	$	(IF CLASS base: Foo)$///				singular - criterion has boolean value
+			which is Foo$//
+	$	(FI)$/
+	$	(IF FUNCS name: bar)$///				plural
+			$(CLASS) has methods named bar
+	$	(FI)
+	$(ROF)
+
+
+run over
+
+	class Foo {
+		int bar();
+		void bar (int);
+	};
+	
+	class Bar : public Foo {
+	};
+	
+	class Baz : public Bar {
+		int bar();
+	};
+
+
+yields
+
+	Foo has methods named bar
+	Bar has a superclass which is Foo
+	Baz has a superclass 
+	Baz has methods named bar
+
+
+** Switch Branches **
+
+switch_clause: 
+	switch_ant case_list defl_case(opt) hctiws_ant
+
+case_list:
+	case_ant fcode(opt)
+	case_list case_ant
+
+case_ant:
+	$ ( CASE criterion )
+
+defl_case:
+	defl_ant fcode(opt)
+
+hctiws_ant:
+	$ ( HCTIWS text(opt) )
+
+
+A switch_clause is the exact semantic equivalent of a nested
+sequence of if_clauses. 
+
+Example:
+
+	$(SWITCH ARG)
+	$(CASE type: int)
+		it's an int 
+	$(CASE type: long)
+		it's a long
+	$(DEFAULT)
+		it's not int or long
+	$(HCTIWS)
+
+is a more compact way of writing
+
+	$(IF ARG type: int)
+		it's an int
+	$(ELSE)
+	$	(IF ARG type: long)
+		it's a long
+	$	(ELSE)
+		it's not int or long
+	$	(FI)
+	$(FI)
+
+In particular, cases in Formic are mutually exclusive.  They do NOT
+"fall through" as in 'C'. If more than one CASE matches the variable,
+the first one will be taken.
+
+
+** Criteria **
+
+criterion:
+	simple_criterion
+	! criterion
+	| criterion criterion
+	& criterion criterion
+
+! is negation, & is logical conjunction, | is logical disjunction
+
+Example:
+
+	$(IF FUNC & ptr ! | root: int root: char)
+
+The 'criterion' should be read: "is both a pointer and neither to root
+nor to char" i.e. the 'if_ant' selects functions which return pointers
+to anything other than ints or chars.
+
+simple_criterion:
+	predicate_0
+	predicate_1 rval
+	predicate_2 rval rval
+	predicate_3 rval rval rval
+
+rval:
+	string
+	derived_string
+
+derived_string:
+	< singular simple_criterion(opt) >
+	< plural   simple_criterion(opt) >
+
+The code between the angle brackets is evaluated in the same way as
+it would be in a var_ant, but the resulting text is returned as a
+string to be used in the same way as a literal string. 
+
+Example:
+
+	$(FOR ARGS)
+	$	(IF ARG type: <FUNC type>)
+			*same*
+	$	(FI)
+	$(ROF)
+
+This script would print the string '*same*' once for every parameter
+of a function whose type is the same as its return type.
+		
+
+string:
+	(any sequence of alphanumerics or any sequence of
+	alphanumerics, spaces, and tabs surrounded by double quotes)
+
+Formic recognizes the 'C' escape sequences \n, \t and \ddd
+
+Example:
+
+	$(SET foo "\003")
+	$(foo)
+
+This script outputs control-C.
+
+
+
+** Formic Variables **
+
+var_ant:
+	$ ( singular simple_criterion(opt) modifier_list(opt) )
+
+A var_ant outputs a string.  The predicate in the simple_criterion must be
+one that is defined for the particular singular it follows and also one
+that evaluates to a string value.
+
+Example:
+
+	$(FUNC base)	*** ERROR	'base' is undefined for FUNC
+	$(FUNC ctor)	*** ERROR	'ctor' evaluates to a Boolean  
+	$(FUNC type)	*** OK		prints the return type of the current FUNC
+
+
+modifier_list:
+	modifier_list(opt) modifier
+
+modifier:
+	mod_0
+	mod_1 string
+
+mod_0:
+	cap
+
+mod_1:
+	trim:
+	mod:
+
+Modifiers change the output text.  They may be repeated
+and operate sequentially.
+
+cap		- capitalize text
+trim:	- truncate text (argument is length)
+mod:	- edit text (argument is sed-style edit command)
+
+As of 1/6/92 the only sed special characters that mod:
+recognizes are ^ (string string beginning) and $ (string end).
+Redundant /'s may be left off: e.g. /foo// may be written foo/
+
+Example:
+
+Where CLASS is in file "file.hxx"
+
+	$(CLASS file: mod: .hxx/ cap) 
+
+prints
+	
+	FILE
+
+
+** Assignments and Seperators **
+
+assig_ant:
+	$ ( SET word rval )
+
+word:
+	(any sequence of alphanumerics)
+
+$(SET foo bar) assigns the value 'bar' to the variable 'foo'
+(which does not need to be declared).  Foo can be any alpha-
+numeric string which is not otherwise used as a variable or
+a Formic keyword.  Bar can be any string or derived_string.
+The variable retains its value until re-set.
+
+Example:
+
+$(SET flag noInt)
+$(FOR FUNCS)
+$	(IF FUNC type: int)
+$		(SET flag hasInt)
+$	(FI)
+$(ROF)$///
+
+$(IF flag name: hasInt)$///
+	Integer
+$(FI)
+
+This script prints the words "Integer" if and only if
+at least one function in its input returns an int.
+
+
+sep_ant:
+	$ ( SEP string )
+
+$(SEP foo) evaluates to the string foo if the immediately
+enclosing loop is not on its final iteration, or the null
+string if it is.  Thus $(SEP ,) is a shorter way of
+writing $(IF N more),$(FI)
+
+
+** Plurals **
+
+plural:
+	CLASSES
+	FUNCS
+	FUNCS_UPWARDS
+	VARS
+	ATTRS
+	ARGS
+	SUPERCLASSES
+	SUBCLASSES
+	SIBCLASSES
+	SUBFUNCS
+	SIBFUNCS
+	REFCLASSES
+
+
+A plural is a list of objects of a particular type over which
+a FOR loop can iterate.
+
+				-type-	-sets-			-content-
+
+CLASSES			CLASS	CLASS			all classes 
+
+FUNCS			FUNC	FUNC 			member functions of current
+										class, or global functions if none
+
+FUNCS_UPWARDS	FUNC	FUNC 			member functions of current 
+										class and all of its superclasses
+
+VARS			VAR		VAR 			member variables of current class
+
+ATTRS			ATTR	ATTR			class attributes of current class
+
+ARGS			ARG		ARG				parameters of current function
+
+SUPERCLASSES	CLASS	SUPERCLASS		superclasses of current class
+										(not including self)
+
+SUBCLASSES		CLASS	SUBCLASS 		subclasses of current class
+										(not including self)
+
+SIBCLASSES		CLASS	SIBCLASS 		sibling classes of current class
+										i.e. all subclasses of its superclass 
+										(self is included)
+
+SUBFUNCS		FUNC	SUBFUNC 		sub-implementations of current function
+										i.e all functions that override it
+
+SIBFUNCS		FUNC	SIBFUNC 		sibling functions of current function
+										i.e. all member function of the same class
+										(self is included)
+										
+REFCLASSES		CLASS	REFCLASS		clases referred to by paramenters or
+										the return type of the current function
+
+
+** Singulars **
+
+singular:
+	word
+	N
+	FNAME
+	CLASS
+	FUNC
+	VAR
+	ATTR
+	ARG
+	SUPERCLASS
+	SUBCLASS
+	SIBCLASS
+	SUBFUNC
+	SIBFUNC
+	REFCLASS
+
+A singular is a variable with a particular type as a value.
+Some are global and others are iteration variables of FOR loops.
+
+			-type-	-set by-				-content-
+
+word		STRING	$(SET word rval) or		(programmer defined)
+					command line -D 
+
+FNAME		STRING	X++ parser				file name (path info stripped)
+
+N			COUNT	$(FOR <anything>)		iteration count
+
+CLASS		CLASS	$(FOR CLASSES)			current class 
+
+FUNC		FUNC	$(FOR FUNCS) or 		current member function
+					$(FOR FUNCS_UPWARDS)	or global function if not in
+											$(FOR CLASSES) loop
+
+VAR			VAR		$(FOR VARS) 			current member variable
+
+ATTR		ATTR	$(FOR ATTRS)			current class attribute
+
+ARG			ARG		$(FOR ARGS)				current function parameter
+
+SUPERCLASS	CLASS	$(FOR SUPERCLASSES) 	current superclass of current class
+
+SUBCLASS	CLASS	$(FOR SUBCLASSES) 		current subclass of current class
+
+SIBCLASS	CLASS	$(FOR SIBCLASSES) 		current sibling class of current class
+											(self is included)
+
+SUBFUNC		FUNC	$(FOR SUBFUNCES) 		current sub-implementation of current
+											function where "sub-implementaion of
+											member function F of class C" is defined
+											as any member function of any subclass of
+											C that overrides F
+
+SIBFUNC		FUNC	$(FOR SIBFUNCES) 		current sibling function of current
+											function (self is included)
+										
+REFCLASS	CLASS	$(FOR REFCLASSES)		class referred to by paramenters or
+											the return type of the current function
+
+
+** Predicates (general) **
+
+predicate_0:
+	more		name		base		memf
+	memv		comment		file		infiles
+	type		ctor		dtor		root
+	primtype 	primroot	ptr			mname
+	out			defl 		overclass	overmname
+	homeclass 	onum
+
+predicate_1:
+	plus:		minus:		equals:		name:
+	kind:		memf:		memv:		pro:
+	base:		basepro:	superpro:	attr:
+	baseattr:	superattr:	type:		root:
+	primtype:	primroot:	rootkind:	overclass:
+	ptr:		spec:		postspec:	defl:
+	file:		onum:		arg:		mname:
+
+predicate_2:
+	pro:mf:
+	pro:mv:
+	attr:arg:
+	baseattr:arg:
+	arg:is:
+
+predicate_3:
+	attr:arg:is:
+	baseattr:arg:is:
+	superattr:arg:is:
+	
+
+  Each predicate is applicable to one or more types of Formic
+variable. They may used in criteria with singulars or plurals
+that have an appropriate type.  Some predicates evaluate to
+booleans others to strings.  Boolean predicates are meaningful
+only in $(IF) $(FOR) and $(CASE) ants.  String predicates may
+may be used as boolean predicates, in which case a null string
+value maps to FALSE an a non-null to TRUE, and also in VAR ants
+where the string is output. In a simple criterion the predicate
+'name' may be omitted; e.g. $(CLASS) == $(CLASS name)
+
+NOTE: With the predicates 'name:', 'type:', 'root:', 'primtype:' and
+'primroot:' the '%' character may be used in the argument string as a
+wildcard. E.g.  $(VAR type: s%) is TRUE for 'short foo' and 'signed bar',
+but FALSE for 'int baz'.
+
+** Predicates for type STRING **
+
+Boolean: 				- contents -
+
+name: x					string name is x
+
+
+** Predicates for type COUNT **
+
+String: 				- contents -
+
+plus: x					count plus x
+minus: x				count minus x
+
+Boolean:				- TRUE if -
+
+more					current iteration is not the last e.g $(IF N more)
+equals: x				count equals x
+
+
+** Predicates for type CLASS **
+
+String: 				- contents -
+
+name					name of class
+file					file containing class declaration (path info stripped)
+comment					class comment
+base					name of parent class
+attr:arg: x y			y-th argument of class attribute x
+baseattr:arg: x y		y-th argument of class attribute x in parent class 
+
+Boolean:				- TRUE if -
+
+infiles					class is in one of the files specified by -F on the command line
+memf					class has member functions
+memv					class has member variables
+name: x					class name is x
+file: x					name of file containing class declaration is x
+base: x					name of parent class is x 
+kind: x					class is named x on a subclass of a class named x
+memf: x					class has member function x
+memv: x					class has member variable x
+pro:  x					class has protection group x (e.g "public")
+basepro: x				parent class has protection group x
+superpro: x				class or some superclass has a protection group x
+attr: x					class has attribute x
+baseattr: x				parent class has attribute x
+superattr: x			class or some superclasss has attribute x
+pro:mf: x y				class has protection group x containing member fucntion y
+pro:mv: x y				class has protection group x containing member variable y
+attr:arg:is: x y z		class has attribute x with argument z at postion y
+baseattr:arg:is: x y z	parent class has attribute x with argument z at postion y
+
+
+
+** Predicates for type FUNC **
+
+String: 				- contents -
+
+name					name of function
+mname					mangled name of function
+file					file containing function declaration
+comment					function comment
+type					return type of function
+root					type with indirection removed
+primtype				type with typedefs resolved
+primroot				type with indirection removed and typedefs resolved [1]
+homeclass				class of which function is a member
+overclass				superclass contining function that FUNC directly overrides
+overmname				mangled name of corresponding function in overlcass
+onum					arbitrary, locally unique int if function is overloaded, else null 
+
+Boolean:				- TRUE if -
+
+infiles					function is in one of the files specified by -F on the command line
+comment					function has a comment
+ctor					function is a constructor
+dtor					function is a destructor
+type					function has a return type (i.e. is not 'void')
+overclass				function overrides function in some superclass
+ptr						return type is a pointer
+enumtype				return type is an enum
+name: x					function name is x
+mname: x				mangled name is x
+file: x					function is declared in file x
+overclass: x			function directly overrides a function in class x
+type: x					return type is x
+pro: x					protection type of function is x (e.g "public")
+root: x					return type with indirection removed is x
+primtype: x				return type with typedefs resolved is x
+primroot: x				return type with indirection removed and typedefs resolved is x
+rootkind: x				return type refers to a class which is x or a subclass of x
+ptr: x					return type is a pointer to x
+spec: x					return type contains type specifier x
+postspec: x				function has postfixed specifier x (e.g. postfix 'const')
+onum: x					onum (see above) of function is x
+
+
+[1] NOTE: 'primroot' removes ALL indirection, including that
+          included in the typedefs; e.g. for:
+
+			typedef char* foo;
+			foo* bar();
+
+		  primroot of foo is 'char'.  The purpose of the
+		  predicate is to yield the true type of the object
+		  ultimately referred to.
+
+
+** Predicates for type VAR **
+
+String: 				- contents -
+
+name					name of member variable
+file					file containing variable declaration
+type					type of variable
+root					type with indirection removed
+primtype				type with typedefs resolved
+primroot				type with indirection removed and typedefs resolved
+
+Boolean:				- TRUE if -
+
+ptr						variable  type is a pointer
+enumtype				variable type is an enum
+name: x					variable name is x
+type: x					variable type is x
+pro: x					protection type of variable is x (e.g "public")
+root: x					type with indirection removed is x
+primtype: x				type with typedefs resolved is x
+primroot: x				type with indirection removed and typedefs resolved is x
+kind: x					type is a class which is x or a subclass of x
+rootkind: x				type with indirection removed is class x or a subclass of x
+ptr: x					type is a pointer to x
+spec: x					type contains type specifier x
+
+
+** Predicates for type ATTR **
+
+String: 				- contents -
+
+name					name of class attribute
+arg: x					x-th argument of attribute
+
+Boolean:				- TRUE if -
+
+name: x					name of attribute is x
+arg:is: x y				x-th argument of attribute is y
+
+
+** Predicates for type ARG **
+
+String: 				- contents -
+
+name					name of function parameter
+type					type of function parameter
+root					type with indirection removed
+primtype				type with typedefs resolved
+primroot				type with indirection removed and typedefs resolved
+defl					default value for parameter
+
+Boolean:				- TRUE if -
+
+ptr						parameter type is a pointer
+enumtype				parameter type is an enum
+out						output parameter (follows OUT in the parameter list)
+name: x					parameter name is x
+type: x					parameter type is x
+root: x					type with indirection removed is x
+primtype: x				type with typedefs resolved is x
+primroot: x				type with indirection removed and typedefs resolved is x
+rootkind: x				type with indirection removed is class x or a subclass of x
+ptr:					parameter is a pointer to x
+defl:					default value is x
