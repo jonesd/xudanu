@@ -420,15 +420,23 @@ fn merge_sequence_regions(
         let new_between = combine(a_between, b_between);
 
         if new_at != new_between {
-            result.push(SequenceEdge {
-                sequence: n_seq.clone(),
-                inclusive: new_at,
-            });
-            result.push(SequenceEdge {
-                sequence: n_seq.clone(),
-                inclusive: new_between,
-            });
-            cur = new_between;
+            if !new_at && new_between {
+                result.push(SequenceEdge {
+                    sequence: n_seq.clone(),
+                    inclusive: false,
+                });
+                cur = true;
+            } else {
+                result.push(SequenceEdge {
+                    sequence: n_seq.clone(),
+                    inclusive: true,
+                });
+                result.push(SequenceEdge {
+                    sequence: n_seq.clone(),
+                    inclusive: false,
+                });
+                cur = false;
+            }
         } else if new_at != cur {
             result.push(SequenceEdge {
                 sequence: n_seq.clone(),
@@ -533,7 +541,7 @@ impl SequenceDsp {
         seq.shifted(self.shift).plus(&self.translation)
     }
 
-    fn inverse_transform(&self, seq: &Sequence) -> Sequence {
+    fn _inverse_transform(&self, seq: &Sequence) -> Sequence {
         seq.minus(&self.translation).shifted(-self.shift)
     }
 }
@@ -799,6 +807,45 @@ mod tests {
     fn double_complement() {
         let r = SequenceRegion::interval(Sequence::one(1), Sequence::one(5));
         assert_eq!(r.complement().complement(), r);
+    }
+
+    #[test]
+    fn intersect_shared_boundary() {
+        let a = SequenceRegion::above(Sequence::one(3), false);
+        let b = SequenceRegion::above(Sequence::one(3), true);
+        let c = a.intersect(&b);
+        assert!(!c.contains_sequence(&Sequence::one(3)));
+        assert!(c.contains_sequence(&Sequence::one(4)));
+        assert!(c.contains_sequence(&Sequence::one(100)));
+    }
+
+    #[test]
+    fn union_shared_boundary() {
+        let a = SequenceRegion::below(Sequence::one(5), true);
+        let b = SequenceRegion::above(Sequence::one(5), true);
+        let c = a.union_with(&b);
+        assert!(c.contains_sequence(&Sequence::one(4)));
+        assert!(c.contains_sequence(&Sequence::one(5)));
+        assert!(c.contains_sequence(&Sequence::one(6)));
+    }
+
+    #[test]
+    fn minus_shared_boundary() {
+        let a = SequenceRegion::below(Sequence::one(5), true);
+        let b = SequenceRegion::above(Sequence::one(3), true);
+        let c = a.minus(&b);
+        assert!(c.contains_sequence(&Sequence::one(2)));
+        assert!(!c.contains_sequence(&Sequence::one(3)));
+        assert!(!c.contains_sequence(&Sequence::one(4)));
+    }
+
+    #[test]
+    fn intersect_above_above_same_boundary() {
+        let a = SequenceRegion::above(Sequence::one(3), true);
+        let b = SequenceRegion::above(Sequence::one(3), false);
+        let c = a.intersect(&b);
+        assert!(!c.contains_sequence(&Sequence::one(3)));
+        assert!(c.contains_sequence(&Sequence::one(4)));
     }
 
     #[test]

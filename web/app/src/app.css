@@ -1,0 +1,277 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #1a1a2e;
+  background: #fafafa;
+}
+
+.workspace-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fff;
+}
+
+.workspace-header h1 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.workspace-header button {
+  padding: 6px 16px;
+  background: #4361ee;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.workspace-header button:hover {
+  background: #3a56d4;
+}
+
+.workspace-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.branch-panel {
+  width: 220px;
+  border-right: 1px solid #e0e0e0;
+  background: #fff;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.branch-panel h2 {
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #666;
+  margin-bottom: 12px;
+}
+
+.branch-panel ul {
+  list-style: none;
+}
+
+.branch-panel li {
+  margin-bottom: 4px;
+}
+
+.branch-panel button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #333;
+}
+
+.branch-panel button:hover {
+  background: #f0f0f0;
+}
+
+.branch-selected button {
+  background: #eef;
+  border-color: #4361ee;
+  font-weight: 500;
+}
+
+.document-area {
+  flex: 1;
+  padding: 24px 32px;
+  overflow-y: auto;
+}
+
+.document {
+  max-width: 720px;
+}
+
+.node-document {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fff;
+}
+
+.node-paragraph {
+  margin-bottom: 12px;
+}
+
+.node-spans {
+  line-height: 1.6;
+}
+
+.span-text {
+  font-size: 15px;
+}
+
+.span-alternatives {
+  display: inline;
+  font-size: 15px;
+  background: #fff3cd;
+  border-radius: 3px;
+  padding: 1px 3px;
+}
+
+.alternative-divider {
+  color: #999;
+  font-weight: 300;
+}
+
+.span-edit-input {
+  font-size: 15px;
+  font-family: inherit;
+  border: 2px solid #4361ee;
+  border-radius: 4px;
+  padding: 2px 6px;
+  outline: none;
+  min-width: 120px;
+}
+
+.span-editable {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 3px;
+  transition: background 0.15s;
+}
+
+.span-editable:hover {
+  background: #f0f0ff;
+}
+
+.saving-indicator {
+  color: #999;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.loading {
+  color: #999;
+  font-size: 14px;
+}
+
+.document-empty {
+  color: #999;
+  font-size: 14px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.debug-toggle-active {
+  background: #333 !important;
+}
+
+.debug-panel {
+  border-top: 1px solid #e0e0e0;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  max-height: 40vh;
+  overflow-y: auto;
+  font-size: 13px;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+.debug-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #333;
+}
+
+.debug-tabs button {
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #999;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.debug-tabs button:hover {
+  color: #fff;
+}
+
+.debug-tab-active {
+  color: #fff !important;
+  border-bottom-color: #4361ee !important;
+}
+
+.debug-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.debug-table th {
+  text-align: left;
+  padding: 6px 12px;
+  color: #666;
+  font-weight: 500;
+  border-bottom: 1px solid #333;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.debug-table td {
+  padding: 5px 12px;
+  border-bottom: 1px solid #222;
+}
+
+.debug-id {
+  color: #888;
+}
+
+.debug-badge {
+  display: inline-block;
+  background: #2a2a4a;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: #a0a0ff;
+}
+
+.debug-pos-detail {
+  margin-left: 6px;
+  color: #666;
+  font-size: 11px;
+}
+
+.debug-type {
+  color: #4ecdc4;
+}
+
+.debug-summary {
+  color: #ccc;
+}
+
+.error {
+  padding: 12px 24px;
+  background: #fee;
+  color: #c00;
+  font-size: 14px;
+}

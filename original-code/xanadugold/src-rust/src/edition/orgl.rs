@@ -6,7 +6,7 @@ use super::xn_region::XnRegion;
 const MAX_LEAF_SIZE: usize = 16384;
 
 #[derive(Debug, Clone, PartialEq)]
-enum Loaf {
+    pub(crate) enum Loaf {
     Leaf {
         region: XnRegion,
         entries: Vec<(i64, Arc<Carrier>)>,

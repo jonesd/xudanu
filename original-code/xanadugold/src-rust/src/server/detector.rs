@@ -89,11 +89,11 @@ impl DetectorList {
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub fn _len(&self) -> usize {
         self.detectors.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub fn _is_empty(&self) -> bool {
         self.detectors.is_empty()
     }
 }

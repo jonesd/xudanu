@@ -25,10 +25,10 @@ impl std::fmt::Display for SessionId {
     }
 }
 
-pub(crate) struct Session {
+pub struct Session {
     id: SessionId,
     key_master: Option<KeyMaster>,
-    connect_time: Instant,
+    _connect_time: Instant,
     initial_login: Option<BeId>,
     active: bool,
 }
@@ -38,7 +38,7 @@ impl Session {
         Session {
             id,
             key_master: None,
-            connect_time: Instant::now(),
+            _connect_time: Instant::now(),
             initial_login: None,
             active: true,
         }
@@ -56,8 +56,8 @@ impl Session {
         self.active = false;
     }
 
-    pub fn connect_time(&self) -> Instant {
-        self.connect_time
+    pub fn _connect_time(&self) -> Instant {
+        self._connect_time
     }
 
     pub fn initial_login(&self) -> Option<BeId> {
@@ -68,11 +68,11 @@ impl Session {
         self.key_master.is_some()
     }
 
-    pub fn key_master(&self) -> Option<&KeyMaster> {
+    pub fn _key_master(&self) -> Option<&KeyMaster> {
         self.key_master.as_ref()
     }
 
-    pub fn key_master_mut(&mut self) -> Option<&mut KeyMaster> {
+    pub fn _key_master_mut(&mut self) -> Option<&mut KeyMaster> {
         self.key_master.as_mut()
     }
 
@@ -90,7 +90,7 @@ impl Session {
         }
     }
 
-    pub fn clear_key_master(&mut self) {
+    pub fn _clear_key_master(&mut self) {
         self.key_master = None;
     }
 

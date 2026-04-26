@@ -12,7 +12,7 @@ const META_SNARF_ID: u32 = 0;
 const DATA_SNARF_OFFSET: u32 = DEFAULT_DATA_START;
 const META_VERSION: u32 = 1;
 
-pub(crate) struct MetaRecord {
+pub struct MetaRecord {
     pub(crate) hash_counter: u64,
     pub(crate) token_counter: u32,
     pub(crate) flocks: Vec<(FlockId, Option<FlockLocation>, FlockFlags, u32)>,
