@@ -1006,6 +1006,257 @@ async fn subscribe_and_receive_event() {
 // Phase 11: Work listing, Links, Transclusion
 // ============================================================
 
+// ============================================================
+// Concurrent editing (two-client)
+// ============================================================
+
+#[tokio::test]
+async fn two_clients_see_each_others_revisions() {
+    let srv = TestServer::start().await;
+    let (mut s_a, mut r_a, _) = json_setup(&srv).await;
+    let (mut s_b, mut r_b, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s_a, &mut r_a,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "initial"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let sub_frame = serde_json::json!({
+        "v": PROTOCOL_VERSION, "type": "subscribe", "id": 20,
+        "payload": {"detector_type": "revision", "target_id": work_id}
+    });
+    send_recv_json(&mut s_b, &mut r_b, sub_frame.clone()).await;
+
+    send_recv_json(&mut s_a, &mut r_a,
+        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    send_recv_json(&mut s_a, &mut r_a,
+        json_req(40, "work_revise", Some(serde_json::json!({
+            "work_id": work_id, "edition": {"text": "client a was here"}
+        })))).await;
+
+    send_recv_json(&mut s_a, &mut r_a,
+        json_req(50, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    let deadline = std::time::Duration::from_secs(3);
+    let start = std::time::Instant::now();
+    let mut got_event = false;
+    while start.elapsed() < deadline {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), r_b.next()).await {
+            Ok(Some(Ok(msg))) => {
+                let val: serde_json::Value = match msg {
+                    Message::Text(t) => serde_json::from_str(&t).unwrap(),
+                    Message::Binary(b) => serde_json::from_slice(&b).unwrap(),
+                    _ => continue,
+                };
+                if val["type"] == "event" && val["event"]["type"] == "work_revised" {
+                    assert_eq!(val["event"]["payload"]["work_be_id"], work_id);
+                    assert_eq!(val["event"]["payload"]["revision"], 1);
+                    got_event = true;
+                    break;
+                }
+            }
+            _ => continue,
+        }
+    }
+    assert!(got_event, "client B should receive work_revised event");
+
+    let resp = send_recv_json(&mut s_b, &mut r_b,
+        json_req(60, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["value"]["value"]["text"], "client a was here");
+}
+
+#[tokio::test]
+async fn grab_lock_prevents_concurrent_edit() {
+    let srv = TestServer::start().await;
+    let (mut s_a, mut r_a, _) = json_setup(&srv).await;
+    let (mut s_b, mut r_b, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s_a, &mut r_a,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "shared"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    send_recv_json(&mut s_a, &mut r_a,
+        json_req(20, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    let resp = send_recv_json(&mut s_b, &mut r_b,
+        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["type"], "error");
+    assert_eq!(resp["code"], "already_grabbed");
+}
+
+#[tokio::test]
+async fn delta_conflict_with_concurrent_client() {
+    let srv = TestServer::start().await;
+    let (mut s_a, mut r_a, _) = json_setup(&srv).await;
+    let (mut s_b, mut r_b, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s_a, &mut r_a,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "hello"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    send_recv_json(&mut s_a, &mut r_a,
+        json_req(20, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    send_recv_json(&mut s_a, &mut r_a,
+        json_req(30, "work_revise", Some(serde_json::json!({
+            "work_id": work_id, "edition": {"text": "hello world"}
+        })))).await;
+
+    send_recv_json(&mut s_a, &mut r_a,
+        json_req(40, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    send_recv_json(&mut s_b, &mut r_b,
+        json_req(50, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    let resp = send_recv_json(&mut s_b, &mut r_b,
+        json_req(60, "work_revise_delta", Some(serde_json::json!({
+            "work_id": work_id,
+            "base_revision": 0,
+            "ops": [
+                {"type": "retain", "count": 5},
+                {"type": "insert", "text": "!"}
+            ]
+        })))).await;
+    assert_eq!(resp["value"]["type"], "edition");
+    assert_eq!(resp["value"]["value"]["text"], "hello world");
+}
+
+#[tokio::test]
+async fn sequential_edits_by_two_clients() {
+    let srv = TestServer::start().await;
+    let (mut s_a, mut r_a, _) = json_setup(&srv).await;
+    let (mut s_b, mut r_b, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s_a, &mut r_a,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "one"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    send_recv_json(&mut s_a, &mut r_a,
+        json_req(20, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(&mut s_a, &mut r_a,
+        json_req(30, "work_revise", Some(serde_json::json!({
+            "work_id": work_id, "edition": {"text": "one two"}
+        })))).await;
+    send_recv_json(&mut s_a, &mut r_a,
+        json_req(40, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    send_recv_json(&mut s_b, &mut r_b,
+        json_req(50, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(&mut s_b, &mut r_b,
+        json_req(60, "work_revise_delta", Some(serde_json::json!({
+            "work_id": work_id,
+            "base_revision": 1,
+            "ops": [
+                {"type": "retain", "count": 7},
+                {"type": "insert", "text": " three"}
+            ]
+        })))).await;
+    send_recv_json(&mut s_b, &mut r_b,
+        json_req(70, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    let resp = send_recv_json(&mut s_a, &mut r_a,
+        json_req(80, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["value"]["value"]["text"], "one two three");
+}
+
+#[tokio::test]
+async fn status_events_cross_client() {
+    let srv = TestServer::start().await;
+    let (mut s_a, mut r_a, _) = json_setup(&srv).await;
+    let (mut s_b, mut r_b, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s_a, &mut r_a,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "test"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let sub_frame = serde_json::json!({
+        "v": PROTOCOL_VERSION, "type": "subscribe", "id": 20,
+        "payload": {"detector_type": "status", "target_id": work_id}
+    });
+    send_recv_json(&mut s_a, &mut r_a, sub_frame).await;
+
+    send_recv_json(&mut s_b, &mut r_b,
+        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    let deadline = std::time::Duration::from_secs(3);
+    let start = std::time::Instant::now();
+    let mut got_grabbed = false;
+    while start.elapsed() < deadline {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), r_a.next()).await {
+            Ok(Some(Ok(msg))) => {
+                let val: serde_json::Value = match msg {
+                    Message::Text(t) => serde_json::from_str(&t).unwrap(),
+                    Message::Binary(b) => serde_json::from_slice(&b).unwrap(),
+                    _ => continue,
+                };
+                if val["type"] == "event" && val["event"]["type"] == "work_grabbed" {
+                    assert_eq!(val["event"]["payload"]["work_be_id"], work_id);
+                    got_grabbed = true;
+                    break;
+                }
+            }
+            _ => continue,
+        }
+    }
+    assert!(got_grabbed, "client A should see client B grab the work");
+
+    send_recv_json(&mut s_b, &mut r_b,
+        json_req(40, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    let start = std::time::Instant::now();
+    let mut got_released = false;
+    while start.elapsed() < deadline {
+        match tokio::time::timeout(std::time::Duration::from_millis(100), r_a.next()).await {
+            Ok(Some(Ok(msg))) => {
+                let val: serde_json::Value = match msg {
+                    Message::Text(t) => serde_json::from_str(&t).unwrap(),
+                    Message::Binary(b) => serde_json::from_slice(&b).unwrap(),
+                    _ => continue,
+                };
+                if val["type"] == "event" && val["event"]["type"] == "work_released" {
+                    got_released = true;
+                    break;
+                }
+            }
+            _ => continue,
+        }
+    }
+    assert!(got_released, "client A should see client B release the work");
+}
+
+#[tokio::test]
+async fn revision_history_preserves_all_edits() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "v0"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    for i in 1..=5u64 {
+        send_recv_json(&mut s, &mut r,
+            json_req((20 + i as u16 * 10), "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+        send_recv_json(&mut s, &mut r,
+            json_req((21 + i as u16 * 10), "work_revise", Some(serde_json::json!({
+                "work_id": work_id, "edition": {"text": format!("v{}", i)}
+            })))).await;
+        send_recv_json(&mut s, &mut r,
+            json_req((22 + i as u16 * 10), "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+    }
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(200, "work_revision_count", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["value"]["value"], 5);
+
+    for i in 0..=5u64 {
+        let resp = send_recv_json(&mut s, &mut r,
+            json_req(300 + i as u16, "work_fetch_revision", Some(serde_json::json!({
+                "work_id": work_id, "number": i
+            })))).await;
+        assert_eq!(resp["value"]["value"]["text"], format!("v{}", i));
+    }
+}
+
 #[tokio::test]
 async fn work_list_empty() {
     let srv = TestServer::start().await;
