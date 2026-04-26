@@ -1,4 +1,4 @@
-use crate::edition::BeId;
+use crate::edition::{BeId, Edition};
 use crate::server::Server;
 use crate::server::lock::LockCredential;
 use crate::server::lock::{BooLock, ChallengeLock, MatchLock};
@@ -119,6 +119,19 @@ fn dispatch_inner(
         WireRequest::WorkRevise { work_id, edition } => {
             let ed = edition.to_edition();
             let rev = srv.work_revise(session_id, work_id, ed)?;
+            Ok(ResponseValue::Humber(rev))
+        }
+        WireRequest::WorkReviseDelta { work_id, base_revision, ops } => {
+            use super::protocol::apply_text_delta;
+            let current_ed = srv.work_edition(work_id)?;
+            let current_rev = srv.work_revision_count(work_id)?;
+            if current_rev != base_revision {
+                return Ok(ResponseValue::Edition(EditionPayload::from_edition(&current_ed)));
+            }
+            let current_text = edition_to_text(&current_ed);
+            let new_text = apply_text_delta(&current_text, &ops);
+            let new_ed = Edition::from_text(&new_text);
+            let rev = srv.work_revise(session_id, work_id, new_ed)?;
             Ok(ResponseValue::Humber(rev))
         }
         WireRequest::WorkGrab { work_id } => {
@@ -335,4 +348,12 @@ fn dispatch_inner(
             Ok(ResponseValue::WorkIds(work_ids))
         }
     }
+}
+
+fn edition_to_text(edition: &Edition) -> String {
+    edition
+        .all_entries()
+        .iter()
+        .map(|(_, carrier)| carrier.element.as_text().unwrap_or(""))
+        .collect()
 }

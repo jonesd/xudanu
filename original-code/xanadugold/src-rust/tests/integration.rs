@@ -1122,3 +1122,99 @@ async fn find_works_for_content() {
     assert_eq!(resp["type"], "response");
     assert!(resp["value"]["value"].as_array().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn delta_edit_success() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "hello world"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let rev0 = send_recv_json(&mut s, &mut r,
+        json_req(20, "work_revision_count", Some(serde_json::json!({"work_id": work_id}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    send_recv_json(&mut s, &mut r,
+        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(40, "work_revise_delta", Some(serde_json::json!({
+            "work_id": work_id,
+            "base_revision": rev0,
+            "ops": [
+                {"type": "retain", "count": 5},
+                {"type": "insert", "text": "beautiful"}
+            ]
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "humber");
+    assert_eq!(resp["value"]["value"], rev0 + 1);
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(50, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["value"]["value"]["text"], "hellobeautiful world");
+}
+
+#[tokio::test]
+async fn delta_edit_conflict_returns_edition() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "hello world"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    send_recv_json(&mut s, &mut r,
+        json_req(20, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    send_recv_json(&mut s, &mut r,
+        json_req(30, "work_revise", Some(serde_json::json!({
+            "work_id": work_id,
+            "edition": {"text": "hello world"}
+        })))).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(40, "work_revise_delta", Some(serde_json::json!({
+            "work_id": work_id,
+            "base_revision": 0,
+            "ops": [
+                {"type": "retain", "count": 5},
+                {"type": "insert", "text": "!"}
+            ]
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "edition");
+    assert_eq!(resp["value"]["value"]["text"], "hello world");
+}
+
+#[tokio::test]
+async fn delta_delete_and_insert() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "the quick brown fox"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    send_recv_json(&mut s, &mut r,
+        json_req(20, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(30, "work_revise_delta", Some(serde_json::json!({
+            "work_id": work_id,
+            "base_revision": 0,
+            "ops": [
+                {"type": "retain", "count": 4},
+                {"type": "delete", "count": 5},
+                {"type": "insert", "text": "slow"},
+                {"type": "retain", "count": 7}
+            ]
+        })))).await;
+    assert_eq!(resp["value"]["type"], "humber");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(40, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["value"]["value"]["text"], "the slow brown fox");
+}

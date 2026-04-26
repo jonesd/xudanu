@@ -126,6 +126,8 @@ pub enum OperationCode {
     WorkList,
     WorkListByOwner,
 
+    WorkReviseDelta,
+
     LinkCreate,
     LinkGet,
     LinkUpdate,
@@ -180,6 +182,7 @@ impl OperationCode {
             0x0313 => Some(OperationCode::WorkOwner),
             0x0314 => Some(OperationCode::WorkList),
             0x0315 => Some(OperationCode::WorkListByOwner),
+            0x0316 => Some(OperationCode::WorkReviseDelta),
 
             0x0401 => Some(OperationCode::EditionStore),
             0x0402 => Some(OperationCode::EditionGet),
@@ -262,6 +265,7 @@ impl OperationCode {
 
             OperationCode::WorkList                    => 0x0314,
             OperationCode::WorkListByOwner             => 0x0315,
+            OperationCode::WorkReviseDelta             => 0x0316,
 
             OperationCode::LinkCreate                  => 0x0701,
             OperationCode::LinkGet                     => 0x0702,
@@ -275,6 +279,43 @@ impl OperationCode {
             OperationCode::ServerStats => 0x0601,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TextDeltaOp {
+    Retain { count: u64 },
+    Insert { text: String },
+    Delete { count: u64 },
+}
+
+pub fn apply_text_delta(text: &str, ops: &[TextDeltaOp]) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut result = String::with_capacity(text.len() + 64);
+    let mut pos = 0usize;
+    for op in ops {
+        match op {
+            TextDeltaOp::Retain { count } => {
+                let end = (pos + *count as usize).min(chars.len());
+                for ch in &chars[pos..end] {
+                    result.push(*ch);
+                }
+                pos = end;
+            }
+            TextDeltaOp::Insert { text: t } => {
+                result.push_str(t);
+            }
+            TextDeltaOp::Delete { count } => {
+                pos = (pos + *count as usize).min(chars.len());
+            }
+        }
+    }
+    if pos < chars.len() {
+        for ch in &chars[pos..] {
+            result.push(*ch);
+        }
+    }
+    result
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -339,6 +380,8 @@ pub enum WireRequest {
 
     WorkList,
     WorkListByOwner { owner: BeId },
+
+    WorkReviseDelta { work_id: BeId, base_revision: u64, ops: Vec<TextDeltaOp> },
 
     LinkCreate { origin: BeId, destination: BeId, origin_ref: Option<HyperRefPayload>, destination_ref: Option<HyperRefPayload> },
     LinkGet { link_id: BeId },
