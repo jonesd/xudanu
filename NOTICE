@@ -1,0 +1,28 @@
+xudanu – Rust/WASM implementation in the Xanadu lineage
+
+This project includes work derived from Udanax Gold (Xanadu 92.1),
+originally developed by Autodesk, Inc. and contributors to the
+Xanadu project.
+
+Udanax Gold was released under the Xanadu X11 license, a permissive
+open-source license.
+
+This repository contains:
+
+* A translation and reinterpretation of Udanax Gold concepts into Rust
+  and WebAssembly
+* Modifications, optimizations, and new architectural elements
+
+Portions of this project are derived from Udanax Gold and remain
+subject to the terms of the Xanadu X11 license.
+The full license text is included in:
+THIRD_PARTY_LICENSES/udanax_gold.txt
+
+All other code in this repository:
+Copyright 2026 David J. and contributors
+Licensed under the Apache License, Version 2.0
+
+This project is an independent effort and is not affiliated with,
+endorsed by, or sponsored by Autodesk, Inc. or the original
+Xanadu project contributors.
+
