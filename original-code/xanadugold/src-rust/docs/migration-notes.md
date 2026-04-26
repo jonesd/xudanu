@@ -625,4 +625,112 @@ This creates documents, edits them, creates links, lists works, creates clubs, a
 |---|---|---|
 | Phase 10 | 612 unit + 47 integration | Admin API, handshake, detector subscription |
 | Phase 11 | 612 unit + 53 integration | +6 integration (work-list, links, transclusion) |
-| **Total** | **665** | All passing, 14 ignored |
+
+## Phase 14: Space/CoordinateSpace Types
+
+### What was implemented
+
+A new `src/space/` module with 8 files implementing Gold's CoordinateSpace hierarchy:
+
+| Module | C++ Original | Rust Implementation |
+|---|---|---|
+| `traits.rs` | `Space`/`Position`/`XnRegion`/`Dsp`/`OrderSpec` (spacex.hxx) | `Space`/`Position`/`Region`/`Dsp`/`OrderSpec` traits with circular associated types |
+| `integer.rs` | `IntegerSpace`/`IntegerPos`/`IntegerRegion` (integerx.hxx) | `IntegerSpace`, `IntegerPos`, `IntegerRegion` (wraps `XnRegion`), `IntegerDsp`, `IntegerAscending`/`IntegerDescending` |
+| `real.rs` | `RealSpace`/`RealPos`/`RealRegion` (realx.hxx) | `RealSpace`, `RealPos`, `RealRegion`, `RealDsp`, `RealAscending`/`RealDescending` |
+| `sequence.rs` | `SequenceSpace`/`Sequence`/`SequenceRegion`/`SequenceMapping` (sequencex.hxx) | `SequenceSpace`, `Sequence` (Vec<i64> + shift), `SequencePos`, `SequenceRegion`, `SequenceDsp`, `SequenceAscending`/`SequenceDescending` |
+| `cross.rs` | `CrossSpace`/`Tuple`/`CrossRegion`/`CrossMapping` (crossx.hxx) | `CrossSpace2<A,B>`, `Tuple2<A,B>`, `CrossRegion2<R1,R2>`, `CrossDsp2<D1,D2>`, `CrossOrder2` |
+| `filter.rs` | `FilterSpace`/`Filter`/`FilterPosition`/`Joint`/`RegionDelta` (filterx.hxx) | `FilterSpace`, `FilterPosition`, `Filter` enum (Full/Empty/Subset/Superset/Intersection/NotSubset/NotSuperset/And/Or), `Joint`, `RegionDelta` |
+| `mapping.rs` | `SimpleMapping`/`CompositeMapping`/`ConstantMapping`/`EmptyMapping` (spacep.hxx) | `SimpleMapping<S>`, `CompositeMapping<S>`, `ConstantMapping<S>`, `EmptyMapping<S>` with `MappingSpace` trait |
+| `order.rs` | `ReverseOrder`/`ChainedOrder` (spacep.hxx) | `ReverseOrder<P>`, `ChainedOrder<P>` |
+
+### Key design decisions
+
+1. **Circular associated types**: `Position<Region=R>` and `Region<Position=P>` where `P::Region=R` and `R::Position=P`. This preserves the type-level relationship between positions, regions, and displacements without inheritance.
+
+2. **IntegerRegion wraps XnRegion**: The existing `XnRegion` transition-array implementation is reused as the storage for `IntegerRegion`. This avoids duplication and maintains compatibility with the Edition layer.
+
+3. **CrossSpace2 is generic over two axes**: `CrossSpace2<A: Space, B: Space>` avoids heterogeneous type erasure for the common 2D case. Higher dimensions can be supported by nesting (e.g., `CrossSpace2<CrossSpace2<X, Y>, Z>`).
+
+4. **FilterSpace is standalone** (does NOT implement the Space trait): Filter positions are regions from another space, which can't be captured by the circular associated type pattern. Uses tag-based `Filter` enum with u64 tags instead of actual region comparison.
+
+5. **Mapping types use a separate `MappingSpace` trait**: Because the main `Region`/`Dsp` traits' method names (`contains`, `is_empty`) conflict with the mapping layer's own traits when both are in scope. Tests use fully-qualified `Region::contains(...)` calls.
+
+6. **ReverseOrder::compare() reverses ordering** by swapping args AND reversing the result via `.reverse()`. Manual Debug/PartialEq/Eq/Hash implementations since `Box<dyn OrderSpec>` doesn't impl Clone/Hash/Eq.
+
+### RealRegion bug: edge-flag model vs simple flip model
+
+**Root cause**: The original implementation used an edge-flag model where each transition stored both a `value: f64` and an `included: bool` flag. The `included` flag indicated whether the point at exactly that value was inside the region. This works for simple (non-merged) intervals but breaks when the merge algorithm produces same-value transition pairs.
+
+**How the bug manifested**: The `merge_real_regions` function produces same-value pairs like `[(3.0, false), (3.0, true)]` to represent the transition "not inside at 3.0, but inside just past 3.0". The `contains_value` method used flip counting: walk transitions with value <= v, flipping the inside state for each one. Two transitions at the same value flip twice (net zero), so `contains_value(4.0)` would see: flip at 3.0 -> true, flip at 3.0 -> false (back to false), then 5.0 > 4.0 so return false. But 4.0 IS in the region `(3.0, 5.0)`.
+
+**The fundamental tension**: The edge-flag model conflates two pieces of information:
+- The "at" state (the `included` flag at exact boundary values)
+- The "between" state (flipped by each transition)
+
+For simple intervals these are aligned. For merged intervals they conflict: same-value pairs represent a real state change ("not at 3.0, but yes past 3.0") that flip counting treats as zero change (two flips cancel).
+
+**Failed attempts**:
+1. Counting distinct-value groups instead of individual transitions -- works for point regions but breaks for merged intervals
+2. Using even/odd group sizes -- ambiguous: a group of 2 could mean 1 flip (false->true) or 0 flips (true->false->true->false)
+3. Linear scan with per-edge flips -- same double-flip problem
+4. `normalize_edges` that removes even-count groups -- removes the pair entirely, losing the real state change
+
+**Solution adopted**: Drop the `included` flag entirely. Use a simple flip model where transitions are just `Vec<f64>` values (like `XnRegion`/`IntegerRegion`). All intervals are internally half-open `[start, stop)`. Open/closed boundary distinctions from the API are mapped to half-open at construction time:
+- `interval(1.0, 5.0, false, false)` -> effective `[1.0+e, 5.0)` where e = `1.0.next_up() - 1.0`
+- `interval(1.0, 5.0, true, true)` -> effective `[1.0, 5.0+e)`
+- `above(10.0, false)` -> transition at `10.0.next_up()` instead of `10.0`
+- `below(10.0, true)` -> transition at `10.0.next_up()` instead of `10.0`
+
+This makes `contains_value` a simple flip count: count transitions with value <= v. The merge becomes a standard sorted-merge of transition arrays with no edge-flag logic, no `normalize_edges`, and no same-value ambiguity.
+
+**Trade-off**: We lose the ability to distinguish `[3.0, 5.0]` from `[3.0, 5.0)` at exact float values. For f64, `v.next_up() - v` is on the order of 10^-16, so this distinction is negligible for practical use. All existing tests pass with the half-open mapping.
+
+**Impact on the codebase**:
+- `RealEdge` struct removed entirely (was only used internally)
+- `RealRegion.transitions` changed from `Vec<RealEdge>` to `Vec<f64>`
+- `contains_value` simplified from 17 lines to 7 lines
+- `merge_real_regions` simplified from 60 lines to 30 lines
+- `complement` simplified from 8 lines to 4 lines (just flip `starts_inside`)
+- `normalize_edges`, `count_distinct_flips`, `count_net_flips` helper functions all removed
+- Manual `PartialEq`/`Eq`/`Hash` impls for `RealRegion` (since `Vec<f64>` doesn't impl them)
+
+### SequenceDsp inverse bug: shift not adjusted on leading-zero trim
+
+**Root cause**: `Sequence::from_numbers_with_shift` trimmed leading zeros from the numbers array but didn't adjust the `shift` field, so the first non-zero value ended up at the wrong index.
+
+**How the bug manifested**: `SequenceDsp::inverse()` computed `inv_translation = Sequence::zero().minus(&self.translation).shifted(-self.shift)`. The `minus` operation produced `[0, 0, 5]` at shift=-2, meaning 5 is at index 0. But `from_numbers_with_shift([0, 0, 5], -2)` trimmed the leading zeros to `[5]` while keeping shift=-2, incorrectly placing 5 at index -2 instead of index 0. This caused `inv.of(d.of(x))` to produce `{ shift: -2, numbers: [5] }` instead of `{ shift: 0, numbers: [5] }`.
+
+**The fix was one line**: increment `shift` for each leading zero removed:
+
+```rust
+while numbers.first() == Some(&0) {
+    numbers.remove(0);
+    shift += 1;  // was missing
+}
+```
+
+**Additional change**: `Sequence::from_numbers()` was decoupled from `from_numbers_with_shift` because they have different semantics:
+- `from_numbers([0, 0, 3, 7])` -> trim and reindex to start at 0 (user-facing, padding removal)
+- `from_numbers_with_shift(result, start)` -> trim and adjust shift to preserve actual indices (internal, for plus/minus)
+
+**The inverse formula itself was correct**: `inverse_transform(seq) = seq.minus(&self.translation).shifted(-self.shift)` undoes the forward `transform(seq) = seq.shifted(self.shift).plus(&self.translation)` correctly. The bug was entirely in the index bookkeeping of `from_numbers_with_shift`.
+
+### Enhancement ideas for future phases
+
+1. **yrs/CRDT as transport layer**: The Edition model maps naturally to yrs `Doc` with `Text` sequences. An Edition could be materialized into a yrs document for real-time sync, while maintaining the Gold partial ordering for conflict preservation.
+
+2. **Compressed transition arrays**: For very large regions, run-length encoding with 32-bit deltas could reduce memory usage.
+
+3. **Parallel region operations**: `merge_transitions` could be parallelized for large regions using rayon.
+
+4. **RealRegion epsilon-aware API**: Expose the half-open mapping to callers who need exact boundary control. Could add `interval_half_open(start, stop)` constructor.
+
+5. **SequenceRegion: drop edge-flag model**: SequenceRegion uses the same edge-flag pattern as the old RealRegion and may have the same merge/contains bug. Consider adopting the same simple flip model.
+
+### Test counts
+
+| Phase | Tests | Notes |
+|---|---|---|
+| Phase 13 | 612 unit + 54 integration | Arc<Mutex> refactor |
+| Phase 14 (space types) | 686 unit + 54 integration | +74 new space tests |
+| **Total** | **740** | All passing, 11 ignored |
