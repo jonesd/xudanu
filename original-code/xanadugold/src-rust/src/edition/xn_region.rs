@@ -231,6 +231,13 @@ impl XnRegion {
             None
         }
     }
+
+    pub fn shift(&self, offset: i64) -> Self {
+        XnRegion {
+            starts_inside: self.starts_inside,
+            transitions: self.transitions.iter().map(|t| t.wrapping_add(offset)).collect(),
+        }
+    }
 }
 
 impl Default for XnRegion {
