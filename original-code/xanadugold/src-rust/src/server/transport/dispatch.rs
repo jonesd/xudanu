@@ -368,6 +368,37 @@ fn dispatch_inner(
             }).collect();
             Ok(ResponseValue::SharedRegions(payloads))
         }
+
+        WireRequest::BlobUpload { data, mime_type } => {
+            let raw_data = crate::edition::base64_decode(&data)
+                .ok_or_else(|| crate::server::ServerError::InvalidArgument("invalid base64 data".to_string()))?;
+            let meta = srv.blob_upload(session_id, raw_data, mime_type)?;
+            Ok(ResponseValue::BlobMeta(super::protocol::BlobMetaPayload::from_blob_meta(&meta)))
+        }
+        WireRequest::BlobGet { content_hash } => {
+            let data = srv.blob_get(content_hash)?;
+            Ok(ResponseValue::BlobData(data))
+        }
+        WireRequest::BlobGetPreview { content_hash } => {
+            match srv.blob_preview(content_hash)? {
+                Some(data) => Ok(ResponseValue::BlobData(data)),
+                None => Ok(ResponseValue::Void),
+            }
+        }
+        WireRequest::BlobExists { content_hash } => {
+            Ok(ResponseValue::Boolean(srv.blob_exists(content_hash)))
+        }
+        WireRequest::BlobInfo { content_hash } => {
+            let meta = srv.blob_info(content_hash)?;
+            Ok(ResponseValue::BlobMeta(super::protocol::BlobMetaPayload::from_blob_meta(&meta)))
+        }
+        WireRequest::BlobStats => {
+            let (total_blobs, total_bytes) = srv.blob_stats();
+            Ok(ResponseValue::BlobStatsInfo(super::protocol::BlobStatsPayload {
+                total_blobs,
+                total_bytes,
+            }))
+        }
     }
 }
 

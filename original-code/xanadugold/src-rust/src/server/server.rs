@@ -4,6 +4,7 @@ use crate::edition::{
     BeId, Edition, GrandMap, RangeElement, Work,
 };
 use crate::edition::backfollow::BackfollowEngine;
+use crate::edition::blob_store::{BlobMeta, BlobStore};
 use crate::edition::links::{HyperLink, HyperRef};
 use crate::edition::transclusion::{TransclusionIndex, TransclusionQuery, WorkQuery};
 use super::admin::{AdminState, IdGrant, SessionInfo};
@@ -59,6 +60,7 @@ pub struct Server {
     link_counter: BeId,
     backfollow: BackfollowEngine,
     transclusion_index: TransclusionIndex,
+    blob_store: BlobStore,
 }
 
 #[derive(Debug)]
@@ -141,6 +143,7 @@ impl Server {
             link_counter: 0,
             transclusion_index: TransclusionIndex::new(),
             backfollow: BackfollowEngine::new(),
+            blob_store: BlobStore::in_memory(),
         };
 
         let pub_club = Club::new_with_owner(
@@ -1086,6 +1089,47 @@ impl Server {
         find_shared_substrings(&text_a, &text_b, 4)
     }
 
+    // === Blob operations ===
+
+    pub fn blob_upload(
+        &mut self,
+        session_id: SessionId,
+        data: Vec<u8>,
+        mime_type: String,
+    ) -> Result<BlobMeta, ServerError> {
+        self.ensure_logged_in(session_id)?;
+        self.blob_store.store(&data, mime_type)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn blob_get(&self, hash_u64: u64) -> Result<Vec<u8>, ServerError> {
+        let meta = self.blob_store.get_meta_by_u64(hash_u64)
+            .ok_or_else(|| ServerError::NotFound(format!("blob {:016x}", hash_u64)))?;
+        self.blob_store.retrieve(&meta.content_hash)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn blob_preview(&self, hash_u64: u64) -> Result<Option<Vec<u8>>, ServerError> {
+        let meta = self.blob_store.get_meta_by_u64(hash_u64)
+            .ok_or_else(|| ServerError::NotFound(format!("blob {:016x}", hash_u64)))?;
+        self.blob_store.retrieve_preview(&meta)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn blob_exists(&self, hash_u64: u64) -> bool {
+        self.blob_store.get_meta_by_u64(hash_u64).is_some()
+    }
+
+    pub fn blob_info(&self, hash_u64: u64) -> Result<BlobMeta, ServerError> {
+        self.blob_store.get_meta_by_u64(hash_u64)
+            .ok_or_else(|| ServerError::NotFound(format!("blob {:016x}", hash_u64)))
+    }
+
+    pub fn blob_stats(&self) -> (u64, u64) {
+        let stats = self.blob_store.stats();
+        (stats.total_blobs, stats.total_bytes)
+    }
+
     // === Detectors ===
 
     pub fn add_revision_detector(
@@ -1367,6 +1411,7 @@ mod persist_snapshot {
                 link_counter: snapshot.link_counter,
                 transclusion_index: TransclusionIndex::new(),
                 backfollow: BackfollowEngine::new(),
+                blob_store: BlobStore::in_memory(),
             };
 
             for club_snap in &snapshot.clubs {
@@ -2471,5 +2516,77 @@ mod tests {
             let new_id = server.create_work(sid, Edition::from_text("y")).unwrap();
             assert!(new_id > last_id, "new id {} should be > last {}", new_id, last_id);
         }
+    }
+
+    #[test]
+    fn blob_upload_and_get() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let meta = server.blob_upload(sid, b"hello blob".to_vec(), "text/plain".to_string()).unwrap();
+        assert_eq!(meta.byte_size, 10);
+        assert_eq!(meta.mime_type, "text/plain");
+        let data = server.blob_get(meta.hash_u64()).unwrap();
+        assert_eq!(data, b"hello blob");
+    }
+
+    #[test]
+    fn blob_upload_requires_login() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        let result = server.blob_upload(sid, b"data".to_vec(), "image/png".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn blob_deduplication() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let m1 = server.blob_upload(sid, b"same".to_vec(), "text/plain".to_string()).unwrap();
+        let m2 = server.blob_upload(sid, b"same".to_vec(), "text/plain".to_string()).unwrap();
+        assert_eq!(m1.hash_u64(), m2.hash_u64());
+    }
+
+    #[test]
+    fn blob_exists() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let meta = server.blob_upload(sid, b"data".to_vec(), "text/plain".to_string()).unwrap();
+        assert!(server.blob_exists(meta.hash_u64()));
+        assert!(!server.blob_exists(99999));
+    }
+
+    #[test]
+    fn blob_info() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let meta = server.blob_upload(sid, b"info test".to_vec(), "image/png".to_string()).unwrap();
+        let info = server.blob_info(meta.hash_u64()).unwrap();
+        assert_eq!(info.byte_size, 9);
+        assert_eq!(info.mime_type, "image/png");
+    }
+
+    #[test]
+    fn blob_not_found() {
+        let server = Server::new();
+        let result = server.blob_get(99999);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn blob_stats() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let (blobs, bytes) = server.blob_stats();
+        assert_eq!(blobs, 0);
+        assert_eq!(bytes, 0);
+        server.blob_upload(sid, b"aaa".to_vec(), "text/plain".to_string()).unwrap();
+        let (blobs, bytes) = server.blob_stats();
+        assert_eq!(blobs, 1);
+        assert_eq!(bytes, 3);
     }
 }

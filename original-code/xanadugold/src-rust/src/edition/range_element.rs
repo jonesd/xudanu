@@ -1,3 +1,5 @@
+use super::blob_store::ImageOverlay;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RangeElementId(pub u64);
@@ -8,7 +10,7 @@ impl RangeElementId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RangeElement {
     Data {
@@ -32,6 +34,18 @@ pub enum RangeElement {
     },
     Work {
         work_id: RangeElementId,
+    },
+    Blob {
+        content_hash: u64,
+        mime_type: String,
+        byte_size: u64,
+        #[cfg_attr(feature = "serde", serde(default))]
+        width: Option<u32>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        height: Option<u32>,
+    },
+    Overlay {
+        overlay: ImageOverlay,
     },
 }
 
@@ -73,6 +87,30 @@ impl RangeElement {
         }
     }
 
+    pub fn blob(content_hash: u64, mime_type: impl Into<String>, byte_size: u64) -> Self {
+        RangeElement::Blob {
+            content_hash,
+            mime_type: mime_type.into(),
+            byte_size,
+            width: None,
+            height: None,
+        }
+    }
+
+    pub fn blob_with_dims(content_hash: u64, mime_type: impl Into<String>, byte_size: u64, width: u32, height: u32) -> Self {
+        RangeElement::Blob {
+            content_hash,
+            mime_type: mime_type.into(),
+            byte_size,
+            width: Some(width),
+            height: Some(height),
+        }
+    }
+
+    pub fn overlay(image_overlay: ImageOverlay) -> Self {
+        RangeElement::Overlay { overlay: image_overlay }
+    }
+
     pub fn is_data(&self) -> bool {
         matches!(self, RangeElement::Data { .. })
     }
@@ -110,6 +148,45 @@ impl RangeElement {
         match self {
             RangeElement::Work { work_id } => Some(work_id.0),
             _ => None,
+        }
+    }
+
+    pub fn is_blob(&self) -> bool {
+        matches!(self, RangeElement::Blob { .. })
+    }
+
+    pub fn is_overlay(&self) -> bool {
+        matches!(self, RangeElement::Overlay { .. })
+    }
+
+    pub fn as_blob(&self) -> Option<(u64, &str, u64, Option<u32>, Option<u32>)> {
+        match self {
+            RangeElement::Blob { content_hash, mime_type, byte_size, width, height } => {
+                Some((*content_hash, mime_type.as_str(), *byte_size, *width, *height))
+            }
+            _ => None,
+        }
+    }
+
+    pub fn as_blob_hash(&self) -> Option<u64> {
+        match self {
+            RangeElement::Blob { content_hash, .. } => Some(*content_hash),
+            RangeElement::Overlay { overlay } => Some(overlay.base_hash),
+            _ => None,
+        }
+    }
+
+    pub fn as_overlay(&self) -> Option<&ImageOverlay> {
+        match self {
+            RangeElement::Overlay { overlay } => Some(overlay),
+            _ => None,
+        }
+    }
+
+    pub fn is_image(&self) -> bool {
+        match self {
+            RangeElement::Blob { mime_type, .. } => mime_type.starts_with("image/"),
+            _ => false,
         }
     }
 }

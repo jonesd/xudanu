@@ -140,6 +140,13 @@ pub enum OperationCode {
     FindSharedRegions,
 
     ServerStats,
+
+    BlobUpload,
+    BlobGet,
+    BlobGetPreview,
+    BlobExists,
+    BlobInfo,
+    BlobStats,
 }
 
 impl OperationCode {
@@ -210,6 +217,13 @@ impl OperationCode {
             0x0804 => Some(OperationCode::FindSharedRegions),
 
             0x0601 => Some(OperationCode::ServerStats),
+
+            0x0901 => Some(OperationCode::BlobUpload),
+            0x0902 => Some(OperationCode::BlobGet),
+            0x0903 => Some(OperationCode::BlobGetPreview),
+            0x0904 => Some(OperationCode::BlobExists),
+            0x0905 => Some(OperationCode::BlobInfo),
+            0x0906 => Some(OperationCode::BlobStats),
 
             _ => None,
         }
@@ -283,6 +297,13 @@ impl OperationCode {
             OperationCode::FindSharedRegions           => 0x0804,
 
             OperationCode::ServerStats => 0x0601,
+
+            OperationCode::BlobUpload      => 0x0901,
+            OperationCode::BlobGet          => 0x0902,
+            OperationCode::BlobGetPreview   => 0x0903,
+            OperationCode::BlobExists       => 0x0904,
+            OperationCode::BlobInfo         => 0x0905,
+            OperationCode::BlobStats        => 0x0906,
         }
     }
 }
@@ -401,6 +422,13 @@ pub enum WireRequest {
     FindSharedRegions { work_a: BeId, work_b: BeId },
 
     ServerStats,
+
+    BlobUpload { data: String, mime_type: String },
+    BlobGet { content_hash: u64 },
+    BlobGetPreview { content_hash: u64 },
+    BlobExists { content_hash: u64 },
+    BlobInfo { content_hash: u64 },
+    BlobStats,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -483,6 +511,9 @@ pub enum ResponseValue {
     WorkIds(Vec<BeId>),
     TextTransclusionResults(Vec<TextTransclusionResultPayload>),
     SharedRegions(Vec<SharedRegionPayload>),
+    BlobMeta(BlobMetaPayload),
+    BlobData(Vec<u8>),
+    BlobStatsInfo(BlobStatsPayload),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -550,6 +581,35 @@ pub struct SharedRegionPayload {
     pub start_b: i64,
     pub end_b: i64,
     pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlobMetaPayload {
+    pub content_hash: u64,
+    pub byte_size: u64,
+    pub mime_type: String,
+    pub preview_hash: Option<u64>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
+impl BlobMetaPayload {
+    pub fn from_blob_meta(meta: &crate::edition::BlobMeta) -> Self {
+        BlobMetaPayload {
+            content_hash: meta.hash_u64(),
+            byte_size: meta.byte_size,
+            mime_type: meta.mime_type.clone(),
+            preview_hash: meta.preview_hash.map(|h| crate::edition::u64_from_hash(&h)),
+            width: meta.metadata.get("width").and_then(|v| v.parse().ok()),
+            height: meta.metadata.get("height").and_then(|v| v.parse().ok()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlobStatsPayload {
+    pub total_blobs: u64,
+    pub total_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
