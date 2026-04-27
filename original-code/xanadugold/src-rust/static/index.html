@@ -115,7 +115,7 @@ header .session-info { font-size: 11px; color: var(--fg2); background: var(--bg3
   <div class="sidebar">
     <div class="sidebar-header">
       <h2>Documents</h2>
-      <button onclick="doCreate()">+ New</button>
+      <button id="btnNew" onclick="doCreate()" disabled>+ New</button>
     </div>
     <div class="work-list" id="worklist"></div>
   </div>
@@ -139,6 +139,7 @@ header .session-info { font-size: 11px; color: var(--fg2); background: var(--bg3
       <input type="range" id="revRange" min="0" max="0" value="0" oninput="onRevSlide(this.value)">
       <span class="rev-num" id="revNum">0</span>
       <button onclick="closeHistory()">Back to current</button>
+      <button id="btnRestore" onclick="doRestore()" style="display:none;margin-left:4px;background:#d29922;color:#0d1117;font-weight:600">Restore this version</button>
     </div>
     <div class="editor-area">
       <div class="editor-content" id="editor"></div>
@@ -178,6 +179,8 @@ let authorMap={};
 let colorIdx=0;
 let pendingReq={};
 let lastKnownText='';
+let historyText=null;
+let historyRev=null;
 let autoSaveTimer=null;
 const AUTO_SAVE_MS=1500;
 
@@ -208,10 +211,11 @@ function connectWs() {
   ws.onopen = () => { $('status').textContent='Connected'; $('status').className='status connected'; };
   ws.onmessage = ev => {
     const msg = JSON.parse(ev.data);
+    console.log('msg', msg.type, msg);
     if (msg.type==='handshake') { doConnect(); return; }
     if (msg.type==='response') { handleResp(msg); return; }
     if (msg.type==='event') { handleEvent(msg); return; }
-    if (msg.type==='error') { toast('Error: '+(msg.message||msg.code)); return; }
+    if (msg.type==='error') { console.error('error', msg); toast((msg.message||msg.code).replace(/^Error:\s*/,'')); return; }
   };
   ws.onclose = () => { $('status').textContent='Disconnected'; $('status').className='status'; };
   ws.onerror = () => { $('status').textContent='Error'; $('status').className='status'; };
@@ -244,14 +248,19 @@ function handleResp(msg) {
   const op = pendingReq[msg.id];
   delete pendingReq[msg.id];
   const v = msg.value;
+  console.log('resp', op, JSON.stringify(v));
 
-  if (v && v.type==='humber' && !sessionId) {
+  if (op==='session_connect' && v && (v.type==='humber' || v.type==='id')) {
     sessionId = v.value;
     $('sessionInfo').textContent = 'session '+sessionId;
     req('session_login_public');
     return;
   }
-  if (!loggedIn && sessionId) { loggedIn=true; refresh(); return; }
+  if (op==='session_login_public') {
+    loggedIn=true;
+    $('btnNew').disabled=false;
+    refresh(); return;
+  }
 
   if (v && v.type==='work_list') {
     works = v.value;
@@ -271,20 +280,31 @@ function handleResp(msg) {
       updateRevInfo();
       return;
     }
-    renderEdition(v.value, op==='history_fetch');
+    renderEdition(v.value, op==='work_fetch_revision');
     return;
   }
-  if (v && v.type==='humber') {
-    if (op==='work_create') {
-      currentWork = v.value; currentRev=0; totalRevs=1; isEditing=false;
+  if (op==='work_create') {
+    const workId = (v && v.type==='id') ? v.value : (v && v.type==='humber') ? v.value : null;
+    if (workId !== null) {
+      currentWork = workId; currentRev=0; totalRevs=1; isEditing=false;
       refresh(); showWork(currentWork);
       toast('Document created');
       return;
     }
+  }
+  if (v && v.type==='humber') {
     if (op==='work_revise') {
-      currentRev = v.value; totalRevs = v.value; isEditing=false;
-      updateToolbar();
-      toast('Saved revision '+v.value);
+      currentRev = v.value; totalRevs = v.value;
+      if (restoringAfterGrab === 'revising') {
+        restoringAfterGrab = false;
+        req('work_release', {work_id: currentWork});
+        closeHistory();
+        toast('Restored revision as #'+v.value);
+      } else {
+        isEditing=false;
+        updateToolbar();
+        toast('Saved revision '+v.value);
+      }
       return;
     }
     if (op==='work_revise_delta') {
@@ -293,12 +313,24 @@ function handleResp(msg) {
       toast('Auto-saved revision '+v.value);
       return;
     }
+    if (op==='work_revision_count') {
+      totalRevs = v.value;
+      if (!isEditing) currentRev = v.value;
+      updateRevInfo();
+      return;
+    }
   }
   if (v && v.type==='link_list') { renderLinks(v.value); return; }
-  if (v && v.type==='boolean' && op==='work_grab') {
-    isEditing=true; updateToolbar();
-    $('editor').contentEditable='true'; $('editor').focus();
-    toast('Editing - type your changes');
+  if ((v && v.type==='boolean' && v.value===true && op==='work_grab') ||
+      (v && v.type==='void' && op==='work_grab')) {
+    if (restoringAfterGrab === true) {
+      restoringAfterGrab = false;
+      finishRestore();
+    } else {
+      isEditing=true; updateToolbar();
+      $('editor').contentEditable='true'; $('editor').focus();
+      toast('Editing - type your changes');
+    }
     return;
   }
   if (v && v.type==='void' && op==='work_release') {
@@ -306,7 +338,6 @@ function handleResp(msg) {
     $('editor').contentEditable='false';
     return;
   }
-  if (v && v.type==='id') { refresh(); return; }
 }
 
 function handleEvent(msg) {
@@ -403,12 +434,15 @@ function renderEdition(ed, isHistoryView) {
   else text = JSON.stringify(ed);
 
   if (isHistoryView) {
+    historyText = text;
     el.innerHTML = '';
     const span = document.createElement('span');
     span.style.opacity = '0.6';
     span.textContent = text;
     el.appendChild(span);
   } else {
+    historyText = null;
+    historyRev = null;
     el.textContent = text;
     if (isEditing) lastKnownText = text;
   }
@@ -587,13 +621,32 @@ function toggleHistory() {
 
 function closeHistory() {
   $('revSlider').classList.remove('visible');
+  $('btnRestore').style.display = 'none';
   viewingHistory = false;
+  historyText = null;
+  historyRev = null;
   if (currentWork) req('work_get_edition', {work_id: currentWork});
 }
 
 function onRevSlide(val) {
   $('revNum').textContent = val;
+  historyRev = parseInt(val);
+  $('btnRestore').style.display = (historyRev < totalRevs) ? '' : 'none';
   req('work_fetch_revision', {work_id: currentWork, number: parseInt(val)});
+}
+
+function doRestore() {
+  if (!currentWork || historyText === null) return;
+  if (!confirm('Restore document to revision ' + historyRev + '? This will create a new revision with that content.')) return;
+  req('work_grab', {work_id: currentWork});
+  restoringAfterGrab = true;
+}
+
+var restoringAfterGrab = false;
+
+function finishRestore() {
+  req('work_revise', {work_id: currentWork, edition: {text: historyText}});
+  restoringAfterGrab = 'revising';
 }
 
 function toggleLinks() {
