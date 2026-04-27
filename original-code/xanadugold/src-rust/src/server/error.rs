@@ -29,8 +29,9 @@ impl std::fmt::Display for ServerError {
             ServerError::NotFound(s) => write!(f, "not found: {}", s),
             ServerError::AlreadyExists(s) => write!(f, "already exists: {}", s),
             ServerError::NotGrabbed(id) => write!(f, "work {} not grabbed", id),
-            ServerError::AlreadyGrabbed { work, by } => {
-                write!(f, "work {} already grabbed by {:?}", work, by)
+            ServerError::AlreadyGrabbed { work, by } => match by {
+                Some(sid) => write!(f, "work {} is locked by session {} (use release first or wait for them to finish)", work, sid),
+                None => write!(f, "work {} is locked by another session", work),
             }
             ServerError::SessionRequired => write!(f, "session required"),
             ServerError::InvalidArgument(s) => write!(f, "invalid argument: {}", s),
