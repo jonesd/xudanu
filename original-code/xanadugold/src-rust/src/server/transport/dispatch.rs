@@ -282,14 +282,14 @@ fn dispatch_inner(
         }
 
         WireRequest::WorkList => {
-            let entries = srv.list_works().into_iter().map(|(work_id, owner, revision_count, is_grabbed)| {
-                super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed }
+            let entries = srv.list_works_with_titles().into_iter().map(|(work_id, owner, revision_count, is_grabbed, title)| {
+                super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed, title }
             }).collect();
             Ok(ResponseValue::WorkList(entries))
         }
         WireRequest::WorkListByOwner { owner } => {
             let entries = srv.list_works_by_owner(owner).into_iter().map(|(work_id, owner, revision_count, is_grabbed)| {
-                super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed }
+                super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed, title: String::new() }
             }).collect();
             Ok(ResponseValue::WorkList(entries))
         }

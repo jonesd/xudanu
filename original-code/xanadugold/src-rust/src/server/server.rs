@@ -715,6 +715,24 @@ impl Server {
             .collect()
     }
 
+    pub fn list_works_with_titles(&self) -> Vec<(BeId, Option<BeId>, u64, bool, String)> {
+        self.works
+            .iter()
+            .map(|(id, ws)| {
+                let owner = ws.work.owner();
+                let rev_count = ws.work.revision_count();
+                let grabbed = ws.grabber.is_some();
+                let text = ws.work.current_edition()
+                    .all_entries()
+                    .iter()
+                    .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                    .collect::<String>();
+                let title = text.lines().next().unwrap_or("").chars().take(60).collect();
+                (*id, owner, rev_count, grabbed, title)
+            })
+            .collect()
+    }
+
     pub fn list_works_by_owner(&self, owner: BeId) -> Vec<(BeId, Option<BeId>, u64, bool)> {
         self.works
             .iter()
