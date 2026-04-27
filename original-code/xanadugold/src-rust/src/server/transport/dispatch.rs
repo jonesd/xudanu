@@ -347,6 +347,27 @@ fn dispatch_inner(
             let work_ids = srv.find_works_for_content(content_be_id);
             Ok(ResponseValue::WorkIds(work_ids))
         }
+        WireRequest::FindTextTranscluders { text } => {
+            let results = srv.find_text_transcluders(&text);
+            let payloads = results.into_iter().map(|(work_id, owner, revision_count, matches)| {
+                super::protocol::TextTransclusionResultPayload {
+                    work_id,
+                    owner,
+                    revision_count,
+                    matches: matches.into_iter().map(|(start, end)| {
+                        super::protocol::TextMatchPayload { start, end }
+                    }).collect(),
+                }
+            }).collect();
+            Ok(ResponseValue::TextTransclusionResults(payloads))
+        }
+        WireRequest::FindSharedRegions { work_a, work_b } => {
+            let results = srv.find_shared_regions(work_a, work_b);
+            let payloads = results.into_iter().map(|(start_a, end_a, start_b, end_b, text)| {
+                super::protocol::SharedRegionPayload { work_id: work_b, start_a, end_a, start_b, end_b, text }
+            }).collect();
+            Ok(ResponseValue::SharedRegions(payloads))
+        }
     }
 }
 

@@ -1015,6 +1015,59 @@ impl Server {
         elems.into_iter().filter_map(|e| e.as_work_id()).collect()
     }
 
+    pub fn find_text_transcluders(
+        &self,
+        search_text: &str,
+    ) -> Vec<(BeId, Option<BeId>, u64, Vec<(i64, i64)>)> {
+        let mut results = Vec::new();
+        for (work_id, ws) in &self.works {
+            let ed = ws.work.current_edition();
+            let text = ed
+                .all_entries()
+                .iter()
+                .map(|(_, carrier)| carrier.element.as_text().unwrap_or(""))
+                .collect::<String>();
+            let mut matches = Vec::new();
+            let mut start = 0;
+            while let Some(pos) = text[start..].find(search_text) {
+                let abs_start = (start + pos) as i64;
+                let abs_end = abs_start + search_text.len() as i64;
+                matches.push((abs_start, abs_end));
+                start += pos + 1;
+                if start >= text.len() { break; }
+            }
+            if !matches.is_empty() {
+                results.push((
+                    *work_id,
+                    ws.work.owner(),
+                    ws.work.revision_count(),
+                    matches,
+                ));
+            }
+        }
+        results
+    }
+
+    pub fn find_shared_regions(
+        &self,
+        work_a: BeId,
+        work_b: BeId,
+    ) -> Vec<(i64, i64, i64, i64, String)> {
+        let text_a = match self.work_edition(work_a) {
+            Ok(ed) => ed.all_entries().iter()
+                .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                .collect::<String>(),
+            Err(_) => return Vec::new(),
+        };
+        let text_b = match self.work_edition(work_b) {
+            Ok(ed) => ed.all_entries().iter()
+                .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                .collect::<String>(),
+            Err(_) => return Vec::new(),
+        };
+        find_shared_substrings(&text_a, &text_b, 4)
+    }
+
     // === Detectors ===
 
     pub fn add_revision_detector(
@@ -1377,6 +1430,157 @@ mod persist_snapshot {
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
             Ok(Self::from_snapshot(&snapshot))
         }
+    }
+}
+
+fn find_shared_substrings(
+    text_a: &str,
+    text_b: &str,
+    min_len: usize,
+) -> Vec<(i64, i64, i64, i64, String)> {
+    let a_bytes = text_a.as_bytes();
+    let b_bytes = text_b.as_bytes();
+    let a_len = a_bytes.len();
+    let b_len = b_bytes.len();
+    if a_len == 0 || b_len == 0 || min_len == 0 {
+        return Vec::new();
+    }
+    let mut results = Vec::new();
+    let mut matched_a = vec![false; a_len];
+    let mut matched_b = vec![false; b_len];
+    for i in 0..a_len {
+        if matched_a[i] {
+            continue;
+        }
+        for j in 0..b_len {
+            if matched_b[j] {
+                continue;
+            }
+            let mut len = 0usize;
+            while i + len < a_len && j + len < b_len
+                && !matched_a[i + len] && !matched_b[j + len]
+                && a_bytes[i + len] == b_bytes[j + len]
+            {
+                len += 1;
+            }
+            if len >= min_len {
+                let shared = String::from_utf8_lossy(&a_bytes[i..i + len]).to_string();
+                results.push((i as i64, (i + len) as i64, j as i64, (j + len) as i64, shared));
+                for k in 0..len {
+                    matched_a[i + k] = true;
+                    matched_b[j + k] = true;
+                }
+                break;
+            }
+        }
+    }
+    results
+}
+
+#[cfg(test)]
+mod tests_find_text {
+    use super::*;
+    use crate::edition::Edition;
+
+    fn setup() -> (Server, crate::server::SessionId) {
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        (server, session)
+    }
+
+    #[test]
+    fn find_text_transcluders_basic() {
+        let (mut server, sid) = setup();
+        let doc1 = server.create_work(sid, Edition::from_text("hello world")).unwrap();
+        let doc2 = server.create_work(sid, Edition::from_text("hello universe")).unwrap();
+        let doc3 = server.create_work(sid, Edition::from_text("goodbye world")).unwrap();
+
+        let results = server.find_text_transcluders("hello");
+        assert_eq!(results.len(), 2);
+        let ids: Vec<BeId> = results.iter().map(|(id, _, _, _)| *id).collect();
+        assert!(ids.contains(&doc1));
+        assert!(ids.contains(&doc2));
+        assert!(!ids.contains(&doc3));
+    }
+
+    #[test]
+    fn find_text_transcluders_returns_match_positions() {
+        let (mut server, sid) = setup();
+        let _doc = server.create_work(sid, Edition::from_text("abc hello def hello ghi")).unwrap();
+
+        let results = server.find_text_transcluders("hello");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].3.len(), 2);
+        assert_eq!(results[0].3[0], (4, 9));
+        assert_eq!(results[0].3[1], (14, 19));
+    }
+
+    #[test]
+    fn find_text_transcluders_no_match() {
+        let (mut server, sid) = setup();
+        let _doc = server.create_work(sid, Edition::from_text("hello world")).unwrap();
+
+        let results = server.find_text_transcluders("xyz");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn find_text_transcluders_returns_owner_and_revision_count() {
+        let (mut server, sid) = setup();
+        let doc = server.create_work(sid, Edition::from_text("hello")).unwrap();
+
+        let results = server.find_text_transcluders("hello");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, doc);
+        assert!(results[0].1.is_some());
+        assert_eq!(results[0].2, 0);
+    }
+
+    #[test]
+    fn find_shared_regions_basic() {
+        let (mut server, sid) = setup();
+        let doc_a = server.create_work(sid, Edition::from_text("the quick brown fox")).unwrap();
+        let doc_b = server.create_work(sid, Edition::from_text("a quick blue fox jumps")).unwrap();
+
+        let regions = server.find_shared_regions(doc_a, doc_b);
+        assert!(!regions.is_empty());
+        let texts: Vec<&str> = regions.iter().map(|r| r.4.as_str()).collect();
+        assert!(texts.iter().any(|t: &&str| t.contains("quick")));
+        assert!(texts.iter().any(|t: &&str| t.contains("fox")));
+    }
+
+    #[test]
+    fn find_shared_regions_no_overlap() {
+        let (mut server, sid) = setup();
+        let doc_a = server.create_work(sid, Edition::from_text("aaaa")).unwrap();
+        let doc_b = server.create_work(sid, Edition::from_text("bbbb")).unwrap();
+
+        let regions = server.find_shared_regions(doc_a, doc_b);
+        assert!(regions.is_empty());
+    }
+
+    #[test]
+    fn find_shared_substrings_basic() {
+        let results = find_shared_substrings("the quick brown fox", "a quick blue fox", 4);
+        assert!(!results.is_empty());
+        let texts: Vec<&str> = results.iter().map(|r| r.4.as_str()).collect();
+        assert!(texts.iter().any(|t| t.contains("quick")));
+    }
+
+    #[test]
+    fn find_shared_substrings_min_length() {
+        let results = find_shared_substrings("abcdef", "abcxyz", 4);
+        assert!(results.is_empty());
+        let results = find_shared_substrings("abcdef", "abcxyz", 3);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].4, "abc");
+    }
+
+    #[test]
+    fn find_shared_substrings_empty() {
+        assert!(find_shared_substrings("", "hello", 4).is_empty());
+        assert!(find_shared_substrings("hello", "", 4).is_empty());
     }
 }
 

@@ -136,6 +136,8 @@ pub enum OperationCode {
 
     FindTranscluders,
     FindWorksForContent,
+    FindTextTranscluders,
+    FindSharedRegions,
 
     ServerStats,
 }
@@ -204,6 +206,8 @@ impl OperationCode {
 
             0x0801 => Some(OperationCode::FindTranscluders),
             0x0802 => Some(OperationCode::FindWorksForContent),
+            0x0803 => Some(OperationCode::FindTextTranscluders),
+            0x0804 => Some(OperationCode::FindSharedRegions),
 
             0x0601 => Some(OperationCode::ServerStats),
 
@@ -275,6 +279,8 @@ impl OperationCode {
 
             OperationCode::FindTranscluders            => 0x0801,
             OperationCode::FindWorksForContent         => 0x0802,
+            OperationCode::FindTextTranscluders        => 0x0803,
+            OperationCode::FindSharedRegions           => 0x0804,
 
             OperationCode::ServerStats => 0x0601,
         }
@@ -391,6 +397,8 @@ pub enum WireRequest {
 
     FindTranscluders { content_be_id: BeId },
     FindWorksForContent { content_be_id: BeId },
+    FindTextTranscluders { text: String },
+    FindSharedRegions { work_a: BeId, work_b: BeId },
 
     ServerStats,
 }
@@ -473,6 +481,8 @@ pub enum ResponseValue {
     LinkList(Vec<LinkPayload>),
     TransclusionResults(Vec<TransclusionResultPayload>),
     WorkIds(Vec<BeId>),
+    TextTransclusionResults(Vec<TextTransclusionResultPayload>),
+    SharedRegions(Vec<SharedRegionPayload>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -514,6 +524,30 @@ pub struct TransclusionResultPayload {
     pub element_type: String,
     pub element_id: BeId,
     pub is_direct: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextTransclusionResultPayload {
+    pub work_id: BeId,
+    pub owner: Option<BeId>,
+    pub revision_count: u64,
+    pub matches: Vec<TextMatchPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextMatchPayload {
+    pub start: i64,
+    pub end: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SharedRegionPayload {
+    pub work_id: BeId,
+    pub start_a: i64,
+    pub end_a: i64,
+    pub start_b: i64,
+    pub end_b: i64,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
