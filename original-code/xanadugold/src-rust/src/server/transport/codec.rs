@@ -752,6 +752,20 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::FindWorksForContent { content_be_id: args.content_be_id })
             }
+            OperationCode::FindTextTranscluders => {
+                #[derive(Deserialize)]
+                struct Args { text: String }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::FindTextTranscluders { text: args.text })
+            }
+            OperationCode::FindSharedRegions => {
+                #[derive(Deserialize)]
+                struct Args { work_a: BeId, work_b: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::FindSharedRegions { work_a: args.work_a, work_b: args.work_b })
+            }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
