@@ -6,680 +6,835 @@
 <title>xudanu</title>
 <style>
 :root {
-  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --bg4: #30363d;
-  --fg: #e6edf3; --fg2: #8b949e; --fg3: #484f58;
-  --accent: #58a6ff; --green: #3fb950; --red: #f85149; --orange: #d29922;
-  --purple: #bc8cff; --cyan: #39d353;
-  --radius: 6px;
+  --bg:#0d1117; --bg2:#161b22; --bg3:#21262d; --bg4:#30363d;
+  --fg:#c9d1d9; --fg2:#8b949e; --fg3:#484f58;
+  --accent:#58a6ff; --green:#3fb950; --red:#f85149;
+  --orange:#d29922; --purple:#bc8cff;
+  --border:#30363d; --radius:6px;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--fg); height: 100vh; display: flex; flex-direction: column; }
-a { color: var(--accent); }
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--fg);height:100vh;display:flex;flex-direction:column}
+#app{display:flex;flex-direction:column;flex:1;min-height:0}
+a{color:var(--accent)}
 
-header { background: var(--bg2); padding: 8px 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--bg3); flex-shrink: 0; }
-header .logo { font-weight: 700; font-size: 15px; color: var(--accent); letter-spacing: -0.5px; }
-header .status { font-size: 12px; color: var(--fg2); }
-header .status.connected { color: var(--green); }
-header .spacer { flex: 1; }
-header .session-info { font-size: 11px; color: var(--fg2); background: var(--bg3); padding: 3px 8px; border-radius: var(--radius); }
+header{background:var(--bg2);padding:4px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);flex-shrink:0;height:32px}
+header .logo{font-weight:700;font-size:15px;color:var(--accent);letter-spacing:-0.5px}
+header .status{font-size:12px;color:var(--fg2)}
+header .status.connected{color:var(--green)}
+header .spacer{flex:1}
+header .session-info{font-size:11px;color:var(--fg2);background:var(--bg3);padding:3px 8px;border-radius:var(--radius)}
 
-.layout { display: flex; flex: 1; overflow: hidden; }
+.layout{display:flex;flex:1;overflow:hidden;min-height:0}
 
-.sidebar { width: 240px; background: var(--bg2); border-right: 1px solid var(--bg3); display: flex; flex-direction: column; flex-shrink: 0; }
-.sidebar-header { padding: 12px 12px 8px; display: flex; align-items: center; justify-content: space-between; }
-.sidebar-header h2 { font-size: 11px; color: var(--fg2); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
-.sidebar-header button { background: var(--accent); color: var(--bg); border: none; padding: 4px 10px; border-radius: var(--radius); cursor: pointer; font-size: 12px; font-weight: 600; }
-.sidebar-header button:hover { opacity: 0.85; }
-.work-list { flex: 1; overflow-y: auto; }
-.work-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--bg3); display: flex; align-items: center; gap: 8px; }
-.work-item:hover { background: var(--bg3); }
-.work-item.active { background: var(--bg3); border-left: 2px solid var(--accent); }
-.work-item .id { font-size: 10px; color: var(--fg3); font-family: 'SF Mono', Menlo, monospace; }
-.work-item .meta { font-size: 12px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.work-item .rev { font-size: 10px; color: var(--fg3); }
-.work-item .badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
-.badge-editing { background: var(--orange); color: var(--bg); }
-.badge-locked { background: var(--red); color: white; }
+.sidebar{width:200px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-header{padding:12px 12px 8px;display:flex;align-items:center;justify-content:space-between}
+.sidebar-header h2{font-size:11px;color:var(--fg2);text-transform:uppercase;letter-spacing:1px;font-weight:600}
+.sidebar-header button{background:var(--accent);color:var(--bg);border:none;padding:4px 10px;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600}
+.sidebar-header button:hover{opacity:.85}
+.sidebar-header button:disabled{opacity:.35;cursor:default}
+.work-list{flex:1;overflow-y:auto}
+.work-item{padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--bg3);display:flex;align-items:center;gap:8px}
+.work-item:hover{background:var(--bg3)}
+.work-item.active{background:var(--bg3);border-left:2px solid var(--accent)}
+.work-item .id{font-size:10px;color:var(--fg3);font-family:'SF Mono',Menlo,monospace}
+.work-item .meta{font-size:12px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.work-item .rev{font-size:10px;color:var(--fg3)}
+.work-item .badge{font-size:9px;padding:1px 5px;border-radius:3px;font-weight:600}
+.badge-editing{background:var(--orange);color:var(--bg)}
 
-.center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.center{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
 
-.toolbar { background: var(--bg2); padding: 6px 12px; display: flex; gap: 6px; border-bottom: 1px solid var(--bg3); align-items: center; flex-shrink: 0; }
-.toolbar button { background: var(--bg3); color: var(--fg); border: none; padding: 5px 12px; border-radius: var(--radius); cursor: pointer; font-size: 12px; font-family: inherit; }
-.toolbar button:hover { background: var(--bg4); }
-.toolbar button:disabled { opacity: 0.35; cursor: default; }
-.toolbar button.primary { background: var(--green); color: var(--bg); font-weight: 600; }
-.toolbar button.primary:hover { opacity: 0.85; }
-.toolbar button.danger { background: var(--red); color: white; }
-.toolbar .sep { width: 1px; height: 20px; background: var(--bg4); margin: 0 4px; }
-.toolbar .rev-info { font-size: 11px; color: var(--fg2); font-family: 'SF Mono', Menlo, monospace; margin-left: auto; }
-.toolbar .rev-info .editing { color: var(--orange); font-weight: 600; }
-.toolbar .rev-info .saving { color: var(--accent); }
+.toolbar{background:var(--bg2);padding:6px 12px;display:flex;gap:6px;border-bottom:1px solid var(--border);align-items:center;flex-shrink:0}
+.toolbar button{background:var(--bg3);color:var(--fg);border:none;padding:5px 12px;border-radius:var(--radius);cursor:pointer;font-size:12px;font-family:inherit}
+.toolbar button:hover{background:var(--bg4)}
+.toolbar button:disabled{opacity:.35;cursor:default}
+.toolbar button.primary{background:var(--green);color:var(--bg);font-weight:600}
+.toolbar button.primary:hover{opacity:.85}
+.toolbar button.danger{background:var(--red);color:#fff}
+.toolbar button.danger:hover{opacity:.85}
+.toolbar .sep{width:1px;height:20px;background:var(--bg4);margin:0 4px}
+.toolbar .rev-info{font-size:11px;color:var(--fg2);font-family:'SF Mono',Menlo,monospace;margin-left:auto}
+.toolbar .rev-info .editing{color:var(--orange);font-weight:600}
 
-.presence-bar { background: var(--bg2); padding: 4px 12px; border-bottom: 1px solid var(--bg3); display: flex; gap: 8px; align-items: center; flex-shrink: 0; min-height: 28px; }
-.presence-bar .label { font-size: 10px; color: var(--fg3); text-transform: uppercase; }
-.presence-user { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+.revision-slider{background:var(--bg2);padding:6px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.revision-slider label{font-size:11px;color:var(--fg2);white-space:nowrap}
+.revision-slider input[type=range]{flex:1;accent-color:var(--accent)}
+.revision-slider .rev-num{font-size:11px;color:var(--accent);font-family:'SF Mono',Menlo,monospace;min-width:50px;text-align:right}
+.revision-slider button{background:var(--bg3);color:var(--fg);border:none;padding:3px 8px;border-radius:var(--radius);cursor:pointer;font-size:11px}
+.revision-slider button.restore-btn{background:var(--orange);color:var(--bg);font-weight:600;margin-left:4px}
 
-.revision-slider { background: var(--bg2); padding: 6px 12px; border-bottom: 1px solid var(--bg3); display: none; align-items: center; gap: 8px; flex-shrink: 0; }
-.revision-slider.visible { display: flex; }
-.revision-slider label { font-size: 11px; color: var(--fg2); white-space: nowrap; }
-.revision-slider input[type=range] { flex: 1; accent-color: var(--accent); }
-.revision-slider .rev-num { font-size: 11px; color: var(--accent); font-family: 'SF Mono', Menlo, monospace; min-width: 50px; text-align: right; }
-.revision-slider button { background: var(--bg3); color: var(--fg); border: none; padding: 3px 8px; border-radius: var(--radius); cursor: pointer; font-size: 11px; }
+.editor-area{flex:1;overflow-y:auto;overflow-x:hidden;position:relative;min-height:0}
+.editor-area.split{display:flex;overflow:hidden}
+.editor-pane-wrap{flex:1;overflow-y:auto;position:relative;min-height:0}
+.editor-content{padding:16px 32px;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:14px;line-height:1.6;white-space:pre-wrap;word-wrap:break-word;outline:none}
+.editor-content:empty::before{content:'Select or create a document...';color:var(--fg3)}
+.editor-content[contenteditable=true]{background:rgba(88,166,255,0.03)}
+.placeholder-text{color:var(--fg3);font-style:italic}
 
-.editor-area { flex: 1; overflow-y: auto; position: relative; }
-.editor-content { padding: 20px 24px; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 14px; line-height: 1.7; white-space: pre-wrap; word-wrap: break-word; min-height: 100%; outline: none; }
-.editor-content:empty::before { content: 'Select or create a document...'; color: var(--fg3); }
-.editor-content[contenteditable=true] { background: var(--bg); }
-.placeholder-text { color: var(--fg3); font-style: italic; }
+.editor-divider{width:40px;min-width:40px;background:var(--bg2);position:relative;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--border);border-right:1px solid var(--border)}
+.editor-divider::before{content:'';position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--border)}
 
-.right-panel { width: 260px; background: var(--bg2); border-left: 1px solid var(--bg3); display: flex; flex-direction: column; flex-shrink: 0; }
-.right-panel .panel-header { padding: 12px 12px 8px; }
-.right-panel h2 { font-size: 11px; color: var(--fg2); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
-.link-list { flex: 1; overflow-y: auto; }
-.link-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--bg3); font-size: 12px; display: flex; align-items: center; gap: 6px; }
-.link-item:hover { background: var(--bg3); }
-.link-item .arrow { color: var(--accent); }
-.link-item .id { font-size: 10px; color: var(--fg3); font-family: 'SF Mono', Menlo, monospace; }
+.split-close{position:absolute;top:8px;right:8px;background:var(--bg3);color:var(--fg);border:none;padding:4px 8px;border-radius:var(--radius);cursor:pointer;font-size:11px;z-index:20}
+.split-close:hover{background:var(--bg4)}
+.split-label{position:absolute;top:8px;left:12px;font-size:10px;color:var(--fg3);text-transform:uppercase;letter-spacing:1px;z-index:20;background:var(--bg2);padding:2px 6px;border-radius:3px}
 
-.footer { background: var(--bg2); border-top: 1px solid var(--bg3); padding: 6px 12px; display: flex; gap: 8px; flex-shrink: 0; }
-#cmd { flex: 1; background: var(--bg); color: var(--fg); border: 1px solid var(--bg4); padding: 6px 10px; border-radius: var(--radius); font-family: 'SF Mono', Menlo, monospace; font-size: 12px; }
-#cmd:focus { border-color: var(--accent); outline: none; }
-.footer button { background: var(--bg4); color: var(--fg); border: none; padding: 6px 14px; border-radius: var(--radius); cursor: pointer; font-family: inherit; font-size: 12px; }
+.transclusion-hl{background:rgba(210,153,34,0.25);border-bottom:2px solid var(--orange);border-radius:2px}
 
-.toast { position: fixed; bottom: 50px; right: 16px; background: var(--bg3); color: var(--fg); padding: 8px 16px; border-radius: var(--radius); font-size: 12px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 100; }
-.toast.show { opacity: 1; }
+.svg-overlay{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15;overflow:visible}
 
-.color-legend { padding: 12px; border-top: 1px solid var(--bg3); }
-.color-legend h3 { font-size: 10px; color: var(--fg3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-bottom: 3px; }
-.legend-swatch { width: 12px; height: 12px; border-radius: 2px; }
+.find-refs-popup{position:fixed;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:8px;z-index:50;box-shadow:0 4px 16px rgba(0,0,0,0.4);min-width:220px;max-width:320px;transform:translateX(-50%)}
+.find-refs-popup .fr-btn{background:var(--orange);color:var(--bg);border:none;padding:4px 12px;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;width:100%}
+.find-refs-popup .fr-btn:hover{opacity:.85}
+.find-refs-popup .fr-btn:disabled{opacity:.5;cursor:default}
+.find-refs-popup .fr-loading{font-size:11px;color:var(--fg2);margin-top:6px;text-align:center}
+.find-refs-results{margin-top:6px;max-height:200px;overflow-y:auto}
+.find-refs-result{padding:5px 8px;cursor:pointer;font-size:11px;border-radius:3px;display:flex;align-items:center;gap:6px}
+.find-refs-result:hover{background:var(--bg3)}
+.find-refs-result .fr-id{font-family:'SF Mono',Menlo,monospace;color:var(--accent);min-width:30px}
+.find-refs-result .fr-owner{color:var(--fg2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.find-refs-result .fr-count{background:var(--orange);color:var(--bg);padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600}
 
-@media (max-width: 900px) {
-  .sidebar { width: 180px; }
-  .right-panel { width: 200px; }
-}
-@media (max-width: 700px) {
-  .sidebar, .right-panel { display: none; }
-}
+.footer{background:var(--bg2);border-top:1px solid var(--border);padding:3px 12px;display:none;gap:8px;flex-shrink:0}
+.footer.visible{display:flex}
+.footer input{flex:1;background:var(--bg);color:var(--fg);border:1px solid var(--border);padding:4px 10px;border-radius:var(--radius);font-family:'SF Mono',Menlo,monospace;font-size:12px}
+.footer input:focus{border-color:var(--accent);outline:none}
+.footer button{background:var(--bg4);color:var(--fg);border:none;padding:4px 14px;border-radius:var(--radius);cursor:pointer;font-size:12px}
+
+.toast-wrap{position:fixed;bottom:50px;right:16px;z-index:100;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.toast{background:var(--bg3);color:var(--fg);padding:8px 16px;border-radius:var(--radius);font-size:12px;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+
+@media(max-width:900px){.sidebar{width:180px}}
+@media(max-width:700px){.sidebar{display:none}}
 </style>
 </head>
 <body>
-<header>
-  <span class="logo">xudanu</span>
-  <span class="status" id="status">connecting...</span>
-  <span class="spacer"></span>
-  <span class="session-info" id="sessionInfo"></span>
-</header>
-
-<div class="layout">
-  <div class="sidebar">
-    <div class="sidebar-header">
-      <h2>Documents</h2>
-      <button id="btnNew" onclick="doCreate()" disabled>+ New</button>
-    </div>
-    <div class="work-list" id="worklist"></div>
-  </div>
-
-  <div class="center">
-    <div class="toolbar" id="toolbar">
-      <button id="btnEdit" onclick="doEdit()" disabled>Edit</button>
-      <button id="btnSave" onclick="doSave()" class="primary" disabled>Save</button>
-      <button id="btnCancel" onclick="doCancel()" class="danger" disabled>Cancel</button>
-      <div class="sep"></div>
-      <button id="btnHistory" onclick="toggleHistory()" disabled>History</button>
-      <button id="btnLinks" onclick="toggleLinks()" disabled>Links</button>
-      <span class="rev-info" id="revInfo"></span>
-    </div>
-    <div class="presence-bar" id="presenceBar" style="display:none">
-      <span class="label">Editors</span>
-      <div id="presenceUsers"></div>
-    </div>
-    <div class="revision-slider" id="revSlider">
-      <label>Revision</label>
-      <input type="range" id="revRange" min="0" max="0" value="0" oninput="onRevSlide(this.value)">
-      <span class="rev-num" id="revNum">0</span>
-      <button onclick="closeHistory()">Back to current</button>
-      <button id="btnRestore" onclick="doRestore()" style="display:none;margin-left:4px;background:#d29922;color:#0d1117;font-weight:600">Restore this version</button>
-    </div>
-    <div class="editor-area">
-      <div class="editor-content" id="editor"></div>
-    </div>
-  </div>
-
-  <div class="right-panel" id="rightPanel" style="display:none">
-    <div class="panel-header"><h2>Links</h2></div>
-    <div class="link-list" id="linklist"></div>
-    <div class="color-legend">
-      <h3>Author Colors</h3>
-      <div id="legendItems"></div>
-    </div>
-  </div>
-</div>
-
-<div class="footer">
-  <input id="cmd" placeholder="Type a command..." autofocus>
-  <button onclick="sendCmd()">Run</button>
-</div>
-<div class="toast" id="toast"></div>
-
+<div id="app"></div>
+<script src="https://unpkg.com/preact@10/dist/preact.umd.js"></script>
+<script src="https://unpkg.com/preact@10/hooks/dist/hooks.umd.js"></script>
 <script>
-const AUTHOR_COLORS = [
-  '#58a6ff','#3fb950','#d29922','#f85149','#bc8cff',
-  '#39d353','#79c0ff','#ffa657','#ff7b72','#d2a8ff',
-  '#56d4dd','#7ee787','#e3b341','#ffa198','#b392f0'
-];
+var ph = preactHooks || preact.hooks;
+var h = preact.h, render = preact.render, Fragment = preact.Fragment;
+var useState = ph.useState, useEffect = ph.useEffect, useRef = ph.useRef,
+    useCallback = ph.useCallback, useMemo = ph.useMemo, useLayoutEffect = ph.useLayoutEffect;
 
-let ws=null, nextId=1, sessionId=null, loggedIn=false;
-let works=[], currentWork=null, currentRev=0, totalRevs=0;
-let isEditing=false, viewingHistory=false;
-let subscriptions={};
-let presence={};
-let authorColors={};
-let authorMap={};
-let colorIdx=0;
-let pendingReq={};
-let lastKnownText='';
-let historyText=null;
-let historyRev=null;
-let autoSaveTimer=null;
-const AUTO_SAVE_MS=1500;
+var AUTO_SAVE_MS = 1500;
 
-const $=id=>document.getElementById(id);
-
-function getAuthorColor(sessionId) {
-  if (!authorColors[sessionId]) {
-    authorColors[sessionId] = AUTHOR_COLORS[colorIdx % AUTHOR_COLORS.length];
-    colorIdx++;
-  }
-  return authorColors[sessionId];
-}
-
-function getAuthorName(sid) {
-  if (sid === sessionId) return 'You';
-  if (authorMap[sid]) return authorMap[sid];
-  return 'User ' + sid;
-}
-
-function toast(msg) {
-  const t=$('toast'); t.textContent=msg; t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 2500);
-}
-
-function connectWs() {
-  const proto = location.protocol==='https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(proto+'//'+location.host+'/xudanu?format=json&version=2');
-  ws.onopen = () => { $('status').textContent='Connected'; $('status').className='status connected'; };
-  ws.onmessage = ev => {
-    const msg = JSON.parse(ev.data);
-    console.log('msg', msg.type, msg);
-    if (msg.type==='handshake') { doConnect(); return; }
-    if (msg.type==='response') { handleResp(msg); return; }
-    if (msg.type==='event') { handleEvent(msg); return; }
-    if (msg.type==='error') { console.error('error', msg); toast((msg.message||msg.code).replace(/^Error:\s*/,'')); return; }
-  };
-  ws.onclose = () => { $('status').textContent='Disconnected'; $('status').className='status'; };
-  ws.onerror = () => { $('status').textContent='Error'; $('status').className='status'; };
-}
-
-function req(op, payload) {
-  const id = nextId++;
-  const f = {v:2, type:'request', id, op};
-  if (payload) f.payload = payload;
-  pendingReq[id] = op;
-  ws.send(JSON.stringify(f));
-  return id;
-}
-
-function subscribe(detType, targetId) {
-  const id = nextId++;
-  const f = {v:2, type:'subscribe', id, payload:{detector_type:detType, target_id:targetId}};
-  ws.send(JSON.stringify(f));
-  return id;
-}
-
-function unsubscribe(subId) {
-  const f = {v:2, type:'unsubscribe', id:subId};
-  ws.send(JSON.stringify(f));
-}
-
-function doConnect() { req('session_connect'); }
-
-function handleResp(msg) {
-  const op = pendingReq[msg.id];
-  delete pendingReq[msg.id];
-  const v = msg.value;
-  console.log('resp', op, JSON.stringify(v));
-
-  if (op==='session_connect' && v && (v.type==='humber' || v.type==='id')) {
-    sessionId = v.value;
-    $('sessionInfo').textContent = 'session '+sessionId;
-    req('session_login_public');
-    return;
-  }
-  if (op==='session_login_public') {
-    loggedIn=true;
-    $('btnNew').disabled=false;
-    refresh(); return;
-  }
-
-  if (v && v.type==='work_list') {
-    works = v.value;
-    renderWorkList();
-    return;
-  }
-  if (v && v.type==='edition') {
-    if (op==='work_revise_delta') {
-      let text = '';
-      const ed = v.value;
-      if (ed && ed.text) text = ed.text;
-      else if (ed && ed.entries) text = ed.entries.map(e => e[1].Text ? e[1].Text.text : '').join('');
-      $('editor').textContent = text;
-      lastKnownText = text;
-      currentRev = totalRevs;
-      toast('Conflict resolved - document updated');
-      updateRevInfo();
-      return;
-    }
-    renderEdition(v.value, op==='work_fetch_revision');
-    return;
-  }
-  if (op==='work_create') {
-    const workId = (v && v.type==='id') ? v.value : (v && v.type==='humber') ? v.value : null;
-    if (workId !== null) {
-      currentWork = workId; currentRev=0; totalRevs=1; isEditing=false;
-      refresh(); showWork(currentWork);
-      toast('Document created');
-      return;
-    }
-  }
-  if (v && v.type==='humber') {
-    if (op==='work_revise') {
-      currentRev = v.value; totalRevs = v.value;
-      if (restoringAfterGrab === 'revising') {
-        restoringAfterGrab = false;
-        req('work_release', {work_id: currentWork});
-        closeHistory();
-        toast('Restored revision as #'+v.value);
-      } else {
-        isEditing=false;
-        updateToolbar();
-        toast('Saved revision '+v.value);
-      }
-      return;
-    }
-    if (op==='work_revise_delta') {
-      currentRev = v.value; totalRevs = v.value;
-      updateRevInfo();
-      toast('Auto-saved revision '+v.value);
-      return;
-    }
-    if (op==='work_revision_count') {
-      totalRevs = v.value;
-      if (!isEditing) currentRev = v.value;
-      updateRevInfo();
-      return;
-    }
-  }
-  if (v && v.type==='link_list') { renderLinks(v.value); return; }
-  if ((v && v.type==='boolean' && v.value===true && op==='work_grab') ||
-      (v && v.type==='void' && op==='work_grab')) {
-    if (restoringAfterGrab === true) {
-      restoringAfterGrab = false;
-      finishRestore();
-    } else {
-      isEditing=true; updateToolbar();
-      $('editor').contentEditable='true'; $('editor').focus();
-      toast('Editing - type your changes');
-    }
-    return;
-  }
-  if (v && v.type==='void' && op==='work_release') {
-    isEditing=false; updateToolbar();
-    $('editor').contentEditable='false';
-    return;
-  }
-}
-
-function handleEvent(msg) {
-  const ev = msg.event;
-  if (!ev) return;
-
-  if (ev.type==='work_revised') {
-    if (ev.payload.work_be_id === currentWork && !isEditing && !viewingHistory) {
-      currentRev = ev.payload.revision;
-      totalRevs = ev.payload.revision;
-      req('work_get_edition', {work_id: currentWork});
-      updateRevInfo();
-    } else if (ev.payload.work_be_id === currentWork) {
-      totalRevs = ev.payload.revision;
-      updateRevInfo();
-    }
-    if (ev.payload.session_id) {
-      const sid = ev.payload.session_id;
-      if (sid !== sessionId) {
-        const color = getAuthorColor(sid);
-        authorMap[sid] = authorMap[sid] || ('User '+sid);
-        toast(getAuthorName(sid)+' saved revision '+ev.payload.revision);
-      }
-    }
-  }
-  if (ev.type==='work_grabbed' && ev.payload.work_be_id === currentWork) {
-    const sid = ev.payload.session_id;
-    if (sid !== sessionId) {
-      presence[sid] = {editing: true};
-      updatePresence();
-      toast(getAuthorName(sid)+' started editing');
-    }
-  }
-  if (ev.type==='work_released' && ev.payload.work_be_id === currentWork) {
-    const sid = ev.payload.session_id;
-    if (sid !== sessionId) {
-      delete presence[sid];
-      updatePresence();
-    }
-  }
-}
-
-function refresh() {
-  req('work_list');
-  if (currentWork) req('link_list_for_work', {work_id: currentWork});
-}
-
-function showWork(id) {
-  Object.values(subscriptions).forEach(subId => unsubscribe(subId));
-  subscriptions = {};
-  presence = {};
-
-  currentWork = id; isEditing=false; viewingHistory=false;
-  $('editor').contentEditable='false';
-  closeHistory();
-
-  const s1 = subscribe('revision', id);
-  const s2 = subscribe('status', id);
-  subscriptions = {revision: s1, status: s2};
-
-  req('work_get_edition', {work_id: id});
-  req('link_list_for_work', {work_id: id});
-  req('work_revision_count', {work_id: id});
-  updateToolbar();
-}
-
-function renderWorkList() {
-  const el = $('worklist'); el.innerHTML='';
-  if (!works.length) { el.innerHTML='<div style="padding:12px;color:var(--fg3);font-size:12px">No documents yet</div>'; return; }
-  for (const w of works) {
-    const d = document.createElement('div');
-    d.className = 'work-item'+(w.work_id===currentWork?' active':'');
-    let badge = '';
-    if (w.is_grabbed) badge = '<span class="badge badge-editing">editing</span>';
-    d.innerHTML = '<span class="id">'+w.work_id+'</span><span class="meta">'+badge+'</span><span class="rev">r'+w.revision_count+'</span>';
-    d.onclick = () => { currentWork=w.work_id; currentRev=w.revision_count; totalRevs=w.revision_count; showWork(w.work_id); };
-    el.appendChild(d);
-  }
-}
-
-function renderEdition(ed, isHistoryView) {
-  const el = $('editor');
-  if (!ed || ed.empty!==undefined) {
-    el.innerHTML = '<span class="placeholder-text">Empty document</span>';
-    updateLegend();
-    return;
-  }
-  let text = '';
-  if (ed.text) text = ed.text;
-  else if (ed.entries) text = ed.entries.map(e => {
-    const el = e[1];
-    return el.Text ? el.Text.text : '['+JSON.stringify(el)+']';
-  }).join('');
-  else text = JSON.stringify(ed);
-
-  if (isHistoryView) {
-    historyText = text;
-    el.innerHTML = '';
-    const span = document.createElement('span');
-    span.style.opacity = '0.6';
-    span.textContent = text;
-    el.appendChild(span);
-  } else {
-    historyText = null;
-    historyRev = null;
-    el.textContent = text;
-    if (isEditing) lastKnownText = text;
-  }
-  updateLegend();
-}
-
-function renderLinks(links) {
-  const el = $('linklist'); el.innerHTML='';
-  if (!links||!links.length) { el.innerHTML='<div style="padding:12px;color:var(--fg3);font-size:12px">No links</div>'; return; }
-  for (const l of links) {
-    const d = document.createElement('div'); d.className='link-item';
-    const other = l.origin===currentWork ? l.destination : l.origin;
-    d.innerHTML = '<span class="id">'+l.link_id+'</span> <span class="arrow">&rarr;</span> <span class="id">'+other+'</span>';
-    d.onclick = () => { currentWork=other; showWork(other); refresh(); };
-    el.appendChild(d);
-  }
-}
-
-function updatePresence() {
-  const bar = $('presenceBar');
-  const users = $('presenceUsers');
-  const keys = Object.keys(presence);
-  if (!keys.length && !isEditing) { bar.style.display='none'; return; }
-  bar.style.display='flex';
-  users.innerHTML = '';
-  if (isEditing) {
-    const s = document.createElement('span');
-    s.className = 'presence-user';
-    s.style.background = getAuthorColor(sessionId)+'22';
-    s.style.color = getAuthorColor(sessionId);
-    s.textContent = 'You (editing)';
-    users.appendChild(s);
-  }
-  for (const sid of keys) {
-    const s = document.createElement('span');
-    s.className = 'presence-user';
-    const c = getAuthorColor(parseInt(sid));
-    s.style.background = c+'22';
-    s.style.color = c;
-    s.textContent = getAuthorName(parseInt(sid)) + (presence[sid].editing ? ' (editing)' : '');
-    users.appendChild(s);
-  }
-  updateLegend();
-}
-
-function updateLegend() {
-  const el = $('legendItems'); el.innerHTML='';
-  if (!Object.keys(authorMap).length && !sessionId) return;
-  const me = document.createElement('div'); me.className='legend-item';
-  me.innerHTML = '<span class="legend-swatch" style="background:'+getAuthorColor(sessionId)+'"></span>You';
-  el.appendChild(me);
-  for (const [sid, name] of Object.entries(authorMap)) {
-    const d = document.createElement('div'); d.className='legend-item';
-    d.innerHTML = '<span class="legend-swatch" style="background:'+getAuthorColor(parseInt(sid))+'"></span>'+name;
-    el.appendChild(d);
-  }
-}
-
-function updateToolbar() {
-  $('btnEdit').disabled = !currentWork || isEditing;
-  $('btnSave').disabled = !isEditing;
-  $('btnCancel').disabled = !isEditing;
-  $('btnHistory').disabled = !currentWork || isEditing;
-  $('btnLinks').disabled = !currentWork;
-  updateRevInfo();
-  updatePresence();
-}
-
-function updateRevInfo() {
-  const info = $('revInfo');
-  if (!currentWork) { info.innerHTML=''; return; }
-  let html = '<span>rev '+currentRev+'/'+totalRevs+'</span>';
-  if (isEditing) html += ' <span class="editing">EDITING</span>';
-  info.innerHTML = html;
-  const range = $('revRange');
-  range.max = totalRevs;
-  range.value = currentRev;
-  $('revNum').textContent = currentRev;
-}
-
-function doCreate() {
-  const text = prompt('New document text:');
-  if (text === null) return;
-  req('work_create', {edition:{text: text||''}});
-}
-
-function doEdit() {
-  if (!currentWork) return;
-  lastKnownText = $('editor').textContent;
-  req('work_grab', {work_id: currentWork});
-}
-
-function doSave() {
-  if (!currentWork) return;
-  if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer=null; }
-  const text = $('editor').textContent;
-  if (text === lastKnownText) {
-    req('work_release', {work_id: currentWork});
-    $('editor').contentEditable='false';
-    isEditing=false;
-    updateToolbar();
-    return;
-  }
-  const ops = computeDelta(lastKnownText, text);
-  req('work_revise_delta', {work_id: currentWork, base_revision: currentRev, ops});
-  lastKnownText = text;
-  $('editor').contentEditable='false';
-}
-
-function doCancel() {
-  if (!currentWork) return;
-  if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer=null; }
-  req('work_release', {work_id: currentWork});
-  $('editor').textContent = lastKnownText;
-  $('editor').contentEditable='false';
-  isEditing=false;
-  updateToolbar();
-}
-
-function scheduleAutoSave() {
-  if (autoSaveTimer) clearTimeout(autoSaveTimer);
-  autoSaveTimer = setTimeout(() => {
-    if (!isEditing || !currentWork) return;
-    const text = $('editor').textContent;
-    if (text === lastKnownText) return;
-    const ops = computeDelta(lastKnownText, text);
-    req('work_revise_delta', {work_id: currentWork, base_revision: currentRev, ops});
-    lastKnownText = text;
-  }, AUTO_SAVE_MS);
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function computeDelta(oldText, newText) {
-  const ops = [];
-  let oi = 0, ni = 0;
-  const ol = oldText.length, nl = newText.length;
+  var ops = [], oi = 0, ni = 0, ol = oldText.length, nl = newText.length;
   while (oi < ol || ni < nl) {
-    let commonLen = 0;
-    const maxCommon = Math.min(ol - oi, nl - ni);
-    while (commonLen < maxCommon && oldText.charCodeAt(oi + commonLen) === newText.charCodeAt(ni + commonLen)) {
-      commonLen++;
-    }
-    if (commonLen > 0) {
-      ops.push({type:'retain', count:commonLen});
-      oi += commonLen;
-      ni += commonLen;
-    }
-    let deleteLen = 0;
-    while (oi + deleteLen < ol && (ni >= nl || oldText.charCodeAt(oi + deleteLen) !== newText.charCodeAt(ni))) {
-      deleteLen++;
-    }
-    if (deleteLen > 0) {
-      ops.push({type:'delete', count:deleteLen});
-      oi += deleteLen;
-    }
-    let insertLen = 0;
-    while (ni + insertLen < nl && (oi >= ol || oldText.charCodeAt(oi) !== newText.charCodeAt(ni + insertLen))) {
-      insertLen++;
-    }
-    if (insertLen > 0) {
-      ops.push({type:'insert', text: newText.substring(ni, ni + insertLen)});
-      ni += insertLen;
-    }
+    var cl = 0, mx = Math.min(ol - oi, nl - ni);
+    while (cl < mx && oldText.charCodeAt(oi + cl) === newText.charCodeAt(ni + cl)) cl++;
+    if (cl > 0) { ops.push({type:'retain',count:cl}); oi += cl; ni += cl; }
+    var dl = 0;
+    while (oi + dl < ol && (ni >= nl || oldText.charCodeAt(oi + dl) !== newText.charCodeAt(ni))) dl++;
+    if (dl > 0) { ops.push({type:'delete',count:dl}); oi += dl; }
+    var il = 0;
+    while (ni + il < nl && (oi >= ol || oldText.charCodeAt(oi) !== newText.charCodeAt(ni + il))) il++;
+    if (il > 0) { ops.push({type:'insert',text:newText.substring(ni,ni+il)}); ni += il; }
   }
   return ops;
 }
 
-function toggleHistory() {
-  const slider = $('revSlider');
-  if (slider.classList.contains('visible')) { closeHistory(); return; }
-  slider.classList.add('visible');
-  viewingHistory = true;
-  $('revRange').max = totalRevs;
-  $('revRange').value = totalRevs;
-  $('revNum').textContent = totalRevs;
-}
-
-function closeHistory() {
-  $('revSlider').classList.remove('visible');
-  $('btnRestore').style.display = 'none';
-  viewingHistory = false;
-  historyText = null;
-  historyRev = null;
-  if (currentWork) req('work_get_edition', {work_id: currentWork});
-}
-
-function onRevSlide(val) {
-  $('revNum').textContent = val;
-  historyRev = parseInt(val);
-  $('btnRestore').style.display = (historyRev < totalRevs) ? '' : 'none';
-  req('work_fetch_revision', {work_id: currentWork, number: parseInt(val)});
-}
-
-function doRestore() {
-  if (!currentWork || historyText === null) return;
-  if (!confirm('Restore document to revision ' + historyRev + '? This will create a new revision with that content.')) return;
-  req('work_grab', {work_id: currentWork});
-  restoringAfterGrab = true;
-}
-
-var restoringAfterGrab = false;
-
-function finishRestore() {
-  req('work_revise', {work_id: currentWork, edition: {text: historyText}});
-  restoringAfterGrab = 'revising';
-}
-
-function toggleLinks() {
-  const p = $('rightPanel');
-  p.style.display = p.style.display==='none' ? 'flex' : 'none';
-}
-
-function sendCmd() {
-  const text = $('cmd').value.trim();
-  if (!text) return;
-  $('cmd').value = '';
-  const parts = text.split(/\s+/), c = parts[0].toLowerCase(), a = parts.slice(1);
-  switch(c) {
-    case 'create': req('work_create',{edition:{text:a.join(' ')||''}}); break;
-    case 'list': req('work_list'); break;
-    case 'open': if(a[0]) { currentWork=parseInt(a[0]); showWork(currentWork); refresh(); } break;
-    case 'grab': req('work_grab',{work_id:+a[0]}); break;
-    case 'revise': req('work_revise',{work_id:+a[0],edition:{text:a.slice(1).join(' ')||''}}); break;
-    case 'release': req('work_release',{work_id:+a[0]}); break;
-    case 'link': req('link_create',{origin:+a[0],destination:+a[1]}); break;
-    case 'links': req('link_list_for_work',{work_id:+a[0]}); break;
-    case 'club': if(a[0]) req('club_create_named',{name:a[0],description:{text:'club'}}); break;
-    case 'info': req('server_stats'); break;
-    case 'help':
-      toast('Commands: create <text>, list, open <id>, grab <id>, revise <id> <text>, release <id>, link <from> <to>, links <id>, club <name>, info');
-      break;
-    default: toast('Unknown: '+c);
+function highlightRegions(text, regions, cls) {
+  if (!regions || !regions.length) return escapeHtml(text);
+  var sorted = regions.slice().sort(function(a,b){return a.start - b.start});
+  var html = '', pos = 0;
+  for (var i = 0; i < sorted.length; i++) {
+    var r = sorted[i];
+    if (r.start > pos) html += escapeHtml(text.slice(pos, r.start));
+    html += '<span class="' + cls + '" data-idx="' + i + '">';
+    html += escapeHtml(text.slice(r.start, r.end));
+    html += '</span>';
+    pos = r.end;
   }
+  if (pos < text.length) html += escapeHtml(text.slice(pos));
+  return html;
 }
 
-$('cmd').addEventListener('keydown', e => { if(e.key==='Enter') sendCmd(); });
-$('editor').addEventListener('input', () => { if(isEditing) scheduleAutoSave(); });
-connectWs();
+function editionText(ed) {
+  if (!ed || ed.empty !== undefined) return '';
+  if (ed.text) return ed.text;
+  if (ed.entries) return ed.entries.map(function(e){
+    var el = e[1]; return el.Text ? el.Text.text : '[' + JSON.stringify(el) + ']';
+  }).join('');
+  return JSON.stringify(ed);
+}
+
+var toastId = 0;
+
+function App() {
+  var _status = useState('connecting'), status = _status[0], setStatus = _status[1];
+  var _sid = useState(null), sessionId = _sid[0], setSessionId = _sid[1];
+  var _loggedIn = useState(false), loggedIn = _loggedIn[0], setLoggedIn = _loggedIn[1];
+  var _works = useState([]), works = _works[0], setWorks = _works[1];
+  var _cw = useState(null), currentWorkId = _cw[0], setCurrentWorkId = _cw[1];
+  var _ct = useState(''), currentText = _ct[0], setCurrentText = _ct[1];
+  var _cr = useState(0), currentRev = _cr[0], setCurrentRev = _cr[1];
+  var _tr = useState(0), totalRevs = _tr[0], setTotalRevs = _tr[1];
+  var _ie = useState(false), isEditing = _ie[0], setIsEditing = _ie[1];
+  var _sh = useState(false), showHistory = _sh[0], setShowHistory = _sh[1];
+  var _hr = useState(0), historyRev = _hr[0], setHistoryRev = _hr[1];
+  var _hvt = useState(null), historyViewText = _hvt[0], setHistoryViewText = _hvt[1];
+  var _sel = useState(''), selectedText = _sel[0], setSelectedText = _sel[1];
+  var _sfr = useState(false), showFindRefs = _sfr[0], setShowFindRefs = _sfr[1];
+  var _frp = useState({x:0,y:0}), findRefsPos = _frp[0], setFindRefsPos = _frp[1];
+  var _tres = useState([]), transclusionResults = _tres[0], setTransclusionResults = _tres[1];
+  var _frl = useState(false), findRefsLoading = _frl[0], setFindRefsLoading = _frl[1];
+  var _sm = useState(false), splitMode = _sm[0], setSplitMode = _sm[1];
+  var _sw = useState(null), splitWorkId = _sw[0], setSplitWorkId = _sw[1];
+  var _st = useState(''), splitText = _st[0], setSplitText = _st[1];
+  var _sr = useState([]), sharedRegions = _sr[0], setSharedRegions = _sr[1];
+  var _toasts = useState([]), toasts = _toasts[0], setToasts = _toasts[1];
+  var _bp = useState([]), bridgePaths = _bp[0], setBridgePaths = _bp[1];
+  var _cmd = useState(''), cmdText = _cmd[0], setCmdText = _cmd[1];
+  var _sf = useState(false), showFooter = _sf[0], setShowFooter = _sf[1];
+
+  var wsRef = useRef(null);
+  var nextIdRef = useRef(1);
+  var pendingRef = useRef({});
+  var editorRef = useRef(null);
+  var leftPaneRef = useRef(null);
+  var rightPaneRef = useRef(null);
+  var leftWrapRef = useRef(null);
+  var rightWrapRef = useRef(null);
+  var editorAreaRef = useRef(null);
+  var lastSavedRef = useRef('');
+  var historyTextRef = useRef(null);
+  var restoringRef = useRef(false);
+  var autoSaveRef = useRef(null);
+  var revSliderTimer = useRef(null);
+  var subsRef = useRef({});
+  var toastTimers = useRef({});
+
+  function toast(msg) {
+    var id = ++toastId;
+    setToasts(function(prev) { return prev.concat({id:id, msg:msg, show:false}); });
+    setTimeout(function(){
+      setToasts(function(prev){return prev.map(function(t){return t.id===id?{id:t.id,msg:t.msg,show:true}:t})});
+    }, 10);
+    setTimeout(function(){
+      setToasts(function(prev){return prev.map(function(t){return t.id===id?{id:t.id,msg:t.msg,show:false}:t})});
+    }, 2500);
+    setTimeout(function(){
+      setToasts(function(prev){return prev.filter(function(t){return t.id!==id})});
+    }, 2800);
+  }
+
+  function req(op, payload) {
+    var id = nextIdRef.current++;
+    var f = {v:2,type:'request',id:id,op:op};
+    if (payload) f.payload = payload;
+    pendingRef.current[id] = op;
+    wsRef.current.send(JSON.stringify(f));
+    return id;
+  }
+
+  function sub(detType, targetId) {
+    var id = nextIdRef.current++;
+    wsRef.current.send(JSON.stringify({v:2,type:'subscribe',id:id,payload:{detector_type:detType,target_id:targetId}}));
+    return id;
+  }
+
+  function unsub(subId) {
+    wsRef.current.send(JSON.stringify({v:2,type:'unsubscribe',id:subId}));
+  }
+
+  function closeSplitView() {
+    setSplitMode(false);
+    setSplitWorkId(null);
+    setSplitText('');
+    setSharedRegions([]);
+    setBridgePaths([]);
+  }
+
+  function showWork(id) {
+    Object.values(subsRef.current).forEach(unsub);
+    subsRef.current = {};
+    closeSplitView();
+    setShowFindRefs(false);
+    setShowHistory(false);
+    setHistoryViewText(null);
+    setIsEditing(false);
+    setCurrentWorkId(id);
+    setCurrentText('');
+    setCurrentRev(0);
+    var s1 = sub('revision', id);
+    var s2 = sub('status', id);
+    subsRef.current = {revision:s1, status:s2};
+    req('work_get_edition', {work_id:id});
+    req('work_revision_count', {work_id:id});
+  }
+
+  function doCreate() {
+    var text = prompt('New document text:');
+    if (text === null) return;
+    req('work_create', {edition:{text:text||''}});
+  }
+
+  function doEdit() {
+    if (!currentWorkId) return;
+    lastSavedRef.current = editorRef.current ? editorRef.current.textContent : currentText;
+    req('work_grab', {work_id:currentWorkId});
+  }
+
+  function doSave() {
+    if (!currentWorkId) return;
+    if (autoSaveRef.current) { clearTimeout(autoSaveRef.current); autoSaveRef.current = null; }
+    var text = editorRef.current ? editorRef.current.textContent : '';
+    if (text === lastSavedRef.current) {
+      req('work_release', {work_id:currentWorkId});
+      setIsEditing(false);
+      return;
+    }
+    var ops = computeDelta(lastSavedRef.current, text);
+    req('work_revise_delta', {work_id:currentWorkId, base_revision:currentRev, ops:ops});
+    lastSavedRef.current = text;
+    setIsEditing(false);
+  }
+
+  function doCancel() {
+    if (!currentWorkId) return;
+    if (autoSaveRef.current) { clearTimeout(autoSaveRef.current); autoSaveRef.current = null; }
+    req('work_release', {work_id:currentWorkId});
+    if (editorRef.current) editorRef.current.textContent = lastSavedRef.current;
+    setIsEditing(false);
+  }
+
+  function doRestore() {
+    if (!currentWorkId || historyTextRef.current === null) return;
+    if (!confirm('Restore document to revision ' + historyRev + '?')) return;
+    req('work_grab', {work_id:currentWorkId});
+    restoringRef.current = true;
+  }
+
+  function scheduleAutoSave() {
+    if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
+    autoSaveRef.current = setTimeout(function(){
+      if (!isEditing || !currentWorkId) return;
+      var text = editorRef.current ? editorRef.current.textContent : '';
+      if (text === lastSavedRef.current) return;
+      var ops = computeDelta(lastSavedRef.current, text);
+      req('work_revise_delta', {work_id:currentWorkId, base_revision:currentRev, ops:ops});
+      lastSavedRef.current = text;
+    }, AUTO_SAVE_MS);
+  }
+
+  function handleEditorInput() {
+    if (isEditing) scheduleAutoSave();
+  }
+
+  function handleMouseUp() {
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+      setShowFindRefs(false);
+      return;
+    }
+    if (!editorRef.current || !editorAreaRef.current) return;
+    var text = sel.toString().trim();
+    try {
+      var range = sel.getRangeAt(0);
+      var rect = range.getBoundingClientRect();
+      setFindRefsPos({
+        x: Math.max(110, Math.min(rect.left + rect.width/2, window.innerWidth - 120)),
+        y: rect.bottom + 8
+      });
+    } catch(e) {
+      setFindRefsPos({x:200, y:50});
+    }
+    setSelectedText(text);
+    setTransclusionResults([]);
+    setShowFindRefs(true);
+  }
+
+  function findReferences() {
+    if (!selectedText) return;
+    setFindRefsLoading(true);
+    req('find_text_transcluders', {text:selectedText});
+  }
+
+  function openSplitView(wid) {
+    setShowFindRefs(false);
+    setSplitMode(true);
+    setSplitWorkId(wid);
+    setSplitText('');
+    setSharedRegions([]);
+    setBridgePaths([]);
+    req('work_get_edition', {work_id:wid});
+    req('find_shared_regions', {work_a:currentWorkId, work_b:wid});
+  }
+
+  function sendCmd() {
+    var text = cmdText.trim();
+    if (!text) return;
+    setCmdText('');
+    var parts = text.split(/\s+/), c = parts[0].toLowerCase(), a = parts.slice(1);
+    switch(c) {
+      case 'create': req('work_create',{edition:{text:a.join(' ')||''}}); break;
+      case 'list': req('work_list'); break;
+      case 'open': if(a[0]){showWork(parseInt(a[0]))} break;
+      case 'grab': req('work_grab',{work_id:+a[0]}); break;
+      case 'revise': req('work_revise',{work_id:+a[0],edition:{text:a.slice(1).join(' ')||''}}); break;
+      case 'release': req('work_release',{work_id:+a[0]}); break;
+      case 'info': req('server_stats'); break;
+      case 'help': toast('Commands: create <text>, list, open <id>, grab <id>, revise <id> <text>, release <id>, info'); break;
+      default: toast('Unknown: '+c);
+    }
+  }
+
+  useEffect(function(){
+    var proto = location.protocol==='https:' ? 'wss:' : 'ws:';
+    var ws = new WebSocket(proto+'//'+location.host+'/xudanu?format=json&version=2');
+    wsRef.current = ws;
+
+    ws.onopen = function() { setStatus('connected'); };
+
+    ws.onmessage = function(ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch(e) { return; }
+      console.log('msg', msg.type, msg);
+
+      if (msg.type === 'handshake') {
+        req('session_connect');
+        return;
+      }
+
+      if (msg.type === 'error') {
+        console.error('ws error', msg);
+        toast((msg.message||msg.code||'Error').replace(/^Error:\s*/,''));
+        return;
+      }
+
+      if (msg.type === 'response') {
+        var op = pendingRef.current[msg.id];
+        delete pendingRef.current[msg.id];
+        var v = msg.value;
+        console.log('resp', op, JSON.stringify(v));
+
+        if (op === 'session_connect' && v && (v.type === 'humber' || v.type === 'id')) {
+          setSessionId(v.value);
+          req('session_login_public');
+          return;
+        }
+
+        if (op === 'session_login_public') {
+          setLoggedIn(true);
+          req('work_list');
+          return;
+        }
+
+        if (v && v.type === 'work_list') {
+          setWorks(v.value || []);
+          return;
+        }
+
+        if (v && v.type === 'edition') {
+          var edText = editionText(v.value);
+          if (op === 'work_fetch_revision') {
+            historyTextRef.current = edText;
+            setHistoryViewText(edText);
+            return;
+          }
+          if (op === 'work_revise_delta') {
+            if (editorRef.current) editorRef.current.textContent = edText;
+            lastSavedRef.current = edText;
+            setCurrentText(edText);
+            setCurrentRev(totalRevs);
+            toast('Conflict resolved - document updated');
+            return;
+          }
+          if (splitMode && op === 'work_get_edition') {
+            var pendingSplitId = null;
+            setSplitWorkId(function(prev){ pendingSplitId = prev; return prev; });
+            if (pendingSplitId && pendingSplitId !== currentWorkId) {
+              setSplitText(edText);
+              return;
+            }
+          }
+          setCurrentText(edText);
+          lastSavedRef.current = edText;
+          historyTextRef.current = null;
+          if (editorRef.current && !isEditing) {
+            editorRef.current.textContent = edText;
+          }
+          return;
+        }
+
+        if (v && v.type === 'text_transclusion_results') {
+          setFindRefsLoading(false);
+          setTransclusionResults(v.value || []);
+          return;
+        }
+
+        if (v && v.type === 'shared_regions') {
+          setSharedRegions(v.value || []);
+          return;
+        }
+
+        if (op === 'work_create') {
+          var wid = (v && v.type==='id') ? v.value : (v && v.type==='humber') ? v.value : null;
+          if (wid !== null) {
+            setCurrentWorkId(wid);
+            setCurrentRev(0);
+            setTotalRevs(1);
+            setIsEditing(false);
+            req('work_list');
+            showWork(wid);
+            toast('Document created');
+          }
+          return;
+        }
+
+        if (v && v.type === 'humber') {
+          if (op === 'work_revise') {
+            var rv = v.value;
+            setCurrentRev(rv);
+            setTotalRevs(rv);
+            if (restoringRef.current === 'revising') {
+              restoringRef.current = false;
+              req('work_release', {work_id:currentWorkId});
+              setShowHistory(false);
+              toast('Restored revision as #' + rv);
+            } else {
+              setIsEditing(false);
+              toast('Saved revision ' + rv);
+            }
+            return;
+          }
+          if (op === 'work_revise_delta') {
+            setCurrentRev(v.value);
+            setTotalRevs(v.value);
+            toast('Auto-saved revision ' + v.value);
+            return;
+          }
+          if (op === 'work_revision_count') {
+            setTotalRevs(v.value);
+            if (!isEditing) setCurrentRev(v.value);
+            return;
+          }
+        }
+
+        if (op === 'work_grab') {
+          if ((v && v.type === 'boolean' && v.value === true) || (v && v.type === 'void')) {
+            if (restoringRef.current === true) {
+              restoringRef.current = false;
+              req('work_revise', {work_id:currentWorkId, edition:{text:historyTextRef.current||''}});
+              restoringRef.current = 'revising';
+            } else {
+              setIsEditing(true);
+              toast('Editing - type your changes');
+            }
+          }
+          return;
+        }
+
+        if (v && v.type === 'void' && op === 'work_release') {
+          setIsEditing(false);
+          return;
+        }
+      }
+
+      if (msg.type === 'event') {
+        var e = msg.event;
+        if (!e) return;
+
+        if (e.type === 'work_revised') {
+          var payload = e.payload;
+          if (payload.work_be_id === currentWorkId && !isEditing && !showHistory) {
+            setCurrentRev(payload.revision);
+            setTotalRevs(payload.revision);
+            req('work_get_edition', {work_id:currentWorkId});
+          } else if (payload.work_be_id === currentWorkId) {
+            setTotalRevs(payload.revision);
+          }
+          if (payload.session_id && payload.session_id !== sessionId) {
+            toast('User ' + payload.session_id + ' saved revision ' + payload.revision);
+          }
+        }
+      }
+    };
+
+    ws.onclose = function() { setStatus('disconnected'); };
+    ws.onerror = function() { setStatus('error'); };
+
+    return function(){ ws.close(); };
+  }, []);
+
+  useEffect(function(){
+    if (editorRef.current) {
+      editorRef.current.contentEditable = isEditing ? 'true' : 'false';
+      if (isEditing) editorRef.current.focus();
+    }
+  }, [isEditing]);
+
+  useEffect(function(){
+    function onKey(e) {
+      if (e.key === ':' && !isEditing && document.activeElement.tagName !== 'INPUT') {
+        setShowFooter(function(p){return !p});
+        e.preventDefault();
+      }
+      if (e.key === 'Escape') {
+        setShowFooter(false);
+        setShowFindRefs(false);
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    return function(){ document.removeEventListener('keydown', onKey); };
+  }, [isEditing]);
+
+  useEffect(function(){
+    if (!currentWorkId || isEditing || showHistory) return;
+    if (editorRef.current) editorRef.current.textContent = currentText;
+  }, [currentText, currentWorkId]);
+
+  useEffect(function(){
+    if (showHistory) {
+      setHistoryRev(totalRevs);
+    }
+  }, [showHistory]);
+
+  useEffect(function(){
+    if (!splitMode || !sharedRegions.length) return;
+    function computeBridges() {
+      var lc = leftPaneRef.current;
+      var rc = rightPaneRef.current;
+      var lw = leftWrapRef.current;
+      var rw = rightWrapRef.current;
+      var area = editorAreaRef.current;
+      if (!lc || !rc || !lw || !rw || !area) return;
+      var areaRect = area.getBoundingClientRect();
+      var lwRect = lw.getBoundingClientRect();
+      var rwRect = rw.getBoundingClientRect();
+      var lhl = lc.querySelectorAll('.transclusion-hl');
+      var rhl = rc.querySelectorAll('.transclusion-hl');
+      var paths = [];
+      var n = Math.min(lhl.length, rhl.length, sharedRegions.length);
+      for (var i = 0; i < n; i++) {
+        var lr = lhl[i].getBoundingClientRect();
+        var rr = rhl[i].getBoundingClientRect();
+        var lx = lwRect.right - areaRect.left;
+        var ly = (lr.top + lr.bottom) / 2 - areaRect.top;
+        var rx = rwRect.left - areaRect.left;
+        var ry = (rr.top + rr.bottom) / 2 - areaRect.top;
+        if (ly < lwRect.top - areaRect.top - 20 || ly > lwRect.bottom - areaRect.top + 20) continue;
+        if (ry < rwRect.top - areaRect.top - 20 || ry > rwRect.bottom - areaRect.top + 20) continue;
+        var cx1 = lx + (rx - lx) * 0.4;
+        var cx2 = lx + (rx - lx) * 0.6;
+        paths.push('M' + lx + ',' + ly + ' C' + cx1 + ',' + ly + ' ' + cx2 + ',' + ry + ' ' + rx + ',' + ry);
+      }
+      setBridgePaths(paths);
+    }
+    var timer = setTimeout(computeBridges, 50);
+    var lw = leftWrapRef.current;
+    var rw = rightWrapRef.current;
+    if (lw) lw.addEventListener('scroll', computeBridges);
+    if (rw) rw.addEventListener('scroll', computeBridges);
+    window.addEventListener('resize', computeBridges);
+    return function(){
+      clearTimeout(timer);
+      if (lw) lw.removeEventListener('scroll', computeBridges);
+      if (rw) rw.removeEventListener('scroll', computeBridges);
+      window.removeEventListener('resize', computeBridges);
+    };
+  }, [splitMode, sharedRegions, currentText, splitText]);
+
+  var leftRegions = useMemo(function(){
+    if (!splitMode || !sharedRegions.length) return [];
+    return sharedRegions.map(function(r){return {start:r.start_a, end:r.end_a}});
+  }, [splitMode, sharedRegions]);
+
+  var rightRegions = useMemo(function(){
+    if (!splitMode || !sharedRegions.length) return [];
+    return sharedRegions.map(function(r){return {start:r.start_b, end:r.end_b}});
+  }, [splitMode, sharedRegions]);
+
+  var leftHtml = useMemo(function(){
+    if (!splitMode) return '';
+    return highlightRegions(currentText, leftRegions, 'transclusion-hl');
+  }, [splitMode, currentText, leftRegions]);
+
+  var rightHtml = useMemo(function(){
+    if (!splitMode) return '';
+    return highlightRegions(splitText, rightRegions, 'transclusion-hl');
+  }, [splitMode, splitText, rightRegions]);
+
+  function handleSelectionCheck() {
+    setTimeout(handleMouseUp, 10);
+  }
+
+  var revInfo = h('span', {className:'rev-info'},
+    currentWorkId
+      ? h(Fragment, null,
+          'rev ' + currentRev + '/' + totalRevs,
+          isEditing ? h('span', {className:'editing'}, ' EDITING') : null
+        )
+      : null
+  );
+
+  return h(Fragment, null,
+    h('header', null,
+      h('span', {className:'logo'}, 'xudanu'),
+      h('span', {className: 'status' + (status==='connected' ? ' connected' : '')}, status),
+      h('span', {className:'spacer'}),
+      sessionId ? h('span', {className:'session-info', onClick:function(){setShowFooter(function(p){return !p})}, style:{cursor:'pointer'}}, 'session ' + sessionId) : null,
+      !showFooter ? h('span', {style:{fontSize:10,color:'var(--fg3)'}}, ':') : null
+    ),
+    h('div', {className:'layout'},
+      h('div', {className:'sidebar'},
+        h('div', {className:'sidebar-header'},
+          h('h2', null, 'Documents'),
+          h('button', {onClick:doCreate, disabled:!loggedIn}, '+ New')
+        ),
+        h('div', {className:'work-list'},
+          works.length === 0
+            ? h('div', {style:{padding:12,color:'var(--fg3)',fontSize:12}}, 'No documents yet')
+            :           works.map(function(w){
+                return h('div', {
+                  key: w.work_id,
+                  className: 'work-item' + (w.work_id === currentWorkId ? ' active' : ''),
+                  onClick: function(){ showWork(w.work_id); }
+                },
+                  h('span', {className:'id'}, w.work_id),
+                  h('span', {className:'meta'},
+                    w.title ? h('span', {style:{color:'var(--fg)'}, title: w.title}, w.title.length > 40 ? w.title.slice(0,40)+'...' : w.title) : null,
+                    w.is_grabbed ? h('span', {className:'badge badge-editing'}, 'editing') : null
+                  ),
+                  h('span', {className:'rev'}, 'r' + w.revision_count)
+                );
+              })
+        )
+      ),
+      h('div', {className:'center'},
+        h('div', {className:'toolbar'},
+          h('button', {onClick:doEdit, disabled:!currentWorkId||isEditing||splitMode}, 'Edit'),
+          h('button', {onClick:doSave, className:'primary', disabled:!isEditing}, 'Save'),
+          h('button', {onClick:doCancel, className:'danger', disabled:!isEditing}, 'Cancel'),
+          h('div', {className:'sep'}),
+          h('button', {
+            disabled:!currentWorkId||isEditing,
+            onClick:function(){setShowHistory(!showHistory)}
+          }, 'History'),
+          revInfo
+        ),
+        showHistory ? h('div', {className:'revision-slider'},
+          h('label', null, 'Revision'),
+          h('input', {
+            type:'range', min:1, max:totalRevs,
+            value: historyRev || totalRevs,
+            onInput: function(e){
+              var v = parseInt(e.target.value);
+              setHistoryRev(v);
+              if (revSliderTimer.current) clearTimeout(revSliderTimer.current);
+              revSliderTimer.current = setTimeout(function(){
+                req('work_fetch_revision', {work_id:currentWorkId, number:v});
+              }, 150);
+            }
+          }),
+          h('span', {className:'rev-num'}, historyRev || totalRevs),
+          h('button', {onClick:function(){setShowHistory(false); setHistoryViewText(null);}}, 'Back to current'),
+          historyRev && historyRev < totalRevs
+            ? h('button', {className:'restore-btn', onClick:doRestore}, 'Restore this version')
+            : null
+        ) : null,
+        h('div', {className: 'editor-area' + (splitMode ? ' split' : ''), ref: editorAreaRef},
+          splitMode ? h(Fragment, null,
+            h('div', {className:'editor-pane-wrap', ref: leftWrapRef, style:{position:'relative'}},
+              h('div', {className:'split-label'}, 'Current'),
+              h('div', {
+                ref: leftPaneRef,
+                className:'editor-content',
+                dangerouslySetInnerHTML: {__html: leftHtml || '<span style="color:var(--fg3)">Loading...</span>'}
+              })
+            ),
+            h('div', {className:'editor-divider'}),
+            h('div', {className:'editor-pane-wrap', ref: rightWrapRef, style:{position:'relative'}},
+              h('div', {className:'split-label'}, 'Reference'),
+              h('button', {className:'split-close', onClick:closeSplitView}, 'Close'),
+              h('div', {
+                ref: rightPaneRef,
+                className:'editor-content',
+                dangerouslySetInnerHTML: {__html: rightHtml || '<span style="color:var(--fg3)">Loading...</span>'}
+              })
+            ),
+            h('svg', {className:'svg-overlay'},
+              bridgePaths.map(function(d, i){
+                return h('path', {
+                  key: i,
+                  d: d,
+                  fill: 'none',
+                  stroke: '#d29922',
+                  'stroke-width': 2,
+                  opacity: 0.7,
+                  'stroke-dasharray': '4,2'
+                });
+              })
+            )
+          ) : h(Fragment, null,
+            showHistory && historyViewText !== null
+              ? h('div', {
+                  className: 'editor-content',
+                  style: {opacity: 0.6}
+                }, historyViewText)
+              : h('div', {
+                  ref: editorRef,
+                  className: 'editor-content',
+                  onInput: handleEditorInput,
+                  onMouseUp: handleSelectionCheck
+                }),
+            showFindRefs && currentWorkId ? h('div', {
+              className: 'find-refs-popup',
+              style: {left: findRefsPos.x + 'px', top: findRefsPos.y + 'px'}
+            },
+              h('button', {
+                className: 'fr-btn',
+                onClick: findReferences,
+                disabled: findRefsLoading
+              }, findRefsLoading ? 'Searching...' : 'Find references'),
+              transclusionResults.length > 0 ? h('div', {className:'find-refs-results'},
+                transclusionResults.map(function(r, i){
+                  return h('div', {
+                    key: i,
+                    className: 'find-refs-result',
+                    onClick: function(){ openSplitView(r.work_id); }
+                  },
+                    h('span', {className:'fr-id'}, r.work_id),
+                    h('span', {className:'fr-owner'}, r.owner || 'unknown'),
+                    h('span', {
+                      className:'fr-count',
+                      title: (r.matches || []).map(function(m,i){
+                        return '"' + selectedText + '" at ' + m.start + '-' + m.end;
+                      }).join('\n')
+                    }, r.matches ? r.matches.length : 0)
+                  );
+                })
+              ) : null
+            ) : null
+          )
+        )
+      )
+    ),
+    h('div', {className:'footer' + (showFooter ? ' visible' : '')},
+      h('input', {
+        value: cmdText,
+        onInput: function(e){ setCmdText(e.target.value); },
+        onKeyDown: function(e){ if(e.key==='Enter') sendCmd(); },
+        placeholder: 'Type "help" for commands... (Esc to close)'
+      }),
+      h('button', {onClick:sendCmd}, 'Run')
+    ),
+    h('div', {className:'toast-wrap'},
+      toasts.map(function(t){
+        return h('div', {key:t.id, className:'toast' + (t.show?' show':'')}, t.msg);
+      })
+    )
+  );
+}
+
+render(h(App), document.getElementById('app'));
 </script>
 </body>
 </html>

@@ -491,6 +491,8 @@ pub struct WorkListEntry {
     pub owner: Option<BeId>,
     pub revision_count: u64,
     pub is_grabbed: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
