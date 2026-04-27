@@ -23,6 +23,7 @@ server = ["tokio", "axum", "postcard", "tracing", "tracing-subscriber", "serde",
 getrandom = { version = "0.2", features = ["js"] }
 
 [dependencies]
+blake3 = "1"
 wasm-bindgen = { version = "0.2", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }

@@ -1469,3 +1469,127 @@ async fn delta_delete_and_insert() {
         json_req(40, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
     assert_eq!(resp["value"]["value"]["text"], "the slow brown fox");
 }
+
+// ============================================================
+// Blob protocol tests
+// ============================================================
+
+#[tokio::test]
+async fn blob_upload_and_get_json() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let data = xudanu::edition::base64_encode(b"hello blob world");
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "blob_upload", Some(serde_json::json!({
+            "data": data,
+            "mime_type": "text/plain"
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "blob_meta");
+    let meta = &resp["value"]["value"];
+    let content_hash = meta["content_hash"].as_u64().unwrap();
+    assert!(content_hash > 0);
+    assert_eq!(meta["byte_size"].as_u64().unwrap(), 16);
+    assert_eq!(meta["mime_type"].as_str().unwrap(), "text/plain");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "blob_get", Some(serde_json::json!({
+            "content_hash": content_hash
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "string");
+    let decoded = xudanu::edition::base64_decode(resp["value"]["value"].as_str().unwrap()).unwrap();
+    assert_eq!(decoded, b"hello blob world");
+}
+
+#[tokio::test]
+async fn blob_exists_and_info_json() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "blob_exists", Some(serde_json::json!({"content_hash": 99999})))) .await;
+    assert_eq!(resp["value"]["type"], "boolean");
+    assert!(!resp["value"]["value"].as_bool().unwrap());
+
+    let data = xudanu::edition::base64_encode(b"test data");
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "blob_upload", Some(serde_json::json!({
+            "data": data,
+            "mime_type": "image/png"
+        })))).await;
+    let hash = resp["value"]["value"]["content_hash"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "blob_exists", Some(serde_json::json!({"content_hash": hash})))).await;
+    assert!(resp["value"]["value"].as_bool().unwrap());
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(13, "blob_info", Some(serde_json::json!({"content_hash": hash})))).await;
+    assert_eq!(resp["value"]["type"], "blob_meta");
+    let meta = &resp["value"]["value"];
+    assert_eq!(meta["mime_type"].as_str().unwrap(), "image/png");
+    assert_eq!(meta["byte_size"].as_u64().unwrap(), 9);
+}
+
+#[tokio::test]
+async fn blob_stats_json() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "blob_stats", None)).await;
+    assert_eq!(resp["value"]["type"], "blob_stats_info");
+    assert_eq!(resp["value"]["value"]["total_blobs"].as_u64().unwrap(), 0);
+
+    let data = xudanu::edition::base64_encode(b"x");
+    send_recv_json(&mut s, &mut r,
+        json_req(11, "blob_upload", Some(serde_json::json!({"data": data, "mime_type": "text/plain"})))) .await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "blob_stats", None)).await;
+    assert_eq!(resp["value"]["value"]["total_blobs"].as_u64().unwrap(), 1);
+    assert_eq!(resp["value"]["value"]["total_bytes"].as_u64().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn blob_upload_requires_login() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+    send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+
+    let data = xudanu::edition::base64_encode(b"unauth");
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(2, "blob_upload", Some(serde_json::json!({
+            "data": data,
+            "mime_type": "text/plain"
+        })))).await;
+    assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn blob_get_not_found_json() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "blob_get", Some(serde_json::json!({"content_hash": 99999})))) .await;
+    assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn blob_deduplication_json() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let data = xudanu::edition::base64_encode(b"duplicate");
+    let resp1 = send_recv_json(&mut s, &mut r,
+        json_req(10, "blob_upload", Some(serde_json::json!({"data": data.clone(), "mime_type": "text/plain"})))) .await;
+    let resp2 = send_recv_json(&mut s, &mut r,
+        json_req(11, "blob_upload", Some(serde_json::json!({"data": data, "mime_type": "text/plain"})))) .await;
+    assert_eq!(
+        resp1["value"]["value"]["content_hash"].as_u64().unwrap(),
+        resp2["value"]["value"]["content_hash"].as_u64().unwrap()
+    );
+}

@@ -159,6 +159,13 @@ impl WireCodec for BinaryCodec {
     }
 
     fn encode_response(&self, request_id: u16, value: &ResponseValue) -> Result<Vec<u8>, ProtocolError> {
+        if let ResponseValue::BlobData(data) = value {
+            let mut buf = vec![PROTOCOL_VERSION, MessageType::Response.as_byte()];
+            buf.extend_from_slice(&request_id.to_be_bytes());
+            super::varint::encode_varint(data.len() as u64, &mut buf);
+            buf.extend_from_slice(data);
+            return Ok(buf);
+        }
         let payload = postcard::to_allocvec(value)
             .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
         let mut buf = vec![PROTOCOL_VERSION, MessageType::Response.as_byte()];
@@ -324,6 +331,22 @@ impl WireCodec for JsonCodec {
     }
 
     fn encode_response(&self, request_id: u16, value: &ResponseValue) -> Result<Vec<u8>, ProtocolError> {
+        if let ResponseValue::BlobData(data) = value {
+            let b64 = crate::edition::base64_encode(&data);
+            let frame = WireFrame {
+                v: PROTOCOL_VERSION,
+                msg_type: "response".to_string(),
+                id: request_id,
+                op: None,
+                payload: None,
+                value: Some(ResponseValue::String(b64)),
+                code: None,
+                message: None,
+                event: None,
+            };
+            return serde_json::to_vec(&frame)
+                .map_err(|e| ProtocolError::Serialization(e.to_string()));
+        }
         let frame = WireFrame {
             v: PROTOCOL_VERSION,
             msg_type: "response".to_string(),
@@ -410,6 +433,7 @@ impl JsonCodec {
             OperationCode::AdminServerInfo,
             OperationCode::ServerStats,
             OperationCode::WorkList,
+            OperationCode::BlobStats,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -424,6 +448,7 @@ impl JsonCodec {
                 OperationCode::AdminServerInfo => Ok(WireRequest::AdminServerInfo),
                 OperationCode::ServerStats => Ok(WireRequest::ServerStats),
                 OperationCode::WorkList => Ok(WireRequest::WorkList),
+                OperationCode::BlobStats => Ok(WireRequest::BlobStats),
                 _ => unreachable!(),
             };
         }
@@ -765,6 +790,41 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::FindSharedRegions { work_a: args.work_a, work_b: args.work_b })
+            }
+            OperationCode::BlobUpload => {
+                #[derive(Deserialize)]
+                struct Args { data: String, mime_type: String }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::BlobUpload { data: args.data, mime_type: args.mime_type })
+            }
+            OperationCode::BlobGet => {
+                #[derive(Deserialize)]
+                struct Args { content_hash: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::BlobGet { content_hash: args.content_hash })
+            }
+            OperationCode::BlobGetPreview => {
+                #[derive(Deserialize)]
+                struct Args { content_hash: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::BlobGetPreview { content_hash: args.content_hash })
+            }
+            OperationCode::BlobExists => {
+                #[derive(Deserialize)]
+                struct Args { content_hash: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::BlobExists { content_hash: args.content_hash })
+            }
+            OperationCode::BlobInfo => {
+                #[derive(Deserialize)]
+                struct Args { content_hash: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::BlobInfo { content_hash: args.content_hash })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
