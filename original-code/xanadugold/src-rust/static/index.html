@@ -70,6 +70,13 @@ header .session-info{font-size:11px;color:var(--fg2);background:var(--bg3);paddi
 .editor-content:empty::before{content:'Select or create a document...';color:var(--fg3)}
 .editor-content[contenteditable=true]{background:rgba(88,166,255,0.03)}
 .placeholder-text{color:var(--fg3);font-style:italic}
+.doc-image{max-width:100%;border-radius:var(--radius);margin:8px 0;display:block;border:1px solid var(--border)}
+.doc-image-link{color:var(--accent);font-size:12px;font-family:'SF Mono',Menlo,monospace;cursor:pointer}
+.doc-image-link:hover{text-decoration:underline}
+.img-upload-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:16px;text-align:center;color:var(--fg2);font-size:12px;cursor:pointer;margin:8px 0}
+.img-upload-zone:hover{border-color:var(--accent);color:var(--accent)}
+.img-upload-zone.dragover{border-color:var(--green);background:rgba(63,185,80,0.08)}
+.img-drop-overlay{position:absolute;inset:0;background:rgba(88,166,255,0.08);border:2px dashed var(--accent);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:16px;font-weight:600;z-index:30;pointer-events:none;border-radius:4px}
 
 .editor-divider{width:40px;min-width:40px;background:var(--bg2);position:relative;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--border);border-right:1px solid var(--border)}
 .editor-divider::before{content:'';position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--border)}
@@ -165,6 +172,41 @@ function editionText(ed) {
   return JSON.stringify(ed);
 }
 
+function renderImageMarkers(html) {
+  return html.replace(/\[img:([0-9a-f]{16}):([a-zA-Z0-9/+-]+)\]/g, function(m, hash, mime) {
+    var src = '/blobs/' + hash;
+    if (mime.indexOf('image/') === 0) {
+      return '<img class="doc-image" src="' + src + '" alt="blob:' + hash + '" loading="lazy">';
+    }
+    return '<a class="doc-image-link" href="' + src + '" target="_blank">Attachment ' + hash + ' (' + mime + ')</a>';
+  });
+}
+
+function renderContent(text) {
+  return renderImageMarkers(escapeHtml(text));
+}
+
+function blobUpload(wsRef, req, currentWorkId, currentRev, lastSavedRef, toast) {
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*,.pdf,.txt';
+  input.onchange = function() {
+    var file = input.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function() {
+      var bytes = new Uint8Array(reader.result);
+      var binary = '';
+      for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      var b64 = btoa(binary);
+      window._pendingBlobMeta = {mime: file.type, name: file.name, currentWorkId: currentWorkId, lastSavedRef: lastSavedRef};
+      req('blob_upload', {data: b64, mime_type: file.type});
+    };
+    reader.readAsArrayBuffer(file);
+  };
+  input.click();
+}
+
 var toastId = 0;
 
 function App() {
@@ -193,6 +235,7 @@ function App() {
   var _bp = useState([]), bridgePaths = _bp[0], setBridgePaths = _bp[1];
   var _cmd = useState(''), cmdText = _cmd[0], setCmdText = _cmd[1];
   var _sf = useState(false), showFooter = _sf[0], setShowFooter = _sf[1];
+  var _drag = useState(false), dragOver = _drag[0], setDragOver = _drag[1];
 
   var wsRef = useRef(null);
   var nextIdRef = useRef(1);
@@ -440,7 +483,10 @@ function App() {
             return;
           }
           if (op === 'work_revise_delta') {
-            if (editorRef.current) editorRef.current.textContent = edText;
+            if (editorRef.current) {
+              if (isEditing) editorRef.current.textContent = edText;
+              else editorRef.current.innerHTML = renderContent(edText);
+            }
             lastSavedRef.current = edText;
             setCurrentText(edText);
             setCurrentRev(totalRevs);
@@ -459,7 +505,7 @@ function App() {
           lastSavedRef.current = edText;
           historyTextRef.current = null;
           if (editorRef.current && !isEditing) {
-            editorRef.current.textContent = edText;
+            editorRef.current.innerHTML = renderContent(edText);
           }
           return;
         }
@@ -467,6 +513,32 @@ function App() {
         if (v && v.type === 'text_transclusion_results') {
           setFindRefsLoading(false);
           setTransclusionResults(v.value || []);
+          return;
+        }
+
+        if (v && v.type === 'blob_meta' && op === 'blob_upload') {
+          var meta = v.value;
+          var hashHex = ('0000000000000000' + meta.content_hash.toString(16)).slice(-16);
+          var marker = '\n[img:' + hashHex + ':' + meta.mime_type + ']\n';
+          var pending = window._pendingBlobMeta;
+          delete window._pendingBlobMeta;
+          if (pending && pending.currentWorkId && isEditing) {
+            var ed = editorRef.current;
+            if (ed) {
+              var sel = window.getSelection();
+              if (sel.rangeCount) {
+                var range = sel.getRangeAt(0);
+                range.deleteContents();
+                range.insertNode(document.createTextNode(marker));
+                range.collapse(false);
+              } else {
+                ed.textContent += marker;
+              }
+            }
+            toast('Image uploaded: ' + (pending.name || hashHex));
+          } else {
+            toast('Blob stored: ' + hashHex + ' (' + meta.byte_size + ' bytes)');
+          }
           return;
         }
 
@@ -588,7 +660,9 @@ function App() {
 
   useEffect(function(){
     if (!currentWorkId || isEditing || showHistory) return;
-    if (editorRef.current) editorRef.current.textContent = currentText;
+    if (editorRef.current) {
+      editorRef.current.innerHTML = renderContent(currentText);
+    }
   }, [currentText, currentWorkId]);
 
   useEffect(function(){
@@ -654,12 +728,12 @@ function App() {
 
   var leftHtml = useMemo(function(){
     if (!splitMode) return '';
-    return highlightRegions(currentText, leftRegions, 'transclusion-hl');
+    return renderImageMarkers(highlightRegions(currentText, leftRegions, 'transclusion-hl'));
   }, [splitMode, currentText, leftRegions]);
 
   var rightHtml = useMemo(function(){
     if (!splitMode) return '';
-    return highlightRegions(splitText, rightRegions, 'transclusion-hl');
+    return renderImageMarkers(highlightRegions(splitText, rightRegions, 'transclusion-hl'));
   }, [splitMode, splitText, rightRegions]);
 
   function handleSelectionCheck() {
@@ -715,6 +789,12 @@ function App() {
           h('button', {onClick:doCancel, className:'danger', disabled:!isEditing}, 'Cancel'),
           h('div', {className:'sep'}),
           h('button', {
+            disabled:!isEditing,
+            onClick:function(){ blobUpload(wsRef, req, currentWorkId, currentRev, lastSavedRef, toast); },
+            title: 'Upload image (or drag & drop while editing)'
+          }, '+ Image'),
+          h('div', {className:'sep'}),
+          h('button', {
             disabled:!currentWorkId||isEditing,
             onClick:function(){setShowHistory(!showHistory)}
           }, 'History'),
@@ -740,7 +820,32 @@ function App() {
             ? h('button', {className:'restore-btn', onClick:doRestore}, 'Restore this version')
             : null
         ) : null,
-        h('div', {className: 'editor-area' + (splitMode ? ' split' : ''), ref: editorAreaRef},
+        h('div', {
+          className: 'editor-area' + (splitMode ? ' split' : ''),
+          ref: editorAreaRef,
+          onDragOver: function(e) { e.preventDefault(); if(isEditing) setDragOver(true); },
+          onDragLeave: function() { setDragOver(false); },
+          onDrop: function(e) {
+            e.preventDefault(); setDragOver(false);
+            if (!isEditing) return;
+            var files = e.dataTransfer.files;
+            if (files.length) {
+              var file = files[0];
+              if (!file.type) { toast('Unknown file type'); return; }
+              var reader = new FileReader();
+              reader.onload = function() {
+                var bytes = new Uint8Array(reader.result);
+                var binary = '';
+                for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                var b64 = btoa(binary);
+                window._pendingBlobMeta = {mime: file.type, name: file.name, currentWorkId: currentWorkId, lastSavedRef: lastSavedRef};
+                req('blob_upload', {data: b64, mime_type: file.type});
+              };
+              reader.readAsArrayBuffer(file);
+            }
+          }
+        },
+          dragOver ? h('div', {className:'img-drop-overlay'}, 'Drop image here') : null,
           splitMode ? h(Fragment, null,
             h('div', {className:'editor-pane-wrap', ref: leftWrapRef, style:{position:'relative'}},
               h('div', {className:'split-label'}, 'Current'),
@@ -777,14 +882,22 @@ function App() {
             showHistory && historyViewText !== null
               ? h('div', {
                   className: 'editor-content',
-                  style: {opacity: 0.6}
-                }, historyViewText)
-              : h('div', {
-                  ref: editorRef,
-                  className: 'editor-content',
-                  onInput: handleEditorInput,
-                  onMouseUp: handleSelectionCheck
-                }),
+                  style: {opacity: 0.6},
+                  dangerouslySetInnerHTML: {__html: renderContent(historyViewText)}
+                })
+              : isEditing
+                ? h('div', {
+                    ref: editorRef,
+                    className: 'editor-content',
+                    onInput: handleEditorInput,
+                    onMouseUp: handleSelectionCheck
+                  })
+                : h('div', {
+                    ref: editorRef,
+                    className: 'editor-content',
+                    onMouseUp: handleSelectionCheck,
+                    dangerouslySetInnerHTML: {__html: renderContent(currentText)}
+                  }),
             showFindRefs && currentWorkId ? h('div', {
               className: 'find-refs-popup',
               style: {left: findRefsPos.x + 'px', top: findRefsPos.y + 'px'}

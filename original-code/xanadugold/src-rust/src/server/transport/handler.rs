@@ -34,6 +34,8 @@ pub fn build_router(state: SharedState) -> Router {
     Router::new()
         .route("/xudanu", get(ws_handler))
         .route("/xudanu/", get(ws_handler))
+        .route("/blobs/{hash}", get(blob_get_handler))
+        .route("/blobs/{hash}/preview", get(blob_preview_handler))
         .route("/", get(index_handler))
         .with_state(state)
 }
@@ -54,6 +56,54 @@ async fn ws_handler(
     let format = query.format.as_deref().unwrap_or("binary").to_string();
     let client_version = query.version.unwrap_or(PROTOCOL_VERSION);
     ws.on_upgrade(move |socket| handle_socket(socket, state, format, Some(addr), client_version))
+}
+
+fn safe_content_type(mime: &str) -> axum::http::HeaderValue {
+    mime.parse().unwrap_or_else(|_| "application/octet-stream".parse().unwrap())
+}
+
+async fn blob_get_handler(
+    axum::extract::Path(hash_hex): axum::extract::Path<String>,
+    State(state): State<SharedState>,
+) -> axum::response::Response {
+    let hash_u64 = match u64::from_str_radix(&hash_hex, 16) {
+        Ok(h) => h,
+        Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
+    };
+    let result: Option<(Vec<u8>, String)> = state.server.with_server(|srv| {
+        let meta = srv.blob_info(hash_u64).ok()?;
+        let data = srv.blob_get(hash_u64).ok()?;
+        Some((data, meta.mime_type.clone()))
+    });
+    match result {
+        Some((bytes, mime)) => (
+            [(axum::http::header::CONTENT_TYPE, safe_content_type(&mime))],
+            bytes,
+        ).into_response(),
+        None => axum::http::StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn blob_preview_handler(
+    axum::extract::Path(hash_hex): axum::extract::Path<String>,
+    State(state): State<SharedState>,
+) -> axum::response::Response {
+    let hash_u64 = match u64::from_str_radix(&hash_hex, 16) {
+        Ok(h) => h,
+        Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
+    };
+    let result: Option<(Vec<u8>, String)> = state.server.with_server(|srv| {
+        let meta = srv.blob_info(hash_u64).ok()?;
+        let preview = srv.blob_preview(hash_u64).ok()??;
+        Some((preview, meta.mime_type.clone()))
+    });
+    match result {
+        Some((bytes, mime)) => (
+            [(axum::http::header::CONTENT_TYPE, safe_content_type(&mime))],
+            bytes,
+        ).into_response(),
+        None => axum::http::StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn perform_handshake(
