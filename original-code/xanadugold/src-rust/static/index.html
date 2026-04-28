@@ -77,6 +77,22 @@ header .session-info{font-size:11px;color:var(--fg2);background:var(--bg3);paddi
 .img-upload-zone:hover{border-color:var(--accent);color:var(--accent)}
 .img-upload-zone.dragover{border-color:var(--green);background:rgba(63,185,80,0.08)}
 .img-drop-overlay{position:absolute;inset:0;background:rgba(88,166,255,0.08);border:2px dashed var(--accent);display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:16px;font-weight:600;z-index:30;pointer-events:none;border-radius:4px}
+.doc-image.selected{outline:2px solid var(--accent);outline-offset:2px}
+.overlay-panel{position:absolute;right:12px;top:12px;width:220px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;z-index:40;box-shadow:0 4px 16px rgba(0,0,0,0.5)}
+.overlay-panel h3{font-size:12px;color:var(--fg2);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px}
+.overlay-panel .ctrl{margin-bottom:8px}
+.overlay-panel .ctrl label{display:block;font-size:11px;color:var(--fg2);margin-bottom:3px}
+.overlay-panel .ctrl input[type=range]{width:100%;accent-color:var(--accent)}
+.overlay-panel .ctrl .val{font-size:10px;color:var(--accent);font-family:'SF Mono',Menlo,monospace;float:right}
+.overlay-panel .ctrl-row{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+.overlay-panel .ctrl-row button{background:var(--bg3);color:var(--fg);border:none;padding:4px 8px;border-radius:3px;cursor:pointer;font-size:11px}
+.overlay-panel .ctrl-row button:hover{background:var(--bg4)}
+.overlay-panel .ctrl-row button.active{background:var(--accent);color:var(--bg)}
+.overlay-panel .apply-btn{width:100%;background:var(--green);color:var(--bg);border:none;padding:6px;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;margin-top:4px}
+.overlay-panel .apply-btn:hover{opacity:.85}
+.overlay-panel .close-btn{position:absolute;top:6px;right:8px;background:none;border:none;color:var(--fg3);cursor:pointer;font-size:14px;padding:2px}
+.overlay-panel .close-btn:hover{color:var(--fg)}
+.overlay-panel .preview-img{width:100%;border-radius:4px;margin-bottom:8px;border:1px solid var(--border)}
 
 .editor-divider{width:40px;min-width:40px;background:var(--bg2);position:relative;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--border);border-right:1px solid var(--border)}
 .editor-divider::before{content:'';position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--border)}
@@ -172,40 +188,66 @@ function editionText(ed) {
   return JSON.stringify(ed);
 }
 
-function renderImageMarkers(html) {
+function renderImageMarkers(html, selectedHash) {
   return html.replace(/\[img:([0-9a-f]{16}):([a-zA-Z0-9/+-]+)\]/g, function(m, hash, mime) {
     var src = '/blobs/' + hash;
+    var selCls = (hash === selectedHash) ? ' selected' : '';
     if (mime.indexOf('image/') === 0) {
-      return '<img class="doc-image" src="' + src + '" alt="blob:' + hash + '" loading="lazy">';
+      return '<img class="doc-image' + selCls + '" src="' + src + '" alt="blob:' + hash + '" loading="lazy" data-blob-hash="' + hash + '">';
     }
     return '<a class="doc-image-link" href="' + src + '" target="_blank">Attachment ' + hash + ' (' + mime + ')</a>';
   });
 }
 
-function renderContent(text) {
-  return renderImageMarkers(escapeHtml(text));
+function renderContent(text, selectedHash) {
+  return renderImageMarkers(escapeHtml(text), selectedHash || null);
 }
 
-function blobUpload(wsRef, req, currentWorkId, currentRev, lastSavedRef, toast) {
-  var input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*,.pdf,.txt';
-  input.onchange = function() {
-    var file = input.files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function() {
-      var bytes = new Uint8Array(reader.result);
-      var binary = '';
-      for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-      var b64 = btoa(binary);
-      window._pendingBlobMeta = {mime: file.type, name: file.name, currentWorkId: currentWorkId, lastSavedRef: lastSavedRef};
-      req('blob_upload', {data: b64, mime_type: file.type});
-    };
-    reader.readAsArrayBuffer(file);
-  };
-  input.click();
-}
+   function blobUpload(wsRef, req, currentWorkId, currentRev, lastSavedRef, toast) {
+     var input = document.createElement('input');
+     input.type = 'file';
+     input.accept = 'image/*,.pdf,.txt';
+     input.onchange = function() {
+       var file = input.files[0];
+       if (!file) return;
+       var reader = new FileReader();
+       reader.onload = function() {
+        var bytes = new Uint8Array(reader.result);
+        var binary = '';
+        for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        var b64 = btoa(binary);
+        window._pendingBlobMeta = {mime: file.type, name: file.name, currentWorkId: currentWorkId, lastSavedRef: lastSavedRef};
+        req('blob_upload', {data: b64, mime_type: file.type});
+       };
+       reader.readAsArrayBuffer(file);
+     };
+     input.click();
+   }
+
+  function opsToCssFilter(ops) {
+    var parts = [], opacity = null, rotate = null, flipH = false, flipV = false, w = null, h = null;
+    ops.forEach(function(op) {
+      if (op.Brightness !== undefined) parts.push('brightness(' + (op.Brightness / 1000) + ')');
+      else if (op.Contrast !== undefined) parts.push('contrast(' + (op.Contrast / 1000) + ')');
+      else if (op.Grayscale !== undefined) parts.push('grayscale(1)');
+      else if (op.Opacity !== undefined) opacity = op.Opacity / 1000;
+      else if (op.Rotate !== undefined) rotate = op.Rotate;
+      else if (op.FlipHorizontal !== undefined) flipH = true;
+      else if (op.FlipVertical !== undefined) flipV = true;
+      else if (op.Resize) { w = op.Resize.width; h = op.Resize.height; }
+    });
+    var style = {};
+    if (parts.length) style.filter = parts.join(' ');
+    if (opacity !== null) style.opacity = opacity;
+    var transforms = [];
+    if (rotate) transforms.push('rotate(' + rotate + 'deg)');
+    if (flipH) transforms.push('scaleX(-1)');
+    if (flipV) transforms.push('scaleY(-1)');
+    if (transforms.length) style.transform = transforms.join(' ');
+    if (w) style.maxWidth = w + 'px';
+    if (h) style.maxHeight = h + 'px';
+    return style;
+  }
 
 var toastId = 0;
 
@@ -236,6 +278,8 @@ function App() {
   var _cmd = useState(''), cmdText = _cmd[0], setCmdText = _cmd[1];
   var _sf = useState(false), showFooter = _sf[0], setShowFooter = _sf[1];
   var _drag = useState(false), dragOver = _drag[0], setDragOver = _drag[1];
+  var _selImg = useState(null), selectedImg = _selImg[0], setSelectedImg = _selImg[1];
+  var _olOps = useState([]), overlayOps = _olOps[0], setOverlayOps = _olOps[1];
 
   var wsRef = useRef(null);
   var nextIdRef = useRef(1);
@@ -250,6 +294,7 @@ function App() {
   var historyTextRef = useRef(null);
   var restoringRef = useRef(false);
   var autoSaveRef = useRef(null);
+  var isEditingRef = useRef(false);
   var revSliderTimer = useRef(null);
   var subsRef = useRef({});
   var toastTimers = useRef({});
@@ -275,6 +320,37 @@ function App() {
     pendingRef.current[id] = op;
     wsRef.current.send(JSON.stringify(f));
     return id;
+  }
+
+  function applyOverlay() {
+    if (!selectedImg || !overlayOps.length) return;
+    req('overlay_apply', {base_hash: selectedImg, ops: overlayOps, mime_type: 'image/png'});
+    window._pendingOverlayApply = {currentWorkId: currentWorkId};
+  }
+
+  function toggleOp(op) {
+    setOverlayOps(function(prev) {
+      var idx = prev.findIndex(function(o) { return JSON.stringify(o) === JSON.stringify(op); });
+      if (idx >= 0) return prev.slice(0, idx).concat(prev.slice(idx + 1));
+      return prev.concat([op]);
+    });
+  }
+
+  function hasOp(op) {
+    return overlayOps.some(function(o) { return JSON.stringify(o) === JSON.stringify(op); });
+  }
+
+  function updateNumericOp(opName, value) {
+    var op = {}; op[opName] = value;
+    setOverlayOps(function(prev) {
+      var filtered = prev.filter(function(o) { return o[opName] === undefined; });
+      return filtered.concat([op]);
+    });
+  }
+
+  function getNumericOp(opName) {
+    var found = overlayOps.find(function(o) { return o[opName] !== undefined; });
+    return found ? found[opName] : 1000;
   }
 
   function sub(detType, targetId) {
@@ -314,9 +390,7 @@ function App() {
   }
 
   function doCreate() {
-    var text = prompt('New document text:');
-    if (text === null) return;
-    req('work_create', {edition:{text:text||''}});
+    req('work_create', {edition:{text:''}});
   }
 
   function doEdit() {
@@ -331,12 +405,15 @@ function App() {
     var text = editorRef.current ? editorRef.current.textContent : '';
     if (text === lastSavedRef.current) {
       req('work_release', {work_id:currentWorkId});
+      setCurrentText(text);
       setIsEditing(false);
       return;
     }
-    var ops = computeDelta(lastSavedRef.current, text);
-    req('work_revise_delta', {work_id:currentWorkId, base_revision:currentRev, ops:ops});
-    lastSavedRef.current = text;
+              var ops = computeDelta(lastSavedRef.current, text);
+              req('work_revise_delta', {work_id:currentWorkId, base_revision:currentRev, ops:ops});
+              lastSavedRef.current = text;
+              setCurrentText(text);
+    setCurrentText(text);
     setIsEditing(false);
   }
 
@@ -422,7 +499,7 @@ function App() {
       case 'open': if(a[0]){showWork(parseInt(a[0]))} break;
       case 'grab': req('work_grab',{work_id:+a[0]}); break;
       case 'revise': req('work_revise',{work_id:+a[0],edition:{text:a.slice(1).join(' ')||''}}); break;
-      case 'release': req('work_release',{work_id:+a[0]}); break;
+      case 'release': req('work_release',{work_id:a[0]?+a[0]:currentWorkId}); break;
       case 'info': req('server_stats'); break;
       case 'help': toast('Commands: create <text>, list, open <id>, grab <id>, revise <id> <text>, release <id>, info'); break;
       default: toast('Unknown: '+c);
@@ -485,7 +562,7 @@ function App() {
           if (op === 'work_revise_delta') {
             if (editorRef.current) {
               if (isEditing) editorRef.current.textContent = edText;
-              else editorRef.current.innerHTML = renderContent(edText);
+              else editorRef.current.innerHTML = renderContent(edText, selectedImg);
             }
             lastSavedRef.current = edText;
             setCurrentText(edText);
@@ -505,7 +582,7 @@ function App() {
           lastSavedRef.current = edText;
           historyTextRef.current = null;
           if (editorRef.current && !isEditing) {
-            editorRef.current.innerHTML = renderContent(edText);
+            editorRef.current.innerHTML = renderContent(edText, selectedImg);
           }
           return;
         }
@@ -522,7 +599,7 @@ function App() {
           var marker = '\n[img:' + hashHex + ':' + meta.mime_type + ']\n';
           var pending = window._pendingBlobMeta;
           delete window._pendingBlobMeta;
-          if (pending && pending.currentWorkId && isEditing) {
+          if (pending && pending.currentWorkId && isEditingRef.current) {
             var ed = editorRef.current;
             if (ed) {
               var sel = window.getSelection();
@@ -542,6 +619,24 @@ function App() {
           return;
         }
 
+        if (v && v.type === 'blob_meta' && op === 'overlay_apply') {
+          var meta = v.value;
+          var hashHex = ('0000000000000000' + meta.content_hash.toString(16)).slice(-16);
+          var pending = window._pendingOverlayApply;
+          delete window._pendingOverlayApply;
+          if (pending && pending.currentWorkId && isEditingRef.current) {
+            var marker = '\n[img:' + hashHex + ':image/png]\n';
+            var ed = editorRef.current;
+            if (ed) {
+              ed.textContent += marker;
+            }
+            toast('Overlay applied: ' + hashHex);
+            setSelectedImg(null);
+            setOverlayOps([]);
+          }
+          return;
+        }
+
         if (v && v.type === 'shared_regions') {
           setSharedRegions(v.value || []);
           return;
@@ -550,13 +645,36 @@ function App() {
         if (op === 'work_create') {
           var wid = (v && v.type==='id') ? v.value : (v && v.type==='humber') ? v.value : null;
           if (wid !== null) {
-            setCurrentWorkId(wid);
-            setCurrentRev(0);
-            setTotalRevs(1);
-            setIsEditing(false);
             req('work_list');
-            showWork(wid);
-            toast('Document created');
+            req('work_grab', {work_id:wid});
+            window._autoEditCreate = wid;
+          }
+          return;
+        }
+
+        if (op === 'work_grab') {
+          if ((v && v.type === 'boolean' && v.value === true) || (v && v.type === 'void')) {
+            if (window._autoEditCreate !== undefined) {
+              var createWid = window._autoEditCreate;
+              delete window._autoEditCreate;
+              setCurrentWorkId(createWid);
+              setCurrentRev(0);
+              setTotalRevs(1);
+              var s1 = sub('revision', createWid);
+              var s2 = sub('status', createWid);
+              subsRef.current = {revision:s1, status:s2};
+              req('work_get_edition', {work_id:createWid});
+              req('work_revision_count', {work_id:createWid});
+              setIsEditing(true);
+              toast('Document created \u2014 start typing');
+            } else if (restoringRef.current === true) {
+              restoringRef.current = false;
+              req('work_revise', {work_id:currentWorkId, edition:{text:historyTextRef.current||''}});
+              restoringRef.current = 'revising';
+            } else {
+              setIsEditing(true);
+              toast('Editing - type your changes');
+            }
           }
           return;
         }
@@ -637,9 +755,13 @@ function App() {
   }, []);
 
   useEffect(function(){
+    isEditingRef.current = isEditing;
     if (editorRef.current) {
       editorRef.current.contentEditable = isEditing ? 'true' : 'false';
-      if (isEditing) editorRef.current.focus();
+      if (isEditing) {
+        editorRef.current.textContent = currentText;
+        editorRef.current.focus();
+      }
     }
   }, [isEditing]);
 
@@ -661,9 +783,9 @@ function App() {
   useEffect(function(){
     if (!currentWorkId || isEditing || showHistory) return;
     if (editorRef.current) {
-      editorRef.current.innerHTML = renderContent(currentText);
+      editorRef.current.innerHTML = renderContent(currentText, selectedImg);
     }
-  }, [currentText, currentWorkId]);
+  }, [currentText, currentWorkId, selectedImg]);
 
   useEffect(function(){
     if (showHistory) {
@@ -728,12 +850,12 @@ function App() {
 
   var leftHtml = useMemo(function(){
     if (!splitMode) return '';
-    return renderImageMarkers(highlightRegions(currentText, leftRegions, 'transclusion-hl'));
-  }, [splitMode, currentText, leftRegions]);
+    return renderImageMarkers(highlightRegions(currentText, leftRegions, 'transclusion-hl'), selectedImg);
+  }, [splitMode, currentText, leftRegions, selectedImg]);
 
   var rightHtml = useMemo(function(){
     if (!splitMode) return '';
-    return renderImageMarkers(highlightRegions(splitText, rightRegions, 'transclusion-hl'));
+    return renderImageMarkers(highlightRegions(splitText, rightRegions, 'transclusion-hl'), null);
   }, [splitMode, splitText, rightRegions]);
 
   function handleSelectionCheck() {
@@ -744,7 +866,7 @@ function App() {
     currentWorkId
       ? h(Fragment, null,
           'rev ' + currentRev + '/' + totalRevs,
-          isEditing ? h('span', {className:'editing'}, ' EDITING') : null
+          isEditing ? h('span', {className:'editing'}, ' EDITING \u2014 Save or Cancel to release') : null
         )
       : null
   );
@@ -843,9 +965,43 @@ function App() {
               };
               reader.readAsArrayBuffer(file);
             }
+          },
+          onClick: function(e) {
+            var img = e.target.closest('.doc-image');
+            if (img && img.dataset.blobHash && !isEditing) {
+              setSelectedImg(img.dataset.blobHash);
+              setOverlayOps([]);
+            } else if (!img && selectedImg) {
+              setSelectedImg(null);
+              setOverlayOps([]);
+            }
           }
         },
           dragOver ? h('div', {className:'img-drop-overlay'}, 'Drop image here') : null,
+          selectedImg && !isEditing ? h('div', {className:'overlay-panel'},
+            h('button', {className:'close-btn', onClick:function(){setSelectedImg(null);setOverlayOps([])}}, '\u00d7'),
+            h('img', {className:'preview-img', src:'/blobs/'+selectedImg, style:Object.assign({}, opsToCssFilter(overlayOps))}),
+            h('h3', null, 'Image Overlay'),
+            h('div', {className:'ctrl'},
+              h('label', null, 'Brightness ', h('span', {className:'val'}, (getNumericOp('Brightness')/10).toFixed(0)+'%')),
+              h('input', {type:'range', min:0, max:2000, value:getNumericOp('Brightness'), onInput:function(e){updateNumericOp('Brightness', +e.target.value)}})
+            ),
+            h('div', {className:'ctrl'},
+              h('label', null, 'Contrast ', h('span', {className:'val'}, (getNumericOp('Contrast')/10).toFixed(0)+'%')),
+              h('input', {type:'range', min:0, max:2000, value:getNumericOp('Contrast'), onInput:function(e){updateNumericOp('Contrast', +e.target.value)}})
+            ),
+            h('div', {className:'ctrl'},
+              h('label', null, 'Opacity ', h('span', {className:'val'}, (getNumericOp('Opacity')/10).toFixed(0)+'%')),
+              h('input', {type:'range', min:0, max:1000, value:getNumericOp('Opacity'), onInput:function(e){updateNumericOp('Opacity', +e.target.value)}})
+            ),
+            h('div', {className:'ctrl-row'},
+              h('button', {className:hasOp({Grayscale:true})?'active':'', onClick:function(){toggleOp({Grayscale:true})}}, 'Grayscale'),
+              h('button', {className:hasOp({FlipHorizontal:true})?'active':'', onClick:function(){toggleOp({FlipHorizontal:true})}}, 'Flip H'),
+              h('button', {className:hasOp({FlipVertical:true})?'active':'', onClick:function(){toggleOp({FlipVertical:true})}}, 'Flip V'),
+              h('button', {className:hasOp({Rotate:90})?'active':'', onClick:function(){toggleOp({Rotate:90})}}, 'Rotate 90')
+            ),
+            h('button', {className:'apply-btn', disabled:!overlayOps.length, onClick:function(){applyOverlay()}}, 'Apply Overlay')
+          ) : null,
           splitMode ? h(Fragment, null,
             h('div', {className:'editor-pane-wrap', ref: leftWrapRef, style:{position:'relative'}},
               h('div', {className:'split-label'}, 'Current'),
@@ -896,7 +1052,7 @@ function App() {
                     ref: editorRef,
                     className: 'editor-content',
                     onMouseUp: handleSelectionCheck,
-                    dangerouslySetInnerHTML: {__html: renderContent(currentText)}
+                    dangerouslySetInnerHTML: {__html: renderContent(currentText, selectedImg)}
                   }),
             showFindRefs && currentWorkId ? h('div', {
               className: 'find-refs-popup',

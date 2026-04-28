@@ -399,6 +399,20 @@ fn dispatch_inner(
                 total_bytes,
             }))
         }
+
+        WireRequest::OverlayApply { base_hash, ops, mime_type } => {
+            let meta = srv.blob_apply_overlay(session_id, base_hash, ops, mime_type)?;
+            Ok(ResponseValue::BlobMeta(super::protocol::BlobMetaPayload::from_blob_meta(&meta)))
+        }
+        WireRequest::OverlayGet { overlay_hash } => {
+            let overlay = srv.blob_get_overlay(overlay_hash)?;
+            Ok(ResponseValue::OverlayInfo(super::protocol::OverlayPayload {
+                overlay_hash,
+                base_hash: overlay.base_hash,
+                operations: overlay.operations,
+                mime_type: overlay.mime_type,
+            }))
+        }
     }
 }
 

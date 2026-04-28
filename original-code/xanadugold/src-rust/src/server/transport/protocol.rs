@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::edition::{BeId, Edition, RangeElement, XnRegion};
+use crate::edition::{BeId, Edition, RangeElement, XnRegion, ImageOp};
 use crate::server::lock::LockCredential;
 
 pub const PROTOCOL_VERSION: u8 = 0x02;
@@ -147,6 +147,8 @@ pub enum OperationCode {
     BlobExists,
     BlobInfo,
     BlobStats,
+    OverlayApply,
+    OverlayGet,
 }
 
 impl OperationCode {
@@ -224,6 +226,9 @@ impl OperationCode {
             0x0904 => Some(OperationCode::BlobExists),
             0x0905 => Some(OperationCode::BlobInfo),
             0x0906 => Some(OperationCode::BlobStats),
+
+            0x0a01 => Some(OperationCode::OverlayApply),
+            0x0a02 => Some(OperationCode::OverlayGet),
 
             _ => None,
         }
@@ -304,6 +309,9 @@ impl OperationCode {
             OperationCode::BlobExists       => 0x0904,
             OperationCode::BlobInfo         => 0x0905,
             OperationCode::BlobStats        => 0x0906,
+
+            OperationCode::OverlayApply      => 0x0a01,
+            OperationCode::OverlayGet        => 0x0a02,
         }
     }
 }
@@ -429,6 +437,8 @@ pub enum WireRequest {
     BlobExists { content_hash: u64 },
     BlobInfo { content_hash: u64 },
     BlobStats,
+    OverlayApply { base_hash: u64, ops: Vec<ImageOp>, mime_type: String },
+    OverlayGet { overlay_hash: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -514,6 +524,7 @@ pub enum ResponseValue {
     BlobMeta(BlobMetaPayload),
     BlobData(Vec<u8>),
     BlobStatsInfo(BlobStatsPayload),
+    OverlayInfo(OverlayPayload),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -610,6 +621,14 @@ impl BlobMetaPayload {
 pub struct BlobStatsPayload {
     pub total_blobs: u64,
     pub total_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OverlayPayload {
+    pub overlay_hash: u64,
+    pub base_hash: u64,
+    pub operations: Vec<ImageOp>,
+    pub mime_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

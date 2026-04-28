@@ -314,6 +314,26 @@ impl BlobStore {
         Ok(meta)
     }
 
+    pub fn store_overlay(&self, base_hash: u64, ops: Vec<ImageOp>, mime_type: String) -> Result<BlobMeta, BlobError> {
+        let overlay = ImageOverlay::new(base_hash, ops, mime_type);
+        let json = serde_json::to_vec(&overlay)
+            .map_err(|e| BlobError::IoError(e.to_string()))?;
+        self.store(&json, "application/x-xudanu-overlay".to_string())
+    }
+
+    pub fn retrieve_overlay(&self, hash: &[u8; 32]) -> Result<ImageOverlay, BlobError> {
+        let data = self.backend.retrieve(hash)?;
+        serde_json::from_slice(&data)
+            .map_err(|e| BlobError::IoError(format!("invalid overlay: {}", e)))
+    }
+
+    pub fn retrieve_overlay_by_u64(&self, hash_u64: u64) -> Result<ImageOverlay, BlobError> {
+        let full_hash = self.by_u64.lock().unwrap()
+            .get(&hash_u64).copied()
+            .ok_or(BlobError::NotFound([0u8; 32]))?;
+        self.retrieve_overlay(&full_hash)
+    }
+
     pub fn retrieve(&self, hash: &[u8; 32]) -> Result<Vec<u8>, BlobError> {
         self.backend.retrieve(hash)
     }
@@ -762,5 +782,50 @@ mod tests {
             std::process::id(),
             std::thread::current().id()
         ))
+    }
+
+    #[test]
+    fn store_overlay_creates_blob() {
+        let store = BlobStore::in_memory();
+        let base = store.store(b"fake image data", "image/png".to_string()).unwrap();
+        let base_hash = base.hash_u64();
+        let ops = vec![ImageOp::Brightness(800), ImageOp::Grayscale];
+        let meta = store.store_overlay(base_hash, ops.clone(), "image/png".to_string()).unwrap();
+        assert_eq!(meta.mime_type, "application/x-xudanu-overlay");
+        assert!(meta.byte_size > 0);
+    }
+
+    #[test]
+    fn retrieve_overlay_roundtrip() {
+        let store = BlobStore::in_memory();
+        let base = store.store(b"base data", "image/jpeg".to_string()).unwrap();
+        let base_hash = base.hash_u64();
+        let ops = vec![ImageOp::Contrast(1200), ImageOp::Rotate(90), ImageOp::FlipHorizontal];
+        let meta = store.store_overlay(base_hash, ops.clone(), "image/jpeg".to_string()).unwrap();
+        let overlay = store.retrieve_overlay_by_u64(meta.hash_u64()).unwrap();
+        assert_eq!(overlay.base_hash, base_hash);
+        assert_eq!(overlay.operations, ops);
+        assert_eq!(overlay.mime_type, "image/jpeg");
+    }
+
+    #[test]
+    fn overlay_deduplication() {
+        let store = BlobStore::in_memory();
+        let base = store.store(b"base", "image/png".to_string()).unwrap();
+        let base_hash = base.hash_u64();
+        let ops = vec![ImageOp::Grayscale];
+        let m1 = store.store_overlay(base_hash, ops.clone(), "image/png".to_string()).unwrap();
+        let m2 = store.store_overlay(base_hash, ops.clone(), "image/png".to_string()).unwrap();
+        assert_eq!(m1.hash_u64(), m2.hash_u64());
+    }
+
+    #[test]
+    fn overlay_different_ops_different_hash() {
+        let store = BlobStore::in_memory();
+        let base = store.store(b"base", "image/png".to_string()).unwrap();
+        let base_hash = base.hash_u64();
+        let m1 = store.store_overlay(base_hash, vec![ImageOp::Grayscale], "image/png".to_string()).unwrap();
+        let m2 = store.store_overlay(base_hash, vec![ImageOp::FlipVertical], "image/png".to_string()).unwrap();
+        assert_ne!(m1.hash_u64(), m2.hash_u64());
     }
 }

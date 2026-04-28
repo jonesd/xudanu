@@ -1136,6 +1136,26 @@ impl Server {
         (stats.total_blobs, stats.total_bytes)
     }
 
+    pub fn blob_apply_overlay(
+        &mut self,
+        session_id: SessionId,
+        base_hash: u64,
+        ops: Vec<crate::edition::ImageOp>,
+        mime_type: String,
+    ) -> Result<BlobMeta, ServerError> {
+        self.ensure_logged_in(session_id)?;
+        if !self.blob_exists(base_hash) {
+            return Err(ServerError::NotFound(format!("base blob {:016x}", base_hash)));
+        }
+        self.blob_store.store_overlay(base_hash, ops, mime_type)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn blob_get_overlay(&self, hash_u64: u64) -> Result<crate::edition::ImageOverlay, ServerError> {
+        self.blob_store.retrieve_overlay_by_u64(hash_u64)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
     // === Detectors ===
 
     pub fn add_revision_detector(
