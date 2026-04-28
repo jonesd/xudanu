@@ -1625,3 +1625,60 @@ async fn blob_http_get_not_found() {
         .send().await.unwrap();
     assert_eq!(http_resp.status(), 404);
 }
+
+#[tokio::test]
+async fn overlay_apply_and_get() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let data = xudanu::edition::base64_encode(b"base image bytes");
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "blob_upload", Some(serde_json::json!({
+            "data": data,
+            "mime_type": "image/png"
+        })))).await;
+    let base_hash = resp["value"]["value"]["content_hash"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "overlay_apply", Some(serde_json::json!({
+            "base_hash": base_hash,
+            "ops": [{"Brightness": 800}, "Grayscale"],
+            "mime_type": "image/png"
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "blob_meta");
+    let overlay_hash = resp["value"]["value"]["content_hash"].as_u64().unwrap();
+    assert_ne!(overlay_hash, base_hash);
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "overlay_get", Some(serde_json::json!({
+            "overlay_hash": overlay_hash
+        })))).await;
+    assert_eq!(resp["value"]["type"], "overlay_info");
+    assert_eq!(resp["value"]["value"]["base_hash"].as_u64().unwrap(), base_hash);
+    assert_eq!(resp["value"]["value"]["mime_type"].as_str().unwrap(), "image/png");
+    assert_eq!(resp["value"]["value"]["operations"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn overlay_requires_login() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+    send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(2, "overlay_apply", Some(serde_json::json!({
+            "base_hash": 1, "ops": [], "mime_type": "image/png"
+        })))).await;
+    assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn overlay_invalid_base() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "overlay_apply", Some(serde_json::json!({
+            "base_hash": 99999, "ops": ["Grayscale"], "mime_type": "image/png"
+        })))).await;
+    assert_eq!(resp["type"], "error");
+}
