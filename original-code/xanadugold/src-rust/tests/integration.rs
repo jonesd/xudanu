@@ -1593,3 +1593,35 @@ async fn blob_deduplication_json() {
         resp2["value"]["value"]["content_hash"].as_u64().unwrap()
     );
 }
+
+#[tokio::test]
+async fn blob_http_get_serves_data() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let data = xudanu::edition::base64_encode(b"http blob test");
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "blob_upload", Some(serde_json::json!({
+            "data": data,
+            "mime_type": "text/plain"
+        })))).await;
+    let hash = resp["value"]["value"]["content_hash"].as_u64().unwrap();
+    let hash_hex = format!("{:016x}", hash);
+
+    let client = reqwest::Client::new();
+    let http_resp = client.get(format!("http://{}/blobs/{}", srv.addr, hash_hex))
+        .send().await.unwrap();
+    assert_eq!(http_resp.status(), 200);
+    assert_eq!(http_resp.headers().get("content-type").unwrap(), "text/plain");
+    let body = http_resp.bytes().await.unwrap();
+    assert_eq!(&body[..], b"http blob test");
+}
+
+#[tokio::test]
+async fn blob_http_get_not_found() {
+    let srv = TestServer::start().await;
+    let client = reqwest::Client::new();
+    let http_resp = client.get(format!("http://{}/blobs/{:016x}", srv.addr, 99999u64))
+        .send().await.unwrap();
+    assert_eq!(http_resp.status(), 404);
+}

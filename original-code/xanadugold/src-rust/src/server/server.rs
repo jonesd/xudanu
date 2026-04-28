@@ -1098,6 +1098,12 @@ impl Server {
         mime_type: String,
     ) -> Result<BlobMeta, ServerError> {
         self.ensure_logged_in(session_id)?;
+        const MAX_BLOB_SIZE: usize = 64 * 1024 * 1024;
+        if data.len() > MAX_BLOB_SIZE {
+            return Err(ServerError::InvalidArgument(
+                format!("blob too large: {} bytes (max {})", data.len(), MAX_BLOB_SIZE)
+            ));
+        }
         self.blob_store.store(&data, mime_type)
             .map_err(|e| ServerError::Internal(e.to_string()))
     }

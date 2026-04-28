@@ -233,7 +233,8 @@ impl BlobBackend for FilesystemBackend {
         use std::io::Seek;
         file.seek(std::io::SeekFrom::Start(offset))
             .map_err(|e| BlobError::IoError(e.to_string()))?;
-        let mut buf = vec![0u8; len as usize];
+        let read_len = (len as usize).min(64 * 1024 * 1024);
+        let mut buf = vec![0u8; read_len];
         let n = file.read(&mut buf)
             .map_err(|e| BlobError::IoError(e.to_string()))?;
         buf.truncate(n);
@@ -297,6 +298,9 @@ impl BlobStore {
         let hash = hash_content(data);
         let byte_size = data.len() as u64;
         self.backend.store(&hash, data)?;
+        if let Some(existing) = self.meta.lock().unwrap().get(&hash).cloned() {
+            return Ok(existing);
+        }
         let mut meta = BlobMeta::new(hash, byte_size, mime_type);
         if meta.is_image() {
             if let Some(preview_data) = generate_preview(data, &meta.mime_type) {
