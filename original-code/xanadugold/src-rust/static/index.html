@@ -180,12 +180,17 @@ function highlightRegions(text, regions, cls) {
 }
 
 function editionText(ed) {
-  if (!ed || ed.empty !== undefined) return '';
+  if (!ed) return '';
+  if (ed.type === 'empty' || ed.empty !== undefined) return '';
+  if (ed.type === 'text' && ed.value) return ed.value;
   if (ed.text) return ed.text;
+  if (ed.type === 'entries' && ed.value) return ed.value.map(function(e){
+    var el = e[1]; return el.Text ? el.Text.text : '[' + JSON.stringify(el) + ']';
+  }).join('');
   if (ed.entries) return ed.entries.map(function(e){
     var el = e[1]; return el.Text ? el.Text.text : '[' + JSON.stringify(el) + ']';
   }).join('');
-  return JSON.stringify(ed);
+  return '';
 }
 
 function renderImageMarkers(html, selectedHash) {
@@ -324,7 +329,7 @@ function App() {
 
   function applyOverlay() {
     if (!selectedImg || !overlayOps.length) return;
-    req('overlay_apply', {base_hash: selectedImg, ops: overlayOps, mime_type: 'image/png'});
+    req('overlay_apply', {base_hash: parseInt(selectedImg, 16), ops: overlayOps, mime_type: 'image/png'});
     window._pendingOverlayApply = {currentWorkId: currentWorkId};
   }
 
@@ -409,10 +414,9 @@ function App() {
       setIsEditing(false);
       return;
     }
-              var ops = computeDelta(lastSavedRef.current, text);
-              req('work_revise_delta', {work_id:currentWorkId, base_revision:currentRev, ops:ops});
-              lastSavedRef.current = text;
-              setCurrentText(text);
+    var ops = computeDelta(lastSavedRef.current, text);
+    req('work_revise_delta', {work_id:currentWorkId, base_revision:currentRev, ops:ops});
+    lastSavedRef.current = text;
     setCurrentText(text);
     setIsEditing(false);
   }
@@ -624,11 +628,17 @@ function App() {
           var hashHex = ('0000000000000000' + meta.content_hash.toString(16)).slice(-16);
           var pending = window._pendingOverlayApply;
           delete window._pendingOverlayApply;
-          if (pending && pending.currentWorkId && isEditingRef.current) {
+          if (pending && pending.currentWorkId) {
             var marker = '\n[img:' + hashHex + ':image/png]\n';
-            var ed = editorRef.current;
-            if (ed) {
-              ed.textContent += marker;
+            if (isEditingRef.current) {
+              var ed = editorRef.current;
+              if (ed) ed.textContent += marker;
+            } else {
+              var newText = lastSavedRef.current + marker;
+              setCurrentText(newText);
+              lastSavedRef.current = newText;
+              req('work_grab', {work_id:pending.currentWorkId});
+              window._overlayInsert = {text: newText};
             }
             toast('Overlay applied: ' + hashHex);
             setSelectedImg(null);
@@ -667,6 +677,11 @@ function App() {
               req('work_revision_count', {work_id:createWid});
               setIsEditing(true);
               toast('Document created \u2014 start typing');
+            } else if (window._overlayInsert !== undefined) {
+              var insert = window._overlayInsert;
+              delete window._overlayInsert;
+              req('work_revise', {work_id:currentWorkId, edition:{text:insert.text}});
+              window._overlayRelease = true;
             } else if (restoringRef.current === true) {
               restoringRef.current = false;
               req('work_revise', {work_id:currentWorkId, edition:{text:historyTextRef.current||''}});
@@ -684,7 +699,11 @@ function App() {
             var rv = v.value;
             setCurrentRev(rv);
             setTotalRevs(rv);
-            if (restoringRef.current === 'revising') {
+            if (window._overlayRelease) {
+              delete window._overlayRelease;
+              req('work_release', {work_id:currentWorkId});
+              toast('Overlay saved as revision ' + rv);
+            } else if (restoringRef.current === 'revising') {
               restoringRef.current = false;
               req('work_release', {work_id:currentWorkId});
               setShowHistory(false);
@@ -706,20 +725,6 @@ function App() {
             if (!isEditing) setCurrentRev(v.value);
             return;
           }
-        }
-
-        if (op === 'work_grab') {
-          if ((v && v.type === 'boolean' && v.value === true) || (v && v.type === 'void')) {
-            if (restoringRef.current === true) {
-              restoringRef.current = false;
-              req('work_revise', {work_id:currentWorkId, edition:{text:historyTextRef.current||''}});
-              restoringRef.current = 'revising';
-            } else {
-              setIsEditing(true);
-              toast('Editing - type your changes');
-            }
-          }
-          return;
         }
 
         if (v && v.type === 'void' && op === 'work_release') {
