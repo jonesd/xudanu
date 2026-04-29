@@ -76,17 +76,20 @@ async fn main() {
                 .cloned()
                 .or_else(|| args.get(3).cloned());
 
-            let server = if let Some(ref dir) = data_dir {
+            let mut server = if let Some(ref dir) = data_dir {
                 let path = PathBuf::from(dir);
                 let snapshot_path = path.join("server.json");
                 if snapshot_path.exists() {
                     tracing::info!("Restoring from {}", snapshot_path.display());
-                    Server::restore_from_file(&snapshot_path).expect("failed to restore snapshot")
+                    let mut s = Server::restore_from_file(&snapshot_path).expect("failed to restore snapshot");
+                    s.set_checkpoint_path(snapshot_path);
+                    s
                 } else {
                     tracing::info!("Initializing new data directory: {}", dir);
                     std::fs::create_dir_all(&path).expect("failed to create data directory");
-                    let s = Server::new();
+                    let mut s = Server::new();
                     s.checkpoint_to_file(&snapshot_path).expect("failed to write initial checkpoint");
+                    s.set_checkpoint_path(snapshot_path);
                     s
                 }
             } else {
