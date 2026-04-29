@@ -61,6 +61,7 @@ pub struct Server {
     backfollow: BackfollowEngine,
     transclusion_index: TransclusionIndex,
     blob_store: BlobStore,
+    checkpoint_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug)]
@@ -144,6 +145,7 @@ impl Server {
             transclusion_index: TransclusionIndex::new(),
             backfollow: BackfollowEngine::new(),
             blob_store: BlobStore::in_memory(),
+            checkpoint_path: None,
         };
 
         let pub_club = Club::new_with_owner(
@@ -897,7 +899,23 @@ impl Server {
 
     pub fn bump_operation(&mut self) -> u64 {
         self.operation_counter += 1;
+        if self.operation_counter % 50 == 0 {
+            self.auto_checkpoint();
+        }
         self.operation_counter
+    }
+
+    pub fn set_checkpoint_path(&mut self, path: std::path::PathBuf) {
+        self.checkpoint_path = Some(path);
+    }
+
+    fn auto_checkpoint(&mut self) {
+        #[cfg(feature = "server")]
+        if let Some(ref path) = self.checkpoint_path {
+            if let Err(e) = self.checkpoint_to_file(path) {
+                tracing::warn!("auto-checkpoint failed: {}", e);
+            }
+        }
     }
 
     pub fn operation_count(&self) -> u64 {
@@ -1438,6 +1456,7 @@ mod persist_snapshot {
                 transclusion_index: TransclusionIndex::new(),
                 backfollow: BackfollowEngine::new(),
                 blob_store: BlobStore::in_memory(),
+                checkpoint_path: None,
             };
 
             for club_snap in &snapshot.clubs {
@@ -1501,6 +1520,16 @@ mod persist_snapshot {
                 let edition = ws.work.edition().clone();
                 let elem = RangeElement::work(*wid);
                 server.transclusion_index.register_work(&edition, &elem);
+            }
+
+            let max_id = server.works.keys().copied()
+                .chain(server.clubs.keys().copied())
+                .chain(server.links.keys().copied())
+                .chain(server.standalone_editions.keys().copied())
+                .max()
+                .unwrap_or(0);
+            if max_id >= server.grand_map.id_counter() {
+                server.grand_map.set_id_counter(max_id + 1);
             }
 
             server

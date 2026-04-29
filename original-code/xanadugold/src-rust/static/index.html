@@ -193,7 +193,49 @@ function editionText(ed) {
   return '';
 }
 
+function encodeOps(ops) {
+  return ops.map(function(op) {
+    if (op.Brightness !== undefined) return 'b' + op.Brightness;
+    if (op.Contrast !== undefined) return 'c' + op.Contrast;
+    if (op.Grayscale !== undefined) return 'g';
+    if (op.Opacity !== undefined) return 'o' + op.Opacity;
+    if (op.Rotate !== undefined) return 'r' + op.Rotate;
+    if (op.FlipHorizontal !== undefined) return 'fh';
+    if (op.FlipVertical !== undefined) return 'fv';
+    if (op.Resize) return 's' + op.Resize.width + 'x' + op.Resize.height;
+    if (op.Crop) return 'cr' + op.Crop.x + '.' + op.Crop.y + '.' + op.Crop.width + '.' + op.Crop.height;
+    return '';
+  }).filter(Boolean).join(',');
+}
+
+function decodeOps(str) {
+  if (!str) return [];
+  return str.split(',').map(function(s) {
+    if (s[0] === 'b') return {Brightness: +s.slice(1)};
+    if (s[0] === 'c') return {Contrast: +s.slice(1)};
+    if (s === 'g') return {Grayscale: true};
+    if (s[0] === 'o') return {Opacity: +s.slice(1)};
+    if (s[0] === 'r' && s[1] !== 'f') return {Rotate: +s.slice(1)};
+    if (s === 'fh') return {FlipHorizontal: true};
+    if (s === 'fv') return {FlipVertical: true};
+    if (s[0] === 's') { var p = s.slice(1).split('x'); return {Resize: {width: +p[0], height: +p[1]}}; }
+    if (s.slice(0,2) === 'cr') { var p = s.slice(2).split('.'); return {Crop: {x: +p[0], y: +p[1], width: +p[2], height: +p[3]}}; }
+    return null;
+  }).filter(Boolean);
+}
+
 function renderImageMarkers(html, selectedHash) {
+  html = html.replace(/\[overlay:([0-9a-f]{16}):([a-z0-9.,x]+):([a-zA-Z0-9/+-]+)\]/g, function(m, hash, opsStr, mime) {
+    var ops = decodeOps(opsStr);
+    var style = opsToCssFilter(ops);
+    var src = '/blobs/' + hash;
+    var selCls = (hash === selectedHash) ? ' selected' : '';
+    var styleStr = Object.entries(style).map(function(e){return e[0]+':'+e[1]}).join(';');
+    if (mime.indexOf('image/') === 0) {
+      return '<img class="doc-image' + selCls + '" src="' + src + '" alt="overlay:' + hash + '" loading="lazy" data-blob-hash="' + hash + '" data-overlay-ops="' + opsStr + '" style="' + styleStr + '">';
+    }
+    return '<a class="doc-image-link" href="' + src + '" target="_blank">Overlay ' + hash + '</a>';
+  });
   return html.replace(/\[img:([0-9a-f]{16}):([a-zA-Z0-9/+-]+)\]/g, function(m, hash, mime) {
     var src = '/blobs/' + hash;
     var selCls = (hash === selectedHash) ? ' selected' : '';
@@ -329,8 +371,9 @@ function App() {
 
   function applyOverlay() {
     if (!selectedImg || !overlayOps.length) return;
+    var opsEncoded = encodeOps(overlayOps);
     req('overlay_apply', {base_hash: parseInt(selectedImg, 16), ops: overlayOps, mime_type: 'image/png'});
-    window._pendingOverlayApply = {currentWorkId: currentWorkId};
+    window._pendingOverlayApply = {currentWorkId: currentWorkId, baseHash: selectedImg, opsEncoded: opsEncoded};
   }
 
   function toggleOp(op) {
@@ -624,12 +667,10 @@ function App() {
         }
 
         if (v && v.type === 'blob_meta' && op === 'overlay_apply') {
-          var meta = v.value;
-          var hashHex = ('0000000000000000' + meta.content_hash.toString(16)).slice(-16);
           var pending = window._pendingOverlayApply;
           delete window._pendingOverlayApply;
-          if (pending && pending.currentWorkId) {
-            var marker = '\n[img:' + hashHex + ':image/png]\n';
+          if (pending && pending.currentWorkId && pending.baseHash && pending.opsEncoded) {
+            var marker = '\n[overlay:' + pending.baseHash + ':' + pending.opsEncoded + ':image/png]\n';
             if (isEditingRef.current) {
               var ed = editorRef.current;
               if (ed) ed.textContent += marker;
@@ -640,7 +681,7 @@ function App() {
               req('work_grab', {work_id:pending.currentWorkId});
               window._overlayInsert = {text: newText};
             }
-            toast('Overlay applied: ' + hashHex);
+            toast('Overlay applied');
             setSelectedImg(null);
             setOverlayOps([]);
           }
@@ -975,7 +1016,11 @@ function App() {
             var img = e.target.closest('.doc-image');
             if (img && img.dataset.blobHash && !isEditing) {
               setSelectedImg(img.dataset.blobHash);
-              setOverlayOps([]);
+              if (img.dataset.overlayOps) {
+                setOverlayOps(decodeOps(img.dataset.overlayOps));
+              } else {
+                setOverlayOps([]);
+              }
             } else if (!img && selectedImg) {
               setSelectedImg(null);
               setOverlayOps([]);
