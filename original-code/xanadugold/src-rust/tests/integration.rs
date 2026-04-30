@@ -8,6 +8,14 @@ use xudanu::server::transport::{
 };
 use xudanu::server::transport::varint;
 
+fn parse_hash_hex(v: &serde_json::Value) -> u64 {
+    u64::from_str_radix(v.as_str().unwrap(), 16).unwrap()
+}
+
+fn hash_hex(n: u64) -> String {
+    format!("{:016x}", n)
+}
+
 struct TestServer {
     addr: SocketAddr,
 }
@@ -1488,14 +1496,14 @@ async fn blob_upload_and_get_json() {
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "blob_meta");
     let meta = &resp["value"]["value"];
-    let content_hash = meta["content_hash"].as_u64().unwrap();
+    let content_hash = parse_hash_hex(&meta["content_hash"]);
     assert!(content_hash > 0);
     assert_eq!(meta["byte_size"].as_u64().unwrap(), 16);
     assert_eq!(meta["mime_type"].as_str().unwrap(), "text/plain");
 
     let resp = send_recv_json(&mut s, &mut r,
         json_req(11, "blob_get", Some(serde_json::json!({
-            "content_hash": content_hash
+            "content_hash": hash_hex(content_hash)
         })))).await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "string");
@@ -1509,7 +1517,7 @@ async fn blob_exists_and_info_json() {
     let (mut s, mut r, _) = json_setup(&srv).await;
 
     let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "blob_exists", Some(serde_json::json!({"content_hash": 99999})))) .await;
+        json_req(10, "blob_exists", Some(serde_json::json!({"content_hash": hash_hex(99999)})))) .await;
     assert_eq!(resp["value"]["type"], "boolean");
     assert!(!resp["value"]["value"].as_bool().unwrap());
 
@@ -1519,14 +1527,14 @@ async fn blob_exists_and_info_json() {
             "data": data,
             "mime_type": "image/png"
         })))).await;
-    let hash = resp["value"]["value"]["content_hash"].as_u64().unwrap();
+    let hash = parse_hash_hex(&resp["value"]["value"]["content_hash"]);
 
     let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "blob_exists", Some(serde_json::json!({"content_hash": hash})))).await;
+        json_req(12, "blob_exists", Some(serde_json::json!({"content_hash": hash_hex(hash)})))).await;
     assert!(resp["value"]["value"].as_bool().unwrap());
 
     let resp = send_recv_json(&mut s, &mut r,
-        json_req(13, "blob_info", Some(serde_json::json!({"content_hash": hash})))).await;
+        json_req(13, "blob_info", Some(serde_json::json!({"content_hash": hash_hex(hash)})))).await;
     assert_eq!(resp["value"]["type"], "blob_meta");
     let meta = &resp["value"]["value"];
     assert_eq!(meta["mime_type"].as_str().unwrap(), "image/png");
@@ -1574,7 +1582,7 @@ async fn blob_get_not_found_json() {
     let (mut s, mut r, _) = json_setup(&srv).await;
 
     let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "blob_get", Some(serde_json::json!({"content_hash": 99999})))) .await;
+        json_req(10, "blob_get", Some(serde_json::json!({"content_hash": hash_hex(99999)})))) .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -1589,8 +1597,8 @@ async fn blob_deduplication_json() {
     let resp2 = send_recv_json(&mut s, &mut r,
         json_req(11, "blob_upload", Some(serde_json::json!({"data": data, "mime_type": "text/plain"})))) .await;
     assert_eq!(
-        resp1["value"]["value"]["content_hash"].as_u64().unwrap(),
-        resp2["value"]["value"]["content_hash"].as_u64().unwrap()
+        parse_hash_hex(&resp1["value"]["value"]["content_hash"]),
+        parse_hash_hex(&resp2["value"]["value"]["content_hash"])
     );
 }
 
@@ -1605,11 +1613,11 @@ async fn blob_http_get_serves_data() {
             "data": data,
             "mime_type": "text/plain"
         })))).await;
-    let hash = resp["value"]["value"]["content_hash"].as_u64().unwrap();
-    let hash_hex = format!("{:016x}", hash);
+    let hash = parse_hash_hex(&resp["value"]["value"]["content_hash"]);
+    let hash_hex_val = resp["value"]["value"]["content_hash"].as_str().unwrap().to_string();
 
     let client = reqwest::Client::new();
-    let http_resp = client.get(format!("http://{}/blobs/{}", srv.addr, hash_hex))
+    let http_resp = client.get(format!("http://{}/blobs/{}", srv.addr, hash_hex_val))
         .send().await.unwrap();
     assert_eq!(http_resp.status(), 200);
     assert_eq!(http_resp.headers().get("content-type").unwrap(), "text/plain");
@@ -1637,25 +1645,25 @@ async fn overlay_apply_and_get() {
             "data": data,
             "mime_type": "image/png"
         })))).await;
-    let base_hash = resp["value"]["value"]["content_hash"].as_u64().unwrap();
+    let base_hash = parse_hash_hex(&resp["value"]["value"]["content_hash"]);
 
     let resp = send_recv_json(&mut s, &mut r,
         json_req(11, "overlay_apply", Some(serde_json::json!({
-            "base_hash": base_hash,
+            "base_hash": hash_hex(base_hash),
             "ops": [{"Brightness": 800}, "Grayscale"],
             "mime_type": "image/png"
         })))).await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "blob_meta");
-    let overlay_hash = resp["value"]["value"]["content_hash"].as_u64().unwrap();
+    let overlay_hash = parse_hash_hex(&resp["value"]["value"]["content_hash"]);
     assert_ne!(overlay_hash, base_hash);
 
     let resp = send_recv_json(&mut s, &mut r,
         json_req(12, "overlay_get", Some(serde_json::json!({
-            "overlay_hash": overlay_hash
+            "overlay_hash": hash_hex(overlay_hash)
         })))).await;
     assert_eq!(resp["value"]["type"], "overlay_info");
-    assert_eq!(resp["value"]["value"]["base_hash"].as_u64().unwrap(), base_hash);
+    assert_eq!(parse_hash_hex(&resp["value"]["value"]["base_hash"]), base_hash);
     assert_eq!(resp["value"]["value"]["mime_type"].as_str().unwrap(), "image/png");
     assert_eq!(resp["value"]["value"]["operations"].as_array().unwrap().len(), 2);
 }
@@ -1667,7 +1675,7 @@ async fn overlay_requires_login() {
     send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
     let resp = send_recv_json(&mut s, &mut r,
         json_req(2, "overlay_apply", Some(serde_json::json!({
-            "base_hash": 1, "ops": [], "mime_type": "image/png"
+            "base_hash": hash_hex(1), "ops": [], "mime_type": "image/png"
         })))).await;
     assert_eq!(resp["type"], "error");
 }
@@ -1678,7 +1686,7 @@ async fn overlay_invalid_base() {
     let (mut s, mut r, _) = json_setup(&srv).await;
     let resp = send_recv_json(&mut s, &mut r,
         json_req(10, "overlay_apply", Some(serde_json::json!({
-            "base_hash": 99999, "ops": ["Grayscale"], "mime_type": "image/png"
+            "base_hash": hash_hex(99999), "ops": ["Grayscale"], "mime_type": "image/png"
         })))).await;
     assert_eq!(resp["type"], "error");
 }

@@ -432,13 +432,13 @@ pub enum WireRequest {
     ServerStats,
 
     BlobUpload { data: String, mime_type: String },
-    BlobGet { content_hash: u64 },
-    BlobGetPreview { content_hash: u64 },
-    BlobExists { content_hash: u64 },
-    BlobInfo { content_hash: u64 },
+    BlobGet { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] content_hash: u64 },
+    BlobGetPreview { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] content_hash: u64 },
+    BlobExists { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] content_hash: u64 },
+    BlobInfo { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] content_hash: u64 },
     BlobStats,
-    OverlayApply { base_hash: u64, ops: Vec<ImageOp>, mime_type: String },
-    OverlayGet { overlay_hash: u64 },
+    OverlayApply { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] base_hash: u64, ops: Vec<ImageOp>, mime_type: String },
+    OverlayGet { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] overlay_hash: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -594,11 +594,41 @@ pub struct SharedRegionPayload {
     pub text: String,
 }
 
+pub mod u64_hex {
+    use serde::{Serializer, Deserializer, de::Error};
+    pub fn serialize<S: Serializer>(v: &u64, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&format!("{:016x}", v))
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+        let s = <String as serde::Deserialize>::deserialize(d)?;
+        u64::from_str_radix(&s, 16).map_err(D::Error::custom)
+    }
+}
+
+pub mod u64_option_hex {
+    use serde::{Serializer, Deserializer, de::Error};
+    pub fn serialize<S: Serializer>(v: &Option<u64>, s: S) -> Result<S::Ok, S::Error> {
+        match v {
+            Some(n) => s.serialize_some(&format!("{:016x}", n)),
+            None => s.serialize_none(),
+        }
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+        let opt: Option<String> = <Option<String> as serde::Deserialize>::deserialize(d)?;
+        match opt {
+            Some(s) => Ok(Some(u64::from_str_radix(&s, 16).map_err(D::Error::custom)?)),
+            None => Ok(None),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlobMetaPayload {
+    #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")]
     pub content_hash: u64,
     pub byte_size: u64,
     pub mime_type: String,
+    #[serde(serialize_with = "u64_option_hex::serialize", deserialize_with = "u64_option_hex::deserialize")]
     pub preview_hash: Option<u64>,
     pub width: Option<u32>,
     pub height: Option<u32>,
@@ -625,7 +655,9 @@ pub struct BlobStatsPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverlayPayload {
+    #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")]
     pub overlay_hash: u64,
+    #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")]
     pub base_hash: u64,
     pub operations: Vec<ImageOp>,
     pub mime_type: String,

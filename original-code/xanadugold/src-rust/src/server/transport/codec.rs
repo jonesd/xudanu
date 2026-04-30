@@ -800,42 +800,42 @@ impl JsonCodec {
             }
             OperationCode::BlobGet => {
                 #[derive(Deserialize)]
-                struct Args { content_hash: u64 }
+                struct Args { #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")] content_hash: u64 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::BlobGet { content_hash: args.content_hash })
             }
             OperationCode::BlobGetPreview => {
                 #[derive(Deserialize)]
-                struct Args { content_hash: u64 }
+                struct Args { #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")] content_hash: u64 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::BlobGetPreview { content_hash: args.content_hash })
             }
             OperationCode::BlobExists => {
                 #[derive(Deserialize)]
-                struct Args { content_hash: u64 }
+                struct Args { #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")] content_hash: u64 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::BlobExists { content_hash: args.content_hash })
             }
             OperationCode::BlobInfo => {
                 #[derive(Deserialize)]
-                struct Args { content_hash: u64 }
+                struct Args { #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")] content_hash: u64 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::BlobInfo { content_hash: args.content_hash })
             }
             OperationCode::OverlayApply => {
                 #[derive(Deserialize)]
-                struct Args { base_hash: u64, ops: Vec<crate::edition::ImageOp>, mime_type: String }
+                struct Args { #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")] base_hash: u64, ops: Vec<crate::edition::ImageOp>, mime_type: String }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::OverlayApply { base_hash: args.base_hash, ops: args.ops, mime_type: args.mime_type })
             }
             OperationCode::OverlayGet => {
                 #[derive(Deserialize)]
-                struct Args { overlay_hash: u64 }
+                struct Args { #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")] overlay_hash: u64 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::OverlayGet { overlay_hash: args.overlay_hash })
