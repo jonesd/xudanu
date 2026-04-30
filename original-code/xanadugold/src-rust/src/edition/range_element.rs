@@ -189,6 +189,68 @@ impl RangeElement {
             _ => false,
         }
     }
+
+    pub fn content_fingerprint(&self) -> [u8; 32] {
+        match self {
+            RangeElement::Text { text } => {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(b"text:");
+                hasher.update(text.as_bytes());
+                *hasher.finalize().as_bytes()
+            }
+            RangeElement::Data { bytes } => {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(b"data:");
+                hasher.update(bytes);
+                *hasher.finalize().as_bytes()
+            }
+            RangeElement::Edition { edition_id } => {
+                let mut buf = b"edition:".to_vec();
+                buf.extend_from_slice(&edition_id.0.to_le_bytes());
+                blake3::hash(&buf).into()
+            }
+            RangeElement::Label { label_id, inner } => {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(b"label:");
+                hasher.update(&label_id.0.to_le_bytes());
+                hasher.update(&inner.content_fingerprint());
+                *hasher.finalize().as_bytes()
+            }
+            RangeElement::PlaceHolder { id } => {
+                let mut buf = b"placeholder:".to_vec();
+                buf.extend_from_slice(&id.0.to_le_bytes());
+                blake3::hash(&buf).into()
+            }
+            RangeElement::IDHolder { id } => {
+                let mut buf = b"idholder:".to_vec();
+                buf.extend_from_slice(&id.to_le_bytes());
+                blake3::hash(&buf).into()
+            }
+            RangeElement::Work { work_id } => {
+                let mut buf = b"work:".to_vec();
+                buf.extend_from_slice(&work_id.0.to_le_bytes());
+                blake3::hash(&buf).into()
+            }
+            RangeElement::Blob { content_hash, .. } => {
+                let mut buf = b"blob:".to_vec();
+                buf.extend_from_slice(&content_hash.to_le_bytes());
+                blake3::hash(&buf).into()
+            }
+            RangeElement::Overlay { overlay } => {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(b"overlay:");
+                hasher.update(&overlay.base_hash.to_le_bytes());
+                for op in &overlay.operations {
+                    hasher.update(format!("{:?}", op).as_bytes());
+                }
+                *hasher.finalize().as_bytes()
+            }
+        }
+    }
+
+    pub fn is_content_addressable(&self) -> bool {
+        matches!(self, RangeElement::Text { .. } | RangeElement::Data { .. })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -284,5 +346,79 @@ mod tests {
     fn carrier_labelled() {
         let c = Carrier::labelled(RangeElementId::new(1), RangeElement::text("x"));
         assert!(c.label.is_some());
+    }
+
+    #[test]
+    fn fingerprint_text_deterministic() {
+        let e1 = RangeElement::text("hello");
+        let e2 = RangeElement::text("hello");
+        assert_eq!(e1.content_fingerprint(), e2.content_fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_text_different() {
+        let e1 = RangeElement::text("hello");
+        let e2 = RangeElement::text("world");
+        assert_ne!(e1.content_fingerprint(), e2.content_fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_data_deterministic() {
+        let e1 = RangeElement::data(vec![1, 2, 3]);
+        let e2 = RangeElement::data(vec![1, 2, 3]);
+        assert_eq!(e1.content_fingerprint(), e2.content_fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_data_different() {
+        let e1 = RangeElement::data(vec![1, 2, 3]);
+        let e2 = RangeElement::data(vec![4, 5, 6]);
+        assert_ne!(e1.content_fingerprint(), e2.content_fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_edition_by_id() {
+        let e1 = RangeElement::edition(42);
+        let e2 = RangeElement::edition(42);
+        assert_eq!(e1.content_fingerprint(), e2.content_fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_edition_different() {
+        let e1 = RangeElement::edition(42);
+        let e2 = RangeElement::edition(99);
+        assert_ne!(e1.content_fingerprint(), e2.content_fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_placeholder_unique_per_id() {
+        let e1 = RangeElement::placeholder(1);
+        let e2 = RangeElement::placeholder(2);
+        assert_ne!(e1.content_fingerprint(), e2.content_fingerprint());
+    }
+
+    #[test]
+    fn fingerprint_blob_by_hash() {
+        let e1 = RangeElement::blob(0xabcd, "image/png", 100);
+        let e2 = RangeElement::blob(0xabcd, "image/jpeg", 200);
+        assert_eq!(e1.content_fingerprint(), e2.content_fingerprint(),
+            "blob fingerprint should be by content_hash only");
+    }
+
+    #[test]
+    fn fingerprint_text_not_equal_data() {
+        let e1 = RangeElement::text("hello");
+        let e2 = RangeElement::data(b"hello".to_vec());
+        assert_ne!(e1.content_fingerprint(), e2.content_fingerprint(),
+            "Text and Data with same bytes should have different fingerprints due to type prefix");
+    }
+
+    #[test]
+    fn is_content_addressable() {
+        assert!(RangeElement::text("x").is_content_addressable());
+        assert!(RangeElement::data(vec![1]).is_content_addressable());
+        assert!(!RangeElement::edition(1).is_content_addressable());
+        assert!(!RangeElement::placeholder(1).is_content_addressable());
+        assert!(!RangeElement::work(1).is_content_addressable());
     }
 }
