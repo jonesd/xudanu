@@ -296,10 +296,8 @@ impl Default for TransclusionIndex {
 }
 
 fn element_key(element: &RangeElement) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    element.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let fp = element.content_fingerprint();
+    fp.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 #[cfg(test)]
