@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
 use crate::edition::{
-    BeId, Edition, GrandMap, RangeElement, Work,
+    BeId, BeRangeElement, BeStorage, Edition, GrandMap, InMemoryBeStorage,
+    Work, XnRegion, ContentAddressIndex,
+    RangeElement, hash_content, u64_from_hash,
 };
 use crate::edition::backfollow::BackfollowEngine;
-use crate::edition::blob_store::{BlobMeta, BlobStore};
+use crate::edition::blob_store::{BlobMeta, BlobStore, MemoryBackend};
 use crate::edition::links::{HyperLink, HyperRef};
 use crate::edition::transclusion::{TransclusionIndex, TransclusionQuery, WorkQuery};
 use super::admin::{AdminState, IdGrant, SessionInfo};
@@ -60,6 +62,7 @@ pub struct Server {
     link_counter: BeId,
     backfollow: BackfollowEngine,
     transclusion_index: TransclusionIndex,
+    content_address: ContentAddressIndex,
     blob_store: BlobStore,
     checkpoint_path: Option<std::path::PathBuf>,
 }
@@ -143,6 +146,7 @@ impl Server {
             links: HashMap::new(),
             link_counter: 0,
             transclusion_index: TransclusionIndex::new(),
+            content_address: ContentAddressIndex::new(1_000_000),
             backfollow: BackfollowEngine::new(),
             blob_store: BlobStore::in_memory(),
             checkpoint_path: None,
@@ -419,6 +423,7 @@ impl Server {
         self.works.insert(be_id, ws);
 
         let edition = self.works[&be_id].work.edition().clone();
+        self.content_address.intern_edition_elements(&edition);
         let work_elem = RangeElement::work(be_id);
         self.transclusion_index.register_work(&edition, &work_elem);
         let work = Work::new_with_owner(be_id, owner, edition);
@@ -472,6 +477,7 @@ impl Server {
         });
 
         let updated_edition = ws.work.edition().clone();
+        self.content_address.intern_edition_elements(&updated_edition);
         let work_elem = RangeElement::work(work_be_id);
         self.transclusion_index.register_work(&updated_edition, &work_elem);
         let updated_work = Work::new_with_owner(work_be_id, ws.work.owner(), updated_edition);
@@ -1103,6 +1109,14 @@ impl Server {
         ed_a.find_content_shared_regions(&ed_b, 2)
     }
 
+    pub fn content_address_lookup(&self, element: &RangeElement) -> Option<BeId> {
+        self.content_address.lookup(element)
+    }
+
+    pub fn content_address_count(&self) -> usize {
+        self.content_address.fingerprint_count()
+    }
+
     // === Blob operations ===
 
     pub fn blob_upload(
@@ -1450,6 +1464,7 @@ mod persist_snapshot {
                 links: HashMap::new(),
                 link_counter: snapshot.link_counter,
                 transclusion_index: TransclusionIndex::new(),
+                content_address: ContentAddressIndex::new(1_000_000),
                 backfollow: BackfollowEngine::new(),
                 blob_store: BlobStore::in_memory(),
                 checkpoint_path: None,
@@ -2696,5 +2711,57 @@ mod tests {
         ])).unwrap();
         let regions = server.find_shared_regions(doc1, doc2);
         assert!(!regions.is_empty(), "structural comparison should find shared blob+text run");
+    }
+
+    #[test]
+    fn content_address_same_text_same_be_id() {
+        let (mut server, sid) = setup_logged_in_server();
+        server.create_work(sid, Edition::from_text("hello")).unwrap();
+        let id_first = server.content_address_lookup(&RangeElement::text("h")).unwrap();
+        server.create_work(sid, Edition::from_text("hippo")).unwrap();
+        let id_second = server.content_address_lookup(&RangeElement::text("h")).unwrap();
+        assert_eq!(id_first, id_second, "'h' should have the same canonical BeId across documents");
+    }
+
+    #[test]
+    fn content_address_different_text_different_be_id() {
+        let (mut server, sid) = setup_logged_in_server();
+        server.create_work(sid, Edition::from_text("abc")).unwrap();
+        let id_a = server.content_address_lookup(&RangeElement::text("a")).unwrap();
+        let id_b = server.content_address_lookup(&RangeElement::text("b")).unwrap();
+        assert_ne!(id_a, id_b);
+    }
+
+    #[test]
+    fn content_address_across_revisions() {
+        let (mut server, sid) = setup_logged_in_server();
+        let doc = server.create_work(sid, Edition::from_text("abc")).unwrap();
+        let id_before = server.content_address_lookup(&RangeElement::text("a")).unwrap();
+        server.work_grab(sid, doc).unwrap();
+        server.work_revise(sid, doc, Edition::from_text("axc")).unwrap();
+        let id_after = server.content_address_lookup(&RangeElement::text("a")).unwrap();
+        assert_eq!(id_before, id_after, "'a' identity should be stable across revisions");
+    }
+
+    #[test]
+    fn content_address_transclusion_finds_cross_document() {
+        let (mut server, sid) = setup_logged_in_server();
+        let _doc1 = server.create_work(sid, Edition::from_text("shared phrase here")).unwrap();
+        let _doc2 = server.create_work(sid, Edition::from_text("shared phrase there")).unwrap();
+        let results = server.find_text_transcluders("shared phrase");
+        assert_eq!(results.len(), 2, "should find 'shared phrase' in both documents");
+    }
+
+    #[test]
+    fn content_address_count_grows() {
+        let (mut server, sid) = setup_logged_in_server();
+        assert_eq!(server.content_address_count(), 0);
+        server.create_work(sid, Edition::from_text("hello")).unwrap();
+        let count1 = server.content_address_count();
+        assert!(count1 > 0);
+        server.create_work(sid, Edition::from_text("hello")).unwrap();
+        assert_eq!(server.content_address_count(), count1, "duplicate doc should not increase count");
+        server.create_work(sid, Edition::from_text("world")).unwrap();
+        assert!(server.content_address_count() > count1);
     }
 }
