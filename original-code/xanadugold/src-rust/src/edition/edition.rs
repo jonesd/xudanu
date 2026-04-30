@@ -342,6 +342,50 @@ impl Edition {
         }
         true
     }
+
+    pub fn find_content_shared_regions(&self, other: &Edition, min_run: usize) -> Vec<(i64, i64, i64, i64, String)> {
+        let entries_a = self.orgl.all_entries();
+        let entries_b = other.orgl.all_entries();
+        if entries_a.is_empty() || entries_b.is_empty() || min_run == 0 {
+            return Vec::new();
+        }
+        let mut results = Vec::new();
+        let mut matched_a = vec![false; entries_a.len()];
+        let mut matched_b = vec![false; entries_b.len()];
+        for i in 0..entries_a.len() {
+            if matched_a[i] {
+                continue;
+            }
+            for j in 0..entries_b.len() {
+                if matched_b[j] {
+                    continue;
+                }
+                let mut len = 0usize;
+                while i + len < entries_a.len() && j + len < entries_b.len()
+                    && !matched_a[i + len] && !matched_b[j + len]
+                    && *entries_a[i + len].1 == *entries_b[j + len].1
+                {
+                    len += 1;
+                }
+                if len >= min_run {
+                    let pos_a_start = entries_a[i].0;
+                    let pos_a_end = entries_a[i + len - 1].0 + 1;
+                    let pos_b_start = entries_b[j].0;
+                    let pos_b_end = entries_b[j + len - 1].0 + 1;
+                    let text: String = entries_a[i..i + len].iter()
+                        .filter_map(|(_, c)| c.element.as_text())
+                        .collect();
+                    results.push((pos_a_start, pos_a_end, pos_b_start, pos_b_end, text));
+                    for k in 0..len {
+                        matched_a[i + k] = true;
+                        matched_b[j + k] = true;
+                    }
+                    break;
+                }
+            }
+        }
+        results
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -566,6 +610,100 @@ mod tests {
 
         let region = XnRegion::interval(0, 1);
         assert!(a.is_range_identical(&c, Some(&region)));
+    }
+
+    #[test]
+    fn find_content_shared_regions_basic() {
+        let a = Edition::from_text("hello world");
+        let b = Edition::from_text("say hello world now");
+        let regions = a.find_content_shared_regions(&b, 2);
+        assert!(!regions.is_empty());
+        let (sa, ea, _sb, _eb, text) = &regions[0];
+        assert_eq!(text, "hello world");
+        assert_eq!(*sa, 0);
+        assert_eq!(*ea, 11);
+    }
+
+    #[test]
+    fn find_content_shared_regions_partial() {
+        let a = Edition::from_text("the quick brown fox");
+        let b = Edition::from_text("a quick blue fox");
+        let regions = a.find_content_shared_regions(&b, 4);
+        assert!(regions.len() >= 1);
+        let texts: Vec<&str> = regions.iter().map(|r| r.4.as_str()).collect();
+        assert!(texts.iter().any(|t| t.contains("quick") || t.contains("fox")),
+            "expected 'quick' or 'fox' in {:?}, find_content_shared_regions_partial):", texts);
+    }
+
+    #[test]
+    fn find_content_shared_regions_min_run() {
+        let a = Edition::from_text("abcdef");
+        let b = Edition::from_text("abcxyz");
+        let regions3 = a.find_content_shared_regions(&b, 4);
+        assert!(regions3.is_empty(), "3-char match should not meet min_run=4");
+        let regions2 = a.find_content_shared_regions(&b, 2);
+        assert!(!regions2.is_empty());
+        assert!(regions2[0].4.contains("abc"));
+    }
+
+    #[test]
+    fn find_content_shared_regions_empty() {
+        let a = Edition::from_text("");
+        let b = Edition::from_text("hello");
+        assert!(a.find_content_shared_regions(&b, 4).is_empty());
+        assert!(b.find_content_shared_regions(&a, 4).is_empty());
+    }
+
+    #[test]
+    fn find_content_shared_regions_identical() {
+        let a = Edition::from_text("same text");
+        let b = Edition::from_text("same text");
+        let regions = a.find_content_shared_regions(&b, 2);
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].4, "same text");
+        assert_eq!(regions[0].0, 0);
+        assert_eq!(regions[0].1, 9);
+        assert_eq!(regions[0].2, 0);
+        assert_eq!(regions[0].3, 9);
+    }
+
+    #[test]
+    fn find_content_shared_regions_shifted() {
+        let a = Edition::from_text("hello");
+        let b = Edition::from_text("xxhello");
+        let regions = a.find_content_shared_regions(&b, 2);
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].4, "hello");
+        assert_eq!(regions[0].0, 0);
+        assert_eq!(regions[0].1, 5);
+        assert_eq!(regions[0].2, 2);
+        assert_eq!(regions[0].3, 7);
+    }
+
+    #[test]
+    fn find_content_shared_regions_multiple_runs() {
+        let a = Edition::from_text("cat dog bird cat dog");
+        let b = Edition::from_text("cat dog fish cat dog");
+        let regions = a.find_content_shared_regions(&b, 3);
+        assert!(regions.len() >= 2, "expected at least 2 shared runs, got {}: {:?}", regions.len(), regions);
+    }
+
+    #[test]
+    fn find_content_shared_regions_with_blob() {
+        let a = Edition::from_text_elements(&[
+            RangeElement::text("a"),
+            RangeElement::text("b"),
+            RangeElement::Blob { content_hash: 42, mime_type: "image/png".into(), byte_size: 100, width: Some(10), height: Some(10) },
+            RangeElement::text("c"),
+        ]);
+        let b = Edition::from_text_elements(&[
+            RangeElement::text("x"),
+            RangeElement::text("b"),
+            RangeElement::Blob { content_hash: 42, mime_type: "image/png".into(), byte_size: 100, width: Some(10), height: Some(10) },
+            RangeElement::text("c"),
+        ]);
+        let regions = a.find_content_shared_regions(&b, 2);
+        assert!(!regions.is_empty(), "should find shared blob+text run");
     }
 
     #[test]

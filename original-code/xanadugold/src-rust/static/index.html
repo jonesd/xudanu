@@ -70,6 +70,18 @@ header .session-info{font-size:11px;color:var(--fg2);background:var(--bg3);paddi
 .revision-slider button{background:var(--bg3);color:var(--fg);border:none;padding:3px 8px;border-radius:var(--radius);cursor:pointer;font-size:11px}
 .revision-slider button.restore-btn{background:var(--orange);color:var(--bg);font-weight:600;margin-left:4px}
 
+.links-panel{background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;padding:8px 12px}
+.links-header{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:12px;color:var(--fg2)}
+.links-header button{background:var(--bg3);color:var(--fg);border:none;padding:3px 8px;border-radius:var(--radius);cursor:pointer;font-size:11px}
+.links-header button:disabled{opacity:.4}
+.links-list{max-height:120px;overflow-y:auto}
+.link-item{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;border-bottom:1px solid var(--border)}
+.link-item:last-child{border-bottom:none}
+.link-dir{color:var(--fg3);font-size:10px;text-transform:uppercase;font-weight:600;min-width:28px}
+.link-target{font-family:'SF Mono',Menlo,monospace;font-size:11px}
+.link-delete{background:none;border:none;color:var(--fg3);cursor:pointer;font-size:14px;margin-left:auto;padding:0 2px}
+.link-delete:hover{color:var(--red)}
+
 .editor-area{flex:1;overflow-y:auto;overflow-x:hidden;position:relative;min-height:0}
 .editor-area.split{display:flex;overflow:hidden}
 .editor-pane-wrap{flex:1;overflow-y:auto;position:relative;min-height:0}
@@ -339,6 +351,9 @@ function App() {
   var _drag = useState(false), dragOver = _drag[0], setDragOver = _drag[1];
   var _selImg = useState(null), selectedImg = _selImg[0], setSelectedImg = _selImg[1];
   var _olOps = useState([]), overlayOps = _olOps[0], setOverlayOps = _olOps[1];
+  var _sl = useState(false), showLinks = _sl[0], setShowLinks = _sl[1];
+  var _links = useState([]), links = _links[0], setLinks = _links[1];
+  var _linkTarget = useState(''), linkTargetId = _linkTarget[0], setLinkTargetId = _linkTarget[1];
   var savedTheme = typeof localStorage !== 'undefined' && localStorage.getItem('xudanu-theme');
   var _theme = useState(savedTheme === 'light' ? 'light' : 'dark'), theme = _theme[0], setTheme = _theme[1];
 
@@ -460,6 +475,8 @@ function App() {
     setCurrentWorkId(id);
     setCurrentText('');
     setCurrentRev(0);
+    setLinks([]);
+    setShowLinks(false);
     var s1 = sub('revision', id);
     var s2 = sub('status', id);
     subsRef.current = {revision:s1, status:s2};
@@ -523,6 +540,22 @@ function App() {
   function clearAutoSave() {
     if (autoSaveRef.current) { clearTimeout(autoSaveRef.current); autoSaveRef.current = null; }
     autoSaveInFlightRef.current = false;
+  }
+
+  function loadLinks() {
+    if (!currentWorkIdRef.current) return;
+    req('link_list_for_work', {work_id: currentWorkIdRef.current});
+  }
+
+  function createLinkToTarget() {
+    var tid = parseInt(linkTargetId);
+    if (!currentWorkIdRef.current || isNaN(tid)) return;
+    req('link_create', {origin: currentWorkIdRef.current, destination: tid, origin_ref: null, destination_ref: null});
+    setLinkTargetId('');
+  }
+
+  function deleteLink(linkId) {
+    req('link_delete', {link_id: linkId});
   }
 
   function handleEditorInput(e) {
@@ -746,6 +779,8 @@ function App() {
               setCurrentText('');
               currentTextRef.current = '';
               lastSavedRef.current = '';
+              setLinks([]);
+              setShowLinks(false);
               var s1 = sub('revision', createWid);
               var s2 = sub('status', createWid);
               subsRef.current = {revision:s1, status:s2};
@@ -813,6 +848,23 @@ function App() {
 
         if (v && v.type === 'void' && op === 'work_release') {
           setIsEditing(false);
+          return;
+        }
+
+        if (v && v.type === 'link_list') {
+          setLinks(v.value || []);
+          return;
+        }
+
+        if (v && v.type === 'id' && op === 'link_create') {
+          toast('Link created: ' + v.value);
+          loadLinks();
+          return;
+        }
+
+        if (v && v.type === 'void' && op === 'link_delete') {
+          toast('Link deleted');
+          loadLinks();
           return;
         }
       }
@@ -1015,6 +1067,13 @@ function App() {
             disabled:!currentWorkId||isEditing,
             onClick:function(){setShowHistory(!showHistory)}
           }, 'History'),
+          h('button', {
+            disabled:!currentWorkId,
+            onClick:function(){
+              if (!showLinks) loadLinks();
+              setShowLinks(!showLinks);
+            }
+          }, 'Links (' + links.length + ')'),
           revInfo
         ),
         showHistory ? h('div', {className:'revision-slider'},
@@ -1036,6 +1095,42 @@ function App() {
           historyRev && historyRev < totalRevs
             ? h('button', {className:'restore-btn', onClick:doRestore}, 'Restore this version')
             : null
+        ) : null,
+        showLinks ? h('div', {className:'links-panel'},
+          h('div', {className:'links-header'},
+            h('span', null, 'Links from this document'),
+            h('input', {
+              type:'number', placeholder:'Target work ID',
+              value: linkTargetId,
+              onInput: function(e){setLinkTargetId(e.target.value)},
+              style:{width:120, marginLeft:8}
+            }),
+            h('button', {
+              disabled: !linkTargetId || !currentWorkId,
+              onClick: createLinkToTarget
+            }, 'Add Link')
+          ),
+          links.length === 0
+            ? h('div', {style:{padding:8, color:'var(--fg3)', fontSize:12}}, 'No links')
+            : h('div', {className:'links-list'},
+              links.map(function(lnk) {
+                var otherId = lnk.origin === currentWorkId ? lnk.destination : lnk.origin;
+                var direction = lnk.origin === currentWorkId ? 'to' : 'from';
+                return h('div', {key: lnk.link_id, className:'link-item'},
+                  h('span', {className:'link-dir'}, direction),
+                  h('span', {
+                    className:'link-target',
+                    onClick: function(){ showWork(otherId); },
+                    style: {cursor:'pointer', color:'var(--accent)'}
+                  }, 'doc ' + otherId),
+                  h('button', {
+                    className:'link-delete',
+                    onClick: function(e){ e.stopPropagation(); deleteLink(lnk.link_id); },
+                    title:'Delete link'
+                  }, '\u00d7')
+                );
+              })
+            )
         ) : null,
         h('div', {
           className: 'editor-area' + (splitMode ? ' split' : ''),
