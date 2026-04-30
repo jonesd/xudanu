@@ -1092,19 +1092,15 @@ impl Server {
         work_a: BeId,
         work_b: BeId,
     ) -> Vec<(i64, i64, i64, i64, String)> {
-        let text_a = match self.work_edition(work_a) {
-            Ok(ed) => ed.all_entries().iter()
-                .map(|(_, c)| c.element.as_text().unwrap_or(""))
-                .collect::<String>(),
+        let ed_a = match self.work_edition(work_a) {
+            Ok(ed) => ed,
             Err(_) => return Vec::new(),
         };
-        let text_b = match self.work_edition(work_b) {
-            Ok(ed) => ed.all_entries().iter()
-                .map(|(_, c)| c.element.as_text().unwrap_or(""))
-                .collect::<String>(),
+        let ed_b = match self.work_edition(work_b) {
+            Ok(ed) => ed,
             Err(_) => return Vec::new(),
         };
-        find_shared_substrings(&text_a, &text_b, 4)
+        ed_a.find_content_shared_regions(&ed_b, 2)
     }
 
     // === Blob operations ===
@@ -1551,6 +1547,7 @@ mod persist_snapshot {
     }
 }
 
+#[allow(dead_code)]
 fn find_shared_substrings(
     text_a: &str,
     text_b: &str,
@@ -2643,5 +2640,61 @@ mod tests {
         let (blobs, bytes) = server.blob_stats();
         assert_eq!(blobs, 1);
         assert_eq!(bytes, 3);
+    }
+
+    #[test]
+    fn find_structural_shared_regions_basic() {
+        let (mut server, sid) = setup_logged_in_server();
+        let doc1 = server.create_work(sid, Edition::from_text("hello world")).unwrap();
+        let doc2 = server.create_work(sid, Edition::from_text("say hello world now")).unwrap();
+        let regions = server.find_shared_regions(doc1, doc2);
+        assert!(!regions.is_empty());
+        let has_hello = regions.iter().any(|(_, _, _, _, t)| t.contains("hello") || t.contains("world"));
+        assert!(has_hello, "expected shared text containing 'hello' or 'world': {:?}", regions);
+    }
+
+    #[test]
+    fn find_structural_shared_regions_identical() {
+        let (mut server, sid) = setup_logged_in_server();
+        let doc1 = server.create_work(sid, Edition::from_text("same content")).unwrap();
+        let doc2 = server.create_work(sid, Edition::from_text("same content")).unwrap();
+        let regions = server.find_shared_regions(doc1, doc2);
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].4, "same content");
+    }
+
+    #[test]
+    fn find_structural_shared_regions_empty() {
+        let (mut server, sid) = setup_logged_in_server();
+        let doc1 = server.create_work(sid, Edition::from_text("hello")).unwrap();
+        let doc2 = server.create_work(sid, Edition::from_text("")).unwrap();
+        assert!(server.find_shared_regions(doc1, doc2).is_empty());
+    }
+
+    #[test]
+    fn find_structural_shared_regions_not_found() {
+        let (mut server, sid) = setup_logged_in_server();
+        let doc1 = server.create_work(sid, Edition::from_text("abc")).unwrap();
+        let doc2 = server.create_work(sid, Edition::from_text("xyz")).unwrap();
+        assert!(server.find_shared_regions(doc1, doc2).is_empty());
+    }
+
+    #[test]
+    fn find_structural_shared_regions_with_blob() {
+        let (mut server, sid) = setup_logged_in_server();
+        let doc1 = server.create_work(sid, Edition::from_text_elements(&[
+            RangeElement::text("a"),
+            RangeElement::text("b"),
+            RangeElement::Blob { content_hash: 42, mime_type: "image/png".into(), byte_size: 100, width: Some(10), height: Some(10) },
+            RangeElement::text("c"),
+        ])).unwrap();
+        let doc2 = server.create_work(sid, Edition::from_text_elements(&[
+            RangeElement::text("x"),
+            RangeElement::text("b"),
+            RangeElement::Blob { content_hash: 42, mime_type: "image/png".into(), byte_size: 100, width: Some(10), height: Some(10) },
+            RangeElement::text("c"),
+        ])).unwrap();
+        let regions = server.find_shared_regions(doc1, doc2);
+        assert!(!regions.is_empty(), "structural comparison should find shared blob+text run");
     }
 }
