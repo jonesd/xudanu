@@ -12,6 +12,13 @@
   --orange:#d29922; --purple:#bc8cff;
   --border:#30363d; --radius:6px;
 }
+:root.light {
+  --bg:#ffffff; --bg2:#f6f8fa; --bg3:#e1e4e8; --bg4:#d1d5da;
+  --fg:#24292e; --fg2:#586069; --fg3:#959da5;
+  --accent:#0366d6; --green:#28a745; --red:#d73a49;
+  --orange:#e36209; --purple:#6f42c1;
+  --border:#e1e4e8;
+}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--fg);height:100vh;display:flex;flex-direction:column}
 #app{display:flex;flex-direction:column;flex:1;min-height:0}
@@ -68,7 +75,8 @@ header .session-info{font-size:11px;color:var(--fg2);background:var(--bg3);paddi
 .editor-pane-wrap{flex:1;overflow-y:auto;position:relative;min-height:0}
 .editor-content{padding:16px 32px;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:14px;line-height:1.6;white-space:pre-wrap;word-wrap:break-word;outline:none}
 .editor-content:empty::before{content:'Select or create a document...';color:var(--fg3)}
-.editor-content[contenteditable=true]{background:rgba(88,166,255,0.03)}
+textarea.editor-content{width:100%;height:100%;border:none;background:rgba(88,166,255,0.03);color:var(--fg);resize:none;display:block;box-sizing:border-box}
+textarea.editor-content:focus{outline:none}
 .placeholder-text{color:var(--fg3);font-style:italic}
 .doc-image{max-width:100%;border-radius:var(--radius);margin:8px 0;display:block;border:1px solid var(--border)}
 .doc-image-link{color:var(--accent);font-size:12px;font-family:'SF Mono',Menlo,monospace;cursor:pointer}
@@ -129,6 +137,8 @@ header .session-info{font-size:11px;color:var(--fg2);background:var(--bg3);paddi
 
 @media(max-width:900px){.sidebar{width:180px}}
 @media(max-width:700px){.sidebar{display:none}}
+.theme-btn{background:none;border:1px solid var(--border);color:var(--fg2);padding:2px 8px;border-radius:var(--radius);cursor:pointer;font-size:11px;line-height:1}
+.theme-btn:hover{background:var(--bg3)}
 </style>
 </head>
 <body>
@@ -250,26 +260,28 @@ function renderContent(text, selectedHash) {
   return renderImageMarkers(escapeHtml(text), selectedHash || null);
 }
 
-   function blobUpload(wsRef, req, currentWorkId, currentRev, lastSavedRef, toast) {
-     var input = document.createElement('input');
-     input.type = 'file';
-     input.accept = 'image/*,.pdf,.txt';
-     input.onchange = function() {
-       var file = input.files[0];
-       if (!file) return;
-       var reader = new FileReader();
-       reader.onload = function() {
-        var bytes = new Uint8Array(reader.result);
-        var binary = '';
-        for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-        var b64 = btoa(binary);
-        window._pendingBlobMeta = {mime: file.type, name: file.name, currentWorkId: currentWorkId, lastSavedRef: lastSavedRef};
-        req('blob_upload', {data: b64, mime_type: file.type});
-       };
-       reader.readAsArrayBuffer(file);
-     };
-     input.click();
-   }
+    function blobUpload(wsRef, req, currentWorkId, currentRev, lastSavedRef, toast, editorRef) {
+      var ed = editorRef.current;
+      var pos = (ed && ed.selectionStart != null) ? ed.selectionStart : -1;
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*,.pdf,.txt';
+      input.onchange = function() {
+        var file = input.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function() {
+         var bytes = new Uint8Array(reader.result);
+         var binary = '';
+         for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+         var b64 = btoa(binary);
+         window._pendingBlobMeta = {mime: file.type, name: file.name, currentWorkId: currentWorkId, lastSavedRef: lastSavedRef, cursorPos: pos};
+         req('blob_upload', {data: b64, mime_type: file.type});
+        };
+        reader.readAsArrayBuffer(file);
+      };
+      input.click();
+    }
 
   function opsToCssFilter(ops) {
     var parts = [], opacity = null, rotate = null, flipH = false, flipV = false, w = null, h = null;
@@ -327,6 +339,8 @@ function App() {
   var _drag = useState(false), dragOver = _drag[0], setDragOver = _drag[1];
   var _selImg = useState(null), selectedImg = _selImg[0], setSelectedImg = _selImg[1];
   var _olOps = useState([]), overlayOps = _olOps[0], setOverlayOps = _olOps[1];
+  var savedTheme = typeof localStorage !== 'undefined' && localStorage.getItem('xudanu-theme');
+  var _theme = useState(savedTheme === 'light' ? 'light' : 'dark'), theme = _theme[0], setTheme = _theme[1];
 
   var wsRef = useRef(null);
   var nextIdRef = useRef(1);
@@ -342,6 +356,15 @@ function App() {
   var restoringRef = useRef(false);
   var autoSaveRef = useRef(null);
   var isEditingRef = useRef(false);
+  var currentTextRef = useRef('');
+  var cursorPosRef = useRef(-1);
+  var currentWorkIdRef = useRef(null);
+  var currentRevRef = useRef(0);
+  var totalRevsRef = useRef(0);
+  var selectedImgRef = useRef(null);
+  var showHistoryRef = useRef(false);
+  var splitModeRef = useRef(false);
+  var sessionIdRef = useRef(null);
   var revSliderTimer = useRef(null);
   var subsRef = useRef({});
   var toastTimers = useRef({});
@@ -372,7 +395,13 @@ function App() {
   function applyOverlay() {
     if (!selectedImg || !overlayOps.length) return;
     var opsEncoded = encodeOps(overlayOps);
-    req('overlay_apply', {base_hash: parseInt(selectedImg, 16), ops: overlayOps, mime_type: 'image/png'});
+    var wireOps = overlayOps.map(function(op) {
+      if (op.Grayscale === true) return 'Grayscale';
+      if (op.FlipHorizontal === true) return 'FlipHorizontal';
+      if (op.FlipVertical === true) return 'FlipVertical';
+      return op;
+    });
+    req('overlay_apply', {base_hash: selectedImg, ops: wireOps, mime_type: 'image/png'});
     window._pendingOverlayApply = {currentWorkId: currentWorkId, baseHash: selectedImg, opsEncoded: opsEncoded};
   }
 
@@ -443,32 +472,28 @@ function App() {
 
   function doEdit() {
     if (!currentWorkId) return;
-    lastSavedRef.current = editorRef.current ? editorRef.current.textContent : currentText;
+    lastSavedRef.current = currentText;
     req('work_grab', {work_id:currentWorkId});
   }
 
   function doSave() {
     if (!currentWorkId) return;
-    if (autoSaveRef.current) { clearTimeout(autoSaveRef.current); autoSaveRef.current = null; }
-    var text = editorRef.current ? editorRef.current.textContent : '';
+    var text = currentTextRef.current;
     if (text === lastSavedRef.current) {
       req('work_release', {work_id:currentWorkId});
-      setCurrentText(text);
-      setIsEditing(false);
       return;
     }
-    var ops = computeDelta(lastSavedRef.current, text);
-    req('work_revise_delta', {work_id:currentWorkId, base_revision:currentRev, ops:ops});
-    lastSavedRef.current = text;
     setCurrentText(text);
-    setIsEditing(false);
+    req('work_revise', {work_id:currentWorkId, edition:{text:text}});
+    lastSavedRef.current = text;
   }
 
   function doCancel() {
     if (!currentWorkId) return;
-    if (autoSaveRef.current) { clearTimeout(autoSaveRef.current); autoSaveRef.current = null; }
     req('work_release', {work_id:currentWorkId});
-    if (editorRef.current) editorRef.current.textContent = lastSavedRef.current;
+    if (editorRef.current) editorRef.current.value = lastSavedRef.current;
+    currentTextRef.current = lastSavedRef.current;
+    setCurrentText(lastSavedRef.current);
     setIsEditing(false);
   }
 
@@ -482,17 +507,17 @@ function App() {
   function scheduleAutoSave() {
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
     autoSaveRef.current = setTimeout(function(){
-      if (!isEditing || !currentWorkId) return;
-      var text = editorRef.current ? editorRef.current.textContent : '';
+      if (!isEditingRef.current || !currentWorkIdRef.current) return;
+      var text = currentTextRef.current;
       if (text === lastSavedRef.current) return;
       var ops = computeDelta(lastSavedRef.current, text);
-      req('work_revise_delta', {work_id:currentWorkId, base_revision:currentRev, ops:ops});
+      req('work_revise_delta', {work_id:currentWorkIdRef.current, base_revision:currentRevRef.current, ops:ops});
       lastSavedRef.current = text;
     }, AUTO_SAVE_MS);
   }
 
-  function handleEditorInput() {
-    if (isEditing) scheduleAutoSave();
+  function handleEditorInput(e) {
+    currentTextRef.current = e.target.value;
   }
 
   function handleMouseUp() {
@@ -607,30 +632,26 @@ function App() {
             return;
           }
           if (op === 'work_revise_delta') {
-            if (editorRef.current) {
-              if (isEditing) editorRef.current.textContent = edText;
-              else editorRef.current.innerHTML = renderContent(edText, selectedImg);
-            }
+            if (editorRef.current) editorRef.current.value = edText;
+            currentTextRef.current = edText;
             lastSavedRef.current = edText;
-            setCurrentText(edText);
-            setCurrentRev(totalRevs);
+            setCurrentRev(totalRevsRef.current);
             toast('Conflict resolved - document updated');
             return;
           }
-          if (splitMode && op === 'work_get_edition') {
+          if (splitModeRef.current && op === 'work_get_edition') {
             var pendingSplitId = null;
             setSplitWorkId(function(prev){ pendingSplitId = prev; return prev; });
-            if (pendingSplitId && pendingSplitId !== currentWorkId) {
+            if (pendingSplitId && pendingSplitId !== currentWorkIdRef.current) {
               setSplitText(edText);
               return;
             }
           }
+          if (isEditingRef.current) return;
           setCurrentText(edText);
+          currentTextRef.current = edText;
           lastSavedRef.current = edText;
           historyTextRef.current = null;
-          if (editorRef.current && !isEditing) {
-            editorRef.current.innerHTML = renderContent(edText, selectedImg);
-          }
           return;
         }
 
@@ -642,23 +663,17 @@ function App() {
 
         if (v && v.type === 'blob_meta' && op === 'blob_upload') {
           var meta = v.value;
-          var hashHex = ('0000000000000000' + meta.content_hash.toString(16)).slice(-16);
+          var hashHex = meta.content_hash;
           var marker = '\n[img:' + hashHex + ':' + meta.mime_type + ']\n';
           var pending = window._pendingBlobMeta;
           delete window._pendingBlobMeta;
           if (pending && pending.currentWorkId && isEditingRef.current) {
-            var ed = editorRef.current;
-            if (ed) {
-              var sel = window.getSelection();
-              if (sel.rangeCount) {
-                var range = sel.getRangeAt(0);
-                range.deleteContents();
-                range.insertNode(document.createTextNode(marker));
-                range.collapse(false);
-              } else {
-                ed.textContent += marker;
-              }
-            }
+            var pos = (pending.cursorPos >= 0) ? pending.cursorPos : editorRef.current ? editorRef.current.value.length : 0;
+            var txt = editorRef.current ? editorRef.current.value : currentTextRef.current;
+            var newText = txt.substring(0, pos) + marker + txt.substring(pos);
+            if (editorRef.current) editorRef.current.value = newText;
+            currentTextRef.current = newText;
+            setCurrentText(newText);
             toast('Image uploaded: ' + (pending.name || hashHex));
           } else {
             toast('Blob stored: ' + hashHex + ' (' + meta.byte_size + ' bytes)');
@@ -672,13 +687,15 @@ function App() {
           if (pending && pending.currentWorkId && pending.baseHash && pending.opsEncoded) {
             var marker = '\n[overlay:' + pending.baseHash + ':' + pending.opsEncoded + ':image/png]\n';
             if (isEditingRef.current) {
-              var ed = editorRef.current;
-              if (ed) ed.textContent += marker;
+              var newText = currentTextRef.current + marker;
+              setCurrentText(newText);
+              currentTextRef.current = newText;
+              lastSavedRef.current = newText;
             } else {
               var newText = lastSavedRef.current + marker;
               setCurrentText(newText);
               lastSavedRef.current = newText;
-              req('work_grab', {work_id:pending.currentWorkId});
+              req('work_grab', {work_id:currentWorkIdRef.current});
               window._overlayInsert = {text: newText};
             }
             toast('Overlay applied');
@@ -709,26 +726,33 @@ function App() {
               var createWid = window._autoEditCreate;
               delete window._autoEditCreate;
               setCurrentWorkId(createWid);
+              currentWorkIdRef.current = createWid;
               setCurrentRev(0);
-              setTotalRevs(1);
+              currentRevRef.current = 0;
+              setTotalRevs(0);
+              totalRevsRef.current = 0;
+              setCurrentText('');
+              currentTextRef.current = '';
+              lastSavedRef.current = '';
               var s1 = sub('revision', createWid);
               var s2 = sub('status', createWid);
               subsRef.current = {revision:s1, status:s2};
-              req('work_get_edition', {work_id:createWid});
               req('work_revision_count', {work_id:createWid});
               setIsEditing(true);
+              isEditingRef.current = true;
               toast('Document created \u2014 start typing');
             } else if (window._overlayInsert !== undefined) {
               var insert = window._overlayInsert;
               delete window._overlayInsert;
-              req('work_revise', {work_id:currentWorkId, edition:{text:insert.text}});
+              req('work_revise', {work_id:currentWorkIdRef.current, edition:{text:insert.text}});
               window._overlayRelease = true;
             } else if (restoringRef.current === true) {
               restoringRef.current = false;
-              req('work_revise', {work_id:currentWorkId, edition:{text:historyTextRef.current||''}});
+              req('work_revise', {work_id:currentWorkIdRef.current, edition:{text:historyTextRef.current||''}});
               restoringRef.current = 'revising';
             } else {
               setIsEditing(true);
+              isEditingRef.current = true;
               toast('Editing - type your changes');
             }
           }
@@ -739,31 +763,36 @@ function App() {
           if (op === 'work_revise') {
             var rv = v.value;
             setCurrentRev(rv);
+            currentRevRef.current = rv;
             setTotalRevs(rv);
             if (window._overlayRelease) {
               delete window._overlayRelease;
-              req('work_release', {work_id:currentWorkId});
+              req('work_release', {work_id:currentWorkIdRef.current});
               toast('Overlay saved as revision ' + rv);
             } else if (restoringRef.current === 'revising') {
               restoringRef.current = false;
-              req('work_release', {work_id:currentWorkId});
+              req('work_release', {work_id:currentWorkIdRef.current});
               setShowHistory(false);
               toast('Restored revision as #' + rv);
             } else {
-              setIsEditing(false);
+              req('work_release', {work_id:currentWorkIdRef.current});
               toast('Saved revision ' + rv);
             }
             return;
           }
           if (op === 'work_revise_delta') {
             setCurrentRev(v.value);
+            currentRevRef.current = v.value;
             setTotalRevs(v.value);
             toast('Auto-saved revision ' + v.value);
             return;
           }
           if (op === 'work_revision_count') {
             setTotalRevs(v.value);
-            if (!isEditing) setCurrentRev(v.value);
+            if (!isEditingRef.current || v.value > currentRevRef.current) {
+              setCurrentRev(v.value);
+              currentRevRef.current = v.value;
+            }
             return;
           }
         }
@@ -780,14 +809,14 @@ function App() {
 
         if (e.type === 'work_revised') {
           var payload = e.payload;
-          if (payload.work_be_id === currentWorkId && !isEditing && !showHistory) {
+          if (payload.work_be_id === currentWorkIdRef.current && !isEditingRef.current && !showHistoryRef.current) {
             setCurrentRev(payload.revision);
             setTotalRevs(payload.revision);
-            req('work_get_edition', {work_id:currentWorkId});
-          } else if (payload.work_be_id === currentWorkId) {
+            req('work_get_edition', {work_id:currentWorkIdRef.current});
+          } else if (payload.work_be_id === currentWorkIdRef.current) {
             setTotalRevs(payload.revision);
           }
-          if (payload.session_id && payload.session_id !== sessionId) {
+          if (payload.session_id && payload.session_id !== sessionIdRef.current) {
             toast('User ' + payload.session_id + ' saved revision ' + payload.revision);
           }
         }
@@ -801,13 +830,25 @@ function App() {
   }, []);
 
   useEffect(function(){
+    document.documentElement.className = theme === 'light' ? 'light' : '';
+    try { localStorage.setItem('xudanu-theme', theme); } catch(e) {}
+  }, [theme]);
+
+  useEffect(function(){
     isEditingRef.current = isEditing;
-    if (editorRef.current) {
-      editorRef.current.contentEditable = isEditing ? 'true' : 'false';
-      if (isEditing) {
-        editorRef.current.textContent = currentText;
-        editorRef.current.focus();
-      }
+    currentTextRef.current = currentText;
+    currentWorkIdRef.current = currentWorkId;
+    currentRevRef.current = currentRev;
+    totalRevsRef.current = totalRevs;
+    selectedImgRef.current = selectedImg;
+    showHistoryRef.current = showHistory;
+    splitModeRef.current = splitMode;
+    sessionIdRef.current = sessionId;
+  });
+
+  useEffect(function(){
+    if (isEditing && editorRef.current) {
+      editorRef.current.focus();
     }
   }, [isEditing]);
 
@@ -825,13 +866,6 @@ function App() {
     document.addEventListener('keydown', onKey);
     return function(){ document.removeEventListener('keydown', onKey); };
   }, [isEditing]);
-
-  useEffect(function(){
-    if (!currentWorkId || isEditing || showHistory) return;
-    if (editorRef.current) {
-      editorRef.current.innerHTML = renderContent(currentText, selectedImg);
-    }
-  }, [currentText, currentWorkId, selectedImg]);
 
   useEffect(function(){
     if (showHistory) {
@@ -923,6 +957,7 @@ function App() {
       h('span', {className: 'status' + (status==='connected' ? ' connected' : '')}, status),
       h('span', {className:'spacer'}),
       sessionId ? h('span', {className:'session-info', onClick:function(){setShowFooter(function(p){return !p})}, style:{cursor:'pointer'}}, 'session ' + sessionId) : null,
+      h('button', {className:'theme-btn', onClick:function(){setTheme(function(t){return t==='dark'?'light':'dark'})}}, theme === 'dark' ? '\u2600' : '\u263D'),
       !showFooter ? h('span', {style:{fontSize:10,color:'var(--fg3)'}}, ':') : null
     ),
     h('div', {className:'layout'},
@@ -958,7 +993,7 @@ function App() {
           h('div', {className:'sep'}),
           h('button', {
             disabled:!isEditing,
-            onClick:function(){ blobUpload(wsRef, req, currentWorkId, currentRev, lastSavedRef, toast); },
+            onClick:function(){ blobUpload(wsRef, req, currentWorkId, currentRev, lastSavedRef, toast, editorRef); },
             title: 'Upload image (or drag & drop while editing)'
           }, '+ Image'),
           h('div', {className:'sep'}),
@@ -1006,13 +1041,14 @@ function App() {
                 var binary = '';
                 for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
                 var b64 = btoa(binary);
-                window._pendingBlobMeta = {mime: file.type, name: file.name, currentWorkId: currentWorkId, lastSavedRef: lastSavedRef};
+                window._pendingBlobMeta = {mime: file.type, name: file.name, currentWorkId: currentWorkId, lastSavedRef: lastSavedRef, cursorPos: -1};
                 req('blob_upload', {data: b64, mime_type: file.type});
               };
               reader.readAsArrayBuffer(file);
             }
           },
           onClick: function(e) {
+            if (e.target.closest('.overlay-panel')) return;
             var img = e.target.closest('.doc-image');
             if (img && img.dataset.blobHash && !isEditing) {
               setSelectedImg(img.dataset.blobHash);
@@ -1092,11 +1128,12 @@ function App() {
                   dangerouslySetInnerHTML: {__html: renderContent(historyViewText)}
                 })
               : isEditing
-                ? h('div', {
+                ? h('textarea', {
+                    key: currentWorkId,
                     ref: editorRef,
                     className: 'editor-content',
-                    onInput: handleEditorInput,
-                    onMouseUp: handleSelectionCheck
+                    defaultValue: currentText,
+                    onInput: handleEditorInput
                   })
                 : h('div', {
                     ref: editorRef,
