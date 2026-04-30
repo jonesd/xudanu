@@ -355,6 +355,7 @@ function App() {
   var historyTextRef = useRef(null);
   var restoringRef = useRef(false);
   var autoSaveRef = useRef(null);
+  var autoSaveInFlightRef = useRef(false);
   var isEditingRef = useRef(false);
   var currentTextRef = useRef('');
   var cursorPosRef = useRef(-1);
@@ -478,6 +479,7 @@ function App() {
 
   function doSave() {
     if (!currentWorkId) return;
+    clearAutoSave();
     var text = currentTextRef.current;
     if (text === lastSavedRef.current) {
       req('work_release', {work_id:currentWorkId});
@@ -490,6 +492,7 @@ function App() {
 
   function doCancel() {
     if (!currentWorkId) return;
+    clearAutoSave();
     req('work_release', {work_id:currentWorkId});
     if (editorRef.current) editorRef.current.value = lastSavedRef.current;
     currentTextRef.current = lastSavedRef.current;
@@ -508,16 +511,23 @@ function App() {
     if (autoSaveRef.current) clearTimeout(autoSaveRef.current);
     autoSaveRef.current = setTimeout(function(){
       if (!isEditingRef.current || !currentWorkIdRef.current) return;
+      if (autoSaveInFlightRef.current) return;
       var text = currentTextRef.current;
       if (text === lastSavedRef.current) return;
       var ops = computeDelta(lastSavedRef.current, text);
+      autoSaveInFlightRef.current = true;
       req('work_revise_delta', {work_id:currentWorkIdRef.current, base_revision:currentRevRef.current, ops:ops});
-      lastSavedRef.current = text;
     }, AUTO_SAVE_MS);
+  }
+
+  function clearAutoSave() {
+    if (autoSaveRef.current) { clearTimeout(autoSaveRef.current); autoSaveRef.current = null; }
+    autoSaveInFlightRef.current = false;
   }
 
   function handleEditorInput(e) {
     currentTextRef.current = e.target.value;
+    scheduleAutoSave();
   }
 
   function handleMouseUp() {
@@ -632,11 +642,13 @@ function App() {
             return;
           }
           if (op === 'work_revise_delta') {
+            autoSaveInFlightRef.current = false;
             if (editorRef.current) editorRef.current.value = edText;
             currentTextRef.current = edText;
             lastSavedRef.current = edText;
             setCurrentRev(totalRevsRef.current);
-            toast('Conflict resolved - document updated');
+            currentRevRef.current = totalRevsRef.current;
+            toast('Auto-save conflict - document updated');
             return;
           }
           if (splitModeRef.current && op === 'work_get_edition') {
@@ -781,6 +793,8 @@ function App() {
             return;
           }
           if (op === 'work_revise_delta') {
+            autoSaveInFlightRef.current = false;
+            lastSavedRef.current = currentTextRef.current;
             setCurrentRev(v.value);
             currentRevRef.current = v.value;
             setTotalRevs(v.value);
