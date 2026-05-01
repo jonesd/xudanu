@@ -34,7 +34,20 @@ impl Path {
         Path { labels }
     }
 
-    pub fn follow(&self, _edition: &Edition) -> Option<RangeElement> {
+    pub fn follow(&self, edition: &Edition) -> Option<RangeElement> {
+        if self.labels.is_empty() {
+            return None;
+        }
+        let entries = edition.all_entries();
+        let label = &self.labels[0];
+        for (_, carrier) in &entries {
+            if carrier.element == *label {
+                if let Some(inner) = carrier.element.as_label_inner() {
+                    return Some(inner.clone());
+                }
+                return Some(carrier.element.clone());
+            }
+        }
         None
     }
 }
@@ -684,5 +697,42 @@ mod tests {
         assert_eq!(link.end_count(), 3);
         assert!(!link.is_two_ended());
         assert_eq!(link.link_types().len(), 2);
+    }
+
+    #[test]
+    fn path_follow_finds_labelled_element() {
+        let edition = Edition::from_text_elements(&[
+            RangeElement::text("before"),
+            RangeElement::label(1, RangeElement::text("target")),
+            RangeElement::text("after"),
+        ]);
+        let path = Path::new(vec![RangeElement::label(1, RangeElement::text("target"))]);
+        let result = path.follow(&edition);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_text(), Some("target"));
+    }
+
+    #[test]
+    fn path_follow_empty_path() {
+        let edition = Edition::from_text("hello");
+        let path = Path::empty();
+        assert!(path.follow(&edition).is_none());
+    }
+
+    #[test]
+    fn path_follow_not_found() {
+        let edition = Edition::from_text("hello");
+        let path = Path::new(vec![RangeElement::label(99, RangeElement::text("missing"))]);
+        assert!(path.follow(&edition).is_none());
+    }
+
+    #[test]
+    fn path_follow_text_match() {
+        let edition = Edition::from_text_elements(&[
+            RangeElement::text("hello"),
+        ]);
+        let path = Path::new(vec![RangeElement::text("hello")]);
+        let result = path.follow(&edition);
+        assert!(result.is_some());
     }
 }
