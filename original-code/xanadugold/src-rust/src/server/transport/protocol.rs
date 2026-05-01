@@ -551,14 +551,62 @@ pub struct HyperRefPayload {
     pub kind: String,
     pub work_context: Option<BeId>,
     pub original_context: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_context: Option<Vec<RangeElementPayload>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub excerpt: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RangeElementPayload {
+    #[serde(rename = "type")]
+    pub elem_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_id: Option<BeId>,
+}
+
+impl RangeElementPayload {
+    pub fn from_range_element(re: &crate::edition::RangeElement) -> Self {
+        match re {
+            crate::edition::RangeElement::Text { text } => RangeElementPayload {
+                elem_type: "text".to_string(),
+                text: Some(text.clone()),
+                label_id: None,
+            },
+            crate::edition::RangeElement::Label { label_id, inner } => RangeElementPayload {
+                elem_type: "label".to_string(),
+                text: inner.as_text().map(|s| s.to_string()),
+                label_id: Some(label_id.0),
+            },
+            _ => RangeElementPayload {
+                elem_type: "other".to_string(),
+                text: None,
+                label_id: None,
+            },
+        }
+    }
 }
 
 impl HyperRefPayload {
     pub fn from_hyper_ref(hr: &crate::edition::links::HyperRef) -> Self {
+        let path_context = hr.path_context().map(|p| {
+            p.labels().iter().map(RangeElementPayload::from_range_element).collect()
+        });
+        let excerpt = hr.excerpt().and_then(|ed| {
+            let entries = ed.all_entries();
+            let text: String = entries.iter()
+                .filter_map(|(_, c)| c.element.as_text())
+                .collect();
+            if text.is_empty() { None } else { Some(text) }
+        });
         HyperRefPayload {
             kind: if hr.is_single() { "single".to_string() } else { "multi".to_string() },
             work_context: hr.work_context(),
             original_context: hr.original_context(),
+            path_context,
+            excerpt,
         }
     }
 }

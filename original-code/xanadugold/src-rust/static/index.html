@@ -82,6 +82,10 @@ header .session-info{font-size:11px;color:var(--fg2);background:var(--bg3);paddi
 .link-delete{background:none;border:none;color:var(--fg3);cursor:pointer;font-size:14px;margin-left:auto;padding:0 2px}
 .link-delete:hover{color:var(--red)}
 
+.link-nav-bar{display:flex;gap:6px;padding:4px 12px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;align-items:center}
+.link-nav-chip{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);font-size:11px;font-family:'SF Mono',Menlo,monospace;color:var(--accent);cursor:pointer;transition:background .15s}
+.link-nav-chip:hover{background:var(--bg4);border-color:var(--accent)}
+
 .editor-area{flex:1;overflow-y:auto;overflow-x:hidden;position:relative;min-height:0}
 .editor-area.split{display:flex;overflow:hidden}
 .editor-pane-wrap{flex:1;overflow-y:auto;position:relative;min-height:0}
@@ -122,8 +126,10 @@ textarea.editor-content:focus{outline:none}
 .split-label{position:absolute;top:8px;left:12px;font-size:10px;color:var(--fg3);text-transform:uppercase;letter-spacing:1px;z-index:20;background:var(--bg2);padding:2px 6px;border-radius:3px}
 
 .transclusion-hl{background:rgba(210,153,34,0.25);border-bottom:2px solid var(--orange);border-radius:2px}
+.editor-area.split .transclusion-hl{cursor:pointer;transition:background .15s}
+.editor-area.split .transclusion-hl:hover{background:rgba(210,153,34,0.5)}
 
-.svg-overlay{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15;overflow:visible}
+.svg-overlay{position:absolute;top:0;left:0;width:100%;height:100%;z-index:15;overflow:visible}
 
 .find-refs-popup{position:fixed;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:8px;z-index:50;box-shadow:0 4px 16px rgba(0,0,0,0.4);min-width:220px;max-width:320px;transform:translateX(-50%)}
 .find-refs-popup .fr-btn{background:var(--orange);color:var(--bg);border:none;padding:4px 12px;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;width:100%}
@@ -501,7 +507,8 @@ function App() {
     if (!currentWorkId) return;
     writeGenRef.current++;
     clearAutoSave();
-    var text = currentTextRef.current;
+    var text = editorRef.current ? editorRef.current.value : currentTextRef.current;
+    currentTextRef.current = text;
     setCurrentText(text);
     req('work_revise', {work_id:currentWorkId, edition:{text:text}});
     lastSavedRef.current = text;
@@ -1152,6 +1159,18 @@ function App() {
               })
             )
         ) : null,
+        !isEditing && links.length > 0 ? h('div', {className:'link-nav-bar'},
+          links.map(function(lnk) {
+            var otherId = lnk.origin === currentWorkId ? lnk.destination : lnk.origin;
+            var direction = lnk.origin === currentWorkId ? '\u2192' : '\u2190';
+            return h('span', {
+              key: lnk.link_id,
+              className: 'link-nav-chip',
+              onClick: function(){ showWork(otherId); },
+              title: 'Go to document ' + otherId
+            }, direction + ' doc ' + otherId);
+          })
+        ) : null,
         h('div', {
           className: 'editor-area' + (splitMode ? ' split' : ''),
           ref: editorAreaRef,
@@ -1178,6 +1197,18 @@ function App() {
           },
           onClick: function(e) {
             if (e.target.closest('.overlay-panel')) return;
+            if (splitMode && e.target.closest('.transclusion-hl')) {
+              var idx = e.target.closest('.transclusion-hl').dataset.idx;
+              if (idx !== undefined) {
+                var isLeft = e.target.closest('.editor-pane-wrap') === leftWrapRef.current;
+                var targetPane = isLeft ? rightPaneRef.current : leftPaneRef.current;
+                if (targetPane) {
+                  var target = targetPane.querySelector('.transclusion-hl[data-idx="' + idx + '"]');
+                  if (target) target.scrollIntoView({behavior:'smooth', block:'center'});
+                }
+              }
+              return;
+            }
             var img = e.target.closest('.doc-image');
             if (img && img.dataset.blobHash && !isEditing) {
               setSelectedImg(img.dataset.blobHash);
@@ -1243,9 +1274,15 @@ function App() {
                   d: d,
                   fill: 'none',
                   stroke: '#d29922',
-                  'stroke-width': 2,
-                  opacity: 0.7,
-                  'stroke-dasharray': '4,2'
+                  'stroke-width': 8,
+                  opacity: 0.0,
+                  style: {cursor:'pointer'},
+                  onClick: function(){
+                    var lhl = leftPaneRef.current ? leftPaneRef.current.querySelectorAll('.transclusion-hl') : [];
+                    var rhl = rightPaneRef.current ? rightPaneRef.current.querySelectorAll('.transclusion-hl') : [];
+                    if (lhl[i]) lhl[i].scrollIntoView({behavior:'smooth', block:'center'});
+                    if (rhl[i]) rhl[i].scrollIntoView({behavior:'smooth', block:'center'});
+                  }
                 });
               })
             )

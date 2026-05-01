@@ -159,6 +159,13 @@ impl RangeElement {
         matches!(self, RangeElement::Overlay { .. })
     }
 
+    pub fn as_label_inner(&self) -> Option<&RangeElement> {
+        match self {
+            RangeElement::Label { inner, .. } => Some(inner),
+            _ => None,
+        }
+    }
+
     pub fn as_blob(&self) -> Option<(u64, &str, u64, Option<u32>, Option<u32>)> {
         match self {
             RangeElement::Blob { content_hash, mime_type, byte_size, width, height } => {
