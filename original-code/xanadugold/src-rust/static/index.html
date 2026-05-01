@@ -359,6 +359,8 @@ function App() {
 
   var wsRef = useRef(null);
   var nextIdRef = useRef(1);
+  var writeGenRef = useRef(0);
+  var autoSaveGenRef = useRef(0);
   var pendingRef = useRef({});
   var editorRef = useRef(null);
   var leftPaneRef = useRef(null);
@@ -466,6 +468,7 @@ function App() {
 
   function showWork(id) {
     if (isEditingRef.current && currentWorkIdRef.current && currentWorkIdRef.current !== id) {
+      writeGenRef.current++;
       clearAutoSave();
       req('work_release', {work_id: currentWorkIdRef.current});
     }
@@ -496,12 +499,9 @@ function App() {
 
   function doSave() {
     if (!currentWorkId) return;
+    writeGenRef.current++;
     clearAutoSave();
     var text = currentTextRef.current;
-    if (text === lastSavedRef.current) {
-      req('work_release', {work_id:currentWorkId});
-      return;
-    }
     setCurrentText(text);
     req('work_revise', {work_id:currentWorkId, edition:{text:text}});
     lastSavedRef.current = text;
@@ -509,6 +509,7 @@ function App() {
 
   function doCancel() {
     if (!currentWorkId) return;
+    writeGenRef.current++;
     clearAutoSave();
     req('work_release', {work_id:currentWorkId});
     if (editorRef.current) editorRef.current.value = lastSavedRef.current;
@@ -533,6 +534,7 @@ function App() {
       if (text === lastSavedRef.current) return;
       var ops = computeDelta(lastSavedRef.current, text);
       autoSaveInFlightRef.current = true;
+      autoSaveGenRef.current = writeGenRef.current;
       req('work_revise_delta', {work_id:currentWorkIdRef.current, base_revision:currentRevRef.current, ops:ops});
     }, AUTO_SAVE_MS);
   }
@@ -640,7 +642,11 @@ function App() {
 
       if (msg.type === 'error') {
         console.error('ws error', msg);
+        var errOp = pendingRef.current[msg.id];
         toast((msg.message||msg.code||'Error').replace(/^Error:\s*/,''));
+        if (errOp === 'work_revise' || errOp === 'work_revise_delta') {
+          req('work_release', {work_id:currentWorkIdRef.current});
+        }
         return;
       }
 
@@ -676,6 +682,7 @@ function App() {
           }
           if (op === 'work_revise_delta') {
             autoSaveInFlightRef.current = false;
+            if (autoSaveGenRef.current !== writeGenRef.current) return;
             if (editorRef.current) editorRef.current.value = edText;
             currentTextRef.current = edText;
             lastSavedRef.current = edText;
@@ -829,6 +836,7 @@ function App() {
           }
           if (op === 'work_revise_delta') {
             autoSaveInFlightRef.current = false;
+            if (autoSaveGenRef.current !== writeGenRef.current) return;
             lastSavedRef.current = currentTextRef.current;
             setCurrentRev(v.value);
             currentRevRef.current = v.value;
@@ -1088,6 +1096,10 @@ function App() {
               setHistoryRev(v);
               if (revSliderTimer.current) clearTimeout(revSliderTimer.current);
               revSliderTimer.current = setTimeout(function(){
+                if (v >= totalRevs) {
+                  setHistoryViewText(null);
+                  return;
+                }
                 req('work_fetch_revision', {work_id:currentWorkId, number:v});
               }, 150);
             }
@@ -1096,7 +1108,7 @@ function App() {
           h('button', {onClick:function(){setShowHistory(false); setHistoryViewText(null);}}, 'Back to current'),
           historyRev && historyRev < totalRevs
             ? h('button', {className:'restore-btn', onClick:doRestore}, 'Restore this version')
-            : null
+            : h('span', {style:{visibility:'hidden'}, className:'restore-btn'}, 'Restore this version')
         ) : null,
         showLinks ? h('div', {className:'links-panel'},
           h('div', {className:'links-header'},
