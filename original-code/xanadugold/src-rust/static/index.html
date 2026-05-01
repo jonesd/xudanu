@@ -465,13 +465,12 @@ function App() {
   }
 
   function showWork(id) {
-    Object.values(subsRef.current).forEach(unsub);
-    subsRef.current = {};
-    closeSplitView();
-    setShowFindRefs(false);
-    setShowHistory(false);
-    setHistoryViewText(null);
+    if (isEditingRef.current && currentWorkIdRef.current && currentWorkIdRef.current !== id) {
+      clearAutoSave();
+      req('work_release', {work_id: currentWorkIdRef.current});
+    }
     setIsEditing(false);
+    isEditingRef.current = false;
     setCurrentWorkId(id);
     setCurrentText('');
     setCurrentRev(0);
@@ -482,6 +481,7 @@ function App() {
     subsRef.current = {revision:s1, status:s2};
     req('work_get_edition', {work_id:id});
     req('work_revision_count', {work_id:id});
+    req('link_list_for_work', {work_id:id});
   }
 
   function doCreate() {
@@ -848,6 +848,8 @@ function App() {
 
         if (v && v.type === 'void' && op === 'work_release') {
           setIsEditing(false);
+          isEditingRef.current = false;
+          req('work_list');
           return;
         }
 
@@ -1099,12 +1101,18 @@ function App() {
         showLinks ? h('div', {className:'links-panel'},
           h('div', {className:'links-header'},
             h('span', null, 'Links from this document'),
-            h('input', {
-              type:'number', placeholder:'Target work ID',
+            h('select', {
               value: linkTargetId,
-              onInput: function(e){setLinkTargetId(e.target.value)},
-              style:{width:120, marginLeft:8}
-            }),
+              onChange: function(e){setLinkTargetId(e.target.value)},
+              style:{marginLeft:8}
+            },
+              h('option', {value:''}, '\u2014 select document \u2014'),
+              works.filter(function(w){ return w.work_id !== currentWorkId; }).map(function(w){
+                return h('option', {key: w.work_id, value: String(w.work_id)},
+                  w.work_id + (w.title ? ' (' + (w.title.length > 30 ? w.title.slice(0,30)+'...' : w.title) + ')' : '')
+                );
+              })
+            ),
             h('button', {
               disabled: !linkTargetId || !currentWorkId,
               onClick: createLinkToTarget
