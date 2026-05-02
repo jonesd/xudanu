@@ -361,9 +361,13 @@ fn dispatch_inner(
             }).collect();
             Ok(ResponseValue::TextTransclusionResults(payloads))
         }
-        WireRequest::FindSharedRegions { work_a, work_b } => {
+        WireRequest::FindSharedRegions { work_a, work_b, filter_text } => {
             let results = srv.find_shared_regions(work_a, work_b);
-            let payloads = results.into_iter().map(|(start_a, end_a, start_b, end_b, text)| {
+            let filtered: Vec<_> = match &filter_text {
+                Some(ft) => results.into_iter().filter(|(_, _, _, _, text)| text.contains(ft.as_str())).collect(),
+                None => results,
+            };
+            let payloads = filtered.into_iter().map(|(start_a, end_a, start_b, end_b, text)| {
                 super::protocol::SharedRegionPayload { work_id: work_b, start_a, end_a, start_b, end_b, text }
             }).collect();
             Ok(ResponseValue::SharedRegions(payloads))
