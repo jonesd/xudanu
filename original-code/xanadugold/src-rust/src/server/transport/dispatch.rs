@@ -492,6 +492,22 @@ fn dispatch_inner(
                 method: format!("{:?}", cm).to_lowercase(),
             })
         }
+        WireRequest::ContentSharedRegion { work_a, work_b } => {
+            let region = srv.content_shared_region(work_a, work_b)?;
+            Ok(ResponseValue::SharedRegionResult { region })
+        }
+        WireRequest::ContentMapSharedTo { work_a, work_b } => {
+            let mapping = srv.content_map_shared_to(work_a, work_b)?;
+            Ok(ResponseValue::SharedMappingResult { pairs: mapping.pairs().to_vec() })
+        }
+        WireRequest::ContentMapSharedOnto { work_a, work_b } => {
+            let mapping = srv.content_map_shared_onto(work_a, work_b)?;
+            Ok(ResponseValue::SharedMappingResult { pairs: mapping.pairs().to_vec() })
+        }
+        WireRequest::PositionsOf { work_id, element } => {
+            let region = srv.positions_of(work_id, &element)?;
+            Ok(ResponseValue::PositionsOfResult { region })
+        }
     }
 }
 

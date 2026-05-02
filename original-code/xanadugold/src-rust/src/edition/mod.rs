@@ -3,6 +3,7 @@ pub mod backfollow;
 pub mod blob_store;
 pub mod bundle;
 pub mod canopy;
+pub mod shared_mapping;
 pub mod content_address;
 pub mod edition;
 pub mod endorsement;
@@ -25,6 +26,7 @@ pub mod xn_region;
 
 pub use backend::{BeStorage, BeRangeElement, InMemoryBeStorage, BeId};
 pub use backfollow::{BackfollowEngine, EditionMeta};
+pub use shared_mapping::{SharedMapping, content_shared_region, content_map_shared_to, content_map_shared_onto};
 pub use blob_store::{BlobBackend, BlobStore, BlobMeta, BlobError, BlobBackendStats, MemoryBackend, FilesystemBackend, ImageOp, ImageOverlay, hash_content, u64_from_hash, base64_encode, base64_decode};
 pub use bundle::{
     Bundle, CostMethod, StorageCost, RetrieveFlags,

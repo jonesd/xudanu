@@ -7,6 +7,7 @@ use super::bundle::{
 };
 use super::orgl::OrglRoot;
 use super::range_element::{Carrier, RangeElement};
+use super::shared_mapping::{SharedMapping, content_shared_region, content_map_shared_to, content_map_shared_onto};
 use super::xn_region::XnRegion;
 
 #[derive(Debug, Clone)]
@@ -349,6 +350,18 @@ impl Edition {
             }
         }
         mapping
+    }
+
+    pub fn content_shared_region(&self, other: &Edition) -> XnRegion {
+        content_shared_region(&self.orgl.all_entries(), &other.orgl.all_entries())
+    }
+
+    pub fn content_map_shared_to(&self, other: &Edition) -> SharedMapping {
+        content_map_shared_to(&self.orgl.all_entries(), &other.orgl.all_entries())
+    }
+
+    pub fn content_map_shared_onto(&self, other: &Edition) -> SharedMapping {
+        content_map_shared_onto(&self.orgl.all_entries(), &other.orgl.all_entries())
     }
 
     pub fn positions_of(&self, value: &RangeElement) -> XnRegion {

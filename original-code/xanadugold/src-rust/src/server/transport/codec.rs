@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use crate::edition::{BeId, XnRegion};
+use crate::edition::{BeId, XnRegion, RangeElement};
 use crate::server::lock::LockCredential;
 
 use super::protocol::*;
@@ -908,6 +908,34 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::EditionCost { work_id: args.work_id, method: args.method })
+            }
+            OperationCode::ContentSharedRegion => {
+                #[derive(Deserialize)]
+                struct Args { work_a: BeId, work_b: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ContentSharedRegion { work_a: args.work_a, work_b: args.work_b })
+            }
+            OperationCode::ContentMapSharedTo => {
+                #[derive(Deserialize)]
+                struct Args { work_a: BeId, work_b: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ContentMapSharedTo { work_a: args.work_a, work_b: args.work_b })
+            }
+            OperationCode::ContentMapSharedOnto => {
+                #[derive(Deserialize)]
+                struct Args { work_a: BeId, work_b: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ContentMapSharedOnto { work_a: args.work_a, work_b: args.work_b })
+            }
+            OperationCode::PositionsOf => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, element: RangeElement }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::PositionsOf { work_id: args.work_id, element: args.element })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
