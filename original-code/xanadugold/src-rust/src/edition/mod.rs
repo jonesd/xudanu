@@ -20,6 +20,7 @@ pub mod pool;
 pub mod props;
 pub mod range_element;
 pub mod range_transclusion;
+pub mod recorder;
 pub mod snapshot;
 pub mod transclusion;
 pub mod work;
@@ -62,6 +63,10 @@ pub use range_transclusion::{
     RangeTransclusionQuery, RangeTransclusionResult, RangeWorkResult,
     range_transcluders, range_works, walk_otree_shared,
     collect_unique_elements, count_transclusion_depth, find_deeply_transcluded,
+};
+pub use recorder::{
+    RecorderSystem, RecorderQuery, RecorderKind, RecorderId,
+    Fossil, RecordedResult, Agenda, AgendaItem, Matcher, RecorderTrigger,
 };
 pub use transclusion::{TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery};
 pub use work::Work;

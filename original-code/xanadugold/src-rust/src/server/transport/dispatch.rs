@@ -538,6 +538,74 @@ fn dispatch_inner(
             let depth = srv.transclusion_depth(work_id, position, max_depth.unwrap_or(10))?;
             Ok(ResponseValue::TransclusionDepthResult { depth })
         }
+        WireRequest::AdminRecorderCreate { kind, direct_only, region } => {
+            srv.ensure_admin(session_id)?;
+            let recorder_kind = match kind.as_str() {
+                "works" => crate::edition::RecorderKind::Works,
+                _ => crate::edition::RecorderKind::Transcluders,
+            };
+            let query = crate::edition::RecorderQuery {
+                kind: recorder_kind,
+                region,
+                direct_only: direct_only.unwrap_or(false),
+                authority_clubs: Vec::new(),
+                endorsement_filter: None,
+            };
+            let id = srv.recorder_create(query)?;
+            Ok(ResponseValue::RecorderCreateResult { recorder_id: id })
+        }
+        WireRequest::AdminRecorderRecord { recorder_id, element } => {
+            srv.ensure_admin(session_id)?;
+            let recorded = srv.recorder_record(recorder_id, &element)?;
+            Ok(ResponseValue::RecorderRecordResult { recorded })
+        }
+        WireRequest::AdminRecorderList => {
+            srv.ensure_admin(session_id)?;
+            let recorders = srv.recorder_list().into_iter().map(|f| {
+                super::protocol::RecorderInfoPayload {
+                    id: f.id,
+                    kind: match f.query.kind {
+                        crate::edition::RecorderKind::Transcluders => "transcluders".to_string(),
+                        crate::edition::RecorderKind::Works => "works".to_string(),
+                    },
+                    direct_only: f.query.direct_only,
+                    result_count: f.result_count(),
+                    is_extinct: f.is_extinct,
+                    reference_count: f.reference_count,
+                    created_at: f.created_at,
+                }
+            }).collect();
+            Ok(ResponseValue::RecorderListResult { recorders })
+        }
+        WireRequest::AdminRecorderGet { recorder_id } => {
+            srv.ensure_admin(session_id)?;
+            let info = srv.recorder_get(recorder_id).map(|f| {
+                super::protocol::RecorderInfoPayload {
+                    id: f.id,
+                    kind: match f.query.kind {
+                        crate::edition::RecorderKind::Transcluders => "transcluders".to_string(),
+                        crate::edition::RecorderKind::Works => "works".to_string(),
+                    },
+                    direct_only: f.query.direct_only,
+                    result_count: f.result_count(),
+                    is_extinct: f.is_extinct,
+                    reference_count: f.reference_count,
+                    created_at: f.created_at,
+                }
+            });
+            Ok(ResponseValue::RecorderGetResult { recorder: info })
+        }
+        WireRequest::AdminServerHealth => {
+            let health = srv.server_health();
+            Ok(ResponseValue::ServerHealthResult {
+                operation_count: health.operation_count,
+                active_recorders: health.active_recorders,
+                total_recorded: health.total_recorded,
+                blob_count: health.blob_count,
+                link_count: health.link_count,
+                uptime_secs: health.uptime_secs,
+            })
+        }
     }
 }
 

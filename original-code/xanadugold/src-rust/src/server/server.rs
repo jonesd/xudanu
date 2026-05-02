@@ -65,6 +65,17 @@ pub struct Server {
     content_address: ContentAddressIndex,
     blob_store: BlobStore,
     checkpoint_path: Option<std::path::PathBuf>,
+    recorder_system: crate::edition::RecorderSystem,
+    start_time: u64,
+}
+
+pub struct ServerHealth {
+    pub operation_count: u64,
+    pub active_recorders: usize,
+    pub total_recorded: usize,
+    pub blob_count: usize,
+    pub link_count: usize,
+    pub uptime_secs: u64,
 }
 
 #[derive(Debug)]
@@ -150,6 +161,11 @@ impl Server {
             backfollow: BackfollowEngine::new(),
             blob_store: BlobStore::in_memory(),
             checkpoint_path: None,
+            recorder_system: crate::edition::RecorderSystem::new(),
+            start_time: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
         };
 
         let pub_club = Club::new_with_owner(
@@ -1526,6 +1542,49 @@ impl Server {
         let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
         Ok(edition.transclusion_depth(position, &self.transclusion_index, max_depth))
     }
+
+    pub fn recorder_create(&mut self, query: crate::edition::RecorderQuery) -> Result<crate::edition::RecorderId, ServerError> {
+        Ok(self.recorder_system.create_fossil(query))
+    }
+
+    pub fn recorder_record(&mut self, recorder_id: crate::edition::RecorderId, element: &crate::edition::RangeElement) -> Result<bool, ServerError> {
+        let is_direct = true;
+        let source_edition_id = element.as_edition_id();
+        let source_work_id = element.as_work_id();
+        Ok(self.recorder_system.record_result(
+            recorder_id,
+            element.clone(),
+            source_edition_id,
+            source_work_id,
+            is_direct,
+        ))
+    }
+
+    pub fn recorder_list(&self) -> Vec<&crate::edition::Fossil> {
+        self.recorder_system.fossil_ids()
+            .into_iter()
+            .filter_map(|id| self.recorder_system.get_fossil(id))
+            .collect()
+    }
+
+    pub fn recorder_get(&self, id: crate::edition::RecorderId) -> Option<&crate::edition::Fossil> {
+        self.recorder_system.get_fossil(id)
+    }
+
+    pub fn server_health(&self) -> ServerHealth {
+        ServerHealth {
+            operation_count: self.operation_counter,
+            active_recorders: self.recorder_system.active_fossil_count(),
+            total_recorded: self.recorder_system.total_result_count(),
+            blob_count: self.blob_store.stats().total_blobs as usize,
+            link_count: self.links.len(),
+            uptime_secs: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+                .saturating_sub(self.start_time),
+        }
+    }
 }
 
 #[cfg(feature = "server")]
@@ -1656,6 +1715,11 @@ mod persist_snapshot {
                 backfollow: BackfollowEngine::new(),
                 blob_store: BlobStore::in_memory(),
                 checkpoint_path: None,
+                recorder_system: crate::edition::RecorderSystem::new(),
+                start_time: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
             };
 
             for club_snap in &snapshot.clubs {

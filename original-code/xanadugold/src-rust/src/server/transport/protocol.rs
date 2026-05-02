@@ -171,6 +171,12 @@ pub enum OperationCode {
     RangeWorks,
     OrderedBundles,
     TransclusionDepth,
+
+    AdminRecorderCreate,
+    AdminRecorderRecord,
+    AdminRecorderList,
+    AdminRecorderGet,
+    AdminServerHealth,
 }
 
 impl OperationCode {
@@ -273,6 +279,12 @@ impl OperationCode {
             0x0f02 => Some(OperationCode::RangeWorks),
             0x0f03 => Some(OperationCode::OrderedBundles),
             0x0f04 => Some(OperationCode::TransclusionDepth),
+
+            0x1101 => Some(OperationCode::AdminRecorderCreate),
+            0x1102 => Some(OperationCode::AdminRecorderRecord),
+            0x1103 => Some(OperationCode::AdminRecorderList),
+            0x1104 => Some(OperationCode::AdminRecorderGet),
+            0x1105 => Some(OperationCode::AdminServerHealth),
 
             _ => None,
         }
@@ -378,6 +390,12 @@ impl OperationCode {
             OperationCode::RangeWorks => 0x0f02,
             OperationCode::OrderedBundles => 0x0f03,
             OperationCode::TransclusionDepth => 0x0f04,
+
+            OperationCode::AdminRecorderCreate => 0x1101,
+            OperationCode::AdminRecorderRecord => 0x1102,
+            OperationCode::AdminRecorderList => 0x1103,
+            OperationCode::AdminRecorderGet => 0x1104,
+            OperationCode::AdminServerHealth => 0x1105,
         }
     }
 }
@@ -527,6 +545,12 @@ pub enum WireRequest {
     RangeWorks { work_id: BeId, region: Option<XnRegion> },
     OrderedBundles { work_id: BeId, region: Option<XnRegion> },
     TransclusionDepth { work_id: BeId, position: i64, max_depth: Option<usize> },
+
+    AdminRecorderCreate { kind: String, direct_only: Option<bool>, region: Option<XnRegion> },
+    AdminRecorderRecord { recorder_id: u64, element: RangeElement },
+    AdminRecorderList,
+    AdminRecorderGet { recorder_id: u64 },
+    AdminServerHealth,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -627,6 +651,18 @@ pub enum ResponseValue {
     RangeWorksResult { work_ids: Vec<BeId>, region: XnRegion },
     OrderedBundlesResult { bundles: Vec<BundlePayload> },
     TransclusionDepthResult { depth: usize },
+    RecorderCreateResult { recorder_id: u64 },
+    RecorderRecordResult { recorded: bool },
+    RecorderListResult { recorders: Vec<RecorderInfoPayload> },
+    RecorderGetResult { recorder: Option<RecorderInfoPayload> },
+    ServerHealthResult {
+        operation_count: u64,
+        active_recorders: usize,
+        total_recorded: usize,
+        blob_count: usize,
+        link_count: usize,
+        uptime_secs: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -870,6 +906,17 @@ pub struct GrantPayload {
     pub club_id: BeId,
     pub region_start: i64,
     pub region_end: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecorderInfoPayload {
+    pub id: u64,
+    pub kind: String,
+    pub direct_only: bool,
+    pub result_count: usize,
+    pub is_extinct: bool,
+    pub reference_count: u64,
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
