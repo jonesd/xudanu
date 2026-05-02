@@ -52,27 +52,6 @@ pub struct HandshakeResult {
     pub my_ephemeral_public: [u8; 32],
 }
 
-pub fn perform_key_exchange(
-    my_static: &StaticSecret,
-    my_ephemeral_public: &[u8; 32],
-    peer_static_public: &PublicKey,
-    peer_ephemeral_public: &[u8; 32],
-    my_eph_secret: EphemeralSecret,
-) -> SharedSecret {
-    let peer_eph = PublicKey::from(*peer_ephemeral_public);
-    let dh1 = my_static.diffie_hellman(&peer_eph);
-    let dh2 = my_eph_secret.diffie_hellman(peer_static_public);
-    let dh3 = EphemeralSecret::random_from_rng(OsRng)
-        .diffie_hellman(&peer_eph);
-    let mut combined = [0u8; 96];
-    combined[..32].copy_from_slice(dh1.as_bytes());
-    combined[32..64].copy_from_slice(dh2.as_bytes());
-    combined[64..].copy_from_slice(dh3.as_bytes());
-    let secret = blake3::hash(&combined).into();
-    combined.zeroize();
-    SharedSecret(secret)
-}
-
 pub fn key_exchange_simple(
     my_static: &StaticSecret,
     peer_ephemeral: &[u8; 32],

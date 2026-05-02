@@ -1626,9 +1626,21 @@ impl Server {
     }
 
     pub fn verify_server_signature(&self, data: &[u8], signature: &[u8]) -> Result<(), ServerError> {
+        self.verify_server_signature_with_key(None, data, signature)
+    }
+
+    pub fn verify_server_signature_with_key(&self, key_id: Option<u64>, data: &[u8], signature: &[u8]) -> Result<(), ServerError> {
         let sig = ed25519_dalek::Signature::from_slice(signature)
             .map_err(|_| ServerError::InvalidArgument("invalid signature bytes".into()))?;
-        crate::crypto::sign::verify_signature(&self.server_keypair.signing_verifying_key(), data, &sig)
+        let verifying_key = match key_id {
+            Some(kid) => {
+                let entry = self.key_history.get(kid)
+                    .ok_or_else(|| ServerError::InvalidArgument(format!("unknown key_id: {}", kid)))?;
+                &entry.verifying_key
+            }
+            None => &self.server_keypair.signing_verifying_key(),
+        };
+        crate::crypto::sign::verify_signature(verifying_key, data, &sig)
             .map_err(|_| ServerError::InvalidArgument("signature verification failed".into()))
     }
 }
@@ -1741,6 +1753,7 @@ mod persist_snapshot {
         pub fn from_snapshot(snapshot: &ServerSnapshot) -> Self {
             let mut grand_map = GrandMap::new();
             grand_map.set_id_counter(snapshot.grand_map_id_counter);
+            let server_kp = crate::crypto::keys::ServerKeyPair::generate("xudanu-server");
 
             let mut server = Server {
                 grand_map,
@@ -1766,8 +1779,8 @@ mod persist_snapshot {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
-                server_keypair: crate::crypto::keys::ServerKeyPair::generate("xudanu-server"),
-                key_history: crate::crypto::keys::KeyHistory::new(&crate::crypto::keys::ServerKeyPair::generate("xudanu-server")),
+                server_keypair: server_kp.clone(),
+                key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
             };
 
             for club_snap in &snapshot.clubs {

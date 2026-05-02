@@ -115,6 +115,7 @@ impl ServerKeyPair {
 impl Drop for ServerKeyPair {
     fn drop(&mut self) {
         self.signing_key.to_bytes().zeroize();
+        // kex_secret (StaticSecret) zeroizes via its own Drop impl in x25519-dalek
     }
 }
 
