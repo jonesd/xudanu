@@ -508,6 +508,32 @@ fn dispatch_inner(
             let region = srv.positions_of(work_id, &element)?;
             Ok(ResponseValue::PositionsOfResult { region })
         }
+        WireRequest::RangeTranscluders { work_id, region, direct_only } => {
+            let result = srv.range_transcluders(work_id, region.as_ref(), direct_only.unwrap_or(false))?;
+            Ok(ResponseValue::RangeTranscludersResult {
+                edition_ids: result.edition_ids,
+                work_ids: result.work_ids,
+                region: result.region,
+            })
+        }
+        WireRequest::RangeWorks { work_id, region } => {
+            let result = srv.range_works(work_id, region.as_ref())?;
+            Ok(ResponseValue::RangeWorksResult {
+                work_ids: result.work_ids,
+                region: result.region,
+            })
+        }
+        WireRequest::OrderedBundles { work_id, region } => {
+            let bundles = srv.ordered_bundles(work_id, region.as_ref())?;
+            let payloads: Vec<BundlePayload> = bundles.iter()
+                .map(BundlePayload::from_bundle)
+                .collect();
+            Ok(ResponseValue::OrderedBundlesResult { bundles: payloads })
+        }
+        WireRequest::TransclusionDepth { work_id, position, max_depth } => {
+            let depth = srv.transclusion_depth(work_id, position, max_depth.unwrap_or(10))?;
+            Ok(ResponseValue::TransclusionDepthResult { depth })
+        }
     }
 }
 

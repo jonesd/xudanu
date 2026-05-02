@@ -1493,6 +1493,39 @@ impl Server {
         let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
         Ok(edition.positions_of(element))
     }
+
+    pub fn range_transcluders(&self, work_id: BeId, region: Option<&XnRegion>, direct_only: bool) -> Result<crate::edition::RangeTransclusionResult, ServerError> {
+        let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
+        let query = crate::edition::RangeTransclusionQuery::new()
+            .direct_only(direct_only);
+        let query = match region {
+            Some(r) => query.with_region(r.clone()),
+            None => query,
+        };
+        let tq = crate::edition::TransclusionQuery::all();
+        Ok(crate::edition::range_transcluders(&edition, &query, &self.transclusion_index, &tq))
+    }
+
+    pub fn range_works(&self, work_id: BeId, region: Option<&XnRegion>) -> Result<crate::edition::RangeWorkResult, ServerError> {
+        let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
+        let query = crate::edition::RangeTransclusionQuery::new();
+        let query = match region {
+            Some(r) => query.with_region(r.clone()),
+            None => query,
+        };
+        let wq = crate::edition::WorkQuery::all();
+        Ok(crate::edition::range_works(&edition, &query, &self.transclusion_index, &wq))
+    }
+
+    pub fn ordered_bundles(&self, work_id: BeId, region: Option<&XnRegion>) -> Result<Vec<crate::edition::Bundle>, ServerError> {
+        let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
+        Ok(edition.ordered_merge_bundles(region))
+    }
+
+    pub fn transclusion_depth(&self, work_id: BeId, position: i64, max_depth: usize) -> Result<usize, ServerError> {
+        let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
+        Ok(edition.transclusion_depth(position, &self.transclusion_index, max_depth))
+    }
 }
 
 #[cfg(feature = "server")]

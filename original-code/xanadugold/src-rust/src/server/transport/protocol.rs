@@ -166,6 +166,11 @@ pub enum OperationCode {
     ContentMapSharedTo,
     ContentMapSharedOnto,
     PositionsOf,
+
+    RangeTranscluders,
+    RangeWorks,
+    OrderedBundles,
+    TransclusionDepth,
 }
 
 impl OperationCode {
@@ -263,6 +268,11 @@ impl OperationCode {
             0x0e02 => Some(OperationCode::ContentMapSharedTo),
             0x0e03 => Some(OperationCode::ContentMapSharedOnto),
             0x0e04 => Some(OperationCode::PositionsOf),
+
+            0x0f01 => Some(OperationCode::RangeTranscluders),
+            0x0f02 => Some(OperationCode::RangeWorks),
+            0x0f03 => Some(OperationCode::OrderedBundles),
+            0x0f04 => Some(OperationCode::TransclusionDepth),
 
             _ => None,
         }
@@ -363,6 +373,11 @@ impl OperationCode {
             OperationCode::ContentMapSharedTo => 0x0e02,
             OperationCode::ContentMapSharedOnto => 0x0e03,
             OperationCode::PositionsOf => 0x0e04,
+
+            OperationCode::RangeTranscluders => 0x0f01,
+            OperationCode::RangeWorks => 0x0f02,
+            OperationCode::OrderedBundles => 0x0f03,
+            OperationCode::TransclusionDepth => 0x0f04,
         }
     }
 }
@@ -507,6 +522,11 @@ pub enum WireRequest {
     ContentMapSharedTo { work_a: BeId, work_b: BeId },
     ContentMapSharedOnto { work_a: BeId, work_b: BeId },
     PositionsOf { work_id: BeId, element: RangeElement },
+
+    RangeTranscluders { work_id: BeId, region: Option<XnRegion>, direct_only: Option<bool> },
+    RangeWorks { work_id: BeId, region: Option<XnRegion> },
+    OrderedBundles { work_id: BeId, region: Option<XnRegion> },
+    TransclusionDepth { work_id: BeId, position: i64, max_depth: Option<usize> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -603,6 +623,10 @@ pub enum ResponseValue {
     SharedRegionResult { region: XnRegion },
     SharedMappingResult { pairs: Vec<(i64, i64)> },
     PositionsOfResult { region: XnRegion },
+    RangeTranscludersResult { edition_ids: Vec<BeId>, work_ids: Vec<BeId>, region: XnRegion },
+    RangeWorksResult { work_ids: Vec<BeId>, region: XnRegion },
+    OrderedBundlesResult { bundles: Vec<BundlePayload> },
+    TransclusionDepthResult { depth: usize },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

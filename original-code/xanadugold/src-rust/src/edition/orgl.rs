@@ -785,7 +785,7 @@ impl OrglRoot {
         }
     }
 
-    fn loaf(&self) -> &Loaf {
+    pub(crate) fn loaf(&self) -> &Loaf {
         match &self.inner {
             OrglInner::Empty => {
                 static EMPTY: std::sync::OnceLock<Loaf> = std::sync::OnceLock::new();
