@@ -233,6 +233,31 @@ impl Edition {
         }
     }
 
+    pub fn transformed_by_mapping(&self, mapping: &super::mapping::Mapping) -> Edition {
+        if mapping.is_empty() {
+            return Edition::empty();
+        }
+        if mapping.is_identity() {
+            return self.clone();
+        }
+        let entries = self.orgl.all_entries();
+        let mut new_entries: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(entries.len());
+        for (pos, carrier) in &entries {
+            if let Some(new_pos) = mapping.of(*pos) {
+                new_entries.push((new_pos, carrier.clone()));
+            }
+        }
+        new_entries.sort_by_key(|(p, _)| *p);
+        let domain = self.domain();
+        let new_domain = mapping.of_region(&domain);
+        if new_entries.is_empty() {
+            return Edition::empty();
+        }
+        Edition {
+            orgl: OrglRoot::from_bulk_entries(new_entries, None, new_domain),
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (i64, Arc<Carrier>)> {
         self.orgl.all_entries().into_iter()
     }
@@ -341,6 +366,30 @@ impl Edition {
             }
         }
         true
+    }
+
+    pub fn positions_labelled(&self, label_id: u64) -> XnRegion {
+        let entries = self.orgl.all_entries();
+        let mut region = XnRegion::empty();
+        for (pos, carrier) in &entries {
+            if carrier.element.label_id_value() == Some(label_id) {
+                region = region.with(*pos);
+            }
+        }
+        region
+    }
+
+    pub fn fetch_labelled(&self, label_id: u64) -> Option<(i64, RangeElement)> {
+        let entries = self.orgl.all_entries();
+        for (pos, carrier) in &entries {
+            if carrier.element.label_id_value() == Some(label_id) {
+                if let Some(inner) = carrier.element.as_label_inner() {
+                    return Some((*pos, inner.clone()));
+                }
+                return Some((*pos, carrier.element.clone()));
+            }
+        }
+        None
     }
 
     pub fn find_content_shared_regions(&self, other: &Edition, min_run: usize) -> Vec<(i64, i64, i64, i64, String)> {
@@ -983,6 +1032,57 @@ mod tests {
         };
         let region = e1.identity_shared_region(&e2, id_eq);
         assert!(region.is_empty());
+    }
+
+    #[test]
+    fn positions_labelled_finds_single_label() {
+        let e = Edition::from_text_elements(&[
+            RangeElement::text("before"),
+            RangeElement::label(1, RangeElement::text("target")),
+            RangeElement::text("after"),
+        ]);
+        let region = e.positions_labelled(1);
+        assert!(region.contains(1));
+        assert!(!region.contains(0));
+        assert!(!region.contains(2));
+    }
+
+    #[test]
+    fn positions_labelled_multiple_labels() {
+        let e = Edition::from_text_elements(&[
+            RangeElement::label(1, RangeElement::text("a")),
+            RangeElement::label(2, RangeElement::text("b")),
+            RangeElement::label(1, RangeElement::text("c")),
+        ]);
+        let region = e.positions_labelled(1);
+        assert!(region.contains(0));
+        assert!(!region.contains(1));
+        assert!(region.contains(2));
+    }
+
+    #[test]
+    fn positions_labelled_no_match() {
+        let e = Edition::from_text("hello");
+        let region = e.positions_labelled(99);
+        assert!(region.is_empty());
+    }
+
+    #[test]
+    fn fetch_labelled_returns_position_and_inner() {
+        let e = Edition::from_text_elements(&[
+            RangeElement::text("before"),
+            RangeElement::label(42, RangeElement::text("found")),
+            RangeElement::text("after"),
+        ]);
+        let (pos, elem) = e.fetch_labelled(42).unwrap();
+        assert_eq!(pos, 1);
+        assert_eq!(elem.as_text(), Some("found"));
+    }
+
+    #[test]
+    fn fetch_labelled_no_match() {
+        let e = Edition::from_text("hello");
+        assert!(e.fetch_labelled(99).is_none());
     }
 
     #[test]

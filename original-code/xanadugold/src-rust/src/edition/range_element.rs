@@ -166,6 +166,13 @@ impl RangeElement {
         }
     }
 
+    pub fn label_id_value(&self) -> Option<u64> {
+        match self {
+            RangeElement::Label { label_id, .. } => Some(label_id.0),
+            _ => None,
+        }
+    }
+
     pub fn as_blob(&self) -> Option<(u64, &str, u64, Option<u32>, Option<u32>)> {
         match self {
             RangeElement::Blob { content_hash, mime_type, byte_size, width, height } => {

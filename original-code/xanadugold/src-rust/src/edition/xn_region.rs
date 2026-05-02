@@ -238,6 +238,30 @@ impl XnRegion {
             transitions: self.transitions.iter().map(|t| t.wrapping_add(offset)).collect(),
         }
     }
+
+    pub fn compactor(&self) -> super::mapping::Mapping {
+        use super::mapping::Mapping;
+        if self.is_empty() {
+            return Mapping::Empty;
+        }
+        let intervals = self.intervals();
+        if intervals.is_empty() {
+            return Mapping::Empty;
+        }
+        let mut mappings = Vec::new();
+        let mut end = 0i64;
+        for (start, stop) in &intervals {
+            let offset = end - start;
+            let region = XnRegion::interval(*start, *stop);
+            mappings.push(Mapping::restricted(offset, region));
+            end += stop - start;
+        }
+        if mappings.len() == 1 {
+            mappings.remove(0)
+        } else {
+            Mapping::Composite(mappings)
+        }
+    }
 }
 
 impl Default for XnRegion {
