@@ -1956,3 +1956,124 @@ async fn edition_cost_not_found() {
         })))).await;
     assert_eq!(resp["type"], "error");
 }
+
+#[tokio::test]
+async fn content_shared_region_overlap() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abcdef"}
+        })))).await;
+    let work_a = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({
+            "edition": {"text": "xyzcde"}
+        })))).await;
+    let work_b = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "content_shared_region", Some(serde_json::json!({
+            "work_a": work_a, "work_b": work_b
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let region = &resp["value"]["value"]["region"];
+    assert!(region["transitions"].as_array().unwrap().len() > 0);
+}
+
+#[tokio::test]
+async fn content_shared_region_no_overlap() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abc"}
+        })))).await;
+    let work_a = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({
+            "edition": {"text": "xyz"}
+        })))).await;
+    let work_b = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "content_shared_region", Some(serde_json::json!({
+            "work_a": work_a, "work_b": work_b
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let region = &resp["value"]["value"]["region"];
+    assert!(region["transitions"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn content_map_shared_to() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abc"}
+        })))).await;
+    let work_a = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({
+            "edition": {"text": "xaybzc"}
+        })))).await;
+    let work_b = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "content_map_shared_to", Some(serde_json::json!({
+            "work_a": work_a, "work_b": work_b
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let pairs = resp["value"]["value"]["pairs"].as_array().unwrap();
+    assert!(pairs.len() >= 3);
+}
+
+#[tokio::test]
+async fn content_map_shared_onto() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abc"}
+        })))).await;
+    let work_a = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abc"}
+        })))).await;
+    let work_b = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "content_map_shared_onto", Some(serde_json::json!({
+            "work_a": work_a, "work_b": work_b
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let pairs = resp["value"]["value"]["pairs"].as_array().unwrap();
+    assert_eq!(pairs.len(), 3);
+}
+
+#[tokio::test]
+async fn positions_of_element() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abac"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "positions_of", Some(serde_json::json!({
+            "work_id": work_id,
+            "element": {"Text": {"text": "a"}}
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let region = &resp["value"]["value"]["region"];
+    let transitions = region["transitions"].as_array().unwrap();
+    assert!(transitions.len() >= 2);
+}

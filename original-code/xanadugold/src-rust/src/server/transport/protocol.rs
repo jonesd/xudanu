@@ -161,6 +161,11 @@ pub enum OperationCode {
 
     EditionRetrieve,
     EditionCost,
+
+    ContentSharedRegion,
+    ContentMapSharedTo,
+    ContentMapSharedOnto,
+    PositionsOf,
 }
 
 impl OperationCode {
@@ -253,6 +258,11 @@ impl OperationCode {
 
             0x0c01 => Some(OperationCode::EditionRetrieve),
             0x0c02 => Some(OperationCode::EditionCost),
+
+            0x0e01 => Some(OperationCode::ContentSharedRegion),
+            0x0e02 => Some(OperationCode::ContentMapSharedTo),
+            0x0e03 => Some(OperationCode::ContentMapSharedOnto),
+            0x0e04 => Some(OperationCode::PositionsOf),
 
             _ => None,
         }
@@ -348,6 +358,11 @@ impl OperationCode {
 
             OperationCode::EditionRetrieve => 0x0c01,
             OperationCode::EditionCost     => 0x0c02,
+
+            OperationCode::ContentSharedRegion => 0x0e01,
+            OperationCode::ContentMapSharedTo => 0x0e02,
+            OperationCode::ContentMapSharedOnto => 0x0e03,
+            OperationCode::PositionsOf => 0x0e04,
         }
     }
 }
@@ -487,6 +502,11 @@ pub enum WireRequest {
 
     EditionRetrieve { work_id: BeId, region: Option<XnRegion>, flags: Option<RetrieveFlagsPayload> },
     EditionCost { work_id: BeId, method: Option<String> },
+
+    ContentSharedRegion { work_a: BeId, work_b: BeId },
+    ContentMapSharedTo { work_a: BeId, work_b: BeId },
+    ContentMapSharedOnto { work_a: BeId, work_b: BeId },
+    PositionsOf { work_id: BeId, element: RangeElement },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -580,6 +600,9 @@ pub enum ResponseValue {
     IdentityResolveResult { resolved_id: u64 },
     BundleResults { bundles: Vec<BundlePayload> },
     StorageCostResult { total_bytes: u64, unique_bytes: u64, shared_bytes: u64, share_count: u64, billed_bytes: u64, method: String },
+    SharedRegionResult { region: XnRegion },
+    SharedMappingResult { pairs: Vec<(i64, i64)> },
+    PositionsOfResult { region: XnRegion },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

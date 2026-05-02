@@ -1470,6 +1470,29 @@ impl Server {
         let edition = ws.work.current_edition();
         Ok(edition.cost(method))
     }
+
+    pub fn content_shared_region(&self, work_a: BeId, work_b: BeId) -> Result<XnRegion, ServerError> {
+        let ed_a = self.get_edition(work_a)?.ok_or(ServerError::WorkNotFound(work_a))?;
+        let ed_b = self.get_edition(work_b)?.ok_or(ServerError::WorkNotFound(work_b))?;
+        Ok(ed_a.content_shared_region(&ed_b))
+    }
+
+    pub fn content_map_shared_to(&self, work_a: BeId, work_b: BeId) -> Result<crate::edition::SharedMapping, ServerError> {
+        let ed_a = self.get_edition(work_a)?.ok_or(ServerError::WorkNotFound(work_a))?;
+        let ed_b = self.get_edition(work_b)?.ok_or(ServerError::WorkNotFound(work_b))?;
+        Ok(ed_a.content_map_shared_to(&ed_b))
+    }
+
+    pub fn content_map_shared_onto(&self, work_a: BeId, work_b: BeId) -> Result<crate::edition::SharedMapping, ServerError> {
+        let ed_a = self.get_edition(work_a)?.ok_or(ServerError::WorkNotFound(work_a))?;
+        let ed_b = self.get_edition(work_b)?.ok_or(ServerError::WorkNotFound(work_b))?;
+        Ok(ed_a.content_map_shared_onto(&ed_b))
+    }
+
+    pub fn positions_of(&self, work_id: BeId, element: &RangeElement) -> Result<XnRegion, ServerError> {
+        let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
+        Ok(edition.positions_of(element))
+    }
 }
 
 #[cfg(feature = "server")]
