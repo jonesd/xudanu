@@ -1447,6 +1447,29 @@ impl Server {
     pub fn identity_resolve(&self, id: u64) -> u64 {
         self.grand_map.resolve_identity(id)
     }
+
+    pub fn edition_retrieve(
+        &self,
+        work_id: BeId,
+        region: Option<&XnRegion>,
+        flags: crate::edition::RetrieveFlags,
+    ) -> Result<Vec<crate::edition::Bundle>, ServerError> {
+        let ws = self.works.get(&work_id)
+            .ok_or_else(|| ServerError::WorkNotFound(work_id))?;
+        let edition = ws.work.current_edition();
+        Ok(edition.retrieve(region, flags))
+    }
+
+    pub fn edition_cost(
+        &self,
+        work_id: BeId,
+        method: crate::edition::CostMethod,
+    ) -> Result<crate::edition::StorageCost, ServerError> {
+        let ws = self.works.get(&work_id)
+            .ok_or_else(|| ServerError::WorkNotFound(work_id))?;
+        let edition = ws.work.current_edition();
+        Ok(edition.cost(method))
+    }
 }
 
 #[cfg(feature = "server")]

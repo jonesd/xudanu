@@ -458,6 +458,40 @@ fn dispatch_inner(
             let resolved = srv.identity_resolve(id);
             Ok(ResponseValue::IdentityResolveResult { resolved_id: resolved })
         }
+        WireRequest::EditionRetrieve { work_id, region, flags } => {
+            use crate::edition::{RetrieveFlags, Bundle};
+            use super::protocol::{BundlePayload, RetrieveFlagsPayload};
+            let rf = match flags {
+                Some(f) => RetrieveFlags {
+                    ignore_total_ordering: f.ignore_total_ordering.unwrap_or(false),
+                    ignore_array_ordering: f.ignore_array_ordering.unwrap_or(false),
+                    separate_owners: f.separate_owners.unwrap_or(false),
+                },
+                None => RetrieveFlags::default(),
+            };
+            let bundles = srv.edition_retrieve(work_id, region.as_ref(), rf)?;
+            let payloads: Vec<BundlePayload> = bundles.iter()
+                .map(BundlePayload::from_bundle)
+                .collect();
+            Ok(ResponseValue::BundleResults { bundles: payloads })
+        }
+        WireRequest::EditionCost { work_id, method } => {
+            use crate::edition::CostMethod;
+            let cm = match method.as_deref() {
+                Some("omit_shared") => CostMethod::OmitShared,
+                Some("prorate_shared") => CostMethod::ProrateShared,
+                _ => CostMethod::TotalShared,
+            };
+            let cost = srv.edition_cost(work_id, cm)?;
+            Ok(ResponseValue::StorageCostResult {
+                total_bytes: cost.total_bytes,
+                unique_bytes: cost.unique_bytes,
+                shared_bytes: cost.shared_bytes,
+                share_count: cost.share_count,
+                billed_bytes: cost.billed_bytes(),
+                method: format!("{:?}", cm).to_lowercase(),
+            })
+        }
     }
 }
 

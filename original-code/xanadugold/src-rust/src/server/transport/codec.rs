@@ -894,6 +894,21 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::IdentityResolve { id: args.id })
             }
+            OperationCode::EditionRetrieve => {
+                use super::protocol::RetrieveFlagsPayload;
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, region: Option<XnRegion>, flags: Option<RetrieveFlagsPayload> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EditionRetrieve { work_id: args.work_id, region: args.region, flags: args.flags })
+            }
+            OperationCode::EditionCost => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, method: Option<String> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EditionCost { work_id: args.work_id, method: args.method })
+            }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }

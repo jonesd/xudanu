@@ -1,6 +1,7 @@
 pub mod backend;
 pub mod backfollow;
 pub mod blob_store;
+pub mod bundle;
 pub mod canopy;
 pub mod content_address;
 pub mod edition;
@@ -25,6 +26,10 @@ pub mod xn_region;
 pub use backend::{BeStorage, BeRangeElement, InMemoryBeStorage, BeId};
 pub use backfollow::{BackfollowEngine, EditionMeta};
 pub use blob_store::{BlobBackend, BlobStore, BlobMeta, BlobError, BlobBackendStats, MemoryBackend, FilesystemBackend, ImageOp, ImageOverlay, hash_content, u64_from_hash, base64_encode, base64_decode};
+pub use bundle::{
+    Bundle, CostMethod, StorageCost, RetrieveFlags,
+    retrieve_bundles, compute_storage_cost, element_byte_size,
+};
 pub use canopy::{BertCanopy, CanopyCrumData, CanopyCrumKind, SensorCanopy};
 pub use content_address::ContentAddressIndex;
 pub use edition::Edition;

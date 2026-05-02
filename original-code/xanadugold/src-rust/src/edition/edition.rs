@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use super::bundle::{
+    Bundle, CostMethod, RetrieveFlags, StorageCost,
+    retrieve_bundles, compute_storage_cost, element_byte_size, fingerprint_u64,
+};
 use super::orgl::OrglRoot;
 use super::range_element::{Carrier, RangeElement};
 use super::xn_region::XnRegion;
@@ -390,6 +394,40 @@ impl Edition {
             }
         }
         None
+    }
+
+    pub fn retrieve(&self, region: Option<&XnRegion>, flags: RetrieveFlags) -> Vec<Bundle> {
+        let entries = self.orgl.all_entries();
+        retrieve_bundles(&entries, region, flags)
+    }
+
+    pub fn cost(&self, method: CostMethod) -> StorageCost {
+        let entries = self.orgl.all_entries();
+        compute_storage_cost(&entries, &std::collections::HashMap::new(), method)
+    }
+
+    pub fn cost_with_shares(
+        &self,
+        content_share_counts: &std::collections::HashMap<u64, u64>,
+        method: CostMethod,
+    ) -> StorageCost {
+        let entries = self.orgl.all_entries();
+        compute_storage_cost(&entries, content_share_counts, method)
+    }
+
+    pub fn content_fingerprint_counts(&self) -> std::collections::HashMap<u64, u64> {
+        let entries = self.orgl.all_entries();
+        let mut counts = std::collections::HashMap::new();
+        for (_, carrier) in &entries {
+            let fp = fingerprint_u64(&carrier.element);
+            *counts.entry(fp).or_insert(0) += 1;
+        }
+        counts
+    }
+
+    pub fn total_byte_size(&self) -> u64 {
+        let entries = self.orgl.all_entries();
+        entries.iter().map(|(_, c)| element_byte_size(&c.element)).sum()
     }
 
     pub fn find_content_shared_regions(&self, other: &Edition, min_run: usize) -> Vec<(i64, i64, i64, i64, String)> {
