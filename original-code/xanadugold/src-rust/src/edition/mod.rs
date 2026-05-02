@@ -7,6 +7,7 @@ pub mod edition;
 pub mod endorsement;
 pub mod fetext;
 pub mod grandmap;
+pub mod label;
 pub mod links;
 pub mod mapping;
 #[cfg(feature = "serde")]
@@ -30,6 +31,12 @@ pub use edition::Edition;
 pub use endorsement::{Endorsement, EndorsementSet, EndorsementFilter, Endorseable, endorsements_from_ids, endorsement_ids_to_grandmap};
 pub use fetext::{FeText, FeTextError};
 pub use grandmap::{GrandMap, Id, IdSpace, IdSpaceId};
+pub use label::{
+    Label, LabelId, LabelledCarrier, LabelledEdition, RebindError,
+    ElementIdentity, IdentityMap,
+    can_make_identical, CanMakeIdenticalResult,
+    make_range_identical, MakeRangeIdenticalResult, MakeRangeIdenticalOutcome, MakeIdenticalError,
+};
 pub use links::{HyperLink, HyperRef, HyperRefKind, Path, FollowError, EditionResolver, HashMapResolver};
 pub use mapping::Mapping;
 pub use orgl::{OrglRoot, SplayResult};
