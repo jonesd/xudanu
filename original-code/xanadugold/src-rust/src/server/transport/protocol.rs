@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::edition::{BeId, Edition, RangeElement, XnRegion, ImageOp};
+use crate::edition::{BeId, Edition, RangeElement, XnRegion, ImageOp, Bundle, StorageCost, CostMethod};
 use crate::server::lock::LockCredential;
 
 pub const PROTOCOL_VERSION: u8 = 0x02;
@@ -158,6 +158,9 @@ pub enum OperationCode {
     MakeRangeIdentical,
     IdentityUnify,
     IdentityResolve,
+
+    EditionRetrieve,
+    EditionCost,
 }
 
 impl OperationCode {
@@ -247,6 +250,9 @@ impl OperationCode {
             0x0b06 => Some(OperationCode::MakeRangeIdentical),
             0x0b07 => Some(OperationCode::IdentityUnify),
             0x0b08 => Some(OperationCode::IdentityResolve),
+
+            0x0c01 => Some(OperationCode::EditionRetrieve),
+            0x0c02 => Some(OperationCode::EditionCost),
 
             _ => None,
         }
@@ -339,6 +345,9 @@ impl OperationCode {
             OperationCode::MakeRangeIdentical    => 0x0b06,
             OperationCode::IdentityUnify         => 0x0b07,
             OperationCode::IdentityResolve       => 0x0b08,
+
+            OperationCode::EditionRetrieve => 0x0c01,
+            OperationCode::EditionCost     => 0x0c02,
         }
     }
 }
@@ -475,6 +484,9 @@ pub enum WireRequest {
     MakeRangeIdentical { source_work_id: BeId, target_work_id: BeId, region: Option<XnRegion> },
     IdentityUnify { source_id: u64, target_id: u64 },
     IdentityResolve { id: u64 },
+
+    EditionRetrieve { work_id: BeId, region: Option<XnRegion>, flags: Option<RetrieveFlagsPayload> },
+    EditionCost { work_id: BeId, method: Option<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -566,6 +578,41 @@ pub enum ResponseValue {
     CanMakeIdenticalResult { result: String },
     MakeRangeIdenticalResult { outcome: String, failed_count: u64, failed: EditionPayload },
     IdentityResolveResult { resolved_id: u64 },
+    BundleResults { bundles: Vec<BundlePayload> },
+    StorageCostResult { total_bytes: u64, unique_bytes: u64, shared_bytes: u64, share_count: u64, billed_bytes: u64, method: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrieveFlagsPayload {
+    pub ignore_total_ordering: Option<bool>,
+    pub ignore_array_ordering: Option<bool>,
+    pub separate_owners: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum BundlePayload {
+    Element { region: XnRegion, element: RangeElement },
+    Array { region: XnRegion, elements: Vec<RangeElement> },
+    PlaceHolder { region: XnRegion },
+}
+
+impl BundlePayload {
+    pub fn from_bundle(bundle: &Bundle) -> Self {
+        match bundle {
+            Bundle::Element { region, element } => BundlePayload::Element {
+                region: region.clone(),
+                element: element.clone(),
+            },
+            Bundle::Array { region, elements } => BundlePayload::Array {
+                region: region.clone(),
+                elements: elements.clone(),
+            },
+            Bundle::PlaceHolder { region } => BundlePayload::PlaceHolder {
+                region: region.clone(),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

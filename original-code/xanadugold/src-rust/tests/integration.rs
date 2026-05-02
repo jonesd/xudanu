@@ -1825,5 +1825,134 @@ async fn edition_rebind_after_grab() {
             "new_edition": {"text": "Xbc"}
         })))).await;
     assert_eq!(resp["type"], "response");
+    assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "edition");
+}
+
+#[tokio::test]
+async fn edition_retrieve_text_work() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "hello"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "edition_retrieve", Some(serde_json::json!({
+            "work_id": work_id
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let bundles = resp["value"]["value"]["bundles"].as_array().unwrap();
+    assert!(!bundles.is_empty());
+    assert_eq!(bundles[0]["type"].as_str().unwrap(), "array");
+    let elements = bundles[0]["elements"].as_array().unwrap();
+    assert_eq!(elements.len(), 5);
+    assert_eq!(elements[0]["Text"]["text"].as_str().unwrap(), "h");
+}
+
+#[tokio::test]
+async fn edition_retrieve_with_region() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abcdef"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "edition_retrieve", Some(serde_json::json!({
+            "work_id": work_id,
+            "region": {"starts_inside": false, "transitions": [2, 5]}
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let bundles = resp["value"]["value"]["bundles"].as_array().unwrap();
+    assert!(!bundles.is_empty());
+    let elements = bundles[0]["elements"].as_array().unwrap();
+    assert_eq!(elements.len(), 3);
+    assert_eq!(elements[0]["Text"]["text"].as_str().unwrap(), "c");
+    assert_eq!(elements[1]["Text"]["text"].as_str().unwrap(), "d");
+    assert_eq!(elements[2]["Text"]["text"].as_str().unwrap(), "e");
+}
+
+#[tokio::test]
+async fn edition_retrieve_empty_work() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": ""}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "edition_retrieve", Some(serde_json::json!({
+            "work_id": work_id
+        })))).await;
+    assert_eq!(resp["type"], "response");
+}
+
+#[tokio::test]
+async fn edition_cost_text_work() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "hello world"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "edition_cost", Some(serde_json::json!({
+            "work_id": work_id,
+            "method": "total_shared"
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert!(resp["value"]["value"]["total_bytes"].as_u64().unwrap() > 0);
+    assert_eq!(resp["value"]["value"]["method"].as_str().unwrap(), "totalshared");
+}
+
+#[tokio::test]
+async fn edition_cost_omit_shared() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "test"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "edition_cost", Some(serde_json::json!({
+            "work_id": work_id,
+            "method": "omit_shared"
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let billed = resp["value"]["value"]["billed_bytes"].as_u64().unwrap();
+    assert!(billed > 0);
+}
+
+#[tokio::test]
+async fn edition_retrieve_not_found() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "edition_retrieve", Some(serde_json::json!({
+            "work_id": 99999
+        })))).await;
+    assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn edition_cost_not_found() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "edition_cost", Some(serde_json::json!({
+            "work_id": 99999
+        })))).await;
+    assert_eq!(resp["type"], "error");
 }
