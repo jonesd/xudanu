@@ -428,6 +428,7 @@ impl Server {
         self.transclusion_index.register_work(&edition, &work_elem);
         let work = Work::new_with_owner(be_id, owner, edition);
         self.backfollow.register_work(work, be_id, None);
+        self.auto_checkpoint();
 
         Ok(be_id)
     }
@@ -482,6 +483,7 @@ impl Server {
         self.transclusion_index.register_work(&updated_edition, &work_elem);
         let updated_work = Work::new_with_owner(work_be_id, ws.work.owner(), updated_edition);
         self.backfollow.update_work(work_be_id, updated_work);
+        self.auto_checkpoint();
 
         Ok(revision)
     }
@@ -905,7 +907,7 @@ impl Server {
 
     pub fn bump_operation(&mut self) -> u64 {
         self.operation_counter += 1;
-        if self.operation_counter % 50 == 0 {
+        if self.operation_counter % 10 == 0 {
             self.auto_checkpoint();
         }
         self.operation_counter
@@ -1550,7 +1552,9 @@ mod persist_snapshot {
             let snapshot = self.to_snapshot();
             let json = serde_json::to_string_pretty(&snapshot)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-            std::fs::write(path, json.as_bytes())
+            let tmp_path = path.with_extension("tmp");
+            std::fs::write(&tmp_path, json.as_bytes())?;
+            std::fs::rename(&tmp_path, path)
         }
 
         pub fn restore_from_file(path: &std::path::Path) -> std::io::Result<Self> {

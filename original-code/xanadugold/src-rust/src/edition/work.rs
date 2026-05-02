@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use super::backend::BeId;
 use super::edition::Edition;
+use super::endorsement::EndorsementSet;
 
 #[derive(Debug, Clone)]
 pub struct Work {
@@ -13,6 +14,7 @@ pub struct Work {
     read_club: Option<BeId>,
     edit_club: Option<BeId>,
     sponsors: Vec<BeId>,
+    endorsements: EndorsementSet,
 }
 
 impl Work {
@@ -26,6 +28,7 @@ impl Work {
             read_club: None,
             edit_club: None,
             sponsors: Vec::new(),
+            endorsements: EndorsementSet::new(),
         }
     }
 
@@ -39,6 +42,7 @@ impl Work {
             read_club: None,
             edit_club: None,
             sponsors: Vec::new(),
+            endorsements: EndorsementSet::new(),
         }
     }
 
@@ -82,6 +86,16 @@ impl Work {
         self.current_edition = new_edition;
     }
 
+    pub fn try_revise(&mut self, new_edition: Edition) -> Result<(), super::snapshot::SnapshotError> {
+        if self.edit_club == Some(0) {
+            return Err(super::snapshot::SnapshotError::CannotEditFrozen {
+                work_id: self.be_id,
+            });
+        }
+        self.revise(new_edition);
+        Ok(())
+    }
+
     pub fn fetch_revision(&self, number: u64) -> Option<&Edition> {
         if number == self.revision_count {
             return Some(&self.current_edition);
@@ -122,6 +136,18 @@ impl Work {
     pub fn set_revision_history(&mut self, count: u64, history: BTreeMap<u64, Edition>) {
         self.revision_count = count;
         self.revision_history = history;
+    }
+
+    pub fn endorsements(&self) -> &EndorsementSet {
+        &self.endorsements
+    }
+
+    pub fn endorse(&mut self, additional: &EndorsementSet) {
+        self.endorsements = self.endorsements.union(additional);
+    }
+
+    pub fn retract(&mut self, removed: &EndorsementSet) {
+        self.endorsements = self.endorsements.difference(removed);
     }
 }
 
@@ -249,5 +275,21 @@ mod tests {
             work.fetch_revision(50).unwrap().fetch(50).unwrap().as_text().unwrap(),
             "v50"
         );
+    }
+
+    #[test]
+    fn work_try_revise_normal() {
+        let mut work = Work::new(1, Edition::from_text("v0"));
+        work.try_revise(Edition::from_text("v1")).unwrap();
+        assert_eq!(work.edition().to_text(), "v1");
+    }
+
+    #[test]
+    fn work_try_revise_frozen_rejected() {
+        let mut work = Work::new(1, Edition::from_text("v0"));
+        work.set_edit_club(Some(0));
+        let result = work.try_revise(Edition::from_text("v1"));
+        assert!(result.is_err());
+        assert_eq!(work.edition().to_text(), "v0");
     }
 }

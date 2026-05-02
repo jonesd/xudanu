@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
 use crate::edition::BeId;
+use super::club::Club;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct KeyMaster {
@@ -10,8 +12,7 @@ pub struct KeyMaster {
 
 impl KeyMaster {
     pub fn make(club_id: BeId) -> Self {
-        let mut login = HashSet::new();
-        login.insert(club_id);
+        let login: HashSet<BeId> = [club_id].into_iter().collect();
         let actual = login.clone();
         KeyMaster {
             login_authority: login,
@@ -63,14 +64,59 @@ impl KeyMaster {
         self.actual_authority = self.login_authority.clone();
     }
 
-    pub fn has_signature_authority(&self, club_id: BeId) -> bool {
-        self.actual_authority.contains(&club_id)
+    pub fn has_signature_authority(
+        &self,
+        club_id: BeId,
+        all_clubs: &HashMap<BeId, Club>,
+    ) -> bool {
+        if let Some(club) = all_clubs.get(&club_id) {
+            if let Some(sig_club) = club.signature_club() {
+                return self.has_authority(sig_club);
+            }
+        }
+        false
+    }
+
+    pub fn update_authority(
+        &mut self,
+        all_clubs: &HashMap<BeId, Club>,
+    ) {
+        self.actual_authority = HashSet::new();
+        for login_id in &self.login_authority {
+            if let Some(club) = all_clubs.get(login_id) {
+                let supers = club.transitive_super_club_ids(all_clubs);
+                self.actual_authority.extend(supers);
+            } else {
+                self.actual_authority.insert(*login_id);
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::edition::Edition;
+    use crate::server::club::Club;
+    use std::collections::HashMap;
+
+    fn make_club_hierarchy() -> HashMap<BeId, Club> {
+        let mut clubs = HashMap::new();
+        let mut root = Club::new_with_owner(1, Some(1), Edition::from_text("root"));
+        let mut admin = Club::new_with_owner(2, Some(1), Edition::from_text("admin"));
+        let user = Club::new_with_owner(3, Some(2), Edition::from_text("user"));
+
+        root.add_member(2);
+        root.add_member(3);
+        admin.add_member(4u64);
+
+        clubs.insert(1, root);
+        clubs.insert(2, admin);
+        clubs.insert(3, user);
+        let guest = Club::new_with_owner(4, Some(3), Edition::from_text("guest"));
+        clubs.insert(4, guest);
+        clubs
+    }
 
     #[test]
     fn make_single_club() {
@@ -118,5 +164,23 @@ mod tests {
     fn make_public() {
         let km = KeyMaster::make_public();
         assert!(km.has_authority(0));
+    }
+
+    #[test]
+    fn update_authority_with_hierarchy() {
+        let clubs = make_club_hierarchy();
+        let mut km = KeyMaster::make(4);
+        km.update_authority(&clubs);
+        assert!(km.has_authority(4));
+        assert!(km.has_authority(2));
+        assert!(km.has_authority(1));
+    }
+
+    #[test]
+    fn signature_authority_check() {
+        let clubs = make_club_hierarchy();
+        let km = KeyMaster::make(1);
+        assert!(km.has_signature_authority(2, &clubs));
+        assert!(!km.has_signature_authority(4, &clubs));
     }
 }

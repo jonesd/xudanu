@@ -114,6 +114,14 @@ textarea.editor-content:focus{outline:none}
 .overlay-panel .ctrl-row button.active{background:var(--accent);color:var(--bg)}
 .overlay-panel .apply-btn{width:100%;background:var(--green);color:var(--bg);border:none;padding:6px;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;margin-top:4px}
 .overlay-panel .apply-btn:hover{opacity:.85}
+.img-link-section{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
+.img-link-section h4{margin:0 0 4px 0;font-size:11px;color:var(--fg2)}
+.img-link-section select{width:100%;margin-bottom:4px}
+.img-link-section button{background:var(--bg3);color:var(--fg);border:none;padding:3px 8px;border-radius:var(--radius);cursor:pointer;font-size:11px;width:100%}
+.img-link-section button:disabled{opacity:.4}
+.doc-image-wrapper{position:relative;display:inline-block}
+.img-link-badge{position:absolute;top:4px;right:4px;background:var(--accent);color:var(--bg);font-size:9px;padding:1px 4px;border-radius:var(--radius);cursor:pointer;font-weight:600;z-index:2}
+.img-link-badge:hover{opacity:.8}
 .overlay-panel .close-btn{position:absolute;top:6px;right:8px;background:none;border:none;color:var(--fg3);cursor:pointer;font-size:14px;padding:2px}
 .overlay-panel .close-btn:hover{color:var(--fg)}
 .overlay-panel .preview-img{width:100%;border-radius:4px;margin-bottom:8px;border:1px solid var(--border)}
@@ -252,30 +260,49 @@ function decodeOps(str) {
   }).filter(Boolean);
 }
 
-function renderImageMarkers(html, selectedHash) {
+function renderImageMarkers(html, selectedHash, linkList) {
+  function linkedDocForHash(hash) {
+    if (!linkList || !linkList.length) return null;
+    for (var i = 0; i < linkList.length; i++) {
+      var lnk = linkList[i];
+      var exc = lnk.origin_ref && lnk.origin_ref.excerpt;
+      if (exc && exc.indexOf(hash) >= 0) {
+        return lnk.destination;
+      }
+      exc = lnk.destination_ref && lnk.destination_ref.excerpt;
+      if (exc && exc.indexOf(hash) >= 0) {
+        return lnk.origin;
+      }
+    }
+    return null;
+  }
   html = html.replace(/\[overlay:([0-9a-f]{16}):([a-z0-9.,x]+):([a-zA-Z0-9/+-]+)\]/g, function(m, hash, opsStr, mime) {
     var ops = decodeOps(opsStr);
     var style = opsToCssFilter(ops);
     var src = '/blobs/' + hash;
     var selCls = (hash === selectedHash) ? ' selected' : '';
     var styleStr = Object.entries(style).map(function(e){return e[0]+':'+e[1]}).join(';');
+    var linked = linkedDocForHash(hash);
     if (mime.indexOf('image/') === 0) {
-      return '<img class="doc-image' + selCls + '" src="' + src + '" alt="overlay:' + hash + '" loading="lazy" data-blob-hash="' + hash + '" data-overlay-ops="' + opsStr + '" style="' + styleStr + '">';
+      var badge = linked ? '<span class="img-link-badge" data-link-to="'+linked+'">\u2192 '+linked+'</span>' : '';
+      return '<span class="doc-image-wrapper"><img class="doc-image' + selCls + '" src="' + src + '" alt="overlay:' + hash + '" loading="lazy" data-blob-hash="' + hash + '" data-overlay-ops="' + opsStr + '" style="' + styleStr + '">' + badge + '</span>';
     }
     return '<a class="doc-image-link" href="' + src + '" target="_blank">Overlay ' + hash + '</a>';
   });
   return html.replace(/\[img:([0-9a-f]{16}):([a-zA-Z0-9/+-]+)\]/g, function(m, hash, mime) {
     var src = '/blobs/' + hash;
     var selCls = (hash === selectedHash) ? ' selected' : '';
+    var linked = linkedDocForHash(hash);
     if (mime.indexOf('image/') === 0) {
-      return '<img class="doc-image' + selCls + '" src="' + src + '" alt="blob:' + hash + '" loading="lazy" data-blob-hash="' + hash + '">';
+      var badge = linked ? '<span class="img-link-badge" data-link-to="'+linked+'">\u2192 '+linked+'</span>' : '';
+      return '<span class="doc-image-wrapper"><img class="doc-image' + selCls + '" src="' + src + '" alt="blob:' + hash + '" loading="lazy" data-blob-hash="' + hash + '">' + badge + '</span>';
     }
     return '<a class="doc-image-link" href="' + src + '" target="_blank">Attachment ' + hash + ' (' + mime + ')</a>';
   });
 }
 
-function renderContent(text, selectedHash) {
-  return renderImageMarkers(escapeHtml(text), selectedHash || null);
+function renderContent(text, selectedHash, linkList) {
+  return renderImageMarkers(escapeHtml(text), selectedHash || null, linkList);
 }
 
     function blobUpload(wsRef, req, currentWorkId, currentRev, lastSavedRef, toast, editorRef) {
@@ -1212,6 +1239,11 @@ function App() {
               return;
             }
             var img = e.target.closest('.doc-image');
+            var linkBadge = e.target.closest('.img-link-badge');
+            if (linkBadge && linkBadge.dataset.linkTo) {
+              showWork(parseInt(linkBadge.dataset.linkTo));
+              return;
+            }
             if (img && img.dataset.blobHash && !isEditing) {
               setSelectedImg(img.dataset.blobHash);
               if (img.dataset.overlayOps) {
@@ -1248,7 +1280,28 @@ function App() {
               h('button', {className:hasOp({FlipVertical:true})?'active':'', onClick:function(){toggleOp({FlipVertical:true})}}, 'Flip V'),
               h('button', {className:hasOp({Rotate:90})?'active':'', onClick:function(){toggleOp({Rotate:90})}}, 'Rotate 90')
             ),
-            h('button', {className:'apply-btn', disabled:!overlayOps.length, onClick:function(){applyOverlay()}}, 'Apply Overlay')
+            h('button', {className:'apply-btn', disabled:!overlayOps.length, onClick:function(){applyOverlay()}}, 'Apply Overlay'),
+            h('div', {className:'img-link-section'},
+              h('h4', null, 'Link Image'),
+              h('select', {
+                value: linkTargetId,
+                onChange: function(e){setLinkTargetId(e.target.value)}
+              },
+                h('option', {value:''}, '\u2014 link to document \u2014'),
+                works.filter(function(w){ return w.work_id !== currentWorkId; }).map(function(w){
+                  return h('option', {key: w.work_id, value: String(w.work_id)},
+                    w.work_id + (w.title ? ' (' + (w.title.length > 30 ? w.title.slice(0,30)+'...' : w.title) + ')' : '')
+                  );
+                })
+              ),
+              h('button', {
+                disabled: !linkTargetId || !currentWorkId,
+                onClick: function(){
+                  req('link_create', {origin: currentWorkId, destination: parseInt(linkTargetId), origin_ref: {kind:'single', work_context: currentWorkId, excerpt: '[img:'+selectedImg+':image/png]'}, destination_ref: null});
+                  setLinkTargetId('');
+                }
+              }, 'Link')
+            )
           ) : null,
           splitMode ? h(Fragment, null,
             h('div', {className:'editor-pane-wrap', ref: leftWrapRef, style:{position:'relative'}},
@@ -1307,7 +1360,7 @@ function App() {
                     ref: editorRef,
                     className: 'editor-content',
                     onMouseUp: handleSelectionCheck,
-                    dangerouslySetInnerHTML: {__html: renderContent(currentText, selectedImg)}
+                    dangerouslySetInnerHTML: {__html: renderContent(currentText, selectedImg, links)}
                   }),
             showFindRefs && currentWorkId ? h('div', {
               className: 'find-refs-popup',

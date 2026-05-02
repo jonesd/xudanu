@@ -1,6 +1,76 @@
 use std::collections::HashMap;
 use super::edition::Edition;
 use super::range_element::RangeElement;
+use super::xn_region::XnRegion;
+
+pub trait EditionResolver: std::fmt::Debug {
+    fn resolve_edition(&self, edition_id: u64) -> Option<Edition>;
+}
+
+#[derive(Debug, Clone)]
+pub struct HashMapResolver {
+    editions: HashMap<u64, Edition>,
+}
+
+impl HashMapResolver {
+    pub fn new() -> Self {
+        HashMapResolver {
+            editions: HashMap::new(),
+        }
+    }
+
+    pub fn with(mut self, edition_id: u64, edition: Edition) -> Self {
+        self.editions.insert(edition_id, edition);
+        self
+    }
+
+    pub fn insert(&mut self, edition_id: u64, edition: Edition) {
+        self.editions.insert(edition_id, edition);
+    }
+}
+
+impl Default for HashMapResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EditionResolver for HashMapResolver {
+    fn resolve_edition(&self, edition_id: u64) -> Option<Edition> {
+        self.editions.get(&edition_id).cloned()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FollowError {
+    EmptyPath,
+    LabelNotFound { step: usize, label_id: u64 },
+    MultiplePositions { step: usize, label_id: u64, count: usize },
+    EditionNotFound { step: usize, edition_id: u64 },
+    UnexpectedType { step: usize, position: i64 },
+}
+
+impl std::fmt::Display for FollowError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FollowError::EmptyPath => write!(f, "cannot follow empty path"),
+            FollowError::LabelNotFound { step, label_id } => {
+                write!(f, "step {}: label {} not found", step, label_id)
+            }
+            FollowError::MultiplePositions { step, label_id, count } => {
+                write!(f, "step {}: label {} found at {} positions (expected exactly one)", step, label_id, count)
+            }
+            FollowError::EditionNotFound { step, edition_id } => {
+                write!(f, "step {}: nested edition {} could not be resolved", step, edition_id)
+            }
+            FollowError::UnexpectedType { step, position } => {
+                write!(f, "step {}: unexpected element type at position {}", step, position)
+            }
+        }
+    }
+}
+
+impl std::error::Error for FollowError {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Path {
@@ -35,20 +105,144 @@ impl Path {
     }
 
     pub fn follow(&self, edition: &Edition) -> Option<RangeElement> {
+        self.follow_with_resolver(edition, &HashMapResolver::new()).ok()
+    }
+
+    pub fn follow_with_resolver(
+        &self,
+        edition: &Edition,
+        resolver: &dyn EditionResolver,
+    ) -> Result<RangeElement, FollowError> {
         if self.labels.is_empty() {
-            return None;
+            return Err(FollowError::EmptyPath);
         }
-        let entries = edition.all_entries();
-        let label = &self.labels[0];
-        for (_, carrier) in &entries {
-            if carrier.element == *label {
-                if let Some(inner) = carrier.element.as_label_inner() {
-                    return Some(inner.clone());
+
+        let mut current_entries = edition.all_entries();
+
+        for (step, label) in self.labels.iter().enumerate() {
+            let label_id = match label.label_id_value() {
+                Some(id) => id,
+                None => {
+                    let mut found = None;
+                    for (pos, carrier) in &current_entries {
+                        if carrier.element == *label {
+                            if let Some(inner) = carrier.element.as_label_inner() {
+                                found = Some((*pos, inner.clone()));
+                            } else {
+                                found = Some((*pos, carrier.element.clone()));
+                            }
+                            break;
+                        }
+                    }
+                    match found {
+                        Some((found_pos, ref elem)) => {
+                            if step == self.labels.len() - 1 {
+                                return Ok(elem.clone());
+                            }
+                            return Err(FollowError::UnexpectedType {
+                                step,
+                                position: found_pos,
+                            });
+                        }
+                        None => {
+                            return Err(FollowError::LabelNotFound {
+                                step,
+                                label_id: 0,
+                            });
+                        }
+                    }
                 }
-                return Some(carrier.element.clone());
+            };
+
+            let matching: Vec<(i64, RangeElement)> = current_entries
+                .iter()
+                .filter_map(|(pos, carrier)| {
+                    if carrier.element.label_id_value() == Some(label_id) {
+                        let inner = carrier
+                            .element
+                            .as_label_inner()
+                            .cloned()
+                            .unwrap_or_else(|| carrier.element.clone());
+                        Some((*pos, inner))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if matching.is_empty() {
+                return Err(FollowError::LabelNotFound { step, label_id });
+            }
+            if matching.len() > 1 {
+                return Err(FollowError::MultiplePositions {
+                    step,
+                    label_id,
+                    count: matching.len(),
+                });
+            }
+
+            let (_pos, element) = matching.into_iter().next().unwrap();
+
+            if step == self.labels.len() - 1 {
+                return Ok(element);
+            }
+
+            match &element {
+                RangeElement::Edition { edition_id } => {
+                    let nested_edition = resolver
+                        .resolve_edition(edition_id.0)
+                        .ok_or(FollowError::EditionNotFound {
+                            step,
+                            edition_id: edition_id.0,
+                        })?;
+                    current_entries = nested_edition.all_entries();
+                }
+                RangeElement::Label { inner, .. } => {
+                    if let RangeElement::Edition { edition_id } = inner.as_ref() {
+                        let nested_edition = resolver
+                            .resolve_edition(edition_id.0)
+                            .ok_or(FollowError::EditionNotFound {
+                                step,
+                                edition_id: edition_id.0,
+                            })?;
+                        current_entries = nested_edition.all_entries();
+                    } else {
+                        return Ok(element);
+                    }
+                }
+                _ => {
+                    return Err(FollowError::UnexpectedType {
+                        step,
+                        position: _pos,
+                    });
+                }
             }
         }
-        None
+
+        Err(FollowError::EmptyPath)
+    }
+
+    pub fn follow_region(&self, edition: &Edition) -> XnRegion {
+        if self.labels.is_empty() {
+            return XnRegion::empty();
+        }
+
+        let label = &self.labels[0];
+        let label_id = match label.label_id_value() {
+            Some(id) => id,
+            None => {
+                let entries = edition.all_entries();
+                let mut region = XnRegion::empty();
+                for (pos, carrier) in &entries {
+                    if carrier.element == *label {
+                        region = region.with(*pos);
+                    }
+                }
+                return region;
+            }
+        };
+
+        edition.positions_labelled(label_id)
     }
 }
 
@@ -734,5 +928,189 @@ mod tests {
         let path = Path::new(vec![RangeElement::text("hello")]);
         let result = path.follow(&edition);
         assert!(result.is_some());
+    }
+
+    #[test]
+    fn path_follow_with_resolver_multi_step() {
+        let inner_edition = Edition::from_text_elements(&[
+            RangeElement::text("prefix"),
+            RangeElement::label(2, RangeElement::text("deep_value")),
+            RangeElement::text("suffix"),
+        ]);
+        let resolver = HashMapResolver::new().with(100, inner_edition);
+
+        let outer_edition = Edition::from_text_elements(&[
+            RangeElement::label(1, RangeElement::edition(100)),
+            RangeElement::text("other"),
+        ]);
+        let path = Path::new(vec![
+            RangeElement::label(1, RangeElement::edition(100)),
+            RangeElement::label(2, RangeElement::text("deep_value")),
+        ]);
+        let result = path.follow_with_resolver(&outer_edition, &resolver).unwrap();
+        assert_eq!(result.as_text(), Some("deep_value"));
+    }
+
+    #[test]
+    fn path_follow_with_resolver_missing_edition() {
+        let outer_edition = Edition::from_text_elements(&[
+            RangeElement::label(1, RangeElement::edition(999)),
+        ]);
+        let resolver = HashMapResolver::new();
+        let path = Path::new(vec![
+            RangeElement::label(1, RangeElement::edition(999)),
+            RangeElement::label(2, RangeElement::text("x")),
+        ]);
+        let err = path.follow_with_resolver(&outer_edition, &resolver).unwrap_err();
+        match err {
+            FollowError::EditionNotFound { edition_id, .. } => assert_eq!(edition_id, 999),
+            e => panic!("expected EditionNotFound, got: {}", e),
+        }
+    }
+
+    #[test]
+    fn path_follow_label_not_found() {
+        let edition = Edition::from_text_elements(&[
+            RangeElement::label(1, RangeElement::text("x")),
+        ]);
+        let path = Path::new(vec![RangeElement::label(99, RangeElement::text("y"))]);
+        let err = path.follow_with_resolver(&edition, &HashMapResolver::new()).unwrap_err();
+        match err {
+            FollowError::LabelNotFound { label_id, .. } => assert_eq!(label_id, 99),
+            e => panic!("expected LabelNotFound, got: {}", e),
+        }
+    }
+
+    #[test]
+    fn path_follow_multiple_positions_error() {
+        let edition = Edition::from_text_elements(&[
+            RangeElement::label(1, RangeElement::text("a")),
+            RangeElement::label(1, RangeElement::text("b")),
+        ]);
+        let path = Path::new(vec![RangeElement::label(1, RangeElement::text("a"))]);
+        let err = path.follow_with_resolver(&edition, &HashMapResolver::new()).unwrap_err();
+        match err {
+            FollowError::MultiplePositions { label_id, count, .. } => {
+                assert_eq!(label_id, 1);
+                assert_eq!(count, 2);
+            }
+            e => panic!("expected MultiplePositions, got: {}", e),
+        }
+    }
+
+    #[test]
+    fn path_follow_deeply_nested() {
+        let leaf = Edition::from_text_elements(&[
+            RangeElement::label(3, RangeElement::text("leaf")),
+        ]);
+        let mid = Edition::from_text_elements(&[
+            RangeElement::label(2, RangeElement::edition(200)),
+        ]);
+        let resolver = HashMapResolver::new()
+            .with(100, mid)
+            .with(200, leaf);
+
+        let root = Edition::from_text_elements(&[
+            RangeElement::label(1, RangeElement::edition(100)),
+        ]);
+        let path = Path::new(vec![
+            RangeElement::label(1, RangeElement::edition(100)),
+            RangeElement::label(2, RangeElement::edition(200)),
+            RangeElement::label(3, RangeElement::text("leaf")),
+        ]);
+        let result = path.follow_with_resolver(&root, &resolver).unwrap();
+        assert_eq!(result.as_text(), Some("leaf"));
+    }
+
+    #[test]
+    fn path_follow_single_label_returns_inner() {
+        let edition = Edition::from_text_elements(&[
+            RangeElement::label(42, RangeElement::text("found")),
+        ]);
+        let path = Path::new(vec![RangeElement::label(42, RangeElement::text("found"))]);
+        let result = path.follow(&edition).unwrap();
+        assert_eq!(result.as_text(), Some("found"));
+    }
+
+    #[test]
+    fn path_follow_resolves_label_with_edition_inner() {
+        let inner = Edition::from_text("inner content");
+        let resolver = HashMapResolver::new().with(50, inner);
+
+        let outer = Edition::from_text_elements(&[
+            RangeElement::label(1, RangeElement::edition(50)),
+        ]);
+        let path = Path::new(vec![
+            RangeElement::label(1, RangeElement::edition(50)),
+        ]);
+        let result = path.follow_with_resolver(&outer, &resolver).unwrap();
+        assert_eq!(result.as_edition_id(), Some(50));
+    }
+
+    #[test]
+    fn path_follow_region_returns_positions() {
+        use crate::edition::xn_region::XnRegion;
+        let edition = Edition::from_text_elements(&[
+            RangeElement::label(1, RangeElement::text("a")),
+            RangeElement::text("middle"),
+            RangeElement::label(1, RangeElement::text("b")),
+        ]);
+        let path = Path::new(vec![RangeElement::label(1, RangeElement::text("a"))]);
+        let region = path.follow_region(&edition);
+        assert!(region.contains(0));
+        assert!(!region.contains(1));
+        assert!(region.contains(2));
+    }
+
+    #[test]
+    fn path_follow_region_empty_for_no_match() {
+        let edition = Edition::from_text("hello");
+        let path = Path::new(vec![RangeElement::label(99, RangeElement::text("x"))]);
+        let region = path.follow_region(&edition);
+        assert!(region.is_empty());
+    }
+
+    #[test]
+    fn path_follow_returns_edition_element_when_not_last_step_cant_resolve() {
+        let outer = Edition::from_text_elements(&[
+            RangeElement::label(1, RangeElement::edition(42)),
+        ]);
+        let path = Path::new(vec![
+            RangeElement::label(1, RangeElement::edition(42)),
+            RangeElement::label(2, RangeElement::text("x")),
+        ]);
+        let resolver = HashMapResolver::new();
+        let err = path.follow_with_resolver(&outer, &resolver).unwrap_err();
+        assert!(matches!(err, FollowError::EditionNotFound { edition_id: 42, .. }));
+    }
+
+    #[test]
+    fn follow_error_display() {
+        let err = FollowError::LabelNotFound { step: 2, label_id: 5 };
+        assert!(err.to_string().contains("step 2"));
+        assert!(err.to_string().contains("5"));
+
+        let err = FollowError::MultiplePositions { step: 0, label_id: 1, count: 3 };
+        assert!(err.to_string().contains("3 positions"));
+
+        let err = FollowError::EditionNotFound { step: 1, edition_id: 99 };
+        assert!(err.to_string().contains("99"));
+
+        let err = FollowError::EmptyPath;
+        assert!(err.to_string().contains("empty"));
+    }
+
+    #[test]
+    fn hash_map_resolver_default() {
+        let resolver = HashMapResolver::default();
+        assert!(resolver.resolve_edition(0).is_none());
+    }
+
+    #[test]
+    fn hash_map_resolver_insert() {
+        let mut resolver = HashMapResolver::new();
+        resolver.insert(1, Edition::from_text("a"));
+        assert!(resolver.resolve_edition(1).is_some());
+        assert!(resolver.resolve_edition(2).is_none());
     }
 }
