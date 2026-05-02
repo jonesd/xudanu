@@ -2293,3 +2293,126 @@ async fn transclusion_depth_not_found() {
         })))).await;
     assert_eq!(resp["type"], "error");
 }
+
+#[tokio::test]
+async fn admin_recorder_create_and_list() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "admin_recorder_create", Some(serde_json::json!({
+            "kind": "transcluders",
+            "direct_only": true
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let recorder_id = resp["value"]["value"]["recorder_id"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "admin_recorder_create", Some(serde_json::json!({
+            "kind": "works"
+        })))).await;
+    assert_eq!(resp["type"], "response");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "admin_recorder_list", None)).await;
+    assert_eq!(resp["type"], "response");
+    let recorders = resp["value"]["value"]["recorders"].as_array().unwrap();
+    assert!(recorders.len() >= 2);
+    let first = &recorders[0];
+    assert_eq!(first["id"].as_u64().unwrap(), recorder_id);
+    assert_eq!(first["kind"], "transcluders");
+    assert_eq!(first["direct_only"], true);
+}
+
+#[tokio::test]
+async fn admin_recorder_record_and_get() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "admin_recorder_create", Some(serde_json::json!({
+            "kind": "transcluders"
+        })))).await;
+    let recorder_id = resp["value"]["value"]["recorder_id"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "admin_recorder_record", Some(serde_json::json!({
+            "recorder_id": recorder_id,
+            "element": {"Edition": {"edition_id": 42}}
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["recorded"], true);
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "admin_recorder_get", Some(serde_json::json!({
+            "recorder_id": recorder_id
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let info = &resp["value"]["value"]["recorder"];
+    assert_eq!(info["id"].as_u64().unwrap(), recorder_id);
+    assert_eq!(info["result_count"].as_u64().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn admin_recorder_record_wrong_kind() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "admin_recorder_create", Some(serde_json::json!({
+            "kind": "works"
+        })))).await;
+    let recorder_id = resp["value"]["value"]["recorder_id"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "admin_recorder_record", Some(serde_json::json!({
+            "recorder_id": recorder_id,
+            "element": {"Edition": {"edition_id": 42}}
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["recorded"], false);
+}
+
+#[tokio::test]
+async fn admin_server_health() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "admin_server_health", None)).await;
+    assert_eq!(resp["type"], "response");
+    let health = &resp["value"]["value"];
+    assert!(health["operation_count"].as_u64().unwrap() > 0);
+    assert!(health["uptime_secs"].as_u64().is_some());
+    assert!(health["active_recorders"].as_u64().is_some());
+    assert!(health["total_recorded"].as_u64().is_some());
+    assert!(health["blob_count"].as_u64().is_some());
+    assert!(health["link_count"].as_u64().is_some());
+}
+
+#[tokio::test]
+async fn admin_recorder_not_found() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "admin_recorder_get", Some(serde_json::json!({
+            "recorder_id": 99999
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert!(resp["value"]["value"]["recorder"].is_null());
+}
+
+#[tokio::test]
+async fn admin_recorder_record_not_found() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "admin_recorder_record", Some(serde_json::json!({
+            "recorder_id": 99999,
+            "element": {"Edition": {"edition_id": 1}}
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["recorded"], false);
+}

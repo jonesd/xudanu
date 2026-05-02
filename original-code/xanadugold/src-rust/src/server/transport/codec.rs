@@ -435,6 +435,8 @@ impl JsonCodec {
             OperationCode::WorkList,
             OperationCode::BlobStats,
             OperationCode::LabelCreate,
+            OperationCode::AdminRecorderList,
+            OperationCode::AdminServerHealth,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -451,6 +453,8 @@ impl JsonCodec {
                 OperationCode::WorkList => Ok(WireRequest::WorkList),
                 OperationCode::BlobStats => Ok(WireRequest::BlobStats),
                 OperationCode::LabelCreate => Ok(WireRequest::LabelCreate),
+                OperationCode::AdminRecorderList => Ok(WireRequest::AdminRecorderList),
+                OperationCode::AdminServerHealth => Ok(WireRequest::AdminServerHealth),
                 _ => unreachable!(),
             };
         }
@@ -964,6 +968,33 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::TransclusionDepth { work_id: args.work_id, position: args.position, max_depth: args.max_depth })
+            }
+            OperationCode::AdminRecorderCreate => {
+                #[derive(Deserialize)]
+                struct Args { kind: String, direct_only: Option<bool>, region: Option<XnRegion> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AdminRecorderCreate { kind: args.kind, direct_only: args.direct_only, region: args.region })
+            }
+            OperationCode::AdminRecorderRecord => {
+                #[derive(Deserialize)]
+                struct Args { recorder_id: u64, element: RangeElement }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AdminRecorderRecord { recorder_id: args.recorder_id, element: args.element })
+            }
+            OperationCode::AdminRecorderList => {
+                Ok(WireRequest::AdminRecorderList)
+            }
+            OperationCode::AdminRecorderGet => {
+                #[derive(Deserialize)]
+                struct Args { recorder_id: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AdminRecorderGet { recorder_id: args.recorder_id })
+            }
+            OperationCode::AdminServerHealth => {
+                Ok(WireRequest::AdminServerHealth)
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
