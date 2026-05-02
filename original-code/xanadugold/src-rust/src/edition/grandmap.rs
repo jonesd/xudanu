@@ -73,6 +73,7 @@ pub struct GrandMap {
     element_to_ids: HashMap<BeId, Vec<Id>>,
     id_holders: HashMap<Id, BeId>,
     id_counter: BeId,
+    identity_map: crate::edition::label::IdentityMap,
 }
 
 impl Default for GrandMap {
@@ -91,6 +92,7 @@ impl GrandMap {
             element_to_ids: HashMap::new(),
             id_holders: HashMap::new(),
             id_counter: 1000,
+            identity_map: crate::edition::label::IdentityMap::new(),
         }
     }
 
@@ -211,6 +213,18 @@ impl GrandMap {
             owner,
         });
         (be_id, work)
+    }
+
+    pub fn unify_identity(&mut self, source_id: u64, target_id: u64) {
+        self.identity_map.unify(source_id, target_id);
+    }
+
+    pub fn resolve_identity(&self, id: u64) -> u64 {
+        self.identity_map.resolve(id)
+    }
+
+    pub fn identity_map(&self) -> &crate::edition::label::IdentityMap {
+        &self.identity_map
     }
 }
 

@@ -413,6 +413,51 @@ fn dispatch_inner(
                 mime_type: overlay.mime_type,
             }))
         }
+
+        WireRequest::LabelCreate => {
+            let label_id = srv.create_label();
+            Ok(ResponseValue::LabelInfo { label_id })
+        }
+        WireRequest::LabelGetPositions { work_id, label_id } => {
+            let positions = srv.label_get_positions(work_id, label_id)?;
+            Ok(ResponseValue::LabelPositions { label_id, positions })
+        }
+        WireRequest::EditionRelabel { work_id, label_id } => {
+            let _ed = srv.edition_relabel(work_id, label_id)?;
+            Ok(ResponseValue::LabelInfo { label_id })
+        }
+        WireRequest::EditionRebind { work_id, position, new_edition } => {
+            let ed = new_edition.to_edition();
+            let updated = srv.edition_rebind(session_id, work_id, position, ed)?;
+            Ok(ResponseValue::Edition(EditionPayload::from_edition(&updated)))
+        }
+        WireRequest::CanMakeIdentical { source_work_id, target_work_id, position } => {
+            let results = srv.can_make_identical_elements(source_work_id, target_work_id, position)?;
+            let all_yes = !results.is_empty() && results.iter().all(|(_, r)| r == "yes");
+            let any_yes = results.iter().any(|(_, r)| r == "yes");
+            Ok(ResponseValue::CanMakeIdenticalResult {
+                result: if results.is_empty() { "no_positions".to_string() }
+                        else if all_yes { "yes".to_string() }
+                        else if any_yes { "partial".to_string() }
+                        else { "no".to_string() },
+            })
+        }
+        WireRequest::MakeRangeIdentical { source_work_id, target_work_id, region } => {
+            let (outcome, failed_count, failed_ed) = srv.make_range_identical_editions(session_id, source_work_id, target_work_id, region)?;
+            Ok(ResponseValue::MakeRangeIdenticalResult {
+                outcome,
+                failed_count,
+                failed: EditionPayload::from_edition(&failed_ed),
+            })
+        }
+        WireRequest::IdentityUnify { source_id, target_id } => {
+            srv.identity_unify(source_id, target_id);
+            Ok(ResponseValue::IdentityResolveResult { resolved_id: target_id })
+        }
+        WireRequest::IdentityResolve { id } => {
+            let resolved = srv.identity_resolve(id);
+            Ok(ResponseValue::IdentityResolveResult { resolved_id: resolved })
+        }
     }
 }
 

@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use crate::edition::BeId;
+use crate::edition::{BeId, XnRegion};
 use crate::server::lock::LockCredential;
 
 use super::protocol::*;
@@ -434,6 +434,7 @@ impl JsonCodec {
             OperationCode::ServerStats,
             OperationCode::WorkList,
             OperationCode::BlobStats,
+            OperationCode::LabelCreate,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -449,6 +450,7 @@ impl JsonCodec {
                 OperationCode::ServerStats => Ok(WireRequest::ServerStats),
                 OperationCode::WorkList => Ok(WireRequest::WorkList),
                 OperationCode::BlobStats => Ok(WireRequest::BlobStats),
+                OperationCode::LabelCreate => Ok(WireRequest::LabelCreate),
                 _ => unreachable!(),
             };
         }
@@ -839,6 +841,58 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::OverlayGet { overlay_hash: args.overlay_hash })
+            }
+            OperationCode::LabelCreate => {
+                Ok(WireRequest::LabelCreate)
+            }
+            OperationCode::LabelGetPositions => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, label_id: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LabelGetPositions { work_id: args.work_id, label_id: args.label_id })
+            }
+            OperationCode::EditionRelabel => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, label_id: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EditionRelabel { work_id: args.work_id, label_id: args.label_id })
+            }
+            OperationCode::EditionRebind => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, position: i64, new_edition: EditionPayload }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EditionRebind { work_id: args.work_id, position: args.position, new_edition: args.new_edition })
+            }
+            OperationCode::CanMakeIdentical => {
+                #[derive(Deserialize)]
+                struct Args { source_work_id: BeId, target_work_id: BeId, position: Option<i64> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CanMakeIdentical { source_work_id: args.source_work_id, target_work_id: args.target_work_id, position: args.position })
+            }
+            OperationCode::MakeRangeIdentical => {
+                #[derive(Deserialize)]
+                struct Args { source_work_id: BeId, target_work_id: BeId, region: Option<XnRegion> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::MakeRangeIdentical { source_work_id: args.source_work_id, target_work_id: args.target_work_id, region: args.region })
+            }
+            OperationCode::IdentityUnify => {
+                #[derive(Deserialize)]
+                struct Args { source_id: u64, target_id: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::IdentityUnify { source_id: args.source_id, target_id: args.target_id })
+            }
+            OperationCode::IdentityResolve => {
+                #[derive(Deserialize)]
+                struct Args { id: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::IdentityResolve { id: args.id })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }

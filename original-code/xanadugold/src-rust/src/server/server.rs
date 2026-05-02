@@ -1340,6 +1340,113 @@ impl Server {
             Some(grabbed)
         }
     }
+
+    // === Label & Identity operations ===
+
+    pub fn create_label(&mut self) -> u64 {
+        use crate::edition::LabelId;
+        let id = LabelId::new();
+        id.as_u64()
+    }
+
+    pub fn label_get_positions(&self, work_id: BeId, label_id: u64) -> Result<XnRegion, ServerError> {
+        let ws = self.works.get(&work_id).ok_or(ServerError::WorkNotFound(work_id))?;
+        let ed = ws.work.current_edition();
+        Ok(ed.positions_labelled(label_id))
+    }
+
+    pub fn edition_relabel(&mut self, work_id: BeId, label_id: u64) -> Result<Edition, ServerError> {
+        let ws = self.works.get(&work_id).ok_or(ServerError::WorkNotFound(work_id))?;
+        let _ed = ws.work.current_edition();
+        Ok(Edition::empty())
+    }
+
+    pub fn edition_rebind(&mut self, session_id: SessionId, work_id: BeId, position: i64, new_edition: Edition) -> Result<Edition, ServerError> {
+        self.ensure_grabbed_by(session_id, work_id)?;
+        let ws = self.works.get_mut(&work_id).ok_or(ServerError::WorkNotFound(work_id))?;
+        let current = ws.work.current_edition();
+        if !current.has_position(position) {
+            return Err(ServerError::InvalidArgument(format!("position {} not found in work {}", position, work_id)));
+        }
+        let old_carrier = current.carrier_at(position)
+            .ok_or(ServerError::InvalidArgument("no carrier at position".into()))?;
+        let new_elem = new_edition.fetch(position)
+            .ok_or(ServerError::InvalidArgument("no element at position in new edition".into()))?;
+        let new_carrier = match old_carrier.label.as_ref() {
+            Some(lid) => crate::edition::range_element::Carrier::labelled(lid.clone(), new_elem),
+            None => crate::edition::range_element::Carrier::new(new_elem),
+        };
+        let updated = Edition {
+            orgl: current.orgl.with(position, std::sync::Arc::new(new_carrier)),
+        };
+        ws.work.revise(updated.clone());
+        Ok(updated)
+    }
+
+    pub fn can_make_identical_elements(
+        &self,
+        source_work_id: BeId,
+        target_work_id: BeId,
+        position: Option<i64>,
+    ) -> Result<Vec<(i64, String)>, ServerError> {
+        let source_ws = self.works.get(&source_work_id).ok_or(ServerError::WorkNotFound(source_work_id))?;
+        let target_ws = self.works.get(&target_work_id).ok_or(ServerError::WorkNotFound(target_work_id))?;
+        let source_ed = source_ws.work.current_edition();
+        let target_ed = target_ws.work.current_edition();
+        let positions: Vec<i64> = match position {
+            Some(p) => vec![p],
+            None => source_ed.all_entries().iter().map(|(p, _)| *p).collect(),
+        };
+        let mut results = Vec::new();
+        for pos in positions {
+            let source_elem = source_ed.fetch(pos);
+            let target_elem = target_ed.fetch(pos);
+            match (source_elem, target_elem) {
+                (Some(s), Some(t)) => {
+                    let result = crate::edition::can_make_identical(&s, &t);
+                    let label = match result {
+                        crate::edition::CanMakeIdenticalResult::Yes => "yes",
+                        crate::edition::CanMakeIdenticalResult::DifferentType => "different_type",
+                        crate::edition::CanMakeIdenticalResult::DifferentContent => "different_content",
+                        crate::edition::CanMakeIdenticalResult::NotOwned => "not_owned",
+                    };
+                    results.push((pos, label.to_string()));
+                }
+                (Some(_), None) => results.push((pos, "no_target".to_string())),
+                (None, _) => {}
+            }
+        }
+        Ok(results)
+    }
+
+    pub fn make_range_identical_editions(
+        &mut self,
+        session_id: SessionId,
+        source_work_id: BeId,
+        target_work_id: BeId,
+        region: Option<XnRegion>,
+    ) -> Result<(String, u64, Edition), ServerError> {
+        self.ensure_can_edit(session_id, source_work_id)?;
+        let source_ws = self.works.get(&source_work_id).ok_or(ServerError::WorkNotFound(source_work_id))?;
+        let target_ws = self.works.get(&target_work_id).ok_or(ServerError::WorkNotFound(target_work_id))?;
+        let source_ed = source_ws.work.current_edition();
+        let target_ed = target_ws.work.current_edition();
+        let result = crate::edition::make_range_identical(&source_ed, &target_ed, region.as_ref());
+        let outcome = match result.outcome {
+            crate::edition::MakeRangeIdenticalOutcome::AllUnified => "all_unified",
+            crate::edition::MakeRangeIdenticalOutcome::PartiallyUnified { .. } => "partially_unified",
+        };
+        let failed_count = result.failed.count();
+        Ok((outcome.to_string(), failed_count, result.failed))
+    }
+
+    pub fn identity_unify(&mut self, source_id: u64, target_id: u64) {
+        self.grand_map.unify_identity(source_id, target_id);
+    }
+
+    pub fn identity_resolve(&self, id: u64) -> u64 {
+        self.grand_map.resolve_identity(id)
+    }
 }
 
 #[cfg(feature = "server")]
