@@ -493,7 +493,7 @@ pub enum WireRequest {
     FindTranscluders { content_be_id: BeId },
     FindWorksForContent { content_be_id: BeId },
     FindTextTranscluders { text: String },
-    FindSharedRegions { work_a: BeId, work_b: BeId },
+    FindSharedRegions { work_a: BeId, work_b: BeId, filter_text: Option<String> },
 
     ServerStats,
 

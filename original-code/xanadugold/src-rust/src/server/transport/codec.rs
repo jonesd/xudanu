@@ -788,10 +788,10 @@ impl JsonCodec {
             }
             OperationCode::FindSharedRegions => {
                 #[derive(Deserialize)]
-                struct Args { work_a: BeId, work_b: BeId }
+                struct Args { work_a: BeId, work_b: BeId, filter_text: Option<String> }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::FindSharedRegions { work_a: args.work_a, work_b: args.work_b })
+                Ok(WireRequest::FindSharedRegions { work_a: args.work_a, work_b: args.work_b, filter_text: args.filter_text })
             }
             OperationCode::BlobUpload => {
                 #[derive(Deserialize)]

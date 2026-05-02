@@ -607,7 +607,7 @@ function App() {
       setShowFindRefs(false);
       return;
     }
-    if (!editorRef.current || !editorAreaRef.current) return;
+    if (!editorRef.current || !editorAreaRef.current) { console.log('MOUSEUP: missing refs editorRef=', !!editorRef.current, 'areaRef=', !!editorAreaRef.current); return; }
     var text = sel.toString().trim();
     try {
       var range = sel.getRangeAt(0);
@@ -638,7 +638,7 @@ function App() {
     setSharedRegions([]);
     setBridgePaths([]);
     req('work_get_edition', {work_id:wid});
-    req('find_shared_regions', {work_a:currentWorkId, work_b:wid});
+    req('find_shared_regions', {work_a:currentWorkId, work_b:wid, filter_text: selectedText || undefined});
   }
 
   function sendCmd() {
@@ -1004,15 +1004,19 @@ function App() {
       for (var i = 0; i < n; i++) {
         var lr = lhl[i].getBoundingClientRect();
         var rr = rhl[i].getBoundingClientRect();
-        var lx = lwRect.right - areaRect.left;
-        var ly = (lr.top + lr.bottom) / 2 - areaRect.top;
-        var rx = rwRect.left - areaRect.left;
-        var ry = (rr.top + rr.bottom) / 2 - areaRect.top;
-        if (ly < lwRect.top - areaRect.top - 20 || ly > lwRect.bottom - areaRect.top + 20) continue;
-        if (ry < rwRect.top - areaRect.top - 20 || ry > rwRect.bottom - areaRect.top + 20) continue;
-        var cx1 = lx + (rx - lx) * 0.4;
-        var cx2 = lx + (rx - lx) * 0.6;
-        paths.push('M' + lx + ',' + ly + ' C' + cx1 + ',' + ly + ' ' + cx2 + ',' + ry + ' ' + rx + ',' + ry);
+        var ly = (lr.top + lr.bottom) / 2 - lwRect.top;
+        var ry = (rr.top + rr.bottom) / 2 - rwRect.top;
+        if (lr.top < lwRect.top - 20 || lr.top > lwRect.bottom + 20) continue;
+        if (rr.top < rwRect.top - 20 || rr.top > rwRect.bottom + 20) continue;
+        var lx = lr.right - lwRect.left;
+        var rx = rr.left - rwRect.left;
+        var offset = (i - (n - 1) / 2) * 5;
+        var midLY = ly + offset;
+        var midRY = ry + offset;
+        var lOffY = ly + offset;
+        var rOffY = ry + offset;
+        paths.push({lx:lx, ly:lOffY, lEdge:lwRect.width, rx:rx, ry:rOffY, rEdge:0,
+          d: 'M0,' + midLY + ' C15,' + midLY + ' 25,' + midRY + ' 40,' + midRY});
       }
       setBridgePaths(paths);
     }
@@ -1310,9 +1314,50 @@ function App() {
                 ref: leftPaneRef,
                 className:'editor-content',
                 dangerouslySetInnerHTML: {__html: leftHtml || '<span style="color:var(--fg3)">Loading...</span>'}
-              })
+              }),
+              h('svg', {className:'svg-overlay', style:{zIndex:20, pointerEvents:'none'}},
+                bridgePaths.map(function(d, i){
+                  return h('line', {
+                    key: i,
+                    x1: d.lx, y1: d.ly,
+                    x2: d.lEdge, y2: d.ly,
+                    stroke: '#d29922',
+                    'stroke-width': 1.5,
+                    'stroke-dasharray': '4,3',
+                    opacity: 0.7
+                  });
+                })
+              )
             ),
-            h('div', {className:'editor-divider'}),
+            h('div', {className:'editor-divider'},
+              h('svg', {width:'40', height:'100%', style:{position:'absolute',top:0,left:0,overflow:'visible',pointerEvents:'none'}},
+                bridgePaths.map(function(d, i){
+                  return h(Fragment, {key: i},
+                    h('path', {
+                      d: d.d,
+                      fill: 'none',
+                      stroke: '#d29922',
+                      'stroke-width': 1.5,
+                      'stroke-dasharray': '4,3',
+                      opacity: 0.7
+                    }),
+                    h('path', {
+                      d: d.d,
+                      fill: 'none',
+                      stroke: 'transparent',
+                      'stroke-width': 12,
+                      style: {cursor:'pointer', pointerEvents:'stroke'},
+                      onClick: function(){
+                        var lhl = leftPaneRef.current ? leftPaneRef.current.querySelectorAll('.transclusion-hl') : [];
+                        var rhl = rightPaneRef.current ? rightPaneRef.current.querySelectorAll('.transclusion-hl') : [];
+                        if (lhl[i]) lhl[i].scrollIntoView({behavior:'smooth', block:'center'});
+                        if (rhl[i]) rhl[i].scrollIntoView({behavior:'smooth', block:'center'});
+                      }
+                    })
+                  );
+                })
+              )
+            ),
             h('div', {className:'editor-pane-wrap', ref: rightWrapRef, style:{position:'relative'}},
               h('div', {className:'split-label'}, 'Reference'),
               h('button', {className:'split-close', onClick:closeSplitView}, 'Close'),
@@ -1320,26 +1365,20 @@ function App() {
                 ref: rightPaneRef,
                 className:'editor-content',
                 dangerouslySetInnerHTML: {__html: rightHtml || '<span style="color:var(--fg3)">Loading...</span>'}
-              })
-            ),
-            h('svg', {className:'svg-overlay'},
-              bridgePaths.map(function(d, i){
-                return h('path', {
-                  key: i,
-                  d: d,
-                  fill: 'none',
-                  stroke: '#d29922',
-                  'stroke-width': 8,
-                  opacity: 0.0,
-                  style: {cursor:'pointer'},
-                  onClick: function(){
-                    var lhl = leftPaneRef.current ? leftPaneRef.current.querySelectorAll('.transclusion-hl') : [];
-                    var rhl = rightPaneRef.current ? rightPaneRef.current.querySelectorAll('.transclusion-hl') : [];
-                    if (lhl[i]) lhl[i].scrollIntoView({behavior:'smooth', block:'center'});
-                    if (rhl[i]) rhl[i].scrollIntoView({behavior:'smooth', block:'center'});
-                  }
-                });
-              })
+              }),
+              h('svg', {className:'svg-overlay', style:{zIndex:20, pointerEvents:'none'}},
+                bridgePaths.map(function(d, i){
+                  return h('line', {
+                    key: i,
+                    x1: d.rEdge, y1: d.ry,
+                    x2: d.rx, y2: d.ry,
+                    stroke: '#d29922',
+                    'stroke-width': 1.5,
+                    'stroke-dasharray': '4,3',
+                    opacity: 0.7
+                  });
+                })
+              )
             )
           ) : h(Fragment, null,
             showHistory && historyViewText !== null
