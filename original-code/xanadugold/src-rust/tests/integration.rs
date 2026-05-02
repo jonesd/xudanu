@@ -2374,20 +2374,122 @@ async fn admin_recorder_record_wrong_kind() {
 }
 
 #[tokio::test]
-async fn admin_server_health() {
+async fn crypto_get_public_key() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "crypto_get_public_key", None)).await;
+    assert_eq!(resp["type"], "response");
+    let val = &resp["value"]["value"];
+    assert!(val["key_id"].as_u64().is_some());
+    assert_eq!(val["signing_key"].as_array().unwrap().len(), 32);
+    assert_eq!(val["kex_key"].as_array().unwrap().len(), 32);
+    assert!(!val["server_id"].as_str().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn crypto_sign_and_verify() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let data: Vec<u8> = vec![1, 2, 3, 4, 5];
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "crypto_sign_data", Some(serde_json::json!({
+            "data": data
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let signature = resp["value"]["value"]["signature"].as_array().unwrap();
+    assert_eq!(signature.len(), 64);
+
+    let sig_bytes: Vec<u8> = signature.iter().map(|v| v.as_u64().unwrap() as u8).collect();
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(2, "crypto_verify_signature", Some(serde_json::json!({
+            "data": data,
+            "signature": sig_bytes
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["valid"], true);
+}
+
+#[tokio::test]
+async fn crypto_verify_rejects_tampered() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let data: Vec<u8> = vec![1, 2, 3];
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "crypto_sign_data", Some(serde_json::json!({
+            "data": data
+        })))).await;
+    let sig = resp["value"]["value"]["signature"].as_array().unwrap();
+    let mut tampered: Vec<u8> = sig.iter().map(|v| v.as_u64().unwrap() as u8).collect();
+    tampered[0] ^= 0xff;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(2, "crypto_verify_signature", Some(serde_json::json!({
+            "data": data,
+            "signature": tampered
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["valid"], false);
+}
+
+#[tokio::test]
+async fn crypto_key_rotation() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
     let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "admin_server_health", None)).await;
+        json_req(1, "crypto_get_public_key", None)).await;
+    let old_key_id = resp["value"]["value"]["key_id"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(2, "crypto_key_rotation", None)).await;
     assert_eq!(resp["type"], "response");
-    let health = &resp["value"]["value"];
-    assert!(health["operation_count"].as_u64().unwrap() > 0);
-    assert!(health["uptime_secs"].as_u64().is_some());
-    assert!(health["active_recorders"].as_u64().is_some());
-    assert!(health["total_recorded"].as_u64().is_some());
-    assert!(health["blob_count"].as_u64().is_some());
-    assert!(health["link_count"].as_u64().is_some());
+    let new_key_id = resp["value"]["value"]["new_key_id"].as_u64().unwrap();
+    assert_ne!(old_key_id, new_key_id);
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(3, "crypto_get_public_key", None)).await;
+    let current_key_id = resp["value"]["value"]["key_id"].as_u64().unwrap();
+    assert_eq!(current_key_id, new_key_id);
+}
+
+#[tokio::test]
+async fn crypto_key_history() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "crypto_key_history", None)).await;
+    assert_eq!(resp["type"], "response");
+    let val = &resp["value"]["value"];
+    assert!(val["current_key_id"].as_u64().is_some());
+    assert_eq!(val["entry_count"].as_u64().unwrap(), 1);
+
+    send_recv_json(&mut s, &mut r,
+        json_req(2, "crypto_key_rotation", None)).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(3, "crypto_key_history", None)).await;
+    let val = &resp["value"]["value"];
+    assert_eq!(val["entry_count"].as_u64().unwrap(), 2);
+    let entries = val["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_ne!(entries[0]["key_id"].as_u64().unwrap(), entries[1]["key_id"].as_u64().unwrap());
+}
+
+#[tokio::test]
+async fn crypto_sign_requires_admin() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "crypto_sign_data", Some(serde_json::json!({
+            "data": [1, 2, 3]
+        })))).await;
+    assert_eq!(resp["type"], "error");
 }
 
 #[tokio::test]

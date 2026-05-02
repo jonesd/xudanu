@@ -177,6 +177,11 @@ pub enum OperationCode {
     AdminRecorderList,
     AdminRecorderGet,
     AdminServerHealth,
+    CryptoGetPublicKey,
+    CryptoSignData,
+    CryptoVerifySignature,
+    CryptoKeyRotation,
+    CryptoKeyHistory,
 }
 
 impl OperationCode {
@@ -285,6 +290,12 @@ impl OperationCode {
             0x1103 => Some(OperationCode::AdminRecorderList),
             0x1104 => Some(OperationCode::AdminRecorderGet),
             0x1105 => Some(OperationCode::AdminServerHealth),
+
+            0x1201 => Some(OperationCode::CryptoGetPublicKey),
+            0x1202 => Some(OperationCode::CryptoSignData),
+            0x1203 => Some(OperationCode::CryptoVerifySignature),
+            0x1204 => Some(OperationCode::CryptoKeyRotation),
+            0x1205 => Some(OperationCode::CryptoKeyHistory),
 
             _ => None,
         }
@@ -396,6 +407,12 @@ impl OperationCode {
             OperationCode::AdminRecorderList => 0x1103,
             OperationCode::AdminRecorderGet => 0x1104,
             OperationCode::AdminServerHealth => 0x1105,
+
+            OperationCode::CryptoGetPublicKey => 0x1201,
+            OperationCode::CryptoSignData => 0x1202,
+            OperationCode::CryptoVerifySignature => 0x1203,
+            OperationCode::CryptoKeyRotation => 0x1204,
+            OperationCode::CryptoKeyHistory => 0x1205,
         }
     }
 }
@@ -551,6 +568,11 @@ pub enum WireRequest {
     AdminRecorderList,
     AdminRecorderGet { recorder_id: u64 },
     AdminServerHealth,
+    CryptoGetPublicKey,
+    CryptoSignData { data: Vec<u8> },
+    CryptoVerifySignature { data: Vec<u8>, signature: Vec<u8> },
+    CryptoKeyRotation,
+    CryptoKeyHistory,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -663,6 +685,35 @@ pub enum ResponseValue {
         link_count: usize,
         uptime_secs: u64,
     },
+    CryptoPublicKeyResult {
+        key_id: u64,
+        signing_key: Vec<u8>,
+        kex_key: Vec<u8>,
+        server_id: String,
+    },
+    CryptoSignResult {
+        signature: Vec<u8>,
+        key_id: u64,
+    },
+    CryptoVerifyResult {
+        valid: bool,
+    },
+    CryptoKeyRotationResult {
+        new_key_id: u64,
+    },
+    CryptoKeyHistoryResult {
+        server_id: String,
+        current_key_id: u64,
+        entry_count: usize,
+        entries: Vec<KeyHistoryEntryPayload>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyHistoryEntryPayload {
+    pub key_id: u64,
+    pub not_before: u64,
+    pub not_after: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

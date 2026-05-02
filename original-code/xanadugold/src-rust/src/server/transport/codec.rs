@@ -257,6 +257,11 @@ impl BinaryCodec {
             OperationCode::SessionDisconnect => Ok(WireRequest::SessionDisconnect),
             OperationCode::SessionLoginPublic => Ok(WireRequest::SessionLoginPublic),
             OperationCode::ClubNames => Ok(WireRequest::ClubNames),
+            OperationCode::AdminRecorderList => Ok(WireRequest::AdminRecorderList),
+            OperationCode::AdminServerHealth => Ok(WireRequest::AdminServerHealth),
+            OperationCode::CryptoGetPublicKey => Ok(WireRequest::CryptoGetPublicKey),
+            OperationCode::CryptoKeyRotation => Ok(WireRequest::CryptoKeyRotation),
+            OperationCode::CryptoKeyHistory => Ok(WireRequest::CryptoKeyHistory),
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
@@ -437,6 +442,9 @@ impl JsonCodec {
             OperationCode::LabelCreate,
             OperationCode::AdminRecorderList,
             OperationCode::AdminServerHealth,
+            OperationCode::CryptoGetPublicKey,
+            OperationCode::CryptoKeyRotation,
+            OperationCode::CryptoKeyHistory,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -455,6 +463,9 @@ impl JsonCodec {
                 OperationCode::LabelCreate => Ok(WireRequest::LabelCreate),
                 OperationCode::AdminRecorderList => Ok(WireRequest::AdminRecorderList),
                 OperationCode::AdminServerHealth => Ok(WireRequest::AdminServerHealth),
+                OperationCode::CryptoGetPublicKey => Ok(WireRequest::CryptoGetPublicKey),
+                OperationCode::CryptoKeyRotation => Ok(WireRequest::CryptoKeyRotation),
+                OperationCode::CryptoKeyHistory => Ok(WireRequest::CryptoKeyHistory),
                 _ => unreachable!(),
             };
         }
@@ -995,6 +1006,29 @@ impl JsonCodec {
             }
             OperationCode::AdminServerHealth => {
                 Ok(WireRequest::AdminServerHealth)
+            }
+            OperationCode::CryptoGetPublicKey => {
+                Ok(WireRequest::CryptoGetPublicKey)
+            }
+            OperationCode::CryptoSignData => {
+                #[derive(Deserialize)]
+                struct Args { data: Vec<u8> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CryptoSignData { data: args.data })
+            }
+            OperationCode::CryptoVerifySignature => {
+                #[derive(Deserialize)]
+                struct Args { data: Vec<u8>, signature: Vec<u8> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CryptoVerifySignature { data: args.data, signature: args.signature })
+            }
+            OperationCode::CryptoKeyRotation => {
+                Ok(WireRequest::CryptoKeyRotation)
+            }
+            OperationCode::CryptoKeyHistory => {
+                Ok(WireRequest::CryptoKeyHistory)
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }

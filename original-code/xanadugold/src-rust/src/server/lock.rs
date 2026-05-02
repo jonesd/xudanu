@@ -131,15 +131,12 @@ impl Lock for ChallengeLock {
 #[derive(Debug, Clone)]
 pub struct MatchLock {
     club_id: BeId,
-    expected_password: Vec<u8>,
+    phc_hash: String,
 }
 
 impl MatchLock {
-    pub fn new(club_id: BeId, expected_password: Vec<u8>) -> Self {
-        MatchLock {
-            club_id,
-            expected_password,
-        }
+    pub fn new(club_id: BeId, phc_hash: String) -> Self {
+        MatchLock { club_id, phc_hash }
     }
 }
 
@@ -147,11 +144,9 @@ impl Lock for MatchLock {
     fn try_open(&self, credential: &LockCredential) -> Result<KeyMaster, ServerError> {
         match credential {
             LockCredential::Password(password) => {
-                if password == &self.expected_password {
-                    Ok(KeyMaster::make(self.club_id))
-                } else {
-                    Err(ServerError::LockFailed("password mismatch".into()))
-                }
+                crate::crypto::password::verify_password(&self.phc_hash, password)
+                    .map(|_| KeyMaster::make(self.club_id))
+                    .map_err(|_| ServerError::LockFailed("password mismatch".into()))
             }
             _ => Err(ServerError::LockFailed(
                 "match lock requires Password credential".into(),
@@ -287,6 +282,25 @@ impl ChallengeLockSmith {
             encrypter_name,
         }
     }
+
+    pub fn create_challenge(&self, challenge_data: &[u8]) -> Result<Vec<u8>, ServerError> {
+        if self.public_key.len() != 32 {
+            return Err(ServerError::Internal("invalid public key length for challenge".into()));
+        }
+        let peer_pub_bytes: [u8; 32] = self.public_key.clone().try_into()
+            .map_err(|_| ServerError::Internal("public key must be 32 bytes".into()))?;
+        let peer_pub = x25519_dalek::PublicKey::from(peer_pub_bytes);
+        let eph_secret = x25519_dalek::EphemeralSecret::random_from_rng(rand::rngs::OsRng);
+        let eph_public = x25519_dalek::PublicKey::from(&eph_secret);
+        let shared = eph_secret.diffie_hellman(&peer_pub);
+        let key = crate::crypto::kdf::derive_key(shared.as_bytes(), None, crate::crypto::kdf::DomainLabel::CHALLENGE_KEY, b"challenge-aead");
+        let sealed = crate::crypto::aead::seal_standalone(&key, challenge_data, b"xudanu-challenge", 0)
+            .map_err(|e| ServerError::Internal(format!("challenge encryption failed: {}", e)))?;
+        let mut result = Vec::with_capacity(32 + sealed.ciphertext.len());
+        result.extend_from_slice(eph_public.as_bytes());
+        result.extend(sealed.ciphertext);
+        Ok(result)
+    }
 }
 
 impl LockSmith for ChallengeLockSmith {
@@ -304,15 +318,24 @@ impl LockSmith for ChallengeLockSmith {
 
 #[derive(Debug, Clone)]
 pub struct MatchLockSmith {
-    pub expected_password: Vec<u8>,
+    pub phc_hash: String,
     pub scrambler_name: String,
 }
 
 impl MatchLockSmith {
-    pub fn new(expected_password: Vec<u8>, scrambler_name: String) -> Self {
+    pub fn from_password(password: &[u8]) -> Result<Self, ServerError> {
+        let phc_hash = crate::crypto::password::hash_password(password)
+            .map_err(|e| ServerError::Internal(format!("password hash failed: {}", e)))?;
+        Ok(MatchLockSmith {
+            phc_hash,
+            scrambler_name: "argon2id".to_string(),
+        })
+    }
+
+    pub fn from_phc_hash(phc_hash: String) -> Self {
         MatchLockSmith {
-            expected_password,
-            scrambler_name,
+            phc_hash,
+            scrambler_name: "argon2id".to_string(),
         }
     }
 }
@@ -320,7 +343,7 @@ impl MatchLockSmith {
 impl LockSmith for MatchLockSmith {
     fn create_lock(&self, club_id: Option<BeId>) -> Box<dyn Lock> {
         let id = club_id.unwrap_or(0);
-        Box::new(MatchLock::new(id, self.expected_password.clone()))
+        Box::new(MatchLock::new(id, self.phc_hash.clone()))
     }
 
     fn clone_boxed(&self) -> Box<dyn LockSmith> {
@@ -373,7 +396,8 @@ mod tests {
 
     #[test]
     fn match_lock_opens_with_correct_password() {
-        let lock = MatchLock::new(5, b"secret".to_vec());
+        let smith = MatchLockSmith::from_password(b"secret").unwrap();
+        let lock = smith.create_lock(Some(5));
         let km = lock
             .try_open(&LockCredential::Password(b"secret".to_vec()))
             .unwrap();
@@ -382,7 +406,8 @@ mod tests {
 
     #[test]
     fn match_lock_rejects_wrong_password() {
-        let lock = MatchLock::new(5, b"secret".to_vec());
+        let smith = MatchLockSmith::from_password(b"secret").unwrap();
+        let lock = smith.create_lock(Some(5));
         let result = lock.try_open(&LockCredential::Password(b"wrong".to_vec()));
         assert!(result.is_err());
     }
@@ -393,7 +418,7 @@ mod tests {
             .with_sub_lock("boo".to_string(), Box::new(BooLock::new(42)))
             .with_sub_lock(
                 "match".to_string(),
-                Box::new(MatchLock::new(99, b"pw".to_vec())),
+                MatchLockSmith::from_password(b"pw").unwrap().create_lock(Some(99)),
             );
         let km = ml
             .try_open(&LockCredential::Named {

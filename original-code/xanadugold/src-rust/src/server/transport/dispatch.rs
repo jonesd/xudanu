@@ -1,7 +1,7 @@
 use crate::edition::{BeId, Edition};
 use crate::server::Server;
 use crate::server::lock::LockCredential;
-use crate::server::lock::{BooLock, ChallengeLock, MatchLock};
+use crate::server::lock::{BooLock, ChallengeLock, MatchLockSmith, LockSmith};
 use super::protocol::*;
 use super::shared::ServerHandle;
 
@@ -46,7 +46,9 @@ fn dispatch_inner(
                     Box::new(ChallengeLock::new(club_id, vec![], resp.clone()))
                 }
                 LockCredential::Password(pw) => {
-                    Box::new(MatchLock::new(club_id, pw.clone()))
+                    let smith = MatchLockSmith::from_password(pw)
+                        .map_err(|e| crate::server::ServerError::Internal(e.to_string()))?;
+                    smith.create_lock(Some(club_id))
                 }
                 LockCredential::Named { .. } => {
                     return Err(crate::server::ServerError::InvalidArgument(
@@ -604,6 +606,48 @@ fn dispatch_inner(
                 blob_count: health.blob_count,
                 link_count: health.link_count,
                 uptime_secs: health.uptime_secs,
+            })
+        }
+        WireRequest::CryptoGetPublicKey => {
+            let identity = srv.server_identity();
+            Ok(ResponseValue::CryptoPublicKeyResult {
+                key_id: srv.server_key_id(),
+                signing_key: identity.signing_key_bytes().to_vec(),
+                kex_key: identity.kex_public_bytes().to_vec(),
+                server_id: identity.server_id,
+            })
+        }
+        WireRequest::CryptoSignData { data } => {
+            srv.ensure_admin(session_id)?;
+            let sig = srv.sign_data(&data);
+            Ok(ResponseValue::CryptoSignResult {
+                signature: sig,
+                key_id: srv.server_key_id(),
+            })
+        }
+        WireRequest::CryptoVerifySignature { data, signature } => {
+            let valid = srv.verify_server_signature(&data, &signature).is_ok();
+            Ok(ResponseValue::CryptoVerifyResult { valid })
+        }
+        WireRequest::CryptoKeyRotation => {
+            srv.ensure_admin(session_id)?;
+            let new_id = srv.rotate_server_keys()?;
+            Ok(ResponseValue::CryptoKeyRotationResult { new_key_id: new_id })
+        }
+        WireRequest::CryptoKeyHistory => {
+            let history = srv.server_key_history();
+            let entries = history.entries.iter().map(|e| {
+                super::protocol::KeyHistoryEntryPayload {
+                    key_id: e.key_id,
+                    not_before: e.not_before,
+                    not_after: e.not_after,
+                }
+            }).collect();
+            Ok(ResponseValue::CryptoKeyHistoryResult {
+                server_id: history.server_id.clone(),
+                current_key_id: history.current_key_id,
+                entry_count: history.entry_count(),
+                entries,
             })
         }
     }

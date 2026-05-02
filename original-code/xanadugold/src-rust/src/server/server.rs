@@ -45,7 +45,6 @@ impl std::fmt::Debug for WorkState {
     }
 }
 
-#[derive(Debug)]
 pub struct Server {
     grand_map: GrandMap,
     sessions: HashMap<SessionId, Session>,
@@ -67,6 +66,8 @@ pub struct Server {
     checkpoint_path: Option<std::path::PathBuf>,
     recorder_system: crate::edition::RecorderSystem,
     start_time: u64,
+    server_keypair: crate::crypto::keys::ServerKeyPair,
+    key_history: crate::crypto::keys::KeyHistory,
 }
 
 pub struct ServerHealth {
@@ -142,6 +143,8 @@ impl Server {
             empty_club,
         };
 
+        let server_kp = crate::crypto::keys::ServerKeyPair::generate("xudanu-server");
+
         let mut server = Server {
             grand_map,
             sessions: HashMap::new(),
@@ -166,6 +169,8 @@ impl Server {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
+            server_keypair: server_kp.clone(),
+            key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
         };
 
         let pub_club = Club::new_with_owner(
@@ -1585,6 +1590,47 @@ impl Server {
                 .saturating_sub(self.start_time),
         }
     }
+
+    pub fn server_identity(&self) -> crate::crypto::keys::ServerIdentity {
+        crate::crypto::keys::ServerIdentity::from_keypair(&self.server_keypair)
+    }
+
+    pub fn server_public_signing_key(&self) -> [u8; 32] {
+        self.server_keypair.signing_verifying_key().to_bytes()
+    }
+
+    pub fn server_public_kex_key(&self) -> [u8; 32] {
+        *self.server_keypair.kex_public().as_bytes()
+    }
+
+    pub fn server_key_id(&self) -> crate::crypto::keys::KeyId {
+        self.server_keypair.key_id
+    }
+
+    pub fn server_key_history(&self) -> &crate::crypto::keys::KeyHistory {
+        &self.key_history
+    }
+
+    pub fn rotate_server_keys(&mut self) -> Result<crate::crypto::keys::KeyId, ServerError> {
+        let old_kp = self.server_keypair.clone();
+        let new_kp = crate::crypto::keys::ServerKeyPair::generate("xudanu-server");
+        let new_id = self.key_history.rotate(&old_kp, &new_kp)
+            .map_err(|e| ServerError::Internal(format!("key rotation failed: {}", e)))?;
+        self.server_keypair = new_kp;
+        Ok(new_id)
+    }
+
+    pub fn sign_data(&self, data: &[u8]) -> Vec<u8> {
+        let sig = crate::crypto::sign::sign_bytes(&self.server_keypair.signing_key, data);
+        sig.to_bytes().to_vec()
+    }
+
+    pub fn verify_server_signature(&self, data: &[u8], signature: &[u8]) -> Result<(), ServerError> {
+        let sig = ed25519_dalek::Signature::from_slice(signature)
+            .map_err(|_| ServerError::InvalidArgument("invalid signature bytes".into()))?;
+        crate::crypto::sign::verify_signature(&self.server_keypair.signing_verifying_key(), data, &sig)
+            .map_err(|_| ServerError::InvalidArgument("signature verification failed".into()))
+    }
 }
 
 #[cfg(feature = "server")]
@@ -1720,6 +1766,8 @@ mod persist_snapshot {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
+                server_keypair: crate::crypto::keys::ServerKeyPair::generate("xudanu-server"),
+                key_history: crate::crypto::keys::KeyHistory::new(&crate::crypto::keys::ServerKeyPair::generate("xudanu-server")),
             };
 
             for club_snap in &snapshot.clubs {
@@ -2512,7 +2560,7 @@ mod tests {
 
     #[test]
     fn server_match_lock_workflow() {
-        use crate::server::lock::MatchLock;
+        use crate::server::lock::{MatchLockSmith, LockSmith};
 
         let mut server = Server::new();
         let sid = server.connect();
@@ -2522,7 +2570,8 @@ mod tests {
             .create_named_club(sid, "password_club", Edition::empty())
             .unwrap();
 
-        let lock = MatchLock::new(club_id, b"s3cret".to_vec());
+        let smith = MatchLockSmith::from_password(b"s3cret").unwrap();
+        let lock = smith.create_lock(Some(club_id));
 
         let result = lock.try_open(&LockCredential::Password(b"wrong".to_vec()));
         assert!(result.is_err());
@@ -2532,7 +2581,7 @@ mod tests {
             .unwrap();
         assert!(km.has_authority(club_id));
 
-        server.authenticate(sid, &lock, &LockCredential::Password(b"s3cret".to_vec())).unwrap();
+        server.authenticate(sid, lock.as_ref(), &LockCredential::Password(b"s3cret".to_vec())).unwrap();
         assert!(server.session(sid).unwrap().has_authority(club_id));
     }
 
