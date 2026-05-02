@@ -937,6 +937,34 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::PositionsOf { work_id: args.work_id, element: args.element })
             }
+            OperationCode::RangeTranscluders => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, region: Option<XnRegion>, direct_only: Option<bool> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::RangeTranscluders { work_id: args.work_id, region: args.region, direct_only: args.direct_only })
+            }
+            OperationCode::RangeWorks => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, region: Option<XnRegion> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::RangeWorks { work_id: args.work_id, region: args.region })
+            }
+            OperationCode::OrderedBundles => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, region: Option<XnRegion> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::OrderedBundles { work_id: args.work_id, region: args.region })
+            }
+            OperationCode::TransclusionDepth => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, position: i64, max_depth: Option<usize> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TransclusionDepth { work_id: args.work_id, position: args.position, max_depth: args.max_depth })
+            }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }

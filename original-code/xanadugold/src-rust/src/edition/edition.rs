@@ -428,6 +428,73 @@ impl Edition {
         compute_storage_cost(&entries, content_share_counts, method)
     }
 
+    pub fn ordered_bundles(&self, region: Option<&XnRegion>) -> Vec<Bundle> {
+        let search_region = region.cloned().unwrap_or_else(|| self.domain());
+        super::bundle_stepper::loaf_bundle_stepper(self.orgl.loaf(), &search_region)
+            .collect_all()
+    }
+
+    pub fn ordered_merge_bundles(&self, region: Option<&XnRegion>) -> Vec<Bundle> {
+        let search_region = region.cloned().unwrap_or_else(|| self.domain());
+        super::bundle_stepper::loaf_merge_stepper(self.orgl.loaf(), &search_region)
+            .collect_all()
+    }
+
+    pub fn range_transcluders(
+        &self,
+        region: Option<&XnRegion>,
+        direct_only: bool,
+        index: &super::transclusion::TransclusionIndex,
+    ) -> Vec<u64> {
+        let query = super::range_transclusion::RangeTransclusionQuery::new()
+            .direct_only(direct_only);
+        let query = match region {
+            Some(r) => query.with_region(r.clone()),
+            None => query,
+        };
+        let tq = super::transclusion::TransclusionQuery::all();
+        let result = super::range_transclusion::range_transcluders(self, &query, index, &tq);
+        result.edition_ids
+    }
+
+    pub fn range_works(
+        &self,
+        region: Option<&XnRegion>,
+        index: &super::transclusion::TransclusionIndex,
+    ) -> Vec<u64> {
+        let query = super::range_transclusion::RangeTransclusionQuery::new();
+        let query = match region {
+            Some(r) => query.with_region(r.clone()),
+            None => query,
+        };
+        let wq = super::transclusion::WorkQuery::all();
+        let result = super::range_transclusion::range_works(self, &query, index, &wq);
+        result.work_ids
+    }
+
+    pub fn transclusion_depth(
+        &self,
+        position: i64,
+        index: &super::transclusion::TransclusionIndex,
+        max_depth: usize,
+    ) -> usize {
+        match self.fetch(position) {
+            Some(element) => super::range_transclusion::count_transclusion_depth(
+                &element, index, max_depth,
+            ),
+            None => 0,
+        }
+    }
+
+    pub fn deeply_transcluded_elements(
+        &self,
+        region: &XnRegion,
+        index: &super::transclusion::TransclusionIndex,
+        min_depth: usize,
+    ) -> Vec<(i64, RangeElement, usize)> {
+        super::range_transclusion::find_deeply_transcluded(self, region, index, min_depth)
+    }
+
     pub fn content_fingerprint_counts(&self) -> std::collections::HashMap<u64, u64> {
         let entries = self.orgl.all_entries();
         let mut counts = std::collections::HashMap::new();

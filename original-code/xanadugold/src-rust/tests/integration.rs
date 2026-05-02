@@ -2077,3 +2077,219 @@ async fn positions_of_element() {
     let transitions = region["transitions"].as_array().unwrap();
     assert!(transitions.len() >= 2);
 }
+
+#[tokio::test]
+async fn range_transcluders_basic() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "hello world"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({
+            "edition": {"text": "hello universe"}
+        })))).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "range_transcluders", Some(serde_json::json!({
+            "work_id": work_id
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let edition_ids = resp["value"]["value"]["edition_ids"].as_array().unwrap();
+    let work_ids = resp["value"]["value"]["work_ids"].as_array().unwrap();
+    assert!(!edition_ids.is_empty() || !work_ids.is_empty());
+}
+
+#[tokio::test]
+async fn range_transcluders_with_region() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"entries": [[0, {"Text": {"text": "a"}}], [1, {"Text": {"text": "b"}}], [2, {"Text": {"text": "c"}}]]}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({
+            "edition": {"entries": [[0, {"Text": {"text": "a"}}], [1, {"Text": {"text": "b"}}]]}
+        })))).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "range_transcluders", Some(serde_json::json!({
+            "work_id": work_id,
+            "region": {"starts_inside": false, "transitions": [2]}
+        })))).await;
+    assert_eq!(resp["type"], "response");
+}
+
+#[tokio::test]
+async fn range_transcluders_not_found() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "range_transcluders", Some(serde_json::json!({
+            "work_id": 99999
+        })))).await;
+    assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn range_works_basic() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "document content"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "range_works", Some(serde_json::json!({
+            "work_id": work_id
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let work_ids = resp["value"]["value"]["work_ids"].as_array().unwrap();
+    assert!(work_ids.contains(&serde_json::json!(work_id)));
+}
+
+#[tokio::test]
+async fn range_works_with_region() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "hello world"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "range_works", Some(serde_json::json!({
+            "work_id": work_id,
+            "region": {"starts_inside": false, "transitions": [5]}
+        })))).await;
+    assert_eq!(resp["type"], "response");
+}
+
+#[tokio::test]
+async fn ordered_bundles_text() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abc"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "ordered_bundles", Some(serde_json::json!({
+            "work_id": work_id
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let bundles = resp["value"]["value"]["bundles"].as_array().unwrap();
+    assert!(!bundles.is_empty());
+}
+
+#[tokio::test]
+async fn ordered_bundles_with_region() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abcde"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "ordered_bundles", Some(serde_json::json!({
+            "work_id": work_id,
+            "region": {"starts_inside": false, "transitions": [1, 4]}
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let bundles = resp["value"]["value"]["bundles"].as_array().unwrap();
+    assert!(!bundles.is_empty());
+}
+
+#[tokio::test]
+async fn ordered_bundles_not_found() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "ordered_bundles", Some(serde_json::json!({
+            "work_id": 99999
+        })))).await;
+    assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn transclusion_depth_basic() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "unique content"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "transclusion_depth", Some(serde_json::json!({
+            "work_id": work_id,
+            "position": 0
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let depth = resp["value"]["value"]["depth"].as_u64().unwrap();
+    assert!(depth >= 1, "content registered by the work itself has at least depth 1");
+}
+
+#[tokio::test]
+async fn transclusion_depth_shared_content() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "shared text"}
+        })))).await;
+    let _work_a = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({
+            "edition": {"text": "shared text"}
+        })))).await;
+    let work_b = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "transclusion_depth", Some(serde_json::json!({
+            "work_id": work_b,
+            "position": 0,
+            "max_depth": 5
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let depth = resp["value"]["value"]["depth"].as_u64().unwrap();
+    assert!(depth >= 1);
+}
+
+#[tokio::test]
+async fn transclusion_depth_not_found() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "transclusion_depth", Some(serde_json::json!({
+            "work_id": 99999,
+            "position": 0
+        })))).await;
+    assert_eq!(resp["type"], "error");
+}

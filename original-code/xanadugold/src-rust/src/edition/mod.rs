@@ -2,6 +2,7 @@ pub mod backend;
 pub mod backfollow;
 pub mod blob_store;
 pub mod bundle;
+pub mod bundle_stepper;
 pub mod canopy;
 pub mod shared_mapping;
 pub mod content_address;
@@ -18,6 +19,7 @@ pub mod orgl;
 pub mod pool;
 pub mod props;
 pub mod range_element;
+pub mod range_transclusion;
 pub mod snapshot;
 pub mod transclusion;
 pub mod work;
@@ -55,6 +57,12 @@ pub use props::{
 };
 pub use range_element::RangeElement;
 pub use snapshot::{Snapshot, SnapshotStore, SnapshotError, is_frozen, freeze_work, validate_frozen_for_context, validate_not_frozen_for_edit};
+pub use bundle_stepper::{BundleStepper, MergeBundleStepper, loaf_bundle_stepper, loaf_merge_stepper};
+pub use range_transclusion::{
+    RangeTransclusionQuery, RangeTransclusionResult, RangeWorkResult,
+    range_transcluders, range_works, walk_otree_shared,
+    collect_unique_elements, count_transclusion_depth, find_deeply_transcluded,
+};
 pub use transclusion::{TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery};
 pub use work::Work;
 pub use wrapper::{
