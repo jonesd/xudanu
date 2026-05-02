@@ -149,6 +149,15 @@ pub enum OperationCode {
     BlobStats,
     OverlayApply,
     OverlayGet,
+
+    LabelCreate,
+    LabelGetPositions,
+    EditionRelabel,
+    EditionRebind,
+    CanMakeIdentical,
+    MakeRangeIdentical,
+    IdentityUnify,
+    IdentityResolve,
 }
 
 impl OperationCode {
@@ -229,6 +238,15 @@ impl OperationCode {
 
             0x0a01 => Some(OperationCode::OverlayApply),
             0x0a02 => Some(OperationCode::OverlayGet),
+
+            0x0b01 => Some(OperationCode::LabelCreate),
+            0x0b02 => Some(OperationCode::LabelGetPositions),
+            0x0b03 => Some(OperationCode::EditionRelabel),
+            0x0b04 => Some(OperationCode::EditionRebind),
+            0x0b05 => Some(OperationCode::CanMakeIdentical),
+            0x0b06 => Some(OperationCode::MakeRangeIdentical),
+            0x0b07 => Some(OperationCode::IdentityUnify),
+            0x0b08 => Some(OperationCode::IdentityResolve),
 
             _ => None,
         }
@@ -312,6 +330,15 @@ impl OperationCode {
 
             OperationCode::OverlayApply      => 0x0a01,
             OperationCode::OverlayGet        => 0x0a02,
+
+            OperationCode::LabelCreate           => 0x0b01,
+            OperationCode::LabelGetPositions     => 0x0b02,
+            OperationCode::EditionRelabel        => 0x0b03,
+            OperationCode::EditionRebind         => 0x0b04,
+            OperationCode::CanMakeIdentical      => 0x0b05,
+            OperationCode::MakeRangeIdentical    => 0x0b06,
+            OperationCode::IdentityUnify         => 0x0b07,
+            OperationCode::IdentityResolve       => 0x0b08,
         }
     }
 }
@@ -439,6 +466,15 @@ pub enum WireRequest {
     BlobStats,
     OverlayApply { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] base_hash: u64, ops: Vec<ImageOp>, mime_type: String },
     OverlayGet { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] overlay_hash: u64 },
+
+    LabelCreate,
+    LabelGetPositions { work_id: BeId, label_id: u64 },
+    EditionRelabel { work_id: BeId, label_id: u64 },
+    EditionRebind { work_id: BeId, position: i64, new_edition: EditionPayload },
+    CanMakeIdentical { source_work_id: BeId, target_work_id: BeId, position: Option<i64> },
+    MakeRangeIdentical { source_work_id: BeId, target_work_id: BeId, region: Option<XnRegion> },
+    IdentityUnify { source_id: u64, target_id: u64 },
+    IdentityResolve { id: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -525,6 +561,11 @@ pub enum ResponseValue {
     BlobData(Vec<u8>),
     BlobStatsInfo(BlobStatsPayload),
     OverlayInfo(OverlayPayload),
+    LabelInfo { label_id: u64 },
+    LabelPositions { label_id: u64, positions: XnRegion },
+    CanMakeIdenticalResult { result: String },
+    MakeRangeIdenticalResult { outcome: String, failed_count: u64, failed: EditionPayload },
+    IdentityResolveResult { resolved_id: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

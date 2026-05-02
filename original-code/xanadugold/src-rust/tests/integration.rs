@@ -1681,12 +1681,149 @@ async fn overlay_requires_login() {
 }
 
 #[tokio::test]
-async fn overlay_invalid_base() {
+async fn label_create() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
     let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "overlay_apply", Some(serde_json::json!({
-            "base_hash": hash_hex(99999), "ops": ["Grayscale"], "mime_type": "image/png"
+        json_req(10, "label_create", None)).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "label_info");
+    let label_id = resp["value"]["value"]["label_id"].as_u64().unwrap();
+    assert!(label_id > 0);
+}
+
+#[tokio::test]
+async fn label_get_positions() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "hello"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "label_get_positions", Some(serde_json::json!({
+            "work_id": work_id, "label_id": 999
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "label_positions");
+}
+
+#[tokio::test]
+async fn can_make_identical_same_work() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abc"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "can_make_identical", Some(serde_json::json!({
+            "source_work_id": work_id, "target_work_id": work_id
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["result"].as_str().unwrap(), "yes");
+}
+
+#[tokio::test]
+async fn can_make_identical_different_content() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp_a = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abc"}
+        })))).await;
+    let work_a = resp_a["value"]["value"].as_u64().unwrap();
+    let resp_b = send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({
+            "edition": {"text": "xyz"}
+        })))).await;
+    let work_b = resp_b["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "can_make_identical", Some(serde_json::json!({
+            "source_work_id": work_a, "target_work_id": work_b
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["result"].as_str().unwrap(), "no");
+}
+
+#[tokio::test]
+async fn make_range_identical_same_work() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abc"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "make_range_identical", Some(serde_json::json!({
+            "source_work_id": work_id, "target_work_id": work_id
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["outcome"].as_str().unwrap(), "all_unified");
+    assert_eq!(resp["value"]["value"]["failed_count"].as_u64().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn identity_unify_and_resolve() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "identity_unify", Some(serde_json::json!({
+            "source_id": 100, "target_id": 200
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["resolved_id"].as_u64().unwrap(), 200);
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "identity_resolve", Some(serde_json::json!({
+            "id": 100
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["resolved_id"].as_u64().unwrap(), 200);
+}
+
+#[tokio::test]
+async fn edition_rebind_requires_grab() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abc"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "edition_rebind", Some(serde_json::json!({
+            "work_id": work_id, "position": 0,
+            "new_edition": {"text": "Xbc"}
         })))).await;
     assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn edition_rebind_after_grab() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "abc"}
+        })))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+    send_recv_json(&mut s, &mut r,
+        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "edition_rebind", Some(serde_json::json!({
+            "work_id": work_id, "position": 1,
+            "new_edition": {"text": "Xbc"}
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "edition");
 }

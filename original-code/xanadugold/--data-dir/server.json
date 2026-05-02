@@ -1,0 +1,241 @@
+{
+  "grand_map_id_counter": 1004,
+  "session_counter": 0,
+  "operation_counter": 0,
+  "system_clubs": {
+    "public_club": 1000,
+    "admin_club": 1001,
+    "access_club": 1002,
+    "empty_club": 1003
+  },
+  "works": [],
+  "clubs": [
+    {
+      "be_id": 1000,
+      "name": null,
+      "signature_club": null,
+      "work": {
+        "be_id": 1000,
+        "owner": 1000,
+        "revision_count": 0,
+        "current": {
+          "entries": [
+            [
+              0,
+              {
+                "Text": {
+                  "text": "p"
+                }
+              }
+            ],
+            [
+              1,
+              {
+                "Text": {
+                  "text": "u"
+                }
+              }
+            ],
+            [
+              2,
+              {
+                "Text": {
+                  "text": "b"
+                }
+              }
+            ],
+            [
+              3,
+              {
+                "Text": {
+                  "text": "l"
+                }
+              }
+            ],
+            [
+              4,
+              {
+                "Text": {
+                  "text": "i"
+                }
+              }
+            ],
+            [
+              5,
+              {
+                "Text": {
+                  "text": "c"
+                }
+              }
+            ]
+          ],
+          "default": null,
+          "domain_start": null,
+          "domain_infinite_above": false
+        },
+        "history": {},
+        "read_club": null,
+        "edit_club": null,
+        "sponsors": []
+      }
+    },
+    {
+      "be_id": 1001,
+      "name": null,
+      "signature_club": null,
+      "work": {
+        "be_id": 1001,
+        "owner": 1001,
+        "revision_count": 0,
+        "current": {
+          "entries": [
+            [
+              0,
+              {
+                "Text": {
+                  "text": "a"
+                }
+              }
+            ],
+            [
+              1,
+              {
+                "Text": {
+                  "text": "d"
+                }
+              }
+            ],
+            [
+              2,
+              {
+                "Text": {
+                  "text": "m"
+                }
+              }
+            ],
+            [
+              3,
+              {
+                "Text": {
+                  "text": "i"
+                }
+              }
+            ],
+            [
+              4,
+              {
+                "Text": {
+                  "text": "n"
+                }
+              }
+            ]
+          ],
+          "default": null,
+          "domain_start": null,
+          "domain_infinite_above": false
+        },
+        "history": {},
+        "read_club": 1000,
+        "edit_club": null,
+        "sponsors": []
+      }
+    },
+    {
+      "be_id": 1003,
+      "name": null,
+      "signature_club": null,
+      "work": {
+        "be_id": 1003,
+        "owner": null,
+        "revision_count": 0,
+        "current": {
+          "entries": [],
+          "default": null,
+          "domain_start": null,
+          "domain_infinite_above": false
+        },
+        "history": {},
+        "read_club": null,
+        "edit_club": null,
+        "sponsors": []
+      }
+    },
+    {
+      "be_id": 1002,
+      "name": null,
+      "signature_club": null,
+      "work": {
+        "be_id": 1002,
+        "owner": 1001,
+        "revision_count": 0,
+        "current": {
+          "entries": [
+            [
+              0,
+              {
+                "Text": {
+                  "text": "a"
+                }
+              }
+            ],
+            [
+              1,
+              {
+                "Text": {
+                  "text": "c"
+                }
+              }
+            ],
+            [
+              2,
+              {
+                "Text": {
+                  "text": "c"
+                }
+              }
+            ],
+            [
+              3,
+              {
+                "Text": {
+                  "text": "e"
+                }
+              }
+            ],
+            [
+              4,
+              {
+                "Text": {
+                  "text": "s"
+                }
+              }
+            ],
+            [
+              5,
+              {
+                "Text": {
+                  "text": "s"
+                }
+              }
+            ]
+          ],
+          "default": null,
+          "domain_start": null,
+          "domain_infinite_above": false
+        },
+        "history": {},
+        "read_club": null,
+        "edit_club": null,
+        "sponsors": []
+      }
+    }
+  ],
+  "standalone_editions": [],
+  "links": [],
+  "link_counter": 0,
+  "admin": {
+    "accepting_connections": true,
+    "shutdown_requested": false,
+    "grants": []
+  }
+}
