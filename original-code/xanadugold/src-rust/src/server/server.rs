@@ -2597,6 +2597,120 @@ impl Server {
     pub fn membership_merge_orset(&mut self, other: &crate::server::federation::OrSet<crate::server::federation::MembershipEntry>) {
         self.federation.membership_mut().merge_orset(other);
     }
+
+    // =================================================================
+    // Phase 19b: Governance & BFT
+    // =================================================================
+
+    pub fn governance_propose(&mut self, transactions: Vec<crate::server::federation::GovernanceTx>) -> Option<crate::server::federation::GovernanceProposal> {
+        let members: Vec<String> = self.federation.membership().active_members().iter().map(|m| m.server_id.clone()).collect();
+        let my_id = self.federation_server_id();
+        let mut gov = self.federation.governance_mut();
+        gov.set_cluster_size(members.len().max(1));
+        if !gov.is_leader(&my_id, &members) {
+            return None;
+        }
+        Some(gov.propose(transactions, my_id))
+    }
+
+    pub fn governance_receive_prepare(&mut self, vote: crate::server::federation::PbftVote) -> crate::server::federation::RoundPhase {
+        let members: Vec<String> = self.federation.membership().active_members().iter().map(|m| m.server_id.clone()).collect();
+        let mut gov = self.federation.governance_mut();
+        gov.set_cluster_size(members.len().max(1));
+        gov.receive_prepare(vote)
+    }
+
+    pub fn governance_receive_commit(&mut self, vote: crate::server::federation::PbftVote) -> crate::server::federation::RoundPhase {
+        let members: Vec<String> = self.federation.membership().active_members().iter().map(|m| m.server_id.clone()).collect();
+        let mut gov = self.federation.governance_mut();
+        gov.set_cluster_size(members.len().max(1));
+        gov.receive_commit(vote)
+    }
+
+    pub fn governance_seal_round(&mut self) -> Option<crate::server::federation::SealedBatch> {
+        let batch = self.federation.governance_mut().seal_round()?;
+        for tx in &batch.transactions {
+            self.governance_execute_tx(tx);
+        }
+        Some(batch)
+    }
+
+    pub(crate) fn governance_execute_tx(&mut self, tx: &crate::server::federation::GovernanceTx) {
+        match tx {
+            crate::server::federation::GovernanceTx::Admit { server_id, verifying_key_hex, kex_public_hex } => {
+                let proofs = vec![];
+                let entry = crate::server::federation::MembershipEntry::new(
+                    server_id, verifying_key_hex, kex_public_hex, proofs, Self::current_timestamp_secs(),
+                );
+                let tag = self.federation.membership_mut().next_tag(server_id);
+                self.federation.membership_mut().add_member(entry, tag);
+            }
+            crate::server::federation::GovernanceTx::Expel { server_id, .. } => {
+                self.federation.membership_mut().remove_member(server_id);
+            }
+            crate::server::federation::GovernanceTx::KeyRegister { server_id, verifying_key_hex, kex_public_hex, .. } => {
+                if let Some(mut entry) = self.federation.membership().find_member(server_id) {
+                    entry.verifying_key_hex = verifying_key_hex.clone();
+                    entry.kex_public_hex = kex_public_hex.clone();
+                }
+            }
+            crate::server::federation::GovernanceTx::RoyaltyRecord { origin_server_id, content_fingerprint_hex, royalty_type, amount, .. } => {
+                let fp_bytes: [u8; 32] = match Self::hex_decode(content_fingerprint_hex)
+                    .ok()
+                    .and_then(|v| v.try_into().ok())
+                {
+                    Some(b) => b,
+                    None => return,
+                };
+                self.federation.record_royalty(crate::server::federation::RoyaltyEntry {
+                    origin_server_id: origin_server_id.clone(),
+                    content_fingerprint: fp_bytes,
+                    royalty_type: royalty_type.clone(),
+                    amount: *amount,
+                    timestamp: Self::current_timestamp_secs(),
+                });
+            }
+        }
+    }
+
+    pub fn governance_log(&self) -> &[crate::server::federation::SealedBatch] {
+        self.federation.governance().log()
+    }
+
+    pub fn governance_current_view(&self) -> u64 {
+        self.federation.governance().current_view()
+    }
+
+    pub fn governance_current_sequence(&self) -> u64 {
+        self.federation.governance().current_sequence()
+    }
+
+    pub fn governance_pending_round(&self) -> Option<&crate::server::federation::ConsensusRound> {
+        self.federation.governance().pending_round()
+    }
+
+    pub fn governance_is_leader(&self) -> bool {
+        let members: Vec<String> = self.federation.membership().active_members().iter().map(|m| m.server_id.clone()).collect();
+        let my_id = self.federation_server_id();
+        self.federation.governance().is_leader(&my_id, &members)
+    }
+
+    pub fn governance_leader_id(&self) -> Option<String> {
+        let members: Vec<String> = self.federation.membership().active_members().iter().map(|m| m.server_id.clone()).collect();
+        self.federation.governance().leader_id(&members)
+    }
+
+    pub fn governance_cluster_size(&self) -> usize {
+        self.federation.governance().cluster_size()
+    }
+
+    pub fn governance_quorum_size(&self) -> usize {
+        self.federation.governance().quorum_size()
+    }
+
+    pub fn federation_royalty_ledger(&self) -> &[crate::server::federation::RoyaltyEntry] {
+        self.federation.royalty_ledger()
+    }
 }
 
 #[derive(Debug)]
@@ -4782,5 +4896,127 @@ mod tests {
 
         let result = dispatch(&state.server, sid, crate::server::transport::protocol::WireRequest::MembershipList);
         assert!(result.is_err(), "membership list without federation should fail");
+    }
+
+    // =====================================================================
+    // Phase 19b: Governance Server Method Tests
+    // =====================================================================
+
+    #[test]
+    fn governance_bootstrap_then_propose() {
+        let mut server = setup_federated_server();
+        let my_id = server.federation_server_id();
+
+        let is_leader = server.governance_is_leader();
+        assert!(is_leader, "single server should be leader");
+
+        let proposal = server.governance_propose(vec![
+            crate::server::federation::GovernanceTx::RoyaltyRecord {
+                origin_server_id: my_id.clone(),
+                target_server_id: "srv-b".to_string(),
+                content_fingerprint_hex: format!("{:064x}", 42),
+                royalty_type: crate::server::federation::RoyaltyType::Transclusion,
+                amount: 100,
+            },
+        ]);
+        assert!(proposal.is_some());
+        let p = proposal.unwrap();
+        assert_eq!(p.sequence_number, 1);
+        assert_eq!(p.proposer_id, my_id);
+    }
+
+    #[test]
+    fn governance_full_consensus_single_server() {
+        let mut server = setup_federated_server();
+        let my_id = server.federation_server_id();
+
+        server.governance_propose(vec![
+            crate::server::federation::GovernanceTx::Expel {
+                server_id: "srv-bad".to_string(),
+                reason: "test".to_string(),
+            },
+        ]).unwrap();
+
+        let vote = crate::server::federation::PbftVote {
+            view_number: 0, sequence_number: 1,
+            voter_id: my_id.clone(), phase: crate::server::federation::PbftPhase::Prepare,
+        };
+        server.governance_receive_prepare(vote);
+
+        let commit = crate::server::federation::PbftVote {
+            view_number: 0, sequence_number: 1,
+            voter_id: my_id.clone(), phase: crate::server::federation::PbftPhase::Commit,
+        };
+        server.governance_receive_commit(commit);
+
+        let batch = server.governance_seal_round();
+        assert!(batch.is_some());
+        assert_eq!(server.governance_log().len(), 1);
+        assert_eq!(server.governance_current_sequence(), 1);
+    }
+
+    #[test]
+    fn governance_execute_admit_tx() {
+        let mut server = setup_federated_server();
+        assert_eq!(server.membership_count(), 1);
+
+        let tx = crate::server::federation::GovernanceTx::Admit {
+            server_id: "srv-new".to_string(),
+            verifying_key_hex: "vk-new".to_string(),
+            kex_public_hex: "kex-new".to_string(),
+        };
+        server.governance_execute_tx(&tx);
+        assert_eq!(server.membership_count(), 2);
+        assert!(server.membership_is_known_member("srv-new"));
+    }
+
+    #[test]
+    fn governance_execute_expel_tx() {
+        let mut server = setup_federated_server();
+        let my_id = server.federation_server_id();
+
+        let tx_admit = crate::server::federation::GovernanceTx::Admit {
+            server_id: "srv-new".to_string(),
+            verifying_key_hex: "vk-new".to_string(),
+            kex_public_hex: "kex-new".to_string(),
+        };
+        server.governance_execute_tx(&tx_admit);
+        assert_eq!(server.membership_count(), 2);
+
+        let tx_expel = crate::server::federation::GovernanceTx::Expel {
+            server_id: "srv-new".to_string(),
+            reason: "gone".to_string(),
+        };
+        server.governance_execute_tx(&tx_expel);
+        assert_eq!(server.membership_count(), 1);
+        assert!(!server.membership_is_known_member("srv-new"));
+    }
+
+    #[test]
+    fn governance_execute_royalty_tx() {
+        let mut server = setup_federated_server();
+
+        let tx = crate::server::federation::GovernanceTx::RoyaltyRecord {
+            origin_server_id: "srv-a".to_string(),
+            target_server_id: "srv-b".to_string(),
+            content_fingerprint_hex: format!("{:064x}", 99),
+            royalty_type: crate::server::federation::RoyaltyType::Transclusion,
+            amount: 250,
+        };
+        server.governance_execute_tx(&tx);
+
+        let ledger = server.federation.royalty_ledger();
+        assert_eq!(ledger.len(), 1);
+        assert_eq!(ledger[0].amount, 250);
+    }
+
+    #[test]
+    fn governance_status() {
+        let server = setup_federated_server();
+        assert_eq!(server.governance_current_view(), 0);
+        assert_eq!(server.governance_current_sequence(), 0);
+        assert!(server.governance_is_leader());
+        assert!(server.governance_leader_id().is_some());
+        assert!(server.governance_pending_round().is_none());
     }
 }

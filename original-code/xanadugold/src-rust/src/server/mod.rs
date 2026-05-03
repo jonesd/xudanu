@@ -15,11 +15,12 @@ pub use club::Club;
 pub use detector::{Detector, Event, FnDetector};
 pub use error::ServerError;
 pub use federation::{
-    AlternativeEdition, EndorsementEntry, EndorsementProof, FederatedId, FederationConfig,
-    FederationInfo, FederationMode, FederationPeerInfo, FederationState, JoinResult,
-    LwwRegister, LwwSnapshot, MembershipEntry, MembershipState, MembershipStatus,
-    MembershipVerifyResult, OrSet, OrSetEntry, OrSetTag, PeerAddress, ReconcileState,
-    ReconcileStore, RoyaltyEntry, RoyaltyType,
+    AlternativeEdition, ConsensusRound, EndorsementEntry, EndorsementProof, FederatedId,
+    FederationConfig, FederationInfo, FederationMode, FederationPeerInfo, FederationState,
+    GovernanceProposal, GovernanceState, GovernanceTx, JoinResult, LwwRegister, LwwSnapshot,
+    MembershipEntry, MembershipState, MembershipStatus, MembershipVerifyResult, OrSet, OrSetEntry,
+    OrSetTag, PbftPhase, PbftVote, PeerAddress, ReconcileState, ReconcileStore, RoundPhase,
+    RoyaltyEntry, RoyaltyType, SealedBatch,
 };
 pub use keymaster::KeyMaster;
 pub use lock::{

@@ -3649,3 +3649,229 @@ async fn membership_endorse_rejects_forged_proof() {
     });
     assert!(!accepted, "endorse with forged proof should be rejected");
 }
+
+// =============================================================================
+// Phase 19b: Governance & BFT Integration Tests
+// =============================================================================
+
+#[tokio::test]
+async fn governance_status_via_wire_op() {
+    let state = setup_federated_server_state();
+    let addr = start_server_on_random_port(state.clone()).await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let resp = send_recv_json(&mut s, &mut r, json_req(10, "governance_status", None)).await;
+    let status = &resp["value"]["value"];
+    assert_eq!(status["view"].as_u64().unwrap(), 0);
+    assert_eq!(status["sequence"].as_u64().unwrap(), 0);
+    assert!(status["is_leader"].as_bool().unwrap());
+    assert!(status["pending"].as_bool().unwrap() == false);
+}
+
+#[tokio::test]
+async fn governance_propose_via_wire_op() {
+    let state = setup_federated_server_state();
+    let addr = start_server_on_random_port(state.clone()).await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+
+    let admin_club_id = send_recv_json(&mut s, &mut r, json_req(2, "club_id_by_name", Some(
+        serde_json::json!({"name": "admin"})
+    ))).await["value"]["value"].as_u64().unwrap();
+    send_recv_json(&mut s, &mut r, json_req(3, "session_login", Some(
+        serde_json::json!({"club_id": admin_club_id})
+    ))).await;
+    send_recv_json(&mut s, &mut r, json_req(4, "session_authenticate", Some(
+        serde_json::json!({"club_id": admin_club_id, "credential": "Boo"})
+    ))).await;
+
+    let tx = serde_json::json!({
+        "type": "admit",
+        "server_id": "srv-new",
+        "verifying_key_hex": "vk-new",
+        "kex_public_hex": "kex-new"
+    });
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "governance_propose", Some(serde_json::json!({
+            "transactions": [tx]
+        })))).await;
+
+    let proposal = &resp["value"]["value"]["proposal"];
+    assert!(proposal.is_object());
+    assert_eq!(proposal["sequence_number"].as_u64().unwrap(), 1);
+    assert_eq!(proposal["transactions"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn governance_log_empty_then_propose() {
+    let state = setup_federated_server_state();
+    let addr = start_server_on_random_port(state.clone()).await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let resp = send_recv_json(&mut s, &mut r, json_req(10, "governance_log", None)).await;
+    let log = resp["value"]["value"]["log"].as_array().unwrap();
+    assert!(log.is_empty(), "initial log should be empty");
+}
+
+#[tokio::test]
+async fn governance_full_consensus_via_server_methods() {
+    let state = setup_federated_server_state();
+    let my_id = state.server.with_server_ref(|srv| srv.federation_server_id());
+
+    state.server.with_server(|srv| {
+        let proposal = srv.governance_propose(vec![
+            xudanu::server::federation::GovernanceTx::Admit {
+                server_id: "srv-joined".to_string(),
+                verifying_key_hex: "vk-joined".to_string(),
+                kex_public_hex: "kex-joined".to_string(),
+            }
+        ]).unwrap();
+
+        let vote = xudanu::server::federation::PbftVote {
+            view_number: proposal.view_number,
+            sequence_number: proposal.sequence_number,
+            voter_id: my_id.clone(),
+            phase: xudanu::server::federation::PbftPhase::Prepare,
+        };
+        srv.governance_receive_prepare(vote);
+
+        let commit = xudanu::server::federation::PbftVote {
+            view_number: proposal.view_number,
+            sequence_number: proposal.sequence_number,
+            voter_id: my_id.clone(),
+            phase: xudanu::server::federation::PbftPhase::Commit,
+        };
+        srv.governance_receive_commit(commit);
+
+        let batch = srv.governance_seal_round().unwrap();
+        assert_eq!(batch.transactions.len(), 1);
+        assert_eq!(srv.governance_log().len(), 1);
+        assert!(srv.membership_is_known_member("srv-joined"));
+    });
+}
+
+#[tokio::test]
+async fn governance_royalty_recording_via_consensus() {
+    let state = setup_federated_server_state();
+    let my_id = state.server.with_server_ref(|srv| srv.federation_server_id());
+
+    state.server.with_server(|srv| {
+        srv.governance_propose(vec![
+            xudanu::server::federation::GovernanceTx::RoyaltyRecord {
+                origin_server_id: my_id.clone(),
+                target_server_id: "srv-b".to_string(),
+                content_fingerprint_hex: format!("{:064x}", 42),
+                royalty_type: xudanu::server::federation::RoyaltyType::Transclusion,
+                amount: 500,
+            }
+        ]).unwrap();
+
+        let vote = xudanu::server::federation::PbftVote {
+            view_number: 0, sequence_number: 1,
+            voter_id: my_id.clone(), phase: xudanu::server::federation::PbftPhase::Prepare,
+        };
+        srv.governance_receive_prepare(vote);
+
+        let commit = xudanu::server::federation::PbftVote {
+            view_number: 0, sequence_number: 1,
+            voter_id: my_id.clone(), phase: xudanu::server::federation::PbftPhase::Commit,
+        };
+        srv.governance_receive_commit(commit);
+
+        srv.governance_seal_round().unwrap();
+
+        let ledger = srv.federation_royalty_ledger();
+        assert_eq!(ledger.len(), 1);
+        assert_eq!(ledger[0].amount, 500);
+        assert_eq!(ledger[0].royalty_type, xudanu::server::federation::RoyaltyType::Transclusion);
+    });
+}
+
+#[tokio::test]
+async fn governance_propose_requires_admin() {
+    let state = setup_federated_server_state();
+    let addr = start_server_on_random_port(state.clone()).await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "governance_propose", Some(serde_json::json!({
+            "transactions": []
+        })))).await;
+    assert!(resp["type"].as_str() == Some("error") || resp.get("error").is_some(), "propose should require admin, got: {:?}", resp);
+}
+
+#[tokio::test]
+async fn governance_seal_via_wire_op() {
+    let state = setup_federated_server_state();
+    let addr = start_server_on_random_port(state.clone()).await;
+    let my_id = state.server.with_server_ref(|srv| srv.federation_server_id());
+
+    state.server.with_server(|srv| {
+        srv.governance_propose(vec![
+            xudanu::server::federation::GovernanceTx::Expel {
+                server_id: "srv-bad".to_string(),
+                reason: "test".to_string(),
+            }
+        ]).unwrap();
+
+        let vote = xudanu::server::federation::PbftVote {
+            view_number: 0, sequence_number: 1,
+            voter_id: my_id.clone(), phase: xudanu::server::federation::PbftPhase::Prepare,
+        };
+        srv.governance_receive_prepare(vote);
+
+        let commit = xudanu::server::federation::PbftVote {
+            view_number: 0, sequence_number: 1,
+            voter_id: my_id.clone(), phase: xudanu::server::federation::PbftPhase::Commit,
+        };
+        srv.governance_receive_commit(commit);
+    });
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+
+    let admin_club_id = send_recv_json(&mut s, &mut r, json_req(2, "club_id_by_name", Some(
+        serde_json::json!({"name": "admin"})
+    ))).await["value"]["value"].as_u64().unwrap();
+    send_recv_json(&mut s, &mut r, json_req(3, "session_login", Some(
+        serde_json::json!({"club_id": admin_club_id})
+    ))).await;
+    send_recv_json(&mut s, &mut r, json_req(4, "session_authenticate", Some(
+        serde_json::json!({"club_id": admin_club_id, "credential": "Boo"})
+    ))).await;
+
+    let resp = send_recv_json(&mut s, &mut r, json_req(10, "governance_seal", None)).await;
+    let batch = &resp["value"]["value"]["batch"];
+    assert!(batch.is_object());
+    assert_eq!(batch["transactions"].as_array().unwrap().len(), 1);
+
+    let log_resp = send_recv_json(&mut s, &mut r, json_req(11, "governance_log", None)).await;
+    let log = log_resp["value"]["value"]["log"].as_array().unwrap();
+    assert_eq!(log.len(), 1);
+}

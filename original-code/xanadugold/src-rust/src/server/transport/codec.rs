@@ -267,6 +267,9 @@ impl BinaryCodec {
              OperationCode::MembershipSync => Ok(WireRequest::MembershipSync),
              OperationCode::MembershipLeave => Ok(WireRequest::MembershipLeave),
              OperationCode::MembershipList => Ok(WireRequest::MembershipList),
+             OperationCode::GovernanceSeal => Ok(WireRequest::GovernanceSeal),
+             OperationCode::GovernanceLog => Ok(WireRequest::GovernanceLog),
+             OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
              OperationCode::AdminIsAcceptingConnections => Ok(WireRequest::AdminIsAcceptingConnections),
              OperationCode::AdminActiveSessions => Ok(WireRequest::AdminActiveSessions),
              OperationCode::AdminShutdown => Ok(WireRequest::AdminShutdown),
@@ -464,6 +467,9 @@ impl JsonCodec {
             OperationCode::MembershipSync,
             OperationCode::MembershipLeave,
             OperationCode::MembershipList,
+            OperationCode::GovernanceSeal,
+            OperationCode::GovernanceLog,
+            OperationCode::GovernanceStatus,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -490,6 +496,9 @@ impl JsonCodec {
                 OperationCode::MembershipSync => Ok(WireRequest::MembershipSync),
                 OperationCode::MembershipLeave => Ok(WireRequest::MembershipLeave),
                 OperationCode::MembershipList => Ok(WireRequest::MembershipList),
+                OperationCode::GovernanceSeal => Ok(WireRequest::GovernanceSeal),
+                OperationCode::GovernanceLog => Ok(WireRequest::GovernanceLog),
+                OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
                 _ => unreachable!(),
             };
         }
@@ -1237,6 +1246,33 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::MembershipVerify {
                     server_id: args.server_id,
+                })
+            }
+            OperationCode::GovernancePropose => {
+                #[derive(Deserialize)]
+                struct Args { transactions: Vec<crate::server::federation::GovernanceTx> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::GovernancePropose {
+                    transactions: args.transactions,
+                })
+            }
+            OperationCode::GovernancePrepare => {
+                #[derive(Deserialize)]
+                struct Args { vote: crate::server::federation::PbftVote }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::GovernancePrepare {
+                    vote: args.vote,
+                })
+            }
+            OperationCode::GovernanceCommit => {
+                #[derive(Deserialize)]
+                struct Args { vote: crate::server::federation::PbftVote }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::GovernanceCommit {
+                    vote: args.vote,
                 })
             }
             _ => Err(FrameParseError::MissingPayload.into()),

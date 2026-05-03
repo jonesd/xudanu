@@ -930,6 +930,67 @@ fn dispatch_inner(
             let verify = srv.membership_verify(&server_id);
             Ok(ResponseValue::MembershipVerifyResult { verify })
         }
+
+        WireRequest::GovernancePropose { transactions } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_admin(session_id)?;
+            let proposal = srv.governance_propose(transactions);
+            Ok(ResponseValue::GovernanceProposeResult { proposal })
+        }
+
+        WireRequest::GovernancePrepare { vote } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_logged_in(session_id)?;
+            let phase = srv.governance_receive_prepare(vote);
+            Ok(ResponseValue::GovernancePrepareResult { phase: format!("{:?}", phase) })
+        }
+
+        WireRequest::GovernanceCommit { vote } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_logged_in(session_id)?;
+            let phase = srv.governance_receive_commit(vote);
+            Ok(ResponseValue::GovernanceCommitResult { phase: format!("{:?}", phase) })
+        }
+
+        WireRequest::GovernanceSeal => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_admin(session_id)?;
+            let batch = srv.governance_seal_round();
+            Ok(ResponseValue::GovernanceSealResult { batch })
+        }
+
+        WireRequest::GovernanceLog => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_logged_in(session_id)?;
+            let log = srv.governance_log().to_vec();
+            Ok(ResponseValue::GovernanceLogResult { log })
+        }
+
+        WireRequest::GovernanceStatus => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_logged_in(session_id)?;
+            Ok(ResponseValue::GovernanceStatusResult {
+                view: srv.governance_current_view(),
+                sequence: srv.governance_current_sequence(),
+                cluster_size: srv.governance_cluster_size(),
+                quorum: srv.governance_quorum_size(),
+                is_leader: srv.governance_is_leader(),
+                leader_id: srv.governance_leader_id(),
+                pending: srv.governance_pending_round().is_some(),
+            })
+        }
     }
 }
 

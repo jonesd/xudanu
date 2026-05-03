@@ -93,6 +93,19 @@ pub enum FederationFrame {
     MembershipLeave {
         server_id: String,
     },
+
+    GovernancePrePrepare {
+        proposal: crate::server::federation::GovernanceProposal,
+    },
+    GovernancePrepareVote {
+        vote: crate::server::federation::PbftVote,
+    },
+    GovernanceCommitVote {
+        vote: crate::server::federation::PbftVote,
+    },
+    GovernanceSealed {
+        batch: crate::server::federation::SealedBatch,
+    },
 }
 
 pub fn build_federation_router(state: SharedState) -> Router {
@@ -560,6 +573,60 @@ async fn handle_federation_socket(
                                     });
                                     tracing::info!("Peer {} left federation membership", server_id);
                                 }
+                            }
+                            Ok(FederationFrame::GovernancePrePrepare { proposal }) => {
+                                tracing::info!(
+                                    "Governance: received pre-prepare from {} view={} seq={}",
+                                    proposal.proposer_id, proposal.view_number, proposal.sequence_number
+                                );
+                                let vote = crate::server::federation::PbftVote {
+                                    view_number: proposal.view_number,
+                                    sequence_number: proposal.sequence_number,
+                                    voter_id: state.server.with_server_ref(|srv| srv.federation_server_id()),
+                                    phase: crate::server::federation::PbftPhase::Prepare,
+                                };
+                                let phase = state.server.with_server(|srv| {
+                                    srv.governance_receive_prepare(vote.clone())
+                                });
+                                if phase == crate::server::federation::RoundPhase::Commit {
+                                    send_encrypted_frame(
+                                        &mut ws_sender,
+                                        &FederationFrame::GovernanceCommitVote { vote },
+                                        &mut outbound_cipher,
+                                    ).await;
+                                }
+                            }
+                            Ok(FederationFrame::GovernancePrepareVote { vote }) => {
+                                let phase = state.server.with_server(|srv| {
+                                    srv.governance_receive_prepare(vote)
+                                });
+                                tracing::debug!("Governance: prepare vote processed, phase={:?}", phase);
+                            }
+                            Ok(FederationFrame::GovernanceCommitVote { vote }) => {
+                                let phase = state.server.with_server(|srv| {
+                                    srv.governance_receive_commit(vote)
+                                });
+                                if phase == crate::server::federation::RoundPhase::Sealed {
+                                    if let Some(batch) = state.server.with_server(|srv| {
+                                        srv.governance_seal_round()
+                                    }) {
+                                        tracing::info!(
+                                            "Governance: sealed batch seq={} with {} txs",
+                                            batch.sequence_number, batch.transactions.len()
+                                        );
+                                    }
+                                }
+                            }
+                            Ok(FederationFrame::GovernanceSealed { batch }) => {
+                                tracing::info!(
+                                    "Governance: received sealed batch seq={} from {}",
+                                    batch.sequence_number, batch.proposer_id
+                                );
+                                state.server.with_server(|srv| {
+                                    for tx in &batch.transactions {
+                                        srv.governance_execute_tx(tx);
+                                    }
+                                });
                             }
                             Ok(frame) => {
                                 tracing::warn!("Federation: unexpected frame type from {}: {:?}", peer_server_id, frame);
