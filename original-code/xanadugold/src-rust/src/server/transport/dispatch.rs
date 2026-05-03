@@ -650,6 +650,58 @@ fn dispatch_inner(
                 entries,
             })
         }
+        WireRequest::WorkEndorse { work_id, endorsements } => {
+            let es = crate::edition::EndorsementSet::from_endorsements(
+                endorsements.iter().map(|&(c, t)| crate::edition::Endorsement::new(c, t)).collect()
+            );
+            srv.work_endorse(session_id, work_id, es)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkRetract { work_id, endorsements } => {
+            let es = crate::edition::EndorsementSet::from_endorsements(
+                endorsements.iter().map(|&(c, t)| crate::edition::Endorsement::new(c, t)).collect()
+            );
+            srv.work_retract(session_id, work_id, es)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkEndorsements { work_id } => {
+            let es = srv.work_endorsements(work_id)?;
+            Ok(ResponseValue::EndorsementResult {
+                endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
+            })
+        }
+        WireRequest::EditionEndorse { edition_id, endorsements } => {
+            let es = crate::edition::EndorsementSet::from_endorsements(
+                endorsements.iter().map(|&(c, t)| crate::edition::Endorsement::new(c, t)).collect()
+            );
+            srv.edition_endorse(session_id, edition_id, es)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::EditionRetract { edition_id, endorsements } => {
+            let es = crate::edition::EndorsementSet::from_endorsements(
+                endorsements.iter().map(|&(c, t)| crate::edition::Endorsement::new(c, t)).collect()
+            );
+            srv.edition_retract(session_id, edition_id, es)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::EditionEndorsements { edition_id } => {
+            let es = srv.edition_endorsements(edition_id)?;
+            Ok(ResponseValue::EndorsementResult {
+                endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
+            })
+        }
+        WireRequest::EditionVisibleEndorsements { edition_id } => {
+            let es = srv.edition_visible_endorsements(session_id, edition_id)?;
+            Ok(ResponseValue::EndorsementResult {
+                endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
+            })
+        }
+        WireRequest::EditionTotalEndorsements { edition_id } => {
+            let es = srv.edition_total_endorsements(edition_id)?;
+            Ok(ResponseValue::EndorsementResult {
+                endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
+            })
+        }
     }
 }
 

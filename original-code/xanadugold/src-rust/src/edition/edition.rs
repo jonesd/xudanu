@@ -9,10 +9,12 @@ use super::orgl::OrglRoot;
 use super::range_element::{Carrier, RangeElement};
 use super::shared_mapping::{SharedMapping, content_shared_region, content_map_shared_to, content_map_shared_onto};
 use super::xn_region::XnRegion;
+use super::endorsement::EndorsementSet;
 
 #[derive(Debug, Clone)]
 pub struct Edition {
     pub(crate) orgl: OrglRoot,
+    pub(crate) endorsements: EndorsementSet,
 }
 
 impl PartialEq for Edition {
@@ -38,18 +40,19 @@ impl Edition {
     pub fn empty() -> Self {
         Edition {
             orgl: OrglRoot::empty(),
+            endorsements: EndorsementSet::new(),
         }
     }
 
     pub fn from_one(position: i64, value: RangeElement) -> Self {
         let orgl = OrglRoot::empty().with(position, Arc::new(Carrier::new(value)));
-        Edition { orgl }
+        Edition { orgl, endorsements: EndorsementSet::new() }
     }
 
     pub fn from_all(region: &XnRegion, value: RangeElement) -> Self {
         if !region.is_finite() {
             let orgl = OrglRoot::with_default(region.clone(), Arc::new(Carrier::new(value)));
-            return Edition { orgl };
+            return Edition { orgl, endorsements: EndorsementSet::new() };
         }
         let mut orgl = OrglRoot::empty();
         for (start, stop) in region.intervals() {
@@ -57,7 +60,7 @@ impl Edition {
                 orgl = orgl.with(pos, Arc::new(Carrier::new(value.clone())));
             }
         }
-        Edition { orgl }
+        Edition { orgl, endorsements: EndorsementSet::new() }
     }
 
     pub fn from_text(text: &str) -> Self {
@@ -70,7 +73,7 @@ impl Edition {
             .collect();
         let n = entries.len();
         let region = if n > 0 { XnRegion::interval(0, n as i64) } else { XnRegion::empty() };
-        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region) }
+        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region), endorsements: EndorsementSet::new() }
     }
 
     pub fn from_text_elements(elements: &[RangeElement]) -> Self {
@@ -79,7 +82,7 @@ impl Edition {
             .collect();
         let n = entries.len();
         let region = if n > 0 { XnRegion::interval(0, n as i64) } else { XnRegion::empty() };
-        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region) }
+        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region), endorsements: EndorsementSet::new() }
     }
 
     pub fn place_holders(region: &XnRegion) -> Self {
@@ -91,12 +94,12 @@ impl Edition {
                 next_id += 1;
             }
         }
-        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region.clone()) }
+        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region.clone()), endorsements: EndorsementSet::new() }
     }
 
     pub fn with_default(region: XnRegion, value: RangeElement) -> Self {
         let orgl = OrglRoot::with_default(region, Arc::new(Carrier::new(value)));
-        Edition { orgl }
+        Edition { orgl, endorsements: EndorsementSet::new() }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -147,6 +150,23 @@ impl Edition {
         self.orgl.all_entries()
     }
 
+    pub fn endorsements(&self) -> &EndorsementSet {
+        &self.endorsements
+    }
+
+    pub fn endorse(&mut self, additional: &EndorsementSet) {
+        self.endorsements = self.endorsements.union(additional);
+    }
+
+    pub fn retract(&mut self, removed: &EndorsementSet) {
+        self.endorsements = self.endorsements.difference(removed);
+    }
+
+    pub fn with_endorsements(mut self, endorsements: EndorsementSet) -> Self {
+        self.endorsements = endorsements;
+        self
+    }
+
     pub fn fetch_all(&self) -> Vec<(i64, Arc<Carrier>)> {
         self.orgl.all_entries()
     }
@@ -166,6 +186,7 @@ impl Edition {
     pub fn with(&self, position: i64, value: RangeElement) -> Self {
         Edition {
             orgl: self.orgl.with(position, Arc::new(Carrier::new(value))),
+            endorsements: self.endorsements.clone(),
         }
     }
 
@@ -176,12 +197,13 @@ impl Edition {
                 orgl = orgl.with(pos, Arc::new(Carrier::new(value.clone())));
             }
         }
-        Edition { orgl }
+        Edition { orgl, endorsements: EndorsementSet::new() }
     }
 
     pub fn without(&self, position: i64) -> Self {
         Edition {
             orgl: self.orgl.without(position),
+            endorsements: self.endorsements.clone(),
         }
     }
 
@@ -189,6 +211,7 @@ impl Edition {
         let keep_region = self.domain().minus(region);
         Edition {
             orgl: self.orgl.copy(&keep_region),
+            endorsements: self.endorsements.clone(),
         }
     }
 
@@ -207,7 +230,7 @@ impl Edition {
             }
         }
         match self.orgl.combine(&other.orgl) {
-            Ok(combined) => Ok(Edition { orgl: combined }),
+            Ok(combined) => Ok(Edition { orgl: combined, endorsements: EndorsementSet::new() }),
             Err(_) => {
                 let mut orgl = self.orgl.clone();
                 for (pos, carrier) in other_entries {
@@ -215,7 +238,7 @@ impl Edition {
                         orgl = orgl.with(pos, carrier);
                     }
                 }
-                Ok(Edition { orgl })
+                Ok(Edition { orgl, endorsements: EndorsementSet::new() })
             }
         }
     }
@@ -223,18 +246,21 @@ impl Edition {
     pub fn replace(&self, other: &Edition) -> Edition {
         Edition {
             orgl: self.orgl.replace(&other.orgl),
+            endorsements: self.endorsements.clone(),
         }
     }
 
     pub fn copy(&self, region: &XnRegion) -> Edition {
         Edition {
             orgl: self.orgl.copy(region),
+            endorsements: self.endorsements.clone(),
         }
     }
 
     pub fn transformed_by(&self, offset: i64) -> Edition {
         Edition {
             orgl: self.orgl.transformed_by(offset),
+            endorsements: self.endorsements.clone(),
         }
     }
 
@@ -260,6 +286,7 @@ impl Edition {
         }
         Edition {
             orgl: OrglRoot::from_bulk_entries(new_entries, None, new_domain),
+            endorsements: self.endorsements.clone(),
         }
     }
 
@@ -319,7 +346,7 @@ impl Edition {
                 }
             }
         }
-        Edition { orgl }
+        Edition { orgl, endorsements: EndorsementSet::new() }
     }
 
     pub fn not_shared_with(&self, other: &Edition) -> Edition {
@@ -335,7 +362,7 @@ impl Edition {
                 orgl = orgl.with(*pos, carrier.clone());
             }
         }
-        Edition { orgl }
+        Edition { orgl, endorsements: EndorsementSet::new() }
     }
 
     pub fn map_shared_to(&self, other: &Edition) -> BTreeMap<i64, i64> {
@@ -1238,7 +1265,7 @@ mod tests {
             let start = Instant::now();
             let region = XnRegion::interval(0, n as i64);
             let orgl = OrglRoot::from_bulk_entries(carriers.clone(), None, region);
-            let bulk_edition = Edition { orgl };
+            let bulk_edition = Edition { orgl, endorsements: EndorsementSet::new() };
             let bulk_dur = start.elapsed();
             let bulk_count = bulk_edition.count();
 

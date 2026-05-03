@@ -261,8 +261,8 @@ impl BinaryCodec {
             OperationCode::AdminServerHealth => Ok(WireRequest::AdminServerHealth),
             OperationCode::CryptoGetPublicKey => Ok(WireRequest::CryptoGetPublicKey),
             OperationCode::CryptoKeyRotation => Ok(WireRequest::CryptoKeyRotation),
-            OperationCode::CryptoKeyHistory => Ok(WireRequest::CryptoKeyHistory),
-            _ => Err(FrameParseError::MissingPayload.into()),
+             OperationCode::CryptoKeyHistory => Ok(WireRequest::CryptoKeyHistory),
+             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
 
@@ -1029,6 +1029,62 @@ impl JsonCodec {
             }
             OperationCode::CryptoKeyHistory => {
                 Ok(WireRequest::CryptoKeyHistory)
+            }
+            OperationCode::WorkEndorse => {
+                #[derive(Deserialize)]
+                struct Args { work_id: u64, endorsements: Vec<(u64, u64)> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkEndorse { work_id: args.work_id, endorsements: args.endorsements })
+            }
+            OperationCode::WorkRetract => {
+                #[derive(Deserialize)]
+                struct Args { work_id: u64, endorsements: Vec<(u64, u64)> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkRetract { work_id: args.work_id, endorsements: args.endorsements })
+            }
+            OperationCode::WorkEndorsements => {
+                #[derive(Deserialize)]
+                struct Args { work_id: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkEndorsements { work_id: args.work_id })
+            }
+            OperationCode::EditionEndorse => {
+                #[derive(Deserialize)]
+                struct Args { edition_id: u64, endorsements: Vec<(u64, u64)> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EditionEndorse { edition_id: args.edition_id, endorsements: args.endorsements })
+            }
+            OperationCode::EditionRetract => {
+                #[derive(Deserialize)]
+                struct Args { edition_id: u64, endorsements: Vec<(u64, u64)> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EditionRetract { edition_id: args.edition_id, endorsements: args.endorsements })
+            }
+            OperationCode::EditionEndorsements => {
+                #[derive(Deserialize)]
+                struct Args { edition_id: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EditionEndorsements { edition_id: args.edition_id })
+            }
+            OperationCode::EditionVisibleEndorsements => {
+                #[derive(Deserialize)]
+                struct Args { edition_id: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EditionVisibleEndorsements { edition_id: args.edition_id })
+            }
+            OperationCode::EditionTotalEndorsements => {
+                #[derive(Deserialize)]
+                struct Args { edition_id: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EditionTotalEndorsements { edition_id: args.edition_id })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }

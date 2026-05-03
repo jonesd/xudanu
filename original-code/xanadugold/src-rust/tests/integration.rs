@@ -2518,3 +2518,146 @@ async fn admin_recorder_record_not_found() {
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["recorded"], false);
 }
+
+#[tokio::test]
+async fn work_endorse_and_query() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let admin_club_id = send_recv_json(&mut s, &mut r,
+        json_req(50, "club_id_by_name", Some(serde_json::json!({"name": "admin"})))).await
+        ["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "work_create", Some(serde_json::json!({"edition": "empty"})))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(2, "work_endorse", Some(serde_json::json!({
+            "work_id": work_id,
+            "endorsements": [[admin_club_id, 10], [admin_club_id, 20]]
+        })))).await;
+    assert_eq!(resp["type"], "response");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(3, "work_endorsements", Some(serde_json::json!({
+            "work_id": work_id
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let endorsements = resp["value"]["value"]["endorsements"].as_array().unwrap();
+    assert_eq!(endorsements.len(), 2);
+}
+
+#[tokio::test]
+async fn work_endorse_retract() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let admin_club_id = send_recv_json(&mut s, &mut r,
+        json_req(100, "club_id_by_name", Some(serde_json::json!({"name": "admin"})))).await
+        ["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "work_create", Some(serde_json::json!({"edition": "empty"})))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    send_recv_json(&mut s, &mut r,
+        json_req(2, "work_endorse", Some(serde_json::json!({
+            "work_id": work_id,
+            "endorsements": [[admin_club_id, 10], [admin_club_id, 20]]
+        })))).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(3, "work_retract", Some(serde_json::json!({
+            "work_id": work_id,
+            "endorsements": [[admin_club_id, 10]]
+        })))).await;
+    assert_eq!(resp["type"], "response");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(4, "work_endorsements", Some(serde_json::json!({
+            "work_id": work_id
+        })))).await;
+    let endorsements = resp["value"]["value"]["endorsements"].as_array().unwrap();
+    assert_eq!(endorsements.len(), 1);
+}
+
+#[tokio::test]
+async fn edition_endorse_and_query() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let admin_club_id = send_recv_json(&mut s, &mut r,
+        json_req(50, "club_id_by_name", Some(serde_json::json!({"name": "admin"})))).await
+        ["value"]["value"].as_u64().unwrap();
+
+    let edition_id = send_recv_json(&mut s, &mut r,
+        json_req(1, "edition_store", Some(serde_json::json!({
+            "edition": {"text": "test content"}
+        })))).await["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(2, "edition_endorse", Some(serde_json::json!({
+            "edition_id": edition_id,
+            "endorsements": [[admin_club_id, 5]]
+        })))).await;
+    assert_eq!(resp["type"], "response");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(3, "edition_endorsements", Some(serde_json::json!({
+            "edition_id": edition_id
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let endorsements = resp["value"]["value"]["endorsements"].as_array().unwrap();
+    assert_eq!(endorsements.len(), 1);
+}
+
+#[tokio::test]
+async fn endorsement_requires_authority() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "work_create", Some(serde_json::json!({"edition": "empty"})))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(2, "work_endorse", Some(serde_json::json!({
+            "work_id": work_id,
+            "endorsements": [[99, 1]]
+        })))).await;
+    assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn work_endorse_idempotent() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
+
+    let admin_club_id = send_recv_json(&mut s, &mut r,
+        json_req(100, "club_id_by_name", Some(serde_json::json!({"name": "admin"})))).await
+        ["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "work_create", Some(serde_json::json!({"edition": "empty"})))).await;
+    let work_id = resp["value"]["value"].as_u64().unwrap();
+
+    send_recv_json(&mut s, &mut r,
+        json_req(2, "work_endorse", Some(serde_json::json!({
+            "work_id": work_id,
+            "endorsements": [[admin_club_id, 10]]
+        })))).await;
+
+    send_recv_json(&mut s, &mut r,
+        json_req(3, "work_endorse", Some(serde_json::json!({
+            "work_id": work_id,
+            "endorsements": [[admin_club_id, 10]]
+        })))).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(4, "work_endorsements", Some(serde_json::json!({
+            "work_id": work_id
+        })))).await;
+    let endorsements = resp["value"]["value"]["endorsements"].as_array().unwrap();
+    assert_eq!(endorsements.len(), 1);
+}
