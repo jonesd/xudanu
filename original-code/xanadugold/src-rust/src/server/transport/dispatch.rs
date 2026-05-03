@@ -882,11 +882,16 @@ fn dispatch_inner(
             Ok(ResponseValue::MembershipEndorseOfferResult { accepted })
         }
 
-        WireRequest::MembershipEndorseAccept { server_id: _ } => {
+        WireRequest::MembershipEndorseAccept { server_id } => {
             if !srv.federation_is_enabled() {
                 return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
             }
             srv.ensure_logged_in(session_id)?;
+            if let Some(vk_hex) = srv.membership_get_verifying_key_hex(&server_id) {
+                if let Some(proof) = srv.membership_sign_endorsement(&server_id, &vk_hex) {
+                    srv.membership_endorse(&server_id, proof);
+                }
+            }
             Ok(ResponseValue::MembershipEndorseAcceptResult {})
         }
 
@@ -903,7 +908,7 @@ fn dispatch_inner(
             if !srv.federation_is_enabled() {
                 return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
             }
-            srv.ensure_logged_in(session_id)?;
+            srv.ensure_admin(session_id)?;
             srv.membership_leave();
             Ok(ResponseValue::MembershipLeaveResult {})
         }
