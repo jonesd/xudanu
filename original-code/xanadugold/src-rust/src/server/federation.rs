@@ -1042,7 +1042,11 @@ pub enum MembershipStatus {
 
 /// A single server's membership record in the federation.
 /// Identified by server_id (which is derived from the verifying key).
-#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
+///
+/// Equality and hashing are based on `server_id` only, so that entries
+/// with different endorsement lists (e.g. after concurrent endorsements)
+/// collapse into the same OrSet identity. This is critical for CRDT correctness.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MembershipEntry {
     pub server_id: String,
     pub verifying_key_hex: String,
@@ -1050,6 +1054,20 @@ pub struct MembershipEntry {
     pub endorsed_by: Vec<EndorsementProof>,
     pub joined_at: u64,
     pub status: MembershipStatus,
+}
+
+impl PartialEq for MembershipEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.server_id == other.server_id
+    }
+}
+
+impl Eq for MembershipEntry {}
+
+impl std::hash::Hash for MembershipEntry {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.server_id.hash(state);
+    }
 }
 
 impl MembershipEntry {
@@ -1169,7 +1187,10 @@ impl MembershipState {
             members: OrSet::new(),
             min_endorsements,
             bootstrap_mode: false,
-            tag_counter: 0,
+            tag_counter: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u64,
         }
     }
 
@@ -1178,7 +1199,10 @@ impl MembershipState {
             members: OrSet::new(),
             min_endorsements,
             bootstrap_mode: true,
-            tag_counter: 0,
+            tag_counter: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u64,
         }
     }
 
@@ -1209,7 +1233,6 @@ impl MembershipState {
 
     pub fn remove_member(&mut self, server_id: &str) -> bool {
         if let Some(entry) = self.find_member(server_id) {
-            let entry = entry.clone();
             self.members.remove_value(&entry);
             return true;
         }
@@ -1230,22 +1253,67 @@ impl MembershipState {
     }
 
     /// Find a member entry by server_id.
-    pub fn find_member(&self, server_id: &str) -> Option<&MembershipEntry> {
-        self.members.values().into_iter().find(|m| m.server_id == server_id)
+    /// Merges endorsements from all OrSet entries with the same server_id
+    /// to handle concurrent endorsement divergence after CRDT merge.
+    pub fn find_member(&self, server_id: &str) -> Option<MembershipEntry> {
+        let matching: Vec<&MembershipEntry> = self.members.adds
+            .iter()
+            .filter(|e| e.value.server_id == server_id)
+            .map(|e| &e.value)
+            .collect();
+
+        if matching.is_empty() {
+            return None;
+        }
+
+        let first = matching[0];
+        let mut merged = first.clone();
+
+        for entry in &matching[1..] {
+            for proof in &entry.endorsed_by {
+                if !merged.has_endorsement_from(&proof.endorser_server_id) {
+                    merged.endorsed_by.push(proof.clone());
+                }
+            }
+            if entry.joined_at < merged.joined_at {
+                merged.joined_at = entry.joined_at;
+            }
+            if entry.status == MembershipStatus::Active {
+                merged.status = MembershipStatus::Active;
+            }
+        }
+
+        Some(merged)
     }
 
-    /// List all active members.
-    pub fn active_members(&self) -> Vec<&MembershipEntry> {
-        self.members
-            .values()
-            .into_iter()
-            .filter(|m| m.is_active())
-            .collect()
+    /// List all active members (with merged endorsements).
+    pub fn active_members(&self) -> Vec<MembershipEntry> {
+        let mut seen_ids = HashSet::new();
+        let mut result = Vec::new();
+        for entry in self.members.adds.iter().map(|e| &e.value) {
+            if seen_ids.insert(entry.server_id.clone()) {
+                if let Some(merged) = self.find_member(&entry.server_id) {
+                    if merged.is_active() {
+                        result.push(merged);
+                    }
+                }
+            }
+        }
+        result
     }
 
-    /// List all members (including pending/suspended).
-    pub fn all_members(&self) -> Vec<&MembershipEntry> {
-        self.members.values()
+    /// List all members (including pending/suspended, with merged endorsements).
+    pub fn all_members(&self) -> Vec<MembershipEntry> {
+        let mut seen_ids = HashSet::new();
+        let mut result = Vec::new();
+        for entry in self.members.adds.iter().map(|e| &e.value) {
+            if seen_ids.insert(entry.server_id.clone()) {
+                if let Some(merged) = self.find_member(&entry.server_id) {
+                    result.push(merged);
+                }
+            }
+        }
+        result
     }
 
     /// Get the number of active members.
@@ -1293,7 +1361,7 @@ impl MembershipState {
     /// Add an endorsement to an existing member's entry.
     /// Returns the updated entry or None if not found.
     pub fn endorse_member(&mut self, server_id: &str, proof: EndorsementProof) -> bool {
-        let found = self.find_member(server_id).cloned();
+        let found = self.find_member(server_id);
         if let Some(entry) = found {
             let mut updated = entry.clone();
             if updated.has_endorsement_from(&proof.endorser_server_id) {
@@ -2872,5 +2940,71 @@ mod tests {
             OrSetTag::new("tag", 1),
         );
         assert_eq!(state.membership().member_count(), 1);
+    }
+
+    // =====================================================================
+    // Phase 19a Review Regression Tests
+    // =====================================================================
+
+    #[test]
+    fn membership_eq_based_on_server_id_only() {
+        let entry_a = MembershipEntry::new("srv-x", "vk-1", "kex-1", vec![], 1000);
+        let mut entry_b = MembershipEntry::new("srv-x", "vk-1", "kex-1", vec![], 1000);
+        entry_b.endorsed_by.push(make_endorsement_proof("srv-b", "srv-x", 200));
+        assert_eq!(entry_a, entry_b, "entries with same server_id must be equal");
+
+        let entry_c = MembershipEntry::new("srv-y", "vk-2", "kex-2", vec![], 1000);
+        assert_ne!(entry_a, entry_c, "entries with different server_id must not be equal");
+    }
+
+    #[test]
+    fn membership_hash_based_on_server_id_only() {
+        let entry_a = MembershipEntry::new("srv-x", "vk-1", "kex-1", vec![], 1000);
+        let mut entry_b = MembershipEntry::new("srv-x", "vk-1", "kex-1", vec![], 1000);
+        entry_b.endorsed_by.push(make_endorsement_proof("srv-b", "srv-x", 200));
+        let mut set = std::collections::HashSet::new();
+        set.insert(entry_a);
+        assert!(set.contains(&entry_b), "hash must match for same server_id");
+    }
+
+    #[test]
+    fn membership_concurrent_endorsement_merge_converges() {
+        let mut state_a = MembershipState::new(2);
+        state_a.add_member(
+            make_membership_entry("srv-b", vec![], 900),
+            OrSetTag::new("srv-b", 1),
+        );
+        state_a.add_member(
+            make_membership_entry("srv-x", vec![], 1000),
+            OrSetTag::new("srv-x", 1),
+        );
+        state_a.endorse_member("srv-x", make_endorsement_proof("srv-b", "srv-x", 200));
+
+        assert!(!state_a.is_member("srv-x"), "only 1 endorsement in A");
+
+        let mut state_b = MembershipState::new(2);
+        state_b.add_member(
+            make_membership_entry("srv-c", vec![], 900),
+            OrSetTag::new("srv-c", 1),
+        );
+        state_b.add_member(
+            make_membership_entry("srv-x", vec![], 1000),
+            OrSetTag::new("srv-x", 1),
+        );
+        state_b.endorse_member("srv-x", make_endorsement_proof("srv-c", "srv-x", 201));
+
+        assert!(!state_b.is_member("srv-x"), "only 1 endorsement in B");
+
+        state_a.merge(&state_b);
+
+        assert!(state_a.is_known_member("srv-x"), "srv-x should be known after merge");
+
+        let entry = state_a.find_member("srv-x").expect("srv-x should exist after merge");
+        assert!(
+            entry.endorsement_count() >= 2,
+            "after merge, endorsements from both servers must be visible, got {}",
+            entry.endorsement_count()
+        );
+        assert!(state_a.is_member("srv-x"), "2 endorsements >= min 2");
     }
 }

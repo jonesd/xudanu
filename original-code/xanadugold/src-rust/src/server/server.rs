@@ -2201,6 +2201,19 @@ impl Server {
         data.iter().map(|b| format!("{:02x}", b)).collect()
     }
 
+    fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
+        if hex.len() % 2 != 0 {
+            return Err("invalid hex length".to_string());
+        }
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| {
+                u8::from_str_radix(&hex[i..i + 2], 16)
+                    .map_err(|e| format!("hex decode error: {}", e))
+            })
+            .collect()
+    }
+
     /// Record a local work revision into the reconcile store.
     /// This should be called whenever a work is created or revised locally.
     pub fn reconcile_record_local_revision(
@@ -2368,8 +2381,13 @@ impl Server {
         let server_id = self.federation_server_id();
         let now = Self::current_timestamp_secs();
 
-        let self_proof = self.membership_sign_endorsement(&server_id, &verifying_key_hex)
-            .expect("self-endorsement should always work");
+        let self_proof = match self.membership_sign_endorsement(&server_id, &verifying_key_hex) {
+            Some(p) => p,
+            None => {
+                tracing::error!("membership_bootstrap_init: failed to create self-endorsement");
+                return;
+            }
+        };
 
         let entry = crate::server::federation::MembershipEntry::new(
             server_id,
@@ -2386,11 +2404,11 @@ impl Server {
 
     pub fn membership_self_entry(&self) -> Option<crate::server::federation::MembershipEntry> {
         let server_id = self.federation_server_id();
-        self.federation.membership().find_member(&server_id).cloned()
+        self.federation.membership().find_member(&server_id)
     }
 
     pub fn membership_list(&self) -> Vec<crate::server::federation::MembershipEntry> {
-        self.federation.membership().active_members().into_iter().cloned().collect()
+        self.federation.membership().active_members()
     }
 
     pub fn membership_count(&self) -> usize {
@@ -2403,6 +2421,11 @@ impl Server {
 
     pub fn membership_is_known_member(&self, server_id: &str) -> bool {
         self.federation.membership().is_known_member(server_id)
+    }
+
+    pub fn membership_get_verifying_key_hex(&self, server_id: &str) -> Option<String> {
+        self.federation.membership().find_member(server_id)
+            .map(|e| e.verifying_key_hex.clone())
     }
 
     pub fn membership_verify(&self, server_id: &str) -> crate::server::federation::MembershipVerifyResult {
@@ -2439,7 +2462,12 @@ impl Server {
             return crate::server::federation::JoinResult::Rejected { server_id, reason };
         }
 
-        let tag = self.reconcile_next_tag();
+        if let Err(reason) = self.membership_verify_entry_endorsements(&entry) {
+            return crate::server::federation::JoinResult::Rejected { server_id, reason };
+        }
+
+        let sid = self.federation_server_id();
+        let tag = self.federation.membership_mut().next_tag(&sid);
         self.federation.membership_mut().add_member(entry.clone(), tag);
 
         let offered_endorsement = self.membership_sign_endorsement(&entry.server_id, &entry.verifying_key_hex);
@@ -2496,7 +2524,57 @@ impl Server {
     }
 
     pub fn membership_endorse(&mut self, server_id: &str, proof: crate::server::federation::EndorsementProof) -> bool {
+        if !self.membership_verify_single_proof(&proof) {
+            tracing::warn!(
+                "endorsement proof signature verification failed for endorser={}",
+                proof.endorser_server_id
+            );
+            return false;
+        }
         self.federation.membership_mut().endorse_member(server_id, proof)
+    }
+
+    fn membership_verify_entry_endorsements(
+        &self,
+        entry: &crate::server::federation::MembershipEntry,
+    ) -> Result<(), String> {
+        for proof in &entry.endorsed_by {
+            if !self.membership_verify_single_proof(proof) {
+                return Err(format!(
+                    "invalid endorsement signature from {}",
+                    proof.endorser_server_id
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn membership_verify_single_proof(
+        &self,
+        proof: &crate::server::federation::EndorsementProof,
+    ) -> bool {
+        let endorser_entry = match self.federation.membership().find_member(&proof.endorser_server_id) {
+            Some(e) => e,
+            None => {
+                if self.federation.membership().is_bootstrap() {
+                    return true;
+                }
+                return false;
+            }
+        };
+        let vk_bytes = match Self::hex_decode(&endorser_entry.verifying_key_hex) {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+        let vk_bytes: [u8; 32] = match vk_bytes.try_into() {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+        let verifying_key = match ed25519_dalek::VerifyingKey::from_bytes(&vk_bytes) {
+            Ok(vk) => vk,
+            Err(_) => return false,
+        };
+        self.membership_verify_endorsement_proof(proof, &verifying_key)
     }
 
     pub fn membership_leave(&mut self) -> bool {

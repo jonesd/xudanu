@@ -549,10 +549,17 @@ async fn handle_federation_socket(
                                 });
                             }
                             Ok(FederationFrame::MembershipLeave { server_id }) => {
-                                state.server.with_server(|srv| {
-                                    srv.membership_remove(&server_id);
-                                });
-                                tracing::info!("Peer {} left federation membership", server_id);
+                                if server_id != peer_server_id {
+                                    tracing::warn!(
+                                        "MembershipLeave: rejected — claimed {} but authenticated as {}",
+                                        server_id, peer_server_id
+                                    );
+                                } else {
+                                    state.server.with_server(|srv| {
+                                        srv.membership_remove(&server_id);
+                                    });
+                                    tracing::info!("Peer {} left federation membership", server_id);
+                                }
                             }
                             Ok(frame) => {
                                 tracing::warn!("Federation: unexpected frame type from {}: {:?}", peer_server_id, frame);

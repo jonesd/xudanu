@@ -3468,10 +3468,19 @@ async fn membership_leave_via_wire_op() {
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
-    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let admin_club_id = send_recv_json(&mut s, &mut r, json_req(2, "club_id_by_name", Some(
+        serde_json::json!({"name": "admin"})
+    ))).await["value"]["value"].as_u64().unwrap();
+    send_recv_json(&mut s, &mut r, json_req(3, "session_login", Some(
+        serde_json::json!({"club_id": admin_club_id})
+    ))).await;
+    send_recv_json(&mut s, &mut r, json_req(4, "session_authenticate", Some(
+        serde_json::json!({"club_id": admin_club_id, "credential": "Boo"})
+    ))).await;
 
     let resp = send_recv_json(&mut s, &mut r, json_req(10, "membership_leave", None)).await;
-    assert!(resp.get("error").is_none());
+    assert!(resp.get("error").is_none(), "leave should succeed with admin auth");
 
     let count = state.server.with_server(|srv| srv.membership_count());
     assert_eq!(count, 0);
@@ -3578,4 +3587,65 @@ async fn membership_rejects_tampered_endorsement() {
         )
     });
     assert!(!invalid, "tampered signature should fail verification");
+}
+
+#[tokio::test]
+async fn membership_join_rejects_forged_endorsement_signature() {
+    let state = setup_federated_server_state();
+    let addr = start_server_on_random_port(state.clone()).await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let my_id = state.server.with_server_ref(|srv| srv.federation_server_id());
+
+    let forged_proof = serde_json::json!({
+        "endorser_server_id": my_id,
+        "endorser_key_id": 99999u64,
+        "endorsee_server_id": "attacker",
+        "endorsee_verifying_key_hex": "vk-attacker",
+        "signature": vec![0u8; 64],
+        "timestamp": 1000u64
+    });
+
+    let join_entry = serde_json::json!({
+        "server_id": "attacker",
+        "verifying_key_hex": "vk-attacker",
+        "kex_public_hex": "kex-attacker",
+        "endorsed_by": [forged_proof],
+        "joined_at": 1000u64,
+        "status": "active"
+    });
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "membership_join_request", Some(serde_json::json!({
+            "entry": join_entry
+        })))).await;
+
+    let result = &resp["value"]["value"]["result"];
+    assert!(result.get("rejected").is_some(),
+        "join with forged endorsement should be rejected, got: {:?}", result);
+}
+
+#[tokio::test]
+async fn membership_endorse_rejects_forged_proof() {
+    let state = setup_federated_server_state();
+
+    let forged_proof = xudanu::server::federation::EndorsementProof {
+        endorser_server_id: "nonexistent".to_string(),
+        endorser_key_id: 1,
+        endorsee_server_id: "target".to_string(),
+        endorsee_verifying_key_hex: "vk-target".to_string(),
+        signature: vec![0u8; 64],
+        timestamp: 1000,
+    };
+
+    let accepted = state.server.with_server(|srv| {
+        srv.membership_endorse("target", forged_proof)
+    });
+    assert!(!accepted, "endorse with forged proof should be rejected");
 }
