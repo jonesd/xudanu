@@ -1525,6 +1525,7 @@ pub struct GovernanceState {
     cluster_size: usize,
     faulty_tolerance: usize,
     tag_counter: u64,
+    applied_sequences: HashSet<u64>,
 }
 
 impl GovernanceState {
@@ -1541,6 +1542,7 @@ impl GovernanceState {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos() as u64,
+            applied_sequences: HashSet::new(),
         }
     }
 
@@ -1602,7 +1604,10 @@ impl GovernanceState {
         self.tag_counter
     }
 
-    pub fn propose(&mut self, transactions: Vec<GovernanceTx>, proposer_id: String) -> GovernanceProposal {
+    pub fn propose(&mut self, transactions: Vec<GovernanceTx>, proposer_id: String) -> Option<GovernanceProposal> {
+        if self.pending_round.is_some() {
+            return None;
+        }
         let seq = self.current_sequence + 1;
         let proposal = GovernanceProposal {
             view_number: self.current_view,
@@ -1626,7 +1631,7 @@ impl GovernanceState {
             phase: RoundPhase::Prepare,
         });
 
-        proposal
+        Some(proposal)
     }
 
     pub fn receive_prepare(&mut self, vote: PbftVote) -> RoundPhase {
@@ -1701,6 +1706,7 @@ impl GovernanceState {
         };
 
         self.current_sequence = sealed.sequence_number;
+        self.applied_sequences.insert(sealed.sequence_number);
         self.log.push(sealed.clone());
         Some(sealed)
     }
@@ -1712,6 +1718,14 @@ impl GovernanceState {
 
     pub fn apply_sealed(&self, batch: &SealedBatch) -> Vec<GovernanceTx> {
         batch.transactions.clone()
+    }
+
+    pub fn is_applied(&self, sequence_number: u64) -> bool {
+        self.applied_sequences.contains(&sequence_number)
+    }
+
+    pub fn mark_applied(&mut self, sequence_number: u64) {
+        self.applied_sequences.insert(sequence_number);
     }
 }
 
@@ -3392,7 +3406,7 @@ mod tests {
             kex_public_hex: "kex-new".to_string(),
         };
 
-        let proposal = gov.propose(vec![tx], "srv-a".to_string());
+        let proposal = gov.propose(vec![tx], "srv-a".to_string()).unwrap();
         assert_eq!(proposal.view_number, 0);
         assert_eq!(proposal.sequence_number, 1);
         assert_eq!(proposal.transactions.len(), 1);
