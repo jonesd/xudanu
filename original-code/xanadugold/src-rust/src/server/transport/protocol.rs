@@ -190,6 +190,9 @@ pub enum OperationCode {
     EditionEndorsements,
     EditionVisibleEndorsements,
     EditionTotalEndorsements,
+
+    FederationInfo,
+    FederationPeers,
 }
 
 impl OperationCode {
@@ -313,6 +316,9 @@ impl OperationCode {
             0x1306 => Some(OperationCode::EditionEndorsements),
             0x1307 => Some(OperationCode::EditionVisibleEndorsements),
             0x1308 => Some(OperationCode::EditionTotalEndorsements),
+
+            0x1401 => Some(OperationCode::FederationInfo),
+            0x1402 => Some(OperationCode::FederationPeers),
 
             _ => None,
         }
@@ -439,6 +445,9 @@ impl OperationCode {
             OperationCode::EditionEndorsements => 0x1306,
             OperationCode::EditionVisibleEndorsements => 0x1307,
             OperationCode::EditionTotalEndorsements => 0x1308,
+
+            OperationCode::FederationInfo => 0x1401,
+            OperationCode::FederationPeers => 0x1402,
         }
     }
 }
@@ -607,6 +616,9 @@ pub enum WireRequest {
     EditionEndorsements { edition_id: BeId },
     EditionVisibleEndorsements { edition_id: BeId },
     EditionTotalEndorsements { edition_id: BeId },
+
+    FederationInfo,
+    FederationPeers,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -742,6 +754,20 @@ pub enum ResponseValue {
         entries: Vec<KeyHistoryEntryPayload>,
     },
     EndorsementResult { endorsements: Vec<(u64, u64)> },
+    FederationInfoResult {
+        server_id: String,
+        federation_domain: String,
+        key_id: u64,
+        signing_key: Vec<u8>,
+        kex_key: Vec<u8>,
+        mode: String,
+        peers: Vec<FederationPeerPayload>,
+        work_count: usize,
+        edition_count: usize,
+    },
+    FederationPeersResult {
+        peers: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -749,6 +775,13 @@ pub struct KeyHistoryEntryPayload {
     pub key_id: u64,
     pub not_before: u64,
     pub not_after: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationPeerPayload {
+    pub server_id: String,
+    pub address: String,
+    pub connected: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

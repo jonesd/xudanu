@@ -262,6 +262,8 @@ impl BinaryCodec {
             OperationCode::CryptoGetPublicKey => Ok(WireRequest::CryptoGetPublicKey),
             OperationCode::CryptoKeyRotation => Ok(WireRequest::CryptoKeyRotation),
              OperationCode::CryptoKeyHistory => Ok(WireRequest::CryptoKeyHistory),
+             OperationCode::FederationInfo => Ok(WireRequest::FederationInfo),
+             OperationCode::FederationPeers => Ok(WireRequest::FederationPeers),
              _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
@@ -445,6 +447,8 @@ impl JsonCodec {
             OperationCode::CryptoGetPublicKey,
             OperationCode::CryptoKeyRotation,
             OperationCode::CryptoKeyHistory,
+            OperationCode::FederationInfo,
+            OperationCode::FederationPeers,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -466,6 +470,8 @@ impl JsonCodec {
                 OperationCode::CryptoGetPublicKey => Ok(WireRequest::CryptoGetPublicKey),
                 OperationCode::CryptoKeyRotation => Ok(WireRequest::CryptoKeyRotation),
                 OperationCode::CryptoKeyHistory => Ok(WireRequest::CryptoKeyHistory),
+                OperationCode::FederationInfo => Ok(WireRequest::FederationInfo),
+                OperationCode::FederationPeers => Ok(WireRequest::FederationPeers),
                 _ => unreachable!(),
             };
         }
@@ -1085,6 +1091,12 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::EditionTotalEndorsements { edition_id: args.edition_id })
+            }
+            OperationCode::FederationInfo => {
+                Ok(WireRequest::FederationInfo)
+            }
+            OperationCode::FederationPeers => {
+                Ok(WireRequest::FederationPeers)
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }

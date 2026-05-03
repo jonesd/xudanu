@@ -68,6 +68,7 @@ pub struct Server {
     start_time: u64,
     server_keypair: crate::crypto::keys::ServerKeyPair,
     key_history: crate::crypto::keys::KeyHistory,
+    federation: crate::server::federation::FederationState,
 }
 
 pub struct ServerHealth {
@@ -171,6 +172,7 @@ impl Server {
                 .as_secs(),
             server_keypair: server_kp.clone(),
             key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
+            federation: crate::server::federation::FederationState::disabled(),
         };
 
         let pub_club = Club::new_with_owner(
@@ -1786,6 +1788,41 @@ impl Server {
             None => true,
         }
     }
+
+    pub fn federation_info(&self) -> crate::server::federation::FederationInfo {
+        let identity = self.server_identity();
+        let config = self.federation.config();
+        let peers = config.peers.iter().map(|p| {
+            crate::server::federation::FederationPeerInfo {
+                server_id: String::new(),
+                address: p.clone(),
+                connected: false,
+            }
+        }).collect();
+        crate::server::federation::FederationInfo {
+            server_id: identity.server_id.clone(),
+            federation_domain: crate::crypto::FEDERATION_DOMAIN.to_string(),
+            key_id: self.server_key_id(),
+            signing_key: identity.signing_key_bytes().to_vec(),
+            kex_key: identity.kex_public_bytes().to_vec(),
+            mode: config.mode.clone(),
+            peers,
+            work_count: self.works.len(),
+            edition_count: self.standalone_editions.len(),
+        }
+    }
+
+    pub fn federation_peers(&self) -> Vec<crate::server::federation::PeerAddress> {
+        self.federation.peer_addresses().to_vec()
+    }
+
+    pub fn set_federation_config(&mut self, config: crate::server::federation::FederationConfig) {
+        self.federation = crate::server::federation::FederationState::new(config);
+    }
+
+    pub fn federation_is_enabled(&self) -> bool {
+        self.federation.is_enabled()
+    }
 }
 
 #[cfg(feature = "server")]
@@ -1924,6 +1961,7 @@ mod persist_snapshot {
                     .as_secs(),
                 server_keypair: server_kp.clone(),
                 key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
+                federation: crate::server::federation::FederationState::disabled(),
             };
 
             for club_snap in &snapshot.clubs {
