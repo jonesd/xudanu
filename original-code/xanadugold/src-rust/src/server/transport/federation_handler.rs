@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use axum::{
     extract::{
@@ -15,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use super::shared::SharedState;
 
 const FEDERATION_PROTOCOL_VERSION: u8 = 1;
+const HANDSHAKE_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FederationHello {
@@ -26,7 +28,7 @@ pub struct FederationHello {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FederationSignature {
     pub signature: Vec<u8>,
-    pub signing_key: Vec<u8>,
+    pub verifying_key: Vec<u8>,
     pub kex_key: Vec<u8>,
 }
 
@@ -47,7 +49,7 @@ pub enum FederationFrame {
     SyncPush(crate::server::federation::SyncPush),
     SyncPull(crate::server::federation::SyncPull),
     SyncResult(crate::server::federation::ContentSyncResult),
-    ContentGet { server_id: String, work_id: u64 },
+    ContentGet { work_id: u64 },
     ContentResponse { found: bool, edition_payload: Option<crate::server::transport::protocol::EditionPayload> },
     BlobGet { content_hash_hex: String },
     BlobResponse { found: bool, data: Option<String>, mime_type: Option<String> },
@@ -79,7 +81,7 @@ async fn handle_federation_socket(
 ) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
-    let (my_server_id, my_eph_bytes, _my_eph) = state.server.with_server(|srv| {
+    let (my_server_id, my_eph_bytes, my_eph) = state.server.with_server(|srv| {
         srv.federation_handshake_init()
     });
 
@@ -91,18 +93,25 @@ async fn handle_federation_socket(
 
     let hello_json = match serde_json::to_string(&FederationFrame::Hello(my_hello)) {
         Ok(j) => j,
-        Err(_) => return,
+        Err(e) => {
+            tracing::error!("Failed to serialize federation Hello: {}", e);
+            return;
+        }
     };
     if ws_sender.send(Message::Text(hello_json.into())).await.is_err() {
         return;
     }
 
-    let peer_hello = match wait_for_frame(&mut ws_receiver).await {
-        Some(FederationFrame::Hello(hello)) => hello,
-        Some(other) => {
+    let peer_hello = match wait_for_frame_timeout(&mut ws_receiver, HANDSHAKE_TIMEOUT_SECS).await {
+        Some(Ok(FederationFrame::Hello(hello))) => hello,
+        Some(Ok(other)) => {
             let _ = ws_sender.send(Message::Text(
                 format!("{{\"type\":\"error\",\"message\":\"expected Hello, got {:?}\"}}", other).into()
             )).await;
+            return;
+        }
+        Some(Err(e)) => {
+            tracing::warn!("Federation handshake timeout or error waiting for Hello from {}: {}", remote_addr, e);
             return;
         }
         None => return,
@@ -126,38 +135,45 @@ async fn handle_federation_socket(
 
     let my_sig = FederationSignature {
         signature: sig_bytes,
-        signing_key: signing_key_bytes,
+        verifying_key: signing_key_bytes,
         kex_key: kex_key_bytes,
     };
 
     let sig_json = match serde_json::to_string(&FederationFrame::Signature(my_sig)) {
         Ok(j) => j,
-        Err(_) => return,
+        Err(e) => {
+            tracing::error!("Failed to serialize federation Signature: {}", e);
+            return;
+        }
     };
     if ws_sender.send(Message::Text(sig_json.into())).await.is_err() {
         return;
     }
 
-    let peer_sig = match wait_for_frame(&mut ws_receiver).await {
-        Some(FederationFrame::Signature(sig)) => sig,
-        Some(other) => {
+    let peer_sig = match wait_for_frame_timeout(&mut ws_receiver, HANDSHAKE_TIMEOUT_SECS).await {
+        Some(Ok(FederationFrame::Signature(sig))) => sig,
+        Some(Ok(other)) => {
             let _ = ws_sender.send(Message::Text(
                 format!("{{\"type\":\"error\",\"message\":\"expected Signature, got {:?}\"}}", other).into()
             )).await;
             return;
         }
+        Some(Err(e)) => {
+            tracing::warn!("Federation handshake timeout waiting for Signature from {}: {}", remote_addr, e);
+            return;
+        }
         None => return,
     };
 
-    let peer_signing_key_bytes: [u8; 32] = match peer_sig.signing_key.as_slice().try_into() {
+    let peer_verifying_key_bytes: [u8; 32] = match peer_sig.verifying_key.as_slice().try_into() {
         Ok(b) => b,
         Err(_) => return,
     };
-    let peer_verifying_key = match ed25519_dalek::VerifyingKey::from_bytes(&peer_signing_key_bytes) {
+    let peer_verifying_key = match ed25519_dalek::VerifyingKey::from_bytes(&peer_verifying_key_bytes) {
         Ok(vk) => vk,
         Err(_) => {
             let _ = ws_sender.send(Message::Text(
-                "{\"type\":\"error\",\"message\":\"invalid peer signing key\"}".into()
+                "{\"type\":\"error\",\"message\":\"invalid peer verifying key\"}".into()
             )).await;
             return;
         }
@@ -184,14 +200,41 @@ async fn handle_federation_socket(
         return;
     }
 
+    let peer_verifying_key_hex = hex_encode(&peer_verifying_key_bytes);
+    let peer_known = state.server.with_server_ref(|srv| {
+        srv.federation_is_peer_known(&peer_verifying_key_hex)
+    });
+
+    if !peer_known {
+        tracing::warn!(
+            "Federation connection rejected from unknown peer {} (key={}) at {}",
+            peer_hello.server_id, &peer_verifying_key_hex[..16], remote_addr
+        );
+        let _ = ws_sender.send(Message::Text(
+            format!("{{\"type\":\"error\",\"message\":\"peer not in trusted peers list\"}}").into()
+        )).await;
+        return;
+    }
+
     let peer_kex_bytes: [u8; 32] = match peer_sig.kex_key.as_slice().try_into() {
         Ok(b) => b,
         Err(_) => return,
     };
 
-    let _session_keys = state.server.with_server(|srv| {
-        srv.federation_derive_session_keys(&peer_kex_bytes, &my_eph_bytes, &peer_eph_bytes)
+    let session_keys = state.server.with_server(|srv| {
+        srv.federation_derive_session_keys(&peer_kex_bytes, &my_eph, &peer_eph_bytes)
     });
+
+    let mut outbound_cipher = crate::crypto::aead::SessionCipher::new(
+        session_keys.outbound,
+        0,
+        crate::crypto::kdf::DomainLabel::FEDERATION_SERVER_TO_SERVER,
+    );
+    let mut inbound_cipher = crate::crypto::aead::SessionCipher::new(
+        session_keys.inbound,
+        0,
+        crate::crypto::kdf::DomainLabel::FEDERATION_SERVER_FROM_SERVER,
+    );
 
     let my_server_id_for_sync = state.server.with_server_ref(|srv| srv.federation_server_id());
 
@@ -200,17 +243,26 @@ async fn handle_federation_socket(
         status: "connected".to_string(),
     })) {
         Ok(j) => j,
-        Err(_) => return,
+        Err(e) => {
+            tracing::error!("Failed to serialize federation Ready: {}", e);
+            return;
+        }
     };
-    if ws_sender.send(Message::Text(ready_json.into())).await.is_err() {
+    let ready_frame = encrypt_frame(ready_json.as_bytes(), &mut outbound_cipher);
+    if ws_sender.send(Message::Binary(ready_frame.into())).await.is_err() {
         return;
     }
 
     let peer_server_id = peer_hello.server_id.clone();
+    let remote_addr_str = remote_addr.to_string();
+
+    state.server.with_server(|srv| {
+        srv.federation_mark_peer_connected(&remote_addr_str, peer_server_id.clone());
+    });
 
     tracing::info!(
-        "Federation handshake completed with server {} from {}",
-        peer_server_id, remote_addr
+        "Federation encrypted handshake completed with server {} (key={}…) from {}",
+        peer_server_id, &peer_verifying_key_hex[..16], remote_addr
     );
 
     loop {
@@ -218,51 +270,75 @@ async fn handle_federation_socket(
             msg = ws_receiver.next() => {
                 match msg {
                     Some(Ok(Message::Close(_))) | None => break,
-                    Some(Ok(Message::Ping(_))) => continue,
-                    Some(Ok(Message::Text(text))) => {
+                    Some(Ok(Message::Ping(data))) => {
+                        let _ = ws_sender.send(Message::Pong(data)).await;
+                        continue;
+                    }
+                    Some(Ok(Message::Binary(data))) => {
+                        let plaintext = match decrypt_frame(&data, &mut inbound_cipher) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                tracing::warn!("Federation: failed to decrypt frame from {}: {}", peer_server_id, e);
+                                continue;
+                            }
+                        };
+                        let text = match String::from_utf8(plaintext) {
+                            Ok(t) => t,
+                            Err(_) => {
+                                tracing::warn!("Federation: decrypted frame is not valid UTF-8 from {}", peer_server_id);
+                                continue;
+                            }
+                        };
                         match serde_json::from_str::<FederationFrame>(&text) {
                             Ok(FederationFrame::Heartbeat) => {
-                                let _ = ws_sender.send(Message::Text(
-                                    serde_json::to_string(&FederationFrame::Ack).unwrap_or_default().into()
-                                )).await;
+                                match serde_json::to_string(&FederationFrame::Ack) {
+                                    Ok(ack_json) => {
+                                        let ack_frame = encrypt_frame(ack_json.as_bytes(), &mut outbound_cipher);
+                                        let _ = ws_sender.send(Message::Binary(ack_frame.into())).await;
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to serialize Ack: {}", e);
+                                    }
+                                }
                             }
                             Ok(FederationFrame::Ready(r)) => {
                                 tracing::info!("Peer ready: {} status={}", r.server_id, r.status);
                             }
-                            Ok(FederationFrame::SyncPull(_pull)) => {
+                            Ok(FederationFrame::SyncPull(pull)) => {
+                                let max = pull.max_entries.min(crate::server::federation::MAX_SYNC_ENTRIES);
                                 let push = state.server.with_server(|srv| {
-                                    let works = srv.federation_export_works();
-                                    let blobs = srv.federation_export_blobs();
+                                    let mut works = srv.federation_export_works();
+                                    let mut editions = srv.federation_export_editions();
+                                    let mut blobs = srv.federation_export_blobs();
+                                    works.truncate(max);
+                                    editions.truncate(max.saturating_sub(works.len()));
+                                    blobs.truncate(max.saturating_sub(works.len()).saturating_sub(editions.len()));
                                     crate::server::federation::SyncPush {
                                         server_id: srv.federation_server_id(),
                                         works,
-                                        editions: Vec::new(),
+                                        editions,
                                         blobs,
                                     }
                                 });
-                                let push_json = serde_json::to_string(&FederationFrame::SyncPush(push)).unwrap_or_default();
-                                let _ = ws_sender.send(Message::Text(push_json.into())).await;
+                                send_encrypted_frame(&mut ws_sender, &FederationFrame::SyncPush(push), &mut outbound_cipher).await;
                             }
                             Ok(FederationFrame::SyncPush(push)) => {
-                                let (works_imported, works_known) = state.server.with_server(|srv| {
+                                let result = state.server.with_server(|srv| {
                                     let my_id = srv.federation_server_id();
-                                    srv.federation_import_works(&push.works, &my_id)
+                                    let (works_imported, works_known) = srv.federation_import_works(&push.works, &my_id);
+                                    let (blobs_imported, blobs_known) = srv.federation_import_blobs(&push.blobs);
+                                    crate::server::federation::ContentSyncResult {
+                                        works_received: works_imported,
+                                        editions_received: 0,
+                                        blobs_received: blobs_imported,
+                                        works_already_known: works_known,
+                                        editions_already_known: 0,
+                                        blobs_already_known: blobs_known,
+                                    }
                                 });
-                                let (blobs_imported, blobs_known) = state.server.with_server(|srv| {
-                                    srv.federation_import_blobs(&push.blobs)
-                                });
-                                let result = crate::server::federation::ContentSyncResult {
-                                    works_received: works_imported,
-                                    editions_received: 0,
-                                    blobs_received: blobs_imported,
-                                    works_already_known: works_known,
-                                    editions_already_known: 0,
-                                    blobs_already_known: blobs_known,
-                                };
-                                let result_json = serde_json::to_string(&FederationFrame::SyncResult(result)).unwrap_or_default();
-                                let _ = ws_sender.send(Message::Text(result_json.into())).await;
+                                send_encrypted_frame(&mut ws_sender, &FederationFrame::SyncResult(result), &mut outbound_cipher).await;
                             }
-                            Ok(FederationFrame::ContentGet { server_id: _server_id, work_id }) => {
+                            Ok(FederationFrame::ContentGet { work_id }) => {
                                 let response = state.server.with_server_ref(|srv| {
                                     match srv.federation_get_work_edition(work_id) {
                                         Some(edition_payload) => FederationFrame::ContentResponse {
@@ -272,8 +348,7 @@ async fn handle_federation_socket(
                                         None => FederationFrame::ContentResponse { found: false, edition_payload: None },
                                     }
                                 });
-                                let resp_json = serde_json::to_string(&response).unwrap_or_default();
-                                let _ = ws_sender.send(Message::Text(resp_json.into())).await;
+                                send_encrypted_frame(&mut ws_sender, &response, &mut outbound_cipher).await;
                             }
                             Ok(FederationFrame::BlobGet { content_hash_hex }) => {
                                 let response = state.server.with_server_ref(|srv| {
@@ -286,14 +361,20 @@ async fn handle_federation_socket(
                                         None => FederationFrame::BlobResponse { found: false, data: None, mime_type: None },
                                     }
                                 });
-                                let resp_json = serde_json::to_string(&response).unwrap_or_default();
-                                let _ = ws_sender.send(Message::Text(resp_json.into())).await;
+                                send_encrypted_frame(&mut ws_sender, &response, &mut outbound_cipher).await;
                             }
-                            Ok(_) => {}
-                            Err(_) => {}
+                            Ok(frame) => {
+                                tracing::warn!("Federation: unexpected frame type from {}: {:?}", peer_server_id, frame);
+                            }
+                            Err(e) => {
+                                tracing::warn!("Federation: failed to parse frame from {}: {}", peer_server_id, e);
+                            }
                         }
                     }
-                    Some(Ok(Message::Binary(_))) => {}
+                    Some(Ok(Message::Text(text))) => {
+                        tracing::warn!("Federation: received unencrypted text frame after handshake from {}, ignoring", peer_server_id);
+                        let _ = text;
+                    }
                     Some(Ok(Message::Pong(_))) => continue,
                     _ => continue,
                 }
@@ -301,16 +382,70 @@ async fn handle_federation_socket(
         }
     }
 
+    state.server.with_server(|srv| {
+        srv.federation_mark_peer_disconnected(&remote_addr_str);
+    });
     tracing::info!("Federation connection closed with server {}", peer_server_id);
 }
 
-async fn wait_for_frame(ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>) -> Option<FederationFrame> {
+fn encrypt_frame(plaintext: &[u8], cipher: &mut crate::crypto::aead::SessionCipher) -> Vec<u8> {
+    match cipher.seal(plaintext, b"xudanu-federation") {
+        Ok(envelope) => envelope.encode(),
+        Err(e) => {
+            tracing::error!("Federation encryption failed: {}", e);
+            Vec::new()
+        }
+    }
+}
+
+fn decrypt_frame(data: &[u8], cipher: &mut crate::crypto::aead::SessionCipher) -> Result<Vec<u8>, String> {
+    let envelope = crate::crypto::aead::SealedEnvelope::decode(data)
+        .map_err(|e| format!("invalid envelope: {}", e))?;
+    cipher.open(&envelope, b"xudanu-federation")
+        .map_err(|e| format!("decryption failed: {}", e))
+}
+
+async fn send_encrypted_frame(
+    ws_sender: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+    frame: &FederationFrame,
+    cipher: &mut crate::crypto::aead::SessionCipher,
+) {
+    let json = match serde_json::to_string(frame) {
+        Ok(j) => j,
+        Err(e) => {
+            tracing::error!("Failed to serialize federation frame: {}", e);
+            return;
+        }
+    };
+    let encrypted = encrypt_frame(json.as_bytes(), cipher);
+    if encrypted.is_empty() {
+        return;
+    }
+    let _ = ws_sender.send(Message::Binary(encrypted.into())).await;
+}
+
+async fn wait_for_frame_timeout(
+    ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>,
+    timeout_secs: u64,
+) -> Option<Result<FederationFrame, String>> {
+    match tokio::time::timeout(
+        Duration::from_secs(timeout_secs),
+        wait_for_frame_inner(ws_receiver),
+    ).await {
+        Ok(result) => result,
+        Err(_) => Some(Err(format!("handshake timed out after {}s", timeout_secs))),
+    }
+}
+
+async fn wait_for_frame_inner(
+    ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>,
+) -> Option<Result<FederationFrame, String>> {
     while let Some(Ok(msg)) = ws_receiver.next().await {
         match msg {
             Message::Text(text) => {
                 match serde_json::from_str::<FederationFrame>(&text) {
-                    Ok(frame) => return Some(frame),
-                    Err(_) => return None,
+                    Ok(frame) => return Some(Ok(frame)),
+                    Err(e) => return Some(Err(format!("invalid JSON: {}", e))),
                 }
             }
             Message::Close(_) => return None,
@@ -320,6 +455,14 @@ async fn wait_for_frame(ws_receiver: &mut futures_util::stream::SplitStream<WebS
         }
     }
     None
+}
+
+async fn wait_for_frame(ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>) -> Option<FederationFrame> {
+    wait_for_frame_inner(ws_receiver).await.and_then(|r| r.ok())
+}
+
+fn hex_encode(data: &[u8]) -> String {
+    data.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 #[cfg(test)]
@@ -349,7 +492,7 @@ mod tests {
     fn federation_frame_signature_roundtrip() {
         let sig = FederationFrame::Signature(FederationSignature {
             signature: vec![1u8; 64],
-            signing_key: vec![2u8; 32],
+            verifying_key: vec![2u8; 32],
             kex_key: vec![3u8; 32],
         });
         let json = serde_json::to_string(&sig).unwrap();
@@ -358,7 +501,7 @@ mod tests {
         match back {
             FederationFrame::Signature(s) => {
                 assert_eq!(s.signature.len(), 64);
-                assert_eq!(s.signing_key.len(), 32);
+                assert_eq!(s.verifying_key.len(), 32);
                 assert_eq!(s.kex_key.len(), 32);
             }
             _ => panic!("expected Signature"),
@@ -388,5 +531,36 @@ mod tests {
             }
             _ => panic!("expected Ready"),
         }
+    }
+
+    #[test]
+    fn encrypt_decrypt_roundtrip() {
+        let key = [42u8; 32];
+        let mut enc = crate::crypto::aead::SessionCipher::new(key, 0, crate::crypto::kdf::DomainLabel::FEDERATION_SERVER_TO_SERVER);
+        let mut dec = crate::crypto::aead::SessionCipher::new(key, 0, crate::crypto::kdf::DomainLabel::FEDERATION_SERVER_TO_SERVER);
+
+        let plaintext = b"{\"type\":\"Heartbeat\"}";
+        let encrypted = encrypt_frame(plaintext, &mut enc);
+        assert!(!encrypted.is_empty());
+        let decrypted = decrypt_frame(&encrypted, &mut dec).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn decrypt_rejects_garbage() {
+        let key = [42u8; 32];
+        let mut dec = crate::crypto::aead::SessionCipher::new(key, 0, crate::crypto::kdf::DomainLabel::FEDERATION_SERVER_TO_SERVER);
+        assert!(decrypt_frame(&[0u8; 20], &mut dec).is_err());
+    }
+
+    #[test]
+    fn decrypt_rejects_wrong_key() {
+        let key_a = [42u8; 32];
+        let key_b = [99u8; 32];
+        let mut enc = crate::crypto::aead::SessionCipher::new(key_a, 0, crate::crypto::kdf::DomainLabel::FEDERATION_SERVER_TO_SERVER);
+        let mut dec = crate::crypto::aead::SessionCipher::new(key_b, 0, crate::crypto::kdf::DomainLabel::FEDERATION_SERVER_TO_SERVER);
+
+        let encrypted = encrypt_frame(b"secret", &mut enc);
+        assert!(decrypt_frame(&encrypted, &mut dec).is_err());
     }
 }

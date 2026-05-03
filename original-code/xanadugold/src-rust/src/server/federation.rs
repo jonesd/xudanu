@@ -119,12 +119,30 @@ pub struct FederationPeerInfo {
     pub connected: bool,
 }
 
+impl FederationPeerInfo {
+    pub fn unknown(address: PeerAddress) -> Self {
+        FederationPeerInfo {
+            server_id: String::new(),
+            address,
+            connected: false,
+        }
+    }
+
+    pub fn connected(address: PeerAddress, server_id: String) -> Self {
+        FederationPeerInfo {
+            server_id,
+            address,
+            connected: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FederationInfo {
     pub server_id: String,
     pub federation_domain: String,
     pub key_id: u64,
-    pub signing_key: Vec<u8>,
+    pub verifying_key: Vec<u8>,
     pub kex_key: Vec<u8>,
     pub mode: FederationMode,
     pub peers: Vec<FederationPeerInfo>,
@@ -153,6 +171,8 @@ pub enum RoyaltyType {
 pub struct FederationState {
     config: FederationConfig,
     known_peers: HashSet<String>,
+    known_peer_keys: HashSet<String>,
+    connected_peers: HashMap<String, String>,
     royalty_ledger: Vec<RoyaltyEntry>,
 }
 
@@ -166,6 +186,8 @@ impl FederationState {
         FederationState {
             config,
             known_peers,
+            known_peer_keys: HashSet::new(),
+            connected_peers: HashMap::new(),
             royalty_ledger: Vec::new(),
         }
     }
@@ -188,6 +210,32 @@ impl FederationState {
 
     pub fn known_peers(&self) -> &HashSet<String> {
         &self.known_peers
+    }
+
+    pub fn is_peer_known(&self, verifying_key_hex: &str) -> bool {
+        if !self.config.enabled {
+            return true;
+        }
+        if self.known_peer_keys.is_empty() {
+            return true;
+        }
+        self.known_peer_keys.contains(verifying_key_hex)
+    }
+
+    pub fn register_peer_key(&mut self, verifying_key_hex: String) {
+        self.known_peer_keys.insert(verifying_key_hex);
+    }
+
+    pub fn mark_peer_connected(&mut self, address: &str, server_id: String) {
+        self.connected_peers.insert(address.to_string(), server_id);
+    }
+
+    pub fn mark_peer_disconnected(&mut self, address: &str) {
+        self.connected_peers.remove(address);
+    }
+
+    pub fn peer_server_id(&self, address: &str) -> Option<&str> {
+        self.connected_peers.get(address).map(|s| s.as_str())
     }
 
     pub fn add_peer(&mut self, address: PeerAddress) {
@@ -245,7 +293,15 @@ pub struct SyncPush {
 pub struct SyncPull {
     pub server_id: String,
     pub known_fingerprints: Vec<String>,
+    #[serde(default = "default_max_entries")]
+    pub max_entries: usize,
 }
+
+fn default_max_entries() -> usize {
+    1000
+}
+
+pub const MAX_SYNC_ENTRIES: usize = 1000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentSyncResult {
@@ -282,6 +338,10 @@ impl ContentSyncSet {
 
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 }
 
@@ -418,7 +478,7 @@ mod tests {
         ]);
         let json = serde_json::to_string_pretty(&config).unwrap();
         let back: FederationConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.enabled, true);
+        assert!(back.enabled);
         assert_eq!(back.peers.len(), 1);
         assert_eq!(back.mode, FederationMode::Closed);
     }

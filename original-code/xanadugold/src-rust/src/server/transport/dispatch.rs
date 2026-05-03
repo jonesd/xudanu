@@ -612,7 +612,7 @@ fn dispatch_inner(
             let identity = srv.server_identity();
             Ok(ResponseValue::CryptoPublicKeyResult {
                 key_id: srv.server_key_id(),
-                signing_key: identity.signing_key_bytes().to_vec(),
+                verifying_key: identity.signing_key_bytes().to_vec(),
                 kex_key: identity.kex_public_bytes().to_vec(),
                 server_id: identity.server_id,
             })
@@ -712,7 +712,7 @@ fn dispatch_inner(
                 server_id: info.server_id,
                 federation_domain: info.federation_domain,
                 key_id: info.key_id,
-                signing_key: info.signing_key,
+                verifying_key: info.verifying_key,
                 kex_key: info.kex_key,
                 mode: mode_str,
                 peers: info.peers.into_iter().map(|p| {
