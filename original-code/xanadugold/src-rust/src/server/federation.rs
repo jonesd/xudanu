@@ -173,6 +173,7 @@ pub struct FederationState {
     known_peers: HashSet<String>,
     known_peer_keys: HashSet<String>,
     connected_peers: HashMap<String, String>,
+    remote_origins: RemoteOriginRegistry,
     royalty_ledger: Vec<RoyaltyEntry>,
 }
 
@@ -188,6 +189,7 @@ impl FederationState {
             known_peers,
             known_peer_keys: HashSet::new(),
             connected_peers: HashMap::new(),
+            remote_origins: RemoteOriginRegistry::new(),
             royalty_ledger: Vec::new(),
         }
     }
@@ -257,6 +259,22 @@ impl FederationState {
 
     pub fn royalty_ledger(&self) -> &[RoyaltyEntry] {
         &self.royalty_ledger
+    }
+
+    pub fn record_remote_origin(&mut self, fingerprint: [u8; 32], origin: RemoteOrigin) {
+        self.remote_origins.record(fingerprint, origin);
+    }
+
+    pub fn get_remote_origin(&self, fingerprint: &[u8; 32]) -> Option<&RemoteOrigin> {
+        self.remote_origins.get(fingerprint)
+    }
+
+    pub fn remote_origins(&self) -> &RemoteOriginRegistry {
+        &self.remote_origins
+    }
+
+    pub fn remote_origins_mut(&mut self) -> &mut RemoteOriginRegistry {
+        &mut self.remote_origins
     }
 }
 
@@ -342,6 +360,76 @@ impl ContentSyncSet {
 
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteOrigin {
+    pub server_id: String,
+    pub local_id: u64,
+    pub element_type: RemoteElementType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteElementType {
+    Work,
+    Edition,
+    Blob,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederatedTransclusionEntry {
+    pub content_fingerprint_hex: String,
+    pub origin_server_id: String,
+    pub element_type: RemoteElementType,
+    pub local_id: u64,
+    pub is_direct: bool,
+}
+
+pub struct RemoteOriginRegistry {
+    origins: HashMap<[u8; 32], RemoteOrigin>,
+}
+
+impl RemoteOriginRegistry {
+    pub fn new() -> Self {
+        RemoteOriginRegistry {
+            origins: HashMap::new(),
+        }
+    }
+
+    pub fn record(&mut self, fingerprint: [u8; 32], origin: RemoteOrigin) {
+        self.origins.entry(fingerprint).or_insert(origin);
+    }
+
+    pub fn get(&self, fingerprint: &[u8; 32]) -> Option<&RemoteOrigin> {
+        self.origins.get(fingerprint)
+    }
+
+    pub fn origins_by_server(&self, server_id: &str) -> Vec<([u8; 32], RemoteOrigin)> {
+        self.origins
+            .iter()
+            .filter(|(_, o)| o.server_id == server_id)
+            .map(|(fp, o)| (*fp, o.clone()))
+            .collect()
+    }
+
+    pub fn len(&self) -> usize {
+        self.origins.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.origins.is_empty()
+    }
+
+    pub fn contains(&self, fingerprint: &[u8; 32]) -> bool {
+        self.origins.contains_key(fingerprint)
+    }
+}
+
+impl Default for RemoteOriginRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -481,5 +569,116 @@ mod tests {
         assert!(back.enabled);
         assert_eq!(back.peers.len(), 1);
         assert_eq!(back.mode, FederationMode::Closed);
+    }
+
+    #[test]
+    fn remote_origin_record_and_get() {
+        let mut registry = RemoteOriginRegistry::new();
+        let fp = [1u8; 32];
+        let origin = RemoteOrigin {
+            server_id: "server-a".to_string(),
+            local_id: 42,
+            element_type: RemoteElementType::Work,
+        };
+        assert!(registry.is_empty());
+        registry.record(fp, origin.clone());
+        assert_eq!(registry.len(), 1);
+        assert!(registry.contains(&fp));
+
+        let got = registry.get(&fp).unwrap();
+        assert_eq!(got.server_id, "server-a");
+        assert_eq!(got.local_id, 42);
+        assert_eq!(got.element_type, RemoteElementType::Work);
+    }
+
+    #[test]
+    fn remote_origin_overwrite_on_duplicate() {
+        let mut registry = RemoteOriginRegistry::new();
+        let fp = [2u8; 32];
+        registry.record(fp, RemoteOrigin {
+            server_id: "first".to_string(),
+            local_id: 1,
+            element_type: RemoteElementType::Edition,
+        });
+        registry.record(fp, RemoteOrigin {
+            server_id: "second".to_string(),
+            local_id: 2,
+            element_type: RemoteElementType::Work,
+        });
+        assert_eq!(registry.len(), 1);
+        assert_eq!(registry.get(&fp).unwrap().server_id, "first");
+    }
+
+    #[test]
+    fn remote_origins_by_server() {
+        let mut registry = RemoteOriginRegistry::new();
+        registry.record([1u8; 32], RemoteOrigin {
+            server_id: "a".to_string(),
+            local_id: 1,
+            element_type: RemoteElementType::Work,
+        });
+        registry.record([2u8; 32], RemoteOrigin {
+            server_id: "b".to_string(),
+            local_id: 2,
+            element_type: RemoteElementType::Edition,
+        });
+        registry.record([3u8; 32], RemoteOrigin {
+            server_id: "a".to_string(),
+            local_id: 3,
+            element_type: RemoteElementType::Blob,
+        });
+        let from_a = registry.origins_by_server("a");
+        assert_eq!(from_a.len(), 2);
+        let from_b = registry.origins_by_server("b");
+        assert_eq!(from_b.len(), 1);
+        let from_c = registry.origins_by_server("c");
+        assert!(from_c.is_empty());
+    }
+
+    #[test]
+    fn remote_origin_serialize_roundtrip() {
+        let origin = RemoteOrigin {
+            server_id: "test-server".to_string(),
+            local_id: 99,
+            element_type: RemoteElementType::Edition,
+        };
+        let json = serde_json::to_string(&origin).unwrap();
+        let back: RemoteOrigin = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.server_id, "test-server");
+        assert_eq!(back.local_id, 99);
+        assert_eq!(back.element_type, RemoteElementType::Edition);
+    }
+
+    #[test]
+    fn federated_transclusion_entry_serialize() {
+        let entry = FederatedTransclusionEntry {
+            content_fingerprint_hex: "ab".repeat(32),
+            origin_server_id: "srv".to_string(),
+            element_type: RemoteElementType::Work,
+            local_id: 7,
+            is_direct: true,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let back: FederatedTransclusionEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.origin_server_id, "srv");
+        assert_eq!(back.local_id, 7);
+        assert!(back.is_direct);
+    }
+
+    #[test]
+    fn federation_state_remote_origin_tracking() {
+        let mut state = FederationState::new(FederationConfig::disabled());
+        let fp = [42u8; 32];
+        state.record_remote_origin(fp, RemoteOrigin {
+            server_id: "remote".to_string(),
+            local_id: 10,
+            element_type: RemoteElementType::Work,
+        });
+        let origin = state.get_remote_origin(&fp).unwrap();
+        assert_eq!(origin.server_id, "remote");
+        assert_eq!(origin.local_id, 10);
+
+        let missing = state.get_remote_origin(&[0u8; 32]);
+        assert!(missing.is_none());
     }
 }

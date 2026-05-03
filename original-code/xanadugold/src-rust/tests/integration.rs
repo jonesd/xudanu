@@ -2927,3 +2927,174 @@ async fn federation_content_replication_between_two_servers() {
 
     panic!("expected error or ready, got: {:?}", next_val);
 }
+
+// ── Cross-server transclusion tests (Phase 17) ──────────────────────
+
+#[tokio::test]
+async fn federated_transclusion_records_origin_on_import() {
+    let srv_a = FederationTestServer::start().await;
+    let srv_b = FederationTestServer::start().await;
+
+    let url_a = format!("ws://{}/xudanu?format=json&version={}", srv_a.addr, PROTOCOL_VERSION);
+    let (stream_a, _) = tokio_tungstenite::connect_async(&url_a).await.unwrap();
+    let (mut s_a, mut r_a) = stream_a.split();
+    recv_handshake(&mut r_a).await;
+    let _ = send_recv_json(&mut s_a, &mut r_a,
+        json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s_a, &mut r_a,
+        json_req(2, "session_login_public", None)).await;
+
+    let resp = send_recv_json(&mut s_a, &mut r_a,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "unique federated text"}
+        })))).await;
+    assert_eq!(resp["type"], "response");
+
+    let push = srv_a.state.server.with_server(|srv| {
+        srv.federation_export_works()
+    });
+    assert!(push.len() >= 1);
+
+    let my_id = srv_b.state.server.with_server_ref(|srv| srv.federation_server_id());
+    let (imported, _) = srv_b.state.server.with_server(|srv| {
+        srv.federation_import_works(&push, &my_id)
+    });
+    assert!(imported >= 1);
+
+    let has_origins = srv_b.state.server.with_server_ref(|srv| {
+        srv.federation_remote_origin_count() > 0
+    });
+    assert!(has_origins, "server B should have remote origin entries after import");
+
+    let has_federated = srv_b.state.server.with_server_ref(|srv| {
+        srv.federation_has_federated_transclusions()
+    });
+    assert!(has_federated, "server B should have federated transclusion entries");
+}
+
+#[tokio::test]
+async fn federated_transclusion_query_returns_local_results() {
+    let srv = FederationTestServer::start().await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(2, "session_login_public", None)).await;
+
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "hello"}
+        })))).await;
+
+    let text_elem = xudanu::edition::RangeElement::text("h".to_string());
+    let fp = text_elem.content_fingerprint();
+    let fp_hex: String = fp.iter().map(|b| format!("{:02x}", b)).collect();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "federated_transclusion_query", Some(serde_json::json!({
+            "content_fingerprint_hex": fp_hex,
+            "direct_only": false
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let results = resp["value"]["value"]["results"].as_array().unwrap();
+    assert!(!results.is_empty(), "should find local transclusion results");
+}
+
+#[tokio::test]
+async fn federated_content_fetch_returns_edition() {
+    let srv = FederationTestServer::start().await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(2, "session_login_public", None)).await;
+
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "fetch me"}
+        })))).await;
+
+    let text_elem = xudanu::edition::RangeElement::text("f".to_string());
+    let fp = text_elem.content_fingerprint();
+    let fp_hex: String = fp.iter().map(|b| format!("{:02x}", b)).collect();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "federated_content_fetch", Some(serde_json::json!({
+            "content_fingerprint_hex": fp_hex
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["found"], true);
+}
+
+#[tokio::test]
+async fn federated_content_fetch_not_found() {
+    let srv = FederationTestServer::start().await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(2, "session_login_public", None)).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "federated_content_fetch", Some(serde_json::json!({
+            "content_fingerprint_hex": "ff".repeat(32)
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["found"], false);
+}
+
+#[tokio::test]
+async fn cross_server_transclusion_after_sync() {
+    let srv_a = FederationTestServer::start().await;
+    let srv_b = FederationTestServer::start().await;
+
+    let url_a = format!("ws://{}/xudanu?format=json&version={}", srv_a.addr, PROTOCOL_VERSION);
+    let (stream_a, _) = tokio_tungstenite::connect_async(&url_a).await.unwrap();
+    let (mut s_a, mut r_a) = stream_a.split();
+    recv_handshake(&mut r_a).await;
+    let _ = send_recv_json(&mut s_a, &mut r_a, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s_a, &mut r_a, json_req(2, "session_login_public", None)).await;
+
+    let _ = send_recv_json(&mut s_a, &mut r_a,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "shared across servers"}
+        })))).await;
+
+    let push = srv_a.state.server.with_server(|srv| srv.federation_export_works());
+    let my_id = srv_b.state.server.with_server_ref(|srv| srv.federation_server_id());
+    srv_b.state.server.with_server(|srv| {
+        srv.federation_import_works(&push, &my_id)
+    });
+
+    let text_elem = xudanu::edition::RangeElement::text("s".to_string());
+    let fp = text_elem.content_fingerprint();
+    let fp_hex: String = fp.iter().map(|b| format!("{:02x}", b)).collect();
+
+    let url_b = format!("ws://{}/xudanu?format=json&version={}", srv_b.addr, PROTOCOL_VERSION);
+    let (stream_b, _) = tokio_tungstenite::connect_async(&url_b).await.unwrap();
+    let (mut s_b, mut r_b) = stream_b.split();
+    recv_handshake(&mut r_b).await;
+    let _ = send_recv_json(&mut s_b, &mut r_b, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s_b, &mut r_b, json_req(2, "session_login_public", None)).await;
+
+    let resp = send_recv_json(&mut s_b, &mut r_b,
+        json_req(10, "federated_transclusion_query", Some(serde_json::json!({
+            "content_fingerprint_hex": fp_hex,
+            "direct_only": false
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let results = resp["value"]["value"]["results"].as_array().unwrap();
+    assert!(!results.is_empty(), "server B should find transclusion results after sync");
+}

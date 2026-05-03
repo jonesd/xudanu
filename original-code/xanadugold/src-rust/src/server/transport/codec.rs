@@ -1098,6 +1098,25 @@ impl JsonCodec {
             OperationCode::FederationPeers => {
                 Ok(WireRequest::FederationPeers)
             }
+            OperationCode::FederatedTransclusionQuery => {
+                #[derive(Deserialize)]
+                struct Args { content_fingerprint_hex: String, #[serde(default)] direct_only: bool }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::FederatedTransclusionQuery {
+                    content_fingerprint_hex: args.content_fingerprint_hex,
+                    direct_only: args.direct_only,
+                })
+            }
+            OperationCode::FederatedContentFetch => {
+                #[derive(Deserialize)]
+                struct Args { content_fingerprint_hex: String }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::FederatedContentFetch {
+                    content_fingerprint_hex: args.content_fingerprint_hex,
+                })
+            }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }

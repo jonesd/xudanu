@@ -53,6 +53,10 @@ pub enum FederationFrame {
     ContentResponse { found: bool, edition_payload: Option<crate::server::transport::protocol::EditionPayload> },
     BlobGet { content_hash_hex: String },
     BlobResponse { found: bool, data: Option<String>, mime_type: Option<String> },
+    TranscludeQuery { content_fingerprint_hex: String, direct_only: bool },
+    TranscludeResponse { results: Vec<crate::server::federation::FederatedTransclusionEntry> },
+    ContentFetch { content_fingerprint_hex: String },
+    ContentFetchResponse { found: bool, edition_payload: Option<crate::server::transport::protocol::EditionPayload>, blob_data: Option<String>, blob_mime_type: Option<String> },
 }
 
 pub fn build_federation_router(state: SharedState) -> Router {
@@ -363,6 +367,43 @@ async fn handle_federation_socket(
                                 });
                                 send_encrypted_frame(&mut ws_sender, &response, &mut outbound_cipher).await;
                             }
+                            Ok(FederationFrame::TranscludeQuery { content_fingerprint_hex, direct_only }) => {
+                                let results = state.server.with_server(|srv| {
+                                    srv.federation_query_local_transclusion(&content_fingerprint_hex, direct_only)
+                                });
+                                send_encrypted_frame(&mut ws_sender, &FederationFrame::TranscludeResponse { results }, &mut outbound_cipher).await;
+                            }
+                            Ok(FederationFrame::ContentFetch { content_fingerprint_hex }) => {
+                                let response = state.server.with_server(|srv| {
+                                    match srv.federation_fetch_by_fingerprint(&content_fingerprint_hex) {
+                                        super::super::server::FederationFetchResponse::Edition(payload) => {
+                                            FederationFrame::ContentFetchResponse {
+                                                found: true,
+                                                edition_payload: Some(payload),
+                                                blob_data: None,
+                                                blob_mime_type: None,
+                                            }
+                                        }
+                                        super::super::server::FederationFetchResponse::Blob(data, mime) => {
+                                            FederationFrame::ContentFetchResponse {
+                                                found: true,
+                                                edition_payload: None,
+                                                blob_data: Some(data),
+                                                blob_mime_type: Some(mime),
+                                            }
+                                        }
+                                        super::super::server::FederationFetchResponse::NotFound => {
+                                            FederationFrame::ContentFetchResponse {
+                                                found: false,
+                                                edition_payload: None,
+                                                blob_data: None,
+                                                blob_mime_type: None,
+                                            }
+                                        }
+                                    }
+                                });
+                                send_encrypted_frame(&mut ws_sender, &response, &mut outbound_cipher).await;
+                            }
                             Ok(frame) => {
                                 tracing::warn!("Federation: unexpected frame type from {}: {:?}", peer_server_id, frame);
                             }
@@ -562,5 +603,83 @@ mod tests {
 
         let encrypted = encrypt_frame(b"secret", &mut enc);
         assert!(decrypt_frame(&encrypted, &mut dec).is_err());
+    }
+
+    #[test]
+    fn federation_frame_transclude_query_roundtrip() {
+        let frame = FederationFrame::TranscludeQuery {
+            content_fingerprint_hex: "ab".repeat(32),
+            direct_only: true,
+        };
+        let json = serde_json::to_string(&frame).unwrap();
+        assert!(json.contains("\"type\":\"TranscludeQuery\""));
+        let back: FederationFrame = serde_json::from_str(&json).unwrap();
+        match back {
+            FederationFrame::TranscludeQuery { content_fingerprint_hex, direct_only } => {
+                assert_eq!(content_fingerprint_hex.len(), 64);
+                assert!(direct_only);
+            }
+            _ => panic!("expected TranscludeQuery"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_transclude_response_roundtrip() {
+        let frame = FederationFrame::TranscludeResponse {
+            results: vec![
+                crate::server::federation::FederatedTransclusionEntry {
+                    content_fingerprint_hex: "cd".repeat(32),
+                    origin_server_id: "srv-a".to_string(),
+                    element_type: crate::server::federation::RemoteElementType::Work,
+                    local_id: 42,
+                    is_direct: true,
+                },
+            ],
+        };
+        let json = serde_json::to_string(&frame).unwrap();
+        assert!(json.contains("\"type\":\"TranscludeResponse\""));
+        let back: FederationFrame = serde_json::from_str(&json).unwrap();
+        match back {
+            FederationFrame::TranscludeResponse { results } => {
+                assert_eq!(results.len(), 1);
+                assert_eq!(results[0].origin_server_id, "srv-a");
+            }
+            _ => panic!("expected TranscludeResponse"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_content_fetch_roundtrip() {
+        let frame = FederationFrame::ContentFetch {
+            content_fingerprint_hex: "ff".repeat(32),
+        };
+        let json = serde_json::to_string(&frame).unwrap();
+        assert!(json.contains("\"type\":\"ContentFetch\""));
+        let back: FederationFrame = serde_json::from_str(&json).unwrap();
+        match back {
+            FederationFrame::ContentFetch { content_fingerprint_hex } => {
+                assert_eq!(content_fingerprint_hex, "ff".repeat(32));
+            }
+            _ => panic!("expected ContentFetch"),
+        }
+    }
+
+    #[test]
+    fn federation_frame_content_fetch_response_roundtrip() {
+        let frame = FederationFrame::ContentFetchResponse {
+            found: false,
+            edition_payload: None,
+            blob_data: None,
+            blob_mime_type: None,
+        };
+        let json = serde_json::to_string(&frame).unwrap();
+        assert!(json.contains("\"type\":\"ContentFetchResponse\""));
+        let back: FederationFrame = serde_json::from_str(&json).unwrap();
+        match back {
+            FederationFrame::ContentFetchResponse { found, .. } => {
+                assert!(!found);
+            }
+            _ => panic!("expected ContentFetchResponse"),
+        }
     }
 }

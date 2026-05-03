@@ -1839,6 +1839,18 @@ impl Server {
         self.federation.mark_peer_disconnected(address);
     }
 
+    pub fn get_remote_origin(&self, fingerprint: &[u8; 32]) -> Option<&crate::server::federation::RemoteOrigin> {
+        self.federation.get_remote_origin(fingerprint)
+    }
+
+    pub fn federation_remote_origin_count(&self) -> usize {
+        self.federation.remote_origins().len()
+    }
+
+    pub fn federation_has_federated_transclusions(&self) -> bool {
+        self.transclusion_index.has_federated_entries()
+    }
+
     pub fn federation_is_enabled(&self) -> bool {
         self.federation.is_enabled()
     }
@@ -1961,6 +1973,22 @@ impl Server {
                 self.works.insert(be_id, ws);
                 imported += 1;
             }
+            let edition_for_origin = entry.edition_payload.to_edition();
+            for (_, carrier) in edition_for_origin.all_entries() {
+                let fp = carrier.element.content_fingerprint();
+                self.federation.record_remote_origin(fp, crate::server::federation::RemoteOrigin {
+                    server_id: entry.origin_server_id.clone(),
+                    local_id: entry.work_id,
+                    element_type: crate::server::federation::RemoteElementType::Work,
+                });
+                self.transclusion_index.register_federated(
+                    &carrier.element,
+                    entry.origin_server_id.clone(),
+                    entry.work_id,
+                    "work".to_string(),
+                    true,
+                );
+            }
         }
         (imported, already_known)
     }
@@ -2035,6 +2063,143 @@ impl Server {
             meta.mime_type.clone(),
         ))
     }
+
+    pub fn federation_query_local_transclusion(
+        &self,
+        content_fingerprint_hex: &str,
+        direct_only: bool,
+    ) -> Vec<crate::server::federation::FederatedTransclusionEntry> {
+        let mut entries = Vec::new();
+
+        let local_results = self.transclusion_index.find_by_fingerprint_hex(content_fingerprint_hex);
+        for (element, is_direct) in &local_results {
+            if direct_only && !is_direct {
+                continue;
+            }
+            let (elem_type, local_id) = match element {
+                crate::edition::RangeElement::Edition { edition_id } => ("edition", edition_id.0),
+                crate::edition::RangeElement::Work { work_id } => ("work", work_id.0),
+                _ => continue,
+            };
+            entries.push(crate::server::federation::FederatedTransclusionEntry {
+                content_fingerprint_hex: content_fingerprint_hex.to_string(),
+                origin_server_id: self.federation_server_id(),
+                element_type: match elem_type {
+                    "work" => crate::server::federation::RemoteElementType::Work,
+                    _ => crate::server::federation::RemoteElementType::Edition,
+                },
+                local_id,
+                is_direct: *is_direct,
+            });
+        }
+
+        let fed_results = self.transclusion_index.find_federated_by_hex(content_fingerprint_hex);
+        for result in &fed_results {
+            if direct_only && !result.is_direct {
+                continue;
+            }
+            entries.push(crate::server::federation::FederatedTransclusionEntry {
+                content_fingerprint_hex: content_fingerprint_hex.to_string(),
+                origin_server_id: result.origin_server_id.clone(),
+                element_type: match result.element_type.as_str() {
+                    "work" => crate::server::federation::RemoteElementType::Work,
+                    _ => crate::server::federation::RemoteElementType::Edition,
+                },
+                local_id: result.local_id,
+                is_direct: result.is_direct,
+            });
+        }
+
+        entries
+    }
+
+    pub fn federation_fetch_by_fingerprint(
+        &self,
+        content_fingerprint_hex: &str,
+    ) -> FederationFetchResponse {
+        if let Some(fp_bytes) = Self::hex_to_fingerprint(content_fingerprint_hex) {
+            for (_, ws) in &self.works {
+                let ed = ws.work.current_edition();
+                let entries = ed.all_entries();
+                for (_, carrier) in &entries {
+                    if carrier.element.content_fingerprint().as_slice() == fp_bytes.as_slice() {
+                        let payload = crate::server::transport::protocol::EditionPayload::from_edition(&ed);
+                        return FederationFetchResponse::Edition(payload);
+                    }
+                }
+            }
+            if let Ok(hash) = <[u8; 32]>::try_from(fp_bytes.as_slice()) {
+                if let Ok(data) = self.blob_store.retrieve(&hash) {
+                    if let Some(meta) = self.blob_store.get_meta(&hash) {
+                        return FederationFetchResponse::Blob(
+                            crate::edition::blob_store::base64_encode(&data),
+                            meta.mime_type.clone(),
+                        );
+                    }
+                }
+            }
+        }
+        FederationFetchResponse::NotFound
+    }
+
+    pub fn federation_record_remote_origins_for_works(
+        &mut self,
+        entries: &[crate::server::federation::SyncWorkEntry],
+    ) {
+        for entry in entries {
+            let edition = entry.edition_payload.to_edition();
+            let all = edition.all_entries();
+            for (_, carrier) in &all {
+                let fp = carrier.element.content_fingerprint();
+                self.federation.record_remote_origin(fp, crate::server::federation::RemoteOrigin {
+                    server_id: entry.origin_server_id.clone(),
+                    local_id: entry.work_id,
+                    element_type: crate::server::federation::RemoteElementType::Work,
+                });
+                self.transclusion_index.register_federated(
+                    &carrier.element,
+                    entry.origin_server_id.clone(),
+                    entry.work_id,
+                    "work".to_string(),
+                    true,
+                );
+            }
+        }
+    }
+
+    pub fn federation_record_remote_origins_for_blobs(
+        &mut self,
+        entries: &[crate::server::federation::SyncBlobEntry],
+    ) {
+        for entry in entries {
+            if let Some(hash) = crate::edition::blob_store::hex_to_hash(&entry.content_hash_hex) {
+                self.federation.record_remote_origin(hash, crate::server::federation::RemoteOrigin {
+                    server_id: String::new(),
+                    local_id: 0,
+                    element_type: crate::server::federation::RemoteElementType::Blob,
+                });
+            }
+        }
+    }
+
+    fn hex_to_fingerprint(hex: &str) -> Option<Vec<u8>> {
+        if hex.len() != 64 { return None; }
+        let mut bytes = Vec::with_capacity(32);
+        for i in (0..64).step_by(2) {
+            match u8::from_str_radix(&hex[i..i+2], 16) {
+                Ok(b) => bytes.push(b),
+                Err(_) => return None,
+            }
+        }
+        Some(bytes)
+    }
+}
+
+#[derive(Debug)]
+pub enum FederationFetchResponse {
+    Edition(crate::server::transport::protocol::EditionPayload),
+    Blob(String, String),
+    NotFound,
 }
 
 #[cfg(feature = "server")]
@@ -3472,5 +3637,82 @@ mod tests {
         assert_eq!(server.content_address_count(), count1, "duplicate doc should not increase count");
         server.create_work(sid, Edition::from_text("world")).unwrap();
         assert!(server.content_address_count() > count1);
+    }
+
+    #[test]
+    fn federation_remote_origin_recorded_on_import() {
+        let mut server = Server::new();
+        let push = vec![crate::server::federation::SyncWorkEntry {
+            origin_server_id: "remote-server".to_string(),
+            work_id: 100,
+            edition_payload: crate::server::transport::protocol::EditionPayload::Text("hello world".to_string()),
+        }];
+        let my_id = server.federation_server_id();
+        let (imported, _) = server.federation_import_works(&push, &my_id);
+        assert_eq!(imported, 1);
+        assert!(server.federation.remote_origins().len() > 0);
+    }
+
+    #[test]
+    fn federation_transclusion_index_after_import() {
+        let mut server = Server::new();
+        let push = vec![crate::server::federation::SyncWorkEntry {
+            origin_server_id: "remote-server".to_string(),
+            work_id: 200,
+            edition_payload: crate::server::transport::protocol::EditionPayload::Text("hi".to_string()),
+        }];
+        let my_id = server.federation_server_id();
+        server.federation_import_works(&push, &my_id);
+
+        let content = RangeElement::text("h".to_string());
+        let fed_results = server.transclusion_index.find_federated_transcluders(&content);
+        assert_eq!(fed_results.len(), 1);
+        assert_eq!(fed_results[0].origin_server_id, "remote-server");
+        assert_eq!(fed_results[0].local_id, 200);
+    }
+
+    #[test]
+    fn federation_fetch_by_fingerprint_found() {
+        let (mut server, sid) = setup_logged_in_server();
+        server.create_work(sid, Edition::from_text("fetchable content")).unwrap();
+
+        let first_char = RangeElement::text("f".to_string());
+        let fp = first_char.content_fingerprint();
+        let hex: String = fp.iter().map(|b| format!("{:02x}", b)).collect();
+
+        let result = server.federation_fetch_by_fingerprint(&hex);
+        match result {
+            FederationFetchResponse::Edition(_) => {},
+            other => panic!("expected Edition response, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn federation_fetch_by_fingerprint_not_found() {
+        let server = Server::new();
+        let hex = "ff".repeat(32);
+        let result = server.federation_fetch_by_fingerprint(&hex);
+        match result {
+            FederationFetchResponse::NotFound => {},
+            other => panic!("expected NotFound, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn federation_royalty_on_cross_server_transclusion() {
+        let mut server = Server::new();
+        let text_elem = RangeElement::text("royalty content");
+        let fp = text_elem.content_fingerprint();
+        server.federation.record_royalty(crate::server::federation::RoyaltyEntry {
+            origin_server_id: "origin-server".to_string(),
+            content_fingerprint: fp,
+            royalty_type: crate::server::federation::RoyaltyType::Transclusion,
+            amount: 50,
+            timestamp: 1234567890,
+        });
+        let ledger = server.federation.royalty_ledger();
+        assert_eq!(ledger.len(), 1);
+        assert_eq!(ledger[0].amount, 50);
+        assert_eq!(ledger[0].origin_server_id, "origin-server");
     }
 }
