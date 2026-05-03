@@ -3149,3 +3149,191 @@ async fn federated_content_fetch_rejected_when_federation_disabled() {
         })))).await;
     assert_eq!(resp["type"], "error", "should reject content fetch when federation disabled");
 }
+
+// =====================================================================
+// Phase 18: DagWood Reconciliation & Endorsement Sync Integration Tests
+// =====================================================================
+
+#[tokio::test]
+async fn endorsement_add_returns_tag() {
+    let srv = FederationTestServer::start().await;
+    srv.state.server.with_server(|srv| {
+        srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
+    });
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "endorsed content"}
+        })))).await;
+
+    let states = srv.state.server.with_server(|srv| srv.reconcile_export_all());
+    let fp = &states[0].work_fingerprint;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "endorsement_add", Some(serde_json::json!({
+            "work_fingerprint": fp,
+            "club_id": 42,
+            "token_id": 7
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert!(resp["value"]["value"]["tag_counter"].as_u64().unwrap() > 0);
+}
+
+#[tokio::test]
+async fn endorsement_query_returns_added_endorsements() {
+    let srv = FederationTestServer::start().await;
+    srv.state.server.with_server(|srv| {
+        srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
+    });
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "query me"}
+        })))).await;
+
+    let states = srv.state.server.with_server(|srv| srv.reconcile_export_all());
+    let fp = &states[0].work_fingerprint;
+
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(11, "endorsement_add", Some(serde_json::json!({
+            "work_fingerprint": fp,
+            "club_id": 5,
+            "token_id": 10
+        })))).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "endorsement_query", Some(serde_json::json!({
+            "work_fingerprint": fp
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let endorsements = resp["value"]["value"]["endorsements"].as_array().unwrap();
+    assert_eq!(endorsements.len(), 1);
+    assert_eq!(endorsements[0][0].as_u64().unwrap(), 5);
+    assert_eq!(endorsements[0][1].as_u64().unwrap(), 10);
+}
+
+#[tokio::test]
+async fn state_sync_returns_reconcile_states() {
+    let srv = FederationTestServer::start().await;
+    srv.state.server.with_server(|srv| {
+        srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
+    });
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "sync state"}
+        })))).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "state_sync", Some(serde_json::json!({
+            "work_fingerprints": []
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let states = resp["value"]["value"]["states"].as_array().unwrap();
+    assert!(!states.is_empty(), "should return reconcile states");
+}
+
+#[tokio::test]
+async fn state_alternatives_returns_editions() {
+    let srv = FederationTestServer::start().await;
+    srv.state.server.with_server(|srv| {
+        srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
+    });
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "alt content"}
+        })))).await;
+
+    let states = srv.state.server.with_server(|srv| srv.reconcile_export_all());
+    let fp = &states[0].work_fingerprint;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "state_alternatives", Some(serde_json::json!({
+            "work_fingerprint": fp
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let alternatives = resp["value"]["value"]["alternatives"].as_array().unwrap();
+    assert_eq!(alternatives.len(), 1);
+    assert!(!resp["value"]["value"]["current_key"].as_str().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn reconcile_merge_across_servers() {
+    let srv_a = FederationTestServer::start().await;
+    let srv_b = FederationTestServer::start().await;
+
+    let url_a = format!("ws://{}/xudanu?format=json&version={}", srv_a.addr, PROTOCOL_VERSION);
+    let (stream_a, _) = tokio_tungstenite::connect_async(&url_a).await.unwrap();
+    let (mut s_a, mut r_a) = stream_a.split();
+    recv_handshake(&mut r_a).await;
+    let _ = send_recv_json(&mut s_a, &mut r_a, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s_a, &mut r_a, json_req(2, "session_login_public", None)).await;
+
+    let _ = send_recv_json(&mut s_a, &mut r_a,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "shared content for reconcile"}
+        })))).await;
+
+    let states_a = srv_a.state.server.with_server(|srv| srv.reconcile_export_all());
+    let fp = states_a[0].work_fingerprint.clone();
+
+    let alt_b = srv_b.state.server.with_server(|srv| {
+        let edition = xudanu::edition::Edition::from_text("server B version");
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            + 1000;
+        xudanu::server::federation::AlternativeEdition::new(
+            srv.federation_server_id(),
+            0,
+            &edition,
+            ts,
+        )
+    });
+
+    srv_b.state.server.with_server(|srv| {
+        let remote = xudanu::server::federation::ReconcileState::new(
+            &fp,
+            format!("{}:0", srv.federation_server_id()),
+            alt_b.clone(),
+            srv.federation_server_id(),
+            alt_b.timestamp,
+        );
+        srv.reconcile_merge_remote(remote);
+    });
+
+    let states_b = srv_b.state.server.with_server(|srv| srv.reconcile_export_all());
+    assert_eq!(states_b.len(), 1);
+    assert_eq!(states_b[0].alternative_count(), 1);
+    assert_eq!(states_b[0].current_text().unwrap(), "server B version");
+}

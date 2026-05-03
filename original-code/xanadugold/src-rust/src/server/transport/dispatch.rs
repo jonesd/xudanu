@@ -773,6 +773,75 @@ fn dispatch_inner(
                 }
             }
         }
+        WireRequest::EndorsementSync { work_fingerprint } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            let entries = srv.reconcile_export_endorsements();
+            let matches: Vec<(u64, u64, String)> = entries
+                .into_iter()
+                .filter(|(fp, _)| fp == &work_fingerprint)
+                .flat_map(|(_, orset)| {
+                    let vals: Vec<(u64, u64, String)> = orset.values()
+                        .into_iter()
+                        .map(|e| (e.club_id, e.token_id, e.origin_server_id.clone()))
+                        .collect();
+                    vals
+                })
+                .collect();
+            Ok(ResponseValue::EndorsementSyncResult { endorsements: matches })
+        }
+        WireRequest::EndorsementAdd { work_fingerprint, club_id, token_id } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            let tag = srv.reconcile_next_tag();
+            let tag_server_id = tag.server_id.clone();
+            let tag_counter = tag.counter;
+            srv.reconcile_endorse(&work_fingerprint, club_id, token_id, tag);
+            Ok(ResponseValue::EndorsementAddResult { tag_server_id, tag_counter })
+        }
+        WireRequest::EndorsementRetract { work_fingerprint, club_id, token_id } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            let tag = crate::server::federation::OrSetTag::new(srv.federation_server_id(), 0);
+            srv.reconcile_retract(&work_fingerprint, club_id, token_id, &tag);
+            Ok(ResponseValue::EndorsementRetractResult {})
+        }
+        WireRequest::EndorsementQuery { work_fingerprint } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            let matches = match srv.reconcile_get(&work_fingerprint) {
+                Some(state) => state.endorsements.values()
+                    .into_iter()
+                    .map(|e| (e.club_id, e.token_id, e.origin_server_id.clone()))
+                    .collect(),
+                None => Vec::new(),
+            };
+            Ok(ResponseValue::EndorsementQueryResult { endorsements: matches })
+        }
+        WireRequest::StateSync { work_fingerprints } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            let states: Vec<crate::server::federation::ReconcileState> = srv.reconcile_export_all()
+                .into_iter()
+                .filter(|s| work_fingerprints.is_empty() || work_fingerprints.contains(&s.work_fingerprint))
+                .collect();
+            Ok(ResponseValue::StateSyncResult { states })
+        }
+        WireRequest::StateAlternatives { work_fingerprint } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            let alternatives = srv.reconcile_alternatives(&work_fingerprint);
+            let current_key = srv.reconcile_get(&work_fingerprint)
+                .map(|s| s.current.value().clone())
+                .unwrap_or_default();
+            Ok(ResponseValue::StateAlternativesResult { alternatives, current_key })
+        }
     }
 }
 

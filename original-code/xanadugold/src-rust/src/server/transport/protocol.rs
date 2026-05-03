@@ -195,6 +195,13 @@ pub enum OperationCode {
     FederationPeers,
     FederatedTransclusionQuery,
     FederatedContentFetch,
+
+    EndorsementSync,
+    EndorsementAdd,
+    EndorsementRetract,
+    EndorsementQuery,
+    StateSync,
+    StateAlternatives,
 }
 
 impl OperationCode {
@@ -323,6 +330,13 @@ impl OperationCode {
             0x1402 => Some(OperationCode::FederationPeers),
             0x1701 => Some(OperationCode::FederatedTransclusionQuery),
             0x1702 => Some(OperationCode::FederatedContentFetch),
+
+            0x1801 => Some(OperationCode::EndorsementSync),
+            0x1802 => Some(OperationCode::EndorsementAdd),
+            0x1803 => Some(OperationCode::EndorsementRetract),
+            0x1804 => Some(OperationCode::EndorsementQuery),
+            0x1805 => Some(OperationCode::StateSync),
+            0x1806 => Some(OperationCode::StateAlternatives),
 
             _ => None,
         }
@@ -454,6 +468,13 @@ impl OperationCode {
             OperationCode::FederationPeers => 0x1402,
             OperationCode::FederatedTransclusionQuery => 0x1701,
             OperationCode::FederatedContentFetch => 0x1702,
+
+            OperationCode::EndorsementSync => 0x1801,
+            OperationCode::EndorsementAdd => 0x1802,
+            OperationCode::EndorsementRetract => 0x1803,
+            OperationCode::EndorsementQuery => 0x1804,
+            OperationCode::StateSync => 0x1805,
+            OperationCode::StateAlternatives => 0x1806,
         }
     }
 }
@@ -627,6 +648,13 @@ pub enum WireRequest {
     FederationPeers,
     FederatedTransclusionQuery { content_fingerprint_hex: String, direct_only: bool },
     FederatedContentFetch { content_fingerprint_hex: String },
+
+    EndorsementSync { work_fingerprint: String },
+    EndorsementAdd { work_fingerprint: String, club_id: u64, token_id: u64 },
+    EndorsementRetract { work_fingerprint: String, club_id: u64, token_id: u64 },
+    EndorsementQuery { work_fingerprint: String },
+    StateSync { work_fingerprints: Vec<String> },
+    StateAlternatives { work_fingerprint: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -784,6 +812,25 @@ pub enum ResponseValue {
         edition_payload: Option<EditionPayload>,
         blob_data: Option<String>,
         blob_mime_type: Option<String>,
+    },
+
+    EndorsementSyncResult {
+        endorsements: Vec<(u64, u64, String)>,
+    },
+    EndorsementAddResult {
+        tag_server_id: String,
+        tag_counter: u64,
+    },
+    EndorsementRetractResult {},
+    EndorsementQueryResult {
+        endorsements: Vec<(u64, u64, String)>,
+    },
+    StateSyncResult {
+        states: Vec<crate::server::federation::ReconcileState>,
+    },
+    StateAlternativesResult {
+        alternatives: Vec<crate::server::federation::AlternativeEdition>,
+        current_key: String,
     },
 }
 

@@ -1117,6 +1117,64 @@ impl JsonCodec {
                     content_fingerprint_hex: args.content_fingerprint_hex,
                 })
             }
+            OperationCode::EndorsementSync => {
+                #[derive(Deserialize)]
+                struct Args { work_fingerprint: String }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EndorsementSync {
+                    work_fingerprint: args.work_fingerprint,
+                })
+            }
+            OperationCode::EndorsementAdd => {
+                #[derive(Deserialize)]
+                struct Args { work_fingerprint: String, club_id: u64, token_id: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EndorsementAdd {
+                    work_fingerprint: args.work_fingerprint,
+                    club_id: args.club_id,
+                    token_id: args.token_id,
+                })
+            }
+            OperationCode::EndorsementRetract => {
+                #[derive(Deserialize)]
+                struct Args { work_fingerprint: String, club_id: u64, token_id: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EndorsementRetract {
+                    work_fingerprint: args.work_fingerprint,
+                    club_id: args.club_id,
+                    token_id: args.token_id,
+                })
+            }
+            OperationCode::EndorsementQuery => {
+                #[derive(Deserialize)]
+                struct Args { work_fingerprint: String }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::EndorsementQuery {
+                    work_fingerprint: args.work_fingerprint,
+                })
+            }
+            OperationCode::StateSync => {
+                #[derive(Deserialize)]
+                struct Args { #[serde(default)] work_fingerprints: Vec<String> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::StateSync {
+                    work_fingerprints: args.work_fingerprints,
+                })
+            }
+            OperationCode::StateAlternatives => {
+                #[derive(Deserialize)]
+                struct Args { work_fingerprint: String }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::StateAlternatives {
+                    work_fingerprint: args.work_fingerprint,
+                })
+            }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
