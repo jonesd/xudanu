@@ -97,8 +97,9 @@ async fn main() {
             };
 
             let state = AppState::new(server).shared();
-            let app = build_router(state.clone())
-                .into_make_service_with_connect_info::<std::net::SocketAddr>();
+            let client_router = build_router(state.clone());
+            let federation_router = xudanu::server::transport::federation_handler::build_federation_router(state.clone());
+            let app = xudanu::server::transport::federation_handler::merge_routers(client_router, federation_router);
 
             tracing::info!("xudanu server listening on {}", addr);
 
@@ -121,7 +122,7 @@ async fn main() {
                 std::process::exit(0);
             });
 
-            axum::serve(listener, app)
+            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
                 .with_graceful_shutdown(async {
                     shutdown_handler.await.ok();
                 })
