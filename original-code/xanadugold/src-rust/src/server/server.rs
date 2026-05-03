@@ -2074,6 +2074,10 @@ impl Server {
         self.server_keypair.identity_id()
     }
 
+    pub fn server_verifying_key(&self) -> ed25519_dalek::VerifyingKey {
+        self.server_keypair.signing_verifying_key()
+    }
+
     pub fn federation_get_work_edition(&self, work_id: u64) -> Option<crate::server::transport::protocol::EditionPayload> {
         self.works.get(&work_id).map(|ws| {
             crate::server::transport::protocol::EditionPayload::from_edition(
@@ -2191,6 +2195,10 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs()
+    }
+
+    fn hex_encode(data: &[u8]) -> String {
+        data.iter().map(|b| format!("{:02x}", b)).collect()
     }
 
     /// Record a local work revision into the reconcile store.
@@ -2346,6 +2354,170 @@ impl Server {
 
     pub fn reconcile_store_len(&self) -> usize {
         self.reconcile_store.len()
+    }
+
+    // =================================================================
+    // Phase 19a: Membership & Trust
+    // =================================================================
+
+    pub fn membership_bootstrap_init(&mut self) {
+        let verifying_key = self.server_keypair.signing_verifying_key();
+        let verifying_key_hex = Self::hex_encode(&verifying_key.to_bytes());
+        let kex_public = self.server_keypair.kex_public();
+        let kex_hex = Self::hex_encode(kex_public.as_bytes());
+        let server_id = self.federation_server_id();
+        let now = Self::current_timestamp_secs();
+
+        let self_proof = self.membership_sign_endorsement(&server_id, &verifying_key_hex)
+            .expect("self-endorsement should always work");
+
+        let entry = crate::server::federation::MembershipEntry::new(
+            server_id,
+            verifying_key_hex,
+            kex_hex,
+            vec![self_proof],
+            now,
+        );
+        let server_id = self.federation_server_id();
+        let tag = self.federation.membership_mut().next_tag(&server_id);
+        self.federation.membership_mut().add_member(entry, tag);
+        self.federation.membership_mut().exit_bootstrap();
+    }
+
+    pub fn membership_self_entry(&self) -> Option<crate::server::federation::MembershipEntry> {
+        let server_id = self.federation_server_id();
+        self.federation.membership().find_member(&server_id).cloned()
+    }
+
+    pub fn membership_list(&self) -> Vec<crate::server::federation::MembershipEntry> {
+        self.federation.membership().active_members().into_iter().cloned().collect()
+    }
+
+    pub fn membership_count(&self) -> usize {
+        self.federation.membership().member_count()
+    }
+
+    pub fn membership_is_member(&self, server_id: &str) -> bool {
+        self.federation.membership().is_member(server_id)
+    }
+
+    pub fn membership_is_known_member(&self, server_id: &str) -> bool {
+        self.federation.membership().is_known_member(server_id)
+    }
+
+    pub fn membership_verify(&self, server_id: &str) -> crate::server::federation::MembershipVerifyResult {
+        let membership = self.federation.membership();
+        match membership.find_member(server_id) {
+            Some(entry) => {
+                crate::server::federation::MembershipVerifyResult {
+                    server_id: server_id.to_string(),
+                    is_member: entry.is_active() && entry.endorsement_count() >= membership.min_endorsements() as usize,
+                    endorsement_count: entry.endorsement_count(),
+                    min_endorsements: membership.min_endorsements(),
+                    endorsed_by: entry.endorsed_by.iter().map(|e| e.endorser_server_id.clone()).collect(),
+                }
+            }
+            None => {
+                crate::server::federation::MembershipVerifyResult {
+                    server_id: server_id.to_string(),
+                    is_member: false,
+                    endorsement_count: 0,
+                    min_endorsements: membership.min_endorsements(),
+                    endorsed_by: vec![],
+                }
+            }
+        }
+    }
+
+    pub fn membership_process_join(
+        &mut self,
+        entry: crate::server::federation::MembershipEntry,
+    ) -> crate::server::federation::JoinResult {
+        let server_id = entry.server_id.clone();
+
+        if let Err(reason) = self.federation.membership().validate_join(&entry) {
+            return crate::server::federation::JoinResult::Rejected { server_id, reason };
+        }
+
+        let tag = self.reconcile_next_tag();
+        self.federation.membership_mut().add_member(entry.clone(), tag);
+
+        let offered_endorsement = self.membership_sign_endorsement(&entry.server_id, &entry.verifying_key_hex);
+
+        crate::server::federation::JoinResult::Accepted {
+            server_id,
+            membership_entry: entry,
+            offered_endorsement,
+        }
+    }
+
+    pub fn membership_sign_endorsement(
+        &self,
+        endorsee_server_id: &str,
+        endorsee_verifying_key_hex: &str,
+    ) -> Option<crate::server::federation::EndorsementProof> {
+        let my_server_id = self.federation_server_id();
+        let timestamp = Self::current_timestamp_secs();
+        let key_id = self.server_keypair.key_id;
+
+        let proof = crate::server::federation::EndorsementProof {
+            endorser_server_id: my_server_id,
+            endorser_key_id: key_id,
+            endorsee_server_id: endorsee_server_id.to_string(),
+            endorsee_verifying_key_hex: endorsee_verifying_key_hex.to_string(),
+            signature: vec![],
+            timestamp,
+        };
+
+        let transcript = proof.canonical_transcript();
+        let signature = crate::crypto::sign::sign_bytes(&self.server_keypair.signing_key, &transcript);
+
+        Some(crate::server::federation::EndorsementProof {
+            signature: signature.to_bytes().to_vec(),
+            ..proof
+        })
+    }
+
+    pub fn membership_verify_endorsement_proof(
+        &self,
+        proof: &crate::server::federation::EndorsementProof,
+        endorser_verifying_key: &ed25519_dalek::VerifyingKey,
+    ) -> bool {
+        let transcript = proof.canonical_transcript();
+        let sig_bytes: [u8; 64] = match proof.signature.as_slice().try_into() {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+        let signature = match ed25519_dalek::Signature::from_slice(&sig_bytes) {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+        crate::crypto::sign::verify_signature(endorser_verifying_key, &transcript, &signature).is_ok()
+    }
+
+    pub fn membership_endorse(&mut self, server_id: &str, proof: crate::server::federation::EndorsementProof) -> bool {
+        self.federation.membership_mut().endorse_member(server_id, proof)
+    }
+
+    pub fn membership_leave(&mut self) -> bool {
+        let server_id = self.federation_server_id();
+        self.federation.membership_mut().remove_member(&server_id)
+    }
+
+    pub fn membership_remove(&mut self, server_id: &str) -> bool {
+        self.federation.membership_mut().remove_member(server_id)
+    }
+
+    pub fn membership_merge(&mut self, other: &crate::server::federation::MembershipState) {
+        self.federation.membership_mut().merge(other);
+    }
+
+    pub fn membership_export_orset(&self) -> &crate::server::federation::OrSet<crate::server::federation::MembershipEntry> {
+        self.federation.membership().to_orset()
+    }
+
+    pub fn membership_merge_orset(&mut self, other: &crate::server::federation::OrSet<crate::server::federation::MembershipEntry>) {
+        self.federation.membership_mut().merge_orset(other);
     }
 }
 
@@ -4266,5 +4438,271 @@ mod tests {
             work_fingerprint: "test".to_string(),
         });
         assert!(result.is_err(), "endorsement query without login should fail");
+    }
+
+    // =====================================================================
+    // Phase 19a: Membership Server Method Tests
+    // =====================================================================
+
+    fn setup_federated_server() -> Server {
+        let mut server = Server::new();
+        let mut config = crate::server::federation::FederationConfig::closed(vec![]);
+        config.min_endorsements = 1;
+        server.set_federation_config(config);
+        server.membership_bootstrap_init();
+        server
+    }
+
+    #[test]
+    fn membership_bootstrap_init_adds_self() {
+        let server = setup_federated_server();
+        let server_id = server.federation_server_id();
+        assert!(server.membership_is_member(&server_id));
+        assert_eq!(server.membership_count(), 1);
+    }
+
+    #[test]
+    fn membership_self_entry_returns_own_entry() {
+        let server = setup_federated_server();
+        let entry = server.membership_self_entry().unwrap();
+        assert_eq!(entry.server_id, server.federation_server_id());
+        assert!(entry.is_active());
+    }
+
+    #[test]
+    fn membership_list_returns_active_members() {
+        let server = setup_federated_server();
+        let list = server.membership_list();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].server_id, server.federation_server_id());
+    }
+
+    #[test]
+    fn membership_verify_own_server() {
+        let server = setup_federated_server();
+        let server_id = server.federation_server_id();
+        let result = server.membership_verify(&server_id);
+        assert!(result.is_member);
+        assert_eq!(result.endorsement_count, 1);
+    }
+
+    #[test]
+    fn membership_verify_unknown_server() {
+        let server = setup_federated_server();
+        let result = server.membership_verify("unknown-server");
+        assert!(!result.is_member);
+        assert_eq!(result.endorsement_count, 0);
+    }
+
+    #[test]
+    fn membership_sign_and_verify_endorsement() {
+        let server = setup_federated_server();
+        let endorsee_id = "new-server-abc";
+        let endorsee_vk = "deadbeef";
+
+        let proof = server.membership_sign_endorsement(endorsee_id, endorsee_vk).unwrap();
+        assert_eq!(proof.endorser_server_id, server.federation_server_id());
+        assert_eq!(proof.endorsee_server_id, endorsee_id);
+        assert_eq!(proof.endorsee_verifying_key_hex, endorsee_vk);
+        assert!(!proof.signature.is_empty());
+
+        let verifying_key = server.server_keypair.signing_verifying_key();
+        assert!(server.membership_verify_endorsement_proof(&proof, &verifying_key));
+    }
+
+    #[test]
+    fn membership_verify_endorsement_rejects_tampered() {
+        let server = setup_federated_server();
+        let mut proof = server.membership_sign_endorsement("target", "vk123").unwrap();
+        proof.signature[0] ^= 0xff;
+
+        let verifying_key = server.server_keypair.signing_verifying_key();
+        assert!(!server.membership_verify_endorsement_proof(&proof, &verifying_key));
+    }
+
+    #[test]
+    fn membership_verify_endorsement_rejects_wrong_key() {
+        let server = setup_federated_server();
+        let proof = server.membership_sign_endorsement("target", "vk123").unwrap();
+
+        let wrong_key = crate::crypto::keys::ServerKeyPair::generate("other");
+        let wrong_vk = wrong_key.signing_verifying_key();
+        assert!(!server.membership_verify_endorsement_proof(&proof, &wrong_vk));
+    }
+
+    #[test]
+    fn membership_process_join_accepts_new_server() {
+        let mut server = setup_federated_server();
+        let my_id = server.federation_server_id();
+
+        let proof = server.membership_sign_endorsement("new-server", "vk-new").unwrap();
+        let new_entry = crate::server::federation::MembershipEntry::new(
+            "new-server",
+            "vk-new",
+            "kex-new",
+            vec![proof],
+            1000,
+        );
+
+        let result = server.membership_process_join(new_entry);
+        match result {
+            crate::server::federation::JoinResult::Accepted { server_id, offered_endorsement, .. } => {
+                assert_eq!(server_id, "new-server");
+                assert!(offered_endorsement.is_some());
+                let proof = offered_endorsement.unwrap();
+                assert_eq!(proof.endorser_server_id, my_id);
+            }
+            crate::server::federation::JoinResult::Rejected { reason, .. } => panic!("should accept: {}", reason),
+        }
+        assert_eq!(server.membership_count(), 2);
+    }
+
+    #[test]
+    fn membership_process_join_rejects_duplicate() {
+        let mut server = setup_federated_server();
+        let my_id = server.federation_server_id();
+
+        let entry = crate::server::federation::MembershipEntry::new(
+            my_id.clone(),
+            "vk-self",
+            "kex-self",
+            vec![],
+            1000,
+        );
+
+        let result = server.membership_process_join(entry);
+        match result {
+            crate::server::federation::JoinResult::Rejected { reason, .. } => {
+                assert!(reason.contains("already a member"));
+            }
+            crate::server::federation::JoinResult::Accepted { .. } => panic!("should reject"),
+        }
+    }
+
+    #[test]
+    fn membership_leave_removes_self() {
+        let mut server = setup_federated_server();
+        let my_id = server.federation_server_id();
+        assert!(server.membership_is_member(&my_id));
+
+        server.membership_leave();
+        assert!(!server.membership_is_member(&my_id));
+        assert_eq!(server.membership_count(), 0);
+    }
+
+    #[test]
+    fn membership_remove_removes_target() {
+        let mut server = setup_federated_server();
+
+        let proof = server.membership_sign_endorsement("target-server", "vk-target").unwrap();
+        let new_entry = crate::server::federation::MembershipEntry::new(
+            "target-server",
+            "vk-target",
+            "kex-target",
+            vec![proof],
+            1000,
+        );
+        server.membership_process_join(new_entry);
+        assert_eq!(server.membership_count(), 2);
+
+        assert!(server.membership_remove("target-server"));
+        assert_eq!(server.membership_count(), 1);
+        assert!(!server.membership_remove("target-server"));
+    }
+
+    #[test]
+    fn membership_endorse_adds_endorsement() {
+        let mut server = setup_federated_server();
+        let my_id = server.federation_server_id();
+
+        let join_proof = server.membership_sign_endorsement("new-server", "vk-new").unwrap();
+        let new_entry = crate::server::federation::MembershipEntry::new(
+            "new-server",
+            "vk-new",
+            "kex-new",
+            vec![join_proof],
+            1000,
+        );
+        let result = server.membership_process_join(new_entry);
+        match &result {
+            crate::server::federation::JoinResult::Accepted { .. } => {}
+            crate::server::federation::JoinResult::Rejected { reason, .. } => {
+                panic!("join should succeed: {}", reason);
+            }
+        }
+
+        let offered = match result {
+            crate::server::federation::JoinResult::Accepted { offered_endorsement, .. } => offered_endorsement,
+            _ => unreachable!(),
+        };
+        assert!(offered.is_some(), "bootstrap server should offer endorsement on accept");
+
+        let verify = server.membership_verify("new-server");
+        assert!(verify.is_member);
+        assert!(verify.endorsed_by.contains(&my_id));
+    }
+
+    #[test]
+    fn membership_merge_syncs_across_servers() {
+        let mut server_a = setup_federated_server();
+        let mut server_b = setup_federated_server();
+
+        let id_a = server_a.federation_server_id();
+        let id_b = server_b.federation_server_id();
+
+        let entry_b = crate::server::federation::MembershipEntry::new(
+            &id_b, "vk-b", "kex-b", vec![], 1000,
+        );
+        server_a.membership_process_join(entry_b);
+
+        let membership_b = server_b.federation.membership().clone();
+        server_a.membership_merge(&membership_b);
+
+        assert!(server_a.membership_is_member(&id_a));
+        assert!(server_a.membership_is_known_member(&id_b));
+    }
+
+    #[test]
+    fn membership_endorsement_proof_cross_verify() {
+        let server_a = setup_federated_server();
+        let mut server_b = setup_federated_server();
+        let id_a = server_a.federation_server_id();
+        let id_b = server_b.federation_server_id();
+
+        let proof = server_a.membership_sign_endorsement(&id_b, "vk-b").unwrap();
+
+        let vk_a = server_a.server_keypair.signing_verifying_key();
+        assert!(server_b.membership_verify_endorsement_proof(&proof, &vk_a));
+
+        let wrong_vk = server_b.server_keypair.signing_verifying_key();
+        assert!(!server_b.membership_verify_endorsement_proof(&proof, &wrong_vk));
+    }
+
+    #[test]
+    fn membership_dispatch_requires_login() {
+        use crate::server::transport::dispatch::dispatch;
+        use crate::server::transport::shared::AppState;
+
+        let mut server = Server::new();
+        server.set_federation_config(crate::server::federation::FederationConfig::closed(vec![]));
+        let state = AppState::new(server).shared();
+        let session_id = crate::server::SessionId::new(1);
+
+        let result = dispatch(&state.server, session_id, crate::server::transport::protocol::WireRequest::MembershipList);
+        assert!(result.is_err(), "membership list without login should fail");
+    }
+
+    #[test]
+    fn membership_dispatch_requires_federation() {
+        use crate::server::transport::dispatch::dispatch;
+        use crate::server::transport::shared::AppState;
+
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let state = AppState::new(server).shared();
+
+        let result = dispatch(&state.server, sid, crate::server::transport::protocol::WireRequest::MembershipList);
+        assert!(result.is_err(), "membership list without federation should fail");
     }
 }

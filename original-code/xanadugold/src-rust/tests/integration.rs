@@ -3337,3 +3337,245 @@ async fn reconcile_merge_across_servers() {
     assert_eq!(states_b[0].alternative_count(), 1);
     assert_eq!(states_b[0].current_text().unwrap(), "server B version");
 }
+
+// =============================================================================
+// Phase 19a: Trust & Membership Integration Tests
+// =============================================================================
+
+fn setup_federated_server_state() -> xudanu::server::transport::SharedState {
+    let server = Server::new();
+    let state = AppState::new(server).shared();
+    state.server.with_server(|srv| {
+        let mut config = xudanu::server::federation::FederationConfig::closed(vec![]);
+        config.min_endorsements = 1;
+        srv.set_federation_config(config);
+        srv.membership_bootstrap_init();
+    });
+    state
+}
+
+async fn start_server_on_random_port(state: xudanu::server::transport::SharedState) -> std::net::SocketAddr {
+    let client_router = build_router(state.clone());
+    let fed_router = xudanu::server::transport::federation_handler::build_federation_router(state.clone());
+    let app = xudanu::server::transport::federation_handler::merge_routers(client_router, fed_router)
+        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    addr
+}
+
+#[tokio::test]
+async fn membership_bootstrap_registers_self_as_member() {
+    let state = setup_federated_server_state();
+    let addr = start_server_on_random_port(state.clone()).await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let resp = send_recv_json(&mut s, &mut r, json_req(10, "membership_list", None)).await;
+    let members = resp["value"]["value"]["members"].as_array().unwrap();
+    assert_eq!(members.len(), 1);
+}
+
+#[tokio::test]
+async fn membership_verify_returns_member_info() {
+    let state = setup_federated_server_state();
+    let addr = start_server_on_random_port(state.clone()).await;
+    let server_id = state.server.with_server_ref(|srv| srv.federation_server_id());
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "membership_verify", Some(serde_json::json!({
+            "server_id": server_id
+        })))).await;
+    assert!(resp["value"]["value"]["verify"]["is_member"].as_bool().unwrap());
+}
+
+#[tokio::test]
+async fn membership_join_via_wire_op() {
+    let state = setup_federated_server_state();
+    let addr = start_server_on_random_port(state.clone()).await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let (proof_json, _my_id) = state.server.with_server(|srv| {
+        let proof = srv.membership_sign_endorsement("joining-server", "vk-joining").unwrap();
+        let my_id = srv.federation_server_id();
+        (serde_json::to_value(&proof).unwrap(), my_id)
+    });
+
+    let join_entry = serde_json::json!({
+        "server_id": "joining-server",
+        "verifying_key_hex": "vk-joining",
+        "kex_public_hex": "kex-joining",
+        "endorsed_by": [proof_json],
+        "joined_at": 1000,
+        "status": "active"
+    });
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "membership_join_request", Some(serde_json::json!({
+            "entry": join_entry
+        })))).await;
+
+    let result = &resp["value"]["value"]["result"];
+    assert!(result.get("accepted").is_some(), "expected accepted, got: {:?}", result);
+    assert_eq!(result["accepted"]["server_id"].as_str().unwrap(), "joining-server");
+}
+
+#[tokio::test]
+async fn membership_sync_via_wire_op() {
+    let state = setup_federated_server_state();
+    let addr = start_server_on_random_port(state.clone()).await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let resp = send_recv_json(&mut s, &mut r, json_req(10, "membership_sync", None)).await;
+    let members = resp["value"]["value"]["members"].as_array().unwrap();
+    assert_eq!(members.len(), 1);
+}
+
+#[tokio::test]
+async fn membership_leave_via_wire_op() {
+    let state = setup_federated_server_state();
+    let addr = start_server_on_random_port(state.clone()).await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let resp = send_recv_json(&mut s, &mut r, json_req(10, "membership_leave", None)).await;
+    assert!(resp.get("error").is_none());
+
+    let count = state.server.with_server(|srv| srv.membership_count());
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+async fn membership_endorse_offer_via_wire_op() {
+    let state = setup_federated_server_state();
+    let addr = start_server_on_random_port(state.clone()).await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let proof_json = state.server.with_server(|srv| {
+        let join_proof = srv.membership_sign_endorsement("new-server", "vk-new").unwrap();
+        let entry = xudanu::server::federation::MembershipEntry::new(
+            "new-server", "vk-new", "kex-new", vec![join_proof], 1000,
+        );
+        srv.membership_process_join(entry);
+        let proof = srv.membership_sign_endorsement("new-server", "vk-new").unwrap();
+        serde_json::to_value(&proof).unwrap()
+    });
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "membership_endorse_offer", Some(serde_json::json!({
+            "server_id": "new-server",
+            "proof": proof_json
+        })))).await;
+    assert!(resp["value"]["value"]["accepted"].as_bool().unwrap());
+}
+
+#[tokio::test]
+async fn membership_merge_across_two_servers() {
+    let state_a = setup_federated_server_state();
+    let state_b = setup_federated_server_state();
+
+    let id_a = state_a.server.with_server_ref(|srv| srv.federation_server_id());
+
+    let membership_b = state_b.server.with_server(|srv| {
+        srv.membership_export_orset().clone()
+    });
+
+    state_a.server.with_server(|srv| {
+        srv.membership_merge_orset(&membership_b);
+    });
+
+    assert!(state_a.server.with_server(|srv| srv.membership_is_known_member(&id_a)));
+}
+
+#[tokio::test]
+async fn membership_cross_server_endorsement_verification() {
+    let state_a = setup_federated_server_state();
+    let state_b = setup_federated_server_state();
+
+    let id_b = state_b.server.with_server_ref(|srv| srv.federation_server_id());
+    let (proof, vk_a_bytes) = state_a.server.with_server(|srv| {
+        let proof = srv.membership_sign_endorsement(&id_b, "vk-b").unwrap();
+        let vk_bytes = srv.server_verifying_key().to_bytes();
+        (proof, vk_bytes)
+    });
+
+    let valid = state_b.server.with_server(|srv_b| {
+        let vk = ed25519_dalek::VerifyingKey::from_bytes(&vk_a_bytes).unwrap();
+        srv_b.membership_verify_endorsement_proof(&proof, &vk)
+    });
+    assert!(valid, "server B should verify server A's endorsement");
+}
+
+#[tokio::test]
+async fn membership_rejects_tampered_endorsement() {
+    let state = setup_federated_server_state();
+
+    let other_keypair = xudanu::crypto::keys::ServerKeyPair::generate("attacker");
+
+    let fake_proof = xudanu::server::federation::EndorsementProof {
+        endorser_server_id: "attacker-server".to_string(),
+        endorser_key_id: other_keypair.key_id,
+        endorsee_server_id: "victim".to_string(),
+        endorsee_verifying_key_hex: "vk-victim".to_string(),
+        signature: vec![0u8; 64],
+        timestamp: 1000,
+    };
+
+    let valid = state.server.with_server(|srv| {
+        srv.membership_verify_endorsement_proof(
+            &fake_proof,
+            &other_keypair.signing_verifying_key(),
+        )
+    });
+    assert!(!valid, "all-zero signature should be invalid");
+
+    let fake_proof_tampered = xudanu::server::federation::EndorsementProof {
+        signature: vec![0xff; 64],
+        ..fake_proof
+    };
+    let invalid = state.server.with_server(|srv| {
+        srv.membership_verify_endorsement_proof(
+            &fake_proof_tampered,
+            &other_keypair.signing_verifying_key(),
+        )
+    });
+    assert!(!invalid, "tampered signature should fail verification");
+}
