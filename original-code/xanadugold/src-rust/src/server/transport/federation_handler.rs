@@ -330,7 +330,7 @@ async fn handle_federation_socket(
                                 let result = state.server.with_server(|srv| {
                                     let my_id = srv.federation_server_id();
                                     let (works_imported, works_known) = srv.federation_import_works(&push.works, &my_id);
-                                    let (blobs_imported, blobs_known) = srv.federation_import_blobs(&push.blobs);
+                                    let (blobs_imported, blobs_known) = srv.federation_import_blobs(&push.blobs, &push.server_id);
                                     crate::server::federation::ContentSyncResult {
                                         works_received: works_imported,
                                         editions_received: 0,

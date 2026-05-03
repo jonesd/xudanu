@@ -69,6 +69,7 @@ pub struct Server {
     server_keypair: crate::crypto::keys::ServerKeyPair,
     key_history: crate::crypto::keys::KeyHistory,
     federation: crate::server::federation::FederationState,
+    element_fingerprint_to_work: HashMap<[u8; 32], BeId>,
 }
 
 pub struct ServerHealth {
@@ -173,6 +174,7 @@ impl Server {
             server_keypair: server_kp.clone(),
             key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
             federation: crate::server::federation::FederationState::disabled(),
+            element_fingerprint_to_work: HashMap::new(),
         };
 
         let pub_club = Club::new_with_owner(
@@ -446,6 +448,10 @@ impl Server {
         self.works.insert(be_id, ws);
 
         let edition = self.works[&be_id].work.edition().clone();
+        for (_, carrier) in edition.all_entries() {
+            let fp = carrier.element.content_fingerprint();
+            self.element_fingerprint_to_work.insert(fp, be_id);
+        }
         self.content_address.intern_edition_elements(&edition);
         let work_elem = RangeElement::work(be_id);
         self.transclusion_index.register_work(&edition, &work_elem);
@@ -502,6 +508,10 @@ impl Server {
 
         let updated_edition = ws.work.edition().clone();
         self.content_address.intern_edition_elements(&updated_edition);
+        for (_, carrier) in updated_edition.all_entries() {
+            let fp = carrier.element.content_fingerprint();
+            self.element_fingerprint_to_work.insert(fp, work_be_id);
+        }
         let work_elem = RangeElement::work(work_be_id);
         self.transclusion_index.register_work(&updated_edition, &work_elem);
         let updated_work = Work::new_with_owner(work_be_id, ws.work.owner(), updated_edition);
@@ -1404,6 +1414,10 @@ impl Server {
             endorsements: current.endorsements.clone(),
         };
         ws.work.revise(updated.clone());
+        for (_, carrier) in updated.all_entries() {
+            let fp = carrier.element.content_fingerprint();
+            self.element_fingerprint_to_work.insert(fp, work_id);
+        }
         Ok(updated)
     }
 
@@ -1972,22 +1986,24 @@ impl Server {
                 };
                 self.works.insert(be_id, ws);
                 imported += 1;
-            }
-            let edition_for_origin = entry.edition_payload.to_edition();
-            for (_, carrier) in edition_for_origin.all_entries() {
-                let fp = carrier.element.content_fingerprint();
-                self.federation.record_remote_origin(fp, crate::server::federation::RemoteOrigin {
-                    server_id: entry.origin_server_id.clone(),
-                    local_id: entry.work_id,
-                    element_type: crate::server::federation::RemoteElementType::Work,
-                });
-                self.transclusion_index.register_federated(
-                    &carrier.element,
-                    entry.origin_server_id.clone(),
-                    entry.work_id,
-                    "work".to_string(),
-                    true,
-                );
+
+                let ws = self.works.get(&be_id).unwrap();
+                for (_, carrier) in ws.work.current_edition().all_entries() {
+                    let fp = carrier.element.content_fingerprint();
+                    self.federation.record_remote_origin(fp, crate::server::federation::RemoteOrigin {
+                        server_id: entry.origin_server_id.clone(),
+                        local_id: entry.work_id,
+                        element_type: crate::server::federation::RemoteElementType::Work,
+                    });
+                    self.transclusion_index.register_federated(
+                        &carrier.element,
+                        entry.origin_server_id.clone(),
+                        entry.work_id,
+                        "work".to_string(),
+                        true,
+                    );
+                    self.element_fingerprint_to_work.insert(fp, be_id);
+                }
             }
         }
         (imported, already_known)
@@ -2012,7 +2028,7 @@ impl Server {
         }).collect()
     }
 
-    pub fn federation_import_blobs(&mut self, entries: &[crate::server::federation::SyncBlobEntry]) -> (usize, usize) {
+    pub fn federation_import_blobs(&mut self, entries: &[crate::server::federation::SyncBlobEntry], origin_server_id: &str) -> (usize, usize) {
         let mut imported = 0;
         let mut already_known = 0;
         for entry in entries {
@@ -2037,6 +2053,11 @@ impl Server {
                 continue;
             }
             let _ = self.blob_store.store(&data, entry.mime_type.clone());
+            self.federation.record_remote_origin(hash_bytes, crate::server::federation::RemoteOrigin {
+                server_id: origin_server_id.to_string(),
+                local_id: 0,
+                element_type: crate::server::federation::RemoteElementType::Blob,
+            });
             imported += 1;
         }
         (imported, already_known)
@@ -2103,6 +2124,7 @@ impl Server {
                 origin_server_id: result.origin_server_id.clone(),
                 element_type: match result.element_type.as_str() {
                     "work" => crate::server::federation::RemoteElementType::Work,
+                    "blob" => crate::server::federation::RemoteElementType::Blob,
                     _ => crate::server::federation::RemoteElementType::Edition,
                 },
                 local_id: result.local_id,
@@ -2118,68 +2140,27 @@ impl Server {
         content_fingerprint_hex: &str,
     ) -> FederationFetchResponse {
         if let Some(fp_bytes) = Self::hex_to_fingerprint(content_fingerprint_hex) {
-            for (_, ws) in &self.works {
-                let ed = ws.work.current_edition();
-                let entries = ed.all_entries();
-                for (_, carrier) in &entries {
-                    if carrier.element.content_fingerprint().as_slice() == fp_bytes.as_slice() {
-                        let payload = crate::server::transport::protocol::EditionPayload::from_edition(&ed);
-                        return FederationFetchResponse::Edition(payload);
-                    }
+            let fp: [u8; 32] = match fp_bytes.as_slice().try_into() {
+                Ok(arr) => arr,
+                Err(_) => return FederationFetchResponse::NotFound,
+            };
+            if let Some(&work_id) = self.element_fingerprint_to_work.get(&fp) {
+                if let Some(ws) = self.works.get(&work_id) {
+                    let ed = ws.work.current_edition();
+                    let payload = crate::server::transport::protocol::EditionPayload::from_edition(&ed);
+                    return FederationFetchResponse::Edition(payload);
                 }
             }
-            if let Ok(hash) = <[u8; 32]>::try_from(fp_bytes.as_slice()) {
-                if let Ok(data) = self.blob_store.retrieve(&hash) {
-                    if let Some(meta) = self.blob_store.get_meta(&hash) {
-                        return FederationFetchResponse::Blob(
-                            crate::edition::blob_store::base64_encode(&data),
-                            meta.mime_type.clone(),
-                        );
-                    }
+            if let Ok(data) = self.blob_store.retrieve(&fp) {
+                if let Some(meta) = self.blob_store.get_meta(&fp) {
+                    return FederationFetchResponse::Blob(
+                        crate::edition::blob_store::base64_encode(&data),
+                        meta.mime_type.clone(),
+                    );
                 }
             }
         }
         FederationFetchResponse::NotFound
-    }
-
-    pub fn federation_record_remote_origins_for_works(
-        &mut self,
-        entries: &[crate::server::federation::SyncWorkEntry],
-    ) {
-        for entry in entries {
-            let edition = entry.edition_payload.to_edition();
-            let all = edition.all_entries();
-            for (_, carrier) in &all {
-                let fp = carrier.element.content_fingerprint();
-                self.federation.record_remote_origin(fp, crate::server::federation::RemoteOrigin {
-                    server_id: entry.origin_server_id.clone(),
-                    local_id: entry.work_id,
-                    element_type: crate::server::federation::RemoteElementType::Work,
-                });
-                self.transclusion_index.register_federated(
-                    &carrier.element,
-                    entry.origin_server_id.clone(),
-                    entry.work_id,
-                    "work".to_string(),
-                    true,
-                );
-            }
-        }
-    }
-
-    pub fn federation_record_remote_origins_for_blobs(
-        &mut self,
-        entries: &[crate::server::federation::SyncBlobEntry],
-    ) {
-        for entry in entries {
-            if let Some(hash) = crate::edition::blob_store::hex_to_hash(&entry.content_hash_hex) {
-                self.federation.record_remote_origin(hash, crate::server::federation::RemoteOrigin {
-                    server_id: String::new(),
-                    local_id: 0,
-                    element_type: crate::server::federation::RemoteElementType::Blob,
-                });
-            }
-        }
     }
 
     fn hex_to_fingerprint(hex: &str) -> Option<Vec<u8>> {
@@ -2339,6 +2320,7 @@ mod persist_snapshot {
                 server_keypair: server_kp.clone(),
                 key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
                 federation: crate::server::federation::FederationState::disabled(),
+                element_fingerprint_to_work: HashMap::new(),
             };
 
             for club_snap in &snapshot.clubs {
@@ -2365,12 +2347,16 @@ mod persist_snapshot {
                     None,
                 ).work().clone();
                 let ws = WorkState {
-                    work,
+                    work: work.clone(),
                     grabber: None,
                     last_revision_author: ws_snap.last_revision_author,
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
                 };
+                for (_, carrier) in work.current_edition().all_entries() {
+                    let fp = carrier.element.content_fingerprint();
+                    server.element_fingerprint_to_work.insert(fp, *id);
+                }
                 server.works.insert(*id, ws);
             }
 
