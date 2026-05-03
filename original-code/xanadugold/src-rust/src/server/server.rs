@@ -1863,6 +1863,136 @@ impl Server {
         let transcript = crate::crypto::kex::build_transcript(my_eph, peer_eph);
         crate::crypto::kdf::derive_federation_session_keys(shared_secret.as_bytes(), &transcript)
     }
+
+    pub fn federation_export_works(&self) -> Vec<crate::server::federation::SyncWorkEntry> {
+        let server_id = self.federation_server_id();
+        self.works.iter().map(|(work_id, ws)| {
+            crate::server::federation::SyncWorkEntry {
+                origin_server_id: server_id.clone(),
+                work_id: *work_id,
+                edition_payload: crate::server::transport::protocol::EditionPayload::from_edition(
+                    ws.work.current_edition()
+                ),
+            }
+        }).collect()
+    }
+
+    pub fn federation_import_works(
+        &mut self,
+        entries: &[crate::server::federation::SyncWorkEntry],
+        my_server_id: &str,
+    ) -> (usize, usize) {
+        let mut imported = 0;
+        let mut already_known = 0;
+        for entry in entries {
+            if entry.origin_server_id == my_server_id {
+                already_known += 1;
+                continue;
+            }
+            let edition = entry.edition_payload.to_edition();
+            let fid = crate::server::federation::FederatedId::new(&entry.origin_server_id, entry.work_id);
+            let fed_id_str = fid.to_string();
+            if !self.works.iter().any(|(_, ws)| {
+                let ed = ws.work.current_edition();
+                let entries_a = ed.all_entries();
+                let entries_b = edition.all_entries();
+                if entries_a.len() != entries_b.len() { return false; }
+                entries_a.iter().zip(entries_b.iter()).all(|((pa, ca), (pb, cb))| {
+                    pa == pb && ca.element.content_fingerprint() == cb.element.content_fingerprint()
+                })
+            }) {
+                let (be_id, elem) = self.grand_map.new_work_element(None);
+                self.grand_map.assign_new_id(elem);
+                let work = crate::edition::Work::new_with_owner(
+                    be_id,
+                    None,
+                    edition,
+                );
+                let ws = WorkState {
+                    work,
+                    grabber: None,
+                    last_revision_author: None,
+                    status_detectors: DetectorList::new(),
+                    revision_detectors: DetectorList::new(),
+                };
+                self.works.insert(be_id, ws);
+                imported += 1;
+            } else {
+                already_known += 1;
+            }
+        }
+        (imported, already_known)
+    }
+
+    pub fn federation_export_blobs(&self) -> Vec<crate::server::federation::SyncBlobEntry> {
+        let hashes: Vec<[u8; 32]> = self.blob_store.all_hashes();
+        hashes.into_iter().filter_map(|hash| {
+            let data = match self.blob_store.retrieve(&hash) {
+                Ok(d) => d,
+                Err(_) => return None,
+            };
+            let meta = match self.blob_store.get_meta(&hash) {
+                Some(m) => m,
+                None => return None,
+            };
+            Some(crate::server::federation::SyncBlobEntry {
+                content_hash_hex: crate::edition::blob_store::hash_to_hex(&hash),
+                data: crate::edition::blob_store::base64_encode(&data),
+                mime_type: meta.mime_type.clone(),
+            })
+        }).collect()
+    }
+
+    pub fn federation_import_blobs(&mut self, entries: &[crate::server::federation::SyncBlobEntry]) -> (usize, usize) {
+        let mut imported = 0;
+        let mut already_known = 0;
+        for entry in entries {
+            let hash_bytes = match crate::edition::blob_store::hex_to_hash(&entry.content_hash_hex) {
+                Some(h) => h,
+                None => continue,
+            };
+            if self.blob_store.exists(&hash_bytes).unwrap_or(false) {
+                already_known += 1;
+                continue;
+            }
+            let data = match crate::edition::blob_store::base64_decode(&entry.data) {
+                Some(d) => d,
+                None => continue,
+            };
+            let computed = crate::edition::blob_store::hash_content(&data);
+            if computed != hash_bytes {
+                continue;
+            }
+            let _ = self.blob_store.store(&data, entry.mime_type.clone());
+            imported += 1;
+        }
+        (imported, already_known)
+    }
+
+    pub fn federation_server_id(&self) -> String {
+        self.server_keypair.identity_id()
+    }
+
+    pub fn federation_get_work_edition(&self, work_id: u64) -> Option<crate::server::transport::protocol::EditionPayload> {
+        for (id, ws) in &self.works {
+            if *id == work_id {
+                return Some(crate::server::transport::protocol::EditionPayload::from_edition(
+                    ws.work.current_edition()
+                ));
+            }
+        }
+        None
+    }
+
+    pub fn federation_get_blob(&self, content_hash_hex: &str) -> Option<(String, String)> {
+        let hash = crate::edition::blob_store::hex_to_hash(content_hash_hex)?;
+        let data = self.blob_store.retrieve(&hash).ok()?;
+        let meta = self.blob_store.get_meta(&hash)?;
+        Some((
+            crate::edition::blob_store::base64_encode(&data),
+            meta.mime_type.clone(),
+        ))
+    }
 }
 
 #[cfg(feature = "server")]

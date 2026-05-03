@@ -44,6 +44,13 @@ pub enum FederationFrame {
     Ready(FederationReady),
     Heartbeat,
     Ack,
+    SyncPush(crate::server::federation::SyncPush),
+    SyncPull(crate::server::federation::SyncPull),
+    SyncResult(crate::server::federation::ContentSyncResult),
+    ContentGet { server_id: String, work_id: u64 },
+    ContentResponse { found: bool, edition_payload: Option<crate::server::transport::protocol::EditionPayload> },
+    BlobGet { content_hash_hex: String },
+    BlobResponse { found: bool, data: Option<String>, mime_type: Option<String> },
 }
 
 pub fn build_federation_router(state: SharedState) -> Router {
@@ -186,8 +193,10 @@ async fn handle_federation_socket(
         srv.federation_derive_session_keys(&peer_kex_bytes, &my_eph_bytes, &peer_eph_bytes)
     });
 
+    let my_server_id_for_sync = state.server.with_server_ref(|srv| srv.federation_server_id());
+
     let ready_json = match serde_json::to_string(&FederationFrame::Ready(FederationReady {
-        server_id: my_server_id,
+        server_id: my_server_id_for_sync.clone(),
         status: "connected".to_string(),
     })) {
         Ok(j) => j,
@@ -219,6 +228,66 @@ async fn handle_federation_socket(
                             }
                             Ok(FederationFrame::Ready(r)) => {
                                 tracing::info!("Peer ready: {} status={}", r.server_id, r.status);
+                            }
+                            Ok(FederationFrame::SyncPull(_pull)) => {
+                                let push = state.server.with_server(|srv| {
+                                    let works = srv.federation_export_works();
+                                    let blobs = srv.federation_export_blobs();
+                                    crate::server::federation::SyncPush {
+                                        server_id: srv.federation_server_id(),
+                                        works,
+                                        editions: Vec::new(),
+                                        blobs,
+                                    }
+                                });
+                                let push_json = serde_json::to_string(&FederationFrame::SyncPush(push)).unwrap_or_default();
+                                let _ = ws_sender.send(Message::Text(push_json.into())).await;
+                            }
+                            Ok(FederationFrame::SyncPush(push)) => {
+                                let (works_imported, works_known) = state.server.with_server(|srv| {
+                                    let my_id = srv.federation_server_id();
+                                    srv.federation_import_works(&push.works, &my_id)
+                                });
+                                let (blobs_imported, blobs_known) = state.server.with_server(|srv| {
+                                    srv.federation_import_blobs(&push.blobs)
+                                });
+                                let result = crate::server::federation::ContentSyncResult {
+                                    works_received: works_imported,
+                                    editions_received: 0,
+                                    blobs_received: blobs_imported,
+                                    works_already_known: works_known,
+                                    editions_already_known: 0,
+                                    blobs_already_known: blobs_known,
+                                };
+                                let result_json = serde_json::to_string(&FederationFrame::SyncResult(result)).unwrap_or_default();
+                                let _ = ws_sender.send(Message::Text(result_json.into())).await;
+                            }
+                            Ok(FederationFrame::ContentGet { server_id: _server_id, work_id }) => {
+                                let response = state.server.with_server_ref(|srv| {
+                                    match srv.federation_get_work_edition(work_id) {
+                                        Some(edition_payload) => FederationFrame::ContentResponse {
+                                            found: true,
+                                            edition_payload: Some(edition_payload),
+                                        },
+                                        None => FederationFrame::ContentResponse { found: false, edition_payload: None },
+                                    }
+                                });
+                                let resp_json = serde_json::to_string(&response).unwrap_or_default();
+                                let _ = ws_sender.send(Message::Text(resp_json.into())).await;
+                            }
+                            Ok(FederationFrame::BlobGet { content_hash_hex }) => {
+                                let response = state.server.with_server_ref(|srv| {
+                                    match srv.federation_get_blob(&content_hash_hex) {
+                                        Some((data_b64, mime_type)) => FederationFrame::BlobResponse {
+                                            found: true,
+                                            data: Some(data_b64),
+                                            mime_type: Some(mime_type),
+                                        },
+                                        None => FederationFrame::BlobResponse { found: false, data: None, mime_type: None },
+                                    }
+                                });
+                                let resp_json = serde_json::to_string(&response).unwrap_or_default();
+                                let _ = ws_sender.send(Message::Text(resp_json.into())).await;
                             }
                             Ok(_) => {}
                             Err(_) => {}

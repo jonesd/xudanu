@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 
 use serde::{Deserialize, Serialize};
@@ -209,6 +209,85 @@ impl FederationState {
 
     pub fn royalty_ledger(&self) -> &[RoyaltyEntry] {
         &self.royalty_ledger
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncWorkEntry {
+    pub origin_server_id: String,
+    pub work_id: u64,
+    pub edition_payload: crate::server::transport::protocol::EditionPayload,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncEditionEntry {
+    pub origin_server_id: String,
+    pub edition_id: u64,
+    pub edition_payload: crate::server::transport::protocol::EditionPayload,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncBlobEntry {
+    pub content_hash_hex: String,
+    pub data: String,
+    pub mime_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncPush {
+    pub server_id: String,
+    pub works: Vec<SyncWorkEntry>,
+    pub editions: Vec<SyncEditionEntry>,
+    pub blobs: Vec<SyncBlobEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncPull {
+    pub server_id: String,
+    pub known_fingerprints: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentSyncResult {
+    pub works_received: usize,
+    pub editions_received: usize,
+    pub blobs_received: usize,
+    pub works_already_known: usize,
+    pub editions_already_known: usize,
+    pub blobs_already_known: usize,
+}
+
+pub struct ContentSyncSet {
+    entries: HashSet<[u8; 32]>,
+}
+
+impl ContentSyncSet {
+    pub fn new() -> Self {
+        ContentSyncSet {
+            entries: HashSet::new(),
+        }
+    }
+
+    pub fn insert(&mut self, fingerprint: [u8; 32]) -> bool {
+        self.entries.insert(fingerprint)
+    }
+
+    pub fn contains(&self, fingerprint: &[u8; 32]) -> bool {
+        self.entries.contains(fingerprint)
+    }
+
+    pub fn known_fingerprints(&self) -> Vec<String> {
+        self.entries.iter().map(|fp| hex::encode(fp)).collect()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+mod hex {
+    pub fn encode(data: &[u8]) -> String {
+        data.iter().map(|b| format!("{:02x}", b)).collect()
     }
 }
 
