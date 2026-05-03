@@ -70,6 +70,29 @@ pub enum FederationFrame {
     StateSyncResult {
         states: Vec<crate::server::federation::ReconcileState>,
     },
+
+    MembershipJoinRequest {
+        entry: crate::server::federation::MembershipEntry,
+    },
+    MembershipJoinResult {
+        result: crate::server::federation::JoinResult,
+    },
+    MembershipEndorseOffer {
+        server_id: String,
+        proof: crate::server::federation::EndorsementProof,
+    },
+    MembershipEndorseResult {
+        accepted: bool,
+    },
+    MembershipSyncPush {
+        members: crate::server::federation::OrSet<crate::server::federation::MembershipEntry>,
+    },
+    MembershipSyncResult {
+        members: crate::server::federation::OrSet<crate::server::federation::MembershipEntry>,
+    },
+    MembershipLeave {
+        server_id: String,
+    },
 }
 
 pub fn build_federation_router(state: SharedState) -> Router {
@@ -460,6 +483,76 @@ async fn handle_federation_socket(
                                         srv.reconcile_merge_remote(remote_state.clone());
                                     }
                                 });
+                            }
+                            Ok(FederationFrame::MembershipJoinRequest { entry }) => {
+                                let result = state.server.with_server(|srv| {
+                                    srv.membership_process_join(entry)
+                                });
+                                send_encrypted_frame(
+                                    &mut ws_sender,
+                                    &FederationFrame::MembershipJoinResult { result },
+                                    &mut outbound_cipher,
+                                ).await;
+                            }
+                            Ok(FederationFrame::MembershipJoinResult { result }) => {
+                                match &result {
+                                    crate::server::federation::JoinResult::Accepted { server_id, membership_entry, offered_endorsement } => {
+                                        tracing::info!(
+                                            "Membership join accepted for server {}",
+                                            server_id
+                                        );
+                                        if let Some(proof) = offered_endorsement {
+                                            let endorsee_id = membership_entry.server_id.clone();
+                                            let proof_clone = proof.clone();
+                                            state.server.with_server(|srv| {
+                                                srv.membership_endorse(&endorsee_id, proof_clone);
+                                            });
+                                        }
+                                    }
+                                    crate::server::federation::JoinResult::Rejected { server_id, reason } => {
+                                        tracing::warn!(
+                                            "Membership join rejected for server {}: {}",
+                                            server_id, reason
+                                        );
+                                    }
+                                }
+                            }
+                            Ok(FederationFrame::MembershipEndorseOffer { server_id, proof }) => {
+                                let accepted = state.server.with_server(|srv| {
+                                    srv.membership_endorse(&server_id, proof)
+                                });
+                                send_encrypted_frame(
+                                    &mut ws_sender,
+                                    &FederationFrame::MembershipEndorseResult { accepted },
+                                    &mut outbound_cipher,
+                                ).await;
+                            }
+                            Ok(FederationFrame::MembershipEndorseResult { accepted }) => {
+                                tracing::info!("Membership endorse result: accepted={}", accepted);
+                            }
+                            Ok(FederationFrame::MembershipSyncPush { members }) => {
+                                state.server.with_server(|srv| {
+                                    srv.membership_merge_orset(&members);
+                                });
+                                let reply_members = state.server.with_server(|srv| {
+                                    srv.membership_export_orset().clone()
+                                });
+                                send_encrypted_frame(
+                                    &mut ws_sender,
+                                    &FederationFrame::MembershipSyncResult { members: reply_members },
+                                    &mut outbound_cipher,
+                                ).await;
+                            }
+                            Ok(FederationFrame::MembershipSyncResult { members }) => {
+                                state.server.with_server(|srv| {
+                                    srv.membership_merge_orset(&members);
+                                });
+                            }
+                            Ok(FederationFrame::MembershipLeave { server_id }) => {
+                                state.server.with_server(|srv| {
+                                    srv.membership_remove(&server_id);
+                                });
+                                tracing::info!("Peer {} left federation membership", server_id);
                             }
                             Ok(frame) => {
                                 tracing::warn!("Federation: unexpected frame type from {}: {:?}", peer_server_id, frame);

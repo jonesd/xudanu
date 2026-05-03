@@ -264,6 +264,18 @@ impl BinaryCodec {
              OperationCode::CryptoKeyHistory => Ok(WireRequest::CryptoKeyHistory),
              OperationCode::FederationInfo => Ok(WireRequest::FederationInfo),
              OperationCode::FederationPeers => Ok(WireRequest::FederationPeers),
+             OperationCode::MembershipSync => Ok(WireRequest::MembershipSync),
+             OperationCode::MembershipLeave => Ok(WireRequest::MembershipLeave),
+             OperationCode::MembershipList => Ok(WireRequest::MembershipList),
+             OperationCode::AdminIsAcceptingConnections => Ok(WireRequest::AdminIsAcceptingConnections),
+             OperationCode::AdminActiveSessions => Ok(WireRequest::AdminActiveSessions),
+             OperationCode::AdminShutdown => Ok(WireRequest::AdminShutdown),
+             OperationCode::AdminGrants => Ok(WireRequest::AdminGrants),
+             OperationCode::AdminServerInfo => Ok(WireRequest::AdminServerInfo),
+             OperationCode::ServerStats => Ok(WireRequest::ServerStats),
+             OperationCode::WorkList => Ok(WireRequest::WorkList),
+             OperationCode::BlobStats => Ok(WireRequest::BlobStats),
+             OperationCode::LabelCreate => Ok(WireRequest::LabelCreate),
              _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
@@ -449,6 +461,9 @@ impl JsonCodec {
             OperationCode::CryptoKeyHistory,
             OperationCode::FederationInfo,
             OperationCode::FederationPeers,
+            OperationCode::MembershipSync,
+            OperationCode::MembershipLeave,
+            OperationCode::MembershipList,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -472,6 +487,9 @@ impl JsonCodec {
                 OperationCode::CryptoKeyHistory => Ok(WireRequest::CryptoKeyHistory),
                 OperationCode::FederationInfo => Ok(WireRequest::FederationInfo),
                 OperationCode::FederationPeers => Ok(WireRequest::FederationPeers),
+                OperationCode::MembershipSync => Ok(WireRequest::MembershipSync),
+                OperationCode::MembershipLeave => Ok(WireRequest::MembershipLeave),
+                OperationCode::MembershipList => Ok(WireRequest::MembershipList),
                 _ => unreachable!(),
             };
         }
@@ -1173,6 +1191,52 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::StateAlternatives {
                     work_fingerprint: args.work_fingerprint,
+                })
+            }
+            OperationCode::MembershipJoinRequest => {
+                #[derive(Deserialize)]
+                struct Args {
+                    entry: crate::server::federation::MembershipEntry,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::MembershipJoinRequest {
+                    entry: args.entry,
+                })
+            }
+            OperationCode::MembershipJoinResponse
+            | OperationCode::MembershipSyncResult => {
+                Err(FrameParseError::PayloadDecode("server-only response op".into()).into())
+            }
+            OperationCode::MembershipEndorseOffer => {
+                #[derive(Deserialize)]
+                struct Args {
+                    server_id: String,
+                    proof: crate::server::federation::EndorsementProof,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::MembershipEndorseOffer {
+                    server_id: args.server_id,
+                    proof: args.proof,
+                })
+            }
+            OperationCode::MembershipEndorseAccept => {
+                #[derive(Deserialize)]
+                struct Args { server_id: String }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::MembershipEndorseAccept {
+                    server_id: args.server_id,
+                })
+            }
+            OperationCode::MembershipVerify => {
+                #[derive(Deserialize)]
+                struct Args { server_id: String }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::MembershipVerify {
+                    server_id: args.server_id,
                 })
             }
             _ => Err(FrameParseError::MissingPayload.into()),

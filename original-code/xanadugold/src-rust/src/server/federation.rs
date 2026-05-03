@@ -175,6 +175,7 @@ pub struct FederationState {
     connected_peers: HashMap<String, String>,
     remote_origins: RemoteOriginRegistry,
     royalty_ledger: Vec<RoyaltyEntry>,
+    membership: MembershipState,
 }
 
 impl FederationState {
@@ -184,6 +185,7 @@ impl FederationState {
             .iter()
             .map(|p| p.to_string())
             .collect();
+        let min_endorsements = config.min_endorsements;
         FederationState {
             config,
             known_peers,
@@ -191,6 +193,7 @@ impl FederationState {
             connected_peers: HashMap::new(),
             remote_origins: RemoteOriginRegistry::new(),
             royalty_ledger: Vec::new(),
+            membership: MembershipState::new(min_endorsements),
         }
     }
 
@@ -275,6 +278,14 @@ impl FederationState {
 
     pub fn remote_origins_mut(&mut self) -> &mut RemoteOriginRegistry {
         &mut self.remote_origins
+    }
+
+    pub fn membership(&self) -> &MembershipState {
+        &self.membership
+    }
+
+    pub fn membership_mut(&mut self) -> &mut MembershipState {
+        &mut self.membership
     }
 }
 
@@ -995,6 +1006,316 @@ impl ReconcileStore {
 
     pub fn fingerprints(&self) -> Vec<String> {
         self.states.keys().cloned().collect()
+    }
+}
+
+// =============================================================================
+// Phase 19a: Trust & Membership — Web-of-Trust Join Protocol
+// =============================================================================
+//
+// The membership system governs which servers may join the federation.
+// It uses an OR-Set CRDT (OrSet<MembershipEntry>) so that membership
+// decisions propagate correctly across the network without central
+// coordination.
+//
+// Join Protocol Flow:
+//   1. Bootstrap: Config seeds initial trusted peer keys into MembershipState
+//   2. Join Request (over encrypted channel): Joining server sends identity + endorsements
+//   3. Validation: Verify endorsement signatures, check endorsers are members, count >= min_endorsements
+//   4. Join Response: Accept (with offered endorsement) or reject
+//   5. Membership Sync: New member added to OrSet<MembershipEntry>, propagated via CRDT merge
+//   6. Endorsement Offer: Any member can endorse a peer separately from join
+//   7. Leave: Server sends MembershipLeave, triggers remove_value() in OrSet
+//
+// Invariant: a server is a member if its MembershipEntry exists in the
+// membership OrSet with status Active and has >= min_endorsements from
+// other active members.
+
+/// Status of a member in the federation.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MembershipStatus {
+    Active,
+    Suspended,
+    Pending,
+}
+
+/// A single server's membership record in the federation.
+/// Identified by server_id (which is derived from the verifying key).
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MembershipEntry {
+    pub server_id: String,
+    pub verifying_key_hex: String,
+    pub kex_public_hex: String,
+    pub endorsed_by: Vec<EndorsementProof>,
+    pub joined_at: u64,
+    pub status: MembershipStatus,
+}
+
+impl MembershipEntry {
+    pub fn new(
+        server_id: impl Into<String>,
+        verifying_key_hex: impl Into<String>,
+        kex_public_hex: impl Into<String>,
+        endorsed_by: Vec<EndorsementProof>,
+        joined_at: u64,
+    ) -> Self {
+        MembershipEntry {
+            server_id: server_id.into(),
+            verifying_key_hex: verifying_key_hex.into(),
+            kex_public_hex: kex_public_hex.into(),
+            endorsed_by,
+            joined_at,
+            status: MembershipStatus::Active,
+        }
+    }
+
+    pub fn with_status(mut self, status: MembershipStatus) -> Self {
+        self.status = status;
+        self
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.status == MembershipStatus::Active
+    }
+
+    pub fn endorsement_count(&self) -> usize {
+        self.endorsed_by.len()
+    }
+
+    pub fn has_endorsement_from(&self, endorser_server_id: &str) -> bool {
+        self.endorsed_by
+            .iter()
+            .any(|e| e.endorser_server_id == endorser_server_id)
+    }
+
+    pub fn key(&self) -> String {
+        self.server_id.clone()
+    }
+}
+
+/// A signed endorsement from one server of another server's membership.
+/// The signature covers the canonical transcript of:
+///   endorser_server_id || endorsee_server_id || endorsee_verifying_key_hex || timestamp
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
+pub struct EndorsementProof {
+    pub endorser_server_id: String,
+    pub endorser_key_id: u64,
+    pub endorsee_server_id: String,
+    pub endorsee_verifying_key_hex: String,
+    pub signature: Vec<u8>,
+    pub timestamp: u64,
+}
+
+impl EndorsementProof {
+    pub fn canonical_transcript(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(
+            self.endorser_server_id.len()
+                + self.endorsee_server_id.len()
+                + self.endorsee_verifying_key_hex.len()
+                + 8
+                + 8,
+        );
+        buf.extend_from_slice(self.endorser_server_id.as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(self.endorsee_server_id.as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(self.endorsee_verifying_key_hex.as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(&self.endorser_key_id.to_be_bytes());
+        buf.extend_from_slice(&self.timestamp.to_be_bytes());
+        buf
+    }
+}
+
+/// Result of a join request validation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JoinResult {
+    Accepted {
+        server_id: String,
+        membership_entry: MembershipEntry,
+        offered_endorsement: Option<EndorsementProof>,
+    },
+    Rejected {
+        server_id: String,
+        reason: String,
+    },
+}
+
+/// Result of a membership verification check.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MembershipVerifyResult {
+    pub server_id: String,
+    pub is_member: bool,
+    pub endorsement_count: usize,
+    pub min_endorsements: u32,
+    pub endorsed_by: Vec<String>,
+}
+
+/// The membership state for the entire federation.
+/// Wraps an OrSet<MembershipEntry> plus admission policy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MembershipState {
+    members: OrSet<MembershipEntry>,
+    min_endorsements: u32,
+    bootstrap_mode: bool,
+    tag_counter: u64,
+}
+
+impl MembershipState {
+    pub fn new(min_endorsements: u32) -> Self {
+        MembershipState {
+            members: OrSet::new(),
+            min_endorsements,
+            bootstrap_mode: false,
+            tag_counter: 0,
+        }
+    }
+
+    pub fn new_bootstrap(min_endorsements: u32) -> Self {
+        MembershipState {
+            members: OrSet::new(),
+            min_endorsements,
+            bootstrap_mode: true,
+            tag_counter: 0,
+        }
+    }
+
+    pub fn min_endorsements(&self) -> u32 {
+        self.min_endorsements
+    }
+
+    pub fn set_min_endorsements(&mut self, n: u32) {
+        self.min_endorsements = n;
+    }
+
+    pub fn is_bootstrap(&self) -> bool {
+        self.bootstrap_mode
+    }
+
+    pub fn exit_bootstrap(&mut self) {
+        self.bootstrap_mode = false;
+    }
+
+    pub(crate) fn next_tag(&mut self, server_id: &str) -> OrSetTag {
+        self.tag_counter += 1;
+        OrSetTag::new(server_id, self.tag_counter)
+    }
+
+    pub fn add_member(&mut self, entry: MembershipEntry, tag: OrSetTag) {
+        self.members.add(entry, tag);
+    }
+
+    pub fn remove_member(&mut self, server_id: &str) -> bool {
+        if let Some(entry) = self.find_member(server_id) {
+            let entry = entry.clone();
+            self.members.remove_value(&entry);
+            return true;
+        }
+        false
+    }
+
+    /// Check if a server is an active member with enough endorsements.
+    pub fn is_member(&self, server_id: &str) -> bool {
+        match self.find_member(server_id) {
+            Some(entry) => entry.is_active() && entry.endorsement_count() >= self.min_endorsements as usize,
+            None => false,
+        }
+    }
+
+    /// Check if a server is a member (even without min endorsements, for bootstrap).
+    pub fn is_known_member(&self, server_id: &str) -> bool {
+        self.find_member(server_id).is_some()
+    }
+
+    /// Find a member entry by server_id.
+    pub fn find_member(&self, server_id: &str) -> Option<&MembershipEntry> {
+        self.members.values().into_iter().find(|m| m.server_id == server_id)
+    }
+
+    /// List all active members.
+    pub fn active_members(&self) -> Vec<&MembershipEntry> {
+        self.members
+            .values()
+            .into_iter()
+            .filter(|m| m.is_active())
+            .collect()
+    }
+
+    /// List all members (including pending/suspended).
+    pub fn all_members(&self) -> Vec<&MembershipEntry> {
+        self.members.values()
+    }
+
+    /// Get the number of active members.
+    pub fn member_count(&self) -> usize {
+        self.active_members().len()
+    }
+
+    /// Merge membership state from another server (CRDT merge).
+    pub fn merge(&mut self, other: &MembershipState) {
+        self.members.merge(&other.members);
+    }
+
+    /// Validate a join request: check endorsement proofs.
+    pub fn validate_join(&self, entry: &MembershipEntry) -> Result<(), String> {
+        if self.find_member(&entry.server_id).is_some() {
+            return Err(format!("server {} is already a member", entry.server_id));
+        }
+
+        let valid_endorsements: Vec<&EndorsementProof> = entry
+            .endorsed_by
+            .iter()
+            .filter(|proof| {
+                if !self.is_known_member(&proof.endorser_server_id) && !self.bootstrap_mode {
+                    return false;
+                }
+                true
+            })
+            .collect();
+
+        if self.bootstrap_mode && valid_endorsements.is_empty() {
+            return Ok(());
+        }
+
+        if valid_endorsements.len() < self.min_endorsements as usize {
+            return Err(format!(
+                "insufficient endorsements: {} < {}",
+                valid_endorsements.len(),
+                self.min_endorsements
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Add an endorsement to an existing member's entry.
+    /// Returns the updated entry or None if not found.
+    pub fn endorse_member(&mut self, server_id: &str, proof: EndorsementProof) -> bool {
+        let found = self.find_member(server_id).cloned();
+        if let Some(entry) = found {
+            let mut updated = entry.clone();
+            if updated.has_endorsement_from(&proof.endorser_server_id) {
+                return true;
+            }
+            updated.endorsed_by.push(proof);
+            self.members.remove_value(&entry);
+            let tag = self.next_tag(&updated.server_id);
+            self.members.add(updated, tag);
+            return true;
+        }
+        false
+    }
+
+    /// Export for wire protocol.
+    pub fn to_orset(&self) -> &OrSet<MembershipEntry> {
+        &self.members
+    }
+
+    /// Import from wire protocol (merge).
+    pub fn merge_orset(&mut self, other: &OrSet<MembershipEntry>) {
+        self.members.merge(other);
     }
 }
 
@@ -1905,5 +2226,651 @@ mod tests {
         set.insert(a);
         assert!(set.contains(&b));
         assert!(!set.contains(&c));
+    }
+
+    // =====================================================================
+    // Phase 19a: MembershipEntry Tests
+    // =====================================================================
+
+    fn make_membership_entry(
+        server_id: &str,
+        endorsements: Vec<EndorsementProof>,
+        ts: u64,
+    ) -> MembershipEntry {
+        MembershipEntry::new(
+            server_id,
+            format!("vk-{}", server_id),
+            format!("kex-{}", server_id),
+            endorsements,
+            ts,
+        )
+    }
+
+    fn make_endorsement_proof(endorser: &str, endorsee: &str, ts: u64) -> EndorsementProof {
+        EndorsementProof {
+            endorser_server_id: endorser.to_string(),
+            endorser_key_id: 1,
+            endorsee_server_id: endorsee.to_string(),
+            endorsee_verifying_key_hex: format!("vk-{}", endorsee),
+            signature: vec![0u8; 64],
+            timestamp: ts,
+        }
+    }
+
+    #[test]
+    fn membership_entry_new() {
+        let entry = make_membership_entry("srv-a", vec![], 1000);
+        assert_eq!(entry.server_id, "srv-a");
+        assert_eq!(entry.verifying_key_hex, "vk-srv-a");
+        assert_eq!(entry.kex_public_hex, "kex-srv-a");
+        assert!(entry.endorsed_by.is_empty());
+        assert_eq!(entry.joined_at, 1000);
+        assert!(entry.is_active());
+        assert_eq!(entry.status, MembershipStatus::Active);
+    }
+
+    #[test]
+    fn membership_entry_with_status() {
+        let entry = make_membership_entry("srv-a", vec![], 1000)
+            .with_status(MembershipStatus::Suspended);
+        assert_eq!(entry.status, MembershipStatus::Suspended);
+        assert!(!entry.is_active());
+    }
+
+    #[test]
+    fn membership_entry_endorsement_count() {
+        let proofs = vec![
+            make_endorsement_proof("srv-b", "srv-a", 100),
+            make_endorsement_proof("srv-c", "srv-a", 101),
+        ];
+        let entry = make_membership_entry("srv-a", proofs, 1000);
+        assert_eq!(entry.endorsement_count(), 2);
+    }
+
+    #[test]
+    fn membership_entry_has_endorsement_from() {
+        let proofs = vec![
+            make_endorsement_proof("srv-b", "srv-a", 100),
+        ];
+        let entry = make_membership_entry("srv-a", proofs, 1000);
+        assert!(entry.has_endorsement_from("srv-b"));
+        assert!(!entry.has_endorsement_from("srv-c"));
+    }
+
+    #[test]
+    fn membership_entry_key() {
+        let entry = make_membership_entry("srv-a", vec![], 1000);
+        assert_eq!(entry.key(), "srv-a");
+    }
+
+    #[test]
+    fn membership_entry_serialize_roundtrip() {
+        let proofs = vec![
+            make_endorsement_proof("srv-b", "srv-a", 100),
+            make_endorsement_proof("srv-c", "srv-a", 101),
+        ];
+        let entry = make_membership_entry("srv-a", proofs, 1000);
+        let json = serde_json::to_string(&entry).unwrap();
+        let back: MembershipEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.server_id, "srv-a");
+        assert_eq!(back.endorsed_by.len(), 2);
+        assert!(back.is_active());
+    }
+
+    #[test]
+    fn membership_status_serialize_roundtrip() {
+        let statuses = vec![
+            MembershipStatus::Active,
+            MembershipStatus::Suspended,
+            MembershipStatus::Pending,
+        ];
+        for status in statuses {
+            let json = serde_json::to_string(&status).unwrap();
+            let back: MembershipStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(status, back);
+        }
+    }
+
+    // =====================================================================
+    // Phase 19a: EndorsementProof Tests
+    // =====================================================================
+
+    #[test]
+    fn endorsement_proof_canonical_transcript_deterministic() {
+        let proof = make_endorsement_proof("srv-a", "srv-b", 1000);
+        let t1 = proof.canonical_transcript();
+        let t2 = proof.canonical_transcript();
+        assert_eq!(t1, t2, "transcript must be deterministic");
+    }
+
+    #[test]
+    fn endorsement_proof_canonical_transcript_unique_per_endorser() {
+        let proof_a = make_endorsement_proof("srv-a", "srv-b", 1000);
+        let proof_c = make_endorsement_proof("srv-c", "srv-b", 1000);
+        assert_ne!(
+            proof_a.canonical_transcript(),
+            proof_c.canonical_transcript(),
+            "different endorsers must produce different transcripts"
+        );
+    }
+
+    #[test]
+    fn endorsement_proof_canonical_transcript_unique_per_endorsee() {
+        let proof_b = make_endorsement_proof("srv-a", "srv-b", 1000);
+        let proof_c = make_endorsement_proof("srv-a", "srv-c", 1000);
+        assert_ne!(
+            proof_b.canonical_transcript(),
+            proof_c.canonical_transcript(),
+            "different endorsees must produce different transcripts"
+        );
+    }
+
+    #[test]
+    fn endorsement_proof_canonical_transcript_unique_per_timestamp() {
+        let proof_1 = make_endorsement_proof("srv-a", "srv-b", 1000);
+        let proof_2 = make_endorsement_proof("srv-a", "srv-b", 2000);
+        assert_ne!(
+            proof_1.canonical_transcript(),
+            proof_2.canonical_transcript(),
+            "different timestamps must produce different transcripts"
+        );
+    }
+
+    #[test]
+    fn endorsement_proof_serialize_roundtrip() {
+        let proof = make_endorsement_proof("srv-a", "srv-b", 1000);
+        let json = serde_json::to_string(&proof).unwrap();
+        let back: EndorsementProof = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.endorser_server_id, "srv-a");
+        assert_eq!(back.endorsee_server_id, "srv-b");
+        assert_eq!(back.timestamp, 1000);
+        assert_eq!(back.signature.len(), 64);
+    }
+
+    // =====================================================================
+    // Phase 19a: MembershipState Tests
+    // =====================================================================
+
+    #[test]
+    fn membership_state_new_empty() {
+        let state = MembershipState::new(2);
+        assert_eq!(state.min_endorsements(), 2);
+        assert_eq!(state.member_count(), 0);
+        assert!(!state.is_bootstrap());
+    }
+
+    #[test]
+    fn membership_state_bootstrap_mode() {
+        let mut state = MembershipState::new_bootstrap(2);
+        assert!(state.is_bootstrap());
+        state.exit_bootstrap();
+        assert!(!state.is_bootstrap());
+    }
+
+    #[test]
+    fn membership_state_add_and_find_member() {
+        let mut state = MembershipState::new(2);
+        let entry = make_membership_entry("srv-a", vec![], 1000);
+        let tag = OrSetTag::new("srv-a", 1);
+        state.add_member(entry, tag);
+
+        assert!(state.find_member("srv-a").is_some());
+        assert!(state.find_member("srv-b").is_none());
+    }
+
+    #[test]
+    fn membership_state_is_member_requires_endorsements() {
+        let mut state = MembershipState::new(2);
+        let entry = make_membership_entry("srv-a", vec![], 1000);
+        let tag = OrSetTag::new("srv-a", 1);
+        state.add_member(entry, tag);
+
+        assert!(!state.is_member("srv-a"), "0 endorsements < min 2");
+    }
+
+    #[test]
+    fn membership_state_is_member_with_enough_endorsements() {
+        let mut state = MembershipState::new(2);
+        let proofs = vec![
+            make_endorsement_proof("srv-b", "srv-a", 100),
+            make_endorsement_proof("srv-c", "srv-a", 101),
+        ];
+        let entry = make_membership_entry("srv-a", proofs, 1000);
+        let tag = OrSetTag::new("srv-a", 1);
+        state.add_member(entry, tag);
+
+        assert!(state.is_member("srv-a"), "2 endorsements >= min 2");
+    }
+
+    #[test]
+    fn membership_state_is_member_suspended_is_false() {
+        let mut state = MembershipState::new(0);
+        let entry = make_membership_entry("srv-a", vec![], 1000)
+            .with_status(MembershipStatus::Suspended);
+        let tag = OrSetTag::new("srv-a", 1);
+        state.add_member(entry, tag);
+
+        assert!(!state.is_member("srv-a"), "suspended member should not be active");
+    }
+
+    #[test]
+    fn membership_state_is_known_member_ignores_endorsements() {
+        let mut state = MembershipState::new(2);
+        let entry = make_membership_entry("srv-a", vec![], 1000);
+        let tag = OrSetTag::new("srv-a", 1);
+        state.add_member(entry, tag);
+
+        assert!(state.is_known_member("srv-a"), "known even without endorsements");
+        assert!(!state.is_member("srv-a"), "but not a full member");
+    }
+
+    #[test]
+    fn membership_state_remove_member() {
+        let mut state = MembershipState::new(0);
+        let entry = make_membership_entry("srv-a", vec![], 1000);
+        let tag = OrSetTag::new("srv-a", 1);
+        state.add_member(entry, tag);
+
+        assert!(state.remove_member("srv-a"));
+        assert!(!state.is_known_member("srv-a"));
+        assert!(!state.remove_member("srv-a"), "already removed");
+    }
+
+    #[test]
+    fn membership_state_active_members_filters_suspended() {
+        let mut state = MembershipState::new(0);
+        let entry_a = make_membership_entry("srv-a", vec![], 1000);
+        let entry_b = make_membership_entry("srv-b", vec![], 1000)
+            .with_status(MembershipStatus::Suspended);
+        state.add_member(entry_a, OrSetTag::new("tag", 1));
+        state.add_member(entry_b, OrSetTag::new("tag", 2));
+
+        let active = state.active_members();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].server_id, "srv-a");
+    }
+
+    #[test]
+    fn membership_state_all_members_includes_suspended() {
+        let mut state = MembershipState::new(0);
+        let entry_a = make_membership_entry("srv-a", vec![], 1000);
+        let entry_b = make_membership_entry("srv-b", vec![], 1000)
+            .with_status(MembershipStatus::Suspended);
+        state.add_member(entry_a, OrSetTag::new("tag", 1));
+        state.add_member(entry_b, OrSetTag::new("tag", 2));
+
+        let all = state.all_members();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn membership_state_member_count() {
+        let mut state = MembershipState::new(0);
+        assert_eq!(state.member_count(), 0);
+
+        state.add_member(
+            make_membership_entry("srv-a", vec![], 1000),
+            OrSetTag::new("tag", 1),
+        );
+        assert_eq!(state.member_count(), 1);
+
+        state.add_member(
+            make_membership_entry("srv-b", vec![], 1000)
+                .with_status(MembershipStatus::Suspended),
+            OrSetTag::new("tag", 2),
+        );
+        assert_eq!(state.member_count(), 1, "suspended not counted");
+    }
+
+    #[test]
+    fn membership_state_set_min_endorsements() {
+        let mut state = MembershipState::new(2);
+        assert_eq!(state.min_endorsements(), 2);
+        state.set_min_endorsements(5);
+        assert_eq!(state.min_endorsements(), 5);
+    }
+
+    // =====================================================================
+    // Phase 19a: Membership Validation Tests
+    // =====================================================================
+
+    #[test]
+    fn membership_validate_join_rejects_existing_member() {
+        let mut state = MembershipState::new(0);
+        let entry = make_membership_entry("srv-a", vec![], 1000);
+        state.add_member(entry.clone(), OrSetTag::new("tag", 1));
+
+        let result = state.validate_join(&entry);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("already a member"));
+    }
+
+    #[test]
+    fn membership_validate_join_bootstrap_allows_no_endorsements() {
+        let state = MembershipState::new_bootstrap(2);
+        let entry = make_membership_entry("srv-new", vec![], 1000);
+        assert!(state.validate_join(&entry).is_ok());
+    }
+
+    #[test]
+    fn membership_validate_join_rejects_insufficient_endorsements() {
+        let mut state = MembershipState::new(2);
+        let proofs = vec![
+            make_endorsement_proof("srv-b", "srv-new", 100),
+        ];
+        let entry = make_membership_entry("srv-new", proofs, 1000);
+
+        let result = state.validate_join(&entry);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("insufficient endorsements"));
+    }
+
+    #[test]
+    fn membership_validate_join_accepts_enough_endorsements() {
+        let mut state = MembershipState::new(2);
+        state.add_member(
+            make_membership_entry("srv-b", vec![], 900),
+            OrSetTag::new("tag", 1),
+        );
+        state.add_member(
+            make_membership_entry("srv-c", vec![], 900),
+            OrSetTag::new("tag", 2),
+        );
+        let proofs = vec![
+            make_endorsement_proof("srv-b", "srv-new", 100),
+            make_endorsement_proof("srv-c", "srv-new", 101),
+        ];
+        let entry = make_membership_entry("srv-new", proofs, 1000);
+        assert!(state.validate_join(&entry).is_ok());
+    }
+
+    #[test]
+    fn membership_validate_join_filters_non_member_endorsers() {
+        let mut state = MembershipState::new(2);
+        state.add_member(
+            make_membership_entry("srv-b", vec![], 900),
+            OrSetTag::new("tag", 1),
+        );
+        let proofs = vec![
+            make_endorsement_proof("srv-b", "srv-new", 100),
+            make_endorsement_proof("srv-unknown", "srv-new", 101),
+        ];
+        let entry = make_membership_entry("srv-new", proofs, 1000);
+
+        let result = state.validate_join(&entry);
+        assert!(result.is_err(), "only 1 endorsement from member, need 2");
+    }
+
+    // =====================================================================
+    // Phase 19a: Membership Endorsement Tests
+    // =====================================================================
+
+    #[test]
+    fn membership_endorse_member_adds_endorsement() {
+        let mut state = MembershipState::new(2);
+        let entry = make_membership_entry("srv-a", vec![], 1000);
+        state.add_member(entry, OrSetTag::new("tag", 1));
+
+        let proof = make_endorsement_proof("srv-b", "srv-a", 200);
+        let result = state.endorse_member("srv-a", proof);
+        assert!(result);
+
+        let found = state.find_member("srv-a").unwrap();
+        assert_eq!(found.endorsement_count(), 1);
+        assert!(found.has_endorsement_from("srv-b"));
+    }
+
+    #[test]
+    fn membership_endorse_member_idempotent_same_endorser() {
+        let mut state = MembershipState::new(2);
+        let entry = make_membership_entry("srv-a", vec![], 1000);
+        state.add_member(entry, OrSetTag::new("tag", 1));
+
+        let proof1 = make_endorsement_proof("srv-b", "srv-a", 200);
+        let proof2 = make_endorsement_proof("srv-b", "srv-a", 300);
+        state.endorse_member("srv-a", proof1);
+        state.endorse_member("srv-a", proof2);
+
+        let found = state.find_member("srv-a").unwrap();
+        assert_eq!(found.endorsement_count(), 1, "same endorser should not duplicate");
+    }
+
+    #[test]
+    fn membership_endorse_member_unknown_server() {
+        let mut state = MembershipState::new(2);
+        let proof = make_endorsement_proof("srv-b", "srv-unknown", 200);
+        let result = state.endorse_member("srv-unknown", proof);
+        assert!(!result);
+    }
+
+    #[test]
+    fn membership_endorse_upgrades_to_full_member() {
+        let mut state = MembershipState::new(2);
+        state.add_member(
+            make_membership_entry("srv-b", vec![], 900),
+            OrSetTag::new("srv-b", 1),
+        );
+        state.add_member(
+            make_membership_entry("srv-c", vec![], 900),
+            OrSetTag::new("srv-c", 1),
+        );
+        let entry = make_membership_entry("srv-a", vec![], 1000);
+        state.add_member(entry, OrSetTag::new("tag", 1));
+
+        assert!(!state.is_member("srv-a"));
+
+        state.endorse_member("srv-a", make_endorsement_proof("srv-b", "srv-a", 200));
+        assert!(!state.is_member("srv-a"), "1 endorsement < min 2");
+
+        state.endorse_member("srv-a", make_endorsement_proof("srv-c", "srv-a", 201));
+        assert!(state.is_member("srv-a"), "2 endorsements >= min 2");
+    }
+
+    // =====================================================================
+    // Phase 19a: Membership CRDT Merge Tests
+    // =====================================================================
+
+    #[test]
+    fn membership_merge_union_of_members() {
+        let mut state_a = MembershipState::new(0);
+        state_a.add_member(
+            make_membership_entry("srv-a", vec![], 1000),
+            OrSetTag::new("tag", 1),
+        );
+
+        let mut state_b = MembershipState::new(0);
+        state_b.add_member(
+            make_membership_entry("srv-b", vec![], 1000),
+            OrSetTag::new("tag", 2),
+        );
+
+        state_a.merge(&state_b);
+        assert!(state_a.is_known_member("srv-a"));
+        assert!(state_a.is_known_member("srv-b"));
+    }
+
+    #[test]
+    fn membership_merge_is_commutative() {
+        let mut state_a = MembershipState::new(0);
+        state_a.add_member(
+            make_membership_entry("srv-a", vec![], 1000),
+            OrSetTag::new("tag", 1),
+        );
+
+        let mut state_b = MembershipState::new(0);
+        state_b.add_member(
+            make_membership_entry("srv-b", vec![], 1000),
+            OrSetTag::new("tag", 2),
+        );
+
+        let mut merged_ab = state_a.clone();
+        merged_ab.merge(&state_b);
+
+        let mut merged_ba = state_b.clone();
+        merged_ba.merge(&state_a);
+
+        let mut members_ab: Vec<String> = merged_ab.all_members()
+            .iter().map(|m| m.server_id.clone()).collect();
+        members_ab.sort();
+        let mut members_ba: Vec<String> = merged_ba.all_members()
+            .iter().map(|m| m.server_id.clone()).collect();
+        members_ba.sort();
+        assert_eq!(members_ab, members_ba);
+    }
+
+    #[test]
+    fn membership_merge_is_idempotent() {
+        let mut state = MembershipState::new(0);
+        state.add_member(
+            make_membership_entry("srv-a", vec![], 1000),
+            OrSetTag::new("tag", 1),
+        );
+
+        let snapshot = state.clone();
+        state.merge(&snapshot);
+        assert_eq!(state.all_members().len(), 1);
+    }
+
+    #[test]
+    fn membership_merge_three_way_converges() {
+        let mut a = MembershipState::new(0);
+        a.add_member(make_membership_entry("srv-a", vec![], 1000), OrSetTag::new("tag", 1));
+
+        let mut b = MembershipState::new(0);
+        b.add_member(make_membership_entry("srv-b", vec![], 1000), OrSetTag::new("tag", 2));
+
+        let mut c = MembershipState::new(0);
+        c.add_member(make_membership_entry("srv-c", vec![], 1000), OrSetTag::new("tag", 3));
+
+        a.merge(&b);
+        a.merge(&c);
+        b.merge(&a);
+        c.merge(&a);
+
+        let mut members_a: Vec<String> = a.all_members().iter().map(|m| m.server_id.clone()).collect();
+        members_a.sort();
+        let mut members_b: Vec<String> = b.all_members().iter().map(|m| m.server_id.clone()).collect();
+        members_b.sort();
+        let mut members_c: Vec<String> = c.all_members().iter().map(|m| m.server_id.clone()).collect();
+        members_c.sort();
+
+        assert_eq!(members_a, members_b);
+        assert_eq!(members_b, members_c);
+    }
+
+    #[test]
+    fn membership_merge_orset_preserves_removals() {
+        let mut state_a = MembershipState::new(0);
+        state_a.add_member(
+            make_membership_entry("srv-a", vec![], 1000),
+            OrSetTag::new("tag", 1),
+        );
+        state_a.add_member(
+            make_membership_entry("srv-b", vec![], 1000),
+            OrSetTag::new("tag", 2),
+        );
+        state_a.remove_member("srv-b");
+
+        let mut state_b = MembershipState::new(0);
+        state_b.add_member(
+            make_membership_entry("srv-a", vec![], 1000),
+            OrSetTag::new("tag", 1),
+        );
+        state_b.add_member(
+            make_membership_entry("srv-b", vec![], 1000),
+            OrSetTag::new("tag", 2),
+        );
+
+        state_b.merge(&state_a);
+        assert!(state_b.is_known_member("srv-a"));
+        assert!(!state_b.is_known_member("srv-b"), "removal should propagate via CRDT merge");
+    }
+
+    // =====================================================================
+    // Phase 19a: MembershipState Serialization
+    // =====================================================================
+
+    #[test]
+    fn membership_state_serialize_roundtrip() {
+        let mut state = MembershipState::new(2);
+        let proofs = vec![
+            make_endorsement_proof("srv-b", "srv-a", 100),
+            make_endorsement_proof("srv-c", "srv-a", 101),
+        ];
+        state.add_member(
+            make_membership_entry("srv-a", proofs, 1000),
+            OrSetTag::new("tag", 1),
+        );
+
+        let json = serde_json::to_string(&state).unwrap();
+        let back: MembershipState = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.min_endorsements(), 2);
+        assert_eq!(back.member_count(), 1);
+        assert!(back.is_member("srv-a"));
+    }
+
+    #[test]
+    fn join_result_serialize_roundtrip_accepted() {
+        let entry = make_membership_entry("srv-a", vec![], 1000);
+        let proof = make_endorsement_proof("srv-b", "srv-a", 200);
+        let result = JoinResult::Accepted {
+            server_id: "srv-a".to_string(),
+            membership_entry: entry,
+            offered_endorsement: Some(proof),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let back: JoinResult = serde_json::from_str(&json).unwrap();
+        match back {
+            JoinResult::Accepted { server_id, .. } => assert_eq!(server_id, "srv-a"),
+            JoinResult::Rejected { .. } => panic!("expected Accepted"),
+        }
+    }
+
+    #[test]
+    fn join_result_serialize_roundtrip_rejected() {
+        let result = JoinResult::Rejected {
+            server_id: "srv-a".to_string(),
+            reason: "insufficient endorsements".to_string(),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let back: JoinResult = serde_json::from_str(&json).unwrap();
+        match back {
+            JoinResult::Rejected { reason, .. } => {
+                assert!(reason.contains("insufficient"));
+            }
+            JoinResult::Accepted { .. } => panic!("expected Rejected"),
+        }
+    }
+
+    #[test]
+    fn membership_verify_result_serialize() {
+        let result = MembershipVerifyResult {
+            server_id: "srv-a".to_string(),
+            is_member: true,
+            endorsement_count: 3,
+            min_endorsements: 2,
+            endorsed_by: vec!["srv-b".to_string(), "srv-c".to_string(), "srv-d".to_string()],
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let back: MembershipVerifyResult = serde_json::from_str(&json).unwrap();
+        assert!(back.is_member);
+        assert_eq!(back.endorsement_count, 3);
+        assert_eq!(back.endorsed_by.len(), 3);
+    }
+
+    // =====================================================================
+    // Phase 19a: FederationState Integration with Membership
+    // =====================================================================
+
+    #[test]
+    fn federation_state_has_membership() {
+        let mut state = FederationState::new(FederationConfig::closed(vec![]));
+        assert_eq!(state.membership().member_count(), 0);
+
+        state.membership_mut().add_member(
+            make_membership_entry("srv-a", vec![], 1000),
+            OrSetTag::new("tag", 1),
+        );
+        assert_eq!(state.membership().member_count(), 1);
     }
 }

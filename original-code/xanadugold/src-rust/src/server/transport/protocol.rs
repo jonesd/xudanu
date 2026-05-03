@@ -202,6 +202,16 @@ pub enum OperationCode {
     EndorsementQuery,
     StateSync,
     StateAlternatives,
+
+    MembershipJoinRequest,
+    MembershipJoinResponse,
+    MembershipEndorseOffer,
+    MembershipEndorseAccept,
+    MembershipSync,
+    MembershipSyncResult,
+    MembershipLeave,
+    MembershipList,
+    MembershipVerify,
 }
 
 impl OperationCode {
@@ -337,6 +347,16 @@ impl OperationCode {
             0x1804 => Some(OperationCode::EndorsementQuery),
             0x1805 => Some(OperationCode::StateSync),
             0x1806 => Some(OperationCode::StateAlternatives),
+
+            0x1901 => Some(OperationCode::MembershipJoinRequest),
+            0x1902 => Some(OperationCode::MembershipJoinResponse),
+            0x1903 => Some(OperationCode::MembershipEndorseOffer),
+            0x1904 => Some(OperationCode::MembershipEndorseAccept),
+            0x1905 => Some(OperationCode::MembershipSync),
+            0x1906 => Some(OperationCode::MembershipSyncResult),
+            0x1907 => Some(OperationCode::MembershipLeave),
+            0x1908 => Some(OperationCode::MembershipList),
+            0x1909 => Some(OperationCode::MembershipVerify),
 
             _ => None,
         }
@@ -475,6 +495,16 @@ impl OperationCode {
             OperationCode::EndorsementQuery => 0x1804,
             OperationCode::StateSync => 0x1805,
             OperationCode::StateAlternatives => 0x1806,
+
+            OperationCode::MembershipJoinRequest => 0x1901,
+            OperationCode::MembershipJoinResponse => 0x1902,
+            OperationCode::MembershipEndorseOffer => 0x1903,
+            OperationCode::MembershipEndorseAccept => 0x1904,
+            OperationCode::MembershipSync => 0x1905,
+            OperationCode::MembershipSyncResult => 0x1906,
+            OperationCode::MembershipLeave => 0x1907,
+            OperationCode::MembershipList => 0x1908,
+            OperationCode::MembershipVerify => 0x1909,
         }
     }
 }
@@ -655,6 +685,23 @@ pub enum WireRequest {
     EndorsementQuery { work_fingerprint: String },
     StateSync { work_fingerprints: Vec<String> },
     StateAlternatives { work_fingerprint: String },
+
+    MembershipJoinRequest {
+        entry: crate::server::federation::MembershipEntry,
+    },
+    MembershipEndorseOffer {
+        server_id: String,
+        proof: crate::server::federation::EndorsementProof,
+    },
+    MembershipEndorseAccept {
+        server_id: String,
+    },
+    MembershipSync,
+    MembershipLeave,
+    MembershipList,
+    MembershipVerify {
+        server_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -833,6 +880,24 @@ pub enum ResponseValue {
     StateAlternativesResult {
         alternatives: Vec<crate::server::federation::AlternativeEdition>,
         current_key: String,
+    },
+
+    MembershipJoinResult {
+        result: crate::server::federation::JoinResult,
+    },
+    MembershipEndorseOfferResult {
+        accepted: bool,
+    },
+    MembershipEndorseAcceptResult {},
+    MembershipSyncResult {
+        members: Vec<crate::server::federation::MembershipEntry>,
+    },
+    MembershipLeaveResult {},
+    MembershipListResult {
+        members: Vec<crate::server::federation::MembershipEntry>,
+    },
+    MembershipVerifyResult {
+        verify: crate::server::federation::MembershipVerifyResult,
     },
 }
 

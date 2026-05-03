@@ -863,6 +863,68 @@ fn dispatch_inner(
                 .unwrap_or_default();
             Ok(ResponseValue::StateAlternativesResult { alternatives, current_key })
         }
+
+        WireRequest::MembershipJoinRequest { entry } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_logged_in(session_id)?;
+            let result = srv.membership_process_join(entry);
+            Ok(ResponseValue::MembershipJoinResult { result })
+        }
+
+        WireRequest::MembershipEndorseOffer { server_id, proof } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_logged_in(session_id)?;
+            let accepted = srv.membership_endorse(&server_id, proof);
+            Ok(ResponseValue::MembershipEndorseOfferResult { accepted })
+        }
+
+        WireRequest::MembershipEndorseAccept { server_id: _ } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_logged_in(session_id)?;
+            Ok(ResponseValue::MembershipEndorseAcceptResult {})
+        }
+
+        WireRequest::MembershipSync => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_logged_in(session_id)?;
+            let members = srv.membership_list();
+            Ok(ResponseValue::MembershipSyncResult { members })
+        }
+
+        WireRequest::MembershipLeave => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_logged_in(session_id)?;
+            srv.membership_leave();
+            Ok(ResponseValue::MembershipLeaveResult {})
+        }
+
+        WireRequest::MembershipList => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_logged_in(session_id)?;
+            let members = srv.membership_list();
+            Ok(ResponseValue::MembershipListResult { members })
+        }
+
+        WireRequest::MembershipVerify { server_id } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
+            srv.ensure_logged_in(session_id)?;
+            let verify = srv.membership_verify(&server_id);
+            Ok(ResponseValue::MembershipVerifyResult { verify })
+        }
     }
 }
 
