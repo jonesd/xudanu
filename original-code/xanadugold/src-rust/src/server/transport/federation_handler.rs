@@ -57,6 +57,19 @@ pub enum FederationFrame {
     TranscludeResponse { results: Vec<crate::server::federation::FederatedTransclusionEntry> },
     ContentFetch { content_fingerprint_hex: String },
     ContentFetchResponse { found: bool, edition_payload: Option<crate::server::transport::protocol::EditionPayload>, blob_data: Option<String>, blob_mime_type: Option<String> },
+
+    EndorsementSyncPush {
+        endorsements: Vec<(String, crate::server::federation::OrSet<crate::server::federation::EndorsementEntry>)>,
+    },
+    EndorsementSyncResult {
+        endorsements: Vec<(String, crate::server::federation::OrSet<crate::server::federation::EndorsementEntry>)>,
+    },
+    StateSyncPush {
+        states: Vec<crate::server::federation::ReconcileState>,
+    },
+    StateSyncResult {
+        states: Vec<crate::server::federation::ReconcileState>,
+    },
 }
 
 pub fn build_federation_router(state: SharedState) -> Router {
@@ -403,6 +416,50 @@ async fn handle_federation_socket(
                                     }
                                 });
                                 send_encrypted_frame(&mut ws_sender, &response, &mut outbound_cipher).await;
+                            }
+                            Ok(FederationFrame::EndorsementSyncPush { endorsements }) => {
+                                state.server.with_server(|srv| {
+                                    srv.reconcile_merge_endorsements(&endorsements);
+                                });
+                                let reply_endorsements = state.server.with_server(|srv| {
+                                    srv.reconcile_export_endorsements()
+                                });
+                                send_encrypted_frame(
+                                    &mut ws_sender,
+                                    &FederationFrame::EndorsementSyncResult {
+                                        endorsements: reply_endorsements,
+                                    },
+                                    &mut outbound_cipher,
+                                ).await;
+                            }
+                            Ok(FederationFrame::EndorsementSyncResult { endorsements }) => {
+                                state.server.with_server(|srv| {
+                                    srv.reconcile_merge_endorsements(&endorsements);
+                                });
+                            }
+                            Ok(FederationFrame::StateSyncPush { states }) => {
+                                state.server.with_server(|srv| {
+                                    for remote_state in &states {
+                                        srv.reconcile_merge_remote(remote_state.clone());
+                                    }
+                                });
+                                let reply_states = state.server.with_server(|srv| {
+                                    srv.reconcile_export_all()
+                                });
+                                send_encrypted_frame(
+                                    &mut ws_sender,
+                                    &FederationFrame::StateSyncResult {
+                                        states: reply_states,
+                                    },
+                                    &mut outbound_cipher,
+                                ).await;
+                            }
+                            Ok(FederationFrame::StateSyncResult { states }) => {
+                                state.server.with_server(|srv| {
+                                    for remote_state in &states {
+                                        srv.reconcile_merge_remote(remote_state.clone());
+                                    }
+                                });
                             }
                             Ok(frame) => {
                                 tracing::warn!("Federation: unexpected frame type from {}: {:?}", peer_server_id, frame);

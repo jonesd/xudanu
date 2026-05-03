@@ -70,6 +70,8 @@ pub struct Server {
     key_history: crate::crypto::keys::KeyHistory,
     federation: crate::server::federation::FederationState,
     element_fingerprint_to_work: HashMap<[u8; 32], BeId>,
+    reconcile_store: crate::server::federation::ReconcileStore,
+    reconcile_counter: u64,
 }
 
 pub struct ServerHealth {
@@ -175,6 +177,8 @@ impl Server {
             key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
             federation: crate::server::federation::FederationState::disabled(),
             element_fingerprint_to_work: HashMap::new(),
+            reconcile_store: crate::server::federation::ReconcileStore::new(),
+            reconcile_counter: 0,
         };
 
         let pub_club = Club::new_with_owner(
@@ -455,6 +459,11 @@ impl Server {
         self.content_address.intern_edition_elements(&edition);
         let work_elem = RangeElement::work(be_id);
         self.transclusion_index.register_work(&edition, &work_elem);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.reconcile_record_local_revision(be_id, &edition, ts);
         let work = Work::new_with_owner(be_id, owner, edition);
         self.backfollow.register_work(work, be_id, None);
         self.auto_checkpoint();
@@ -514,8 +523,13 @@ impl Server {
         }
         let work_elem = RangeElement::work(work_be_id);
         self.transclusion_index.register_work(&updated_edition, &work_elem);
-        let updated_work = Work::new_with_owner(work_be_id, ws.work.owner(), updated_edition);
+        let updated_work = Work::new_with_owner(work_be_id, ws.work.owner(), updated_edition.clone());
         self.backfollow.update_work(work_be_id, updated_work);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.reconcile_record_local_revision(work_be_id, &updated_edition, ts);
         self.auto_checkpoint();
 
         Ok(revision)
@@ -1418,6 +1432,11 @@ impl Server {
             let fp = carrier.element.content_fingerprint();
             self.element_fingerprint_to_work.insert(fp, work_id);
         }
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.reconcile_record_local_revision(work_id, &updated, ts);
         Ok(updated)
     }
 
@@ -2174,6 +2193,162 @@ impl Server {
         }
         Some(bytes)
     }
+
+    // =================================================================
+    // Phase 18: DagWood Reconciliation & Endorsement Sync
+    // =================================================================
+
+    /// Record a local work revision into the reconcile store.
+    /// This should be called whenever a work is created or revised locally.
+    pub fn reconcile_record_local_revision(
+        &mut self,
+        work_id: BeId,
+        edition: &Edition,
+        timestamp: u64,
+    ) {
+        let server_id = self.federation_server_id();
+        let rev = {
+            if let Some(ws) = self.works.get(&work_id) {
+                ws.work.revision_count()
+            } else {
+                return;
+            }
+        };
+
+        let fp_hex = {
+            let entries = edition.all_entries();
+            let mut hasher = blake3::Hasher::new();
+            for (pos, carrier) in &entries {
+                hasher.update(&pos.to_be_bytes());
+                hasher.update(&carrier.element.content_fingerprint());
+            }
+            let hash = hasher.finalize();
+            crate::edition::blob_store::hash_to_hex(hash.as_bytes())
+        };
+
+        let alt = crate::server::federation::AlternativeEdition::new(
+            &server_id,
+            rev,
+            edition,
+            timestamp,
+        );
+        let key = alt.key();
+
+        let state = self.reconcile_store.get_or_create(
+            &fp_hex,
+            key.clone(),
+            alt,
+            &server_id,
+            timestamp,
+        );
+        state.set_current(key, timestamp, &server_id);
+    }
+
+    /// Merge a remote ReconcileState into the local store.
+    /// Used when receiving state_sync from a federated peer.
+    pub fn reconcile_merge_remote(
+        &mut self,
+        remote: crate::server::federation::ReconcileState,
+    ) {
+        self.reconcile_store.merge_remote(&remote);
+    }
+
+    /// Export the full reconcile store for sync to a peer.
+    pub fn reconcile_export_all(&self) -> Vec<crate::server::federation::ReconcileState> {
+        self.reconcile_store
+            .fingerprints()
+            .into_iter()
+            .filter_map(|fp| self.reconcile_store.get(&fp).cloned())
+            .collect()
+    }
+
+    /// Get reconcile state for a specific work fingerprint.
+    pub fn reconcile_get(&self, work_fingerprint: &str) -> Option<&crate::server::federation::ReconcileState> {
+        self.reconcile_store.get(work_fingerprint)
+    }
+
+    /// Get all alternative editions for a work fingerprint.
+    pub fn reconcile_alternatives(&self, work_fingerprint: &str) -> Vec<crate::server::federation::AlternativeEdition> {
+        self.reconcile_store
+            .get(work_fingerprint)
+            .map(|s| s.all_alternatives().into_iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Add an endorsement to a work's reconcile state via OR-Set CRDT.
+    pub fn reconcile_endorse(
+        &mut self,
+        work_fingerprint: &str,
+        club_id: u64,
+        token_id: u64,
+        tag: crate::server::federation::OrSetTag,
+    ) {
+        if let Some(state) = self.reconcile_store.get_mut(work_fingerprint) {
+            let entry = crate::server::federation::EndorsementEntry::new(
+                club_id,
+                token_id,
+                &tag.server_id,
+            );
+            state.endorsements.add(entry, tag);
+        }
+    }
+
+    /// Retract an endorsement from a work's reconcile state via OR-Set CRDT.
+    pub fn reconcile_retract(
+        &mut self,
+        work_fingerprint: &str,
+        club_id: u64,
+        token_id: u64,
+        tag: &crate::server::federation::OrSetTag,
+    ) {
+        if let Some(state) = self.reconcile_store.get_mut(work_fingerprint) {
+            let entry = crate::server::federation::EndorsementEntry::new(
+                club_id,
+                token_id,
+                &tag.server_id,
+            );
+            state.endorsements.remove(&entry, tag);
+        }
+    }
+
+    /// Get the next unique tag for this server's endorsement operations.
+    pub fn reconcile_next_tag(&mut self) -> crate::server::federation::OrSetTag {
+        self.reconcile_counter += 1;
+        crate::server::federation::OrSetTag::new(
+            self.federation_server_id(),
+            self.reconcile_counter,
+        )
+    }
+
+    /// Export all endorsement sync data for a peer.
+    /// Returns (work_fingerprint, endorsements) pairs.
+    pub fn reconcile_export_endorsements(&self) -> Vec<(String, crate::server::federation::OrSet<crate::server::federation::EndorsementEntry>)> {
+        self.reconcile_store
+            .fingerprints()
+            .into_iter()
+            .filter_map(|fp| {
+                self.reconcile_store.get(&fp).map(|s| {
+                    (fp, s.endorsements.clone())
+                })
+            })
+            .collect()
+    }
+
+    /// Merge remote endorsement OR-Sets into local state.
+    pub fn reconcile_merge_endorsements(
+        &mut self,
+        entries: &[(String, crate::server::federation::OrSet<crate::server::federation::EndorsementEntry>)],
+    ) {
+        for (fp, remote_endorsements) in entries {
+            if let Some(state) = self.reconcile_store.get_mut(fp) {
+                state.endorsements.merge(remote_endorsements);
+            }
+        }
+    }
+
+    pub fn reconcile_store_len(&self) -> usize {
+        self.reconcile_store.len()
+    }
 }
 
 #[derive(Debug)]
@@ -2321,6 +2496,8 @@ mod persist_snapshot {
                 key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
                 federation: crate::server::federation::FederationState::disabled(),
                 element_fingerprint_to_work: HashMap::new(),
+                reconcile_store: crate::server::federation::ReconcileStore::new(),
+                reconcile_counter: 0,
             };
 
             for club_snap in &snapshot.clubs {
@@ -3820,5 +3997,126 @@ mod tests {
             matches!(r.element_type, crate::server::federation::RemoteElementType::Blob)
         });
         assert!(blob_result.is_some(), "should find Blob element_type for blob fingerprint");
+    }
+
+    // =================================================================
+    // Phase 18: Reconcile Server Method Tests
+    // =================================================================
+
+    #[test]
+    fn reconcile_records_on_create_work() {
+        let (mut server, sid) = setup_logged_in_server();
+        server.create_work(sid, Edition::from_text("reconcile test")).unwrap();
+        assert!(
+            server.reconcile_store_len() > 0,
+            "creating a work should populate the reconcile store"
+        );
+    }
+
+    #[test]
+    fn reconcile_records_on_revise() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_id = server.create_work(sid, Edition::from_text("v1")).unwrap();
+        server.work_grab(sid, work_id).unwrap();
+
+        let updated = Edition::from_text("v2");
+        server.work_revise(sid, work_id, updated).unwrap();
+
+        assert!(
+            server.reconcile_store_len() >= 2,
+            "create and revise produce separate reconcile entries (different fingerprints)"
+        );
+    }
+
+    #[test]
+    fn reconcile_merge_remote_adds_alternatives() {
+        let (mut server_a, sid) = setup_logged_in_server();
+        let work_id = server_a.create_work(sid, Edition::from_text("from A")).unwrap();
+        let local_state = server_a.reconcile_export_all();
+        let fp = local_state[0].work_fingerprint.clone();
+        let a_timestamp = local_state[0].current.timestamp();
+
+        let remote_timestamp = a_timestamp + 1000;
+        let alt_b = crate::server::federation::AlternativeEdition::new(
+            "server-b", 0, &Edition::from_text("from B"), remote_timestamp,
+        );
+        let mut remote = crate::server::federation::ReconcileState::new(
+            &fp, "server-b:0".to_string(), alt_b, "server-b", remote_timestamp,
+        );
+
+        server_a.reconcile_merge_remote(remote);
+        let state = server_a.reconcile_get(&fp).unwrap();
+        assert_eq!(state.alternative_count(), 2);
+        assert!(state.has_alternatives());
+        assert_eq!(state.current_text().unwrap(), "from B");
+    }
+
+    #[test]
+    fn reconcile_endorse_via_orset() {
+        let (mut server, sid) = setup_logged_in_server();
+        server.create_work(sid, Edition::from_text("endorsed work")).unwrap();
+        let states = server.reconcile_export_all();
+        let fp = states[0].work_fingerprint.clone();
+
+        let tag = server.reconcile_next_tag();
+        server.reconcile_endorse(&fp, 42, 7, tag);
+
+        let state = server.reconcile_get(&fp).unwrap();
+        assert_eq!(state.endorsements.len(), 1);
+        assert!(state.endorsements.contains(&crate::server::federation::EndorsementEntry::new(42, 7, &server.federation_server_id())));
+    }
+
+    #[test]
+    fn reconcile_retract_via_orset() {
+        let (mut server, sid) = setup_logged_in_server();
+        server.create_work(sid, Edition::from_text("retractable")).unwrap();
+        let states = server.reconcile_export_all();
+        let fp = states[0].work_fingerprint.clone();
+
+        let tag = server.reconcile_next_tag();
+        server.reconcile_endorse(&fp, 42, 7, tag.clone());
+        server.reconcile_retract(&fp, 42, 7, &tag);
+
+        let state = server.reconcile_get(&fp).unwrap();
+        assert_eq!(state.endorsements.len(), 0, "retracted endorsement should be removed");
+    }
+
+    #[test]
+    fn reconcile_export_and_merge_endorsements() {
+        let (mut server_a, sid_a) = setup_logged_in_server();
+        server_a.create_work(sid_a, Edition::from_text("shared work")).unwrap();
+        let states_a = server_a.reconcile_export_all();
+        let fp = states_a[0].work_fingerprint.clone();
+
+        let tag_a = server_a.reconcile_next_tag();
+        server_a.reconcile_endorse(&fp, 1, 10, tag_a);
+
+        let endorsements_a = server_a.reconcile_export_endorsements();
+        assert_eq!(endorsements_a.len(), 1);
+        assert_eq!(endorsements_a[0].0, fp);
+        assert_eq!(endorsements_a[0].1.len(), 1);
+
+        let (mut server_b, sid_b) = setup_logged_in_server();
+        let alt_b = crate::server::federation::AlternativeEdition::new(
+            "server-b-id", 0, &Edition::from_text("shared work"), 100,
+        );
+        let remote_state = crate::server::federation::ReconcileState::new(
+            &fp, "server-b-id:0".to_string(), alt_b, "server-b-id", 100,
+        );
+        server_b.reconcile_merge_remote(remote_state);
+        server_b.reconcile_merge_endorsements(&endorsements_a);
+
+        let state_b = server_b.reconcile_get(&fp).unwrap();
+        assert_eq!(state_b.endorsements.len(), 1);
+    }
+
+    #[test]
+    fn reconcile_next_tag_unique() {
+        let mut server = Server::new();
+        let tag1 = server.reconcile_next_tag();
+        let tag2 = server.reconcile_next_tag();
+        assert_ne!(tag1, tag2);
+        assert_eq!(tag1.counter, 1);
+        assert_eq!(tag2.counter, 2);
     }
 }
