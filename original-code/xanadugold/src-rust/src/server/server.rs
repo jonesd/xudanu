@@ -3701,4 +3701,124 @@ mod tests {
         assert_eq!(ledger[0].amount, 50);
         assert_eq!(ledger[0].origin_server_id, "origin-server");
     }
+
+    #[test]
+    fn re_import_does_not_duplicate_origin_entries() {
+        let mut server = Server::new();
+        let entry = crate::server::federation::SyncWorkEntry {
+            origin_server_id: "remote-server".to_string(),
+            work_id: 100,
+            edition_payload: crate::server::transport::protocol::EditionPayload::Text("hello".to_string()),
+        };
+        let my_id = server.federation_server_id();
+
+        let (imported1, _) = server.federation_import_works(&[entry.clone()], &my_id);
+        assert_eq!(imported1, 1);
+        let origins_after_first = server.federation.remote_origins().len();
+        let fed_after_first = server.transclusion_index.federated_entry_count();
+
+        let (imported2, already2) = server.federation_import_works(&[entry.clone()], &my_id);
+        assert_eq!(imported2, 0);
+        assert_eq!(already2, 1);
+        assert_eq!(
+            server.federation.remote_origins().len(),
+            origins_after_first,
+            "re-import should not add more origin entries"
+        );
+        assert_eq!(
+            server.transclusion_index.federated_entry_count(),
+            fed_after_first,
+            "re-import should not add more federated transclusion entries"
+        );
+    }
+
+    #[test]
+    fn fingerprint_index_resolves_to_correct_work() {
+        let (mut server, sid) = setup_logged_in_server();
+        let id_a = server.create_work(sid, Edition::from_text("alpha")).unwrap();
+        let id_b = server.create_work(sid, Edition::from_text("bravo")).unwrap();
+
+        let char_a = RangeElement::text("a".to_string());
+        let fp_a = char_a.content_fingerprint();
+        let hex_a: String = fp_a.iter().map(|b| format!("{:02x}", b)).collect();
+
+        let result_a = server.federation_fetch_by_fingerprint(&hex_a);
+        match &result_a {
+            FederationFetchResponse::Edition(payload) => {
+                let ed = payload.to_edition();
+                let text: String = ed.all_entries().iter()
+                    .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                    .collect();
+                assert!(text.contains('a'), "should find edition containing 'a'");
+            }
+            other => panic!("expected Edition for 'a', got {:?}", other),
+        }
+
+        let char_b = RangeElement::text("b".to_string());
+        let fp_b = char_b.content_fingerprint();
+        let hex_b: String = fp_b.iter().map(|b| format!("{:02x}", b)).collect();
+
+        let result_b = server.federation_fetch_by_fingerprint(&hex_b);
+        match &result_b {
+            FederationFetchResponse::Edition(payload) => {
+                let ed = payload.to_edition();
+                let text: String = ed.all_entries().iter()
+                    .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                    .collect();
+                assert!(text.contains('b'), "should find edition containing 'b'");
+            }
+            other => panic!("expected Edition for 'b', got {:?}", other),
+        }
+
+        assert_ne!(id_a, id_b);
+    }
+
+    #[test]
+    fn blob_import_records_origin_server_id() {
+        let mut server = Server::new();
+        let data = b"test blob content".to_vec();
+        let hash = crate::edition::blob_store::hash_content(&data);
+        let hash_hex = crate::edition::blob_store::hash_to_hex(&hash);
+        let data_b64 = crate::edition::blob_store::base64_encode(&data);
+
+        let entries = vec![crate::server::federation::SyncBlobEntry {
+            content_hash_hex: hash_hex.clone(),
+            data: data_b64,
+            mime_type: "text/plain".to_string(),
+        }];
+
+        let (imported, _) = server.federation_import_blobs(&entries, "origin-server-42");
+        assert_eq!(imported, 1);
+
+        let origin = server.federation.remote_origins().get(&hash);
+        assert!(origin.is_some(), "blob origin should be recorded");
+        let origin = origin.unwrap();
+        assert_eq!(origin.server_id, "origin-server-42");
+        assert_eq!(origin.element_type, crate::server::federation::RemoteElementType::Blob);
+    }
+
+    #[test]
+    fn federated_query_maps_blob_element_type() {
+        let mut server = Server::new();
+        server.set_federation_config(crate::server::federation::FederationConfig::closed(vec![]));
+
+        let data = b"blobby".to_vec();
+        let data_elem = RangeElement::data(data.clone());
+        let fp = data_elem.content_fingerprint();
+        let fp_hex: String = fp.iter().map(|b| format!("{:02x}", b)).collect();
+
+        server.transclusion_index.register_federated(
+            &data_elem,
+            "remote-blob-server".to_string(),
+            0,
+            "blob".to_string(),
+            true,
+        );
+
+        let results = server.federation_query_local_transclusion(&fp_hex, false);
+        let blob_result = results.iter().find(|r| {
+            matches!(r.element_type, crate::server::federation::RemoteElementType::Blob)
+        });
+        assert!(blob_result.is_some(), "should find Blob element_type for blob fingerprint");
+    }
 }
