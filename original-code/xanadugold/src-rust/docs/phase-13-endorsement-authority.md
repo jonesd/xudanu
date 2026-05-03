@@ -4,6 +4,36 @@
 
 Phase 13 wires the endorsement system into the server API with proper authority validation, matching the C++ `validateEndorsement`/`validateSignature` pattern. Endorsements are publicly readable but can only be modified by sessions with signature authority for the clubs referenced in the endorsement.
 
+## Endorsement Authority Model
+
+### Who can endorse
+
+To stamp an endorsement `(club_id, token_id)` onto a Work or Edition, the session's KeyMaster must have **signature authority** for `club_id`. The chain:
+
+1. Each club has a `signature_club` — set to its owner at creation (via `new_with_owner`)
+2. `has_signature_authority(club_id, all_clubs)` resolves: does the session have authority over `club.signature_club`?
+3. Authority propagates upward through the club hierarchy (if club A is a member of club B, authority over B includes authority over A)
+
+**Example:** If the "Science Club" (id=5) is self-owned (`signature_club = 5`), you need authority over club 5. If it's owned by a parent ("Academic Club", id=2), you need authority over club 2 — meaning any member of Academic can endorse on behalf of Science.
+
+This matches the C++ `FeRangeElement::validateSignature()` exactly: iterate club IDs from the endorsement, check `km->hasSignatureAuthority(clubID)` for each.
+
+### Who can see endorsements
+
+**Anyone.** Query operations (`work_endorsements`, `edition_endorsements`, `edition_visible_endorsements`, `edition_total_endorsements`) require no authority. This is deliberate — the value of an endorsement is that anyone can verify it, like a notary stamp.
+
+### What endorsements mean
+
+An endorsement `(club_id, token_id)` is a typed stamp of approval:
+- **club_id** — *who* is vouching (a club/group with authority)
+- **token_id** — *what* they're vouching *for* (a meaning the club defines)
+
+Each club defines its own vocabulary of token_ids. The system doesn't interpret them — it just stores and queries them. Applications assign meaning (e.g., token 1 = "peer-reviewed", token 2 = "retracted", token 3 = "compliant").
+
+### C++ context
+
+The original Udanax Gold had endorsements fully implemented — `FeWork::endorse()`, `FeEdition::endorse()`, `validateEndorsement()`, the works. The Rust port had the data model (EndorsementSet, EndorsementFilter, Endorseable — 767 lines, 37 tests) but the server integration was missing. Phase 13 closes this gap by wiring the existing library into the server API with the same authority model.
+
 ## What Was Built
 
 ### 1. Edition Endorsement Field
