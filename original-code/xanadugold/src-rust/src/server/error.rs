@@ -18,6 +18,7 @@ pub enum ServerError {
     EditionNotFound(BeId),
     Internal(String),
     AdminRequired,
+    Unauthorized(String),
     ServerShuttingDown,
     NotAcceptingConnections,
 }
@@ -45,6 +46,7 @@ impl std::fmt::Display for ServerError {
             ServerError::EditionNotFound(id) => write!(f, "edition not found: {}", id),
             ServerError::Internal(s) => write!(f, "internal error: {}", s),
             ServerError::AdminRequired => write!(f, "admin authority required"),
+            ServerError::Unauthorized(s) => write!(f, "unauthorized: {}", s),
             ServerError::ServerShuttingDown => write!(f, "server is shutting down"),
             ServerError::NotAcceptingConnections => write!(f, "server is not accepting connections"),
         }

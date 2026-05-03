@@ -182,6 +182,14 @@ pub enum OperationCode {
     CryptoVerifySignature,
     CryptoKeyRotation,
     CryptoKeyHistory,
+    WorkEndorse,
+    WorkRetract,
+    WorkEndorsements,
+    EditionEndorse,
+    EditionRetract,
+    EditionEndorsements,
+    EditionVisibleEndorsements,
+    EditionTotalEndorsements,
 }
 
 impl OperationCode {
@@ -296,6 +304,15 @@ impl OperationCode {
             0x1203 => Some(OperationCode::CryptoVerifySignature),
             0x1204 => Some(OperationCode::CryptoKeyRotation),
             0x1205 => Some(OperationCode::CryptoKeyHistory),
+
+            0x1301 => Some(OperationCode::WorkEndorse),
+            0x1302 => Some(OperationCode::WorkRetract),
+            0x1303 => Some(OperationCode::WorkEndorsements),
+            0x1304 => Some(OperationCode::EditionEndorse),
+            0x1305 => Some(OperationCode::EditionRetract),
+            0x1306 => Some(OperationCode::EditionEndorsements),
+            0x1307 => Some(OperationCode::EditionVisibleEndorsements),
+            0x1308 => Some(OperationCode::EditionTotalEndorsements),
 
             _ => None,
         }
@@ -413,6 +430,15 @@ impl OperationCode {
             OperationCode::CryptoVerifySignature => 0x1203,
             OperationCode::CryptoKeyRotation => 0x1204,
             OperationCode::CryptoKeyHistory => 0x1205,
+
+            OperationCode::WorkEndorse => 0x1301,
+            OperationCode::WorkRetract => 0x1302,
+            OperationCode::WorkEndorsements => 0x1303,
+            OperationCode::EditionEndorse => 0x1304,
+            OperationCode::EditionRetract => 0x1305,
+            OperationCode::EditionEndorsements => 0x1306,
+            OperationCode::EditionVisibleEndorsements => 0x1307,
+            OperationCode::EditionTotalEndorsements => 0x1308,
         }
     }
 }
@@ -573,6 +599,14 @@ pub enum WireRequest {
     CryptoVerifySignature { data: Vec<u8>, signature: Vec<u8> },
     CryptoKeyRotation,
     CryptoKeyHistory,
+    WorkEndorse { work_id: BeId, endorsements: Vec<(u64, u64)> },
+    WorkRetract { work_id: BeId, endorsements: Vec<(u64, u64)> },
+    WorkEndorsements { work_id: BeId },
+    EditionEndorse { edition_id: BeId, endorsements: Vec<(u64, u64)> },
+    EditionRetract { edition_id: BeId, endorsements: Vec<(u64, u64)> },
+    EditionEndorsements { edition_id: BeId },
+    EditionVisibleEndorsements { edition_id: BeId },
+    EditionTotalEndorsements { edition_id: BeId },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -707,6 +741,7 @@ pub enum ResponseValue {
         entry_count: usize,
         entries: Vec<KeyHistoryEntryPayload>,
     },
+    EndorsementResult { endorsements: Vec<(u64, u64)> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -989,6 +1024,7 @@ pub enum ErrorCode {
     Internal,
     ProtocolError,
     AdminRequired,
+    Unauthorized,
     ServerShuttingDown,
     NotAcceptingConnections,
 }
@@ -1011,6 +1047,7 @@ impl ErrorCode {
             crate::server::ServerError::EditionNotFound(_) => ErrorCode::EditionNotFound,
             crate::server::ServerError::Internal(_) => ErrorCode::Internal,
             crate::server::ServerError::AdminRequired => ErrorCode::AdminRequired,
+            crate::server::ServerError::Unauthorized(_) => ErrorCode::Unauthorized,
             crate::server::ServerError::ServerShuttingDown => ErrorCode::ServerShuttingDown,
             crate::server::ServerError::NotAcceptingConnections => ErrorCode::NotAcceptingConnections,
         }

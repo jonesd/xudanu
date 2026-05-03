@@ -1399,6 +1399,7 @@ impl Server {
         };
         let updated = Edition {
             orgl: current.orgl.with(position, std::sync::Arc::new(new_carrier)),
+            endorsements: current.endorsements.clone(),
         };
         ws.work.revise(updated.clone());
         Ok(updated)
@@ -1642,6 +1643,148 @@ impl Server {
         };
         crate::crypto::sign::verify_signature(verifying_key, data, &sig)
             .map_err(|_| ServerError::InvalidArgument("signature verification failed".into()))
+    }
+
+    fn validate_endorsement(
+        &self,
+        session_id: SessionId,
+        endorsements: &crate::edition::EndorsementSet,
+    ) -> Result<(), ServerError> {
+        if endorsements.is_empty() {
+            return Ok(());
+        }
+        self.ensure_session(session_id)?;
+        let session = self.sessions.get(&session_id).unwrap();
+        let km = session._key_master()
+            .ok_or(ServerError::NotAuthorized)?;
+        for club_id in endorsements.club_ids() {
+            if !km.has_signature_authority(club_id, &self.clubs) {
+                return Err(ServerError::Unauthorized(
+                    format!("no signature authority for club {}", club_id)
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn work_endorse(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        endorsements: crate::edition::EndorsementSet,
+    ) -> Result<(), ServerError> {
+        self.validate_endorsement(session_id, &endorsements)?;
+        let ws = self.works.get_mut(&work_id)
+            .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
+        ws.work.endorse(&endorsements);
+        Ok(())
+    }
+
+    pub fn work_retract(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        endorsements: crate::edition::EndorsementSet,
+    ) -> Result<(), ServerError> {
+        self.validate_endorsement(session_id, &endorsements)?;
+        let ws = self.works.get_mut(&work_id)
+            .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
+        ws.work.retract(&endorsements);
+        Ok(())
+    }
+
+    pub fn work_endorsements(&self, work_id: BeId) -> Result<crate::edition::EndorsementSet, ServerError> {
+        let ws = self.works.get(&work_id)
+            .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
+        Ok(ws.work.endorsements().clone())
+    }
+
+    pub fn edition_endorse(
+        &mut self,
+        session_id: SessionId,
+        edition_id: BeId,
+        endorsements: crate::edition::EndorsementSet,
+    ) -> Result<(), ServerError> {
+        self.validate_endorsement(session_id, &endorsements)?;
+        let edition = self.standalone_editions.get_mut(&edition_id)
+            .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
+        edition.endorse(&endorsements);
+        Ok(())
+    }
+
+    pub fn edition_retract(
+        &mut self,
+        session_id: SessionId,
+        edition_id: BeId,
+        endorsements: crate::edition::EndorsementSet,
+    ) -> Result<(), ServerError> {
+        self.validate_endorsement(session_id, &endorsements)?;
+        let edition = self.standalone_editions.get_mut(&edition_id)
+            .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
+        edition.retract(&endorsements);
+        Ok(())
+    }
+
+    pub fn edition_endorsements(&self, edition_id: BeId) -> Result<crate::edition::EndorsementSet, ServerError> {
+        let edition = self.standalone_editions.get(&edition_id)
+            .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
+        Ok(edition.endorsements().clone())
+    }
+
+    pub fn edition_visible_endorsements(
+        &self,
+        session_id: SessionId,
+        edition_id: BeId,
+    ) -> Result<crate::edition::EndorsementSet, ServerError> {
+        let edition = self.standalone_editions.get(&edition_id)
+            .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
+        let _session = self.sessions.get(&session_id)
+            .ok_or(ServerError::SessionNotFound(session_id))?;
+        let mut result = edition.endorsements().clone();
+        for (_, ws) in &self.works {
+            let current_ed = ws.work.current_edition();
+            if current_ed == edition {
+                if self.work_can_read_by(session_id, ws.work.be_id()) {
+                    result = result.union(ws.work.endorsements());
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    pub fn edition_total_endorsements(
+        &self,
+        edition_id: BeId,
+    ) -> Result<crate::edition::EndorsementSet, ServerError> {
+        let edition = self.standalone_editions.get(&edition_id)
+            .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
+        let mut result = edition.endorsements().clone();
+        for (_, ws) in &self.works {
+            let current_ed = ws.work.current_edition();
+            if current_ed == edition {
+                result = result.union(ws.work.endorsements());
+            }
+        }
+        Ok(result)
+    }
+
+    fn work_can_read_by(&self, session_id: SessionId, work_id: BeId) -> bool {
+        let session = match self.sessions.get(&session_id) {
+            Some(s) => s,
+            None => return false,
+        };
+        let km = match session._key_master() {
+            Some(km) => km,
+            None => return false,
+        };
+        let ws = match self.works.get(&work_id) {
+            Some(ws) => ws,
+            None => return false,
+        };
+        match ws.work.read_club() {
+            Some(read_club) => km.has_authority(read_club),
+            None => true,
+        }
     }
 }
 
