@@ -777,6 +777,7 @@ fn dispatch_inner(
             if !srv.federation_is_enabled() {
                 return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
             }
+            srv.ensure_logged_in(session_id)?;
             let entries = srv.reconcile_export_endorsements();
             let matches: Vec<(u64, u64, String)> = entries
                 .into_iter()
@@ -789,12 +790,22 @@ fn dispatch_inner(
                     vals
                 })
                 .collect();
-            Ok(ResponseValue::EndorsementSyncResult { endorsements: matches })
+            let tombstones: Vec<(u64, u64, String)> = srv.reconcile_get(&work_fingerprint)
+                .map(|state| {
+                    let (adds, tombs) = state.endorsements.to_entries();
+                    let _ = adds;
+                    tombs.iter()
+                        .map(|e| (e.value.club_id, e.value.token_id, e.value.origin_server_id.clone()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(ResponseValue::EndorsementSyncResult { endorsements: matches, tombstones })
         }
         WireRequest::EndorsementAdd { work_fingerprint, club_id, token_id } => {
             if !srv.federation_is_enabled() {
                 return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
             }
+            srv.ensure_logged_in(session_id)?;
             let tag = srv.reconcile_next_tag();
             let tag_server_id = tag.server_id.clone();
             let tag_counter = tag.counter;
@@ -805,27 +816,36 @@ fn dispatch_inner(
             if !srv.federation_is_enabled() {
                 return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
             }
-            let tag = crate::server::federation::OrSetTag::new(srv.federation_server_id(), 0);
-            srv.reconcile_retract(&work_fingerprint, club_id, token_id, &tag);
+            srv.ensure_logged_in(session_id)?;
+            srv.reconcile_retract(&work_fingerprint, club_id, token_id);
             Ok(ResponseValue::EndorsementRetractResult {})
         }
         WireRequest::EndorsementQuery { work_fingerprint } => {
             if !srv.federation_is_enabled() {
                 return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
             }
-            let matches = match srv.reconcile_get(&work_fingerprint) {
-                Some(state) => state.endorsements.values()
-                    .into_iter()
-                    .map(|e| (e.club_id, e.token_id, e.origin_server_id.clone()))
-                    .collect(),
-                None => Vec::new(),
+            srv.ensure_logged_in(session_id)?;
+            let (matches, tombstones) = match srv.reconcile_get(&work_fingerprint) {
+                Some(state) => {
+                    let active: Vec<(u64, u64, String)> = state.endorsements.values()
+                        .into_iter()
+                        .map(|e| (e.club_id, e.token_id, e.origin_server_id.clone()))
+                        .collect();
+                    let (_, tombs) = state.endorsements.to_entries();
+                    let tomb_vals: Vec<(u64, u64, String)> = tombs.iter()
+                        .map(|e| (e.value.club_id, e.value.token_id, e.value.origin_server_id.clone()))
+                        .collect();
+                    (active, tomb_vals)
+                }
+                None => (Vec::new(), Vec::new()),
             };
-            Ok(ResponseValue::EndorsementQueryResult { endorsements: matches })
+            Ok(ResponseValue::EndorsementQueryResult { endorsements: matches, tombstones })
         }
         WireRequest::StateSync { work_fingerprints } => {
             if !srv.federation_is_enabled() {
                 return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
             }
+            srv.ensure_logged_in(session_id)?;
             let states: Vec<crate::server::federation::ReconcileState> = srv.reconcile_export_all()
                 .into_iter()
                 .filter(|s| work_fingerprints.is_empty() || work_fingerprints.contains(&s.work_fingerprint))
@@ -836,6 +856,7 @@ fn dispatch_inner(
             if !srv.federation_is_enabled() {
                 return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
             }
+            srv.ensure_logged_in(session_id)?;
             let alternatives = srv.reconcile_alternatives(&work_fingerprint);
             let current_key = srv.reconcile_get(&work_fingerprint)
                 .map(|s| s.current.value().clone())
