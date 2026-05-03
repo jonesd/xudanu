@@ -2610,11 +2610,15 @@ impl Server {
         if !gov.is_leader(&my_id, &members) {
             return None;
         }
-        Some(gov.propose(transactions, my_id))
+        gov.propose(transactions, my_id)
     }
 
     pub fn governance_receive_prepare(&mut self, vote: crate::server::federation::PbftVote) -> crate::server::federation::RoundPhase {
         let members: Vec<String> = self.federation.membership().active_members().iter().map(|m| m.server_id.clone()).collect();
+        let member_ids: Vec<&str> = members.iter().map(|s| s.as_str()).collect();
+        if !member_ids.contains(&vote.voter_id.as_str()) {
+            return crate::server::federation::RoundPhase::PrePrepare;
+        }
         let mut gov = self.federation.governance_mut();
         gov.set_cluster_size(members.len().max(1));
         gov.receive_prepare(vote)
@@ -2622,6 +2626,10 @@ impl Server {
 
     pub fn governance_receive_commit(&mut self, vote: crate::server::federation::PbftVote) -> crate::server::federation::RoundPhase {
         let members: Vec<String> = self.federation.membership().active_members().iter().map(|m| m.server_id.clone()).collect();
+        let member_ids: Vec<&str> = members.iter().map(|s| s.as_str()).collect();
+        if !member_ids.contains(&vote.voter_id.as_str()) {
+            return crate::server::federation::RoundPhase::PrePrepare;
+        }
         let mut gov = self.federation.governance_mut();
         gov.set_cluster_size(members.len().max(1));
         gov.receive_commit(vote)
@@ -2652,6 +2660,9 @@ impl Server {
                 if let Some(mut entry) = self.federation.membership().find_member(server_id) {
                     entry.verifying_key_hex = verifying_key_hex.clone();
                     entry.kex_public_hex = kex_public_hex.clone();
+                    self.federation.membership_mut().remove_member(server_id);
+                    let tag = self.federation.membership_mut().next_tag(server_id);
+                    self.federation.membership_mut().add_member(entry, tag);
                 }
             }
             crate::server::federation::GovernanceTx::RoyaltyRecord { origin_server_id, content_fingerprint_hex, royalty_type, amount, .. } => {
@@ -2706,6 +2717,14 @@ impl Server {
 
     pub fn governance_quorum_size(&self) -> usize {
         self.federation.governance().quorum_size()
+    }
+
+    pub fn governance_is_applied(&self, sequence_number: u64) -> bool {
+        self.federation.governance().is_applied(sequence_number)
+    }
+
+    pub fn governance_mark_applied(&mut self, sequence_number: u64) {
+        self.federation.governance_mut().mark_applied(sequence_number);
     }
 
     pub fn federation_royalty_ledger(&self) -> &[crate::server::federation::RoyaltyEntry] {

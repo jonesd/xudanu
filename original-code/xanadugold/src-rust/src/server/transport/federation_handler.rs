@@ -579,19 +579,33 @@ async fn handle_federation_socket(
                                     "Governance: received pre-prepare from {} view={} seq={}",
                                     proposal.proposer_id, proposal.view_number, proposal.sequence_number
                                 );
-                                let vote = crate::server::federation::PbftVote {
+                                let my_id = state.server.with_server_ref(|srv| srv.federation_server_id());
+                                let prepare_vote = crate::server::federation::PbftVote {
                                     view_number: proposal.view_number,
                                     sequence_number: proposal.sequence_number,
-                                    voter_id: state.server.with_server_ref(|srv| srv.federation_server_id()),
+                                    voter_id: my_id,
                                     phase: crate::server::federation::PbftPhase::Prepare,
                                 };
                                 let phase = state.server.with_server(|srv| {
-                                    srv.governance_receive_prepare(vote.clone())
+                                    srv.governance_receive_prepare(prepare_vote.clone())
                                 });
+
+                                send_encrypted_frame(
+                                    &mut ws_sender,
+                                    &FederationFrame::GovernancePrepareVote { vote: prepare_vote },
+                                    &mut outbound_cipher,
+                                ).await;
+
                                 if phase == crate::server::federation::RoundPhase::Commit {
+                                    let commit_vote = crate::server::federation::PbftVote {
+                                        view_number: proposal.view_number,
+                                        sequence_number: proposal.sequence_number,
+                                        voter_id: state.server.with_server_ref(|srv| srv.federation_server_id()),
+                                        phase: crate::server::federation::PbftPhase::Commit,
+                                    };
                                     send_encrypted_frame(
                                         &mut ws_sender,
-                                        &FederationFrame::GovernanceCommitVote { vote },
+                                        &FederationFrame::GovernanceCommitVote { vote: commit_vote },
                                         &mut outbound_cipher,
                                     ).await;
                                 }
@@ -623,9 +637,32 @@ async fn handle_federation_socket(
                                     batch.sequence_number, batch.proposer_id
                                 );
                                 state.server.with_server(|srv| {
+                                    if batch.proposer_id != peer_server_id {
+                                        tracing::warn!(
+                                            "Governance: rejected sealed batch from {} — proposer is {}",
+                                            peer_server_id, batch.proposer_id
+                                        );
+                                        return;
+                                    }
+                                    let expected_seq = srv.governance_current_sequence() + 1;
+                                    if batch.sequence_number != expected_seq {
+                                        tracing::warn!(
+                                            "Governance: rejected sealed batch seq={} — expected {}",
+                                            batch.sequence_number, expected_seq
+                                        );
+                                        return;
+                                    }
+                                    if srv.governance_is_applied(batch.sequence_number) {
+                                        tracing::info!(
+                                            "Governance: skipping already-applied batch seq={}",
+                                            batch.sequence_number
+                                        );
+                                        return;
+                                    }
                                     for tx in &batch.transactions {
                                         srv.governance_execute_tx(tx);
                                     }
+                                    srv.governance_mark_applied(batch.sequence_number);
                                 });
                             }
                             Ok(frame) => {
