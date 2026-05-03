@@ -459,11 +459,7 @@ impl Server {
         self.content_address.intern_edition_elements(&edition);
         let work_elem = RangeElement::work(be_id);
         self.transclusion_index.register_work(&edition, &work_elem);
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        self.reconcile_record_local_revision(be_id, &edition, ts);
+        self.reconcile_record_local_revision(be_id, &edition, Self::current_timestamp_secs());
         let work = Work::new_with_owner(be_id, owner, edition);
         self.backfollow.register_work(work, be_id, None);
         self.auto_checkpoint();
@@ -525,11 +521,7 @@ impl Server {
         self.transclusion_index.register_work(&updated_edition, &work_elem);
         let updated_work = Work::new_with_owner(work_be_id, ws.work.owner(), updated_edition.clone());
         self.backfollow.update_work(work_be_id, updated_work);
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        self.reconcile_record_local_revision(work_be_id, &updated_edition, ts);
+        self.reconcile_record_local_revision(work_be_id, &updated_edition, Self::current_timestamp_secs());
         self.auto_checkpoint();
 
         Ok(revision)
@@ -1299,7 +1291,7 @@ impl Server {
         Ok(())
     }
 
-    fn ensure_logged_in(&self, session_id: SessionId) -> Result<(), ServerError> {
+    pub(crate) fn ensure_logged_in(&self, session_id: SessionId) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
         let session = self.sessions.get(&session_id).unwrap();
         if !session.is_logged_in() {
@@ -1432,11 +1424,7 @@ impl Server {
             let fp = carrier.element.content_fingerprint();
             self.element_fingerprint_to_work.insert(fp, work_id);
         }
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        self.reconcile_record_local_revision(work_id, &updated, ts);
+        self.reconcile_record_local_revision(work_id, &updated, Self::current_timestamp_secs());
         Ok(updated)
     }
 
@@ -2198,6 +2186,13 @@ impl Server {
     // Phase 18: DagWood Reconciliation & Endorsement Sync
     // =================================================================
 
+    fn current_timestamp_secs() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+    }
+
     /// Record a local work revision into the reconcile store.
     /// This should be called whenever a work is created or revised locally.
     pub fn reconcile_record_local_revision(
@@ -2294,20 +2289,23 @@ impl Server {
     }
 
     /// Retract an endorsement from a work's reconcile state via OR-Set CRDT.
+    /// Uses remove_value semantics — removes ALL entries matching the
+    /// (club_id, token_id) pair, regardless of which tags added them.
+    /// This is correct because the client doesn't track individual OR-Set tags.
     pub fn reconcile_retract(
         &mut self,
         work_fingerprint: &str,
         club_id: u64,
         token_id: u64,
-        tag: &crate::server::federation::OrSetTag,
     ) {
+        let server_id = self.federation_server_id();
         if let Some(state) = self.reconcile_store.get_mut(work_fingerprint) {
             let entry = crate::server::federation::EndorsementEntry::new(
                 club_id,
                 token_id,
-                &tag.server_id,
+                &server_id,
             );
-            state.endorsements.remove(&entry, tag);
+            state.endorsements.remove_value(&entry);
         }
     }
 
@@ -2410,6 +2408,8 @@ mod persist_snapshot {
         links: Vec<LinkSnapshot>,
         link_counter: BeId,
         admin: AdminSnapshot,
+        reconcile_store: crate::server::federation::ReconcileStore,
+        reconcile_counter: u64,
     }
 
     impl Server {
@@ -2460,6 +2460,8 @@ mod persist_snapshot {
                         (g.club_id, start, end)
                     }).collect(),
                 },
+                reconcile_store: self.reconcile_store.clone(),
+                reconcile_counter: self.reconcile_counter,
             }
         }
 
@@ -2496,8 +2498,8 @@ mod persist_snapshot {
                 key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
                 federation: crate::server::federation::FederationState::disabled(),
                 element_fingerprint_to_work: HashMap::new(),
-                reconcile_store: crate::server::federation::ReconcileStore::new(),
-                reconcile_counter: 0,
+                reconcile_store: snapshot.reconcile_store.clone(),
+                reconcile_counter: snapshot.reconcile_counter,
             };
 
             for club_snap in &snapshot.clubs {
@@ -4074,8 +4076,9 @@ mod tests {
         let fp = states[0].work_fingerprint.clone();
 
         let tag = server.reconcile_next_tag();
-        server.reconcile_endorse(&fp, 42, 7, tag.clone());
-        server.reconcile_retract(&fp, 42, 7, &tag);
+        server.reconcile_endorse(&fp, 42, 7, tag);
+
+        server.reconcile_retract(&fp, 42, 7);
 
         let state = server.reconcile_get(&fp).unwrap();
         assert_eq!(state.endorsements.len(), 0, "retracted endorsement should be removed");
@@ -4118,5 +4121,150 @@ mod tests {
         assert_ne!(tag1, tag2);
         assert_eq!(tag1.counter, 1);
         assert_eq!(tag2.counter, 2);
+    }
+
+    // =================================================================
+    // Review Fix Regression Tests (Phase 18 review)
+    // =================================================================
+
+    #[test]
+    fn retract_actually_removes_endorsement() {
+        let (mut server, sid) = setup_logged_in_server();
+        server.create_work(sid, Edition::from_text("retract fix test")).unwrap();
+        let states = server.reconcile_export_all();
+        let fp = states[0].work_fingerprint.clone();
+
+        let tag_a = server.reconcile_next_tag();
+        server.reconcile_endorse(&fp, 10, 20, tag_a);
+
+        let tag_b = server.reconcile_next_tag();
+        server.reconcile_endorse(&fp, 30, 40, tag_b);
+
+        let state = server.reconcile_get(&fp).unwrap();
+        assert_eq!(state.endorsements.len(), 2);
+
+        server.reconcile_retract(&fp, 10, 20);
+
+        let state = server.reconcile_get(&fp).unwrap();
+        assert!(!state.endorsements.contains(&crate::server::federation::EndorsementEntry::new(10, 20, &server.federation_server_id())),
+            "retracted endorsement should be removed");
+        assert!(state.endorsements.contains(&crate::server::federation::EndorsementEntry::new(30, 40, &server.federation_server_id())),
+            "unrelated endorsement should remain");
+    }
+
+    #[test]
+    fn retract_removes_all_tags_for_same_value() {
+        let (mut server, sid) = setup_logged_in_server();
+        server.create_work(sid, Edition::from_text("multi tag retract")).unwrap();
+        let states = server.reconcile_export_all();
+        let fp = states[0].work_fingerprint.clone();
+
+        let tag_a = server.reconcile_next_tag();
+        server.reconcile_endorse(&fp, 5, 5, tag_a);
+        let tag_b = server.reconcile_next_tag();
+        server.reconcile_endorse(&fp, 5, 5, tag_b);
+
+        let state = server.reconcile_get(&fp).unwrap();
+        assert_eq!(state.endorsements.len(), 1, "same value added twice should still be 1 unique value");
+        assert_eq!(state.endorsements.add_count(), 2, "but 2 add entries");
+
+        server.reconcile_retract(&fp, 5, 5);
+
+        let state = server.reconcile_get(&fp).unwrap();
+        assert_eq!(state.endorsements.len(), 0, "retract should remove all tags for the value");
+        assert_eq!(state.endorsements.tombstone_count(), 2, "both tags should be tombstoned");
+    }
+
+    #[test]
+    fn reconcile_persisted_across_snapshot() {
+        let (mut server, sid) = setup_logged_in_server();
+        server.create_work(sid, Edition::from_text("persist me")).unwrap();
+        let tag = server.reconcile_next_tag();
+        let states = server.reconcile_export_all();
+        let fp = states[0].work_fingerprint.clone();
+        server.reconcile_endorse(&fp, 99, 88, tag);
+        assert_eq!(server.reconcile_counter, 1);
+
+        let snapshot = server.to_snapshot();
+        let restored = Server::from_snapshot(&snapshot);
+        assert_eq!(restored.reconcile_counter, 1, "counter should survive snapshot restore");
+        assert_eq!(restored.reconcile_store_len(), 1, "store should survive snapshot restore");
+        let restored_state = restored.reconcile_get(&fp).unwrap();
+        assert_eq!(restored_state.endorsements.len(), 1);
+        assert_eq!(restored_state.endorsements.values()[0].club_id, 99);
+    }
+
+    #[test]
+    fn reconcile_counter_persisted_no_tag_collision() {
+        let (mut server, sid) = setup_logged_in_server();
+        server.reconcile_next_tag();
+        server.reconcile_next_tag();
+        server.reconcile_next_tag();
+        assert_eq!(server.reconcile_counter, 3);
+
+        let snapshot = server.to_snapshot();
+        let mut restored = Server::from_snapshot(&snapshot);
+        let tag = restored.reconcile_next_tag();
+        assert_eq!(tag.counter, 4, "next tag after restore should continue from saved counter, not restart at 1");
+    }
+
+    #[test]
+    fn endorsement_add_requires_login() {
+        use crate::server::transport::dispatch::dispatch;
+        use crate::server::transport::shared::AppState;
+
+        let mut server = Server::new();
+        server.set_federation_config(crate::server::federation::FederationConfig::closed(vec![]));
+        let state = AppState::new(server).shared();
+        let session_id = crate::server::SessionId::new(1);
+
+        let result = dispatch(&state.server, session_id, crate::server::transport::protocol::WireRequest::EndorsementAdd {
+            work_fingerprint: "test".to_string(),
+            club_id: 1,
+            token_id: 1,
+        });
+        assert!(result.is_err(), "endorsement add without login should fail");
+        match result {
+            Err(crate::server::ServerError::SessionRequired) | Err(crate::server::ServerError::SessionNotFound(_)) => {},
+            other => panic!("expected session error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn endorsement_retract_requires_login() {
+        use crate::server::transport::dispatch::dispatch;
+        use crate::server::transport::shared::AppState;
+
+        let mut server = Server::new();
+        server.set_federation_config(crate::server::federation::FederationConfig::closed(vec![]));
+        let state = AppState::new(server).shared();
+        let session_id = crate::server::SessionId::new(1);
+
+        let result = dispatch(&state.server, session_id, crate::server::transport::protocol::WireRequest::EndorsementRetract {
+            work_fingerprint: "test".to_string(),
+            club_id: 1,
+            token_id: 1,
+        });
+        assert!(result.is_err(), "endorsement retract without login should fail");
+        match result {
+            Err(crate::server::ServerError::SessionRequired) | Err(crate::server::ServerError::SessionNotFound(_)) => {},
+            other => panic!("expected session error, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn endorsement_query_requires_login() {
+        use crate::server::transport::dispatch::dispatch;
+        use crate::server::transport::shared::AppState;
+
+        let mut server = Server::new();
+        server.set_federation_config(crate::server::federation::FederationConfig::closed(vec![]));
+        let state = AppState::new(server).shared();
+        let session_id = crate::server::SessionId::new(1);
+
+        let result = dispatch(&state.server, session_id, crate::server::transport::protocol::WireRequest::EndorsementQuery {
+            work_fingerprint: "test".to_string(),
+        });
+        assert!(result.is_err(), "endorsement query without login should fail");
     }
 }

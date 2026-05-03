@@ -816,6 +816,7 @@ pub enum ResponseValue {
 
     EndorsementSyncResult {
         endorsements: Vec<(u64, u64, String)>,
+        tombstones: Vec<(u64, u64, String)>,
     },
     EndorsementAddResult {
         tag_server_id: String,
@@ -824,6 +825,7 @@ pub enum ResponseValue {
     EndorsementRetractResult {},
     EndorsementQueryResult {
         endorsements: Vec<(u64, u64, String)>,
+        tombstones: Vec<(u64, u64, String)>,
     },
     StateSyncResult {
         states: Vec<crate::server::federation::ReconcileState>,
