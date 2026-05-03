@@ -11,6 +11,9 @@ impl DomainLabel {
     pub const DOCUMENT_KEY: &'static str = "xudanu/v1/document-key";
     pub const CHALLENGE_KEY: &'static str = "xudanu/v1/challenge-key";
     pub const EXPORT_SECRET: &'static str = "xudanu/v1/export";
+    pub const FEDERATION_HANDSHAKE: &'static str = "xudanu/v1/federation/handshake";
+    pub const FEDERATION_SERVER_TO_SERVER: &'static str = "xudanu/v1/federation/aead/server-to-server";
+    pub const FEDERATION_SERVER_FROM_SERVER: &'static str = "xudanu/v1/federation/aead/server-from-server";
 }
 
 pub struct SessionKeys {
@@ -38,6 +41,30 @@ pub fn derive_key(ikm: &[u8], salt: Option<&[u8]>, label: &str, info: &[u8]) -> 
     hk.expand(full_info.as_bytes(), &mut okm)
         .expect("32 bytes is valid HKDF output length");
     okm
+}
+
+pub struct FederationSessionKeys {
+    pub outbound: [u8; 32],
+    pub inbound: [u8; 32],
+}
+
+impl FederationSessionKeys {
+    pub fn zeroize(&mut self) {
+        self.outbound.zeroize();
+        self.inbound.zeroize();
+    }
+}
+
+impl Drop for FederationSessionKeys {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+pub fn derive_federation_session_keys(shared_secret: &[u8], handshake_hash: &[u8]) -> FederationSessionKeys {
+    let outbound = derive_key(shared_secret, Some(handshake_hash), DomainLabel::FEDERATION_SERVER_TO_SERVER, &[]);
+    let inbound = derive_key(shared_secret, Some(handshake_hash), DomainLabel::FEDERATION_SERVER_FROM_SERVER, &[]);
+    FederationSessionKeys { outbound, inbound }
 }
 
 pub fn derive_session_keys(shared_secret: &[u8], handshake_hash: &[u8]) -> SessionKeys {

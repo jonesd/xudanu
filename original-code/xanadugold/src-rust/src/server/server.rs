@@ -1823,6 +1823,46 @@ impl Server {
     pub fn federation_is_enabled(&self) -> bool {
         self.federation.is_enabled()
     }
+
+    pub fn federation_handshake_init(&self) -> (String, [u8; 32], crate::crypto::kex::EphemeralKeyPair) {
+        let identity = self.server_identity();
+        let eph = crate::crypto::kex::EphemeralKeyPair::generate();
+        let eph_bytes = *eph.public_key();
+        (identity.server_id, eph_bytes, eph)
+    }
+
+    pub fn federation_sign_handshake(
+        &self,
+        my_eph: &[u8; 32],
+        peer_eph: &[u8; 32],
+    ) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        let sig = crate::crypto::kex::sign_handshake(
+            &self.server_keypair.signing_key,
+            my_eph,
+            peer_eph,
+        );
+        (
+            sig.to_bytes().to_vec(),
+            self.server_keypair.signing_verifying_key().to_bytes().to_vec(),
+            self.server_keypair.kex_public().as_bytes().to_vec(),
+        )
+    }
+
+    pub fn federation_derive_session_keys(
+        &self,
+        peer_kex_public: &[u8; 32],
+        my_eph: &[u8; 32],
+        peer_eph: &[u8; 32],
+    ) -> crate::crypto::kdf::FederationSessionKeys {
+        let shared_secret = crate::crypto::kex::peer_key_exchange(
+            &self.server_keypair.kex_secret,
+            peer_kex_public,
+            my_eph,
+            peer_eph,
+        );
+        let transcript = crate::crypto::kex::build_transcript(my_eph, peer_eph);
+        crate::crypto::kdf::derive_federation_session_keys(shared_secret.as_bytes(), &transcript)
+    }
 }
 
 #[cfg(feature = "server")]

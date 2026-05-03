@@ -2709,3 +2709,118 @@ async fn federation_info_no_auth_required() {
     assert_eq!(resp["type"], "response");
     assert!(!resp["value"]["value"]["server_id"].as_str().unwrap().is_empty());
 }
+
+// ── Federation transport tests (Phase 15) ────────────────────────────
+
+struct FederationTestServer {
+    addr: SocketAddr,
+}
+
+impl FederationTestServer {
+    async fn start() -> Self {
+        let server = Server::new();
+        let state = AppState::new(server).shared();
+        let client_router = build_router(state.clone());
+        let fed_router = xudanu::server::transport::federation_handler::build_federation_router(state.clone());
+        let app = xudanu::server::transport::federation_handler::merge_routers(client_router, fed_router)
+            .into_make_service_with_connect_info::<std::net::SocketAddr>();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        FederationTestServer { addr }
+    }
+
+    fn federation_url(&self) -> String {
+        format!("ws://{}/federation", self.addr)
+    }
+
+    fn ws_url(&self, format: &str) -> String {
+        format!("ws://{}/xudanu?format={}", self.addr, format)
+    }
+}
+
+#[tokio::test]
+async fn federation_handshake_between_two_servers() {
+    let srv_a = FederationTestServer::start().await;
+    let srv_b = FederationTestServer::start().await;
+
+    let (mut ws_a, _) = tokio_tungstenite::connect_async(srv_a.federation_url()).await.unwrap();
+    let (mut ws_b, _) = tokio_tungstenite::connect_async(srv_b.federation_url()).await.unwrap();
+
+    let msg_from_a = ws_a.next().await.unwrap().unwrap();
+    let msg_from_b = ws_b.next().await.unwrap().unwrap();
+
+    let hello_a: serde_json::Value = serde_json::from_str(
+        msg_from_a.to_text().unwrap()
+    ).unwrap();
+    let hello_b: serde_json::Value = serde_json::from_str(
+        msg_from_b.to_text().unwrap()
+    ).unwrap();
+
+    assert_eq!(hello_a["type"], "Hello");
+    assert_eq!(hello_b["type"], "Hello");
+    assert_eq!(hello_a["protocol_version"], 1);
+    assert_eq!(hello_b["protocol_version"], 1);
+    assert_eq!(hello_a["ephemeral_public_key"].as_array().unwrap().len(), 32);
+    assert_eq!(hello_b["ephemeral_public_key"].as_array().unwrap().len(), 32);
+
+    ws_a.send(tokio_tungstenite::tungstenite::Message::Text(
+        serde_json::to_string(&hello_b).unwrap().into()
+    )).await.unwrap();
+    ws_b.send(tokio_tungstenite::tungstenite::Message::Text(
+        serde_json::to_string(&hello_a).unwrap().into()
+    )).await.unwrap();
+
+    let sig_from_a = ws_a.next().await.unwrap().unwrap();
+    let sig_from_b = ws_b.next().await.unwrap().unwrap();
+
+    let sig_a: serde_json::Value = serde_json::from_str(
+        sig_from_a.to_text().unwrap()
+    ).unwrap();
+    let sig_b: serde_json::Value = serde_json::from_str(
+        sig_from_b.to_text().unwrap()
+    ).unwrap();
+
+    assert_eq!(sig_a["type"], "Signature");
+    assert_eq!(sig_b["type"], "Signature");
+    assert_eq!(sig_a["signature"].as_array().unwrap().len(), 64);
+    assert_eq!(sig_b["signature"].as_array().unwrap().len(), 64);
+    assert_eq!(sig_a["signing_key"].as_array().unwrap().len(), 32);
+    assert_eq!(sig_b["signing_key"].as_array().unwrap().len(), 32);
+    assert_eq!(sig_a["kex_key"].as_array().unwrap().len(), 32);
+    assert_eq!(sig_b["kex_key"].as_array().unwrap().len(), 32);
+
+    ws_a.send(tokio_tungstenite::tungstenite::Message::Text(
+        serde_json::to_string(&sig_b).unwrap().into()
+    )).await.unwrap();
+    ws_b.send(tokio_tungstenite::tungstenite::Message::Text(
+        serde_json::to_string(&sig_a).unwrap().into()
+    )).await.unwrap();
+
+    let ready_from_a = ws_a.next().await.unwrap().unwrap();
+    let ready_from_b = ws_b.next().await.unwrap().unwrap();
+
+    let ready_a: serde_json::Value = serde_json::from_str(
+        ready_from_a.to_text().unwrap()
+    ).unwrap();
+    let ready_b: serde_json::Value = serde_json::from_str(
+        ready_from_b.to_text().unwrap()
+    ).unwrap();
+
+    assert_eq!(ready_a["type"], "Ready");
+    assert_eq!(ready_b["type"], "Ready");
+    assert_eq!(ready_a["status"], "connected");
+    assert_eq!(ready_b["status"], "connected");
+
+    ws_a.send(tokio_tungstenite::tungstenite::Message::Text(
+        serde_json::json!({"type": "Heartbeat"}).to_string().into()
+    )).await.unwrap();
+
+    let ack = ws_a.next().await.unwrap().unwrap();
+    let ack_val: serde_json::Value = serde_json::from_str(
+        ack.to_text().unwrap()
+    ).unwrap();
+    assert_eq!(ack_val["type"], "Ack");
+}

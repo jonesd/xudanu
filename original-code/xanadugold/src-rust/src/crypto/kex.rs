@@ -105,6 +105,31 @@ fn build_signature_message(eph_a: &[u8; 32], eph_b: &[u8; 32]) -> Vec<u8> {
     msg
 }
 
+pub fn peer_key_exchange(
+    my_static: &StaticSecret,
+    peer_static_public: &[u8; 32],
+    my_ephemeral: &[u8; 32],
+    peer_ephemeral: &[u8; 32],
+) -> SharedSecret {
+    let peer_static = PublicKey::from(*peer_static_public);
+    let dh_ss = my_static.diffie_hellman(&peer_static);
+    let transcript = canonical_transcript(my_ephemeral, peer_ephemeral);
+    let mut combined = [0u8; 64];
+    combined[..32].copy_from_slice(dh_ss.as_bytes());
+    combined[32..].copy_from_slice(&transcript);
+    let hash = blake3::hash(&combined);
+    combined.zeroize();
+    SharedSecret(hash.into())
+}
+
+fn canonical_transcript(eph_a: &[u8; 32], eph_b: &[u8; 32]) -> [u8; 32] {
+    if eph_a <= eph_b {
+        build_transcript(eph_a, eph_b)
+    } else {
+        build_transcript(eph_b, eph_a)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +215,43 @@ mod tests {
         let a = EphemeralKeyPair::generate();
         let b = EphemeralKeyPair::generate();
         assert_ne!(a.public_key(), b.public_key());
+    }
+
+    #[test]
+    fn peer_key_exchange_symmetric() {
+        let a_static = generate_static();
+        let b_static = generate_static();
+        let b_pub = PublicKey::from(&b_static);
+        let a_pub = PublicKey::from(&a_static);
+        let a_eph = EphemeralKeyPair::generate();
+        let b_eph = EphemeralKeyPair::generate();
+
+        let secret_a = peer_key_exchange(
+            &a_static, b_pub.as_bytes(), a_eph.public_key(), b_eph.public_key(),
+        );
+        let secret_b = peer_key_exchange(
+            &b_static, a_pub.as_bytes(), b_eph.public_key(), a_eph.public_key(),
+        );
+        assert_eq!(secret_a.as_bytes(), secret_b.as_bytes());
+    }
+
+    #[test]
+    fn peer_key_exchange_differs_for_different_peers() {
+        let a_static = generate_static();
+        let b_static = generate_static();
+        let c_static = generate_static();
+        let b_pub = PublicKey::from(&b_static);
+        let c_pub = PublicKey::from(&c_static);
+        let a_eph = EphemeralKeyPair::generate();
+        let b_eph = EphemeralKeyPair::generate();
+        let c_eph = EphemeralKeyPair::generate();
+
+        let secret_ab = peer_key_exchange(
+            &a_static, b_pub.as_bytes(), a_eph.public_key(), b_eph.public_key(),
+        );
+        let secret_ac = peer_key_exchange(
+            &a_static, c_pub.as_bytes(), a_eph.public_key(), c_eph.public_key(),
+        );
+        assert_ne!(secret_ab.as_bytes(), secret_ac.as_bytes());
     }
 }
