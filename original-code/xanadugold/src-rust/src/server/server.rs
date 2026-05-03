@@ -1793,17 +1793,17 @@ impl Server {
         let identity = self.server_identity();
         let config = self.federation.config();
         let peers = config.peers.iter().map(|p| {
-            crate::server::federation::FederationPeerInfo {
-                server_id: String::new(),
-                address: p.clone(),
-                connected: false,
+            let addr_str = p.to_string();
+            match self.federation.peer_server_id(&addr_str) {
+                Some(sid) => crate::server::federation::FederationPeerInfo::connected(p.clone(), sid.to_string()),
+                None => crate::server::federation::FederationPeerInfo::unknown(p.clone()),
             }
         }).collect();
         crate::server::federation::FederationInfo {
             server_id: identity.server_id.clone(),
             federation_domain: crate::crypto::FEDERATION_DOMAIN.to_string(),
             key_id: self.server_key_id(),
-            signing_key: identity.signing_key_bytes().to_vec(),
+            verifying_key: identity.signing_key_bytes().to_vec(),
             kex_key: identity.kex_public_bytes().to_vec(),
             mode: config.mode.clone(),
             peers,
@@ -1816,8 +1816,27 @@ impl Server {
         self.federation.peer_addresses().to_vec()
     }
 
+    pub fn federation_is_peer_known(&self, verifying_key_hex: &str) -> bool {
+        if !self.federation.is_enabled() {
+            return true;
+        }
+        self.federation.is_peer_known(verifying_key_hex)
+    }
+
     pub fn set_federation_config(&mut self, config: crate::server::federation::FederationConfig) {
         self.federation = crate::server::federation::FederationState::new(config);
+    }
+
+    pub fn federation_register_peer_key(&mut self, verifying_key_hex: String) {
+        self.federation.register_peer_key(verifying_key_hex);
+    }
+
+    pub fn federation_mark_peer_connected(&mut self, address: &str, server_id: String) {
+        self.federation.mark_peer_connected(address, server_id);
+    }
+
+    pub fn federation_mark_peer_disconnected(&mut self, address: &str) {
+        self.federation.mark_peer_disconnected(address);
     }
 
     pub fn federation_is_enabled(&self) -> bool {
@@ -1851,7 +1870,7 @@ impl Server {
     pub fn federation_derive_session_keys(
         &self,
         peer_kex_public: &[u8; 32],
-        my_eph: &[u8; 32],
+        my_eph: &crate::crypto::kex::EphemeralKeyPair,
         peer_eph: &[u8; 32],
     ) -> crate::crypto::kdf::FederationSessionKeys {
         let shared_secret = crate::crypto::kex::peer_key_exchange(
@@ -1860,7 +1879,7 @@ impl Server {
             my_eph,
             peer_eph,
         );
-        let transcript = crate::crypto::kex::build_transcript(my_eph, peer_eph);
+        let transcript = crate::crypto::kex::canonical_transcript(my_eph.public_key(), peer_eph);
         crate::crypto::kdf::derive_federation_session_keys(shared_secret.as_bytes(), &transcript)
     }
 
@@ -1877,6 +1896,17 @@ impl Server {
         }).collect()
     }
 
+    pub fn federation_export_editions(&self) -> Vec<crate::server::federation::SyncEditionEntry> {
+        let server_id = self.federation_server_id();
+        self.standalone_editions.iter().map(|(edition_id, edition)| {
+            crate::server::federation::SyncEditionEntry {
+                origin_server_id: server_id.clone(),
+                edition_id: *edition_id,
+                edition_payload: crate::server::transport::protocol::EditionPayload::from_edition(edition),
+            }
+        }).collect()
+    }
+
     pub fn federation_import_works(
         &mut self,
         entries: &[crate::server::federation::SyncWorkEntry],
@@ -1884,23 +1914,36 @@ impl Server {
     ) -> (usize, usize) {
         let mut imported = 0;
         let mut already_known = 0;
+        let existing_fingerprints: Vec<[u8; 32]> = self.works.iter().filter_map(|(_, ws)| {
+            let ed = ws.work.current_edition();
+            let entries = ed.all_entries();
+            if entries.is_empty() { return None; }
+            let mut hasher = blake3::Hasher::new();
+            for (pos, carrier) in &entries {
+                hasher.update(&pos.to_be_bytes());
+                hasher.update(&carrier.element.content_fingerprint());
+            }
+            Some(*hasher.finalize().as_bytes())
+        }).collect();
+
         for entry in entries {
             if entry.origin_server_id == my_server_id {
                 already_known += 1;
                 continue;
             }
             let edition = entry.edition_payload.to_edition();
-            let fid = crate::server::federation::FederatedId::new(&entry.origin_server_id, entry.work_id);
-            let fed_id_str = fid.to_string();
-            if !self.works.iter().any(|(_, ws)| {
-                let ed = ws.work.current_edition();
-                let entries_a = ed.all_entries();
-                let entries_b = edition.all_entries();
-                if entries_a.len() != entries_b.len() { return false; }
-                entries_a.iter().zip(entries_b.iter()).all(|((pa, ca), (pb, cb))| {
-                    pa == pb && ca.element.content_fingerprint() == cb.element.content_fingerprint()
-                })
-            }) {
+            let entry_fingerprint = {
+                let entries = edition.all_entries();
+                let mut hasher = blake3::Hasher::new();
+                for (pos, carrier) in &entries {
+                    hasher.update(&pos.to_be_bytes());
+                    hasher.update(&carrier.element.content_fingerprint());
+                }
+                *hasher.finalize().as_bytes()
+            };
+            if existing_fingerprints.iter().any(|fp| *fp == entry_fingerprint) {
+                already_known += 1;
+            } else {
                 let (be_id, elem) = self.grand_map.new_work_element(None);
                 self.grand_map.assign_new_id(elem);
                 let work = crate::edition::Work::new_with_owner(
@@ -1917,8 +1960,6 @@ impl Server {
                 };
                 self.works.insert(be_id, ws);
                 imported += 1;
-            } else {
-                already_known += 1;
             }
         }
         (imported, already_known)
@@ -1961,6 +2002,10 @@ impl Server {
             };
             let computed = crate::edition::blob_store::hash_content(&data);
             if computed != hash_bytes {
+                tracing::warn!(
+                    "Federation: blob hash mismatch for {}, rejecting",
+                    entry.content_hash_hex
+                );
                 continue;
             }
             let _ = self.blob_store.store(&data, entry.mime_type.clone());
@@ -1974,14 +2019,11 @@ impl Server {
     }
 
     pub fn federation_get_work_edition(&self, work_id: u64) -> Option<crate::server::transport::protocol::EditionPayload> {
-        for (id, ws) in &self.works {
-            if *id == work_id {
-                return Some(crate::server::transport::protocol::EditionPayload::from_edition(
-                    ws.work.current_edition()
-                ));
-            }
-        }
-        None
+        self.works.get(&work_id).map(|ws| {
+            crate::server::transport::protocol::EditionPayload::from_edition(
+                ws.work.current_edition()
+            )
+        })
     }
 
     pub fn federation_get_blob(&self, content_hash_hex: &str) -> Option<(String, String)> {

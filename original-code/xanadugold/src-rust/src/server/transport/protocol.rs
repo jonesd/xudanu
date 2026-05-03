@@ -733,7 +733,7 @@ pub enum ResponseValue {
     },
     CryptoPublicKeyResult {
         key_id: u64,
-        signing_key: Vec<u8>,
+        verifying_key: Vec<u8>,
         kex_key: Vec<u8>,
         server_id: String,
     },
@@ -758,7 +758,7 @@ pub enum ResponseValue {
         server_id: String,
         federation_domain: String,
         key_id: u64,
-        signing_key: Vec<u8>,
+        verifying_key: Vec<u8>,
         kex_key: Vec<u8>,
         mode: String,
         peers: Vec<FederationPeerPayload>,

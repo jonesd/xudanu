@@ -1,4 +1,4 @@
-use x25519_dalek::{EphemeralSecret, PublicKey, StaticSecret};
+use x25519_dalek::{PublicKey, StaticSecret};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use zeroize::Zeroize;
@@ -26,13 +26,15 @@ impl Drop for SharedSecret {
 }
 
 pub struct EphemeralKeyPair {
-    secret: EphemeralSecret,
+    secret: StaticSecret,
     public: PublicKey,
 }
 
 impl EphemeralKeyPair {
     pub fn generate() -> Self {
-        let secret = EphemeralSecret::random_from_rng(OsRng);
+        let mut bytes = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut bytes);
+        let secret = StaticSecret::from(bytes);
         let public = PublicKey::from(&secret);
         EphemeralKeyPair { secret, public }
     }
@@ -43,6 +45,10 @@ impl EphemeralKeyPair {
 
     pub fn public_dalek(&self) -> &PublicKey {
         &self.public
+    }
+
+    pub fn diffie_hellman(&self, peer_public: &PublicKey) -> x25519_dalek::SharedSecret {
+        self.secret.diffie_hellman(peer_public)
     }
 }
 
@@ -108,21 +114,24 @@ fn build_signature_message(eph_a: &[u8; 32], eph_b: &[u8; 32]) -> Vec<u8> {
 pub fn peer_key_exchange(
     my_static: &StaticSecret,
     peer_static_public: &[u8; 32],
-    my_ephemeral: &[u8; 32],
+    my_ephemeral: &EphemeralKeyPair,
     peer_ephemeral: &[u8; 32],
 ) -> SharedSecret {
     let peer_static = PublicKey::from(*peer_static_public);
+    let peer_eph_pub = PublicKey::from(*peer_ephemeral);
     let dh_ss = my_static.diffie_hellman(&peer_static);
-    let transcript = canonical_transcript(my_ephemeral, peer_ephemeral);
-    let mut combined = [0u8; 64];
+    let dh_ee = my_ephemeral.diffie_hellman(&peer_eph_pub);
+    let transcript = canonical_transcript(my_ephemeral.public_key(), peer_ephemeral);
+    let mut combined = [0u8; 96];
     combined[..32].copy_from_slice(dh_ss.as_bytes());
-    combined[32..].copy_from_slice(&transcript);
+    combined[32..64].copy_from_slice(dh_ee.as_bytes());
+    combined[64..].copy_from_slice(&transcript);
     let hash = blake3::hash(&combined);
     combined.zeroize();
     SharedSecret(hash.into())
 }
 
-fn canonical_transcript(eph_a: &[u8; 32], eph_b: &[u8; 32]) -> [u8; 32] {
+pub fn canonical_transcript(eph_a: &[u8; 32], eph_b: &[u8; 32]) -> [u8; 32] {
     if eph_a <= eph_b {
         build_transcript(eph_a, eph_b)
     } else {
@@ -227,10 +236,10 @@ mod tests {
         let b_eph = EphemeralKeyPair::generate();
 
         let secret_a = peer_key_exchange(
-            &a_static, b_pub.as_bytes(), a_eph.public_key(), b_eph.public_key(),
+            &a_static, b_pub.as_bytes(), &a_eph, b_eph.public_key(),
         );
         let secret_b = peer_key_exchange(
-            &b_static, a_pub.as_bytes(), b_eph.public_key(), a_eph.public_key(),
+            &b_static, a_pub.as_bytes(), &b_eph, a_eph.public_key(),
         );
         assert_eq!(secret_a.as_bytes(), secret_b.as_bytes());
     }
@@ -247,10 +256,10 @@ mod tests {
         let c_eph = EphemeralKeyPair::generate();
 
         let secret_ab = peer_key_exchange(
-            &a_static, b_pub.as_bytes(), a_eph.public_key(), b_eph.public_key(),
+            &a_static, b_pub.as_bytes(), &a_eph, b_eph.public_key(),
         );
         let secret_ac = peer_key_exchange(
-            &a_static, c_pub.as_bytes(), a_eph.public_key(), c_eph.public_key(),
+            &a_static, c_pub.as_bytes(), &a_eph, c_eph.public_key(),
         );
         assert_ne!(secret_ab.as_bytes(), secret_ac.as_bytes());
     }
