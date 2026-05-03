@@ -2975,6 +2975,9 @@ async fn federated_transclusion_records_origin_on_import() {
 #[tokio::test]
 async fn federated_transclusion_query_returns_local_results() {
     let srv = FederationTestServer::start().await;
+    srv.state.server.with_server(|srv| {
+        srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
+    });
 
     let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
@@ -3007,6 +3010,9 @@ async fn federated_transclusion_query_returns_local_results() {
 #[tokio::test]
 async fn federated_content_fetch_returns_edition() {
     let srv = FederationTestServer::start().await;
+    srv.state.server.with_server(|srv| {
+        srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
+    });
 
     let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
@@ -3037,6 +3043,9 @@ async fn federated_content_fetch_returns_edition() {
 #[tokio::test]
 async fn federated_content_fetch_not_found() {
     let srv = FederationTestServer::start().await;
+    srv.state.server.with_server(|srv| {
+        srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
+    });
 
     let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
@@ -3059,6 +3068,9 @@ async fn federated_content_fetch_not_found() {
 async fn cross_server_transclusion_after_sync() {
     let srv_a = FederationTestServer::start().await;
     let srv_b = FederationTestServer::start().await;
+    srv_b.state.server.with_server(|srv| {
+        srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
+    });
 
     let url_a = format!("ws://{}/xudanu?format=json&version={}", srv_a.addr, PROTOCOL_VERSION);
     let (stream_a, _) = tokio_tungstenite::connect_async(&url_a).await.unwrap();

@@ -733,12 +733,18 @@ fn dispatch_inner(
             })
         }
         WireRequest::FederatedTransclusionQuery { content_fingerprint_hex, direct_only } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
             let results = srv.federation_query_local_transclusion(&content_fingerprint_hex, direct_only);
             Ok(ResponseValue::FederatedTransclusionResult {
                 results,
             })
         }
         WireRequest::FederatedContentFetch { content_fingerprint_hex } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+            }
             let response = srv.federation_fetch_by_fingerprint(&content_fingerprint_hex);
             match response {
                 crate::server::server::FederationFetchResponse::Edition(payload) => {
