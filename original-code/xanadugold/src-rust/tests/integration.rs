@@ -2661,3 +2661,51 @@ async fn work_endorse_idempotent() {
     let endorsements = resp["value"]["value"]["endorsements"].as_array().unwrap();
     assert_eq!(endorsements.len(), 1);
 }
+
+// ── Federation tests (Phase 14) ──────────────────────────────────────
+
+#[tokio::test]
+async fn federation_info_returns_server_identity() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "federation_info", None)).await;
+    assert_eq!(resp["type"], "response");
+    let val = &resp["value"]["value"];
+    assert!(!val["server_id"].as_str().unwrap().is_empty());
+    assert_eq!(val["federation_domain"].as_str().unwrap(), "xudanu");
+    assert!(val["key_id"].as_u64().is_some());
+    assert_eq!(val["signing_key"].as_array().unwrap().len(), 32);
+    assert_eq!(val["kex_key"].as_array().unwrap().len(), 32);
+    assert_eq!(val["mode"].as_str().unwrap(), "closed");
+    assert_eq!(val["peers"].as_array().unwrap().len(), 0);
+    assert!(val["work_count"].as_u64().is_some());
+    assert!(val["edition_count"].as_u64().is_some());
+}
+
+#[tokio::test]
+async fn federation_peers_returns_empty_when_unconfigured() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "federation_peers", None)).await;
+    assert_eq!(resp["type"], "response");
+    let peers = resp["value"]["value"]["peers"].as_array().unwrap();
+    assert_eq!(peers.len(), 0);
+}
+
+#[tokio::test]
+async fn federation_info_no_auth_required() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+
+    let _resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "session_connect", None)).await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(2, "federation_info", None)).await;
+    assert_eq!(resp["type"], "response");
+    assert!(!resp["value"]["value"]["server_id"].as_str().unwrap().is_empty());
+}

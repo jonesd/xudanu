@@ -702,6 +702,36 @@ fn dispatch_inner(
                 endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
             })
         }
+        WireRequest::FederationInfo => {
+            let info = srv.federation_info();
+            let mode_str = match info.mode {
+                crate::server::federation::FederationMode::Closed => "closed".to_string(),
+                crate::server::federation::FederationMode::Open => "open".to_string(),
+            };
+            Ok(ResponseValue::FederationInfoResult {
+                server_id: info.server_id,
+                federation_domain: info.federation_domain,
+                key_id: info.key_id,
+                signing_key: info.signing_key,
+                kex_key: info.kex_key,
+                mode: mode_str,
+                peers: info.peers.into_iter().map(|p| {
+                    super::protocol::FederationPeerPayload {
+                        server_id: p.server_id,
+                        address: p.address.to_string(),
+                        connected: p.connected,
+                    }
+                }).collect(),
+                work_count: info.work_count,
+                edition_count: info.edition_count,
+            })
+        }
+        WireRequest::FederationPeers => {
+            let peers = srv.federation_peers();
+            Ok(ResponseValue::FederationPeersResult {
+                peers: peers.iter().map(|p| p.to_string()).collect(),
+            })
+        }
     }
 }
 

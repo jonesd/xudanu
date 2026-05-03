@@ -2,6 +2,7 @@ pub mod admin;
 pub mod club;
 pub mod detector;
 pub mod error;
+pub mod federation;
 pub mod keymaster;
 pub mod lock;
 pub mod server;
@@ -13,6 +14,10 @@ pub mod transport;
 pub use club::Club;
 pub use detector::{Detector, Event, FnDetector};
 pub use error::ServerError;
+pub use federation::{
+    FederatedId, FederationConfig, FederationInfo, FederationMode, FederationPeerInfo,
+    FederationState, PeerAddress, RoyaltyEntry, RoyaltyType,
+};
 pub use keymaster::KeyMaster;
 pub use lock::{
     BooLock, BooLockSmith, ChallengeLock, ChallengeLockSmith, Lock, LockCredential,
