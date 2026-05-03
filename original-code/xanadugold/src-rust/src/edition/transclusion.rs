@@ -208,15 +208,25 @@ impl WorkQuery {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct FederatedTransclusionResult {
+    pub origin_server_id: String,
+    pub local_id: u64,
+    pub element_type: String,
+    pub is_direct: bool,
+}
+
 #[derive(Debug)]
 pub struct TransclusionIndex {
     content_to_editions: std::collections::HashMap<String, Vec<(RangeElement, bool)>>,
+    federated_entries: std::collections::HashMap<String, Vec<FederatedTransclusionResult>>,
 }
 
 impl TransclusionIndex {
     pub fn new() -> Self {
         TransclusionIndex {
             content_to_editions: std::collections::HashMap::new(),
+            federated_entries: std::collections::HashMap::new(),
         }
     }
 
@@ -284,8 +294,59 @@ impl TransclusionIndex {
         results
     }
 
+    pub fn register_federated(
+        &mut self,
+        content: &RangeElement,
+        origin_server_id: String,
+        local_id: u64,
+        element_type: String,
+        is_direct: bool,
+    ) {
+        let key = element_key(content);
+        self.federated_entries
+            .entry(key)
+            .or_default()
+            .push(FederatedTransclusionResult {
+                origin_server_id,
+                local_id,
+                element_type,
+                is_direct,
+            });
+    }
+
+    pub fn find_federated_transcluders(&self, content: &RangeElement) -> Vec<&FederatedTransclusionResult> {
+        let key = element_key(content);
+        self.federated_entries
+            .get(&key)
+            .map(|entries| entries.iter().collect())
+            .unwrap_or_default()
+    }
+
+    pub fn find_by_fingerprint_hex(&self, fingerprint_hex: &str) -> Vec<(&RangeElement, bool)> {
+        self.content_to_editions
+            .get(fingerprint_hex)
+            .map(|entries| entries.iter().map(|(e, d)| (e, *d)).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn find_federated_by_hex(&self, fingerprint_hex: &str) -> Vec<&FederatedTransclusionResult> {
+        self.federated_entries
+            .get(fingerprint_hex)
+            .map(|entries| entries.iter().collect())
+            .unwrap_or_default()
+    }
+
+    pub fn has_federated_entries(&self) -> bool {
+        !self.federated_entries.is_empty()
+    }
+
+    pub fn federated_entry_count(&self) -> usize {
+        self.federated_entries.values().map(|v| v.len()).sum()
+    }
+
     pub fn clear(&mut self) {
         self.content_to_editions.clear();
+        self.federated_entries.clear();
     }
 }
 
@@ -484,5 +545,85 @@ mod tests {
         let e1 = RangeElement::text("hello");
         let e2 = RangeElement::text("world");
         assert_ne!(element_key(&e1), element_key(&e2));
+    }
+
+    #[test]
+    fn federated_register_and_find() {
+        let mut idx = TransclusionIndex::new();
+        let content = RangeElement::text("shared content");
+        idx.register_federated(
+            &content,
+            "server-a".to_string(),
+            42,
+            "work".to_string(),
+            true,
+        );
+        assert!(idx.has_federated_entries());
+        assert_eq!(idx.federated_entry_count(), 1);
+
+        let results = idx.find_federated_transcluders(&content);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].origin_server_id, "server-a");
+        assert_eq!(results[0].local_id, 42);
+        assert!(results[0].is_direct);
+    }
+
+    #[test]
+    fn federated_find_no_match() {
+        let mut idx = TransclusionIndex::new();
+        idx.register_federated(
+            &RangeElement::text("hello"),
+            "server-a".to_string(),
+            1,
+            "work".to_string(),
+            true,
+        );
+        let results = idx.find_federated_transcluders(&RangeElement::text("goodbye"));
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn federated_multiple_entries_for_same_content() {
+        let mut idx = TransclusionIndex::new();
+        let content = RangeElement::text("shared");
+        idx.register_federated(&content, "server-a".to_string(), 1, "work".to_string(), true);
+        idx.register_federated(&content, "server-b".to_string(), 2, "edition".to_string(), true);
+        idx.register_federated(&content, "server-c".to_string(), 3, "work".to_string(), false);
+
+        let results = idx.find_federated_transcluders(&content);
+        assert_eq!(results.len(), 3);
+        assert_eq!(idx.federated_entry_count(), 3);
+    }
+
+    #[test]
+    fn federated_clear_clears_both_indexes() {
+        let mut idx = TransclusionIndex::new();
+        let edition = Edition::from_one(0, RangeElement::text("hello"));
+        idx.register_edition(&edition, &RangeElement::edition(1), None);
+        idx.register_federated(&RangeElement::text("hello"), "remote".to_string(), 10, "work".to_string(), true);
+
+        let q = TransclusionQuery::all();
+        assert_eq!(idx.find_transcluders(&RangeElement::text("hello"), &q).len(), 1);
+        assert_eq!(idx.find_federated_transcluders(&RangeElement::text("hello")).len(), 1);
+
+        idx.clear();
+        assert!(idx.find_transcluders(&RangeElement::text("hello"), &q).is_empty());
+        assert!(idx.find_federated_transcluders(&RangeElement::text("hello")).is_empty());
+        assert!(!idx.has_federated_entries());
+    }
+
+    #[test]
+    fn federated_same_fingerprint_as_local() {
+        let mut idx = TransclusionIndex::new();
+        let content = RangeElement::text("hello");
+        let edition = Edition::from_one(0, content.clone());
+        idx.register_edition(&edition, &RangeElement::edition(1), None);
+        idx.register_federated(&content, "remote".to_string(), 99, "edition".to_string(), true);
+
+        let q = TransclusionQuery::all();
+        let local = idx.find_transcluders(&content, &q);
+        let fed = idx.find_federated_transcluders(&content);
+        assert_eq!(local.len(), 1);
+        assert_eq!(fed.len(), 1);
     }
 }

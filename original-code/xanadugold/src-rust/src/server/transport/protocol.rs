@@ -193,6 +193,8 @@ pub enum OperationCode {
 
     FederationInfo,
     FederationPeers,
+    FederatedTransclusionQuery,
+    FederatedContentFetch,
 }
 
 impl OperationCode {
@@ -319,6 +321,8 @@ impl OperationCode {
 
             0x1401 => Some(OperationCode::FederationInfo),
             0x1402 => Some(OperationCode::FederationPeers),
+            0x1701 => Some(OperationCode::FederatedTransclusionQuery),
+            0x1702 => Some(OperationCode::FederatedContentFetch),
 
             _ => None,
         }
@@ -448,6 +452,8 @@ impl OperationCode {
 
             OperationCode::FederationInfo => 0x1401,
             OperationCode::FederationPeers => 0x1402,
+            OperationCode::FederatedTransclusionQuery => 0x1701,
+            OperationCode::FederatedContentFetch => 0x1702,
         }
     }
 }
@@ -619,6 +625,8 @@ pub enum WireRequest {
 
     FederationInfo,
     FederationPeers,
+    FederatedTransclusionQuery { content_fingerprint_hex: String, direct_only: bool },
+    FederatedContentFetch { content_fingerprint_hex: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -767,6 +775,15 @@ pub enum ResponseValue {
     },
     FederationPeersResult {
         peers: Vec<String>,
+    },
+    FederatedTransclusionResult {
+        results: Vec<crate::server::federation::FederatedTransclusionEntry>,
+    },
+    FederatedContentFetchResult {
+        found: bool,
+        edition_payload: Option<EditionPayload>,
+        blob_data: Option<String>,
+        blob_mime_type: Option<String>,
     },
 }
 

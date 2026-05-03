@@ -732,6 +732,41 @@ fn dispatch_inner(
                 peers: peers.iter().map(|p| p.to_string()).collect(),
             })
         }
+        WireRequest::FederatedTransclusionQuery { content_fingerprint_hex, direct_only } => {
+            let results = srv.federation_query_local_transclusion(&content_fingerprint_hex, direct_only);
+            Ok(ResponseValue::FederatedTransclusionResult {
+                results,
+            })
+        }
+        WireRequest::FederatedContentFetch { content_fingerprint_hex } => {
+            let response = srv.federation_fetch_by_fingerprint(&content_fingerprint_hex);
+            match response {
+                crate::server::server::FederationFetchResponse::Edition(payload) => {
+                    Ok(ResponseValue::FederatedContentFetchResult {
+                        found: true,
+                        edition_payload: Some(payload),
+                        blob_data: None,
+                        blob_mime_type: None,
+                    })
+                }
+                crate::server::server::FederationFetchResponse::Blob(data, mime) => {
+                    Ok(ResponseValue::FederatedContentFetchResult {
+                        found: true,
+                        edition_payload: None,
+                        blob_data: Some(data),
+                        blob_mime_type: Some(mime),
+                    })
+                }
+                crate::server::server::FederationFetchResponse::NotFound => {
+                    Ok(ResponseValue::FederatedContentFetchResult {
+                        found: false,
+                        edition_payload: None,
+                        blob_data: None,
+                        blob_mime_type: None,
+                    })
+                }
+            }
+        }
     }
 }
 
