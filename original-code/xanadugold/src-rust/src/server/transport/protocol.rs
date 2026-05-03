@@ -212,6 +212,13 @@ pub enum OperationCode {
     MembershipLeave,
     MembershipList,
     MembershipVerify,
+
+    GovernancePropose,
+    GovernancePrepare,
+    GovernanceCommit,
+    GovernanceSeal,
+    GovernanceLog,
+    GovernanceStatus,
 }
 
 impl OperationCode {
@@ -357,6 +364,13 @@ impl OperationCode {
             0x1907 => Some(OperationCode::MembershipLeave),
             0x1908 => Some(OperationCode::MembershipList),
             0x1909 => Some(OperationCode::MembershipVerify),
+
+            0x1B01 => Some(OperationCode::GovernancePropose),
+            0x1B02 => Some(OperationCode::GovernancePrepare),
+            0x1B03 => Some(OperationCode::GovernanceCommit),
+            0x1B04 => Some(OperationCode::GovernanceSeal),
+            0x1B05 => Some(OperationCode::GovernanceLog),
+            0x1B06 => Some(OperationCode::GovernanceStatus),
 
             _ => None,
         }
@@ -505,6 +519,13 @@ impl OperationCode {
             OperationCode::MembershipLeave => 0x1907,
             OperationCode::MembershipList => 0x1908,
             OperationCode::MembershipVerify => 0x1909,
+
+            OperationCode::GovernancePropose => 0x1B01,
+            OperationCode::GovernancePrepare => 0x1B02,
+            OperationCode::GovernanceCommit => 0x1B03,
+            OperationCode::GovernanceSeal => 0x1B04,
+            OperationCode::GovernanceLog => 0x1B05,
+            OperationCode::GovernanceStatus => 0x1B06,
         }
     }
 }
@@ -702,6 +723,19 @@ pub enum WireRequest {
     MembershipVerify {
         server_id: String,
     },
+
+    GovernancePropose {
+        transactions: Vec<crate::server::federation::GovernanceTx>,
+    },
+    GovernancePrepare {
+        vote: crate::server::federation::PbftVote,
+    },
+    GovernanceCommit {
+        vote: crate::server::federation::PbftVote,
+    },
+    GovernanceSeal,
+    GovernanceLog,
+    GovernanceStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -898,6 +932,31 @@ pub enum ResponseValue {
     },
     MembershipVerifyResult {
         verify: crate::server::federation::MembershipVerifyResult,
+    },
+
+    GovernanceProposeResult {
+        proposal: Option<crate::server::federation::GovernanceProposal>,
+    },
+    GovernancePrepareResult {
+        phase: String,
+    },
+    GovernanceCommitResult {
+        phase: String,
+    },
+    GovernanceSealResult {
+        batch: Option<crate::server::federation::SealedBatch>,
+    },
+    GovernanceLogResult {
+        log: Vec<crate::server::federation::SealedBatch>,
+    },
+    GovernanceStatusResult {
+        view: u64,
+        sequence: u64,
+        cluster_size: usize,
+        quorum: usize,
+        is_leader: bool,
+        leader_id: Option<String>,
+        pending: bool,
     },
 }
 

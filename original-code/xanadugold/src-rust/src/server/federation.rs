@@ -159,7 +159,7 @@ pub struct RoyaltyEntry {
     pub timestamp: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RoyaltyType {
     Transclusion,
@@ -176,6 +176,7 @@ pub struct FederationState {
     remote_origins: RemoteOriginRegistry,
     royalty_ledger: Vec<RoyaltyEntry>,
     membership: MembershipState,
+    governance: GovernanceState,
 }
 
 impl FederationState {
@@ -194,6 +195,7 @@ impl FederationState {
             remote_origins: RemoteOriginRegistry::new(),
             royalty_ledger: Vec::new(),
             membership: MembershipState::new(min_endorsements),
+            governance: GovernanceState::new(1),
         }
     }
 
@@ -286,6 +288,14 @@ impl FederationState {
 
     pub fn membership_mut(&mut self) -> &mut MembershipState {
         &mut self.membership
+    }
+
+    pub fn governance(&self) -> &GovernanceState {
+        &self.governance
+    }
+
+    pub fn governance_mut(&mut self) -> &mut GovernanceState {
+        &mut self.governance
     }
 }
 
@@ -1384,6 +1394,324 @@ impl MembershipState {
     /// Import from wire protocol (merge).
     pub fn merge_orset(&mut self, other: &OrSet<MembershipEntry>) {
         self.members.merge(other);
+    }
+}
+
+// =============================================================================
+// Phase 19b: Governance & BFT — PBFT Consensus for Federation Decisions
+// =============================================================================
+//
+// The Governance Plane uses a lightweight PBFT (Practical Byzantine Fault
+// Tolerance) consensus protocol for 3-10 federation members. It provides:
+//
+// - Total ordering of governance transactions
+// - Byzantine fault tolerance (f faulty nodes tolerated in 3f+1)
+// - One truth, no forks
+//
+// Transaction types:
+//   Admit(server_id)     — Formally admit a member
+//   Expel(server_id)     — Remove a member by consensus
+//   KeyRegister(...)     — Register/rotate a server's cryptographic keys
+//   RoyaltyRecord(...)   — Record a transclusion royalty obligation
+//
+// PBFT phases:
+//   1. PRE-PREPARE: Leader proposes a batch of transactions with sequence number
+//   2. PREPARE:     Replicas validate and broadcast prepare votes
+//   3. COMMIT:      Replicas broadcast commit votes after sufficient prepares
+//   4. EXECUTE:     After sufficient commits, transactions are applied to state
+
+/// A governance transaction that must be agreed upon via PBFT consensus.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum GovernanceTx {
+    Admit {
+        server_id: String,
+        verifying_key_hex: String,
+        kex_public_hex: String,
+    },
+    Expel {
+        server_id: String,
+        reason: String,
+    },
+    KeyRegister {
+        server_id: String,
+        key_id: u64,
+        verifying_key_hex: String,
+        kex_public_hex: String,
+    },
+    RoyaltyRecord {
+        origin_server_id: String,
+        target_server_id: String,
+        content_fingerprint_hex: String,
+        royalty_type: RoyaltyType,
+        amount: u64,
+    },
+}
+
+impl GovernanceTx {
+    pub fn tx_type_name(&self) -> &'static str {
+        match self {
+            GovernanceTx::Admit { .. } => "admit",
+            GovernanceTx::Expel { .. } => "expel",
+            GovernanceTx::KeyRegister { .. } => "key_register",
+            GovernanceTx::RoyaltyRecord { .. } => "royalty_record",
+        }
+    }
+}
+
+/// A batch of governance transactions proposed for consensus.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GovernanceProposal {
+    pub view_number: u64,
+    pub sequence_number: u64,
+    pub transactions: Vec<GovernanceTx>,
+    pub proposer_id: String,
+    pub timestamp: u64,
+}
+
+/// A PBFT vote (used for both Prepare and Commit phases).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PbftVote {
+    pub view_number: u64,
+    pub sequence_number: u64,
+    pub voter_id: String,
+    pub phase: PbftPhase,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PbftPhase {
+    Prepare,
+    Commit,
+}
+
+/// A sealed (fully committed) governance batch in the log.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SealedBatch {
+    pub view_number: u64,
+    pub sequence_number: u64,
+    pub transactions: Vec<GovernanceTx>,
+    pub proposer_id: String,
+    pub timestamp: u64,
+    pub prepare_votes: Vec<String>,
+    pub commit_votes: Vec<String>,
+}
+
+/// The state of a single ongoing consensus round.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConsensusRound {
+    pub proposal: GovernanceProposal,
+    pub prepare_votes: HashSet<String>,
+    pub commit_votes: HashSet<String>,
+    pub phase: RoundPhase,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RoundPhase {
+    PrePrepare,
+    Prepare,
+    Commit,
+    Sealed,
+}
+
+/// The complete governance state for a federation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GovernanceState {
+    log: Vec<SealedBatch>,
+    current_view: u64,
+    current_sequence: u64,
+    pending_round: Option<ConsensusRound>,
+    cluster_size: usize,
+    faulty_tolerance: usize,
+    tag_counter: u64,
+}
+
+impl GovernanceState {
+    pub fn new(cluster_size: usize) -> Self {
+        let faulty_tolerance = (cluster_size.saturating_sub(1)) / 3;
+        GovernanceState {
+            log: Vec::new(),
+            current_view: 0,
+            current_sequence: 0,
+            pending_round: None,
+            cluster_size,
+            faulty_tolerance,
+            tag_counter: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u64,
+        }
+    }
+
+    pub fn cluster_size(&self) -> usize {
+        self.cluster_size
+    }
+
+    pub fn set_cluster_size(&mut self, n: usize) {
+        self.cluster_size = n;
+        self.faulty_tolerance = (n.saturating_sub(1)) / 3;
+    }
+
+    pub fn faulty_tolerance(&self) -> usize {
+        self.faulty_tolerance
+    }
+
+    pub fn quorum_size(&self) -> usize {
+        2 * self.faulty_tolerance + 1
+    }
+
+    pub fn current_view(&self) -> u64 {
+        self.current_view
+    }
+
+    pub fn current_sequence(&self) -> u64 {
+        self.current_sequence
+    }
+
+    pub fn log(&self) -> &[SealedBatch] {
+        &self.log
+    }
+
+    pub fn log_len(&self) -> usize {
+        self.log.len()
+    }
+
+    pub fn pending_round(&self) -> Option<&ConsensusRound> {
+        self.pending_round.as_ref()
+    }
+
+    pub fn is_leader(&self, server_id: &str, members: &[String]) -> bool {
+        if members.is_empty() {
+            return false;
+        }
+        let leader_idx = self.current_view as usize % members.len();
+        members.get(leader_idx).map(|s| s.as_str()) == Some(server_id)
+        }
+
+    pub fn leader_id(&self, members: &[String]) -> Option<String> {
+        if members.is_empty() {
+            return None;
+        }
+        let leader_idx = self.current_view as usize % members.len();
+        members.get(leader_idx).cloned()
+    }
+
+    fn next_tag(&mut self) -> u64 {
+        self.tag_counter += 1;
+        self.tag_counter
+    }
+
+    pub fn propose(&mut self, transactions: Vec<GovernanceTx>, proposer_id: String) -> GovernanceProposal {
+        let seq = self.current_sequence + 1;
+        let proposal = GovernanceProposal {
+            view_number: self.current_view,
+            sequence_number: seq,
+            transactions,
+            proposer_id,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        };
+
+        self.pending_round = Some(ConsensusRound {
+            proposal: proposal.clone(),
+            prepare_votes: {
+                let mut s = HashSet::new();
+                s.insert(proposal.proposer_id.clone());
+                s
+            },
+            commit_votes: HashSet::new(),
+            phase: RoundPhase::Prepare,
+        });
+
+        proposal
+    }
+
+    pub fn receive_prepare(&mut self, vote: PbftVote) -> RoundPhase {
+        let quorum = self.quorum_size();
+        let round = match &mut self.pending_round {
+            Some(r) => r,
+            None => return RoundPhase::PrePrepare,
+        };
+
+        if round.phase != RoundPhase::Prepare && round.phase != RoundPhase::PrePrepare {
+            return round.phase;
+        }
+
+        if vote.view_number != round.proposal.view_number
+            || vote.sequence_number != round.proposal.sequence_number
+        {
+            return round.phase;
+        }
+
+        round.prepare_votes.insert(vote.voter_id.clone());
+        round.phase = RoundPhase::Prepare;
+
+        if round.prepare_votes.len() >= quorum {
+            round.phase = RoundPhase::Commit;
+        }
+
+        round.phase
+    }
+
+    pub fn receive_commit(&mut self, vote: PbftVote) -> RoundPhase {
+        let quorum = self.quorum_size();
+        let round = match &mut self.pending_round {
+            Some(r) => r,
+            None => return RoundPhase::PrePrepare,
+        };
+
+        if round.phase != RoundPhase::Commit {
+            return round.phase;
+        }
+
+        if vote.view_number != round.proposal.view_number
+            || vote.sequence_number != round.proposal.sequence_number
+        {
+            return round.phase;
+        }
+
+        round.commit_votes.insert(vote.voter_id.clone());
+
+        if round.commit_votes.len() >= quorum {
+            round.phase = RoundPhase::Sealed;
+            return RoundPhase::Sealed;
+        }
+
+        RoundPhase::Commit
+    }
+
+    pub fn seal_round(&mut self) -> Option<SealedBatch> {
+        let round = self.pending_round.take()?;
+        if round.phase != RoundPhase::Sealed {
+            self.pending_round = Some(round);
+            return None;
+        }
+
+        let sealed = SealedBatch {
+            view_number: round.proposal.view_number,
+            sequence_number: round.proposal.sequence_number,
+            transactions: round.proposal.transactions,
+            proposer_id: round.proposal.proposer_id,
+            timestamp: round.proposal.timestamp,
+            prepare_votes: round.prepare_votes.into_iter().collect(),
+            commit_votes: round.commit_votes.into_iter().collect(),
+        };
+
+        self.current_sequence = sealed.sequence_number;
+        self.log.push(sealed.clone());
+        Some(sealed)
+    }
+
+    pub fn advance_view(&mut self) {
+        self.current_view += 1;
+        self.pending_round = None;
+    }
+
+    pub fn apply_sealed(&self, batch: &SealedBatch) -> Vec<GovernanceTx> {
+        batch.transactions.clone()
     }
 }
 
@@ -3006,5 +3334,264 @@ mod tests {
             entry.endorsement_count()
         );
         assert!(state_a.is_member("srv-x"), "2 endorsements >= min 2");
+    }
+
+    // =====================================================================
+    // Phase 19b: Governance & BFT Tests
+    // =====================================================================
+
+    #[test]
+    fn governance_state_new() {
+        let gov = GovernanceState::new(4);
+        assert_eq!(gov.cluster_size(), 4);
+        assert_eq!(gov.faulty_tolerance(), 1);
+        assert_eq!(gov.quorum_size(), 3);
+        assert_eq!(gov.current_view(), 0);
+        assert_eq!(gov.current_sequence(), 0);
+        assert!(gov.log().is_empty());
+        assert!(gov.pending_round().is_none());
+    }
+
+    #[test]
+    fn governance_quorum_for_various_cluster_sizes() {
+        assert_eq!(GovernanceState::new(1).quorum_size(), 1);
+        assert_eq!(GovernanceState::new(3).quorum_size(), 1);
+        assert_eq!(GovernanceState::new(4).quorum_size(), 3);
+        assert_eq!(GovernanceState::new(7).quorum_size(), 5);
+        assert_eq!(GovernanceState::new(10).quorum_size(), 7);
+    }
+
+    #[test]
+    fn governance_leader_rotation() {
+        let gov = GovernanceState::new(3);
+        let members = vec!["srv-a".to_string(), "srv-b".to_string(), "srv-c".to_string()];
+        assert!(gov.is_leader("srv-a", &members));
+        assert!(!gov.is_leader("srv-b", &members));
+        assert_eq!(gov.leader_id(&members), Some("srv-a".to_string()));
+    }
+
+    #[test]
+    fn governance_leader_view_rotation() {
+        let mut gov = GovernanceState::new(3);
+        let members = vec!["srv-a".to_string(), "srv-b".to_string(), "srv-c".to_string()];
+        assert!(gov.is_leader("srv-a", &members));
+        gov.advance_view();
+        assert!(gov.is_leader("srv-b", &members));
+        gov.advance_view();
+        assert!(gov.is_leader("srv-c", &members));
+        gov.advance_view();
+        assert!(gov.is_leader("srv-a", &members));
+    }
+
+    #[test]
+    fn governance_propose_creates_round() {
+        let mut gov = GovernanceState::new(3);
+        let tx = GovernanceTx::Admit {
+            server_id: "srv-new".to_string(),
+            verifying_key_hex: "vk-new".to_string(),
+            kex_public_hex: "kex-new".to_string(),
+        };
+
+        let proposal = gov.propose(vec![tx], "srv-a".to_string());
+        assert_eq!(proposal.view_number, 0);
+        assert_eq!(proposal.sequence_number, 1);
+        assert_eq!(proposal.transactions.len(), 1);
+        assert_eq!(proposal.proposer_id, "srv-a");
+
+        let round = gov.pending_round().unwrap();
+        assert_eq!(round.phase, RoundPhase::Prepare);
+        assert!(round.prepare_votes.contains("srv-a"));
+    }
+
+    #[test]
+    fn governance_full_consensus_four_nodes() {
+        let mut gov = GovernanceState::new(4);
+        let tx = GovernanceTx::Expel {
+            server_id: "srv-bad".to_string(),
+            reason: "malicious".to_string(),
+        };
+
+        gov.propose(vec![tx], "srv-a".to_string());
+
+        assert_eq!(gov.pending_round().unwrap().phase, RoundPhase::Prepare);
+
+        let vote_b = PbftVote {
+            view_number: 0, sequence_number: 1,
+            voter_id: "srv-b".to_string(), phase: PbftPhase::Prepare,
+        };
+        let phase = gov.receive_prepare(vote_b);
+        assert_eq!(phase, RoundPhase::Prepare, "2 prepares < quorum 3");
+
+        let vote_c = PbftVote {
+            view_number: 0, sequence_number: 1,
+            voter_id: "srv-c".to_string(), phase: PbftPhase::Prepare,
+        };
+        let phase = gov.receive_prepare(vote_c);
+        assert_eq!(phase, RoundPhase::Commit, "3 prepares >= quorum 3");
+
+        let commit_a = PbftVote {
+            view_number: 0, sequence_number: 1,
+            voter_id: "srv-a".to_string(), phase: PbftPhase::Commit,
+        };
+        let phase = gov.receive_commit(commit_a);
+        assert_eq!(phase, RoundPhase::Commit);
+
+        let commit_b = PbftVote {
+            view_number: 0, sequence_number: 1,
+            voter_id: "srv-b".to_string(), phase: PbftPhase::Commit,
+        };
+        let phase = gov.receive_commit(commit_b);
+        assert_eq!(phase, RoundPhase::Commit);
+
+        let commit_c = PbftVote {
+            view_number: 0, sequence_number: 1,
+            voter_id: "srv-c".to_string(), phase: PbftPhase::Commit,
+        };
+        let phase = gov.receive_commit(commit_c);
+        assert_eq!(phase, RoundPhase::Sealed);
+
+        let batch = gov.seal_round().unwrap();
+        assert_eq!(batch.sequence_number, 1);
+        assert_eq!(batch.transactions.len(), 1);
+        assert_eq!(batch.prepare_votes.len(), 3);
+        assert_eq!(batch.commit_votes.len(), 3);
+        assert_eq!(gov.log_len(), 1);
+        assert_eq!(gov.current_sequence(), 1);
+        assert!(gov.pending_round().is_none());
+    }
+
+    #[test]
+    fn governance_seal_fails_if_not_ready() {
+        let mut gov = GovernanceState::new(3);
+        gov.propose(vec![], "srv-a".to_string());
+        assert!(gov.seal_round().is_none(), "should not seal without commits");
+        assert!(gov.pending_round().is_some(), "round should still be pending");
+    }
+
+    #[test]
+    fn governance_rejects_wrong_view() {
+        let mut gov = GovernanceState::new(3);
+        gov.propose(vec![], "srv-a".to_string());
+
+        let wrong_view = PbftVote {
+            view_number: 99, sequence_number: 1,
+            voter_id: "srv-b".to_string(), phase: PbftPhase::Prepare,
+        };
+        let phase = gov.receive_prepare(wrong_view);
+        assert_eq!(phase, RoundPhase::Prepare, "wrong view should be ignored");
+        assert_eq!(gov.pending_round().unwrap().prepare_votes.len(), 1);
+    }
+
+    #[test]
+    fn governance_advance_view_clears_round() {
+        let mut gov = GovernanceState::new(3);
+        gov.propose(vec![], "srv-a".to_string());
+        assert!(gov.pending_round().is_some());
+        gov.advance_view();
+        assert!(gov.pending_round().is_none());
+        assert_eq!(gov.current_view(), 1);
+    }
+
+    #[test]
+    fn governance_tx_type_names() {
+        assert_eq!(GovernanceTx::Admit { server_id: "a".into(), verifying_key_hex: "v".into(), kex_public_hex: "k".into() }.tx_type_name(), "admit");
+        assert_eq!(GovernanceTx::Expel { server_id: "a".into(), reason: "r".into() }.tx_type_name(), "expel");
+        assert_eq!(GovernanceTx::KeyRegister { server_id: "a".into(), key_id: 1, verifying_key_hex: "v".into(), kex_public_hex: "k".into() }.tx_type_name(), "key_register");
+        assert_eq!(GovernanceTx::RoyaltyRecord { origin_server_id: "a".into(), target_server_id: "b".into(), content_fingerprint_hex: "ff".into(), royalty_type: RoyaltyType::Transclusion, amount: 100 }.tx_type_name(), "royalty_record");
+    }
+
+    #[test]
+    fn governance_proposal_serialize_roundtrip() {
+        let proposal = GovernanceProposal {
+            view_number: 1,
+            sequence_number: 5,
+            transactions: vec![GovernanceTx::Admit {
+                server_id: "srv-x".to_string(),
+                verifying_key_hex: "vk-x".to_string(),
+                kex_public_hex: "kex-x".to_string(),
+            }],
+            proposer_id: "srv-a".to_string(),
+            timestamp: 12345,
+        };
+        let json = serde_json::to_string(&proposal).unwrap();
+        let back: GovernanceProposal = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.view_number, 1);
+        assert_eq!(back.sequence_number, 5);
+        assert_eq!(back.proposer_id, "srv-a");
+    }
+
+    #[test]
+    fn governance_sealed_batch_serialize_roundtrip() {
+        let batch = SealedBatch {
+            view_number: 0,
+            sequence_number: 1,
+            transactions: vec![],
+            proposer_id: "srv-a".to_string(),
+            timestamp: 999,
+            prepare_votes: vec!["a".into(), "b".into(), "c".into()],
+            commit_votes: vec!["a".into(), "b".into(), "c".into()],
+        };
+        let json = serde_json::to_string(&batch).unwrap();
+        let back: SealedBatch = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.prepare_votes.len(), 3);
+        assert_eq!(back.commit_votes.len(), 3);
+    }
+
+    #[test]
+    fn governance_vote_serialize_roundtrip() {
+        let vote = PbftVote {
+            view_number: 2,
+            sequence_number: 10,
+            voter_id: "srv-b".to_string(),
+            phase: PbftPhase::Commit,
+        };
+        let json = serde_json::to_string(&vote).unwrap();
+        let back: PbftVote = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.phase, PbftPhase::Commit);
+    }
+
+    #[test]
+    fn governance_multiple_batches() {
+        let mut gov = GovernanceState::new(4);
+
+        for i in 0..3 {
+            let tx = GovernanceTx::RoyaltyRecord {
+                origin_server_id: format!("srv-{}", i),
+                target_server_id: format!("srv-{}", i + 1),
+                content_fingerprint_hex: format!("{:064x}", i),
+                royalty_type: RoyaltyType::Transclusion,
+                amount: 100 * (i as u64 + 1),
+            };
+            gov.propose(vec![tx], "srv-a".to_string());
+
+            for voter in &["srv-a", "srv-b", "srv-c"] {
+                gov.receive_prepare(PbftVote {
+                    view_number: 0, sequence_number: (i as u64) + 1,
+                    voter_id: voter.to_string(), phase: PbftPhase::Prepare,
+                });
+            }
+            for voter in &["srv-a", "srv-b", "srv-c"] {
+                gov.receive_commit(PbftVote {
+                    view_number: 0, sequence_number: (i as u64) + 1,
+                    voter_id: voter.to_string(), phase: PbftPhase::Commit,
+                });
+            }
+            gov.seal_round().unwrap();
+        }
+
+        assert_eq!(gov.log_len(), 3);
+        assert_eq!(gov.current_sequence(), 3);
+        assert_eq!(gov.log()[0].transactions[0].tx_type_name(), "royalty_record");
+        assert_eq!(gov.log()[2].transactions[0].tx_type_name(), "royalty_record");
+    }
+
+    #[test]
+    fn governance_set_cluster_size() {
+        let mut gov = GovernanceState::new(1);
+        assert_eq!(gov.quorum_size(), 1);
+        gov.set_cluster_size(7);
+        assert_eq!(gov.cluster_size(), 7);
+        assert_eq!(gov.faulty_tolerance(), 2);
+        assert_eq!(gov.quorum_size(), 5);
     }
 }
