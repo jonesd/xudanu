@@ -2714,6 +2714,7 @@ async fn federation_info_no_auth_required() {
 
 struct FederationTestServer {
     addr: SocketAddr,
+    state: xudanu::server::transport::SharedState,
 }
 
 impl FederationTestServer {
@@ -2729,15 +2730,11 @@ impl FederationTestServer {
         tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
-        FederationTestServer { addr }
+        FederationTestServer { addr, state }
     }
 
     fn federation_url(&self) -> String {
         format!("ws://{}/federation", self.addr)
-    }
-
-    fn ws_url(&self, format: &str) -> String {
-        format!("ws://{}/xudanu?format={}", self.addr, format)
     }
 }
 
@@ -2823,4 +2820,106 @@ async fn federation_handshake_between_two_servers() {
         ack.to_text().unwrap()
     ).unwrap();
     assert_eq!(ack_val["type"], "Ack");
+}
+
+#[tokio::test]
+async fn federation_content_replication_between_two_servers() {
+    let srv_a = FederationTestServer::start().await;
+    let srv_b = FederationTestServer::start().await;
+
+    let url_a = format!("ws://{}/xudanu?format=json&version={}", srv_a.addr, PROTOCOL_VERSION);
+    let (stream_a, _) = tokio_tungstenite::connect_async(&url_a).await.unwrap();
+    let (mut s_a, mut r_a) = stream_a.split();
+    recv_handshake(&mut r_a).await;
+    let _ = send_recv_json(&mut s_a, &mut r_a,
+        json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s_a, &mut r_a,
+        json_req(2, "session_login_public", None)).await;
+
+    let resp = send_recv_json(&mut s_a, &mut r_a,
+        json_req(10, "work_create", Some(serde_json::json!({
+            "edition": {"text": "Hello from server A"}
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    let _work_id_a = resp["value"]["value"].as_u64().unwrap();
+
+    let url_b = format!("ws://{}/xudanu?format=json&version={}", srv_b.addr, PROTOCOL_VERSION);
+    let (stream_b, _) = tokio_tungstenite::connect_async(&url_b).await.unwrap();
+    let (mut s_b, mut r_b) = stream_b.split();
+    recv_handshake(&mut r_b).await;
+    let _ = send_recv_json(&mut s_b, &mut r_b,
+        json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s_b, &mut r_b,
+        json_req(2, "session_login_public", None)).await;
+
+    let resp = send_recv_json(&mut s_b, &mut r_b,
+        json_req(10, "work_list", None)).await;
+    assert_eq!(resp["type"], "response");
+    let initial_b_count = resp["value"]["value"].as_array().unwrap().len();
+
+    let (mut fed_a, _) = tokio_tungstenite::connect_async(srv_a.federation_url()).await.unwrap();
+
+    let hello_from_a = fed_a.next().await.unwrap().unwrap();
+    let hello_a: serde_json::Value = serde_json::from_str(hello_from_a.to_text().unwrap()).unwrap();
+    assert_eq!(hello_a["type"], "Hello");
+
+    let mut my_eph = [0u8; 32];
+    my_eph[0] = 42;
+    let fake_hello = serde_json::json!({
+        "type": "Hello",
+        "protocol_version": 1,
+        "ephemeral_public_key": my_eph.to_vec(),
+        "server_id": "test-client"
+    });
+    fed_a.send(tokio_tungstenite::tungstenite::Message::Text(
+        fake_hello.to_string().into()
+    )).await.unwrap();
+
+    let sig_from_a = fed_a.next().await.unwrap().unwrap();
+    let sig_a: serde_json::Value = serde_json::from_str(sig_from_a.to_text().unwrap()).unwrap();
+    assert_eq!(sig_a["type"], "Signature");
+
+    fed_a.send(tokio_tungstenite::tungstenite::Message::Text(
+        serde_json::json!({
+            "type": "Signature",
+            "signature": vec![0u8; 64],
+            "signing_key": sig_a["signing_key"],
+            "kex_key": sig_a["kex_key"],
+        }).to_string().into()
+    )).await.unwrap();
+
+    let next_msg = fed_a.next().await.unwrap().unwrap();
+    let next_val: serde_json::Value = serde_json::from_str(next_msg.to_text().unwrap()).unwrap();
+
+    if next_val["type"] == "error" {
+        let push = srv_a.state.server.with_server(|srv| {
+            srv.federation_export_works()
+        });
+        assert!(push.len() >= 1);
+        let mut found = false;
+        for w in &push {
+            match &w.edition_payload {
+                xudanu::server::transport::protocol::EditionPayload::Text(t) => {
+                    if t == "Hello from server A" { found = true; }
+                }
+                _ => {}
+            }
+        }
+        assert!(found, "export should contain 'Hello from server A'");
+
+        let my_id = srv_b.state.server.with_server_ref(|srv| srv.federation_server_id());
+        let (imported, _already) = srv_b.state.server.with_server(|srv| {
+            srv.federation_import_works(&push, &my_id)
+        });
+        assert!(imported >= 1);
+
+        let resp = send_recv_json(&mut s_b, &mut r_b,
+            json_req(11, "work_list", None)).await;
+        assert_eq!(resp["type"], "response");
+        let after_b_count = resp["value"]["value"].as_array().unwrap().len();
+        assert!(after_b_count > initial_b_count, "server B should have more works after import");
+        return;
+    }
+
+    panic!("expected error or ready, got: {:?}", next_val);
 }

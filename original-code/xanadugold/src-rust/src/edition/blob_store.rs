@@ -381,6 +381,25 @@ impl BlobStore {
     pub fn stats(&self) -> BlobBackendStats {
         self.backend.stats()
     }
+
+    pub fn all_hashes(&self) -> Vec<[u8; 32]> {
+        self.meta.lock().unwrap().keys().copied().collect()
+    }
+}
+
+pub fn hash_to_hex(hash: &[u8; 32]) -> String {
+    hash.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+pub fn hex_to_hash(hex: &str) -> Option<[u8; 32]> {
+    if hex.len() != 64 {
+        return None;
+    }
+    let mut result = [0u8; 32];
+    for i in 0..32 {
+        result[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(result)
 }
 
 pub fn base64_encode(data: &[u8]) -> String {
