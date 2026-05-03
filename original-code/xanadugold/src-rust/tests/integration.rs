@@ -3110,3 +3110,42 @@ async fn cross_server_transclusion_after_sync() {
     let results = resp["value"]["value"]["results"].as_array().unwrap();
     assert!(!results.is_empty(), "server B should find transclusion results after sync");
 }
+
+#[tokio::test]
+async fn federated_transclusion_query_rejected_when_federation_disabled() {
+    let srv = FederationTestServer::start().await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let fp_hex = "ab".repeat(32);
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "federated_transclusion_query", Some(serde_json::json!({
+            "content_fingerprint_hex": fp_hex,
+            "direct_only": false
+        })))).await;
+    assert_eq!(resp["type"], "error", "should reject transclusion query when federation disabled");
+}
+
+#[tokio::test]
+async fn federated_content_fetch_rejected_when_federation_disabled() {
+    let srv = FederationTestServer::start().await;
+
+    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+
+    let fp_hex = "ff".repeat(32);
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(10, "federated_content_fetch", Some(serde_json::json!({
+            "content_fingerprint_hex": fp_hex
+        })))).await;
+    assert_eq!(resp["type"], "error", "should reject content fetch when federation disabled");
+}
