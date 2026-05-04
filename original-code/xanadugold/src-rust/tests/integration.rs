@@ -3875,3 +3875,168 @@ async fn governance_seal_via_wire_op() {
     let log = log_resp["value"]["value"]["log"].as_array().unwrap();
     assert_eq!(log.len(), 1);
 }
+
+fn temp_data_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("xudanu-persist-{}-{}", name, std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::create_dir_all(dir.join("blobs")).unwrap();
+    dir
+}
+
+fn server_init(data_dir: &std::path::Path) -> xudanu::server::Server {
+    let mut server = xudanu::server::Server::new();
+    let _ = server.restore_keypair_from_dir(data_dir);
+    let snapshot_path = data_dir.join("server.json");
+    server.set_checkpoint_path(snapshot_path.clone());
+    server.init_blob_store(data_dir).unwrap();
+    server.checkpoint_to_file(&snapshot_path).unwrap();
+    server
+}
+
+fn server_restore(data_dir: &std::path::Path) -> xudanu::server::Server {
+    let snapshot_path = data_dir.join("server.json");
+    xudanu::server::Server::restore_from_file_with_persistence(&snapshot_path).unwrap()
+}
+
+fn admin_session(srv: &mut xudanu::server::Server) -> (xudanu::server::SessionId, u64) {
+    let club_id = srv.club_names_list().iter()
+        .find(|(n, _)| *n == "admin")
+        .map(|(_, id)| *id)
+        .unwrap();
+    let session = srv.connect();
+    srv.login(session, club_id).unwrap();
+    let lock = xudanu::server::lock::BooLock::new(club_id);
+    srv.authenticate(session, &lock, &xudanu::server::lock::LockCredential::Boo).unwrap();
+    (session, club_id)
+}
+
+#[tokio::test]
+async fn persistence_works_survive_restart() {
+    let dir = temp_data_dir("works");
+    
+    let mut srv = server_init(&dir);
+    let (session, _) = admin_session(&mut srv);
+
+    let w1 = srv.create_work(session, xudanu::edition::Edition::from_text("doc one")).unwrap();
+    let w2 = srv.create_work(session, xudanu::edition::Edition::from_text("doc two")).unwrap();
+    assert_eq!(srv.work_count(), 2);
+
+    srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    drop(srv);
+
+    let srv2 = server_restore(&dir);
+    assert_eq!(srv2.work_count(), 2, "work count should survive restart");
+    assert!(srv2.work(w1).is_ok(), "work {} should exist after restart", w1);
+    assert!(srv2.work(w2).is_ok(), "work {} should exist after restart", w2);
+}
+
+#[tokio::test]
+async fn persistence_keypair_identity_survives_restart() {
+    let dir = temp_data_dir("keypair");
+
+    let srv1 = server_init(&dir);
+    let identity1 = srv1.federation_server_id();
+    srv1.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    drop(srv1);
+
+    let srv2 = server_restore(&dir);
+    let identity2 = srv2.federation_server_id();
+    assert_eq!(identity1, identity2, "server identity must survive restart");
+}
+
+#[tokio::test]
+async fn persistence_edition_content_survives_restart() {
+    let dir = temp_data_dir("editions");
+
+    let mut srv = server_init(&dir);
+    let (session, _) = admin_session(&mut srv);
+
+    let wid = srv.create_work(session, xudanu::edition::Edition::from_text("hello world")).unwrap();
+    srv.work_grab(session, wid).unwrap();
+    srv.work_revise(session, wid, xudanu::edition::Edition::from_text("updated content!")).unwrap();
+    srv.work_release(session, wid).unwrap();
+
+    srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    drop(srv);
+
+    let srv2 = server_restore(&dir);
+    let work = srv2.work(wid).unwrap();
+    let text: String = work.current_edition().all_entries()
+        .iter()
+        .filter_map(|(_, c)| match &c.element {
+            xudanu::edition::RangeElement::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(text.contains("updated content"), "edition text should survive restart, got: {}", text);
+}
+
+#[tokio::test]
+async fn persistence_blobs_survive_restart() {
+    let dir = temp_data_dir("blobs");
+
+    let mut srv = server_init(&dir);
+    let (session, _) = admin_session(&mut srv);
+
+    let meta = srv.blob_upload(session, b"test-blob-data".to_vec(), "application/octet-stream".to_string()).unwrap();
+    assert_eq!(srv.blob_count(), 1);
+    let hash_u64 = meta.hash_u64();
+
+    srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    drop(srv);
+
+    let srv2 = server_restore(&dir);
+    assert_eq!(srv2.blob_count(), 1, "blob count should survive restart");
+    let data = srv2.blob_get(hash_u64).unwrap();
+    assert_eq!(data, b"test-blob-data", "blob data should survive restart");
+}
+
+#[tokio::test]
+async fn persistence_club_names_survive_restart() {
+    let dir = temp_data_dir("clubs");
+
+    let srv1 = server_init(&dir);
+    let names1: Vec<String> = srv1.club_names_list().iter().map(|(n, _)| n.to_string()).collect();
+    srv1.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    drop(srv1);
+
+    let srv2 = server_restore(&dir);
+    let names2: Vec<String> = srv2.club_names_list().iter().map(|(n, _)| n.to_string()).collect();
+    
+    for name in &["public", "admin", "access", "empty"] {
+        assert!(names1.contains(&name.to_string()), "club '{}' should exist before restart", name);
+        assert!(names2.contains(&name.to_string()), "club '{}' should survive restart", name);
+    }
+}
+
+#[tokio::test]
+async fn persistence_federation_state_in_snapshot() {
+    let dir = temp_data_dir("federation");
+
+    let srv1 = server_init(&dir);
+    srv1.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    drop(srv1);
+
+    let json = std::fs::read_to_string(dir.join("server.json")).unwrap();
+    let snap: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert!(snap["federation"].is_object(), "federation state should be in snapshot");
+    assert!(snap["content_address"].is_object(), "content address index should be in snapshot");
+    assert!(snap["blob_metas"].is_array(), "blob metas should be in snapshot");
+}
+
+#[tokio::test]
+async fn persistence_key_history_file_written() {
+    let dir = temp_data_dir("key_history");
+
+    let srv1 = server_init(&dir);
+    srv1.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    drop(srv1);
+
+    assert!(dir.join("key_history.json").exists(), "key_history.json should be written on checkpoint");
+
+    let kh_json = std::fs::read_to_string(dir.join("key_history.json")).unwrap();
+    let kh: serde_json::Value = serde_json::from_str(&kh_json).unwrap();
+    assert!(kh["entries"].is_array(), "key history should have entries array");
+    assert_eq!(kh["entries"].as_array().unwrap().len(), 1, "should have 1 key entry");
+}

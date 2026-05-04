@@ -287,6 +287,128 @@ fn hex_encode(data: &[u8]) -> String {
     data.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KeypairFile {
+    signing_key_bytes: [u8; 32],
+    kex_secret_bytes: [u8; 32],
+    key_id: KeyId,
+    created_at: u64,
+    not_before: u64,
+    not_after: Option<u64>,
+}
+
+impl ServerKeyPair {
+    pub fn save_to_file(&self, path: &std::path::Path) -> std::io::Result<()> {
+        let file = KeypairFile {
+            signing_key_bytes: self.signing_key.to_bytes(),
+            kex_secret_bytes: self.kex_secret.to_bytes(),
+            key_id: self.key_id,
+            created_at: self.created_at,
+            not_before: self.not_before,
+            not_after: self.not_after,
+        };
+        let json = serde_json::to_string(&file)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let tmp_path = path.with_extension("keytmp");
+        std::fs::write(&tmp_path, json.as_bytes())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        std::fs::rename(&tmp_path, path)
+    }
+
+    pub fn load_from_file(path: &std::path::Path) -> std::io::Result<Self> {
+        let json = std::fs::read_to_string(path)?;
+        let file: KeypairFile = serde_json::from_str(&json)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let signing_key = SigningKey::from_bytes(&file.signing_key_bytes);
+        let kex_secret = StaticSecret::from(file.kex_secret_bytes);
+        Ok(ServerKeyPair {
+            key_id: file.key_id,
+            signing_key,
+            kex_secret,
+            created_at: file.created_at,
+            not_before: file.not_before,
+            not_after: file.not_after,
+            is_active: true,
+        })
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KeyHistoryEntryFile {
+    key_id: KeyId,
+    verifying_key_bytes: [u8; 32],
+    kex_public_bytes: [u8; 32],
+    not_before: u64,
+    not_after: Option<u64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SignedKeyRotationFile {
+    payload_bytes: Vec<u8>,
+    signature_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KeyHistoryFile {
+    pub server_id: String,
+    pub entries: Vec<KeyHistoryEntryFile>,
+    pub rotation_proofs: Vec<SignedKeyRotationFile>,
+    pub current_key_id: KeyId,
+}
+
+impl KeyHistory {
+    pub fn to_file_repr(&self) -> KeyHistoryFile {
+        KeyHistoryFile {
+            server_id: self.server_id.clone(),
+            entries: self.entries.iter().map(|e| KeyHistoryEntryFile {
+                key_id: e.key_id,
+                verifying_key_bytes: e.verifying_key.to_bytes(),
+                kex_public_bytes: *e.kex_public.as_bytes(),
+                not_before: e.not_before,
+                not_after: e.not_after,
+            }).collect(),
+            rotation_proofs: self.rotation_proofs.iter().map(|r| SignedKeyRotationFile {
+                payload_bytes: r.payload.encode(),
+                signature_bytes: r.signature.to_bytes().to_vec(),
+            }).collect(),
+            current_key_id: self.current_key_id,
+        }
+    }
+
+    pub fn from_file_repr(file: &KeyHistoryFile) -> Result<Self, String> {
+        let entries: Result<Vec<_>, String> = file.entries.iter().map(|e| {
+            let verifying_key = VerifyingKey::from_bytes(&e.verifying_key_bytes)
+                .map_err(|_| "invalid verifying key bytes in key history".to_string())?;
+            let kex_public = PublicKey::from(e.kex_public_bytes);
+            Ok(KeyHistoryEntry {
+                key_id: e.key_id,
+                verifying_key,
+                kex_public,
+                not_before: e.not_before,
+                not_after: e.not_after,
+            })
+        }).collect();
+        let rotation_proofs: Result<Vec<_>, String> = file.rotation_proofs.iter().map(|r| {
+            let payload = KeyRotationPayload::decode(&r.payload_bytes)
+                .ok_or("invalid key rotation payload in key history".to_string())?;
+            let sig_bytes: [u8; 64] = r.signature_bytes.clone().try_into()
+                .map_err(|_| "invalid signature length in key history".to_string())?;
+            let signature = Signature::from_bytes(&sig_bytes);
+            Ok(SignedKeyRotation { payload, signature })
+        }).collect();
+        Ok(KeyHistory {
+            server_id: file.server_id.clone(),
+            entries: entries?,
+            rotation_proofs: rotation_proofs?,
+            current_key_id: file.current_key_id,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

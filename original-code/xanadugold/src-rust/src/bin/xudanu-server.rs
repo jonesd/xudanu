@@ -24,8 +24,11 @@ fn cmd_init(data_dir: &str) {
         }
     }
     std::fs::create_dir_all(&path).expect("failed to create data directory");
-    let server = Server::new();
+    std::fs::create_dir_all(path.join("blobs")).expect("failed to create blobs directory");
+    let mut server = Server::new();
     let snapshot_path = path.join("server.json");
+    server.restore_keypair_from_dir(&path).expect("failed to init keypair");
+    server.set_checkpoint_path(snapshot_path.clone());
     server.checkpoint_to_file(&snapshot_path).expect("failed to write initial checkpoint");
     eprintln!("Initialized xudanu data directory: {}", data_dir);
 }
@@ -37,10 +40,13 @@ fn cmd_verify(data_dir: &str) {
         eprintln!("Error: no snapshot found at {}", snapshot_path.display());
         std::process::exit(1);
     }
-    match Server::restore_from_file(&snapshot_path) {
+    match Server::restore_from_file_with_persistence(&snapshot_path) {
         Ok(server) => {
-            eprintln!("Snapshot OK: {} works",
+            eprintln!("Snapshot OK: {} works, {} clubs, {} blobs, keypair={}",
                 server.work_count(),
+                server.club_count(),
+                server.blob_count(),
+                server.federation_server_id(),
             );
         }
         Err(e) => {
@@ -98,15 +104,21 @@ async fn main() {
                 let snapshot_path = path.join("server.json");
                 if snapshot_path.exists() {
                     tracing::info!("Restoring from {}", snapshot_path.display());
-                    let mut s = Server::restore_from_file(&snapshot_path).expect("failed to restore snapshot");
-                    s.set_checkpoint_path(snapshot_path);
+                    let mut s = Server::restore_from_file_with_persistence(&snapshot_path)
+                        .expect("failed to restore snapshot");
+                    tracing::info!(
+                        "Restored: {} works, {} clubs, {} links, {} blobs",
+                        s.work_count(), s.club_count(), s.link_count(), s.blob_count()
+                    );
                     s
                 } else {
                     tracing::info!("Initializing new data directory: {}", dir);
                     std::fs::create_dir_all(&path).expect("failed to create data directory");
+                    std::fs::create_dir_all(path.join("blobs")).expect("failed to create blobs directory");
                     let mut s = Server::new();
+                    let _ = s.restore_keypair_from_dir(&path);
+                    s.set_checkpoint_path(snapshot_path.clone());
                     s.checkpoint_to_file(&snapshot_path).expect("failed to write initial checkpoint");
-                    s.set_checkpoint_path(snapshot_path);
                     s
                 }
             } else {

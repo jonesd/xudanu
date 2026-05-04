@@ -179,7 +179,42 @@ pub struct FederationState {
     governance: GovernanceState,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FederationSnapshot {
+    config: FederationConfig,
+    known_peers: HashSet<String>,
+    known_peer_keys: HashSet<String>,
+    remote_origins: RemoteOriginRegistry,
+    royalty_ledger: Vec<RoyaltyEntry>,
+    membership: MembershipState,
+    governance: GovernanceState,
+}
+
 impl FederationState {
+    pub fn to_snapshot(&self) -> FederationSnapshot {
+        FederationSnapshot {
+            config: self.config.clone(),
+            known_peers: self.known_peers.clone(),
+            known_peer_keys: self.known_peer_keys.clone(),
+            remote_origins: self.remote_origins.clone(),
+            royalty_ledger: self.royalty_ledger.clone(),
+            membership: self.membership.clone(),
+            governance: self.governance.clone(),
+        }
+    }
+
+    pub fn from_snapshot(snapshot: &FederationSnapshot) -> Self {
+        FederationState {
+            config: snapshot.config.clone(),
+            known_peers: snapshot.known_peers.clone(),
+            known_peer_keys: snapshot.known_peer_keys.clone(),
+            connected_peers: HashMap::new(),
+            remote_origins: snapshot.remote_origins.clone(),
+            royalty_ledger: snapshot.royalty_ledger.clone(),
+            membership: snapshot.membership.clone(),
+            governance: snapshot.governance.clone(),
+        }
+    }
     pub fn new(config: FederationConfig) -> Self {
         let known_peers: HashSet<String> = config
             .peers
@@ -409,6 +444,7 @@ pub struct FederatedTransclusionEntry {
     pub is_direct: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteOriginRegistry {
     origins: HashMap<[u8; 32], RemoteOrigin>,
 }
