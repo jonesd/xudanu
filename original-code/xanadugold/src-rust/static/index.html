@@ -1315,7 +1315,7 @@ function App() {
                 className:'editor-content',
                 dangerouslySetInnerHTML: {__html: leftHtml || '<span style="color:var(--fg3)">Loading...</span>'}
               }),
-              h('svg', {className:'svg-overlay', style:{zIndex:20, pointerEvents:'none'}},
+              h('svg', {className:'svg-overlay', width:'100%', height:'100%', style:{zIndex:20, pointerEvents:'none'}},
                 bridgePaths.map(function(d, i){
                   return h('line', {
                     key: i,
@@ -1366,7 +1366,7 @@ function App() {
                 className:'editor-content',
                 dangerouslySetInnerHTML: {__html: rightHtml || '<span style="color:var(--fg3)">Loading...</span>'}
               }),
-              h('svg', {className:'svg-overlay', style:{zIndex:20, pointerEvents:'none'}},
+              h('svg', {className:'svg-overlay', width:'100%', height:'100%', style:{zIndex:20, pointerEvents:'none'}},
                 bridgePaths.map(function(d, i){
                   return h('line', {
                     key: i,
