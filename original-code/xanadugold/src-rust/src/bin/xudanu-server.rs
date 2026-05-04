@@ -12,6 +12,8 @@ fn usage() {
     eprintln!();
     eprintln!("Run options:");
     eprintln!("  --static-dir <dir>       Serve frontend from directory instead of embedded HTML");
+    eprintln!("  --peer <addr>            Federation peer address (repeatable, e.g. ws://host:port/federation)");
+    eprintln!("  --federation-mode <mode> Federation mode: closed (default) or open");
 }
 
 fn cmd_init(data_dir: &str) {
@@ -82,6 +84,8 @@ async fn main() {
             let mut addr = "127.0.0.1:8080".to_string();
             let mut data_dir: Option<String> = None;
             let mut static_dir: Option<PathBuf> = None;
+            let mut federation_peers: Vec<String> = Vec::new();
+            let mut federation_mode = "closed".to_string();
             let mut i = 2;
             while i < args.len() {
                 match args[i].as_str() {
@@ -91,6 +95,21 @@ async fn main() {
                             eprintln!("Error: --static-dir requires a path");
                             std::process::exit(1);
                         })));
+                    }
+                    "--peer" => {
+                        i += 1;
+                        let peer = args.get(i).map(|s| s.to_string()).unwrap_or_else(|| {
+                            eprintln!("Error: --peer requires an address");
+                            std::process::exit(1);
+                        });
+                        federation_peers.push(peer);
+                    }
+                    "--federation-mode" => {
+                        i += 1;
+                        federation_mode = args.get(i).map(|s| s.to_string()).unwrap_or_else(|| {
+                            eprintln!("Error: --federation-mode requires a value");
+                            std::process::exit(1);
+                        });
                     }
                     s if s.contains(':') => {
                         addr = s.to_string();
@@ -130,6 +149,42 @@ async fn main() {
             } else {
                 Server::new()
             };
+
+            if !federation_peers.is_empty() {
+                let peers: Vec<xudanu::server::federation::PeerAddress> = federation_peers
+                    .iter()
+                    .filter_map(|p| {
+                        let addr = p.trim_start_matches("ws://").trim_start_matches("wss://");
+                        let addr = addr.split('/').next().unwrap_or(addr);
+                        let parts: Vec<&str> = addr.split(':').collect();
+                        match (parts.first(), parts.get(1)) {
+                            (Some(host), Some(port_str)) => {
+                                let port: u16 = port_str.parse().unwrap_or_else(|_| {
+                                    eprintln!("Error: invalid peer port in '{}'", p);
+                                    std::process::exit(1);
+                                });
+                                Some(xudanu::server::federation::PeerAddress::new(*host, port))
+                            }
+                            (Some(host), None) => {
+                                Some(xudanu::server::federation::PeerAddress::new(*host, 8080))
+                            }
+                            _ => None,
+                        }
+                    })
+                    .collect();
+                let mode = match federation_mode.as_str() {
+                    "open" => xudanu::server::federation::FederationMode::Open,
+                    _ => xudanu::server::federation::FederationMode::Closed,
+                };
+                let config = xudanu::server::federation::FederationConfig {
+                    enabled: true,
+                    peers,
+                    mode,
+                    min_endorsements: 2,
+                };
+                tracing::info!("Federation enabled with {} peer(s), mode={}", config.peers.len(), federation_mode);
+                server.set_federation_config(config);
+            }
 
             let state = {
                 let app = AppState::new(server);

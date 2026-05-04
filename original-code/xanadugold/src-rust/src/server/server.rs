@@ -27,10 +27,16 @@ pub struct SystemClubs {
     pub empty_club: BeId,
 }
 
+struct GrabWaiter {
+    session_id: SessionId,
+    grabbed_at: u64,
+}
+
 struct WorkState {
     work: Work,
     grabber: Option<SessionId>,
     grabbed_at: Option<u64>,
+    grab_waiters: Vec<GrabWaiter>,
     last_revision_author: Option<BeId>,
     status_detectors: DetectorList,
     revision_detectors: DetectorList,
@@ -294,10 +300,24 @@ impl Server {
         for work_be_id in grabbed {
             if let Some(ws) = self.works.get_mut(&work_be_id) {
                 ws.grabber = None;
+                ws.grabbed_at = None;
                 ws.status_detectors.fire(&Event::WorkReleased {
                     work_be_id,
                     session_id,
                 });
+            }
+            self.grant_pending_grab(work_be_id);
+        }
+
+        let waiting: Vec<BeId> = self
+            .works
+            .iter()
+            .filter(|(_, ws)| ws.grab_waiters.iter().any(|w| w.session_id == session_id))
+            .map(|(id, _)| *id)
+            .collect();
+        for work_be_id in waiting {
+            if let Some(ws) = self.works.get_mut(&work_be_id) {
+                ws.grab_waiters.retain(|w| w.session_id != session_id);
             }
         }
 
@@ -476,6 +496,7 @@ impl Server {
             work,
             grabber: None,
             grabbed_at: None,
+            grab_waiters: Vec::new(),
             last_revision_author: None,
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
@@ -613,7 +634,111 @@ impl Server {
             session_id,
         });
 
+        self.grant_pending_grab(work_be_id);
+
         Ok(())
+    }
+
+    pub fn work_request_grab(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<bool, ServerError> {
+        self.ensure_session(session_id)?;
+        self.ensure_can_edit(session_id, work_be_id)?;
+
+        let ws = self
+            .works
+            .get_mut(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+
+        if ws.grabber == Some(session_id) {
+            return Ok(true);
+        }
+
+        if ws.grabber.is_none() {
+            ws.grabber = Some(session_id);
+            ws.grabbed_at = Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            );
+            ws.status_detectors.fire(&Event::WorkGrabbed {
+                work_be_id,
+                session_id,
+            });
+            return Ok(true);
+        }
+
+        let already_waiting = ws.grab_waiters.iter().any(|w| w.session_id == session_id);
+        if !already_waiting {
+            ws.grab_waiters.push(GrabWaiter {
+                session_id,
+                grabbed_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            });
+        }
+        Ok(false)
+    }
+
+    pub fn work_cancel_grab_request(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        let ws = self
+            .works
+            .get_mut(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        ws.grab_waiters.retain(|w| w.session_id != session_id);
+        Ok(())
+    }
+
+    pub fn work_grab_waiters(&self, work_be_id: BeId) -> Result<Vec<SessionId>, ServerError> {
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        Ok(ws.grab_waiters.iter().map(|w| w.session_id).collect())
+    }
+
+    fn grant_pending_grab(&mut self, work_be_id: BeId) {
+        let candidates = {
+            let ws = match self.works.get(&work_be_id) {
+                Some(ws) => ws,
+                None => return,
+            };
+            if ws.grabber.is_some() {
+                return;
+            }
+            ws.grab_waiters.iter().map(|w| w.session_id).collect::<Vec<_>>()
+        };
+
+        for candidate in candidates {
+            if self.session_can_edit(candidate, work_be_id) {
+                let ws = self.works.get_mut(&work_be_id).unwrap();
+                ws.grabber = Some(candidate);
+                ws.grabbed_at = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                );
+                ws.grab_waiters.retain(|w| w.session_id != candidate);
+                let session_id = candidate;
+                ws.status_detectors.fire(&Event::WorkGrabbed {
+                    work_be_id,
+                    session_id,
+                });
+                return;
+            }
+            let ws = self.works.get_mut(&work_be_id).unwrap();
+            ws.grab_waiters.retain(|w| w.session_id != candidate);
+        }
     }
 
     pub fn work_is_grabbed(&self, work_be_id: BeId) -> Result<bool, ServerError> {
@@ -1149,19 +1274,25 @@ impl Server {
                 })
             })
             .collect();
-        for (work_be_id, session_id) in timed_out {
+        for (work_be_id, session_id) in &timed_out {
             tracing::warn!(
                 "Releasing expired grab on work {:?} by session {:?} ({}s timeout)",
                 work_be_id, session_id, GRAB_TIMEOUT_SECS
             );
-            if let Some(ws) = self.works.get_mut(&work_be_id) {
+            if let Some(ws) = self.works.get_mut(work_be_id) {
                 ws.grabber = None;
                 ws.grabbed_at = None;
                 ws.status_detectors.fire(&Event::WorkReleased {
-                    work_be_id,
-                    session_id,
+                    work_be_id: *work_be_id,
+                    session_id: *session_id,
                 });
             }
+            self.grant_pending_grab(*work_be_id);
+        }
+
+        const WAIT_TIMEOUT_SECS: u64 = 3600;
+        for (_, ws) in self.works.iter_mut() {
+            ws.grab_waiters.retain(|w| now.saturating_sub(w.grabbed_at) <= WAIT_TIMEOUT_SECS);
         }
     }
 
@@ -1610,6 +1741,15 @@ impl Server {
             }
             None => true,
         }
+    }
+
+    fn session_can_edit(&self, session_id: SessionId, work_be_id: BeId) -> bool {
+        let ws = match self.works.get(&work_be_id) {
+            Some(ws) => ws,
+            None => return false,
+        };
+        self.sessions.contains_key(&session_id)
+            && self.check_edit_permission(session_id, &ws.work)
     }
 
     fn _find_grabbed_works(&self, session_id: SessionId) -> Option<Vec<BeId>> {
@@ -2234,6 +2374,7 @@ impl Server {
                     work,
                     grabber: None,
                     grabbed_at: None,
+                    grab_waiters: Vec::new(),
                     last_revision_author: None,
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
@@ -3214,6 +3355,7 @@ pub(crate) mod persist_snapshot {
                     work: work.clone(),
                     grabber: None,
                     grabbed_at: None,
+                    grab_waiters: Vec::new(),
                     last_revision_author: ws_snap.last_revision_author,
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),

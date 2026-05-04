@@ -221,6 +221,9 @@ impl BinaryCodec {
             | OperationCode::WorkRelease
             | OperationCode::WorkIsGrabbed
             | OperationCode::WorkGrabber
+            | OperationCode::WorkRequestGrab
+            | OperationCode::WorkCancelGrabRequest
+            | OperationCode::WorkGrabWaiters
             | OperationCode::WorkCanRead
             | OperationCode::WorkCanRevise
             | OperationCode::WorkReadClub
@@ -294,6 +297,9 @@ impl BinaryCodec {
             OperationCode::WorkRelease => Ok(WireRequest::WorkRelease { work_id: id }),
             OperationCode::WorkIsGrabbed => Ok(WireRequest::WorkIsGrabbed { work_id: id }),
             OperationCode::WorkGrabber => Ok(WireRequest::WorkGrabber { work_id: id }),
+            OperationCode::WorkRequestGrab => Ok(WireRequest::WorkRequestGrab { work_id: id }),
+            OperationCode::WorkCancelGrabRequest => Ok(WireRequest::WorkCancelGrabRequest { work_id: id }),
+            OperationCode::WorkGrabWaiters => Ok(WireRequest::WorkGrabWaiters { work_id: id }),
             OperationCode::WorkCanRead => Ok(WireRequest::WorkCanRead { work_id: id }),
             OperationCode::WorkCanRevise => Ok(WireRequest::WorkCanRevise { work_id: id }),
             OperationCode::WorkReadClub => Ok(WireRequest::WorkReadClub { work_id: id }),
@@ -637,6 +643,27 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::WorkGrabber { work_id: args.work_id })
+            }
+            OperationCode::WorkRequestGrab => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkRequestGrab { work_id: args.work_id })
+            }
+            OperationCode::WorkCancelGrabRequest => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkCancelGrabRequest { work_id: args.work_id })
+            }
+            OperationCode::WorkGrabWaiters => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkGrabWaiters { work_id: args.work_id })
             }
             OperationCode::WorkCanRead => {
                 #[derive(Deserialize)]
