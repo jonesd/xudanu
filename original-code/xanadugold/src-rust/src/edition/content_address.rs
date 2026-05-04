@@ -3,11 +3,54 @@ use std::collections::HashMap;
 use super::range_element::RangeElement;
 use crate::edition::BeId;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ContentAddressIndex {
     fingerprint_to_be_id: HashMap<[u8; 32], BeId>,
     be_id_to_fingerprint: HashMap<BeId, [u8; 32]>,
     next_be_id: BeId,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ContentAddressFile {
+    entries: Vec<(String, BeId)>,
+    next_be_id: BeId,
+}
+
+impl serde::Serialize for ContentAddressIndex {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let file = ContentAddressFile {
+            entries: self.fingerprint_to_be_id.iter().map(|(k, v)| {
+                (k.iter().map(|b| format!("{:02x}", b)).collect::<String>(), *v)
+            }).collect(),
+            next_be_id: self.next_be_id,
+        };
+        file.serialize(s)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ContentAddressIndex {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let file = ContentAddressFile::deserialize(d)?;
+        let mut fingerprint_to_be_id = HashMap::new();
+        let mut be_id_to_fingerprint = HashMap::new();
+        for (hex_str, be_id) in &file.entries {
+            if hex_str.len() != 64 {
+                return Err(serde::de::Error::custom("content address hash must be 64 hex chars"));
+            }
+            let mut hash = [0u8; 32];
+            for i in 0..32 {
+                hash[i] = u8::from_str_radix(&hex_str[i*2..i*2+2], 16)
+                    .map_err(|_| serde::de::Error::custom("invalid hex in content address"))?;
+            }
+            fingerprint_to_be_id.insert(hash, *be_id);
+            be_id_to_fingerprint.insert(*be_id, hash);
+        }
+        Ok(ContentAddressIndex {
+            fingerprint_to_be_id,
+            be_id_to_fingerprint,
+            next_be_id: file.next_be_id,
+        })
+    }
 }
 
 impl ContentAddressIndex {

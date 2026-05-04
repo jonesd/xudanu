@@ -188,6 +188,9 @@ impl Server {
         );
         server.clubs.insert(public_club, pub_club);
         server.club_names.insert("public".to_string(), public_club);
+        if let Some(c) = server.clubs.get_mut(&public_club) {
+            c.set_name("public".to_string());
+        }
 
         let adm_club = Club::new_with_owner(
             admin_club,
@@ -197,6 +200,7 @@ impl Server {
         server.clubs.insert(admin_club, adm_club);
         server.club_names.insert("admin".to_string(), admin_club);
         if let Some(c) = server.clubs.get_mut(&admin_club) {
+            c.set_name("admin".to_string());
             c.set_read_club(Some(public_club));
         }
 
@@ -207,10 +211,16 @@ impl Server {
         );
         server.clubs.insert(access_club, acc_club);
         server.club_names.insert("access".to_string(), access_club);
+        if let Some(c) = server.clubs.get_mut(&access_club) {
+            c.set_name("access".to_string());
+        }
 
         let emp_club = Club::new(empty_club, Edition::empty());
         server.clubs.insert(empty_club, emp_club);
         server.club_names.insert("empty".to_string(), empty_club);
+        if let Some(c) = server.clubs.get_mut(&empty_club) {
+            c.set_name("empty".to_string());
+        }
 
         server
     }
@@ -970,6 +980,115 @@ impl Server {
         self.checkpoint_path = Some(path);
     }
 
+    pub fn restore_keypair_from_dir(&mut self, data_dir: &std::path::Path) -> std::io::Result<()> {
+        let key_path = data_dir.join("server.key");
+        if key_path.exists() {
+            let kp = crate::crypto::keys::ServerKeyPair::load_from_file(&key_path)?;
+            tracing::info!("Restored server identity: {}", kp.identity_id());
+            self.server_keypair = kp.clone();
+            self.key_history = crate::crypto::keys::KeyHistory::new(&kp);
+            Ok(())
+        } else {
+            let kp = crate::crypto::keys::ServerKeyPair::generate("xudanu-server");
+            tracing::info!("Generated new server identity: {}", kp.identity_id());
+            kp.save_to_file(&key_path)?;
+            self.server_keypair = kp.clone();
+            self.key_history = crate::crypto::keys::KeyHistory::new(&kp);
+            Ok(())
+        }
+    }
+
+    pub fn load_keypair_from_dir(&mut self, data_dir: &std::path::Path) -> std::io::Result<()> {
+        let key_path = data_dir.join("server.key");
+        let kp = if key_path.exists() {
+            let kp = crate::crypto::keys::ServerKeyPair::load_from_file(&key_path)?;
+            tracing::info!("Restored server identity: {}", kp.identity_id());
+            kp
+        } else {
+            let kp = crate::crypto::keys::ServerKeyPair::generate("xudanu-server");
+            tracing::info!("Generated new server identity: {}", kp.identity_id());
+            kp.save_to_file(&key_path)?;
+            kp
+        };
+        self.server_keypair = kp.clone();
+        Ok(())
+    }
+
+    pub fn restore_key_history_from_snapshot(&mut self) {
+        if let Some(ref path) = self.checkpoint_path {
+            let data_dir = path.parent().unwrap_or(path);
+            let kh_path = data_dir.join("key_history.json");
+            if kh_path.exists() {
+                if let Ok(json) = std::fs::read_to_string(&kh_path) {
+                    if let Ok(file) = serde_json::from_str::<crate::crypto::keys::KeyHistoryFile>(&json) {
+                        match crate::crypto::keys::KeyHistory::from_file_repr(&file) {
+                            Ok(kh) => {
+                                tracing::info!("Restored key history with {} entries", kh.entry_count());
+                                self.key_history = kh;
+                            }
+                            Err(e) => {
+                                tracing::warn!("Corrupt key history file, using fresh history: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn save_key_history(&self) {
+        if let Some(ref path) = self.checkpoint_path {
+            let data_dir = path.parent().unwrap_or(path);
+            let kh_path = data_dir.join("key_history.json");
+            let file = self.key_history.to_file_repr();
+            match serde_json::to_string_pretty(&file) {
+                Ok(json) => {
+                    if let Err(e) = std::fs::write(&kh_path, json) {
+                        tracing::warn!("Failed to write key history: {}", e);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to serialize key history: {}", e);
+                }
+            }
+        }
+    }
+
+    pub fn init_blob_store(&mut self, data_dir: &std::path::Path) -> std::io::Result<()> {
+        self.restore_blob_store(data_dir, vec![])
+    }
+
+    pub fn restore_blob_store(&mut self, data_dir: &std::path::Path, metas: Vec<persist_snapshot::BlobMetaSnapshot>) -> std::io::Result<()> {        let blobs_dir = data_dir.join("blobs");
+        if !blobs_dir.exists() {
+            std::fs::create_dir_all(&blobs_dir)?;
+        }
+        let store = BlobStore::filesystem(&blobs_dir).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::Other, format!("failed to init filesystem blobs: {}", e))
+        })?;
+        tracing::info!("Using filesystem blob storage at {}", blobs_dir.display());
+        self.blob_store = store;
+        let restored_metas: Vec<_> = metas.into_iter().filter_map(|ms| {
+            let mut hash = [0u8; 32];
+            if ms.content_hash.len() != 32 { return None; }
+            hash.copy_from_slice(&ms.content_hash);
+            let mut meta = crate::edition::blob_store::BlobMeta::new(hash, ms.byte_size, ms.mime_type);
+            if let Some(ph) = ms.preview_hash {
+                if ph.len() == 32 {
+                    let mut ph_arr: [u8; 32] = [0u8; 32];
+                    ph_arr.copy_from_slice(&ph);
+                    meta = meta.with_preview(ph_arr);
+                }
+            }
+            for (k, v) in ms.metadata {
+                meta = meta.with_metadata(k, v);
+            }
+            Some(meta)
+        }).collect();
+        self.blob_store.restore_metas(restored_metas);
+        tracing::info!("Restored {} blob metadata entries", self.blob_store.stats().total_blobs);
+        Ok(())
+    }
+
     fn auto_checkpoint(&mut self) {
         #[cfg(feature = "server")]
         if let Some(ref path) = self.checkpoint_path {
@@ -1071,6 +1190,10 @@ impl Server {
 
     pub fn link_count(&self) -> usize {
         self.links.len()
+    }
+
+    pub fn blob_count(&self) -> usize {
+        self.blob_store.stats().total_blobs as usize
     }
 
     // === Transclusion queries ===
@@ -2760,9 +2883,10 @@ pub enum FederationFetchResponse {
 }
 
 #[cfg(feature = "server")]
-mod persist_snapshot {
+pub(crate) mod persist_snapshot {
     use super::*;
     use crate::edition::persistent::{EditionSnapshot, WorkSnapshot};
+    use std::collections::HashMap;
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     struct WorkStateSnapshot {
@@ -2813,6 +2937,28 @@ mod persist_snapshot {
         admin: AdminSnapshot,
         reconcile_store: crate::server::federation::ReconcileStore,
         reconcile_counter: u64,
+        federation: Option<crate::server::federation::FederationSnapshot>,
+        content_address: Option<crate::edition::ContentAddressIndex>,
+        blob_metas: Vec<BlobMetaSnapshot>,
+        key_history: Option<KeyHistorySnapshot>,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    pub(crate) struct BlobMetaSnapshot {
+        pub(crate) content_hash: Vec<u8>,
+        pub(crate) hash_u64: u64,
+        pub(crate) byte_size: u64,
+        pub(crate) mime_type: String,
+        pub(crate) preview_hash: Option<Vec<u8>>,
+        pub(crate) metadata: HashMap<String, String>,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    pub struct KeyHistorySnapshot {
+        pub server_id: String,
+        pub entries: Vec<crate::crypto::keys::KeyHistoryEntryFile>,
+        pub rotation_proofs: Vec<crate::crypto::keys::SignedKeyRotationFile>,
+        pub current_key_id: crate::crypto::keys::KeyId,
     }
 
     impl Server {
@@ -2841,6 +2987,25 @@ mod persist_snapshot {
                 }
             }).collect();
 
+            let blob_metas = self.blob_store.all_metas().iter().map(|(hash, meta)| {
+                BlobMetaSnapshot {
+                    content_hash: hash.to_vec(),
+                    hash_u64: meta.hash_u64(),
+                    byte_size: meta.byte_size,
+                    mime_type: meta.mime_type.clone(),
+                    preview_hash: meta.preview_hash.map(|ph| ph.to_vec()),
+                    metadata: meta.metadata.clone(),
+                }
+            }).collect();
+
+            let kh_file = self.key_history.to_file_repr();
+            let key_history = Some(KeyHistorySnapshot {
+                server_id: kh_file.server_id,
+                entries: kh_file.entries,
+                rotation_proofs: kh_file.rotation_proofs,
+                current_key_id: kh_file.current_key_id,
+            });
+
             ServerSnapshot {
                 grand_map_id_counter: self.grand_map.id_counter(),
                 session_counter: self.session_counter,
@@ -2865,6 +3030,10 @@ mod persist_snapshot {
                 },
                 reconcile_store: self.reconcile_store.clone(),
                 reconcile_counter: self.reconcile_counter,
+                federation: Some(self.federation.to_snapshot()),
+                content_address: Some(self.content_address.clone()),
+                blob_metas,
+                key_history,
             }
         }
 
@@ -2872,6 +3041,12 @@ mod persist_snapshot {
             let mut grand_map = GrandMap::new();
             grand_map.set_id_counter(snapshot.grand_map_id_counter);
             let server_kp = crate::crypto::keys::ServerKeyPair::generate("xudanu-server");
+
+            let federation = snapshot.federation.as_ref()
+                .map(|fs| crate::server::federation::FederationState::from_snapshot(fs))
+                .unwrap_or_else(crate::server::federation::FederationState::disabled);
+            let content_address = snapshot.content_address.clone()
+                .unwrap_or_else(|| ContentAddressIndex::new(1_000_000));
 
             let mut server = Server {
                 grand_map,
@@ -2888,7 +3063,7 @@ mod persist_snapshot {
                 links: HashMap::new(),
                 link_counter: snapshot.link_counter,
                 transclusion_index: TransclusionIndex::new(),
-                content_address: ContentAddressIndex::new(1_000_000),
+                content_address,
                 backfollow: BackfollowEngine::new(),
                 blob_store: BlobStore::in_memory(),
                 checkpoint_path: None,
@@ -2899,7 +3074,7 @@ mod persist_snapshot {
                     .as_secs(),
                 server_keypair: server_kp.clone(),
                 key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
-                federation: crate::server::federation::FederationState::disabled(),
+                federation,
                 element_fingerprint_to_work: HashMap::new(),
                 reconcile_store: snapshot.reconcile_store.clone(),
                 reconcile_counter: snapshot.reconcile_counter,
@@ -2991,7 +3166,9 @@ mod persist_snapshot {
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             let tmp_path = path.with_extension("tmp");
             std::fs::write(&tmp_path, json.as_bytes())?;
-            std::fs::rename(&tmp_path, path)
+            std::fs::rename(&tmp_path, path)?;
+            self.save_key_history();
+            Ok(())
         }
 
         pub fn restore_from_file(path: &std::path::Path) -> std::io::Result<Self> {
@@ -2999,6 +3176,24 @@ mod persist_snapshot {
             let snapshot: ServerSnapshot = serde_json::from_str(&json)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
             Ok(Self::from_snapshot(&snapshot))
+        }
+
+        pub fn restore_from_file_with_persistence(path: &std::path::Path) -> std::io::Result<Self> {
+            let json = std::fs::read_to_string(path)?;
+            let snapshot: ServerSnapshot = serde_json::from_str(&json)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            Ok(Self::from_snapshot_with_persistence(&snapshot, path))
+        }
+
+        fn from_snapshot_with_persistence(snapshot: &ServerSnapshot, snapshot_path: &std::path::Path) -> Self {
+            let mut server = Self::from_snapshot(snapshot);
+            server.checkpoint_path = Some(snapshot_path.to_path_buf());
+            if let Some(data_dir) = snapshot_path.parent() {
+                let _ = server.load_keypair_from_dir(data_dir);
+                server.restore_key_history_from_snapshot();
+                let _ = server.restore_blob_store(data_dir, snapshot.blob_metas.clone());
+            }
+            server
         }
     }
 }

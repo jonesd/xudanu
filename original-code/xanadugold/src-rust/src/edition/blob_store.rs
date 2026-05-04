@@ -385,6 +385,19 @@ impl BlobStore {
     pub fn all_hashes(&self) -> Vec<[u8; 32]> {
         self.meta.lock().unwrap().keys().copied().collect()
     }
+
+    pub fn all_metas(&self) -> Vec<([u8; 32], BlobMeta)> {
+        self.meta.lock().unwrap().iter().map(|(k, v)| (*k, v.clone())).collect()
+    }
+
+    pub fn restore_metas(&self, metas: Vec<BlobMeta>) {
+        for meta in metas {
+            let hash_u64 = meta.hash_u64();
+            let full_hash = meta.content_hash;
+            self.meta.lock().unwrap().insert(full_hash, meta);
+            self.by_u64.lock().unwrap().insert(hash_u64, full_hash);
+        }
+    }
 }
 
 pub fn hash_to_hex(hash: &[u8; 32]) -> String {
