@@ -36,6 +36,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/xudanu/", get(ws_handler))
         .route("/blobs/{hash}", get(blob_get_handler))
         .route("/blobs/{hash}/preview", get(blob_preview_handler))
+        .route("/health", get(health_handler))
         .route("/", get(index_handler))
         .fallback(static_fallback_handler)
         .with_state(state)
@@ -61,6 +62,11 @@ async fn index_handler(State(state): State<SharedState>) -> impl IntoResponse {
         [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
         html,
     )
+}
+
+async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
+    let json = state.server.with_server_ref(|server| server.health_json());
+    ([(axum::http::header::CONTENT_TYPE, "application/json")], json)
 }
 
 async fn static_fallback_handler(

@@ -10,6 +10,10 @@ pub fn dispatch(
     session_id: crate::server::SessionId,
     request: WireRequest,
 ) -> Result<ResponseValue, crate::server::ServerError> {
+    let op_name = format!("{:?}", request);
+    let op_name = op_name.split_whitespace().next().unwrap_or("?");
+    let span = tracing::info_span!("dispatch", op = op_name, session = session_id.as_u64());
+    let _enter = span.enter();
     handle.with_server(|srv| {
         srv.bump_operation();
         dispatch_inner(srv, session_id, request)

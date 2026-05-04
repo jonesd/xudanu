@@ -30,6 +30,7 @@ pub struct SystemClubs {
 struct WorkState {
     work: Work,
     grabber: Option<SessionId>,
+    grabbed_at: Option<u64>,
     last_revision_author: Option<BeId>,
     status_detectors: DetectorList,
     revision_detectors: DetectorList,
@@ -72,6 +73,7 @@ pub struct Server {
     element_fingerprint_to_work: HashMap<[u8; 32], BeId>,
     reconcile_store: crate::server::federation::ReconcileStore,
     reconcile_counter: u64,
+    last_checkpoint_time: u64,
 }
 
 pub struct ServerHealth {
@@ -179,6 +181,10 @@ impl Server {
             element_fingerprint_to_work: HashMap::new(),
             reconcile_store: crate::server::federation::ReconcileStore::new(),
             reconcile_counter: 0,
+            last_checkpoint_time: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
         };
 
         let pub_club = Club::new_with_owner(
@@ -469,6 +475,7 @@ impl Server {
         let ws = WorkState {
             work,
             grabber: None,
+            grabbed_at: None,
             last_revision_author: None,
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
@@ -572,6 +579,12 @@ impl Server {
         }
 
         ws.grabber = Some(session_id);
+        ws.grabbed_at = Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        );
         ws.status_detectors.fire(&Event::WorkGrabbed {
             work_be_id,
             session_id,
@@ -594,6 +607,7 @@ impl Server {
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
 
         ws.grabber = None;
+        ws.grabbed_at = None;
         ws.status_detectors.fire(&Event::WorkReleased {
             work_be_id,
             session_id,
@@ -616,6 +630,14 @@ impl Server {
             .get(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         Ok(ws.grabber)
+    }
+
+    pub fn work_grabbed_at(&self, work_be_id: BeId) -> Result<Option<u64>, ServerError> {
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        Ok(ws.grabbed_at)
     }
 
     pub fn work_can_read(
@@ -972,6 +994,7 @@ impl Server {
         self.operation_counter += 1;
         if self.operation_counter % 10 == 0 {
             self.auto_checkpoint();
+            self.check_grab_timeouts();
         }
         self.operation_counter
     }
@@ -1092,10 +1115,68 @@ impl Server {
     fn auto_checkpoint(&mut self) {
         #[cfg(feature = "server")]
         if let Some(ref path) = self.checkpoint_path {
-            if let Err(e) = self.checkpoint_to_file(path) {
-                tracing::warn!("auto-checkpoint failed: {}", e);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let elapsed = now.saturating_sub(self.last_checkpoint_time);
+            if elapsed >= 30 {
+                if let Err(e) = self.checkpoint_to_file(path) {
+                    tracing::warn!("auto-checkpoint failed: {}", e);
+                } else {
+                    self.last_checkpoint_time = now;
+                }
             }
         }
+    }
+
+    fn check_grab_timeouts(&mut self) {
+        const GRAB_TIMEOUT_SECS: u64 = 1800;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let timed_out: Vec<(BeId, SessionId)> = self
+            .works
+            .iter()
+            .filter_map(|(id, ws)| {
+                ws.grabbed_at.and_then(|t| {
+                    if now.saturating_sub(t) > GRAB_TIMEOUT_SECS {
+                        ws.grabber.map(|sid| (*id, sid))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect();
+        for (work_be_id, session_id) in timed_out {
+            tracing::warn!(
+                "Releasing expired grab on work {:?} by session {:?} ({}s timeout)",
+                work_be_id, session_id, GRAB_TIMEOUT_SECS
+            );
+            if let Some(ws) = self.works.get_mut(&work_be_id) {
+                ws.grabber = None;
+                ws.grabbed_at = None;
+                ws.status_detectors.fire(&Event::WorkReleased {
+                    work_be_id,
+                    session_id,
+                });
+            }
+        }
+    }
+
+    pub fn recovery_stats(&self) -> String {
+        let grabbed = self.works.values().filter(|ws| ws.grabber.is_some()).count();
+        format!(
+            "works={} clubs={} links={} editions={} sessions={} blobs={} grabbed={}",
+            self.works.len(),
+            self.clubs.len(),
+            self.link_count(),
+            self.standalone_editions.len(),
+            self.sessions.len(),
+            self.blob_count(),
+            grabbed,
+        )
     }
 
     pub fn operation_count(&self) -> u64 {
@@ -1194,6 +1275,28 @@ impl Server {
 
     pub fn blob_count(&self) -> usize {
         self.blob_store.stats().total_blobs as usize
+    }
+
+    pub fn health_json(&self) -> String {
+        let grabbed = self.works.values().filter(|ws| ws.grabber.is_some()).count();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let since_checkpoint = now.saturating_sub(self.last_checkpoint_time);
+        serde_json::json!({
+            "status": "ok",
+            "works": self.works.len(),
+            "clubs": self.clubs.len(),
+            "links": self.link_count(),
+            "editions": self.standalone_editions.len(),
+            "sessions": self.sessions.len(),
+            "blobs": self.blob_count(),
+            "grabbed_works": grabbed,
+            "operations": self.operation_counter,
+            "last_checkpoint_ago_secs": since_checkpoint,
+            "server_id": self.server_keypair.identity_id().to_string(),
+        }).to_string()
     }
 
     // === Transclusion queries ===
@@ -2130,6 +2233,7 @@ impl Server {
                 let ws = WorkState {
                     work,
                     grabber: None,
+                    grabbed_at: None,
                     last_revision_author: None,
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
@@ -3078,8 +3182,11 @@ pub(crate) mod persist_snapshot {
                 element_fingerprint_to_work: HashMap::new(),
                 reconcile_store: snapshot.reconcile_store.clone(),
                 reconcile_counter: snapshot.reconcile_counter,
-            };
-
+                last_checkpoint_time: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap.work.to_work(
                     crate::persist::FlockId::new(club_snap.be_id, 0),
@@ -3106,6 +3213,7 @@ pub(crate) mod persist_snapshot {
                 let ws = WorkState {
                     work: work.clone(),
                     grabber: None,
+                    grabbed_at: None,
                     last_revision_author: ws_snap.last_revision_author,
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
@@ -3161,6 +3269,7 @@ pub(crate) mod persist_snapshot {
         }
 
         pub fn checkpoint_to_file(&self, path: &std::path::Path) -> std::io::Result<()> {
+            let start = std::time::Instant::now();
             let snapshot = self.to_snapshot();
             let json = serde_json::to_string_pretty(&snapshot)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -3168,6 +3277,11 @@ pub(crate) mod persist_snapshot {
             std::fs::write(&tmp_path, json.as_bytes())?;
             std::fs::rename(&tmp_path, path)?;
             self.save_key_history();
+            tracing::info!(
+                "Checkpoint saved in {:.2}ms ({} bytes)",
+                start.elapsed().as_secs_f64() * 1000.0,
+                json.len()
+            );
             Ok(())
         }
 
