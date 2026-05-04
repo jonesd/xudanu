@@ -156,6 +156,18 @@ fn dispatch_inner(
             let grabber = srv.work_grabber(work_id)?;
             Ok(ResponseValue::Humber(grabber.map(|s| s.as_u64()).unwrap_or(0)))
         }
+        WireRequest::WorkRequestGrab { work_id } => {
+            let granted = srv.work_request_grab(session_id, work_id)?;
+            Ok(ResponseValue::Boolean(granted))
+        }
+        WireRequest::WorkCancelGrabRequest { work_id } => {
+            srv.work_cancel_grab_request(session_id, work_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkGrabWaiters { work_id } => {
+            let waiters = srv.work_grab_waiters(work_id)?;
+            Ok(ResponseValue::Humber(waiters.len() as u64))
+        }
         WireRequest::WorkCanRead { work_id } => {
             let can = srv.work_can_read(session_id, work_id)?;
             Ok(ResponseValue::Boolean(can))

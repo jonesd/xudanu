@@ -3905,10 +3905,24 @@ fn admin_session(srv: &mut xudanu::server::Server) -> (xudanu::server::SessionId
         .map(|(_, id)| *id)
         .unwrap();
     let session = srv.connect();
-    srv.login(session, club_id).unwrap();
     let lock = xudanu::server::lock::BooLock::new(club_id);
     srv.authenticate(session, &lock, &xudanu::server::lock::LockCredential::Boo).unwrap();
     (session, club_id)
+}
+
+fn admin_session_id(srv: &mut xudanu::server::Server) -> xudanu::server::SessionId {
+    admin_session(srv).0
+}
+
+fn make_admin_session(srv: &mut xudanu::server::Server) -> xudanu::server::SessionId {
+    let club_id = srv.club_names_list().iter()
+        .find(|(n, _)| *n == "admin")
+        .map(|(_, id)| *id)
+        .unwrap();
+    let session = srv.connect();
+    let lock = xudanu::server::lock::BooLock::new(club_id);
+    srv.authenticate(session, &lock, &xudanu::server::lock::LockCredential::Boo).unwrap();
+    session
 }
 
 #[tokio::test]
@@ -4213,4 +4227,158 @@ fn grabbed_works_released_after_restart() {
     let srv2 = server_restore(&dir);
     assert!(srv2.work_grabber(wid).unwrap().is_none(), "grabbed work should be released after restart — sessions don't survive");
     assert!(srv2.work_grabbed_at(wid).unwrap().is_none(), "grabbed_at should also be cleared after restart");
+}
+
+#[test]
+fn request_grab_succeeds_immediately_when_unlocked() {
+    let dir = temp_data_dir("req_grab_unlocked");
+    let mut srv = server_init(&dir);
+    let (session, _) = admin_session(&mut srv);
+
+    let wid = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+    let granted = srv.work_request_grab(session, wid).unwrap();
+    assert!(granted, "request_grab should succeed immediately when work is unlocked");
+    assert!(srv.work_grabber(wid).unwrap().is_some(), "work should be grabbed after request_grab");
+}
+
+#[test]
+fn request_grab_queues_when_already_grabbed() {
+    let dir = temp_data_dir("req_grab_queued");
+    let mut srv = server_init(&dir);
+
+    let s1 = make_admin_session(&mut srv);
+    let s2 = make_admin_session(&mut srv);
+
+    let wid = srv.create_work(s1, xudanu::edition::Edition::from_text("test")).unwrap();
+
+    srv.work_grab(s1, wid).unwrap();
+    assert!(srv.work_grabber(wid).unwrap() == Some(s1));
+
+    let granted = srv.work_request_grab(s2, wid).unwrap();
+    assert!(!granted, "request_grab should return false when work is locked");
+
+    let waiters = srv.work_grab_waiters(wid).unwrap();
+    assert_eq!(waiters, vec![s2], "s2 should be in the wait queue");
+}
+
+#[test]
+fn request_grab_auto_grants_on_release() {
+    let dir = temp_data_dir("req_grab_auto_grant");
+    let mut srv = server_init(&dir);
+
+    let s1 = make_admin_session(&mut srv);
+    let s2 = make_admin_session(&mut srv);
+
+    let wid = srv.create_work(s1, xudanu::edition::Edition::from_text("test")).unwrap();
+
+    srv.work_grab(s1, wid).unwrap();
+    srv.work_request_grab(s2, wid).unwrap();
+
+    srv.work_release(s1, wid).unwrap();
+
+    assert_eq!(srv.work_grabber(wid).unwrap(), Some(s2), "s2 should get the grab after s1 releases");
+    let waiters = srv.work_grab_waiters(wid).unwrap();
+    assert!(waiters.is_empty(), "wait queue should be empty after grant");
+}
+
+#[test]
+fn cancel_grab_request_removes_from_queue() {
+    let dir = temp_data_dir("cancel_grab_req");
+    let mut srv = server_init(&dir);
+
+    let s1 = make_admin_session(&mut srv);
+    let s2 = make_admin_session(&mut srv);
+
+    let wid = srv.create_work(s1, xudanu::edition::Edition::from_text("test")).unwrap();
+
+    srv.work_grab(s1, wid).unwrap();
+    srv.work_request_grab(s2, wid).unwrap();
+
+    srv.work_cancel_grab_request(s2, wid).unwrap();
+    let waiters = srv.work_grab_waiters(wid).unwrap();
+    assert!(waiters.is_empty(), "wait queue should be empty after cancel");
+
+    srv.work_release(s1, wid).unwrap();
+    assert!(srv.work_grabber(wid).unwrap().is_none(), "no waiter to grant to");
+}
+
+#[test]
+fn disconnect_releases_grab_and_grants_to_waiter() {
+    let dir = temp_data_dir("disconnect_grant");
+    let mut srv = server_init(&dir);
+
+    let s1 = make_admin_session(&mut srv);
+    let s2 = make_admin_session(&mut srv);
+
+    let wid = srv.create_work(s1, xudanu::edition::Edition::from_text("test")).unwrap();
+
+    srv.work_grab(s1, wid).unwrap();
+    srv.work_request_grab(s2, wid).unwrap();
+
+    srv.disconnect(s1).unwrap();
+
+    assert_eq!(srv.work_grabber(wid).unwrap(), Some(s2), "s2 should get the grab after s1 disconnects");
+}
+
+#[test]
+fn disconnect_cancels_pending_grab_requests() {
+    let dir = temp_data_dir("disconnect_cancel_wait");
+    let mut srv = server_init(&dir);
+
+    let s1 = make_admin_session(&mut srv);
+    let s2 = make_admin_session(&mut srv);
+
+    let wid = srv.create_work(s1, xudanu::edition::Edition::from_text("test")).unwrap();
+
+    srv.work_grab(s1, wid).unwrap();
+    srv.work_request_grab(s2, wid).unwrap();
+
+    srv.disconnect(s2).unwrap();
+
+    let waiters = srv.work_grab_waiters(wid).unwrap();
+    assert!(waiters.is_empty(), "s2's grab request should be cancelled on disconnect");
+
+    srv.work_release(s1, wid).unwrap();
+    assert!(srv.work_grabber(wid).unwrap().is_none(), "no waiter to grant to");
+}
+
+#[test]
+fn request_grab_idempotent_for_holder() {
+    let dir = temp_data_dir("req_grab_idempotent");
+    let mut srv = server_init(&dir);
+    let (session, _) = admin_session(&mut srv);
+
+    let wid = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+
+    srv.work_grab(session, wid).unwrap();
+    let granted = srv.work_request_grab(session, wid).unwrap();
+    assert!(granted, "request_grab by current holder should return true");
+}
+
+#[test]
+fn grant_pending_skips_session_without_edit_perm() {
+    let dir = temp_data_dir("grant_skip_no_perm");
+    let mut srv = server_init(&dir);
+
+    let admin_club = srv.club_names_list().iter()
+        .find(|(n, _)| *n == "admin")
+        .map(|(_, id)| *id)
+        .unwrap();
+
+    let s1 = make_admin_session(&mut srv);
+    let s2 = make_admin_session(&mut srv);
+    let s3 = make_admin_session(&mut srv);
+
+    let wid = srv.create_work(s1, xudanu::edition::Edition::from_text("test")).unwrap();
+    srv.work_set_edit_club(s1, wid, Some(admin_club)).unwrap();
+
+    srv.work_grab(s1, wid).unwrap();
+    srv.work_request_grab(s3, wid).unwrap();
+    srv.work_request_grab(s2, wid).unwrap();
+
+    srv.disconnect(s3).unwrap();
+
+    srv.work_release(s1, wid).unwrap();
+
+    assert_eq!(srv.work_grabber(wid).unwrap(), Some(s2), "should grant to s2, skip disconnected s3");
 }
