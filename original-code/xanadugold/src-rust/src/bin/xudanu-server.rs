@@ -58,7 +58,10 @@ fn cmd_verify(data_dir: &str) {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_target(true)
+        .with_timer(tracing_subscriber::fmt::time::time())
+        .init();
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
@@ -104,11 +107,14 @@ async fn main() {
                 let snapshot_path = path.join("server.json");
                 if snapshot_path.exists() {
                     tracing::info!("Restoring from {}", snapshot_path.display());
+                    let start = std::time::Instant::now();
                     let mut s = Server::restore_from_file_with_persistence(&snapshot_path)
                         .expect("failed to restore snapshot");
+                    let elapsed = start.elapsed();
                     tracing::info!(
-                        "Restored: {} works, {} clubs, {} links, {} blobs",
-                        s.work_count(), s.club_count(), s.link_count(), s.blob_count()
+                        "Restored in {:.2}ms: {}",
+                        elapsed.as_secs_f64() * 1000.0,
+                        s.recovery_stats()
                     );
                     s
                 } else {
@@ -152,8 +158,13 @@ async fn main() {
                 if let Some(ref dir) = shutdown_data_dir {
                     let snapshot_path = PathBuf::from(dir).join("server.json");
                     shutdown_state.server.with_server_ref(|server| {
+                        let start = std::time::Instant::now();
                         match server.checkpoint_to_file(&snapshot_path) {
-                            Ok(()) => tracing::info!("Checkpoint saved to {}", snapshot_path.display()),
+                            Ok(()) => tracing::info!(
+                                "Checkpoint saved to {} in {:.2}ms",
+                                snapshot_path.display(),
+                                start.elapsed().as_secs_f64() * 1000.0
+                            ),
                             Err(e) => tracing::error!("Checkpoint failed: {}", e),
                         }
                     });

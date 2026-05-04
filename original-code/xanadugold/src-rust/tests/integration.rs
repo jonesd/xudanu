@@ -4040,3 +4040,177 @@ async fn persistence_key_history_file_written() {
     assert!(kh["entries"].is_array(), "key history should have entries array");
     assert_eq!(kh["entries"].as_array().unwrap().len(), 1, "should have 1 key entry");
 }
+
+#[test]
+fn grab_timeout_releases_expired_grab() {
+    let dir = temp_data_dir("grab_timeout");
+    let mut srv = server_init(&dir);
+    let (session, club_id) = admin_session(&mut srv);
+
+    let work_id = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+    srv.work_grab(session, work_id).unwrap();
+
+    let grabber = srv.work_grabber(work_id).unwrap();
+    assert!(grabber.is_some(), "work should be grabbed");
+
+    let grabbed_at = srv.work_grabbed_at(work_id).unwrap();
+    assert!(grabbed_at.is_some(), "grabbed_at should be set");
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let t = grabbed_at.unwrap();
+    assert!(now >= t, "grabbed_at should be in the past");
+    assert!(now - t < 5, "grabbed_at should be within last 5 seconds");
+}
+
+#[test]
+fn work_release_clears_grabbed_at() {
+    let dir = temp_data_dir("grab_release");
+    let mut srv = server_init(&dir);
+    let (session, club_id) = admin_session(&mut srv);
+
+    let work_id = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+    srv.work_grab(session, work_id).unwrap();
+
+    let grabbed_at = srv.work_grabbed_at(work_id).unwrap();
+    assert!(grabbed_at.is_some());
+
+    srv.work_release(session, work_id).unwrap();
+
+    let grabber = srv.work_grabber(work_id).unwrap();
+    assert!(grabber.is_none());
+
+    let grabbed_at = srv.work_grabbed_at(work_id).unwrap();
+    assert!(grabbed_at.is_none(), "grabbed_at should be cleared on release");
+}
+
+#[test]
+fn health_json_returns_valid_data() {
+    let dir = temp_data_dir("health");
+    let mut srv = server_init(&dir);
+    let (session, club_id) = admin_session(&mut srv);
+
+    let _work_id = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+
+    let json_str = srv.health_json();
+    let health: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+    assert_eq!(health["status"], "ok");
+    assert!(health["works"].as_u64().unwrap() >= 1, "should have at least 1 work");
+    assert!(health["clubs"].as_u64().unwrap() >= 4, "should have system clubs");
+    assert!(health["sessions"].as_u64().unwrap() >= 1, "should have the admin session");
+    assert!(health["operations"].is_number(), "operations should be a number");
+    assert!(health["last_checkpoint_ago_secs"].is_number());
+    assert!(health["server_id"].is_string());
+}
+
+#[tokio::test]
+async fn health_endpoint_via_http() {
+    let server = Server::new();
+    let state = AppState::new(server).shared();
+    let app = build_router(state)
+        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client.get(format!("http://{}/health", addr))
+        .send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let body_text = resp.text().await.unwrap();
+    let body: serde_json::Value = serde_json::from_str(&body_text).unwrap();
+    assert_eq!(body["status"], "ok");
+    assert!(body["works"].is_number());
+    assert!(body["server_id"].is_string());
+}
+
+#[test]
+fn recovery_stats_format() {
+    let dir = temp_data_dir("recovery_stats");
+    let mut srv = server_init(&dir);
+    let (session, _) = admin_session(&mut srv);
+
+    let _work_id = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+
+    let stats = srv.recovery_stats();
+    assert!(stats.contains("works="), "should show work count");
+    assert!(stats.contains("clubs=4"));
+    assert!(stats.contains("sessions=1"));
+    assert!(stats.contains("grabbed=0"));
+}
+
+#[test]
+fn persistence_atomic_write_no_partial_file() {
+    let dir = temp_data_dir("atomic_write");
+
+    let srv = server_init(&dir);
+    srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    drop(srv);
+
+    assert!(!dir.join("server.json.tmp").exists(), "tmp file should not linger after successful checkpoint");
+    assert!(dir.join("server.json").exists(), "final file should exist");
+
+    let json = std::fs::read_to_string(dir.join("server.json")).unwrap();
+    let _: serde_json::Value = serde_json::from_str(&json).unwrap();
+}
+
+#[test]
+fn persistence_corrupt_snapshot_graceful_error() {
+    let dir = temp_data_dir("corrupt");
+
+    std::fs::create_dir_all(dir.join("blobs")).unwrap();
+    std::fs::write(dir.join("server.json"), "{ this is not valid json !!!").unwrap();
+
+    let result = xudanu::server::Server::restore_from_file_with_persistence(&dir.join("server.json"));
+    assert!(result.is_err(), "corrupt snapshot should return an error, not panic");
+}
+
+#[test]
+fn auto_checkpoint_skips_within_30s_window() {
+    let dir = temp_data_dir("auto_checkpoint_timing");
+
+    let mut srv = server_init(&dir);
+    let (session, _) = admin_session(&mut srv);
+
+    let _w = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+    srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    let size_after_first = std::fs::metadata(dir.join("server.json")).unwrap().len();
+
+    srv.bump_operation();
+    srv.bump_operation();
+    srv.bump_operation();
+    srv.bump_operation();
+    srv.bump_operation();
+    srv.bump_operation();
+    srv.bump_operation();
+    srv.bump_operation();
+    srv.bump_operation();
+    srv.bump_operation();
+
+    let size_after_ops = std::fs::metadata(dir.join("server.json")).unwrap().len();
+    assert_eq!(size_after_first, size_after_ops, "checkpoint should not rewrite within 30s window");
+}
+
+#[test]
+fn grabbed_works_released_after_restart() {
+    let dir = temp_data_dir("grab_restart");
+
+    let mut srv = server_init(&dir);
+    let (session, _) = admin_session(&mut srv);
+
+    let wid = srv.create_work(session, xudanu::edition::Edition::from_text("grabbed doc")).unwrap();
+    srv.work_grab(session, wid).unwrap();
+    assert!(srv.work_grabber(wid).unwrap().is_some(), "work should be grabbed before restart");
+
+    srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
+    drop(srv);
+
+    let srv2 = server_restore(&dir);
+    assert!(srv2.work_grabber(wid).unwrap().is_none(), "grabbed work should be released after restart — sessions don't survive");
+    assert!(srv2.work_grabbed_at(wid).unwrap().is_none(), "grabbed_at should also be cleared after restart");
+}
