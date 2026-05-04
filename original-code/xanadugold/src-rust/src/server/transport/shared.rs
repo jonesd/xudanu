@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::server::Server;
@@ -10,6 +11,7 @@ pub struct AppState {
     pub server: ServerHandle,
     pub event_bus: tokio::sync::broadcast::Sender<EventMessage>,
     pub security: Arc<Mutex<SecurityMonitor>>,
+    pub static_dir: Option<PathBuf>,
 }
 
 impl AppState {
@@ -24,7 +26,13 @@ impl AppState {
             server: handle,
             event_bus: tx,
             security: Arc::new(Mutex::new(monitor)),
+            static_dir: None,
         }
+    }
+
+    pub fn with_static_dir(mut self, dir: PathBuf) -> Self {
+        self.static_dir = Some(dir);
+        self
     }
 
     pub fn shared(self) -> SharedState {

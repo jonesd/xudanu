@@ -37,14 +37,51 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/blobs/{hash}", get(blob_get_handler))
         .route("/blobs/{hash}/preview", get(blob_preview_handler))
         .route("/", get(index_handler))
+        .fallback(static_fallback_handler)
         .with_state(state)
 }
 
-async fn index_handler() -> impl IntoResponse {
+const EMBEDDED_INDEX_HTML: &str = include_str!("../../../static/index.html");
+
+async fn index_handler(State(state): State<SharedState>) -> impl IntoResponse {
+    let html = match &state.static_dir {
+        Some(dir) => match tokio::fs::read_to_string(dir.join("index.html")).await {
+            Ok(content) => {
+                tracing::debug!("Serving index.html from {}", dir.display());
+                content
+            }
+            Err(e) => {
+                tracing::warn!("Failed to read {}/index.html: {}, using embedded", dir.display(), e);
+                EMBEDDED_INDEX_HTML.to_owned()
+            }
+        }
+        None => EMBEDDED_INDEX_HTML.to_owned(),
+    };
     (
         [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        include_str!("../../../static/index.html"),
+        html,
     )
+}
+
+async fn static_fallback_handler(
+    axum::extract::Path(path): axum::extract::Path<String>,
+    State(state): State<SharedState>,
+) -> impl IntoResponse {
+    let dir = match &state.static_dir {
+        Some(d) => d,
+        None => return axum::http::StatusCode::NOT_FOUND.into_response(),
+    };
+    let file_path = dir.join(&path);
+    if !file_path.starts_with(dir) {
+        return axum::http::StatusCode::FORBIDDEN.into_response();
+    }
+    match tokio::fs::read(&file_path).await {
+        Ok(bytes) => {
+            let mime = mime_guess::from_path(&file_path).first_or_octet_stream();
+            ([(axum::http::header::CONTENT_TYPE, mime.to_string())], bytes).into_response()
+        }
+        Err(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn ws_handler(
@@ -55,7 +92,9 @@ async fn ws_handler(
 ) -> impl IntoResponse {
     let format = query.format.as_deref().unwrap_or("binary").to_string();
     let client_version = query.version.unwrap_or(PROTOCOL_VERSION);
-    ws.on_upgrade(move |socket| handle_socket(socket, state, format, Some(addr), client_version))
+    ws.max_frame_size(16 * 1024 * 1024)
+        .max_message_size(64 * 1024 * 1024)
+        .on_upgrade(move |socket| handle_socket(socket, state, format, Some(addr), client_version))
 }
 
 fn safe_content_type(mime: &str) -> axum::http::HeaderValue {
@@ -194,6 +233,16 @@ async fn handle_socket(
 
     let negotiated = perform_handshake(&codec, &mut ws_sender, &mut ws_receiver, client_version, is_text).await;
     if negotiated.is_none() {
+        return;
+    }
+
+    let too_many = {
+        let sec = state.security.lock().unwrap();
+        sec.active_sessions_for_ip(remote_addr) >= 50
+    };
+    if too_many {
+        tracing::warn!("Rejecting connection from {}: too many sessions", remote_addr.map(|a| a.to_string()).unwrap_or_default());
+        let _ = ws_sender.send(Message::Close(None)).await;
         return;
     }
 

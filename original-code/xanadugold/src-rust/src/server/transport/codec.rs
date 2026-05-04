@@ -208,7 +208,11 @@ impl BinaryCodec {
             return self.request_without_payload(op);
         }
         let (len, n) = varint::decode_varint(data)?;
-        let payload_data = &data[n..n + len as usize];
+        let end = n.checked_add(len as usize).ok_or_else(|| FrameParseError::PayloadDecode("payload length overflow".into()))?;
+        if end > data.len() {
+            return Err(FrameParseError::PayloadDecode("payload extends beyond frame".into()).into());
+        }
+        let payload_data = &data[n..end];
         match op {
             OperationCode::SessionConnect => Ok(WireRequest::SessionConnect),
             OperationCode::SessionDisconnect => Ok(WireRequest::SessionDisconnect),

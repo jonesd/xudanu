@@ -1773,7 +1773,7 @@ async fn make_range_identical_same_work() {
 #[tokio::test]
 async fn identity_unify_and_resolve() {
     let srv = TestServer::start().await;
-    let (mut s, mut r, _) = json_setup(&srv).await;
+    let (mut s, mut r, _) = json_admin_login(&srv).await;
     let resp = send_recv_json(&mut s, &mut r,
         json_req(10, "identity_unify", Some(serde_json::json!({
             "source_id": 100, "target_id": 200
