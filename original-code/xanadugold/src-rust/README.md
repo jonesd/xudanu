@@ -1,143 +1,128 @@
 # xudanu
 
-**xudanu** (Xudanu) is a modern Rust and WebAssembly implementation inspired by the Xanadu Project and its Udanax Gold (Xanadu 92.1) system.
+Conflict-preserving hypertext document store. A Rust implementation of the Udanax Gold model with server, web frontend, and federation support.
 
-It reinterprets and evolves foundational ideas in generalized hypertext and data structures for use in contemporary systems.
+## What It Is
 
----
+xudanu implements the Udanax Gold hypertext model, where content is identity. Documents are content-addressed O-trees stored in a GrandMap that deduplicates at the byte level. The same text appearing in multiple documents shares a single `BeId`, making transclusion automatic rather than manual.
 
-## Naming
+The core data structure is a partially ordered trace history (DagWood) that preserves all revisions and their relationships. Editions build on previous editions with structural sharing, so nothing is overwritten or lost. Bidirectional links connect documents without embedding, and every link is tracked in both directions.
 
-The canonical name of the project is **`xudanu`** (lowercase).
+## Features
 
-* Used for: code, crates, CLI tools, and repository naming
-* Example: `use xudanu::...`, `xudanu serve`
+- **Content-addressed blob storage** with BLAKE3 fingerprints and deduplication via a global GrandMap
+- **Edition-based document revision** with structural sharing across versions
+- **Transclusion tracking** — find where any content element is reused across all documents
+- **Three-plane architecture** — Content (CRDT), Reconciliation (DagWood partial ordering), Governance (PBFT)
+- **Web-of-trust membership** with Ed25519 endorsements and membership proofs
+- **PBFT consensus** for governance operations (admit/expel members, key rotation, royalty)
+- **WebSocket API** with JSON and binary (postcard) wire protocols
+- **Embedded web frontend** with document editing, revision browsing, link management, and image upload
+- **Federation** with encrypted peer channels (X25519 key exchange, ChaCha20-Poly1305)
+- **WASM support** for browser-side library use via `wasm-bindgen`
 
-The capitalized form **“Xudanu”** may be used in prose or discussion when referring to the system more generally.
-
----
-
-## Overview
-
-The original Xanadu work introduced a deeply innovative model for structured documents, versioning, and linking.
-xudanu continues that lineage by:
-
-* Translating core ideas into **Rust**
-* Supporting **WebAssembly (WASM)** execution
-* Refining and optimizing core data structures and algorithms
-* Making the system usable in modern environments (web, services, distributed systems)
-
-This is not just a port—it is an **evolution** of those ideas.
-
----
-
-## Lineage
-
-xudanu builds on a long lineage of research and engineering:
+## Quick Start
 
 ```
-Xanadu Project (1980s–1990s)
-        ↓
-Xanadu 92.1 (Udanax Gold)
-        ↓
-xudanu (Rust / WebAssembly)
+cargo build --features server
+./target/debug/xudanu-server run
 ```
 
-The original Xanadu system explored new models for hypertext, identity, and structure that remain relevant today.
+Open http://127.0.0.1:8080 in a browser.
 
-xudanu aims to make those ideas accessible and practical with modern tooling.
+## CLI Reference
 
----
+```
+xudanu-server init <data-dir>              Initialize a new data directory
+xudanu-server run [addr] [data-dir]        Run the server (default: 127.0.0.1:8080)
+xudanu-server verify <data-dir>            Verify snapshot integrity
+```
 
-## Project Background
+Run options:
 
-The Xanadu project, initiated in the 1980s, explored a radically different approach to hypertext and information systems.
-Its implementation, Xanadu 92.1 (later released as Udanax Gold), introduced novel data structures and models.
+```
+--static-dir <dir>    Serve frontend from a custom directory instead of embedded HTML
+```
 
-xudanu is a modern reimplementation and evolution of those ideas.
+Data is checkpointed to `server.json` in the data directory on graceful shutdown (Ctrl-C).
 
-This project:
+## Feature Flags
 
-* Translates and adapts concepts from Udanax Gold into Rust
-* Introduces optimizations and architectural changes
-* Targets modern execution environments including WebAssembly
+| Flag | Enables |
+|---|---|
+| `server` | Tokio async runtime, Axum HTTP/WebSocket server, federation transport, cryptography, admin CLI |
+| `wasm` | `wasm-bindgen` bindings, browser panic hook, JS interop types |
+| `serde` | Serialize/deserialize derives on core types |
+| `serde_json` | JSON serialization support |
 
-We aim to preserve the strengths of the original system while making it usable in today’s ecosystem.
+The `server` flag implies `serde` and `serde_json`. The `wasm` flag also implies `serde` and `serde_json`.
 
----
+Default features: none. The library core (edition, ent, space, persist) builds with no features enabled.
 
-## Philosophy
+## Building
 
-xudanu exists to continue and extend ideas that were ahead of their time.
+**Server binary:**
+```
+cargo build --features server
+```
 
-By combining those foundational concepts with modern tools such as Rust and WebAssembly, we aim to:
+**WASM library:**
+```
+cargo check --features wasm --target wasm32-unknown-unknown
+```
 
-* Improve safety and performance
-* Enable new applications
-* Support experimentation and real-world deployment
+**Library only** (edition, ent, space, persist modules, no server or WASM):
+```
+cargo build
+```
 
-This project is an ongoing evolution, not a static port.
+## Testing
 
----
+**Full suite (includes integration tests):**
+```
+cargo test --features server
+```
 
-## Status
+**Library only:**
+```
+cargo test --features "serde,serde_json"
+```
 
-🚧 Work in progress
+Integration tests are gated behind the `server` feature and require `tokio`, `tokio-tungstenite`, and `reqwest` (listed in `[dev-dependencies]`).
 
-The system is actively being developed and refined.
-Core data structures and behaviors are stabilizing, with a focus on correctness and test coverage.
+## Architecture
 
----
+```
+src/
+  lib.rs          Top-level module re-exports
+  edition/        Document revision model (O-tree, GrandMap, editions)
+  ent/            Entity store (DagWood, BranchStore, TracePosition)
+  space/          Assertion store and materialization
+  persist/        Snapshot serialization and checkpointing
+  crypto/         Ed25519, X25519, ChaCha20-Poly1305, BLAKE3, Argon2
+  server/         Server implementation
+    admin/        Club-based permissions
+    club/         Named permission groups
+    detector/     Event detection on document changes
+    federation/   Peer state, PBFT consensus, membership, governance
+    keymaster/    Key management
+    lock/         Document locking (shared, exclusive, challenge)
+    server/       Core server state and operations
+    session/      Client session tracking
+    transport/    HTTP/WebSocket handlers, federation wire protocol
+  wasm/           WASM bindings for browser use
+```
+
+The three-plane model separates concerns:
+
+- **Content plane** — CRDT-based assertions about document content (create node, set text, create span)
+- **Reconciliation plane** — DagWood partial ordering determines how concurrent edits relate
+- **Governance plane** — PBFT consensus for membership and policy decisions across federated peers
+
+## Custom Frontend
+
+Pass `--static-dir <path>` to serve static files from a directory. The server serves `index.html` at `/` and other files at their relative paths. Connect to the server via WebSocket at `/xudanu?format=json&version=2`. See [docs/custom-frontend.md](docs/custom-frontend.md) for a complete guide and minimal example.
 
 ## License
 
-xudanu is licensed under the **Apache License 2.0**.
-
-### Upstream License
-
-Portions of this project are derived from **Udanax Gold (Xanadu 92.1)**, which was released under the **Xanadu X11 license** (a permissive license similar to MIT).
-
-The original license is included in:
-
-```
-THIRD_PARTY_LICENSES/udanax_gold.txt
-```
-
-### Commercial Use
-
-Both licenses are permissive.
-
-This means you may:
-
-* Use this software commercially
-* Modify and distribute it
-* Integrate it into proprietary systems
-
-Requirements:
-
-* Preserve license notices
-* Include attribution to the original Xanadu/Udanax work
-
----
-
-## Attribution and Non-Endorsement
-
-This project acknowledges the pioneering work of the Xanadu project and Udanax Gold.
-
-xudanu is an independent effort and is **not affiliated with or endorsed by Autodesk or the original Xanadu contributors**.
-
----
-
-## Contributing
-
-Contributions are welcome.
-
-By contributing, you agree that your contributions will be licensed under the Apache License 2.0.
-
----
-
-## Acknowledgements
-
-We acknowledge the original Xanadu vision and the engineers who built Udanax Gold.
-Their work continues to influence how we think about information systems today.
-
+Research and educational project based on the original Udanax Gold code.
