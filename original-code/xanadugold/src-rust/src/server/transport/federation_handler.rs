@@ -328,6 +328,10 @@ async fn handle_federation_socket(
                         continue;
                     }
                     Some(Ok(Message::Binary(data))) => {
+                        if data.len() > 64 * 1024 * 1024 {
+                            tracing::warn!("Federation: oversized frame from {} ({} bytes), dropping", peer_server_id, data.len());
+                            continue;
+                        }
                         let plaintext = match decrypt_frame(&data, &mut inbound_cipher) {
                             Ok(p) => p,
                             Err(e) => {
@@ -611,23 +615,31 @@ async fn handle_federation_socket(
                                 }
                             }
                             Ok(FederationFrame::GovernancePrepareVote { vote }) => {
-                                let phase = state.server.with_server(|srv| {
-                                    srv.governance_receive_prepare(vote)
-                                });
-                                tracing::debug!("Governance: prepare vote processed, phase={:?}", phase);
+                                if vote.voter_id != peer_server_id {
+                                    tracing::warn!("Governance: rejected prepare vote from {} claiming to be {}", peer_server_id, vote.voter_id);
+                                } else {
+                                    let phase = state.server.with_server(|srv| {
+                                        srv.governance_receive_prepare(vote)
+                                    });
+                                    tracing::debug!("Governance: prepare vote processed, phase={:?}", phase);
+                                }
                             }
                             Ok(FederationFrame::GovernanceCommitVote { vote }) => {
-                                let phase = state.server.with_server(|srv| {
-                                    srv.governance_receive_commit(vote)
-                                });
-                                if phase == crate::server::federation::RoundPhase::Sealed {
-                                    if let Some(batch) = state.server.with_server(|srv| {
-                                        srv.governance_seal_round()
-                                    }) {
-                                        tracing::info!(
-                                            "Governance: sealed batch seq={} with {} txs",
-                                            batch.sequence_number, batch.transactions.len()
-                                        );
+                                if vote.voter_id != peer_server_id {
+                                    tracing::warn!("Governance: rejected commit vote from {} claiming to be {}", peer_server_id, vote.voter_id);
+                                } else {
+                                    let phase = state.server.with_server(|srv| {
+                                        srv.governance_receive_commit(vote)
+                                    });
+                                    if phase == crate::server::federation::RoundPhase::Sealed {
+                                        if let Some(batch) = state.server.with_server(|srv| {
+                                            srv.governance_seal_round()
+                                        }) {
+                                            tracing::info!(
+                                                "Governance: sealed batch seq={} with {} txs",
+                                                batch.sequence_number, batch.transactions.len()
+                                            );
+                                        }
                                     }
                                 }
                             }

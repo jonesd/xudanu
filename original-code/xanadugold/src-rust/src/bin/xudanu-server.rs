@@ -9,6 +9,9 @@ fn usage() {
     eprintln!("  init <data-dir>          Initialize a new data directory");
     eprintln!("  run [addr] [data-dir]    Run the server (default: 127.0.0.1:8080)");
     eprintln!("  verify <data-dir>        Verify data integrity");
+    eprintln!();
+    eprintln!("Run options:");
+    eprintln!("  --static-dir <dir>       Serve frontend from directory instead of embedded HTML");
 }
 
 fn cmd_init(data_dir: &str) {
@@ -67,14 +70,28 @@ async fn main() {
             cmd_verify(data_dir);
         }
         "run" => {
-            let addr = args.get(2)
-                .filter(|s| s.contains(':'))
-                .cloned()
-                .unwrap_or_else(|| "127.0.0.1:8080".to_string());
-            let data_dir = args.get(2)
-                .filter(|s| !s.contains(':'))
-                .cloned()
-                .or_else(|| args.get(3).cloned());
+            let mut addr = "127.0.0.1:8080".to_string();
+            let mut data_dir: Option<String> = None;
+            let mut static_dir: Option<PathBuf> = None;
+            let mut i = 2;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--static-dir" => {
+                        i += 1;
+                        static_dir = Some(PathBuf::from(args.get(i).map(|s| s.as_str()).unwrap_or_else(|| {
+                            eprintln!("Error: --static-dir requires a path");
+                            std::process::exit(1);
+                        })));
+                    }
+                    s if s.contains(':') => {
+                        addr = s.to_string();
+                    }
+                    s => {
+                        data_dir = Some(s.to_string());
+                    }
+                }
+                i += 1;
+            }
 
             let mut server = if let Some(ref dir) = data_dir {
                 let path = PathBuf::from(dir);
@@ -96,7 +113,17 @@ async fn main() {
                 Server::new()
             };
 
-            let state = AppState::new(server).shared();
+            let state = {
+                let app = AppState::new(server);
+                let app = match static_dir {
+                    Some(ref dir) => {
+                        tracing::info!("Serving static files from {}", dir.display());
+                        app.with_static_dir(dir.clone())
+                    }
+                    None => app,
+                };
+                app.shared()
+            };
             let client_router = build_router(state.clone());
             let federation_router = xudanu::server::transport::federation_handler::build_federation_router(state.clone());
             let app = xudanu::server::transport::federation_handler::merge_routers(client_router, federation_router);

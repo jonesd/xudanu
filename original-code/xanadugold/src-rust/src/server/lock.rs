@@ -107,7 +107,7 @@ impl Lock for ChallengeLock {
     fn try_open(&self, credential: &LockCredential) -> Result<KeyMaster, ServerError> {
         match credential {
             LockCredential::ChallengeResponse(response) => {
-                if response == &self.expected_response {
+                if crate::crypto::password::constant_time_eq(response, &self.expected_response) {
                     Ok(KeyMaster::make(self.club_id))
                 } else {
                     Err(ServerError::LockFailed("challenge response mismatch".into()))

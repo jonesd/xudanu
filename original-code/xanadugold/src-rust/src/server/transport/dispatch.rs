@@ -187,10 +187,12 @@ fn dispatch_inner(
             }
         }
         WireRequest::WorkSponsor { work_id, club_id } => {
+            srv.ensure_logged_in(session_id)?;
             srv.work_sponsor(work_id, club_id)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkUnsponsor { work_id, club_id } => {
+            srv.ensure_logged_in(session_id)?;
             srv.work_unsponsor(work_id, club_id)?;
             Ok(ResponseValue::Void)
         }
@@ -262,6 +264,7 @@ fn dispatch_inner(
             Ok(ResponseValue::Grants(payloads))
         }
         WireRequest::AdminServerInfo => {
+            srv.ensure_admin(session_id)?;
             Ok(ResponseValue::ServerInfo(super::protocol::ServerInfoPayload {
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 session_count: srv.session_count(),
@@ -273,6 +276,7 @@ fn dispatch_inner(
         }
 
         WireRequest::ServerStats => {
+            srv.ensure_logged_in(session_id)?;
             Ok(ResponseValue::ServerInfo(super::protocol::ServerInfoPayload {
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 session_count: srv.session_count(),
@@ -457,6 +461,7 @@ fn dispatch_inner(
             })
         }
         WireRequest::IdentityUnify { source_id, target_id } => {
+            srv.ensure_admin(session_id)?;
             srv.identity_unify(source_id, target_id);
             Ok(ResponseValue::IdentityResolveResult { resolved_id: target_id })
         }

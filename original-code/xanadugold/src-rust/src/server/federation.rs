@@ -224,7 +224,8 @@ impl FederationState {
             return true;
         }
         if self.known_peer_keys.is_empty() {
-            return true;
+            tracing::warn!("Federation enabled but no peer keys registered — rejecting all connections");
+            return false;
         }
         self.known_peer_keys.contains(verifying_key_hex)
     }
@@ -719,23 +720,31 @@ impl<T: Clone + PartialEq> LwwRegister<T> {
 
     /// Set a new value if (timestamp, server_id) is strictly greater than
     /// the current one. Returns true if the value was updated.
+    fn clamp_timestamp(ts: u64) -> u64 {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if ts > now.saturating_add(3600) { now } else { ts }
+    }
+
     pub fn set(&mut self, value: T, timestamp: u64, server_id: impl Into<String>) -> bool {
         let server_id = server_id.into();
-        if (timestamp, &server_id) > (self.timestamp, &self.server_id) {
+        let ts = Self::clamp_timestamp(timestamp);
+        if (ts, &server_id) > (self.timestamp, &self.server_id) {
             self.value = value;
-            self.timestamp = timestamp;
+            self.timestamp = ts;
             self.server_id = server_id;
             return true;
         }
         false
     }
 
-    /// Merge another LWW-Register into this one. Takes whichever has the
-    /// higher (timestamp, server_id). Commutative, associative, idempotent.
     pub fn merge(&mut self, other: &LwwRegister<T>) {
-        if (other.timestamp, &other.server_id) > (self.timestamp, &self.server_id) {
+        let ts = Self::clamp_timestamp(other.timestamp);
+        if (ts, &other.server_id) > (self.timestamp, &self.server_id) {
             self.value = other.value.clone();
-            self.timestamp = other.timestamp;
+            self.timestamp = ts;
             self.server_id = other.server_id.clone();
         }
     }

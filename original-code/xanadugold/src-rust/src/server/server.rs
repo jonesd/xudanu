@@ -248,8 +248,16 @@ impl Server {
     // === Session management ===
 
     pub fn connect(&mut self) -> SessionId {
+        static SESSION_SECRET: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+        let secret = *SESSION_SECRET.get_or_init(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u64
+        });
         self.session_counter += 1;
-        let id = SessionId::new(self.session_counter);
+        let id_val = self.session_counter ^ secret.wrapping_mul(0x5851F42D4C957F2D);
+        let id = SessionId::new(id_val);
         let session = Session::new(id);
         self.sessions.insert(id, session);
         id
@@ -433,6 +441,12 @@ impl Server {
         edition: Edition,
     ) -> Result<BeId, ServerError> {
         self.ensure_logged_in(session_id)?;
+        const MAX_WORK_COUNT: usize = 100_000;
+        if self.work_count() >= MAX_WORK_COUNT {
+            return Err(ServerError::InvalidArgument(
+                format!("work limit reached (max {})", MAX_WORK_COUNT)
+            ));
+        }
 
         let (be_id, elem) = self.grand_map.new_work_element(None);
         self.grand_map.assign_new_id(elem);
@@ -1168,9 +1182,15 @@ impl Server {
     ) -> Result<BlobMeta, ServerError> {
         self.ensure_logged_in(session_id)?;
         const MAX_BLOB_SIZE: usize = 64 * 1024 * 1024;
+        const MAX_BLOB_COUNT: usize = 10_000;
         if data.len() > MAX_BLOB_SIZE {
             return Err(ServerError::InvalidArgument(
                 format!("blob too large: {} bytes (max {})", data.len(), MAX_BLOB_SIZE)
+            ));
+        }
+        if self.blob_store.stats().total_blobs >= MAX_BLOB_COUNT as u64 {
+            return Err(ServerError::InvalidArgument(
+                format!("blob limit reached (max {})", MAX_BLOB_COUNT)
             ));
         }
         self.blob_store.store(&data, mime_type)
