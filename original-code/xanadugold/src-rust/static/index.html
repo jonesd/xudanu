@@ -205,9 +205,11 @@ function highlightRegions(text, regions, cls) {
   var html = '', pos = 0;
   for (var i = 0; i < sorted.length; i++) {
     var r = sorted[i];
-    if (r.start > pos) html += escapeHtml(text.slice(pos, r.start));
+    if (r.end <= pos) continue;
+    var start = Math.max(r.start, pos);
+    if (start > pos) html += escapeHtml(text.slice(pos, start));
     html += '<span class="' + cls + '" data-idx="' + i + '">';
-    html += escapeHtml(text.slice(r.start, r.end));
+    html += escapeHtml(text.slice(start, r.end));
     html += '</span>';
     pos = r.end;
   }
@@ -378,7 +380,6 @@ function App() {
   var _st = useState(''), splitText = _st[0], setSplitText = _st[1];
   var _sr = useState([]), sharedRegions = _sr[0], setSharedRegions = _sr[1];
   var _toasts = useState([]), toasts = _toasts[0], setToasts = _toasts[1];
-  var _bp = useState([]), bridgePaths = _bp[0], setBridgePaths = _bp[1];
   var _cmd = useState(''), cmdText = _cmd[0], setCmdText = _cmd[1];
   var _sf = useState(false), showFooter = _sf[0], setShowFooter = _sf[1];
   var _drag = useState(false), dragOver = _drag[0], setDragOver = _drag[1];
@@ -418,6 +419,7 @@ function App() {
   var sessionIdRef = useRef(null);
   var revSliderTimer = useRef(null);
   var subsRef = useRef({});
+  var bridgeContainerRef = useRef(null);
   var toastTimers = useRef({});
 
   function toast(msg) {
@@ -496,7 +498,6 @@ function App() {
     setSplitWorkId(null);
     setSplitText('');
     setSharedRegions([]);
-    setBridgePaths([]);
   }
 
   function showWork(id) {
@@ -607,8 +608,11 @@ function App() {
       setShowFindRefs(false);
       return;
     }
-    if (!editorRef.current || !editorAreaRef.current) { console.log('MOUSEUP: missing refs editorRef=', !!editorRef.current, 'areaRef=', !!editorAreaRef.current); return; }
+    if (!editorAreaRef.current) return;
     var text = sel.toString().trim();
+    setSelectedText(text);
+    setTransclusionResults([]);
+    setShowFindRefs(true);
     try {
       var range = sel.getRangeAt(0);
       var rect = range.getBoundingClientRect();
@@ -619,9 +623,6 @@ function App() {
     } catch(e) {
       setFindRefsPos({x:200, y:50});
     }
-    setSelectedText(text);
-    setTransclusionResults([]);
-    setShowFindRefs(true);
   }
 
   function findReferences() {
@@ -632,13 +633,14 @@ function App() {
 
   function openSplitView(wid) {
     setShowFindRefs(false);
-    setSplitMode(true);
-    setSplitWorkId(wid);
-    setSplitText('');
-    setSharedRegions([]);
-    setBridgePaths([]);
-    req('work_get_edition', {work_id:wid});
-    req('find_shared_regions', {work_a:currentWorkId, work_b:wid, filter_text: selectedText || undefined});
+    if (!splitMode) {
+      setSplitMode(true);
+      setSplitWorkId(wid);
+      setSplitText('');
+      setSharedRegions([]);
+      req('work_get_edition', {work_id:wid});
+    }
+    req('find_shared_regions', {work_a:currentWorkId, work_b: splitMode ? splitWorkId : wid, filter_text: selectedText || undefined});
   }
 
   function sendCmd() {
@@ -1004,21 +1006,53 @@ function App() {
       for (var i = 0; i < n; i++) {
         var lr = lhl[i].getBoundingClientRect();
         var rr = rhl[i].getBoundingClientRect();
-        var ly = (lr.top + lr.bottom) / 2 - lwRect.top;
-        var ry = (rr.top + rr.bottom) / 2 - rwRect.top;
-        if (lr.top < lwRect.top - 20 || lr.top > lwRect.bottom + 20) continue;
-        if (rr.top < rwRect.top - 20 || rr.top > rwRect.bottom + 20) continue;
-        var lx = lr.right - lwRect.left;
-        var rx = rr.left - rwRect.left;
+        if (lr.bottom < lwRect.top || lr.top > lwRect.bottom) continue;
+        if (rr.bottom < rwRect.top || rr.top > rwRect.bottom) continue;
+        var ly = lr.bottom - areaRect.top;
+        var ry = rr.bottom - areaRect.top;
+        var lx = lr.right - areaRect.left;
+        var lEdge = lwRect.right - areaRect.left;
+        var rx = rr.left - areaRect.left;
+        var rEdge = rwRect.left - areaRect.left;
         var offset = (i - (n - 1) / 2) * 5;
         var midLY = ly + offset;
         var midRY = ry + offset;
-        var lOffY = ly + offset;
-        var rOffY = ry + offset;
-        paths.push({lx:lx, ly:lOffY, lEdge:lwRect.width, rx:rx, ry:rOffY, rEdge:0,
-          d: 'M0,' + midLY + ' C15,' + midLY + ' 25,' + midRY + ' 40,' + midRY});
+        paths.push({lx:lx, ly:ly + offset, lEdge:lEdge, rx:rx, ry:ry + offset, rEdge:rEdge,
+          d: 'M' + lEdge + ',' + midLY + ' C' + (lEdge+15) + ',' + midLY + ' ' + (rEdge-15) + ',' + midRY + ' ' + rEdge + ',' + midRY});
       }
-      setBridgePaths(paths);
+      var canvas = area.querySelector('canvas._bridge');
+      if (canvas) {
+        var dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.round(areaRect.width) * dpr;
+        canvas.height = Math.round(areaRect.height) * dpr;
+        canvas.style.width = Math.round(areaRect.width) + 'px';
+        canvas.style.height = Math.round(areaRect.height) + 'px';
+        var ctx = canvas.getContext('2d');
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, areaRect.width, areaRect.height);
+        ctx.strokeStyle = '#d29922';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.globalAlpha = 0.7;
+        for (var j = 0; j < paths.length; j++) {
+          var p = paths[j];
+          ctx.beginPath();
+          ctx.moveTo(p.lx, p.ly);
+          ctx.lineTo(p.lEdge, p.ly);
+          ctx.stroke();
+          ctx.beginPath();
+          var parts = p.d.match(/M([\d.]+),([\d.]+)\s+C([\d.]+),([\d.]+)\s+([\d.]+),([\d.]+)\s+([\d.]+),([\d.]+)/);
+          if (parts) {
+            ctx.moveTo(parseFloat(parts[1]), parseFloat(parts[2]));
+            ctx.bezierCurveTo(parseFloat(parts[3]), parseFloat(parts[4]), parseFloat(parts[5]), parseFloat(parts[6]), parseFloat(parts[7]), parseFloat(parts[8]));
+            ctx.stroke();
+          }
+          ctx.beginPath();
+          ctx.moveTo(p.rEdge, p.ry);
+          ctx.lineTo(p.rx, p.ry);
+          ctx.stroke();
+        }
+    }
     }
     var timer = setTimeout(computeBridges, 50);
     var lw = leftWrapRef.current;
@@ -1308,78 +1342,27 @@ function App() {
             )
           ) : null,
           splitMode ? h(Fragment, null,
-            h('div', {className:'editor-pane-wrap', ref: leftWrapRef, style:{position:'relative'}},
+            h('div', {className:'editor-pane-wrap', ref: leftWrapRef},
               h('div', {className:'split-label'}, 'Current'),
               h('div', {
                 ref: leftPaneRef,
                 className:'editor-content',
-                dangerouslySetInnerHTML: {__html: leftHtml || '<span style="color:var(--fg3)">Loading...</span>'}
-              }),
-              h('svg', {className:'svg-overlay', width:'100%', height:'100%', style:{zIndex:20, pointerEvents:'none'}},
-                bridgePaths.map(function(d, i){
-                  return h('line', {
-                    key: i,
-                    x1: d.lx, y1: d.ly,
-                    x2: d.lEdge, y2: d.ly,
-                    stroke: '#d29922',
-                    'stroke-width': 1.5,
-                    'stroke-dasharray': '4,3',
-                    opacity: 0.7
-                  });
-                })
-              )
+                dangerouslySetInnerHTML: {__html: leftHtml || '<span style="color:var(--fg3)">Loading...</span>'},
+                onMouseUp: handleSelectionCheck
+              })
             ),
-            h('div', {className:'editor-divider'},
-              h('svg', {width:'40', height:'100%', style:{position:'absolute',top:0,left:0,overflow:'visible',pointerEvents:'none'}},
-                bridgePaths.map(function(d, i){
-                  return h(Fragment, {key: i},
-                    h('path', {
-                      d: d.d,
-                      fill: 'none',
-                      stroke: '#d29922',
-                      'stroke-width': 1.5,
-                      'stroke-dasharray': '4,3',
-                      opacity: 0.7
-                    }),
-                    h('path', {
-                      d: d.d,
-                      fill: 'none',
-                      stroke: 'transparent',
-                      'stroke-width': 12,
-                      style: {cursor:'pointer', pointerEvents:'stroke'},
-                      onClick: function(){
-                        var lhl = leftPaneRef.current ? leftPaneRef.current.querySelectorAll('.transclusion-hl') : [];
-                        var rhl = rightPaneRef.current ? rightPaneRef.current.querySelectorAll('.transclusion-hl') : [];
-                        if (lhl[i]) lhl[i].scrollIntoView({behavior:'smooth', block:'center'});
-                        if (rhl[i]) rhl[i].scrollIntoView({behavior:'smooth', block:'center'});
-                      }
-                    })
-                  );
-                })
-              )
-            ),
-            h('div', {className:'editor-pane-wrap', ref: rightWrapRef, style:{position:'relative'}},
+            h('div', {className:'editor-divider'}),
+            h('div', {className:'editor-pane-wrap', ref: rightWrapRef},
               h('div', {className:'split-label'}, 'Reference'),
               h('button', {className:'split-close', onClick:closeSplitView}, 'Close'),
               h('div', {
                 ref: rightPaneRef,
                 className:'editor-content',
-                dangerouslySetInnerHTML: {__html: rightHtml || '<span style="color:var(--fg3)">Loading...</span>'}
-              }),
-              h('svg', {className:'svg-overlay', width:'100%', height:'100%', style:{zIndex:20, pointerEvents:'none'}},
-                bridgePaths.map(function(d, i){
-                  return h('line', {
-                    key: i,
-                    x1: d.rEdge, y1: d.ry,
-                    x2: d.rx, y2: d.ry,
-                    stroke: '#d29922',
-                    'stroke-width': 1.5,
-                    'stroke-dasharray': '4,3',
-                    opacity: 0.7
-                  });
-                })
-              )
-            )
+                dangerouslySetInnerHTML: {__html: rightHtml || '<span style="color:var(--fg3)">Loading...</span>'},
+                onMouseUp: handleSelectionCheck
+              })
+            ),
+            h('canvas', {className:'_bridge', style:{position:'absolute',top:0,left:0,zIndex:20,pointerEvents:'none'}})
           ) : h(Fragment, null,
             showHistory && historyViewText !== null
               ? h('div', {
@@ -1393,43 +1376,44 @@ function App() {
                     ref: editorRef,
                     className: 'editor-content',
                     defaultValue: currentText,
-                    onInput: handleEditorInput
+                    onInput: handleEditorInput,
+                    spellcheck: false
                   })
                 : h('div', {
                     ref: editorRef,
                     className: 'editor-content',
                     onMouseUp: handleSelectionCheck,
                     dangerouslySetInnerHTML: {__html: renderContent(currentText, selectedImg, links)}
-                  }),
-            showFindRefs && currentWorkId ? h('div', {
-              className: 'find-refs-popup',
-              style: {left: findRefsPos.x + 'px', top: findRefsPos.y + 'px'}
-            },
-              h('button', {
-                className: 'fr-btn',
-                onClick: findReferences,
-                disabled: findRefsLoading
-              }, findRefsLoading ? 'Searching...' : 'Find references'),
-              transclusionResults.length > 0 ? h('div', {className:'find-refs-results'},
-                transclusionResults.map(function(r, i){
-                  return h('div', {
-                    key: i,
-                    className: 'find-refs-result',
-                    onClick: function(){ openSplitView(r.work_id); }
-                  },
-                    h('span', {className:'fr-id'}, r.work_id),
-                    h('span', {className:'fr-owner'}, r.owner || 'unknown'),
-                    h('span', {
-                      className:'fr-count',
-                      title: (r.matches || []).map(function(m,i){
-                        return '"' + selectedText + '" at ' + m.start + '-' + m.end;
-                      }).join('\n')
-                    }, r.matches ? r.matches.length : 0)
-                  );
-                })
-              ) : null
+                  })
+          ),
+          showFindRefs && currentWorkId ? h('div', {
+            className: 'find-refs-popup',
+            style: {left: findRefsPos.x + 'px', top: findRefsPos.y + 'px'}
+          },
+            h('button', {
+              className: 'fr-btn',
+              onClick: findReferences,
+              disabled: findRefsLoading
+            }, findRefsLoading ? 'Searching...' : 'Find references'),
+            transclusionResults.length > 0 ? h('div', {className:'find-refs-results'},
+              transclusionResults.map(function(r, i){
+                return h('div', {
+                  key: i,
+                  className: 'find-refs-result',
+                  onClick: function(){ openSplitView(r.work_id); }
+                },
+                  h('span', {className:'fr-id'}, r.work_id),
+                  h('span', {className:'fr-owner'}, r.owner || 'unknown'),
+                  h('span', {
+                    className:'fr-count',
+                    title: (r.matches || []).map(function(m,i){
+                      return '"' + selectedText + '" at ' + m.start + '-' + m.end;
+                    }).join('\n')
+                  }, r.matches ? r.matches.length : 0)
+                );
+              })
             ) : null
-          )
+          ) : null
         )
       )
     ),
