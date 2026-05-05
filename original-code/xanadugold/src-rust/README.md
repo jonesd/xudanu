@@ -23,9 +23,20 @@ The core data structure is a partially ordered trace history (DagWood) that pres
 
 ## Quick Start
 
+**From the crate directory:**
 ```
 cargo build --features server
 ./target/debug/xudanu-server run
+```
+
+**From the workspace root:**
+```
+cargo run --features server --bin xudanu-server --manifest-path original-code/xanadugold/src-rust/Cargo.toml -- run
+```
+
+**With live HTML editing** (no rebuild needed for HTML changes):
+```
+cargo run --features server --bin xudanu-server --manifest-path original-code/xanadugold/src-rust/Cargo.toml -- run --static-dir original-code/xanadugold/src-rust/static
 ```
 
 Open http://127.0.0.1:8080 in a browser.
