@@ -384,12 +384,47 @@ fn dispatch_inner(
             Ok(ResponseValue::TextTransclusionResults(payloads))
         }
         WireRequest::FindSharedRegions { work_a, work_b, filter_text } => {
-            let results = srv.find_shared_regions(work_a, work_b);
-            let filtered: Vec<_> = match &filter_text {
-                Some(ft) => results.into_iter().filter(|(_, _, _, _, text)| text.contains(ft.as_str())).collect(),
-                None => results,
+            let results = match &filter_text {
+                Some(ft) if !ft.is_empty() => {
+                    let ed_a = match srv.work_edition(work_a) {
+                        Ok(ed) => ed,
+                        Err(_) => return Ok(ResponseValue::SharedRegions(vec![])),
+                    };
+                    let ed_b = match srv.work_edition(work_b) {
+                        Ok(ed) => ed,
+                        Err(_) => return Ok(ResponseValue::SharedRegions(vec![])),
+                    };
+                    let text_a = ed_a.to_text();
+                    let text_b = ed_b.to_text();
+                    let mut regions = Vec::new();
+                    let mut pos_a = 0;
+                    while let Some(idx) = text_a[pos_a..].find(ft.as_str()) {
+                        let byte_abs = pos_a + idx;
+                        let char_start = text_a[..byte_abs].chars().count();
+                        let char_end = char_start + ft.chars().count();
+                        regions.push((char_start as i64, char_end as i64, 0i64, 0i64, ft.clone()));
+                        pos_a = byte_abs + ft.len();
+                    }
+                    let mut b_regions = Vec::new();
+                    let mut pos_b = 0;
+                    while let Some(idx) = text_b[pos_b..].find(ft.as_str()) {
+                        let byte_abs = pos_b + idx;
+                        let char_start = text_b[..byte_abs].chars().count();
+                        let char_end = char_start + ft.chars().count();
+                        b_regions.push((char_start as i64, char_end as i64));
+                        pos_b = byte_abs + ft.len();
+                    }
+                    let n = regions.len().min(b_regions.len());
+                    regions.truncate(n);
+                    for (i, (_, _, ref mut sb, ref mut eb, _)) in regions.iter_mut().enumerate() {
+                        *sb = b_regions[i].0;
+                        *eb = b_regions[i].1;
+                    }
+                    regions
+                }
+                _ => srv.find_shared_regions(work_a, work_b),
             };
-            let payloads = filtered.into_iter().map(|(start_a, end_a, start_b, end_b, text)| {
+            let payloads = results.into_iter().map(|(start_a, end_a, start_b, end_b, text)| {
                 super::protocol::SharedRegionPayload { work_id: work_b, start_a, end_a, start_b, end_b, text }
             }).collect();
             Ok(ResponseValue::SharedRegions(payloads))
