@@ -119,6 +119,7 @@ fn dispatch_inner(
             Ok(ResponseValue::Id(id))
         }
         WireRequest::WorkGetEdition { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
             let ed = srv.work_edition(work_id)?;
             Ok(ResponseValue::Edition(EditionPayload::from_edition(&ed)))
         }
@@ -221,6 +222,32 @@ fn dispatch_inner(
             Ok(ResponseValue::Humber(owner.unwrap_or(0)))
         }
 
+        WireRequest::WorkPublish { work_id } => {
+            srv.work_publish(session_id, work_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkUnpublish { work_id } => {
+            srv.work_unpublish(session_id, work_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkIrrevocablyUnpublish { work_id } => {
+            srv.work_irrevocably_unpublish(session_id, work_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkIsPublished { work_id } => {
+            let published = srv.work_is_published(session_id, work_id)?;
+            Ok(ResponseValue::Boolean(published))
+        }
+
+        WireRequest::ClubSetDefaultReadClub { club_id, default_read_club } => {
+            srv.club_set_default_read_club(session_id, club_id, default_read_club)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::ClubSetDefaultEditClub { club_id, default_edit_club } => {
+            srv.club_set_default_edit_club(session_id, club_id, default_edit_club)?;
+            Ok(ResponseValue::Void)
+        }
+
         WireRequest::EditionStore { edition } => {
             let ed = edition.to_edition();
             let id = srv.store_edition(session_id, ed)?;
@@ -304,19 +331,21 @@ fn dispatch_inner(
         }
 
         WireRequest::WorkList => {
-            let entries = srv.list_works_with_titles().into_iter().map(|(work_id, owner, revision_count, is_grabbed, title)| {
-                super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed, title }
+            let entries = srv.list_works_with_titles().into_iter().map(|(work_id, owner, revision_count, is_grabbed, title, read_club)| {
+                super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed, title, read_club }
             }).collect();
             Ok(ResponseValue::WorkList(entries))
         }
         WireRequest::WorkListByOwner { owner } => {
-            let entries = srv.list_works_by_owner(owner).into_iter().map(|(work_id, owner, revision_count, is_grabbed)| {
-                super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed, title: String::new() }
+            let entries = srv.list_works_by_owner(owner).into_iter().map(|(work_id, owner, revision_count, is_grabbed, read_club)| {
+                super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed, title: String::new(), read_club }
             }).collect();
             Ok(ResponseValue::WorkList(entries))
         }
 
         WireRequest::LinkCreate { origin, destination, origin_ref, destination_ref } => {
+            srv.ensure_can_read(session_id, origin)?;
+            srv.ensure_can_read(session_id, destination)?;
             let o_ref = origin_ref.map(|hr| {
                 crate::edition::links::HyperRef::single(None, hr.work_context, hr.original_context, None)
             });
@@ -328,6 +357,8 @@ fn dispatch_inner(
         }
         WireRequest::LinkGet { link_id } => {
             let (origin, destination, link) = srv.get_link(link_id)?;
+            srv.ensure_can_read(session_id, origin)?;
+            srv.ensure_can_read(session_id, destination)?;
             let o_ref = link.end_at("LeftEnd").map(super::protocol::HyperRefPayload::from_hyper_ref);
             let d_ref = link.end_at("RightEnd").map(super::protocol::HyperRefPayload::from_hyper_ref);
             Ok(ResponseValue::LinkInfo(super::protocol::LinkPayload {
@@ -349,6 +380,7 @@ fn dispatch_inner(
             Ok(ResponseValue::Void)
         }
         WireRequest::LinkListForWork { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
             let links = srv.list_links_for_work(work_id).into_iter().map(|(link_id, origin, destination)| {
                 super::protocol::LinkPayload {
                     link_id, origin, destination,
@@ -371,7 +403,9 @@ fn dispatch_inner(
         }
         WireRequest::FindTextTranscluders { text } => {
             let results = srv.find_text_transcluders(&text);
-            let payloads = results.into_iter().map(|(work_id, owner, revision_count, matches)| {
+            let payloads = results.into_iter().filter(|(work_id, _, _, _)| {
+                srv.work(*work_id).map(|w| srv.work_is_readable(session_id, w)).unwrap_or(false)
+            }).map(|(work_id, owner, revision_count, matches)| {
                 super::protocol::TextTransclusionResultPayload {
                     work_id,
                     owner,
@@ -384,6 +418,8 @@ fn dispatch_inner(
             Ok(ResponseValue::TextTransclusionResults(payloads))
         }
         WireRequest::FindSharedRegions { work_a, work_b, filter_text } => {
+            srv.ensure_can_read(session_id, work_a)?;
+            srv.ensure_can_read(session_id, work_b)?;
             let results = match &filter_text {
                 Some(ft) if !ft.is_empty() => {
                     let ed_a = match srv.work_edition(work_a) {
@@ -521,6 +557,7 @@ fn dispatch_inner(
             Ok(ResponseValue::IdentityResolveResult { resolved_id: resolved })
         }
         WireRequest::EditionRetrieve { work_id, region, flags } => {
+            srv.ensure_can_read(session_id, work_id)?;
             use crate::edition::{RetrieveFlags, Bundle};
             use super::protocol::{BundlePayload, RetrieveFlagsPayload};
             let rf = match flags {
@@ -555,22 +592,30 @@ fn dispatch_inner(
             })
         }
         WireRequest::ContentSharedRegion { work_a, work_b } => {
+            srv.ensure_can_read(session_id, work_a)?;
+            srv.ensure_can_read(session_id, work_b)?;
             let region = srv.content_shared_region(work_a, work_b)?;
             Ok(ResponseValue::SharedRegionResult { region })
         }
         WireRequest::ContentMapSharedTo { work_a, work_b } => {
+            srv.ensure_can_read(session_id, work_a)?;
+            srv.ensure_can_read(session_id, work_b)?;
             let mapping = srv.content_map_shared_to(work_a, work_b)?;
             Ok(ResponseValue::SharedMappingResult { pairs: mapping.pairs().to_vec() })
         }
         WireRequest::ContentMapSharedOnto { work_a, work_b } => {
+            srv.ensure_can_read(session_id, work_a)?;
+            srv.ensure_can_read(session_id, work_b)?;
             let mapping = srv.content_map_shared_onto(work_a, work_b)?;
             Ok(ResponseValue::SharedMappingResult { pairs: mapping.pairs().to_vec() })
         }
         WireRequest::PositionsOf { work_id, element } => {
+            srv.ensure_can_read(session_id, work_id)?;
             let region = srv.positions_of(work_id, &element)?;
             Ok(ResponseValue::PositionsOfResult { region })
         }
         WireRequest::RangeTranscluders { work_id, region, direct_only } => {
+            srv.ensure_can_read(session_id, work_id)?;
             let result = srv.range_transcluders(work_id, region.as_ref(), direct_only.unwrap_or(false))?;
             Ok(ResponseValue::RangeTranscludersResult {
                 edition_ids: result.edition_ids,
@@ -579,6 +624,7 @@ fn dispatch_inner(
             })
         }
         WireRequest::RangeWorks { work_id, region } => {
+            srv.ensure_can_read(session_id, work_id)?;
             let result = srv.range_works(work_id, region.as_ref())?;
             Ok(ResponseValue::RangeWorksResult {
                 work_ids: result.work_ids,
@@ -586,6 +632,7 @@ fn dispatch_inner(
             })
         }
         WireRequest::OrderedBundles { work_id, region } => {
+            srv.ensure_can_read(session_id, work_id)?;
             let bundles = srv.ordered_bundles(work_id, region.as_ref())?;
             let payloads: Vec<BundlePayload> = bundles.iter()
                 .map(BundlePayload::from_bundle)
@@ -593,6 +640,7 @@ fn dispatch_inner(
             Ok(ResponseValue::OrderedBundlesResult { bundles: payloads })
         }
         WireRequest::TransclusionDepth { work_id, position, max_depth } => {
+            srv.ensure_can_read(session_id, work_id)?;
             let depth = srv.transclusion_depth(work_id, position, max_depth.unwrap_or(10))?;
             Ok(ResponseValue::TransclusionDepthResult { depth })
         }

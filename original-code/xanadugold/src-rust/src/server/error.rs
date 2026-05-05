@@ -21,6 +21,8 @@ pub enum ServerError {
     Unauthorized(String),
     ServerShuttingDown,
     NotAcceptingConnections,
+    ReadClubIrrevocablyRemoved(BeId),
+    NotOwner(BeId),
 }
 
 impl std::fmt::Display for ServerError {
@@ -49,6 +51,8 @@ impl std::fmt::Display for ServerError {
             ServerError::Unauthorized(s) => write!(f, "unauthorized: {}", s),
             ServerError::ServerShuttingDown => write!(f, "server is shutting down"),
             ServerError::NotAcceptingConnections => write!(f, "server is not accepting connections"),
+            ServerError::ReadClubIrrevocablyRemoved(id) => write!(f, "read club irrevocably removed for work {}", id),
+            ServerError::NotOwner(id) => write!(f, "not owner of work {}", id),
         }
     }
 }

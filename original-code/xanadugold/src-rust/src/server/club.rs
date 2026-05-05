@@ -11,6 +11,8 @@ pub struct Club {
     name: Option<String>,
     members: HashSet<BeId>,
     sponsored_works: HashSet<BeId>,
+    default_read_club: Option<BeId>,
+    default_edit_club: Option<BeId>,
 }
 
 impl Club {
@@ -22,6 +24,8 @@ impl Club {
             name: None,
             members: HashSet::new(),
             sponsored_works: HashSet::new(),
+            default_read_club: None,
+            default_edit_club: None,
         }
     }
 
@@ -33,6 +37,8 @@ impl Club {
             name: None,
             members: HashSet::new(),
             sponsored_works: HashSet::new(),
+            default_read_club: None,
+            default_edit_club: None,
         }
     }
 
@@ -110,6 +116,22 @@ impl Club {
 
     pub fn is_member(&self, member_id: BeId) -> bool {
         self.members.contains(&member_id)
+    }
+
+    pub fn default_read_club(&self) -> Option<BeId> {
+        self.default_read_club
+    }
+
+    pub fn set_default_read_club(&mut self, club_id: Option<BeId>) {
+        self.default_read_club = club_id;
+    }
+
+    pub fn default_edit_club(&self) -> Option<BeId> {
+        self.default_edit_club
+    }
+
+    pub fn set_default_edit_club(&mut self, club_id: Option<BeId>) {
+        self.default_edit_club = club_id;
     }
 
     pub fn sponsored_works(&self) -> &HashSet<BeId> {

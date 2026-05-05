@@ -113,6 +113,13 @@ pub enum OperationCode {
     WorkUnsponsor,
     WorkSponsors,
     WorkOwner,
+    WorkPublish,
+    WorkUnpublish,
+    WorkIrrevocablyUnpublish,
+    WorkIsPublished,
+
+    ClubSetDefaultReadClub,
+    ClubSetDefaultEditClub,
 
     EditionStore,
     EditionGet,
@@ -267,9 +274,16 @@ impl OperationCode {
             0x0311 => Some(OperationCode::WorkUnsponsor),
             0x0312 => Some(OperationCode::WorkSponsors),
             0x0313 => Some(OperationCode::WorkOwner),
+            0x0317 => Some(OperationCode::WorkPublish),
+            0x0318 => Some(OperationCode::WorkUnpublish),
+            0x0319 => Some(OperationCode::WorkIrrevocablyUnpublish),
+            0x031A => Some(OperationCode::WorkIsPublished),
             0x0314 => Some(OperationCode::WorkList),
             0x0315 => Some(OperationCode::WorkListByOwner),
             0x0316 => Some(OperationCode::WorkReviseDelta),
+
+            0x0208 => Some(OperationCode::ClubSetDefaultReadClub),
+            0x0209 => Some(OperationCode::ClubSetDefaultEditClub),
 
             0x0401 => Some(OperationCode::EditionStore),
             0x0402 => Some(OperationCode::EditionGet),
@@ -424,6 +438,13 @@ impl OperationCode {
             OperationCode::WorkUnsponsor     => 0x0311,
             OperationCode::WorkSponsors      => 0x0312,
             OperationCode::WorkOwner         => 0x0313,
+            OperationCode::WorkPublish       => 0x0317,
+            OperationCode::WorkUnpublish     => 0x0318,
+            OperationCode::WorkIrrevocablyUnpublish => 0x0319,
+            OperationCode::WorkIsPublished        => 0x031A,
+
+            OperationCode::ClubSetDefaultReadClub  => 0x0208,
+            OperationCode::ClubSetDefaultEditClub  => 0x0209,
 
             OperationCode::EditionStore => 0x0401,
             OperationCode::EditionGet   => 0x0402,
@@ -626,6 +647,13 @@ pub enum WireRequest {
     WorkUnsponsor { work_id: BeId, club_id: BeId },
     WorkSponsors { work_id: BeId },
     WorkOwner { work_id: BeId },
+    WorkPublish { work_id: BeId },
+    WorkUnpublish { work_id: BeId },
+    WorkIrrevocablyUnpublish { work_id: BeId },
+    WorkIsPublished { work_id: BeId },
+
+    ClubSetDefaultReadClub { club_id: BeId, default_read_club: Option<BeId> },
+    ClubSetDefaultEditClub { club_id: BeId, default_edit_club: Option<BeId> },
 
     EditionStore { edition: EditionPayload },
     EditionGet { be_id: BeId },
@@ -1027,6 +1055,8 @@ pub struct WorkListEntry {
     pub is_grabbed: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub title: String,
+    #[serde(default)]
+    pub read_club: Option<BeId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1262,6 +1292,7 @@ pub enum ErrorCode {
     Unauthorized,
     ServerShuttingDown,
     NotAcceptingConnections,
+    IrrevocablyRemoved,
 }
 
 impl ErrorCode {
@@ -1285,6 +1316,8 @@ impl ErrorCode {
             crate::server::ServerError::Unauthorized(_) => ErrorCode::Unauthorized,
             crate::server::ServerError::ServerShuttingDown => ErrorCode::ServerShuttingDown,
             crate::server::ServerError::NotAcceptingConnections => ErrorCode::NotAcceptingConnections,
+            crate::server::ServerError::ReadClubIrrevocablyRemoved(_) => ErrorCode::IrrevocablyRemoved,
+            crate::server::ServerError::NotOwner(_) => ErrorCode::NotAuthorized,
         }
     }
 }
