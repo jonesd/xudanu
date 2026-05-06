@@ -4,8 +4,8 @@ Source: [Project Xanadu - Wikipedia](https://en.wikipedia.org/wiki/Project_Xanad
 
 ## Status Summary
 
-- **6 Fully Implemented:** Rules 1, 4, 6, 7, 10, 12, 17
-- **6 Partially Implemented:** Rules 2, 3, 5, 8, 11, 16
+- **8 Fully Implemented:** Rules 1, 4, 6, 7, 8, 10, 12, 17
+- **5 Partially Implemented:** Rules 2, 3, 5, 11, 16
 - **4 Not Yet Implemented:** Rules 9, 13, 14, 15
 
 ## Rule-by-Rule Assessment
@@ -54,9 +54,9 @@ Link visualization in the web UI with navigation chips. Transclusion split view 
 
 ### Rule 8: Permission to link to a document is explicitly granted by the act of publication
 
-**Status: Partial**
+**Status: Yes**
 
-Documents are published by default when created. There is no explicit "publish" action that grants link permission separately from creation. Club-based access controls exist but are not wired through the UI.
+Publication is implemented via read-club semantics: setting `read_club = public_club` is the act of publication. Works default to private (`read_club = owner's club`). Three operations control visibility: `publish()` (sets read_club to public), `unpublish()` (revocably sets read_club to owner), and `irrevocably_unpublish()` (permanently removes read_club, matching C++ `removeReadClub`). Read permission follows C++ `canBeReadBy`: grabber reads, read_club authority reads, edit_club authority reads (editors always read). All dispatch endpoints enforce read-permission gates and filter result sets. Federation only exports published works. See `docs/rule8-publication-model.md` for full design.
 
 ### Rule 9: Every document can contain a royalty mechanism at any desired degree of granularity
 

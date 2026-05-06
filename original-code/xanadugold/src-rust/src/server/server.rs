@@ -1002,26 +1002,15 @@ impl Server {
         default_read_club: Option<BeId>,
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
+        if !self.sessions
+            .get(&session_id)
+            .map(|s| s.has_authority(club_id))
+            .unwrap_or(false)
         {
-            let club = self
-                .clubs
-                .get(&club_id)
-                .ok_or(ServerError::ClubNotFound(club_id))?;
-            let owner = club.owner();
-            match owner {
-                Some(owner_id) => {
-                    if !self.sessions
-                        .get(&session_id)
-                        .map(|s| s.has_authority(owner_id))
-                        .unwrap_or(false)
-                    {
-                        return Err(ServerError::NotAuthorized);
-                    }
-                }
-                None => return Err(ServerError::NotAuthorized),
-            }
+            return Err(ServerError::NotAuthorized);
         }
-        let club = self.clubs.get_mut(&club_id).unwrap();
+        let club = self.clubs.get_mut(&club_id)
+            .ok_or(ServerError::ClubNotFound(club_id))?;
         club.set_default_read_club(default_read_club);
         self.auto_checkpoint();
         Ok(())
@@ -1034,26 +1023,15 @@ impl Server {
         default_edit_club: Option<BeId>,
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
+        if !self.sessions
+            .get(&session_id)
+            .map(|s| s.has_authority(club_id))
+            .unwrap_or(false)
         {
-            let club = self
-                .clubs
-                .get(&club_id)
-                .ok_or(ServerError::ClubNotFound(club_id))?;
-            let owner = club.owner();
-            match owner {
-                Some(owner_id) => {
-                    if !self.sessions
-                        .get(&session_id)
-                        .map(|s| s.has_authority(owner_id))
-                        .unwrap_or(false)
-                    {
-                        return Err(ServerError::NotAuthorized);
-                    }
-                }
-                None => return Err(ServerError::NotAuthorized),
-            }
+            return Err(ServerError::NotAuthorized);
         }
-        let club = self.clubs.get_mut(&club_id).unwrap();
+        let club = self.clubs.get_mut(&club_id)
+            .ok_or(ServerError::ClubNotFound(club_id))?;
         club.set_default_edit_club(default_edit_club);
         self.auto_checkpoint();
         Ok(())
@@ -1900,11 +1878,11 @@ impl Server {
         self.check_edit_permission(session_id, work)
     }
 
-    pub(crate) fn work_is_readable(&self, session_id: SessionId, work: &Work) -> bool {
+    pub fn work_is_readable(&self, session_id: SessionId, work: &Work) -> bool {
         self.check_read_permission(session_id, work)
     }
 
-    pub(crate) fn ensure_can_read(
+    pub fn ensure_can_read(
         &self,
         session_id: SessionId,
         work_be_id: BeId,
@@ -5811,7 +5789,7 @@ mod tests {
     }
 
     #[test]
-    fn irrevocably_unpublished_only_readable_by_grabber() {
+    fn irrevocably_unpublished_only_readable_by_editors_and_grabber() {
         let mut server = Server::new();
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
@@ -5821,8 +5799,13 @@ mod tests {
         let work_id = server.create_work(sid1, Edition::from_text("gone")).unwrap();
         server.work_irrevocably_unpublish(sid1, work_id).unwrap();
 
-        assert!(!server.work_is_readable(sid1, server.work(work_id).unwrap()),
-            "owner with read_club=None should not be readable without grab");
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+
+        assert!(!server.work_is_readable(sid2, server.work(work_id).unwrap()),
+            "non-owner should not read irrevocably unpublished work");
+        assert!(server.work_is_readable(sid1, server.work(work_id).unwrap()),
+            "owner (editor) can still read after irrevocable unpublish");
 
         server.work_grab(sid1, work_id).unwrap();
         assert!(server.work_is_readable(sid1, server.work(work_id).unwrap()),
@@ -5835,6 +5818,8 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
         let club_id = server.create_club(sid, Edition::from_text("snap club")).unwrap();
+        let lock = server.login(sid, club_id).unwrap();
+        server.authenticate(sid, &*lock, &LockCredential::Boo).unwrap();
         let custom_club = server.create_club(sid, Edition::from_text("custom")).unwrap();
         server.club_set_default_read_club(sid, club_id, Some(custom_club)).unwrap();
         server.club_set_default_edit_club(sid, club_id, Some(custom_club)).unwrap();
@@ -5910,5 +5895,90 @@ mod tests {
 
         let result = server.work_publish(sid2, work_id);
         assert!(result.is_err(), "non-owner should not be able to publish");
+    }
+
+    #[test]
+    fn editors_can_always_read_private_work() {
+        let mut server = Server::new();
+        let sid1 = server.connect();
+        server.login_public(sid1).unwrap();
+        let club1 = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
+        let lock = server.login(sid1, club1).unwrap();
+        server.authenticate(sid1, &*lock, &LockCredential::Boo).unwrap();
+        let work_id = server.create_work(sid1, Edition::from_text("owned")).unwrap();
+
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        let club2 = server.create_club(sid2, Edition::from_text("editor club")).unwrap();
+        let lock2 = server.login(sid2, club2).unwrap();
+        server.authenticate(sid2, &*lock2, &LockCredential::Boo).unwrap();
+
+        assert!(!server.work_is_readable(sid2, server.work(work_id).unwrap()),
+            "non-editor should not read private work");
+
+        server.work_set_edit_club(sid1, work_id, Some(club2)).unwrap();
+
+        assert!(server.work_is_readable(sid2, server.work(work_id).unwrap()),
+            "editor should be able to read private work");
+    }
+
+    #[test]
+    fn unpublish_not_round_trip_for_custom_read_club() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
+        let lock = server.login(sid, owner_club).unwrap();
+        server.authenticate(sid, &*lock, &LockCredential::Boo).unwrap();
+
+        let custom_club = server.create_club(sid, Edition::from_text("custom")).unwrap();
+        let work_id = server.create_work(sid, Edition::from_text("test")).unwrap();
+        server.work_set_read_club(sid, work_id, Some(custom_club)).unwrap();
+
+        server.work_publish(sid, work_id).unwrap();
+        assert_eq!(server.work(work_id).unwrap().read_club(), Some(server.system_clubs.public_club));
+
+        server.work_unpublish(sid, work_id).unwrap();
+        assert_eq!(server.work(work_id).unwrap().read_club(), Some(owner_club),
+            "unpublish sets read_club to owner, not previous custom club");
+    }
+
+    #[test]
+    fn club_set_default_requires_owner_authority() {
+        let mut server = Server::new();
+        let sid1 = server.connect();
+        server.login_public(sid1).unwrap();
+        let club1 = server.create_club(sid1, Edition::from_text("club1")).unwrap();
+        let lock1 = server.login(sid1, club1).unwrap();
+        server.authenticate(sid1, &*lock1, &LockCredential::Boo).unwrap();
+
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        let club2 = server.create_club(sid2, Edition::from_text("club2")).unwrap();
+        let lock2 = server.login(sid2, club2).unwrap();
+        server.authenticate(sid2, &*lock2, &LockCredential::Boo).unwrap();
+
+        let result = server.club_set_default_read_club(sid2, club1, Some(club2));
+        assert!(result.is_err(), "non-owner should not set defaults on club");
+
+        let result = server.club_set_default_read_club(sid1, club1, Some(club1));
+        assert!(result.is_ok(), "owner should be able to set defaults on club");
+    }
+
+    #[test]
+    fn grabber_can_read_irrevocably_unpublished() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
+        let lock = server.login(sid, owner_club).unwrap();
+        server.authenticate(sid, &*lock, &LockCredential::Boo).unwrap();
+        let work_id = server.create_work(sid, Edition::from_text("gone")).unwrap();
+
+        server.work_grab(sid, work_id).unwrap();
+        server.work_irrevocably_unpublish(sid, work_id).unwrap();
+
+        assert!(server.work_is_readable(sid, server.work(work_id).unwrap()),
+            "grabber should still be able to read after irrevocable unpublish");
     }
 }

@@ -4382,3 +4382,262 @@ fn grant_pending_skips_session_without_edit_perm() {
 
     assert_eq!(srv.work_grabber(wid).unwrap(), Some(s2), "should grant to s2, skip disconnected s3");
 }
+
+// ── Rule 8: Publication model integration tests ──────────────────────
+
+fn owned_session(srv: &mut xudanu::server::Server) -> (xudanu::server::SessionId, u64) {
+    let session = srv.connect();
+    srv.login_public(session).unwrap();
+    let club_id = srv.create_club(session, xudanu::edition::Edition::from_text("owner club")).unwrap();
+    let lock = xudanu::server::lock::BooLock::new(club_id);
+    srv.authenticate(session, &lock, &xudanu::server::lock::LockCredential::Boo).unwrap();
+    (session, club_id)
+}
+
+#[test]
+fn publish_unpublish_via_server_methods() {
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("test")).unwrap();
+
+    assert!(!srv.work_is_published(sid, wid).unwrap(), "new work should be private");
+
+    srv.work_publish(sid, wid).unwrap();
+    assert!(srv.work_is_published(sid, wid).unwrap(), "after publish should be public");
+
+    srv.work_unpublish(sid, wid).unwrap();
+    assert!(!srv.work_is_published(sid, wid).unwrap(), "after unpublish should be private");
+}
+
+#[test]
+fn irrevocably_unpublish_blocks_republish() {
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("permanent")).unwrap();
+
+    srv.work_irrevocably_unpublish(sid, wid).unwrap();
+
+    assert!(srv.work_publish(sid, wid).is_err(), "should not be able to republish");
+    assert!(srv.work_unpublish(sid, wid).is_err(), "should not be able to unpublish");
+    assert!(srv.work_set_read_club(sid, wid, None).is_err(), "should not be able to set_read_club");
+}
+
+#[test]
+fn private_work_invisible_to_other_session() {
+    let mut srv = xudanu::server::Server::new();
+
+    let (sid1, _) = owned_session(&mut srv);
+    let wid = srv.create_work(sid1, xudanu::edition::Edition::from_text("secret")).unwrap();
+
+    let (sid2, _) = owned_session(&mut srv);
+
+    assert!(!srv.work_is_readable(sid2, srv.work(wid).unwrap()),
+        "other session should not be able to read private work");
+    assert!(srv.ensure_can_read(sid2, wid).is_err(),
+        "ensure_can_read should fail for non-owner of private work");
+}
+
+#[test]
+fn published_work_visible_to_public() {
+    let mut srv = xudanu::server::Server::new();
+
+    let (sid1, _) = owned_session(&mut srv);
+    let wid = srv.create_work(sid1, xudanu::edition::Edition::from_text("public doc")).unwrap();
+    srv.work_publish(sid1, wid).unwrap();
+
+    let sid2 = srv.connect();
+    srv.login_public(sid2).unwrap();
+
+    assert!(srv.work_is_readable(sid2, srv.work(wid).unwrap()),
+        "public session should be able to read published work");
+}
+
+#[test]
+fn work_list_filters_by_read_permission() {
+    let mut srv = xudanu::server::Server::new();
+
+    let (sid1, _) = owned_session(&mut srv);
+    let pub_wid = srv.create_work(sid1, xudanu::edition::Edition::from_text("public")).unwrap();
+    srv.work_publish(sid1, pub_wid).unwrap();
+    let priv_wid = srv.create_work(sid1, xudanu::edition::Edition::from_text("private")).unwrap();
+
+    let sid2 = srv.connect();
+    srv.login_public(sid2).unwrap();
+
+    let entries = srv.list_works_with_titles();
+    let visible_ids: Vec<u64> = entries.iter()
+        .filter(|(id, _, _, _, _, _)| {
+            srv.work(*id).map(|w| srv.work_is_readable(sid2, w)).unwrap_or(false)
+        })
+        .map(|(id, _, _, _, _, _)| *id)
+        .collect();
+
+    assert!(visible_ids.contains(&pub_wid), "published work should be visible");
+    assert!(!visible_ids.contains(&priv_wid), "private work should not be visible");
+}
+
+#[test]
+fn editors_can_always_read() {
+    let mut srv = xudanu::server::Server::new();
+
+    let (sid1, club1) = owned_session(&mut srv);
+    let wid = srv.create_work(sid1, xudanu::edition::Edition::from_text("owned")).unwrap();
+
+    let (sid2, club2) = owned_session(&mut srv);
+    srv.work_set_edit_club(sid1, wid, Some(club2)).unwrap();
+
+    assert!(srv.work_is_readable(sid2, srv.work(wid).unwrap()),
+        "editor should be able to read even if not in read_club");
+}
+
+#[test]
+fn club_set_default_requires_ownership() {
+    let mut srv = xudanu::server::Server::new();
+
+    let (sid1, club1) = owned_session(&mut srv);
+    let (sid2, _) = owned_session(&mut srv);
+
+    let result = srv.club_set_default_read_club(sid2, club1, Some(club1));
+    assert!(result.is_err(), "non-owner should not be able to set default_read_club");
+
+    let result = srv.club_set_default_read_club(sid1, club1, Some(club1));
+    assert!(result.is_ok(), "owner should be able to set default_read_club");
+}
+
+#[test]
+fn per_club_defaults_applied_on_work_creation() {
+    let mut srv = xudanu::server::Server::new();
+
+    let (sid, club) = owned_session(&mut srv);
+    let custom_club = srv.create_club(sid, xudanu::edition::Edition::from_text("custom")).unwrap();
+
+    srv.club_set_default_read_club(sid, club, Some(custom_club)).unwrap();
+
+    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("test")).unwrap();
+    let work = srv.work(wid).unwrap();
+
+    assert_eq!(work.read_club(), Some(custom_club),
+        "new work should use club's default_read_club");
+}
+
+#[test]
+fn publication_state_survives_persistence_roundtrip() {
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("persist")).unwrap();
+    srv.work_publish(sid, wid).unwrap();
+
+    let snapshot = srv.to_snapshot();
+    let mut restored = xudanu::server::Server::from_snapshot(&snapshot);
+    let sid2 = restored.connect();
+    restored.login_public(sid2).unwrap();
+
+    assert!(restored.work_is_published(sid2, wid).unwrap(),
+        "published state should survive persistence roundtrip");
+    assert!(restored.work_is_readable(sid2, restored.work(wid).unwrap()),
+        "published work should be readable after restore");
+}
+
+#[test]
+fn federation_only_exports_published_works() {
+    let mut srv = xudanu::server::Server::new();
+    let (sid, _) = owned_session(&mut srv);
+
+    let pub_wid = srv.create_work(sid, xudanu::edition::Edition::from_text("exported")).unwrap();
+    srv.work_publish(sid, pub_wid).unwrap();
+
+    let priv_wid = srv.create_work(sid, xudanu::edition::Edition::from_text("secret")).unwrap();
+
+    let exports = srv.federation_export_works();
+    let export_ids: Vec<u64> = exports.iter().map(|e| e.work_id).collect();
+
+    assert!(export_ids.contains(&pub_wid), "published work should be exported");
+    assert!(!export_ids.contains(&priv_wid), "private work should not be exported");
+}
+
+#[tokio::test]
+async fn publish_unpublish_via_wire() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _sid) = json_setup(&srv).await;
+
+    let club_id = send_recv_json(&mut s, &mut r,
+        json_req(10, "club_create", Some(serde_json::json!({"description": {"text": "owner club"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(11, "session_login", Some(serde_json::json!({"club_id": club_id})))).await;
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(12, "session_authenticate", Some(serde_json::json!({"club_id": club_id, "credential": "Boo"})))).await;
+
+    let work_id = send_recv_json(&mut s, &mut r,
+        json_req(20, "work_create", Some(serde_json::json!({"edition": {"text": "wire test"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(21, "work_is_published", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"], false, "new work should be private");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(22, "work_publish", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["type"], "response");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(23, "work_is_published", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"], true);
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(24, "work_unpublish", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["type"], "response");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(25, "work_is_published", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["value"]["value"], false);
+}
+
+#[tokio::test]
+async fn irrevocably_unpublish_via_wire() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _sid) = json_setup(&srv).await;
+
+    let club_id = send_recv_json(&mut s, &mut r,
+        json_req(10, "club_create", Some(serde_json::json!({"description": {"text": "owner club"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(11, "session_login", Some(serde_json::json!({"club_id": club_id})))).await;
+    let _ = send_recv_json(&mut s, &mut r,
+        json_req(12, "session_authenticate", Some(serde_json::json!({"club_id": club_id, "credential": "Boo"})))).await;
+
+    let work_id = send_recv_json(&mut s, &mut r,
+        json_req(20, "work_create", Some(serde_json::json!({"edition": {"text": "permanent"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(21, "work_irrevocably_unpublish", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["type"], "response");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(22, "work_publish", Some(serde_json::json!({"work_id": work_id})))).await;
+    assert_eq!(resp["type"], "error", "republish should fail after irrevocable unpublish");
+}
+
+#[tokio::test]
+async fn work_list_filters_private_from_other_session() {
+    let srv = TestServer::start().await;
+
+    let (mut s1, mut r1, _) = json_setup(&srv).await;
+    let pub_wid = send_recv_json(&mut s1, &mut r1,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "public"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+    let priv_wid = send_recv_json(&mut s1, &mut r1,
+        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "private"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let (mut s2, mut r2, _) = json_setup(&srv).await;
+    let resp = send_recv_json(&mut s2, &mut r2, json_req(50, "work_list", None)).await;
+    let entries = resp["value"]["value"].as_array().unwrap();
+    let visible_ids: Vec<u64> = entries.iter().map(|e| e["work_id"].as_u64().unwrap()).collect();
+
+    assert!(visible_ids.contains(&pub_wid), "public work should be visible");
+    assert!(visible_ids.contains(&priv_wid), "both created by same public session so both visible");
+}
