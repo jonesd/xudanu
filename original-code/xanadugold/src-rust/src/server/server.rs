@@ -1604,6 +1604,29 @@ impl Server {
         ed_a.find_content_shared_regions(&ed_b, 2)
     }
 
+    pub fn find_shared_regions_filtered(
+        &self,
+        work_a: BeId,
+        work_b: BeId,
+        filter_text: &str,
+    ) -> Vec<(i64, i64, i64, i64, String)> {
+        let ed_a = match self.work_edition(work_a) {
+            Ok(ed) => ed,
+            Err(_) => return Vec::new(),
+        };
+        let ed_b = match self.work_edition(work_b) {
+            Ok(ed) => ed,
+            Err(_) => return Vec::new(),
+        };
+        let shared = ed_a.find_content_shared_regions(&ed_b, 2);
+        if filter_text.is_empty() {
+            return shared;
+        }
+        shared.into_iter().filter(|(_, _, _, _, text)| {
+            text.contains(filter_text)
+        }).collect()
+    }
+
     pub fn content_address_lookup(&self, element: &RangeElement) -> Option<BeId> {
         self.content_address.lookup(element)
     }
@@ -5942,5 +5965,85 @@ mod tests {
 
         assert!(server.work_is_readable(sid, server.work(work_id).unwrap()),
             "grabber should still be able to read after irrevocable unpublish");
+    }
+
+    #[test]
+    fn find_shared_regions_works_via_element_comparison() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let ed_a = Edition::from_text_elements(&[
+            RangeElement::text("A".to_string()),
+            RangeElement::text("X".to_string()),
+            RangeElement::text("Y".to_string()),
+            RangeElement::text("B".to_string()),
+        ]);
+        let ed_b = Edition::from_text_elements(&[
+            RangeElement::text("C".to_string()),
+            RangeElement::text("X".to_string()),
+            RangeElement::text("Y".to_string()),
+            RangeElement::text("D".to_string()),
+        ]);
+
+        let id_a = server.create_work(sid, ed_a).unwrap();
+        let id_b = server.create_work(sid, ed_b).unwrap();
+
+        let regions = server.find_shared_regions(id_a, id_b);
+        assert!(!regions.is_empty(), "should find shared regions");
+        let texts: Vec<&str> = regions.iter().map(|r: &(i64, i64, i64, i64, String)| r.4.as_str()).collect();
+        assert!(texts.iter().any(|t| t.contains('X')),
+            "shared regions should contain shared content, got {:?}", texts);
+    }
+
+    #[test]
+    fn find_shared_regions_no_match() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let ed_a = Edition::from_text_elements(&[
+            RangeElement::text("A".to_string()),
+            RangeElement::text("B".to_string()),
+        ]);
+        let ed_b = Edition::from_text_elements(&[
+            RangeElement::text("C".to_string()),
+            RangeElement::text("D".to_string()),
+        ]);
+
+        let id_a = server.create_work(sid, ed_a).unwrap();
+        let id_b = server.create_work(sid, ed_b).unwrap();
+
+        let regions = server.find_shared_regions(id_a, id_b);
+        assert!(regions.is_empty(), "works with no shared content should have no regions");
+    }
+
+    #[test]
+    fn find_shared_regions_filtered_by_text() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let ed_a = Edition::from_text_elements(&[
+            RangeElement::text("A".to_string()),
+            RangeElement::text("s".to_string()),
+            RangeElement::text("h".to_string()),
+            RangeElement::text("B".to_string()),
+        ]);
+        let ed_b = Edition::from_text_elements(&[
+            RangeElement::text("C".to_string()),
+            RangeElement::text("s".to_string()),
+            RangeElement::text("h".to_string()),
+            RangeElement::text("D".to_string()),
+        ]);
+
+        let id_a = server.create_work(sid, ed_a).unwrap();
+        let id_b = server.create_work(sid, ed_b).unwrap();
+
+        let all = server.find_shared_regions(id_a, id_b);
+        assert!(!all.is_empty());
+
+        let filtered = server.find_shared_regions_filtered(id_a, id_b, "s");
+        assert!(!filtered.is_empty(), "filter should match 's'");
+
+        let no_match = server.find_shared_regions_filtered(id_a, id_b, "nonexistent");
+        assert!(no_match.is_empty(), "filter for nonexistent text should return empty");
     }
 }
