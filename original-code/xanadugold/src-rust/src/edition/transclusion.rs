@@ -344,6 +344,42 @@ impl TransclusionIndex {
         self.federated_entries.values().map(|v| v.len()).sum()
     }
 
+    pub fn unregister_edition(
+        &mut self,
+        edition: &Edition,
+        edition_element: &RangeElement,
+        region: Option<&XnRegion>,
+    ) {
+        let search_region = region.cloned().unwrap_or_else(|| XnRegion::full());
+        let entries = edition.fetch_range(&search_region);
+        for (_pos, carrier) in &entries {
+            let key = element_key(&carrier.element);
+            if let Some(vec) = self.content_to_editions.get_mut(&key) {
+                vec.retain(|(elem, _)| elem != edition_element);
+                if vec.is_empty() {
+                    self.content_to_editions.remove(&key);
+                }
+            }
+        }
+    }
+
+    pub fn unregister_work(
+        &mut self,
+        edition: &Edition,
+        work_element: &RangeElement,
+    ) {
+        let entries = edition.fetch_all();
+        for (_pos, carrier) in &entries {
+            let key = element_key(&carrier.element);
+            if let Some(vec) = self.content_to_editions.get_mut(&key) {
+                vec.retain(|(elem, _)| elem != work_element);
+                if vec.is_empty() {
+                    self.content_to_editions.remove(&key);
+                }
+            }
+        }
+    }
+
     pub fn clear(&mut self) {
         self.content_to_editions.clear();
         self.federated_entries.clear();
@@ -625,5 +661,70 @@ mod tests {
         let fed = idx.find_federated_transcluders(&content);
         assert_eq!(local.len(), 1);
         assert_eq!(fed.len(), 1);
+    }
+
+    #[test]
+    fn unregister_edition_removes_entries() {
+        let mut idx = TransclusionIndex::new();
+        let edition = Edition::from_one(0, RangeElement::text("hello"));
+        let elem = RangeElement::edition(1);
+        idx.register_edition(&edition, &elem, None);
+
+        let q = TransclusionQuery::all();
+        assert_eq!(idx.find_transcluders(&RangeElement::text("hello"), &q).len(), 1);
+
+        idx.unregister_edition(&edition, &elem, None);
+        assert!(idx.find_transcluders(&RangeElement::text("hello"), &q).is_empty());
+    }
+
+    #[test]
+    fn unregister_edition_preserves_other_editions() {
+        let mut idx = TransclusionIndex::new();
+        let edition_a = Edition::from_one(0, RangeElement::text("hello"));
+        let edition_b = Edition::from_one(0, RangeElement::text("hello"));
+        let elem_a = RangeElement::edition(1);
+        let elem_b = RangeElement::edition(2);
+        idx.register_edition(&edition_a, &elem_a, None);
+        idx.register_edition(&edition_b, &elem_b, None);
+
+        let q = TransclusionQuery::all();
+        assert_eq!(idx.find_transcluders(&RangeElement::text("hello"), &q).len(), 2);
+
+        idx.unregister_edition(&edition_a, &elem_a, None);
+        let results = idx.find_transcluders(&RangeElement::text("hello"), &q);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].element, elem_b);
+    }
+
+    #[test]
+    fn unregister_work_removes_entries() {
+        let mut idx = TransclusionIndex::new();
+        let edition = Edition::from_one(0, RangeElement::text("hello"));
+        let elem = RangeElement::work(42);
+        idx.register_work(&edition, &elem);
+
+        let q = WorkQuery::all();
+        assert_eq!(idx.find_works(&RangeElement::text("hello"), &q).len(), 1);
+
+        idx.unregister_work(&edition, &elem);
+        assert!(idx.find_works(&RangeElement::text("hello"), &q).is_empty());
+    }
+
+    #[test]
+    fn unregister_work_preserves_other_works() {
+        let mut idx = TransclusionIndex::new();
+        let edition = Edition::from_one(0, RangeElement::text("hello"));
+        let elem_a = RangeElement::work(10);
+        let elem_b = RangeElement::work(20);
+        idx.register_work(&edition, &elem_a);
+        idx.register_work(&edition, &elem_b);
+
+        let q = WorkQuery::all();
+        assert_eq!(idx.find_works(&RangeElement::text("hello"), &q).len(), 2);
+
+        idx.unregister_work(&edition, &elem_a);
+        let results = idx.find_works(&RangeElement::text("hello"), &q);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], elem_b);
     }
 }
