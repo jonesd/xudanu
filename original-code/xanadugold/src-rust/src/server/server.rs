@@ -1673,6 +1673,21 @@ impl Server {
             .map_err(|e| ServerError::Internal(e.to_string()))
     }
 
+    pub fn recorder_create_for_content(&mut self, query: crate::edition::RecorderQuery, edition_id: u64) -> crate::edition::RecorderId {
+        let matcher_query = query.clone();
+        let fossil_id = self.recorder_system.create_fossil(query);
+        self.recorder_system.schedule_matcher(fossil_id, matcher_query, Some(edition_id));
+        fossil_id
+    }
+
+    pub fn recorder_extinguish(&mut self, fossil_id: crate::edition::RecorderId) -> bool {
+        self.recorder_system.extinguish_fossil(fossil_id)
+    }
+
+    pub fn recorder_process(&mut self) -> usize {
+        self.recorder_system.process_agenda_with_engine(&mut self.backfollow)
+    }
+
     pub fn blob_preview(&self, hash_u64: u64) -> Result<Option<Vec<u8>>, ServerError> {
         let meta = self.blob_store.get_meta_by_u64(hash_u64)
             .ok_or_else(|| ServerError::NotFound(format!("blob {:016x}", hash_u64)))?;
