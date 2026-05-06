@@ -104,6 +104,7 @@ impl Default for Server {
 
 impl Server {
     pub fn new() -> Self {
+        crate::edition::init_endorsement_flags();
         let mut grand_map = GrandMap::new();
 
         let public_club = {
@@ -511,7 +512,12 @@ impl Server {
         self.content_address.intern_edition_elements(&edition);
         self.reconcile_record_local_revision(be_id, &edition, Self::current_timestamp_secs());
         let bf_work = self.works[&be_id].work.clone();
-        self.backfollow.register_work(bf_work, be_id, None);
+        let prop = BackfollowEngine::make_work_prop(
+            &bf_work,
+            self.works[&be_id].work.read_club(),
+            self.works[&be_id].work.edit_club(),
+        );
+        self.backfollow.register_work_with_prop(bf_work, be_id, None, prop);
         self.auto_checkpoint();
 
         Ok(be_id)
@@ -564,7 +570,7 @@ impl Server {
         let updated_edition = ws.work.edition().clone();
         self.content_address.intern_edition_elements(&updated_edition);
         let bf_work = ws.work.clone();
-        self.backfollow.update_work(work_be_id, bf_work);
+        self.backfollow.update_work_with_parent(work_be_id, work_be_id, bf_work);
         self.reconcile_record_local_revision(work_be_id, &updated_edition, Self::current_timestamp_secs());
         self.auto_checkpoint();
 
@@ -1966,6 +1972,8 @@ impl Server {
             endorsements: current.endorsements.clone(),
         };
         ws.work.revise(updated.clone());
+        let bf_work = ws.work.clone();
+        self.backfollow.update_work_with_parent(work_id, work_id, bf_work);
         self.reconcile_record_local_revision(work_id, &updated, Self::current_timestamp_secs());
         Ok(updated)
     }
@@ -3451,6 +3459,7 @@ pub(crate) mod persist_snapshot {
 
         pub fn from_snapshot(snapshot: &ServerSnapshot) -> Self {
             let mut grand_map = GrandMap::new();
+            crate::edition::init_endorsement_flags();
             grand_map.set_id_counter(snapshot.grand_map_id_counter);
             let server_kp = crate::crypto::keys::ServerKeyPair::generate("xudanu-server");
 

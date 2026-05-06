@@ -345,7 +345,7 @@ pub fn propagate_height(crum: &Arc<Mutex<CanopyCrumData>>) {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BertCanopy {
     cache: Arc<Mutex<CanopyCacheInner>>,
 }
