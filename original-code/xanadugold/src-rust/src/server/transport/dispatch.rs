@@ -477,97 +477,13 @@ fn dispatch_inner(
         WireRequest::FindSharedRegions { work_a, work_b, filter_text } => {
             srv.ensure_can_read(session_id, work_a)?;
             srv.ensure_can_read(session_id, work_b)?;
-            let results = match &filter_text {
-                Some(ft) if !ft.is_empty() => {
-                    let ed_a = match srv.work_edition(work_a) {
-                        Ok(ed) => ed,
-                        Err(_) => return Ok(ResponseValue::SharedRegions(vec![])),
-                    };
-                    let ed_b = match srv.work_edition(work_b) {
-                        Ok(ed) => ed,
-                        Err(_) => return Ok(ResponseValue::SharedRegions(vec![])),
-                    };
-                    let text_a = ed_a.to_text();
-                    let text_b = ed_b.to_text();
-                    let mut regions = Vec::new();
-                    let mut pos_a = 0;
-                    while let Some(idx) = text_a[pos_a..].find(ft.as_str()) {
-                        let byte_abs = pos_a + idx;
-                        let char_start = text_a[..byte_abs].chars().count();
-                        let char_end = char_start + ft.chars().count();
-                        regions.push((char_start as i64, char_end as i64, 0i64, 0i64, ft.clone()));
-                        pos_a = byte_abs + ft.len();
-                    }
-                    let mut b_regions = Vec::new();
-                    let mut pos_b = 0;
-                    while let Some(idx) = text_b[pos_b..].find(ft.as_str()) {
-                        let byte_abs = pos_b + idx;
-                        let char_start = text_b[..byte_abs].chars().count();
-                        let char_end = char_start + ft.chars().count();
-                        b_regions.push((char_start as i64, char_end as i64));
-                        pos_b = byte_abs + ft.len();
-                    }
-                    let n = regions.len().min(b_regions.len());
-                    regions.truncate(n);
-                    for (i, (_, _, ref mut sb, ref mut eb, _)) in regions.iter_mut().enumerate() {
-                        *sb = b_regions[i].0;
-                        *eb = b_regions[i].1;
-                    }
-                    regions
-                }
-                _ => {
-                    let ed_a = match srv.work_edition(work_a) {
-                        Ok(ed) => ed,
-                        Err(_) => return Ok(ResponseValue::SharedRegions(vec![])),
-                    };
-                    let ed_b = match srv.work_edition(work_b) {
-                        Ok(ed) => ed,
-                        Err(_) => return Ok(ResponseValue::SharedRegions(vec![])),
-                    };
-                    let text_a = ed_a.to_text();
-                    let text_b = ed_b.to_text();
-                    let split_paragraphs = |text: &str| -> Vec<String> {
-                        let mut result = Vec::new();
-                        let mut start = 0;
-                        let mut in_blank = false;
-                        let mut blank_start = 0;
-                        for (i, c) in text.char_indices() {
-                            if c == '\n' {
-                                if !in_blank { in_blank = true; blank_start = i; }
-                            } else if !c.is_whitespace() {
-                                if in_blank && blank_start > start {
-                                    let para = text[start..blank_start].trim().to_string();
-                                    if para.len() >= 30 { result.push(para); }
-                                    start = i;
-                                }
-                                in_blank = false;
-                            }
-                        }
-                        let para = text[start..].trim().to_string();
-                        if para.len() >= 30 { result.push(para); }
-                        result
-                    };
-                    let paras_a = split_paragraphs(&text_a);
-                    let paras_b = split_paragraphs(&text_b);
-                    let mut regions = Vec::new();
-                    let mut matched_b: Vec<bool> = vec![false; paras_b.len()];
-                    for para_a in &paras_a {
-                        for (j, para_b) in paras_b.iter().enumerate() {
-                            if matched_b[j] { continue; }
-                            if para_a == para_b {
-                                let char_start_a = text_a.find(para_a.as_str()).map(|i| text_a[..i].chars().count()).unwrap_or(0);
-                                let char_end_a = char_start_a + para_a.chars().count();
-                                let char_start_b = text_b.find(para_b.as_str()).map(|i| text_b[..i].chars().count()).unwrap_or(0);
-                                let char_end_b = char_start_b + para_b.chars().count();
-                                regions.push((char_start_a as i64, char_end_a as i64, char_start_b as i64, char_end_b as i64, para_a.clone()));
-                                matched_b[j] = true;
-                                break;
-                            }
-                        }
-                    }
-                    regions
-                }
+
+            let results = if let Some(ft) = filter_text.as_ref().filter(|s| !s.is_empty()) {
+                srv.find_shared_regions_filtered(work_a, work_b, ft)
+            } else {
+                srv.find_shared_regions(work_a, work_b)
             };
+
             let payloads = results.into_iter().map(|(start_a, end_a, start_b, end_b, text)| {
                 super::protocol::SharedRegionPayload { work_id: work_b, start_a, end_a, start_b, end_b, text }
             }).collect();
