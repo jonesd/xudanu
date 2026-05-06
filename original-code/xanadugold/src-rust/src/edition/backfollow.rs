@@ -394,6 +394,14 @@ impl BackfollowEngine {
         }
     }
 
+    pub fn on_work_created(&mut self, work_id: u64, work: &Work) {
+        let edition = work.current_edition().clone();
+        for (_, carrier) in edition.all_entries() {
+            let fp = carrier.element.content_fingerprint();
+            self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
+        }
+    }
+
     pub fn find_transcluders(
         &self,
         content: &RangeElement,

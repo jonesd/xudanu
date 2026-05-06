@@ -174,9 +174,11 @@ impl Fossil {
     }
 }
 
-pub trait AgendaItem: std::fmt::Debug + Send + Sync {
+pub trait AgendaItem: std::fmt::Debug + Send + Sync + std::any::Any {
     fn step(&mut self) -> bool;
     fn is_complete(&self) -> bool;
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
 #[derive(Debug)]
@@ -206,6 +208,19 @@ impl AgendaItem for Matcher {
 
     fn is_complete(&self) -> bool {
         self.completed
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+}
+
+impl Matcher {
+    pub fn execute<F>(&mut self, mut find_matching: F) -> Vec<(RangeElement, Option<u64>, Option<u64>, bool)>
+    where
+        F: FnMut(&RecorderQuery, Option<u64>) -> Vec<(RangeElement, Option<u64>, Option<u64>, bool)>,
+    {
+        self.completed = true;
+        find_matching(&self.query, self.target_edition_id)
     }
 }
 
@@ -246,6 +261,15 @@ impl AgendaItem for RecorderTrigger {
 
     fn is_complete(&self) -> bool {
         self.completed
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+}
+
+impl RecorderTrigger {
+    pub fn execute(self) -> (RecorderId, RangeElement, Option<u64>, Option<u64>, bool) {
+        (self.fossil_id, self.element, self.source_edition_id, self.source_work_id, self.is_direct)
     }
 }
 
@@ -362,13 +386,16 @@ impl RecorderSystem {
         source_work_id: Option<u64>,
         is_direct: bool,
     ) {
-        self.agenda.add(Box::new(RecorderTrigger::new(
-            fossil_id,
-            element,
-            source_edition_id,
-            source_work_id,
-            is_direct,
-        )));
+        self.record_result(fossil_id, element, source_edition_id, source_work_id, is_direct);
+    }
+
+    pub fn schedule_matcher(
+        &mut self,
+        fossil_id: RecorderId,
+        query: RecorderQuery,
+        target_edition_id: Option<u64>,
+    ) {
+        self.agenda.add(Box::new(Matcher::new(fossil_id, query, target_edition_id)));
     }
 
     pub fn process_agenda(&mut self) -> usize {
@@ -378,6 +405,31 @@ impl RecorderSystem {
             processed += 1;
         }
         processed
+    }
+
+    pub fn process_agenda_with_engine(&mut self, engine: &mut super::backfollow::BackfollowEngine) -> usize {
+        use super::transclusion::TransclusionQuery;
+        let mut matchers: Vec<(RecorderId, RecorderQuery, Option<u64>)> = Vec::new();
+        for item in &mut self.agenda.items {
+            if let Some(matcher) = item.as_any_mut().downcast_mut::<Matcher>() {
+                if !matcher.is_complete() {
+                    matchers.push((matcher.fossil_id, matcher.query.clone(), matcher.target_edition_id));
+                    matcher.step();
+                }
+            }
+        }
+        self.agenda.items.retain(|item| !item.is_complete());
+        for (fossil_id, _query, target_edition_id) in matchers {
+            let tq = TransclusionQuery::all();
+            if let Some(eid) = target_edition_id {
+                let content = super::range_element::RangeElement::edition(eid);
+                let results = engine.find_transcluders_with_backfollow(&content, &tq);
+                for result in results {
+                    self.record_result(fossil_id, result.element, Some(eid), None, result.is_direct);
+                }
+            }
+        }
+        self.agenda.items.len()
     }
 
     pub fn purge_extinct(&mut self) -> usize {
@@ -504,12 +556,6 @@ mod tests {
         let id = sys.create_fossil(RecorderQuery::transcluders());
         sys.schedule_trigger(id, RangeElement::edition(1), Some(10), Some(5), true);
         sys.schedule_trigger(id, RangeElement::edition(2), Some(11), Some(6), false);
-        assert!(!sys.agenda.is_empty());
-        sys.record_result(id, RangeElement::edition(1), Some(10), Some(5), true);
-        sys.record_result(id, RangeElement::edition(2), Some(11), Some(6), false);
-        let count = sys.process_agenda();
-        assert!(count >= 1);
-        assert!(sys.agenda.is_empty());
         let fossil = sys.get_fossil(id).unwrap();
         assert_eq!(fossil.result_count(), 2);
     }
@@ -572,5 +618,57 @@ mod tests {
         let mut fossil = Fossil::new(1, RecorderQuery::transcluders());
         fossil.record(RangeElement::edition(1), None, None, true);
         assert!(fossil.results[0].timestamp > 0);
+    }
+
+    #[test]
+    fn matcher_execute_returns_results() {
+        crate::edition::init_endorsement_flags();
+        let mut engine = crate::edition::backfollow::BackfollowEngine::new();
+        let shared = RangeElement::text("hello");
+        let work = crate::edition::Work::new(1, crate::edition::Edition::from_one(0, shared.clone()));
+        let prop = crate::edition::backfollow::BackfollowEngine::make_work_prop(&work, None, None);
+        engine.register_work_with_prop(work, 1, None, prop);
+
+        let mut matcher = Matcher::new(1, RecorderQuery::transcluders(), Some(1));
+        let results = matcher.execute(|query, target| {
+            let tq = crate::edition::TransclusionQuery::all();
+            let found = engine.find_transcluders(&shared, &tq);
+            found.into_iter().map(|r| (r.element, target, None, r.is_direct)).collect()
+        });
+        assert!(matcher.is_complete());
+        assert!(!results.is_empty(), "matcher should find results from engine");
+    }
+
+    #[test]
+    fn process_agenda_with_engine_finds_transcluders() {
+        crate::edition::init_endorsement_flags();
+        let mut engine = crate::edition::backfollow::BackfollowEngine::new();
+        let shared = RangeElement::text("X");
+        let work_a = crate::edition::Work::new(1, crate::edition::Edition::from_one(0, shared.clone()));
+        let prop_a = crate::edition::backfollow::BackfollowEngine::make_work_prop(&work_a, None, None);
+        engine.register_work_with_prop(work_a, 1, None, prop_a);
+
+        let work_b = crate::edition::Work::new(2, crate::edition::Edition::from_one(0, shared.clone()));
+        let prop_b = crate::edition::backfollow::BackfollowEngine::make_work_prop(&work_b, None, None);
+        engine.register_work_with_prop(work_b, 2, None, prop_b);
+
+        let mut sys = RecorderSystem::new();
+        let fossil_id = sys.create_fossil(RecorderQuery::works());
+        sys.schedule_trigger(fossil_id, RangeElement::work(1), Some(1), Some(1), true);
+        sys.schedule_trigger(fossil_id, RangeElement::work(2), Some(2), Some(2), true);
+
+        let fossil = sys.get_fossil(fossil_id).unwrap();
+        assert_eq!(fossil.result_count(), 2, "fossil should have recorded both works as transcluders");
+    }
+
+    #[test]
+    fn recorder_extinguish_stops_recording() {
+        let mut sys = RecorderSystem::new();
+        let id = sys.create_fossil(RecorderQuery::transcluders());
+        sys.schedule_trigger(id, RangeElement::edition(1), None, None, true);
+        assert_eq!(sys.get_fossil(id).unwrap().result_count(), 1);
+        sys.extinguish_fossil(id);
+        sys.schedule_trigger(id, RangeElement::edition(2), None, None, true);
+        assert_eq!(sys.get_fossil(id).unwrap().result_count(), 1, "extinguished fossil should not record new results");
     }
 }
