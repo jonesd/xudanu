@@ -198,6 +198,7 @@ fn dispatch_inner(
             Ok(ResponseValue::Humber(count))
         }
         WireRequest::WorkFetchRevision { work_id, number } => {
+            srv.ensure_can_read(session_id, work_id)?;
             match srv.work_fetch_revision(work_id, number)? {
                 Some(ed) => Ok(ResponseValue::Edition(EditionPayload::from_edition(&ed))),
                 None => Ok(ResponseValue::Void),
@@ -214,10 +215,12 @@ fn dispatch_inner(
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkSponsors { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
             let sponsors = srv.work_sponsors(work_id)?.to_vec();
             Ok(ResponseValue::Ids(sponsors))
         }
         WireRequest::WorkOwner { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
             let owner = srv.work_owner(work_id)?;
             Ok(ResponseValue::Humber(owner.unwrap_or(0)))
         }
@@ -254,6 +257,7 @@ fn dispatch_inner(
             Ok(ResponseValue::Id(id))
         }
         WireRequest::EditionGet { be_id } => {
+            srv.ensure_logged_in(session_id)?;
             match srv.get_edition(be_id)? {
                 Some(ed) => Ok(ResponseValue::Edition(EditionPayload::from_edition(&ed))),
                 None => Ok(ResponseValue::Void),
@@ -331,15 +335,27 @@ fn dispatch_inner(
         }
 
         WireRequest::WorkList => {
-            let entries = srv.list_works_with_titles().into_iter().map(|(work_id, owner, revision_count, is_grabbed, title, read_club)| {
-                super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed, title, read_club }
-            }).collect();
+            let entries = srv.list_works_with_titles().into_iter()
+                .filter(|(work_id, _, _, _, _, _)| {
+                    srv.work(*work_id)
+                        .map(|w| srv.work_is_readable(session_id, w))
+                        .unwrap_or(false)
+                })
+                .map(|(work_id, owner, revision_count, is_grabbed, title, read_club)| {
+                    super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed, title, read_club }
+                }).collect();
             Ok(ResponseValue::WorkList(entries))
         }
         WireRequest::WorkListByOwner { owner } => {
-            let entries = srv.list_works_by_owner(owner).into_iter().map(|(work_id, owner, revision_count, is_grabbed, read_club)| {
-                super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed, title: String::new(), read_club }
-            }).collect();
+            let entries = srv.list_works_by_owner(owner).into_iter()
+                .filter(|(work_id, _, _, _, _)| {
+                    srv.work(*work_id)
+                        .map(|w| srv.work_is_readable(session_id, w))
+                        .unwrap_or(false)
+                })
+                .map(|(work_id, owner, revision_count, is_grabbed, read_club)| {
+                    super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed, title: String::new(), read_club }
+                }).collect();
             Ok(ResponseValue::WorkList(entries))
         }
 
@@ -366,6 +382,18 @@ fn dispatch_inner(
             }))
         }
         WireRequest::LinkUpdate { link_id, origin_ref, destination_ref } => {
+            {
+                let (origin, destination, _) = srv.get_link(link_id)?;
+                let can_edit_origin = srv.work(origin)
+                    .map(|w| srv.check_edit_permission(session_id, w))
+                    .unwrap_or(false);
+                let can_edit_destination = srv.work(destination)
+                    .map(|w| srv.check_edit_permission(session_id, w))
+                    .unwrap_or(false);
+                if !can_edit_origin && !can_edit_destination {
+                    return Err(crate::server::ServerError::NotAuthorized);
+                }
+            }
             let o_ref = origin_ref.map(|hr| {
                 crate::edition::links::HyperRef::single(None, hr.work_context, hr.original_context, None)
             });
@@ -376,6 +404,18 @@ fn dispatch_inner(
             Ok(ResponseValue::Void)
         }
         WireRequest::LinkDelete { link_id } => {
+            {
+                let (origin, destination, _) = srv.get_link(link_id)?;
+                let can_edit_origin = srv.work(origin)
+                    .map(|w| srv.check_edit_permission(session_id, w))
+                    .unwrap_or(false);
+                let can_edit_destination = srv.work(destination)
+                    .map(|w| srv.check_edit_permission(session_id, w))
+                    .unwrap_or(false);
+                if !can_edit_origin && !can_edit_destination {
+                    return Err(crate::server::ServerError::NotAuthorized);
+                }
+            }
             srv.delete_link(session_id, link_id)?;
             Ok(ResponseValue::Void)
         }
@@ -392,13 +432,30 @@ fn dispatch_inner(
         }
 
         WireRequest::FindTranscluders { content_be_id } => {
-            let results = srv.find_transcluders(content_be_id).into_iter().map(|(element_type, element_id, is_direct)| {
-                super::protocol::TransclusionResultPayload { element_type, element_id, is_direct }
-            }).collect();
+            let results = srv.find_transcluders(content_be_id).into_iter()
+                .filter(|(element_type, element_id, _)| {
+                    if element_type == "work" {
+                        srv.work(*element_id)
+                            .map(|w| srv.work_is_readable(session_id, w))
+                            .unwrap_or(false)
+                    } else {
+                        true
+                    }
+                })
+                .map(|(element_type, element_id, is_direct)| {
+                    super::protocol::TransclusionResultPayload { element_type, element_id, is_direct }
+                }).collect();
             Ok(ResponseValue::TransclusionResults(results))
         }
         WireRequest::FindWorksForContent { content_be_id } => {
-            let work_ids = srv.find_works_for_content(content_be_id);
+            let work_ids = srv.find_works_for_content(content_be_id)
+                .into_iter()
+                .filter(|wid| {
+                    srv.work(*wid)
+                        .map(|w| srv.work_is_readable(session_id, w))
+                        .unwrap_or(false)
+                })
+                .collect();
             Ok(ResponseValue::WorkIds(work_ids))
         }
         WireRequest::FindTextTranscluders { text } => {
@@ -617,17 +674,34 @@ fn dispatch_inner(
         WireRequest::RangeTranscluders { work_id, region, direct_only } => {
             srv.ensure_can_read(session_id, work_id)?;
             let result = srv.range_transcluders(work_id, region.as_ref(), direct_only.unwrap_or(false))?;
+            let readable_work_ids: Vec<BeId> = result.work_ids.into_iter()
+                .filter(|wid| {
+                    srv.work(*wid)
+                        .map(|w| srv.work_is_readable(session_id, w))
+                        .unwrap_or(false)
+                })
+                .collect();
+            let readable_edition_ids: Vec<BeId> = result.edition_ids.into_iter()
+                .filter(|eid| srv.get_edition(*eid).ok().flatten().is_some())
+                .collect();
             Ok(ResponseValue::RangeTranscludersResult {
-                edition_ids: result.edition_ids,
-                work_ids: result.work_ids,
+                edition_ids: readable_edition_ids,
+                work_ids: readable_work_ids,
                 region: result.region,
             })
         }
         WireRequest::RangeWorks { work_id, region } => {
             srv.ensure_can_read(session_id, work_id)?;
             let result = srv.range_works(work_id, region.as_ref())?;
+            let readable_work_ids: Vec<BeId> = result.work_ids.into_iter()
+                .filter(|wid| {
+                    srv.work(*wid)
+                        .map(|w| srv.work_is_readable(session_id, w))
+                        .unwrap_or(false)
+                })
+                .collect();
             Ok(ResponseValue::RangeWorksResult {
-                work_ids: result.work_ids,
+                work_ids: readable_work_ids,
                 region: result.region,
             })
         }
@@ -769,6 +843,7 @@ fn dispatch_inner(
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkEndorsements { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
             let es = srv.work_endorsements(work_id)?;
             Ok(ResponseValue::EndorsementResult {
                 endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),

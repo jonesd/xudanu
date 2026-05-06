@@ -1921,7 +1921,7 @@ impl Server {
         }
     }
 
-    fn check_edit_permission(&self, session_id: SessionId, work: &Work) -> bool {
+    pub(crate) fn check_edit_permission(&self, session_id: SessionId, work: &Work) -> bool {
         match work.edit_club() {
             Some(club_id) => {
                 if club_id == self.system_clubs.public_club {
@@ -2497,15 +2497,17 @@ impl Server {
 
     pub fn federation_export_works(&self) -> Vec<crate::server::federation::SyncWorkEntry> {
         let server_id = self.federation_server_id();
-        self.works.iter().map(|(work_id, ws)| {
-            crate::server::federation::SyncWorkEntry {
-                origin_server_id: server_id.clone(),
-                work_id: *work_id,
-                edition_payload: crate::server::transport::protocol::EditionPayload::from_edition(
-                    ws.work.current_edition()
-                ),
-            }
-        }).collect()
+        self.works.iter()
+            .filter(|(_, ws)| ws.work.read_club() == Some(self.system_clubs.public_club))
+            .map(|(work_id, ws)| {
+                crate::server::federation::SyncWorkEntry {
+                    origin_server_id: server_id.clone(),
+                    work_id: *work_id,
+                    edition_payload: crate::server::transport::protocol::EditionPayload::from_edition(
+                        ws.work.current_edition()
+                    ),
+                }
+            }).collect()
     }
 
     pub fn federation_export_editions(&self) -> Vec<crate::server::federation::SyncEditionEntry> {
@@ -2558,11 +2560,12 @@ impl Server {
             } else {
                 let (be_id, elem) = self.grand_map.new_work_element(None);
                 self.grand_map.assign_new_id(elem);
-                let work = crate::edition::Work::new_with_owner(
+                let mut work = crate::edition::Work::new_with_owner(
                     be_id,
                     None,
                     edition,
                 );
+                work.set_read_club(Some(self.system_clubs.public_club));
                 let ws = WorkState {
                     work,
                     grabber: None,
