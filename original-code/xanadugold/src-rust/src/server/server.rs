@@ -510,8 +510,8 @@ impl Server {
         let edition = self.works[&be_id].work.edition().clone();
         self.content_address.intern_edition_elements(&edition);
         self.reconcile_record_local_revision(be_id, &edition, Self::current_timestamp_secs());
-        let work = Work::new_with_owner(be_id, owner, edition);
-        self.backfollow.register_work(work, be_id, None);
+        let bf_work = self.works[&be_id].work.clone();
+        self.backfollow.register_work(bf_work, be_id, None);
         self.auto_checkpoint();
 
         Ok(be_id)
@@ -563,8 +563,8 @@ impl Server {
 
         let updated_edition = ws.work.edition().clone();
         self.content_address.intern_edition_elements(&updated_edition);
-        let updated_work = Work::new_with_owner(work_be_id, ws.work.owner(), updated_edition.clone());
-        self.backfollow.update_work(work_be_id, updated_work);
+        let bf_work = ws.work.clone();
+        self.backfollow.update_work(work_be_id, bf_work);
         self.reconcile_record_local_revision(work_be_id, &updated_edition, Self::current_timestamp_secs());
         self.auto_checkpoint();
 
