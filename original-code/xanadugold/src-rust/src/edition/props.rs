@@ -89,6 +89,14 @@ pub fn endorsements_flags(endorsements: &[Id]) -> u32 {
     result
 }
 
+pub fn init_endorsement_flags() {
+    use_endorsement_flag(crate::edition::wrapper::TEXT_TOKEN as i64);
+    use_endorsement_flag(crate::edition::wrapper::SET_TOKEN as i64);
+    use_endorsement_flag(crate::edition::wrapper::PATH_TOKEN as i64);
+    use_endorsement_flag(crate::edition::wrapper::HYPERLINK_TOKEN as i64);
+    use_endorsement_flag(crate::edition::wrapper::HYPERREF_TOKEN as i64);
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct BertProp {
     permissions: Vec<Id>,

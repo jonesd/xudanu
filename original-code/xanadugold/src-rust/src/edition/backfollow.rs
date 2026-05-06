@@ -10,10 +10,12 @@ use super::props::{BertProp, PropFinder};
 use super::range_element::RangeElement;
 use super::transclusion::{TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery};
 use super::work::Work;
-use crate::ent::htree::HUpperCrumData;
+use super::wrapper::{WRAPPER_CLUB_ID, TEXT_TOKEN};
+use crate::ent::htree::{HUpperCrumData, HPart};
 use crate::ent::trace::TracePosition;
+use crate::ent::branch::BranchStore;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EditionMeta {
     edition_id: u64,
     bert_crum: Arc<Mutex<CanopyCrumData>>,
@@ -107,6 +109,12 @@ impl EditionMeta {
     }
 }
 
+impl HPart for EditionMeta {
+    fn h_crum(&self) -> Option<Arc<Mutex<HUpperCrumData>>> {
+        self.h_crum.clone()
+    }
+}
+
 #[derive(Debug)]
 pub struct BackfollowEngine {
     _grand_map: GrandMap,
@@ -118,6 +126,7 @@ pub struct BackfollowEngine {
     work_storage: std::collections::HashMap<u64, Work>,
     link_storage: std::collections::HashMap<u64, HyperLink>,
     fingerprint_to_works: std::collections::HashMap<[u8; 32], std::collections::HashSet<u64>>,
+    branch_store: BranchStore,
     next_edition_id: u64,
     next_work_id: u64,
     next_link_id: u64,
@@ -135,6 +144,7 @@ impl BackfollowEngine {
             work_storage: std::collections::HashMap::new(),
             link_storage: std::collections::HashMap::new(),
             fingerprint_to_works: std::collections::HashMap::new(),
+            branch_store: BranchStore::new(),
             next_edition_id: 1,
             next_work_id: 1,
             next_link_id: 1,
@@ -208,6 +218,88 @@ impl BackfollowEngine {
         self.work_storage.insert(work_id, work);
     }
 
+    pub fn register_work_with_prop(&mut self, work: Work, work_id: u64, edition_id: Option<u64>, prop: BertProp) {
+        let edition = work.current_edition().clone();
+        let work_elem = RangeElement::work(work_id);
+        self.transclusion_index.register_work(&edition, &work_elem);
+        for (_, carrier) in edition.all_entries() {
+            let fp = carrier.element.content_fingerprint();
+            self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
+        }
+        if let Some(eid) = edition_id {
+            if let Some(meta) = self.edition_metas.get_mut(&eid) {
+                meta.add_work(work_id);
+            }
+        }
+        let (branch_id, _) = self.branch_store.create_root();
+        let tp = TracePosition::new(branch_id, 0);
+        let flags = prop.flags();
+        let bert_crum = self.bert_canopy.make_crum(flags);
+        let sensor_crum = self.sensor_canopy.make_crum(0);
+        let h_crum = HUpperCrumData::new(tp, bert_crum.clone(), self.bert_canopy.clone());
+        let mut meta = EditionMeta::new(work_id, bert_crum, sensor_crum, prop);
+        meta.set_h_crum(Arc::new(Mutex::new(h_crum)));
+        meta.set_trace_position(tp);
+        self.edition_metas.insert(work_id, meta);
+        self.work_storage.insert(work_id, work);
+    }
+
+    pub fn update_work_with_parent(&mut self, work_id: u64, parent_work_id: u64, new_work: Work) {
+        let old_edition = self.work_storage.get(&work_id)
+            .map(|w| w.current_edition().clone());
+        if let Some(old_ed) = old_edition {
+            let old_elem = RangeElement::work(work_id);
+            self.transclusion_index.unregister_work(&old_ed, &old_elem);
+            for (_, carrier) in old_ed.all_entries() {
+                let fp = carrier.element.content_fingerprint();
+                if let Some(set) = self.fingerprint_to_works.get_mut(&fp) {
+                    set.remove(&work_id);
+                    if set.is_empty() {
+                        self.fingerprint_to_works.remove(&fp);
+                    }
+                }
+            }
+        }
+        let new_edition = new_work.current_edition().clone();
+        let work_elem = RangeElement::work(work_id);
+        self.transclusion_index.register_work(&new_edition, &work_elem);
+        for (_, carrier) in new_edition.all_entries() {
+            let fp = carrier.element.content_fingerprint();
+            self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
+        }
+
+        let (branch_id, _) = self.branch_store.create_root();
+        let tp = TracePosition::new(branch_id, 0);
+        let old_prop = self.edition_metas.get(&work_id)
+            .map(|m| m.prop().clone())
+            .unwrap_or_else(BertProp::make);
+        let flags = old_prop.flags();
+        let bert_crum = self.bert_canopy.make_crum(flags);
+        let sensor_crum = self.sensor_canopy.make_crum(0);
+
+        let parent_arc: Option<Arc<Mutex<EditionMeta>>> = self.edition_metas.get(&parent_work_id)
+            .map(|m| Arc::new(Mutex::new(m.clone())));
+
+        let h_crum = if let Some(parent_meta) = parent_arc {
+            let h = HUpperCrumData::from_two(
+                parent_meta.clone() as Arc<Mutex<dyn HPart>>,
+                Arc::new(Mutex::new(EditionMeta::new(work_id, bert_crum.clone(), sensor_crum.clone(), old_prop.clone()))) as Arc<Mutex<dyn HPart>>,
+                tp,
+                self.bert_canopy.clone(),
+            );
+            Arc::new(Mutex::new(h))
+        } else {
+            let h = HUpperCrumData::new(tp, bert_crum.clone(), self.bert_canopy.clone());
+            Arc::new(Mutex::new(h))
+        };
+
+        let mut meta = EditionMeta::new(work_id, bert_crum, sensor_crum, old_prop);
+        meta.set_h_crum(h_crum);
+        meta.set_trace_position(tp);
+        self.edition_metas.insert(work_id, meta);
+        self.work_storage.insert(work_id, new_work);
+    }
+
     pub fn update_work(&mut self, work_id: u64, new_work: Work) {
         let old_edition = self.work_storage.get(&work_id)
             .map(|w| w.current_edition().clone());
@@ -232,6 +324,34 @@ impl BackfollowEngine {
             self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
         }
         self.work_storage.insert(work_id, new_work);
+    }
+
+    pub fn compute_work_endorsements(work: &Work) -> Vec<super::grandmap::Id> {
+        use super::grandmap::Id;
+        let mut has_text = false;
+        for (_, carrier) in work.current_edition().all_entries() {
+            match &carrier.element {
+                RangeElement::Text { .. } | RangeElement::Data { .. } => has_text = true,
+                _ => {}
+            }
+        }
+        let mut endorsements = Vec::new();
+        if has_text {
+            endorsements.push(Id::in_space(super::grandmap::IdSpaceId(WRAPPER_CLUB_ID), TEXT_TOKEN as i64));
+        }
+        endorsements
+    }
+
+    pub fn make_work_prop(work: &Work, read_club: Option<u64>, edit_club: Option<u64>) -> BertProp {
+        let mut permissions = Vec::new();
+        if let Some(rc) = read_club {
+            permissions.push(super::grandmap::Id::global(rc as i64));
+        }
+        if let Some(ec) = edit_club {
+            permissions.push(super::grandmap::Id::global(ec as i64));
+        }
+        let endorsements = Self::compute_work_endorsements(work);
+        BertProp::new(permissions, endorsements, false, false)
     }
 
     pub fn unregister_edition(&mut self, edition_id: u64) {
@@ -339,11 +459,13 @@ impl BackfollowEngine {
                 trail.record_element(&result.element);
             }
         }
+        let trail_edition = trail.into_trail();
         let mut final_results = Vec::new();
-        for result in &index_results {
+        for (_, carrier) in trail_edition.all_entries() {
+            let is_direct = index_results.iter().any(|r| r.element == carrier.element);
             final_results.push(TransclusionResult {
-                element: result.element.clone(),
-                is_direct: result.is_direct,
+                element: carrier.element.clone(),
+                is_direct,
             });
         }
         final_results
@@ -1158,5 +1280,79 @@ mod tests {
         engine.unregister_edition(1);
         assert!(engine.find_transcluders(&elem, &q).is_empty(),
             "unregistered edition should be removed from index");
+    }
+
+    #[test]
+    fn register_work_with_prop_sets_h_crum() {
+        crate::edition::init_endorsement_flags();
+        let mut engine = BackfollowEngine::new();
+        let work = Work::new(1, Edition::from_text("hello"));
+        let prop = BertProp::make();
+        engine.register_work_with_prop(work, 1, None, prop);
+
+        let meta = engine.get_edition_meta(1).unwrap();
+        assert!(meta.h_crum().is_some(), "register_work_with_prop should set h_crum");
+        assert!(meta.trace_position().is_some(), "register_work_with_prop should set trace_position");
+    }
+
+    #[test]
+    fn compute_work_endorsements_detects_text() {
+        let work = Work::new(1, Edition::from_text("hello"));
+        let endorsements = BackfollowEngine::compute_work_endorsements(&work);
+        assert!(!endorsements.is_empty(), "text work should have endorsements");
+        assert!(endorsements.iter().any(|id| id.number == TEXT_TOKEN as i64),
+            "text work should have TEXT_TOKEN endorsement");
+    }
+
+    #[test]
+    fn compute_work_endorsements_empty_work() {
+        let work = Work::new(1, Edition::empty());
+        let endorsements = BackfollowEngine::compute_work_endorsements(&work);
+        assert!(endorsements.is_empty(), "empty work should have no endorsements");
+    }
+
+    #[test]
+    fn make_work_prop_includes_permissions_and_endorsements() {
+        let work = Work::new(1, Edition::from_text("hello"));
+        let prop = BackfollowEngine::make_work_prop(&work, Some(42), Some(43));
+        assert!(!prop.permissions().is_empty(), "prop should have permissions");
+        assert!(!prop.endorsements().is_empty(), "prop should have endorsements");
+        let flags = prop.flags();
+        assert_ne!(flags, 0, "prop should have non-zero flags");
+    }
+
+    #[test]
+    fn update_work_with_parent_creates_h_tree_edge() {
+        crate::edition::init_endorsement_flags();
+        let mut engine = BackfollowEngine::new();
+        let work = Work::new(1, Edition::from_one(0, RangeElement::text("v1")));
+        let prop = BackfollowEngine::make_work_prop(&work, None, None);
+        engine.register_work_with_prop(work, 1, None, prop);
+
+        let v2 = Work::new(1, Edition::from_one(0, RangeElement::text("v2")));
+        engine.update_work_with_parent(1, 1, v2);
+
+        let meta = engine.get_edition_meta(1).unwrap();
+        assert!(meta.h_crum().is_some(), "updated work should have h_crum");
+        let hc = meta.h_crum().unwrap().lock().unwrap();
+        assert!(!hc.o_parents().is_empty(), "updated work should have o_parents linking to previous version");
+    }
+
+    #[test]
+    fn find_transcluders_with_backfollow_returns_trail() {
+        crate::edition::init_endorsement_flags();
+        let mut engine = BackfollowEngine::new();
+        let shared = RangeElement::text("X");
+        let work_a = Work::new(1, Edition::from_one(0, shared.clone()));
+        let prop_a = BackfollowEngine::make_work_prop(&work_a, None, None);
+        engine.register_work_with_prop(work_a, 1, None, prop_a);
+
+        let work_b = Work::new(2, Edition::from_one(0, shared.clone()));
+        let prop_b = BackfollowEngine::make_work_prop(&work_b, None, None);
+        engine.register_work_with_prop(work_b, 2, None, prop_b);
+
+        let q = TransclusionQuery::all();
+        let results = engine.find_transcluders_with_backfollow(&shared, &q);
+        assert!(!results.is_empty(), "should find transcluders via backfollow");
     }
 }

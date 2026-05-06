@@ -55,6 +55,7 @@ pub use props::{
     BertProp, Prop, PropChangeKind, PropFinder, SensorProp,
     PUBLIC_CLUB_FLAG, OTHER_CLUBS_FLAG, OTHER_ENDORSEMENTS_FLAG,
     IS_SENSOR_WAITING_FLAG, IS_NOT_PARTIALIZABLE_FLAG, IS_PARTIAL_FLAG,
+    init_endorsement_flags,
 };
 pub use range_element::RangeElement;
 pub use snapshot::{Snapshot, SnapshotStore, SnapshotError, is_frozen, freeze_work, validate_frozen_for_context, validate_not_frozen_for_edit};
