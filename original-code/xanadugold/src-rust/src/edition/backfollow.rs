@@ -13,7 +13,7 @@ use super::work::Work;
 use super::wrapper::{WRAPPER_CLUB_ID, TEXT_TOKEN};
 use crate::ent::htree::{HUpperCrumData, HPart};
 use crate::ent::trace::TracePosition;
-use crate::ent::branch::BranchStore;
+use crate::ent::dagwood::DagWood;
 
 #[derive(Debug, Clone)]
 pub struct EditionMeta {
@@ -126,7 +126,8 @@ pub struct BackfollowEngine {
     work_storage: std::collections::HashMap<u64, Work>,
     link_storage: std::collections::HashMap<u64, HyperLink>,
     fingerprint_to_works: std::collections::HashMap<[u8; 32], std::collections::HashSet<u64>>,
-    branch_store: BranchStore,
+    dagwood: DagWood,
+    parent_of: std::collections::HashMap<u64, Vec<u64>>,
     next_edition_id: u64,
     next_work_id: u64,
     next_link_id: u64,
@@ -144,7 +145,8 @@ impl BackfollowEngine {
             work_storage: std::collections::HashMap::new(),
             link_storage: std::collections::HashMap::new(),
             fingerprint_to_works: std::collections::HashMap::new(),
-            branch_store: BranchStore::new(),
+            dagwood: DagWood::new(),
+            parent_of: std::collections::HashMap::new(),
             next_edition_id: 1,
             next_work_id: 1,
             next_link_id: 1,
@@ -231,8 +233,7 @@ impl BackfollowEngine {
                 meta.add_work(work_id);
             }
         }
-        let (branch_id, _) = self.branch_store.create_root();
-        let tp = TracePosition::new(branch_id, 0);
+        let tp = self.dagwood.new_position();
         let flags = prop.flags();
         let bert_crum = self.bert_canopy.make_crum(flags);
         let sensor_crum = self.sensor_canopy.make_crum(0);
@@ -240,6 +241,7 @@ impl BackfollowEngine {
         let mut meta = EditionMeta::new(work_id, bert_crum, sensor_crum, prop);
         meta.set_h_crum(Arc::new(Mutex::new(h_crum)));
         meta.set_trace_position(tp);
+        self.parent_of.insert(work_id, Vec::new());
         self.edition_metas.insert(work_id, meta);
         self.work_storage.insert(work_id, work);
     }
@@ -268,8 +270,13 @@ impl BackfollowEngine {
             self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
         }
 
-        let (branch_id, _) = self.branch_store.create_root();
-        let tp = TracePosition::new(branch_id, 0);
+        let parent_tp = self.edition_metas.get(&parent_work_id)
+            .and_then(|m| m.trace_position().copied());
+        let tp = if let Some(parent_pos) = parent_tp {
+            self.dagwood.new_position_after(parent_pos)
+        } else {
+            self.dagwood.new_position()
+        };
         let old_prop = self.edition_metas.get(&work_id)
             .map(|m| m.prop().clone())
             .unwrap_or_else(BertProp::make);
@@ -296,6 +303,7 @@ impl BackfollowEngine {
         let mut meta = EditionMeta::new(work_id, bert_crum, sensor_crum, old_prop);
         meta.set_h_crum(h_crum);
         meta.set_trace_position(tp);
+        self.parent_of.insert(work_id, vec![parent_work_id]);
         self.edition_metas.insert(work_id, meta);
         self.work_storage.insert(work_id, new_work);
     }
@@ -500,6 +508,23 @@ impl BackfollowEngine {
 
     pub fn get_edition_meta(&self, id: u64) -> Option<&EditionMeta> {
         self.edition_metas.get(&id)
+    }
+
+    pub fn version_is_le(&mut self, a: u64, b: u64) -> Option<bool> {
+        let tp_a = self.edition_metas.get(&a).and_then(|m| m.trace_position().copied());
+        let tp_b = self.edition_metas.get(&b).and_then(|m| m.trace_position().copied());
+        match (tp_a, tp_b) {
+            (Some(a_pos), Some(b_pos)) => Some(self.dagwood.is_le(a_pos, b_pos)),
+            _ => None,
+        }
+    }
+
+    pub fn version_ancestors(&self, work_id: u64) -> Vec<u64> {
+        self.parent_of.get(&work_id).cloned().unwrap_or_default()
+    }
+
+    pub fn trace_position_of(&self, work_id: u64) -> Option<TracePosition> {
+        self.edition_metas.get(&work_id).and_then(|m| m.trace_position().copied())
     }
 
     pub fn get_work(&self, id: u64) -> Option<&Work> {
@@ -733,6 +758,64 @@ impl TransclusionQuery {
         let endo_region = self.endorsements_filter().region().clone();
         PropFinder::backfollow_full(perm_region, endo_region)
     }
+}
+
+pub fn edition_to_assertions(
+    edition_id: u64,
+    edition: &Edition,
+    tp: TracePosition,
+) -> Vec<crate::ent::content::Assertion> {
+    use crate::ent::content::{Assertion, AssertionId, AssertionPayload, NodeId, SpanId};
+    let mut assertions = Vec::new();
+    let mut next_id = 1u64;
+    let doc_node = NodeId::new(edition_id);
+    assertions.push(Assertion {
+        id: AssertionId(next_id),
+        position: tp,
+        payload: AssertionPayload::CreateNode {
+            node_id: doc_node,
+            kind: "Edition".to_string(),
+        },
+    });
+    next_id += 1;
+    for (pos, carrier) in edition.all_entries() {
+        let span_id = SpanId::new({
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            edition_id.hash(&mut h);
+            pos.hash(&mut h);
+            h.finish()
+        });
+        let ordinal = (pos.max(0) as u64).min(u32::MAX as u64) as u32;
+        if let Some(text) = carrier.element.as_text() {
+            assertions.push(Assertion {
+                id: AssertionId(next_id),
+                position: tp,
+                payload: AssertionPayload::CreateSpan { span_id },
+            });
+            next_id += 1;
+            assertions.push(Assertion {
+                id: AssertionId(next_id),
+                position: tp,
+                payload: AssertionPayload::SetSpanText {
+                    span_id,
+                    text: text.to_string(),
+                },
+            });
+            next_id += 1;
+            assertions.push(Assertion {
+                id: AssertionId(next_id),
+                position: tp,
+                payload: AssertionPayload::AttachSpanToNode {
+                    node_id: doc_node,
+                    span_id,
+                    ordinal,
+                },
+            });
+            next_id += 1;
+        }
+    }
+    assertions
 }
 
 #[cfg(test)]
@@ -1362,5 +1445,59 @@ mod tests {
         let q = TransclusionQuery::all();
         let results = engine.find_transcluders_with_backfollow(&shared, &q);
         assert!(!results.is_empty(), "should find transcluders via backfollow");
+    }
+
+    #[test]
+    fn dagwood_trace_positions_are_ordered() {
+        crate::edition::init_endorsement_flags();
+        let mut engine = BackfollowEngine::new();
+        let work = Work::new(1, Edition::from_one(0, RangeElement::text("v1")));
+        let prop = BackfollowEngine::make_work_prop(&work, None, None);
+        engine.register_work_with_prop(work, 1, None, prop);
+
+        let tp1 = engine.trace_position_of(1).unwrap();
+
+        let v2 = Work::new(1, Edition::from_one(0, RangeElement::text("v2")));
+        engine.update_work_with_parent(1, 1, v2);
+        let tp2 = engine.trace_position_of(1).unwrap();
+
+        assert_eq!(engine.version_is_le(1, 1), Some(true), "a version should be <= itself");
+        assert_ne!(tp1, tp2, "different versions should have different trace positions");
+    }
+
+    #[test]
+    fn version_ancestors_across_different_works() {
+        crate::edition::init_endorsement_flags();
+        let mut engine = BackfollowEngine::new();
+        let work_a = Work::new(1, Edition::from_one(0, RangeElement::text("A")));
+        let prop_a = BackfollowEngine::make_work_prop(&work_a, None, None);
+        engine.register_work_with_prop(work_a, 1, None, prop_a);
+
+        let ancestors_a = engine.version_ancestors(1);
+        assert!(ancestors_a.is_empty(), "work with no parent has no ancestors");
+
+        let work_b = Work::new(2, Edition::from_one(0, RangeElement::text("B")));
+        let prop_b = BackfollowEngine::make_work_prop(&work_b, None, None);
+        engine.register_work_with_prop(work_b, 2, None, prop_b);
+
+        let ancestors_b = engine.version_ancestors(2);
+        assert!(ancestors_b.is_empty(), "work with no parent has no ancestors");
+
+        assert_eq!(engine.version_is_le(1, 2), Some(false), "unrelated works should not be ordered");
+        assert_eq!(engine.version_is_le(2, 1), Some(false), "unrelated works should not be ordered");
+    }
+
+    #[test]
+    fn edition_to_assertions_maps_text() {
+        use crate::ent::content::AssertionPayload;
+        let edition = Edition::from_text("hello");
+        let mut dagwood = DagWood::new();
+        let tp = dagwood.new_position();
+        let assertions = edition_to_assertions(1, &edition, tp);
+        assert!(!assertions.is_empty());
+        let has_create_node = assertions.iter().any(|a| matches!(a.payload, AssertionPayload::CreateNode { .. }));
+        assert!(has_create_node, "should have CreateNode assertion");
+        let has_set_span = assertions.iter().any(|a| matches!(a.payload, AssertionPayload::SetSpanText { .. }));
+        assert!(has_set_span, "should have SetSpanText assertion");
     }
 }
