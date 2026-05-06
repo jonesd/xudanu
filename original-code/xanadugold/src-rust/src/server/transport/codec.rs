@@ -236,8 +236,10 @@ impl BinaryCodec {
                 self.work_id_request(op, id)
             }
             OperationCode::WorkGetEdition
-            | OperationCode::WorkSponsor
-            | OperationCode::WorkUnsponsor => {
+            | OperationCode::WorkPublish
+            | OperationCode::WorkUnpublish
+            | OperationCode::WorkIrrevocablyUnpublish
+            | OperationCode::WorkIsPublished => {
                 let id: BeId = postcard::from_bytes(payload_data)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 self.work_id_request(op, id)
@@ -307,6 +309,10 @@ impl BinaryCodec {
             OperationCode::WorkRevisionCount => Ok(WireRequest::WorkRevisionCount { work_id: id }),
             OperationCode::WorkSponsors => Ok(WireRequest::WorkSponsors { work_id: id }),
             OperationCode::WorkOwner => Ok(WireRequest::WorkOwner { work_id: id }),
+            OperationCode::WorkPublish => Ok(WireRequest::WorkPublish { work_id: id }),
+            OperationCode::WorkUnpublish => Ok(WireRequest::WorkUnpublish { work_id: id }),
+            OperationCode::WorkIrrevocablyUnpublish => Ok(WireRequest::WorkIrrevocablyUnpublish { work_id: id }),
+            OperationCode::WorkIsPublished => Ok(WireRequest::WorkIsPublished { work_id: id }),
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
@@ -692,6 +698,48 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::WorkSetEditClub { work_id: args.work_id, club_id: args.club_id })
+            }
+            OperationCode::WorkPublish => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkPublish { work_id: args.work_id })
+            }
+            OperationCode::WorkUnpublish => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkUnpublish { work_id: args.work_id })
+            }
+            OperationCode::WorkIrrevocablyUnpublish => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkIrrevocablyUnpublish { work_id: args.work_id })
+            }
+            OperationCode::WorkIsPublished => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkIsPublished { work_id: args.work_id })
+            }
+            OperationCode::ClubSetDefaultReadClub => {
+                #[derive(Deserialize)]
+                struct Args { club_id: BeId, default_read_club: Option<BeId> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ClubSetDefaultReadClub { club_id: args.club_id, default_read_club: args.default_read_club })
+            }
+            OperationCode::ClubSetDefaultEditClub => {
+                #[derive(Deserialize)]
+                struct Args { club_id: BeId, default_edit_club: Option<BeId> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ClubSetDefaultEditClub { club_id: args.club_id, default_edit_club: args.default_edit_club })
             }
             OperationCode::WorkReadClub => {
                 #[derive(Deserialize)]
