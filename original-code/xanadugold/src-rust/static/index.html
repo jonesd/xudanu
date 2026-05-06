@@ -542,6 +542,10 @@ function App() {
     setCurrentText(text);
     req('work_revise', {work_id:currentWorkId, edition:{text:text}});
     lastSavedRef.current = text;
+    req('work_release', {work_id:currentWorkId});
+    setIsEditing(false);
+    isEditingRef.current = false;
+    req('work_get_edition', {work_id:currentWorkId});
   }
 
   function doCancel() {
@@ -959,6 +963,14 @@ function App() {
     splitModeRef.current = splitMode;
     sessionIdRef.current = sessionId;
   });
+
+  useEffect(function(){
+    if (editorAreaRef.current) {
+      editorAreaRef.current.scrollTop = 0;
+      var panes = editorAreaRef.current.querySelectorAll('.editor-pane-wrap');
+      for (var i = 0; i < panes.length; i++) panes[i].scrollTop = 0;
+    }
+  }, [currentWorkId]);
 
   useEffect(function(){
     if (isEditing && editorRef.current) {
