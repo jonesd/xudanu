@@ -4625,19 +4625,28 @@ async fn irrevocably_unpublish_via_wire() {
 async fn work_list_filters_private_from_other_session() {
     let srv = TestServer::start().await;
 
-    let (mut s1, mut r1, _) = json_setup(&srv).await;
+    let (mut s1, mut r1, _sid1) = json_setup(&srv).await;
+    let club_id = send_recv_json(&mut s1, &mut r1,
+        json_req(10, "club_create", Some(serde_json::json!({"description": {"text": "owner club"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+    let _ = send_recv_json(&mut s1, &mut r1,
+        json_req(11, "session_login", Some(serde_json::json!({"club_id": club_id})))).await;
+    let _ = send_recv_json(&mut s1, &mut r1,
+        json_req(12, "session_authenticate", Some(serde_json::json!({"club_id": club_id, "credential": "Boo"})))).await;
     let pub_wid = send_recv_json(&mut s1, &mut r1,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "public"}}))))
+        json_req(20, "work_create", Some(serde_json::json!({"edition": {"text": "will publish"}}))))
         .await["value"]["value"].as_u64().unwrap();
     let priv_wid = send_recv_json(&mut s1, &mut r1,
-        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "private"}}))))
+        json_req(21, "work_create", Some(serde_json::json!({"edition": {"text": "stays private"}}))))
         .await["value"]["value"].as_u64().unwrap();
+    let _ = send_recv_json(&mut s1, &mut r1,
+        json_req(22, "work_publish", Some(serde_json::json!({"work_id": pub_wid})))).await;
 
-    let (mut s2, mut r2, _) = json_setup(&srv).await;
+    let (mut s2, mut r2, _sid2) = json_setup(&srv).await;
     let resp = send_recv_json(&mut s2, &mut r2, json_req(50, "work_list", None)).await;
     let entries = resp["value"]["value"].as_array().unwrap();
     let visible_ids: Vec<u64> = entries.iter().map(|e| e["work_id"].as_u64().unwrap()).collect();
 
-    assert!(visible_ids.contains(&pub_wid), "public work should be visible");
-    assert!(visible_ids.contains(&priv_wid), "both created by same public session so both visible");
+    assert!(visible_ids.contains(&pub_wid), "published work should be visible to other session");
+    assert!(!visible_ids.contains(&priv_wid), "private work should not be visible to other session");
 }
