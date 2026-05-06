@@ -16,6 +16,7 @@ use crate::ent::trace::TracePosition;
 // tracepx.cxx/branchx.cxx. The cache maps BranchId → max reachable
 // position from a fixed reference position, computed by upward traversal
 // through branch parent links.
+#[derive(Debug)]
 pub struct DagWood {
     branches: BranchStore,
     root: TracePosition,

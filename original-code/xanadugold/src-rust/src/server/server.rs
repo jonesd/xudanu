@@ -6,6 +6,7 @@ use crate::edition::{
     RangeElement, hash_content, u64_from_hash,
 };
 use crate::edition::backfollow::BackfollowEngine;
+use crate::ent::trace::TracePosition;
 use crate::edition::blob_store::{BlobMeta, BlobStore, MemoryBackend};
 use crate::edition::links::{HyperLink, HyperRef};
 use crate::edition::transclusion::{TransclusionQuery, WorkQuery};
@@ -1686,6 +1687,18 @@ impl Server {
 
     pub fn recorder_process(&mut self) -> usize {
         self.recorder_system.process_agenda_with_engine(&mut self.backfollow)
+    }
+
+    pub fn version_is_before(&mut self, work_a: BeId, work_b: BeId) -> Option<bool> {
+        self.backfollow.version_is_le(work_a, work_b)
+    }
+
+    pub fn version_ancestors(&self, work_id: BeId) -> Vec<BeId> {
+        self.backfollow.version_ancestors(work_id)
+    }
+
+    pub fn version_trace_position(&self, work_id: BeId) -> Option<TracePosition> {
+        self.backfollow.trace_position_of(work_id)
     }
 
     pub fn blob_preview(&self, hash_u64: u64) -> Result<Option<Vec<u8>>, ServerError> {
