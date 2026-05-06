@@ -117,6 +117,7 @@ pub struct BackfollowEngine {
     edition_storage: std::collections::HashMap<u64, Edition>,
     work_storage: std::collections::HashMap<u64, Work>,
     link_storage: std::collections::HashMap<u64, HyperLink>,
+    fingerprint_to_works: std::collections::HashMap<[u8; 32], std::collections::HashSet<u64>>,
     next_edition_id: u64,
     next_work_id: u64,
     next_link_id: u64,
@@ -133,6 +134,7 @@ impl BackfollowEngine {
             edition_storage: std::collections::HashMap::new(),
             work_storage: std::collections::HashMap::new(),
             link_storage: std::collections::HashMap::new(),
+            fingerprint_to_works: std::collections::HashMap::new(),
             next_edition_id: 1,
             next_work_id: 1,
             next_link_id: 1,
@@ -194,6 +196,10 @@ impl BackfollowEngine {
         let edition = work.current_edition().clone();
         let work_elem = RangeElement::work(work_id);
         self.transclusion_index.register_work(&edition, &work_elem);
+        for (_, carrier) in edition.all_entries() {
+            let fp = carrier.element.content_fingerprint();
+            self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
+        }
         if let Some(eid) = edition_id {
             if let Some(meta) = self.edition_metas.get_mut(&eid) {
                 meta.add_work(work_id);
@@ -203,14 +209,37 @@ impl BackfollowEngine {
     }
 
     pub fn update_work(&mut self, work_id: u64, new_work: Work) {
-        let _edition = new_work.current_edition().clone();
+        let old_edition = self.work_storage.get(&work_id)
+            .map(|w| w.current_edition().clone());
+        if let Some(old_ed) = old_edition {
+            let old_elem = RangeElement::work(work_id);
+            self.transclusion_index.unregister_work(&old_ed, &old_elem);
+            for (_, carrier) in old_ed.all_entries() {
+                let fp = carrier.element.content_fingerprint();
+                if let Some(set) = self.fingerprint_to_works.get_mut(&fp) {
+                    set.remove(&work_id);
+                    if set.is_empty() {
+                        self.fingerprint_to_works.remove(&fp);
+                    }
+                }
+            }
+        }
+        let new_edition = new_work.current_edition().clone();
+        let work_elem = RangeElement::work(work_id);
+        self.transclusion_index.register_work(&new_edition, &work_elem);
+        for (_, carrier) in new_edition.all_entries() {
+            let fp = carrier.element.content_fingerprint();
+            self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
+        }
         self.work_storage.insert(work_id, new_work);
-        self.rebuild_index();
     }
 
     pub fn unregister_edition(&mut self, edition_id: u64) {
         if let Some(meta) = self.edition_metas.remove(&edition_id) {
-            self.edition_storage.remove(&edition_id);
+            if let Some(edition) = self.edition_storage.remove(&edition_id) {
+                let elem = RangeElement::edition(edition_id);
+                self.transclusion_index.unregister_edition(&edition, &elem, None);
+            }
             let _ = meta;
         }
     }
@@ -224,6 +253,7 @@ impl BackfollowEngine {
 
     fn rebuild_index(&mut self) {
         self.transclusion_index.clear();
+        self.fingerprint_to_works.clear();
         for (id, stored) in &self.edition_storage {
             let elem = RangeElement::edition(*id);
             self.transclusion_index.register_edition(stored, &elem, None);
@@ -231,6 +261,10 @@ impl BackfollowEngine {
         for (wid, work) in &self.work_storage {
             let elem = RangeElement::work(*wid);
             self.transclusion_index.register_work(work.current_edition(), &elem);
+            for (_, carrier) in work.current_edition().all_entries() {
+                let fp = carrier.element.content_fingerprint();
+                self.fingerprint_to_works.entry(fp).or_default().insert(*wid);
+            }
         }
     }
 
@@ -344,6 +378,39 @@ impl BackfollowEngine {
 
     pub fn transclusion_index(&self) -> &TransclusionIndex {
         &self.transclusion_index
+    }
+
+    pub fn transclusion_index_mut(&mut self) -> &mut TransclusionIndex {
+        &mut self.transclusion_index
+    }
+
+    pub fn fingerprint_to_works(&self) -> &std::collections::HashMap<[u8; 32], std::collections::HashSet<u64>> {
+        &self.fingerprint_to_works
+    }
+
+    pub fn find_works_by_fingerprint(&self, fp: &[u8; 32]) -> Vec<u64> {
+        self.fingerprint_to_works.get(fp)
+            .map(|set| set.iter().copied().collect())
+            .unwrap_or_default()
+    }
+
+    pub fn register_fingerprint_for_work(&mut self, fp: [u8; 32], work_id: u64) {
+        self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
+    }
+
+    pub fn register_federated_entry(
+        &mut self,
+        content: &RangeElement,
+        origin_server_id: String,
+        local_id: u64,
+        element_type: String,
+        is_direct: bool,
+    ) {
+        self.transclusion_index.register_federated(content, origin_server_id, local_id, element_type, is_direct);
+    }
+
+    pub fn has_federated_entries(&self) -> bool {
+        self.transclusion_index.has_federated_entries()
     }
 
     pub fn bert_canopy(&self) -> &BertCanopy {
@@ -1015,5 +1082,81 @@ mod tests {
         assert_eq!(engine.find_links_to_content(&RangeElement::text("A")).len(), 1);
         assert_eq!(engine.find_links_to_content(&RangeElement::text("B")).len(), 1);
         assert_eq!(engine.find_links_to_content(&RangeElement::text("C")).len(), 1);
+    }
+
+    #[test]
+    fn incremental_update_removes_old_adds_new() {
+        let mut engine = BackfollowEngine::new();
+        let old_edition = Edition::from_one(0, RangeElement::text("hello"));
+        let work = Work::new(1, old_edition);
+        engine.register_work(work, 1, None);
+
+        let q = TransclusionQuery::all();
+        let results = engine.find_transcluders(&RangeElement::text("hello"), &q);
+        assert!(!results.is_empty());
+
+        let new_edition = Edition::from_one(0, RangeElement::text("goodbye"));
+        let updated_work = Work::new(1, new_edition);
+        engine.update_work(1, updated_work);
+
+        let old_results = engine.find_transcluders(&RangeElement::text("hello"), &q);
+        assert!(old_results.is_empty(), "old content should be removed from index");
+
+        let new_results = engine.find_transcluders(&RangeElement::text("goodbye"), &q);
+        assert!(!new_results.is_empty(), "new content should be in index");
+    }
+
+    #[test]
+    fn fingerprint_to_works_multi_valued() {
+        let mut engine = BackfollowEngine::new();
+        let shared_text = RangeElement::text("common content");
+        let edition_a = Edition::from_one(0, shared_text.clone());
+        let edition_b = Edition::from_one(0, shared_text.clone());
+        let work_a = Work::new(10, edition_a);
+        let work_b = Work::new(20, edition_b);
+        engine.register_work(work_a, 10, None);
+        engine.register_work(work_b, 20, None);
+
+        let fp = shared_text.content_fingerprint();
+        let works = engine.find_works_by_fingerprint(&fp);
+        assert_eq!(works.len(), 2, "both works should be found for shared content");
+        assert!(works.contains(&10));
+        assert!(works.contains(&20));
+    }
+
+    #[test]
+    fn incremental_update_cleans_fingerprint_index() {
+        let mut engine = BackfollowEngine::new();
+        let elem = RangeElement::text("unique text");
+        let edition = Edition::from_one(0, elem.clone());
+        let work = Work::new(1, edition);
+        engine.register_work(work, 1, None);
+
+        let fp = elem.content_fingerprint();
+        assert_eq!(engine.find_works_by_fingerprint(&fp).len(), 1);
+
+        let new_elem = RangeElement::text("different text");
+        let new_edition = Edition::from_one(0, new_elem);
+        let updated_work = Work::new(1, new_edition);
+        engine.update_work(1, updated_work);
+
+        assert!(engine.find_works_by_fingerprint(&fp).is_empty(),
+            "old fingerprint should be removed");
+    }
+
+    #[test]
+    fn unregister_edition_cleans_index() {
+        let mut engine = BackfollowEngine::new();
+        let elem = RangeElement::text("test content");
+        let edition = Edition::from_one(0, elem.clone());
+        let prop = BertProp::new(vec![], vec![], false, false);
+        engine.register_edition(edition, 1, prop);
+
+        let q = TransclusionQuery::all();
+        assert!(!engine.find_transcluders(&elem, &q).is_empty());
+
+        engine.unregister_edition(1);
+        assert!(engine.find_transcluders(&elem, &q).is_empty(),
+            "unregistered edition should be removed from index");
     }
 }

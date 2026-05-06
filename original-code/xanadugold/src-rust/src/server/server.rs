@@ -8,7 +8,7 @@ use crate::edition::{
 use crate::edition::backfollow::BackfollowEngine;
 use crate::edition::blob_store::{BlobMeta, BlobStore, MemoryBackend};
 use crate::edition::links::{HyperLink, HyperRef};
-use crate::edition::transclusion::{TransclusionIndex, TransclusionQuery, WorkQuery};
+use crate::edition::transclusion::{TransclusionQuery, WorkQuery};
 use super::admin::{AdminState, IdGrant, SessionInfo};
 use super::club::Club;
 use super::detector::{Detector, DetectorList, Event};
@@ -67,7 +67,6 @@ pub struct Server {
     links: HashMap<BeId, LinkState>,
     link_counter: BeId,
     backfollow: BackfollowEngine,
-    transclusion_index: TransclusionIndex,
     content_address: ContentAddressIndex,
     blob_store: BlobStore,
     checkpoint_path: Option<std::path::PathBuf>,
@@ -76,7 +75,6 @@ pub struct Server {
     server_keypair: crate::crypto::keys::ServerKeyPair,
     key_history: crate::crypto::keys::KeyHistory,
     federation: crate::server::federation::FederationState,
-    element_fingerprint_to_work: HashMap<[u8; 32], BeId>,
     reconcile_store: crate::server::federation::ReconcileStore,
     reconcile_counter: u64,
     last_checkpoint_time: u64,
@@ -171,9 +169,8 @@ impl Server {
             admin: AdminState::new(),
             links: HashMap::new(),
             link_counter: 0,
-            transclusion_index: TransclusionIndex::new(),
-            content_address: ContentAddressIndex::new(1_000_000),
             backfollow: BackfollowEngine::new(),
+            content_address: ContentAddressIndex::new(1_000_000),
             blob_store: BlobStore::in_memory(),
             checkpoint_path: None,
             recorder_system: crate::edition::RecorderSystem::new(),
@@ -184,7 +181,6 @@ impl Server {
             server_keypair: server_kp.clone(),
             key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
             federation: crate::server::federation::FederationState::disabled(),
-            element_fingerprint_to_work: HashMap::new(),
             reconcile_store: crate::server::federation::ReconcileStore::new(),
             reconcile_counter: 0,
             last_checkpoint_time: std::time::SystemTime::now()
@@ -512,13 +508,7 @@ impl Server {
         self.works.insert(be_id, ws);
 
         let edition = self.works[&be_id].work.edition().clone();
-        for (_, carrier) in edition.all_entries() {
-            let fp = carrier.element.content_fingerprint();
-            self.element_fingerprint_to_work.insert(fp, be_id);
-        }
         self.content_address.intern_edition_elements(&edition);
-        let work_elem = RangeElement::work(be_id);
-        self.transclusion_index.register_work(&edition, &work_elem);
         self.reconcile_record_local_revision(be_id, &edition, Self::current_timestamp_secs());
         let work = Work::new_with_owner(be_id, owner, edition);
         self.backfollow.register_work(work, be_id, None);
@@ -573,12 +563,6 @@ impl Server {
 
         let updated_edition = ws.work.edition().clone();
         self.content_address.intern_edition_elements(&updated_edition);
-        for (_, carrier) in updated_edition.all_entries() {
-            let fp = carrier.element.content_fingerprint();
-            self.element_fingerprint_to_work.insert(fp, work_be_id);
-        }
-        let work_elem = RangeElement::work(work_be_id);
-        self.transclusion_index.register_work(&updated_edition, &work_elem);
         let updated_work = Work::new_with_owner(work_be_id, ws.work.owner(), updated_edition.clone());
         self.backfollow.update_work(work_be_id, updated_work);
         self.reconcile_record_local_revision(work_be_id, &updated_edition, Self::current_timestamp_secs());
@@ -1099,7 +1083,7 @@ impl Server {
         self.standalone_editions.insert(be_id, edition);
         let edition = self.standalone_editions.get(&be_id).unwrap().clone();
         let edition_elem = RangeElement::edition(be_id);
-        self.transclusion_index.register_edition(&edition, &edition_elem, None);
+        self.backfollow.transclusion_index_mut().register_edition(&edition, &edition_elem, None);
         Ok(be_id)
     }
 
@@ -1465,11 +1449,11 @@ impl Server {
         let link_elem = RangeElement::work(link_id);
         let origin_elem = RangeElement::work(origin);
         let dest_elem = RangeElement::work(destination);
-        self.transclusion_index.register_work(
+        self.backfollow.transclusion_index_mut().register_work(
             &crate::edition::Edition::from_one(0, origin_elem.clone()),
             &link_elem,
         );
-        self.transclusion_index.register_work(
+        self.backfollow.transclusion_index_mut().register_work(
             &crate::edition::Edition::from_one(0, dest_elem.clone()),
             &link_elem,
         );
@@ -1553,19 +1537,6 @@ impl Server {
         let content = RangeElement::edition(content_be_id);
         let query = TransclusionQuery::all();
         let results = self.backfollow.find_transcluders(&content, &query);
-        if !results.is_empty() {
-            return results.into_iter().map(|r| {
-                let elem = &r.element;
-                if let Some(wid) = elem.as_work_id() {
-                    ("work".to_string(), wid, r.is_direct)
-                } else if let Some(eid) = elem.as_edition_id() {
-                    ("edition".to_string(), eid, r.is_direct)
-                } else {
-                    ("unknown".to_string(), 0, r.is_direct)
-                }
-            }).collect();
-        }
-        let results = self.transclusion_index.find_transcluders(&content, &query);
         results.into_iter().map(|r| {
             let elem = &r.element;
             if let Some(wid) = elem.as_work_id() {
@@ -1573,7 +1544,7 @@ impl Server {
             } else if let Some(eid) = elem.as_edition_id() {
                 ("edition".to_string(), eid, r.is_direct)
             } else {
-                ("unknown".to_string(), 0, r.is_direct)
+                ("unknown".to_string(), 0u64, r.is_direct)
             }
         }).collect()
     }
@@ -1581,12 +1552,7 @@ impl Server {
     pub fn find_works_for_content(&self, content_be_id: BeId) -> Vec<BeId> {
         let content = RangeElement::edition(content_be_id);
         let query = WorkQuery::all();
-        let elems = self.backfollow.find_works_for_content(&content, &query);
-        if !elems.is_empty() {
-            return elems;
-        }
-        let elems = self.transclusion_index.find_works(&content, &query);
-        elems.into_iter().filter_map(|e| e.as_work_id()).collect()
+        self.backfollow.find_works_for_content(&content, &query)
     }
 
     pub fn find_text_transcluders(
@@ -1977,10 +1943,6 @@ impl Server {
             endorsements: current.endorsements.clone(),
         };
         ws.work.revise(updated.clone());
-        for (_, carrier) in updated.all_entries() {
-            let fp = carrier.element.content_fingerprint();
-            self.element_fingerprint_to_work.insert(fp, work_id);
-        }
         self.reconcile_record_local_revision(work_id, &updated, Self::current_timestamp_secs());
         Ok(updated)
     }
@@ -2105,7 +2067,7 @@ impl Server {
             None => query,
         };
         let tq = crate::edition::TransclusionQuery::all();
-        Ok(crate::edition::range_transcluders(&edition, &query, &self.transclusion_index, &tq))
+        Ok(crate::edition::range_transcluders(&edition, &query, self.backfollow.transclusion_index(), &tq))
     }
 
     pub fn range_works(&self, work_id: BeId, region: Option<&XnRegion>) -> Result<crate::edition::RangeWorkResult, ServerError> {
@@ -2116,7 +2078,7 @@ impl Server {
             None => query,
         };
         let wq = crate::edition::WorkQuery::all();
-        Ok(crate::edition::range_works(&edition, &query, &self.transclusion_index, &wq))
+        Ok(crate::edition::range_works(&edition, &query, self.backfollow.transclusion_index(), &wq))
     }
 
     pub fn ordered_bundles(&self, work_id: BeId, region: Option<&XnRegion>) -> Result<Vec<crate::edition::Bundle>, ServerError> {
@@ -2126,7 +2088,7 @@ impl Server {
 
     pub fn transclusion_depth(&self, work_id: BeId, position: i64, max_depth: usize) -> Result<usize, ServerError> {
         let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
-        Ok(edition.transclusion_depth(position, &self.transclusion_index, max_depth))
+        Ok(edition.transclusion_depth(position, self.backfollow.transclusion_index(), max_depth))
     }
 
     pub fn recorder_create(&mut self, query: crate::edition::RecorderQuery) -> Result<crate::edition::RecorderId, ServerError> {
@@ -2426,7 +2388,7 @@ impl Server {
     }
 
     pub fn federation_has_federated_transclusions(&self) -> bool {
-        self.transclusion_index.has_federated_entries()
+        self.backfollow.has_federated_entries()
     }
 
     pub fn federation_is_enabled(&self) -> bool {
@@ -2564,14 +2526,14 @@ impl Server {
                         local_id: entry.work_id,
                         element_type: crate::server::federation::RemoteElementType::Work,
                     });
-                    self.transclusion_index.register_federated(
+                    self.backfollow.register_fingerprint_for_work(fp, be_id);
+                    self.backfollow.register_federated_entry(
                         &carrier.element,
                         entry.origin_server_id.clone(),
                         entry.work_id,
                         "work".to_string(),
                         true,
                     );
-                    self.element_fingerprint_to_work.insert(fp, be_id);
                 }
             }
         }
@@ -2665,7 +2627,7 @@ impl Server {
     ) -> Vec<crate::server::federation::FederatedTransclusionEntry> {
         let mut entries = Vec::new();
 
-        let local_results = self.transclusion_index.find_by_fingerprint_hex(content_fingerprint_hex);
+        let local_results = self.backfollow.transclusion_index().find_by_fingerprint_hex(content_fingerprint_hex);
         for (element, is_direct) in &local_results {
             if direct_only && !is_direct {
                 continue;
@@ -2687,7 +2649,7 @@ impl Server {
             });
         }
 
-        let fed_results = self.transclusion_index.find_federated_by_hex(content_fingerprint_hex);
+        let fed_results = self.backfollow.transclusion_index().find_federated_by_hex(content_fingerprint_hex);
         for result in &fed_results {
             if direct_only && !result.is_direct {
                 continue;
@@ -2717,11 +2679,13 @@ impl Server {
                 Ok(arr) => arr,
                 Err(_) => return FederationFetchResponse::NotFound,
             };
-            if let Some(&work_id) = self.element_fingerprint_to_work.get(&fp) {
-                if let Some(ws) = self.works.get(&work_id) {
-                    let ed = ws.work.current_edition();
-                    let payload = crate::server::transport::protocol::EditionPayload::from_edition(&ed);
-                    return FederationFetchResponse::Edition(payload);
+            if let Some(work_ids) = self.backfollow.fingerprint_to_works().get(&fp) {
+                if let Some(&work_id) = work_ids.iter().next() {
+                    if let Some(ws) = self.works.get(&work_id) {
+                        let ed = ws.work.current_edition();
+                        let payload = crate::server::transport::protocol::EditionPayload::from_edition(&ed);
+                        return FederationFetchResponse::Edition(payload);
+                    }
                 }
             }
             if let Ok(data) = self.blob_store.retrieve(&fp) {
@@ -3487,9 +3451,8 @@ pub(crate) mod persist_snapshot {
                 admin: AdminState::new(),
                 links: HashMap::new(),
                 link_counter: snapshot.link_counter,
-                transclusion_index: TransclusionIndex::new(),
-                content_address,
                 backfollow: BackfollowEngine::new(),
+                content_address,
                 blob_store: BlobStore::in_memory(),
                 checkpoint_path: None,
                 recorder_system: crate::edition::RecorderSystem::new(),
@@ -3500,7 +3463,6 @@ pub(crate) mod persist_snapshot {
                 server_keypair: server_kp.clone(),
                 key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
                 federation,
-                element_fingerprint_to_work: HashMap::new(),
                 reconcile_store: snapshot.reconcile_store.clone(),
                 reconcile_counter: snapshot.reconcile_counter,
                 last_checkpoint_time: std::time::SystemTime::now()
@@ -3542,10 +3504,6 @@ pub(crate) mod persist_snapshot {
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
                 };
-                for (_, carrier) in work.current_edition().all_entries() {
-                    let fp = carrier.element.content_fingerprint();
-                    server.element_fingerprint_to_work.insert(fp, *id);
-                }
                 server.works.insert(*id, ws);
             }
 
@@ -3576,7 +3534,11 @@ pub(crate) mod persist_snapshot {
             for (wid, ws) in &server.works {
                 let edition = ws.work.edition().clone();
                 let elem = RangeElement::work(*wid);
-                server.transclusion_index.register_work(&edition, &elem);
+                server.backfollow.transclusion_index_mut().register_work(&edition, &elem);
+                for (_, carrier) in edition.all_entries() {
+                    let fp = carrier.element.content_fingerprint();
+                    server.backfollow.register_fingerprint_for_work(fp, *wid);
+                }
             }
 
             let max_id = server.works.keys().copied()
@@ -4866,7 +4828,7 @@ mod tests {
         server.federation_import_works(&push, &my_id);
 
         let content = RangeElement::text("h".to_string());
-        let fed_results = server.transclusion_index.find_federated_transcluders(&content);
+        let fed_results = server.backfollow.transclusion_index().find_federated_transcluders(&content);
         assert_eq!(fed_results.len(), 1);
         assert_eq!(fed_results[0].origin_server_id, "remote-server");
         assert_eq!(fed_results[0].local_id, 200);
@@ -4930,7 +4892,7 @@ mod tests {
         let (imported1, _) = server.federation_import_works(&[entry.clone()], &my_id);
         assert_eq!(imported1, 1);
         let origins_after_first = server.federation.remote_origins().len();
-        let fed_after_first = server.transclusion_index.federated_entry_count();
+        let fed_after_first = server.backfollow.transclusion_index().federated_entry_count();
 
         let (imported2, already2) = server.federation_import_works(&[entry.clone()], &my_id);
         assert_eq!(imported2, 0);
@@ -4941,7 +4903,7 @@ mod tests {
             "re-import should not add more origin entries"
         );
         assert_eq!(
-            server.transclusion_index.federated_entry_count(),
+            server.backfollow.transclusion_index().federated_entry_count(),
             fed_after_first,
             "re-import should not add more federated transclusion entries"
         );
@@ -5022,7 +4984,7 @@ mod tests {
         let fp = data_elem.content_fingerprint();
         let fp_hex: String = fp.iter().map(|b| format!("{:02x}", b)).collect();
 
-        server.transclusion_index.register_federated(
+        server.backfollow.register_federated_entry(
             &data_elem,
             "remote-blob-server".to_string(),
             0,
