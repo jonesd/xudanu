@@ -133,9 +133,17 @@ textarea.editor-content:focus{outline:none}
 .split-close:hover{background:var(--bg4)}
 .split-label{position:absolute;top:8px;left:12px;font-size:10px;color:var(--fg3);text-transform:uppercase;letter-spacing:1px;z-index:20;background:var(--bg2);padding:2px 6px;border-radius:3px}
 
-.transclusion-hl{background:rgba(210,153,34,0.25);border-bottom:2px solid var(--orange);border-radius:2px}
+.transclusion-hl{border-bottom:2px solid;border-radius:2px}
+.transclusion-hl[data-cidx="0"]{background:rgba(210,153,34,0.22);border-color:#d29922}
+.transclusion-hl[data-cidx="1"]{background:rgba(86,180,233,0.22);border-color:#56b4e9}
+.transclusion-hl[data-cidx="2"]{background:rgba(0,158,115,0.22);border-color:#009e73}
+.transclusion-hl[data-cidx="3"]{background:rgba(204,121,167,0.22);border-color:#cc79a7}
+.transclusion-hl[data-cidx="4"]{background:rgba(240,228,66,0.22);border-color:#f0e442}
+.transclusion-hl[data-cidx="5"]{background:rgba(230,159,0,0.22);border-color:#e69f00}
+.transclusion-hl[data-cidx="6"]{background:rgba(0,114,178,0.22);border-color:#0072b2}
+.transclusion-hl[data-cidx="7"]{background:rgba(213,94,0,0.22);border-color:#d55e00}
 .editor-area.split .transclusion-hl{cursor:pointer;transition:background .15s}
-.editor-area.split .transclusion-hl:hover{background:rgba(210,153,34,0.5)}
+.editor-area.split .transclusion-hl:hover{filter:brightness(1.4)}
 
 .svg-overlay{position:absolute;top:0;left:0;width:100%;height:100%;z-index:15;overflow:visible}
 
@@ -199,23 +207,24 @@ function computeDelta(oldText, newText) {
   return ops;
 }
 
-function highlightRegions(text, regions, cls) {
-  if (!regions || !regions.length) return escapeHtml(text);
-  var sorted = regions.slice().sort(function(a,b){return a.start - b.start});
-  var html = '', pos = 0;
-  for (var i = 0; i < sorted.length; i++) {
-    var r = sorted[i];
-    if (r.end <= pos) continue;
-    var start = Math.max(r.start, pos);
-    if (start > pos) html += escapeHtml(text.slice(pos, start));
-    html += '<span class="' + cls + '" data-idx="' + i + '">';
-    html += escapeHtml(text.slice(start, r.end));
-    html += '</span>';
-    pos = r.end;
-  }
-  if (pos < text.length) html += escapeHtml(text.slice(pos));
-  return html;
-}
+ function highlightRegions(text, regions, cls) {
+   if (!regions || !regions.length) return escapeHtml(text);
+   var sorted = regions.slice().sort(function(a,b){return a.start - b.start});
+   var html = '', pos = 0;
+   for (var i = 0; i < sorted.length; i++) {
+     var r = sorted[i];
+     if (r.end <= pos) continue;
+     var start = Math.max(r.start, pos);
+     if (start > pos) html += escapeHtml(text.slice(pos, start));
+     var cidx = r.cidx !== undefined ? r.cidx : (i % 8);
+     html += '<span class="' + cls + '" data-idx="' + i + '" data-cidx="' + cidx + '">';
+     html += escapeHtml(text.slice(start, r.end));
+     html += '</span>';
+     pos = r.end;
+   }
+   if (pos < text.length) html += escapeHtml(text.slice(pos));
+   return html;
+ }
 
 function editionText(ed) {
   if (!ed) return '';
@@ -372,6 +381,9 @@ function App() {
   var _hvt = useState(null), historyViewText = _hvt[0], setHistoryViewText = _hvt[1];
   var _sel = useState(''), selectedText = _sel[0], setSelectedText = _sel[1];
   var _sfr = useState(false), showFindRefs = _sfr[0], setShowFindRefs = _sfr[1];
+  var _sc = useState(false), showCompare = _sc[0], setShowCompare = _sc[1];
+  var _cti = useState(''), compareTargetId = _cti[0], setCompareTargetId = _cti[1];
+  var splitEditionTarget = useRef(null);
   var _frp = useState({x:0,y:0}), findRefsPos = _frp[0], setFindRefsPos = _frp[1];
   var _tres = useState([]), transclusionResults = _tres[0], setTransclusionResults = _tres[1];
   var _frl = useState(false), findRefsLoading = _frl[0], setFindRefsLoading = _frl[1];
@@ -495,9 +507,11 @@ function App() {
 
   function closeSplitView() {
     setSplitMode(false);
+    splitModeRef.current = false;
     setSplitWorkId(null);
     setSplitText('');
     setSharedRegions([]);
+    splitEditionTarget.current = null;
   }
 
   function showWork(id) {
@@ -637,14 +651,16 @@ function App() {
 
   function openSplitView(wid) {
     setShowFindRefs(false);
-    if (!splitMode) {
+    if (!splitModeRef.current) {
       setSplitMode(true);
+      splitModeRef.current = true;
       setSplitWorkId(wid);
+      splitEditionTarget.current = wid;
       setSplitText('');
       setSharedRegions([]);
       req('work_get_edition', {work_id:wid});
     }
-    req('find_shared_regions', {work_a:currentWorkId, work_b: splitMode ? splitWorkId : wid, filter_text: selectedText || undefined});
+    req('find_shared_regions', {work_a:currentWorkId, work_b: splitModeRef.current ? splitWorkId : wid, filter_text: selectedText || undefined});
   }
 
   function sendCmd() {
@@ -733,13 +749,10 @@ function App() {
             toast('Auto-save conflict - document updated');
             return;
           }
-          if (splitModeRef.current && op === 'work_get_edition') {
-            var pendingSplitId = null;
-            setSplitWorkId(function(prev){ pendingSplitId = prev; return prev; });
-            if (pendingSplitId && pendingSplitId !== currentWorkIdRef.current) {
-              setSplitText(edText);
-              return;
-            }
+          if (splitModeRef.current && op === 'work_get_edition' && splitEditionTarget.current != null) {
+            setSplitText(edText);
+            splitEditionTarget.current = null;
+            return;
           }
           if (isEditingRef.current) return;
           setCurrentText(edText);
@@ -801,6 +814,7 @@ function App() {
 
         if (v && v.type === 'shared_regions') {
           setSharedRegions(v.value || []);
+          setTimeout(function(){ window.dispatchEvent(new Event('resize')); }, 100);
           return;
         }
 
@@ -1014,6 +1028,7 @@ function App() {
       var lhl = lc.querySelectorAll('.transclusion-hl');
       var rhl = rc.querySelectorAll('.transclusion-hl');
       var paths = [];
+      var bridgeColors = ['#d29922','#56b4e9','#009e73','#cc79a7','#f0e442','#e69f00','#0072b2','#d55e00'];
       var n = Math.min(lhl.length, rhl.length, sharedRegions.length);
       for (var i = 0; i < n; i++) {
         var lr = lhl[i].getBoundingClientRect();
@@ -1030,7 +1045,8 @@ function App() {
         var midLY = ly + offset;
         var midRY = ry + offset;
         paths.push({lx:lx, ly:ly + offset, lEdge:lEdge, rx:rx, ry:ry + offset, rEdge:rEdge,
-          d: 'M' + lEdge + ',' + midLY + ' C' + (lEdge+15) + ',' + midLY + ' ' + (rEdge-15) + ',' + midRY + ' ' + rEdge + ',' + midRY});
+          d: 'M' + lEdge + ',' + midLY + ' C' + (lEdge+15) + ',' + midLY + ' ' + (rEdge-15) + ',' + midRY + ' ' + rEdge + ',' + midRY,
+          color: bridgeColors[i % 8]});
       }
       var canvas = area.querySelector('canvas._bridge');
       if (canvas) {
@@ -1042,12 +1058,12 @@ function App() {
         var ctx = canvas.getContext('2d');
         ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, areaRect.width, areaRect.height);
-        ctx.strokeStyle = '#d29922';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 3]);
         ctx.globalAlpha = 0.7;
         for (var j = 0; j < paths.length; j++) {
           var p = paths[j];
+          ctx.strokeStyle = p.color || '#d29922';
           ctx.beginPath();
           ctx.moveTo(p.lx, p.ly);
           ctx.lineTo(p.lEdge, p.ly);
@@ -1082,23 +1098,27 @@ function App() {
 
   var leftRegions = useMemo(function(){
     if (!splitMode || !sharedRegions.length) return [];
-    return sharedRegions.map(function(r){return {start:r.start_a, end:r.end_a}});
+    return sharedRegions.map(function(r,i){return {start:r.start_a, end:r.end_a, cidx:i%8}});
   }, [splitMode, sharedRegions]);
 
   var rightRegions = useMemo(function(){
     if (!splitMode || !sharedRegions.length) return [];
-    return sharedRegions.map(function(r){return {start:r.start_b, end:r.end_b}});
+    return sharedRegions.map(function(r,i){return {start:r.start_b, end:r.end_b, cidx:i%8}});
   }, [splitMode, sharedRegions]);
 
   var leftHtml = useMemo(function(){
     if (!splitMode) return '';
-    return renderImageMarkers(highlightRegions(currentText, leftRegions, 'transclusion-hl'), selectedImg);
-  }, [splitMode, currentText, leftRegions, selectedImg]);
+    var t = currentText;
+    if (!t) return '';
+    return renderImageMarkers(highlightRegions(t, leftRegions, 'transclusion-hl'), selectedImg);
+  }, [splitMode, currentText, leftRegions, selectedImg, sharedRegions]);
 
   var rightHtml = useMemo(function(){
     if (!splitMode) return '';
-    return renderImageMarkers(highlightRegions(splitText, rightRegions, 'transclusion-hl'), null);
-  }, [splitMode, splitText, rightRegions]);
+    var t = splitText;
+    if (!t) return '<span style="color:var(--fg3)">Loading...</span>';
+    return renderImageMarkers(highlightRegions(t, rightRegions, 'transclusion-hl'), null);
+  }, [splitMode, splitText, rightRegions, sharedRegions]);
 
   function handleSelectionCheck() {
     setTimeout(handleMouseUp, 10);
@@ -1170,6 +1190,10 @@ function App() {
               setShowLinks(!showLinks);
             }
           }, 'Links (' + links.length + ')'),
+          h('button', {
+            disabled:!currentWorkId || isEditing || works.length < 2,
+            onClick:function(){setShowCompare(!showCompare)}
+          }, 'Compare'),
           revInfo
         ),
         showHistory ? h('div', {className:'revision-slider'},
@@ -1237,6 +1261,35 @@ function App() {
                 );
               })
             )
+        ) : null,
+        showCompare ? h('div', {className:'links-panel'},
+          h('div', {className:'links-header'},
+            h('span', null, 'Compare with'),
+            h('select', {
+              value: compareTargetId,
+              onChange: function(e){setCompareTargetId(e.target.value)},
+              style:{marginLeft:8}
+            },
+              h('option', {value:''}, '\u2014 select document \u2014'),
+              works.filter(function(w){ return w.work_id !== currentWorkId; }).map(function(w){
+                return h('option', {key: w.work_id, value: String(w.work_id)},
+                  w.work_id + (w.title ? ' (' + (w.title.length > 30 ? w.title.slice(0,30)+'...' : w.title) + ')' : '')
+                );
+              })
+            ),
+            h('button', {
+              disabled: !compareTargetId || !currentWorkId,
+              onClick: function(){
+                openSplitView(parseInt(compareTargetId));
+                setShowCompare(false);
+                setCompareTargetId('');
+              }
+            }, 'Open'),
+            h('button', {
+              onClick: function(){setShowCompare(false); setCompareTargetId('');},
+              style:{marginLeft:4}
+            }, 'Cancel')
+          )
         ) : null,
         !isEditing && links.length > 0 ? h('div', {className:'link-nav-bar'},
           links.map(function(lnk) {
