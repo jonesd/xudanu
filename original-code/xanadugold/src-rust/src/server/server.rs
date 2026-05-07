@@ -41,6 +41,7 @@ struct WorkState {
     last_revision_author: Option<BeId>,
     status_detectors: DetectorList,
     revision_detectors: DetectorList,
+    cached_title: String,
 }
 
 impl std::fmt::Debug for WorkState {
@@ -66,6 +67,7 @@ pub struct Server {
     operation_counter: u64,
     admin: AdminState,
     links: HashMap<BeId, LinkState>,
+    work_to_links: HashMap<BeId, Vec<BeId>>,
     link_counter: BeId,
     backfollow: BackfollowEngine,
     content_address: ContentAddressIndex,
@@ -104,6 +106,15 @@ impl Default for Server {
 }
 
 impl Server {
+    fn extract_title(edition: &Edition) -> String {
+        let text: String = edition
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.as_text().unwrap_or(""))
+            .collect();
+        text.lines().next().unwrap_or("").chars().take(60).collect()
+    }
+
     pub fn new() -> Self {
         crate::edition::init_endorsement_flags();
         let mut grand_map = GrandMap::new();
@@ -169,8 +180,9 @@ impl Server {
             system_clubs,
             operation_counter: 0,
             admin: AdminState::new(),
-            links: HashMap::new(),
-            link_counter: 0,
+                links: HashMap::new(),
+                work_to_links: HashMap::new(),
+                link_counter: 0,
             backfollow: BackfollowEngine::new(),
             content_address: ContentAddressIndex::new(1_000_000),
             blob_store: BlobStore::in_memory(),
@@ -486,6 +498,7 @@ impl Server {
         self.grand_map.assign_new_id(elem);
 
         let owner = self.session(session_id)?.authority_clubs().iter().next().copied();
+        let title = Self::extract_title(&edition);
         let mut work = Work::new_with_owner(be_id, owner, edition);
 
         if let Some(owner_id) = owner {
@@ -506,6 +519,7 @@ impl Server {
             last_revision_author: None,
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
+            cached_title: title,
         };
         self.works.insert(be_id, ws);
 
@@ -560,6 +574,7 @@ impl Server {
 
         ws.last_revision_author = author_club;
         ws.work.revise(new_edition);
+        ws.cached_title = Self::extract_title(ws.work.current_edition());
         let revision = ws.work.revision_count();
 
         ws.revision_detectors.fire(&Event::WorkRevised {
@@ -1051,14 +1066,8 @@ impl Server {
                 let owner = ws.work.owner();
                 let rev_count = ws.work.revision_count();
                 let grabbed = ws.grabber.is_some();
-                let text = ws.work.current_edition()
-                    .all_entries()
-                    .iter()
-                    .map(|(_, c)| c.element.as_text().unwrap_or(""))
-                    .collect::<String>();
-                let title = text.lines().next().unwrap_or("").chars().take(60).collect();
                 let read_club = ws.work.read_club();
-                (*id, owner, rev_count, grabbed, title, read_club)
+                (*id, owner, rev_count, grabbed, ws.cached_title.clone(), read_club)
             })
             .collect()
     }
@@ -1453,6 +1462,8 @@ impl Server {
 
         let ls = LinkState { link, origin, destination };
         self.links.insert(link_id, ls);
+        self.work_to_links.entry(origin).or_default().push(link_id);
+        self.work_to_links.entry(destination).or_default().push(link_id);
         let link_elem = RangeElement::work(link_id);
         let origin_elem = RangeElement::work(origin);
         let dest_elem = RangeElement::work(destination);
@@ -1494,18 +1505,28 @@ impl Server {
 
     pub fn delete_link(&mut self, _session_id: SessionId, link_id: BeId) -> Result<(), ServerError> {
         self.ensure_session(_session_id)?;
-        if self.links.remove(&link_id).is_none() {
-            return Err(ServerError::NotFound(format!("link {}", link_id)));
+        let ls = self.links.remove(&link_id)
+            .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+        if let Some(ids) = self.work_to_links.get_mut(&ls.origin) {
+            ids.retain(|id| *id != link_id);
+        }
+        if let Some(ids) = self.work_to_links.get_mut(&ls.destination) {
+            ids.retain(|id| *id != link_id);
         }
         Ok(())
     }
 
     pub fn list_links_for_work(&self, work_id: BeId) -> Vec<(BeId, BeId, BeId)> {
-        self.links
-            .iter()
-            .filter(|(_, ls)| ls.origin == work_id || ls.destination == work_id)
-            .map(|(id, ls)| (*id, ls.origin, ls.destination))
-            .collect()
+        self.work_to_links
+            .get(&work_id)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|&lid| {
+                        self.links.get(&lid).map(|ls| (lid, ls.origin, ls.destination))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn link_count(&self) -> usize {
@@ -1566,14 +1587,29 @@ impl Server {
         &self,
         search_text: &str,
     ) -> Vec<(BeId, Option<BeId>, u64, Vec<(i64, i64)>)> {
+        let search_elem = RangeElement::text(search_text);
+        let fp = search_elem.content_fingerprint();
+        let candidate_works: std::collections::HashSet<BeId> =
+            self.backfollow.find_works_by_fingerprint(&fp).into_iter().collect();
+
         let mut results = Vec::new();
-        for (work_id, ws) in &self.works {
+        let work_ids: Vec<BeId> = if candidate_works.is_empty() {
+            self.works.keys().copied().collect()
+        } else {
+            candidate_works.iter().copied().collect()
+        };
+
+        for work_id in work_ids {
+            let ws = match self.works.get(&work_id) {
+                Some(ws) => ws,
+                None => continue,
+            };
             let ed = ws.work.current_edition();
-            let text = ed
+            let text: String = ed
                 .all_entries()
                 .iter()
                 .map(|(_, carrier)| carrier.element.as_text().unwrap_or(""))
-                .collect::<String>();
+                .collect();
             let mut matches = Vec::new();
             let mut start = 0;
             while let Some(pos) = text[start..].find(search_text) {
@@ -1585,7 +1621,7 @@ impl Server {
             }
             if !matches.is_empty() {
                 results.push((
-                    *work_id,
+                    work_id,
                     ws.work.owner(),
                     ws.work.revision_count(),
                     matches,
@@ -2342,11 +2378,13 @@ impl Server {
         let _session = self.sessions.get(&session_id)
             .ok_or(ServerError::SessionNotFound(session_id))?;
         let mut result = edition.endorsements().clone();
-        for (_, ws) in &self.works {
-            let current_ed = ws.work.current_edition();
-            if current_ed == edition {
-                if self.work_can_read_by(session_id, ws.work.be_id()) {
-                    result = result.union(ws.work.endorsements());
+        let candidates = self.works_with_edition_fingerprints(edition);
+        for wid in candidates {
+            if let Some(ws) = self.works.get(&wid) {
+                if ws.work.current_edition() == edition {
+                    if self.work_can_read_by(session_id, ws.work.be_id()) {
+                        result = result.union(ws.work.endorsements());
+                    }
                 }
             }
         }
@@ -2360,13 +2398,26 @@ impl Server {
         let edition = self.standalone_editions.get(&edition_id)
             .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
         let mut result = edition.endorsements().clone();
-        for (_, ws) in &self.works {
-            let current_ed = ws.work.current_edition();
-            if current_ed == edition {
-                result = result.union(ws.work.endorsements());
+        let candidates = self.works_with_edition_fingerprints(edition);
+        for wid in candidates {
+            if let Some(ws) = self.works.get(&wid) {
+                if ws.work.current_edition() == edition {
+                    result = result.union(ws.work.endorsements());
+                }
             }
         }
         Ok(result)
+    }
+
+    fn works_with_edition_fingerprints(&self, edition: &Edition) -> std::collections::HashSet<BeId> {
+        let mut candidates = std::collections::HashSet::new();
+        for (_, carrier) in edition.all_entries() {
+            let fp = carrier.element.content_fingerprint();
+            for wid in self.backfollow.find_works_by_fingerprint(&fp) {
+                candidates.insert(wid);
+            }
+        }
+        candidates
     }
 
     fn work_can_read_by(&self, session_id: SessionId, work_id: BeId) -> bool {
@@ -2559,6 +2610,7 @@ impl Server {
             } else {
                 let (be_id, elem) = self.grand_map.new_work_element(None);
                 self.grand_map.assign_new_id(elem);
+                let title = Self::extract_title(&edition);
                 let mut work = crate::edition::Work::new_with_owner(
                     be_id,
                     None,
@@ -2573,6 +2625,7 @@ impl Server {
                     last_revision_author: None,
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
+                    cached_title: title,
                 };
                 self.works.insert(be_id, ws);
                 imported += 1;
@@ -3510,6 +3563,7 @@ pub(crate) mod persist_snapshot {
                 operation_counter: snapshot.operation_counter,
                 admin: AdminState::new(),
                 links: HashMap::new(),
+                work_to_links: HashMap::new(),
                 link_counter: snapshot.link_counter,
                 backfollow: BackfollowEngine::new(),
                 content_address,
@@ -3563,6 +3617,7 @@ pub(crate) mod persist_snapshot {
                     last_revision_author: ws_snap.last_revision_author,
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
+                    cached_title: Self::extract_title(work.current_edition()),
                 };
                 server.works.insert(*id, ws);
             }
@@ -3589,6 +3644,8 @@ pub(crate) mod persist_snapshot {
                     origin: ls.origin,
                     destination: ls.destination,
                 });
+                server.work_to_links.entry(ls.origin).or_default().push(ls.link_id);
+                server.work_to_links.entry(ls.destination).or_default().push(ls.link_id);
             }
 
             for (wid, ws) in &server.works {
