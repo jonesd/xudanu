@@ -180,9 +180,9 @@ impl Server {
             system_clubs,
             operation_counter: 0,
             admin: AdminState::new(),
-                links: HashMap::new(),
-                work_to_links: HashMap::new(),
-                link_counter: 0,
+            links: HashMap::new(),
+            work_to_links: HashMap::new(),
+            link_counter: 0,
             backfollow: BackfollowEngine::new(),
             content_address: ContentAddressIndex::new(1_000_000),
             blob_store: BlobStore::in_memory(),
@@ -1589,27 +1589,20 @@ impl Server {
     ) -> Vec<(BeId, Option<BeId>, u64, Vec<(i64, i64)>)> {
         let search_elem = RangeElement::text(search_text);
         let fp = search_elem.content_fingerprint();
-        let candidate_works: std::collections::HashSet<BeId> =
+        let exact_matches: std::collections::HashSet<BeId> =
             self.backfollow.find_works_by_fingerprint(&fp).into_iter().collect();
 
         let mut results = Vec::new();
-        let work_ids: Vec<BeId> = if candidate_works.is_empty() {
-            self.works.keys().copied().collect()
-        } else {
-            candidate_works.iter().copied().collect()
-        };
-
-        for work_id in work_ids {
-            let ws = match self.works.get(&work_id) {
-                Some(ws) => ws,
-                None => continue,
-            };
+        for (work_id, ws) in &self.works {
             let ed = ws.work.current_edition();
             let text: String = ed
                 .all_entries()
                 .iter()
                 .map(|(_, carrier)| carrier.element.as_text().unwrap_or(""))
                 .collect();
+            if !text.contains(search_text) {
+                continue;
+            }
             let mut matches = Vec::new();
             let mut start = 0;
             while let Some(pos) = text[start..].find(search_text) {
@@ -1621,13 +1614,14 @@ impl Server {
             }
             if !matches.is_empty() {
                 results.push((
-                    work_id,
+                    *work_id,
                     ws.work.owner(),
                     ws.work.revision_count(),
                     matches,
                 ));
             }
         }
+        let _ = exact_matches;
         results
     }
 
