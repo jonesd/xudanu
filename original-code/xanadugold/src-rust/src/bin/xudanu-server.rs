@@ -42,14 +42,57 @@ fn cmd_verify(data_dir: &str) {
         eprintln!("Error: no snapshot found at {}", snapshot_path.display());
         std::process::exit(1);
     }
+    let content = match std::fs::read_to_string(&snapshot_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: cannot read snapshot: {}", e);
+            std::process::exit(1);
+        }
+    };
+    let raw: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error: corrupt JSON: {}", e);
+            std::process::exit(1);
+        }
+    };
+    let version = xudanu::server::transport::snapshot::detect_version(&raw);
+    let data = if version >= 1 {
+        let versioned: serde_json::Value = raw.clone();
+        match xudanu::server::transport::snapshot::read_and_migrate(&snapshot_path) {
+            Ok((d, _, _)) => d,
+            Err(e) => {
+                eprintln!("Error: migration failed: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        raw.clone()
+    };
+    let report = xudanu::server::transport::snapshot::validate_snapshot(&data);
     match Server::restore_from_file_with_persistence(&snapshot_path) {
         Ok(server) => {
-            eprintln!("Snapshot OK: {} works, {} clubs, {} blobs, keypair={}",
-                server.work_count(),
-                server.club_count(),
-                server.blob_count(),
-                server.federation_server_id(),
-            );
+            println!("Snapshot OK");
+            println!("  Format version: v{}", version);
+            println!("  Server version: {}", env!("CARGO_PKG_VERSION"));
+            println!("  Works: {}", server.work_count());
+            println!("  Clubs: {}", server.club_count());
+            println!("  Blobs: {}", server.blob_count());
+            println!("  Server ID: {}", server.federation_server_id());
+            if report.has_warnings() {
+                for w in &report.warnings {
+                    println!("  Warning: {}", w);
+                }
+            }
+            if !report.is_valid() {
+                for e in &report.errors {
+                    eprintln!("  Error: {}", e);
+                }
+                std::process::exit(1);
+            }
+            if version < 1 {
+                println!("  Note: snapshot is v0 (legacy). It will be auto-migrated to v1 on next startup.");
+            }
         }
         Err(e) => {
             eprintln!("Error: corrupt snapshot: {}", e);

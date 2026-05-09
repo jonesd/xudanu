@@ -3752,30 +3752,30 @@ pub(crate) mod persist_snapshot {
         pub fn checkpoint_to_file(&self, path: &std::path::Path) -> std::io::Result<()> {
             let start = std::time::Instant::now();
             let snapshot = self.to_snapshot();
-            let json = serde_json::to_string_pretty(&snapshot)
+            let data = serde_json::to_value(&snapshot)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-            let tmp_path = path.with_extension("tmp");
-            std::fs::write(&tmp_path, json.as_bytes())?;
-            std::fs::rename(&tmp_path, path)?;
+            crate::server::transport::snapshot::write_versioned_snapshot(path, &data)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             self.save_key_history();
             tracing::info!(
-                "Checkpoint saved in {:.2}ms ({} bytes)",
+                "Checkpoint saved in {:.2}ms",
                 start.elapsed().as_secs_f64() * 1000.0,
-                json.len()
             );
             Ok(())
         }
 
         pub fn restore_from_file(path: &std::path::Path) -> std::io::Result<Self> {
-            let json = std::fs::read_to_string(path)?;
-            let snapshot: ServerSnapshot = serde_json::from_str(&json)
+            let data = crate::server::transport::snapshot::full_restore(path)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let snapshot: ServerSnapshot = serde_json::from_value(data)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
             Ok(Self::from_snapshot(&snapshot))
         }
 
         pub fn restore_from_file_with_persistence(path: &std::path::Path) -> std::io::Result<Self> {
-            let json = std::fs::read_to_string(path)?;
-            let snapshot: ServerSnapshot = serde_json::from_str(&json)
+            let data = crate::server::transport::snapshot::full_restore(path)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let snapshot: ServerSnapshot = serde_json::from_value(data)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
             Ok(Self::from_snapshot_with_persistence(&snapshot, path))
         }

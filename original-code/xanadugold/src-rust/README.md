@@ -159,4 +159,4 @@ Pass `--static-dir <path>` to serve static files from a directory. The server se
 
 This Rust implementation is licensed under **Apache 2.0** (Copyright 2026 David G Jones and contributors).
 
-The original Udanax Gold C++ codebase (in `../src/`) is licensed under the **MIT/X11 license** (Copyright 1979-1999 Udanax.com, released open-source August 23, 1999). See `../LICENSE` for details.
+The original Udanax Gold C++ codebase (in `../src/`) is licensed under the **MIT/X11 license** (Copyright 1979-1999 Udanax.com, released open-source August 23, 1999). See [udanax.xanadu.com](http://udanax.xanadu.com/) for the original announcement and license details.
