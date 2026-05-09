@@ -8,38 +8,58 @@ xudanu implements the Udanax Gold hypertext model, where content is identity. Do
 
 The core data structure is a partially ordered trace history (DagWood) that preserves all revisions and their relationships. Editions build on previous editions with structural sharing, so nothing is overwritten or lost. Bidirectional links connect documents without embedding, and every link is tracked in both directions.
 
-## Features
+## Prerequisites
 
-- **Content-addressed blob storage** with BLAKE3 fingerprints and deduplication via a global GrandMap
-- **Edition-based document revision** with structural sharing across versions
-- **Transclusion tracking** — find where any content element is reused across all documents
-- **Three-plane architecture** — Content (CRDT), Reconciliation (DagWood partial ordering), Governance (PBFT)
-- **Web-of-trust membership** with Ed25519 endorsements and membership proofs
-- **PBFT consensus** for governance operations (admit/expel members, key rotation, royalty)
-- **WebSocket API** with JSON and binary (postcard) wire protocols
-- **Embedded web frontend** with document editing, revision browsing, link management, and image upload
-- **Federation** with encrypted peer channels (X25519 key exchange, ChaCha20-Poly1305)
-- **WASM support** for browser-side library use via `wasm-bindgen`
+- **Rust** 1.56 or later (edition 2021). Latest stable recommended. Install via [rustup](https://rustup.rs):
+  ```
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  ```
+- **A browser** — Firefox recommended (Safari has WebSocket restrictions with HTTP)
 
 ## Quick Start
 
-**From the crate directory:**
+**1. Build the server:**
 ```
+cd original-code/xanadugold/src-rust
 cargo build --features server
-./target/debug/xudanu-server run
 ```
 
-**From the workspace root:**
+**2. Initialize a data directory and start the server:**
 ```
-cargo run --features server --bin xudanu-server --manifest-path original-code/xanadugold/src-rust/Cargo.toml -- run
-```
-
-**With live HTML editing** (no rebuild needed for HTML changes):
-```
-cargo run --features server --bin xudanu-server --manifest-path original-code/xanadugold/src-rust/Cargo.toml -- run --static-dir original-code/xanadugold/src-rust/static
+./target/debug/xudanu-server init /tmp/xudanu-data
+./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data --static-dir ./static
 ```
 
-Open http://127.0.0.1:8080 in a browser.
+**3. Open in your browser:**
+```
+http://127.0.0.1:8090
+```
+
+The `--static-dir` flag serves frontend files directly from disk, so HTML/JS changes take effect on refresh without rebuilding.
+
+### First Steps
+
+1. **Create a document** — click the **+** button in the sidebar. A new empty document opens in edit mode. Type some text and click **Save**.
+2. **Edit and revise** — click **Edit** to grab the document, make changes, then **Save**. Use the revision slider to browse history.
+3. **Upload images** — paste an image or drag-and-drop a file into the editor. Images are content-addressed and deduplicated via BLAKE3 fingerprints.
+4. **Compare two documents** — create a second document with some overlapping text. Select the first document, click **Compare**, choose the second document, and click **Open**. You'll see:
+   - **Amber underlines** = shared content (transclusions), with bridge curves connecting them across panes
+   - **Blue tint** = content unique to the left document
+   - **Orange tint** = content unique to the right document
+5. **Edit in compare view** — each pane has its own **Edit/Save/Cancel** buttons. Edits update the highlighting live.
+
+### From the workspace root
+
+```
+cargo run --features server --bin xudanu-server --manifest-path original-code/xanadugold/src-rust/Cargo.toml -- run 127.0.0.1:8090 /tmp/xudanu-data --static-dir original-code/xanadugold/src-rust/static
+```
+
+### Presentations and Diagrams
+
+- **[slides.html](static/slides.html)** — 10-slide presentation covering Xanadu history, architecture, optimizations, and demo (arrow keys to navigate)
+- **[diagram.html](static/diagram.html)** — interactive architecture diagram showing O-tree / H-tree / Canopy layering with Big-O performance table
+
+Both can be opened directly in a browser while the server is running.
 
 ## CLI Reference
 
@@ -53,6 +73,7 @@ Run options:
 
 ```
 --static-dir <dir>    Serve frontend from a custom directory instead of embedded HTML
+--peer <addr>         Connect to a federated peer server
 ```
 
 Data is checkpointed to `server.json` in the data directory on graceful shutdown (Ctrl-C).
@@ -136,4 +157,6 @@ Pass `--static-dir <path>` to serve static files from a directory. The server se
 
 ## License
 
-Research and educational project based on the original Udanax Gold code.
+This Rust implementation is licensed under **Apache 2.0** (Copyright 2026 David G Jones and contributors).
+
+The original Udanax Gold C++ codebase (in `../src/`) is licensed under the **MIT/X11 license** (Copyright 1979-1999 Udanax.com, released open-source August 23, 1999). See `../LICENSE` for details.
