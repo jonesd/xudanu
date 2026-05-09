@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Xudanu: 30 Years of Hypertext Innovation</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;font-family:'Inter',system-ui,sans-serif;background:#0a0a0f;color:#e0e0e8}
+
+.slide{display:none;width:100vw;height:100vh;padding:60px 80px;position:relative;flex-direction:column;justify-content:center}
+.slide.active{display:flex}
+
+.slide-number{position:absolute;bottom:30px;right:40px;font-size:12px;color:#444;font-family:'JetBrains Mono',monospace}
+.slide-title{font-size:42px;font-weight:800;line-height:1.15;margin-bottom:24px;letter-spacing:-0.5px}
+.slide-subtitle{font-size:18px;font-weight:300;color:#888;margin-bottom:40px;max-width:700px;line-height:1.6}
+
+h1.slide-title{background:linear-gradient(135deg,#58a6ff 0%,#a371f7 50%,#d29922 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-green{color:#3fb950}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.mono{font-family:'JetBrains Mono',monospace}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:start}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px}
+
+.card{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:24px}
+.card h3{font-size:16px;font-weight:600;margin-bottom:8px}
+.card p{font-size:13px;color:#888;line-height:1.6}
+.card code{font-family:'JetBrains Mono',monospace;font-size:12px;color:#79c0ff}
+
+.timeline{position:relative;padding-left:40px}
+.timeline::before{content:'';position:absolute;left:12px;top:0;bottom:0;width:2px;background:linear-gradient(to bottom,#58a6ff,#a371f7,#d29922)}
+.timeline-item{position:relative;margin-bottom:28px}
+.timeline-item::before{content:'';position:absolute;left:-32px;top:6px;width:12px;height:12px;border-radius:50%;border:2px solid #58a6ff;background:#0a0a0f}
+.timeline-item .year{font-family:'JetBrains Mono',monospace;font-size:13px;color:#58a6ff;font-weight:600;margin-bottom:2px}
+.timeline-item .event{font-size:14px;color:#c0c0c8;line-height:1.5}
+.timeline-item .detail{font-size:12px;color:#666;margin-top:2px}
+
+.stat-row{display:flex;gap:32px;margin:20px 0}
+.stat{text-align:center}
+.stat .value{font-size:48px;font-weight:800;font-family:'JetBrains Mono',monospace;background:linear-gradient(135deg,#3fb950,#58a6ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.stat .label{font-size:12px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-top:4px}
+
+.bad{color:#f85149;font-family:'JetBrains Mono',monospace}
+.good{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
+
+.table-wrap{width:100%;border-collapse:collapse;margin:16px 0}
+.table-wrap th{text-align:left;padding:10px 14px;border-bottom:2px solid #222;color:#666;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+.table-wrap td{padding:10px 14px;border-bottom:1px solid #161620;font-size:13px;color:#aaa}
+.table-wrap td:first-child{color:#ccc;font-weight:500}
+
+.quote{border-left:3px solid #d29922;padding:16px 20px;margin:20px 0;background:rgba(210,153,34,0.05);border-radius:0 8px 8px 0;font-style:italic;color:#999;font-size:15px;line-height:1.6}
+.quote cite{display:block;margin-top:8px;font-style:normal;font-size:12px;color:#666}
+
+.layer-box{padding:14px 20px;border-radius:8px;margin-bottom:3px;font-size:13px;display:flex;align-items:center;gap:12px}
+.layer-box .label{font-weight:700;text-transform:uppercase;letter-spacing:1px;font-size:11px;min-width:100px}
+.layer-box .desc{color:#888;font-size:12px}
+.l-green{background:rgba(63,185,80,0.08);border-left:3px solid #3fb950}
+.l-blue{background:rgba(88,166,255,0.08);border-left:3px solid #58a6ff}
+.l-purple{background:rgba(163,113,247,0.08);border-left:3px solid #a371f7}
+.l-amber{background:rgba(210,153,34,0.08);border-left:3px solid #d29922}
+
+.arrow-down{text-align:center;color:#333;font-size:20px;padding:4px 0;font-family:'JetBrains Mono',monospace}
+
+.nav{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:100}
+.nav button{width:36px;height:36px;border-radius:50%;border:1px solid #333;background:rgba(10,10,15,0.9);color:#888;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s}
+.nav button:hover{background:#1a1a24;color:#fff;border-color:#58a6ff}
+.progress{position:fixed;top:0;left:0;height:2px;background:linear-gradient(90deg,#58a6ff,#a371f7,#d29922);transition:width 0.3s;z-index:100}
+
+.feature-list{list-style:none;padding:0}
+.feature-list li{padding:8px 0;font-size:14px;color:#aaa;display:flex;gap:10px;align-items:flex-start}
+.feature-list li::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#58a6ff;margin-top:7px;flex-shrink:0}
+
+.code-block{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:16px;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.8;color:#c9d1d9;margin:12px 0;overflow-x:auto;white-space:pre}
+.kw{color:#ff7b72}
+.fn{color:#d2a8ff}
+.str{color:#a5d6ff}
+.cm{color:#8b949e}
+.num{color:#79c0ff}
+
+.highlight-box{background:linear-gradient(135deg,rgba(88,166,255,0.1),rgba(163,113,247,0.1));border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:24px;margin:16px 0}
+.highlight-box h3{color:#58a6ff;margin-bottom:8px}
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<!-- SLIDE 1: Title -->
+<div class="slide active" id="s1">
+  <div>
+    <div style="font-size:13px;color:#444;font-family:'JetBrains Mono',monospace;margin-bottom:16px;letter-spacing:2px">XUDANU</div>
+    <h1 class="slide-title" style="font-size:56px;max-width:800px">30 Years of Hypertext Innovation</h1>
+    <p class="slide-subtitle" style="font-size:20px;margin-top:8px">From Ted Nelson's 1963 vision, through Udanax Gold's C++ implementation, to a modern Rust engine with optimized transclusion queries.</p>
+    <div style="margin-top:40px;font-size:13px;color:#444">
+      <span style="color:#666">Show &amp; Tell</span> &middot; 2026
+    </div>
+  </div>
+  <div class="slide-number">1 / 10</div>
+</div>
+
+<!-- SLIDE 2: History -->
+<div class="slide" id="s2">
+  <div>
+    <div class="slide-title">A Brief History of Xanadu</div>
+    <div class="two-col">
+      <div class="timeline">
+        <div class="timeline-item"><div class="year">1963</div><div class="event">Ted Nelson coins "hypertext" and begins the Xanadu project</div><div class="detail">Vision: documents that link to and include each other, with automatic attribution and micropayments</div></div>
+        <div class="timeline-item"><div class="year">1960s</div><div class="event">Nelson coins "micropayment" specifically for hypertext</div><div class="detail">Readers pay fractions of a cent; royalties flow to original authors automatically</div></div>
+        <div class="timeline-item"><div class="year">1970s-80s</div><div class="event">Xanadu design refined: transclusion, tumblers, enfilades</div><div class="detail">Core data structures invented: O-tree, H-tree, canopy, mappings</div></div>
+        <div class="timeline-item" style="margin-bottom:0"><div class="year">1989</div><div class="event">Implementation in Smalltalk-80 at Autodesk</div><div class="detail">Mechanically translated to C++ (Objectworks for Smalltalk-80, v2.5)</div></div>
+      </div>
+      <div class="timeline">
+        <div class="timeline-item"><div class="year">1999</div><div class="event">Udanax Gold open-sourced as C++ codebase</div><div class="detail">Complete front-end/back-end implementation ~200k LOC across 200+ files</div></div>
+        <div class="timeline-item"><div class="year">~2005</div><div class="event">Project goes dormant</div><div class="detail">All components ported but disconnected. Transclusion queries unimplemented. Dead code paths everywhere.</div></div>
+        <div class="timeline-item"><div class="year">2025-26</div><div class="event">Xudanu: Rust migration + optimization</div><div class="detail">Faithful port connected into a working system. Fingerprint-based indexing, canopy-filtered H-tree traversal, O(1) lazy transforms.</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-number">2 / 10</div>
+</div>
+
+<!-- SLIDE 3: The Vision -->
+<div class="slide" id="s3">
+  <div>
+    <div class="slide-title">What Xanadu Got Right</div>
+    <div class="quote">"The HTML design was a pathetic compromise between ignorance and arrogance."<br>"The Web is a trivialization of the hypertext idea."<cite>&mdash; Ted Nelson (paraphrased from various talks)</cite></div>
+    <div class="three-col" style="margin-top:24px">
+      <div class="card">
+        <h3 class="accent-amber">Transclusion</h3>
+        <p>Content is never copied &mdash; only <em>referenced in place</em>. When your paragraph appears in 10,000 documents, all 10,000 point to the same bytes. Updates propagate. Attribution is automatic.</p>
+      </div>
+      <div class="card">
+        <h3 class="accent-blue">Micropayments</h3>
+        <p>When a reader accesses a document transcluding 5 authors, fractions of a cent flow to each. The <code class="mono">cost()</code> method tracks bytes, sharing, and ownership at element granularity.</p>
+      </div>
+      <div class="card">
+        <h3 class="accent-green">Bidirectional Links</h3>
+        <p>Every link goes both ways. You always know what links to your document. No more broken links. No more 404s. Every connection is tracked by the system.</p>
+      </div>
+    </div>
+    <div class="highlight-box" style="margin-top:24px">
+      <h3>17 Rules of Xanadu</h3>
+      <p style="font-size:13px;color:#888">The original specification required: no deletion (only new versions), visible connections between documents, automatic copyright tracking, no-typewriter model (non-sequential writing), and content-addressed storage. The Web implemented approximately zero of these.</p>
+    </div>
+  </div>
+  <div class="slide-number">3 / 10</div>
+</div>
+
+<!-- SLIDE 4: Migration Challenge -->
+<div class="slide" id="s4">
+  <div>
+    <div class="slide-title">Migrating with LLM Assistance</div>
+    <div class="slide-subtitle">~200,000 lines of mechanically-translated Smalltalk &rarr; C++ &rarr; idiomatic Rust</div>
+    <div class="two-col">
+      <div>
+        <h3 style="font-size:16px;margin-bottom:16px;color:#f85149">The Challenges</h3>
+        <ul class="feature-list">
+          <li>Every <code class="mono">.cxx</code> file begins with "Output from Objectworks for Smalltalk-80, v2.5, 29 July 1989" &mdash; machine-translated, not human-written</li>
+          <li>Smalltalk idioms everywhere: fluid variables (dynamic scope), become: (object identity swap), deferred classes, sender-seeking message dispatch</li>
+          <li>All components ported but <em>disconnected</em> &mdash; transclusion queries were dead code, H-tree traversal never executed, canopy flags allocated but never checked</li>
+          <li>No test suite for transclusion behavior &mdash; had to derive correctness from first principles</li>
+          <li>Two-tier dual-write to separate indexes caused stale data accumulation</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="font-size:16px;margin-bottom:16px;color:#3fb950">What LLMs Enabled</h3>
+        <ul class="feature-list">
+          <li>Read and understand 200+ interconnected C++ files with cross-references across Smalltalk, front-end, back-end, and storage layers</li>
+          <li>Trace data flow from <code class="mono">BeGrandMap</code> through <code class="mono">BackfollowEngine</code> to <code class="mono">TransclusionIndex</code> to identify the disconnection points</li>
+          <li>Generate idiomatic Rust for each component while preserving the original's algebraic invariants</li>
+          <li>Write property-based tests (1,643 total) covering 17 phases of incremental functionality</li>
+          <li>Debug performance by reading both the C++ and Rust simultaneously, comparing algorithms</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="slide-number">4 / 10</div>
+</div>
+
+<!-- SLIDE 5: The Architecture -->
+<div class="slide" id="s5">
+  <div>
+    <div class="slide-title">The Three-Layer Architecture</div>
+    <div class="slide-subtitle">Content identity enables all the optimizations. Same bytes = same fingerprint = same identity.</div>
+    <div style="max-width:600px">
+      <div class="layer-box l-green"><span class="label" style="color:#3fb950">O-Tree</span><span class="desc">BTree of <code class="mono">RangeElement</code>s. Content-addressed via BLAKE3. 9 element types: Text, Data, Blob, Edition (nested), Label, PlaceHolder, IDHolder, Work, Overlay.</span></div>
+      <div class="arrow-down">&darr; fingerprint &rarr; TransclusionIndex</div>
+      <div class="layer-box l-blue"><span class="label" style="color:#58a6ff">H-Tree</span><span class="desc">Version ancestry DAG. Each node (crum) carries fingerprint summaries of its subtree. Enables O(log n) "find all editions containing this content" without scanning.</span></div>
+      <div class="arrow-down">&darr; canopy flags prune branches</div>
+      <div class="layer-box l-purple"><span class="label" style="color:#a371f7">Canopy</span><span class="desc">Flag-bit bitmap at each H-tree node. Endorsement types (Text=1, Link=2, Blob=4...) merged upward. If parent lacks your flag, skip entire subtree.</span></div>
+      <div class="arrow-down">&darr; BackfollowEngine orchestrates</div>
+      <div class="layer-box l-amber"><span class="label" style="color:#d29922">Query</span><span class="desc">hash query &rarr; index lookup &rarr; H-tree walk (canopy-filtered) &rarr; collect matching works &rarr; results</span></div>
+    </div>
+  </div>
+  <div class="slide-number">5 / 10</div>
+</div>
+
+<!-- SLIDE 6: The Performance Problem -->
+<div class="slide" id="s6">
+  <div>
+    <div class="slide-title">The Performance Challenge</div>
+    <div class="slide-subtitle">The Udanax team designed elegant data structures but left core queries unimplemented. We had to make them fast.</div>
+    <table class="table-wrap">
+      <tr><th>Operation</th><th>Naive (C++ parity)</th><th>Xudanu (optimized)</th><th>How</th></tr>
+      <tr><td>Find works containing text</td><td class="bad">O(W &times; L)</td><td class="good">O(U &times; A)</td><td>Fingerprint HashMap intersection, no full scan</td></tr>
+      <tr><td>Find shared regions (diff)</td><td class="bad">O(n &times; m)</td><td class="good">O(L<sub>a</sub> + L<sub>b</sub>)</td><td>Fingerprint seed discovery + greedy claiming</td></tr>
+      <tr><td>Edition element listing</td><td class="bad">O(n log n) every call</td><td class="good">O(1) after first</td><td>OnceLock cache shared via Arc on clone</td></tr>
+      <tr><td>Transclusion index lookup</td><td class="bad">O(n) flat scan</td><td class="good">O(log n)</td><td>H-tree canopy-filtered traversal</td></tr>
+      <tr><td>Position transform (shift)</td><td class="bad">O(n) rewrite</td><td class="good">O(1)</td><td>Lazy Dsp node wraps tree without traversal</td></tr>
+      <tr><td>Region highlighting</td><td class="bad">O(r &times; t)</td><td class="good">O(r + t)</td><td>Sorted regions, single pass</td></tr>
+    </table>
+    <div style="font-size:11px;color:#444;margin-top:4px">W = works, L = text length, U = unique fingerprints, A = avg works/fingerprint, n/m = doc lengths, r = regions, t = text</div>
+    <div class="highlight-box" style="margin-top:16px">
+      <h3 class="accent-green">Key insight</h3>
+      <p style="font-size:13px;color:#888">BLAKE3 content fingerprints give us inverted indexes (fingerprint &rarr; works), intersection (shared content), and pruning (canopy flags) &mdash; all from the same hash. The O-tree's content-addressing IS the optimization.</p>
+    </div>
+  </div>
+  <div class="slide-number">6 / 10</div>
+</div>
+
+<!-- SLIDE 7: Compositional Structures -->
+<div class="slide" id="s7">
+  <div>
+    <div class="slide-title">Beyond Text: Compositional Data</div>
+    <div class="slide-subtitle">Udanax Gold's RangeElement system allowed any mix of element types in any Edition. Editions can contain Editions. All the optimizations still apply.</div>
+    <div class="three-col">
+      <div class="card">
+        <h3 class="accent-amber">9 Element Types</h3>
+        <p style="margin-bottom:8px">Text, Data, Blob, <strong>Edition</strong> (nested), Label, PlaceHolder, IDHolder, Work, Overlay</p>
+        <p>A single Edition can mix all types. Tables = Edition of Editions. Spreadsheets = Edition of Data. Templates = Edition of PlaceHolders.</p>
+      </div>
+      <div class="card">
+        <h3 class="accent-blue">Composition Operations</h3>
+        <p style="margin-bottom:8px"><code class="mono">combine()</code> merge &middot; <code class="mono">replace()</code> override &middot; <code class="mono">copy()</code> subset &middot; <code class="mono">transformedBy()</code> reposition</p>
+        <p>Plus set algebra: union, intersect, minus, complement. All immutable. All work on any element type.</p>
+      </div>
+      <div class="card">
+        <h3 class="accent-green">Optimizations Apply Universally</h3>
+        <p style="margin-bottom:8px">BLAKE3 fingerprints work on <em>any</em> RangeElement variant, not just Text. Canopy flags just allocate more bits for new types.</p>
+        <p>Dsp compose() handles multi-dimensional structures (CrossDsp) &mdash; same O(1) lazy transform.</p>
+      </div>
+    </div>
+    <div class="highlight-box" style="margin-top:16px">
+      <p style="font-size:13px;color:#888"><span class="accent-blue" style="font-weight:600">Already ported:</span> The entire compositional algebra is in the Rust crate &mdash; FeText, FeSet, XnRegion, Mapping, SharedMapping, Loaf (Leaf/Split/Dsp), OrglRoot, Bundle retrieval, Path navigation. The gap is UI + server protocol, not engine capability.</p>
+    </div>
+  </div>
+  <div class="slide-number">7 / 10</div>
+</div>
+
+<!-- SLIDE 8: Micropayments -->
+<div class="slide" id="s8">
+  <div>
+    <div class="slide-title">Micropayments: The Infrastructure Exists</div>
+    <div class="two-col">
+      <div>
+        <div class="code-block"><span class="kw">pub struct</span> <span class="fn">StorageCost</span> {
+  total_bytes:  <span class="num">u64</span>,    <span class="cm">// Raw bytes</span>
+  unique_bytes: <span class="num">u64</span>,    <span class="cm">// Bytes unique to this doc</span>
+  shared_bytes: <span class="num">u64</span>,    <span class="cm">// Shared via transclusion</span>
+  share_count:  <span class="num">u64</span>,    <span class="cm">// How many docs share them</span>
+  method:       <span class="fn">CostMethod</span>,  <span class="cm">// How to split</span>
+}
+
+<span class="kw">enum</span> <span class="fn">CostMethod</span> {
+  TotalShared,    <span class="cm">// Everyone pays full price</span>
+  ProrateShared,  <span class="cm">// Split equally (royalties)</span>
+  OmitShared,     <span class="cm">// Transcluded = free</span>
+}</div>
+        <p style="font-size:13px;color:#888;margin-top:12px">The accounting is per-element, not per-document. When Alice's paragraph appears in 10,000 documents via transclusion, the system knows she owns those bytes in all 10,000 contexts.</p>
+      </div>
+      <div>
+        <h3 style="font-size:16px;margin-bottom:16px">The Royalty Flow</h3>
+        <ol class="feature-list">
+          <li><strong>Alice writes content</strong> &rarr; server records ownership per element</li>
+          <li><strong>Bob transcludes Alice's paragraph</strong> &rarr; fingerprint match, shared_bytes incremented</li>
+          <li><strong>Reader accesses Bob's document</strong> &rarr; server calculates cost (ProrateShared)</li>
+          <li><strong>Micropayment splits</strong> &rarr; 60% to Alice, 35% to Bob, 5% server fee</li>
+        </ol>
+        <div class="card" style="margin-top:20px">
+          <h3 class="accent-blue">Lightning Network via LDK</h3>
+          <p>Millisatoshi precision, instant settlement, streaming "pay as you read". Rust-native library. Free to develop on testnet. The most Xanadu-aligned payment rail.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-number">8 / 10</div>
+</div>
+
+<!-- SLIDE 9: Live Demo -->
+<div class="slide" id="s9">
+  <div>
+    <div class="slide-title">Live Demo</div>
+    <div class="three-col" style="margin-top:20px">
+      <div class="card" style="border-color:rgba(63,185,80,0.3)">
+        <h3 class="accent-green">1. Create &amp; Compare</h3>
+        <p>Create two documents with shared text. Click Compare. See shared regions (amber), left-only (blue), right-only (orange). Bridge curves connect transcluded content across panes.</p>
+      </div>
+      <div class="card" style="border-color:rgba(88,166,255,0.3)">
+        <h3 class="accent-blue">2. Edit in Context</h3>
+        <p>Edit either pane while seeing highlights update live. Shared region positions shift as you type. The existing fingerprint-based regions are re-applied to the changing text in real time.</p>
+      </div>
+      <div class="card" style="border-color:rgba(210,153,34,0.3)">
+        <h3 class="accent-amber">3. Save &amp; Persist</h3>
+        <p>Save either pane independently. Atomic work_save_and_release prevents races. The BackfollowEngine updates transclusion indexes. Subsequent compares reflect the changes.</p>
+      </div>
+    </div>
+    <div class="stat-row" style="margin-top:40px;justify-content:center">
+      <div class="stat"><div class="value">1,643</div><div class="label">Tests Passing</div></div>
+      <div class="stat"><div class="value">17</div><div class="label">Phases Completed</div></div>
+      <div class="stat"><div class="value">0(n)</div><div class="label">Worst-Case Query</div></div>
+      <div class="stat"><div class="value">200k</div><div class="label">Lines Migrated</div></div>
+    </div>
+    <div style="text-align:center;margin-top:30px;font-family:'JetBrains Mono',monospace;font-size:14px;color:#58a6ff">http://127.0.0.1:8090</div>
+  </div>
+  <div class="slide-number">9 / 10</div>
+</div>
+
+<!-- SLIDE 10: What's Next -->
+<div class="slide" id="s10">
+  <div>
+    <div class="slide-title">What's Next</div>
+    <div class="two-col">
+      <div>
+        <h3 style="font-size:16px;margin-bottom:16px;color:#58a6ff">Near Term</h3>
+        <ul class="feature-list">
+          <li><strong>Structured editing</strong> &mdash; expose Edition.combine/replace/copy to the UI for tables, outlines, nested documents</li>
+          <li><strong>Age heatmap view</strong> &mdash; walk revision history, diff consecutive versions, color characters by when they were added</li>
+          <li><strong>Reactive recorders</strong> &mdash; live transclusion notifications when new content matches your queries (SensorCanopy)</li>
+          <li><strong>Federation</strong> &mdash; multi-node Xanadu servers sharing content with Last-Writer-Wins reconciliation</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="font-size:16px;margin-bottom:16px;color:#d29922">The Bigger Picture</h3>
+        <ul class="feature-list">
+          <li><strong>Micropayment integration</strong> &mdash; Lightning Network (LDK) behind a feature flag. The accounting engine already exists.</li>
+          <li><strong>Rust SDK</strong> &mdash; wrap the WebSocket protocol for programmatic access. Embed the engine directly for single-user tools.</li>
+          <li><strong>Content marketplace</strong> &mdash; publisher dashboards, reader paywalls, royalty reports per transclusion event</li>
+          <li><strong>WASM build</strong> &mdash; the core engine is <code class="mono">no_std</code> compatible. Run Xanadu in the browser.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="quote" style="margin-top:28px">
+      "The Web is what it is because Tim Berners-Lee shipped something that worked. Xanadu never shipped. But the ideas &mdash; transclusion, bidirectional links, content identity, micropayments &mdash; were right. They were just 30 years early."
+    </div>
+  </div>
+  <div class="slide-number">10 / 10</div>
+</div>
+
+<div class="nav">
+  <button onclick="go(-1)">&larr;</button>
+  <button onclick="go(1)">&rarr;</button>
+</div>
+
+<script>
+var current=1,total=10;
+function go(d){
+  var n=Math.max(1,Math.min(total,current+d));
+  if(n===current)return;
+  document.getElementById('s'+current).classList.remove('active');
+  document.getElementById('s'+n).classList.add('active');
+  current=n;
+  document.getElementById('progress').style.width=(current/total*100)+'%';
+}
+document.addEventListener('keydown',function(e){
+  if(e.key==='ArrowRight'||e.key===' '||e.key==='Enter'){e.preventDefault();go(1)}
+  if(e.key==='ArrowLeft'||e.key==='Backspace'){e.preventDefault();go(-1)}
+});
+document.getElementById('progress').style.width=(1/total*100)+'%';
+</script>
+</body>
+</html>
