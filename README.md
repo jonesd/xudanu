@@ -82,10 +82,21 @@ This project is an ongoing evolution, not a static port.
 
 ## Status
 
-🚧 Work in progress
+Actively developed. 1,643 tests passing. Server, web frontend, transclusion queries, and compare view all working. See [src-rust/README.md](original-code/xanadugold/src-rust/README.md) for build instructions and usage guide.
 
-The system is actively being developed and refined.
-Core data structures and behaviors are stabilizing, with a focus on correctness and test coverage.
+## Quick Start
+
+```bash
+# Build
+cd original-code/xanadugold/src-rust
+cargo build --features server
+
+# Run
+./target/debug/xudanu-server init /tmp/xudanu-data
+./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data --static-dir ./static
+```
+
+Open http://127.0.0.1:8090 in Firefox. See [src-rust/README.md](original-code/xanadugold/src-rust/README.md) for full walkthrough, CLI reference, and architecture details.
 
 ---
 
@@ -100,7 +111,7 @@ Portions of this project are derived from **Udanax Gold (Xanadu 92.1)**, which w
 The original license is included in:
 
 ```
-THIRD_PARTY_LICENSES/udanax_gold.txt
+original-code/xanadugold/LICENSE
 ```
 
 ### Commercial Use
