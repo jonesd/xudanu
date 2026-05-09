@@ -36,7 +36,7 @@ This is not just a port—it is an **evolution** of those ideas.
 xudanu builds on a long lineage of research and engineering:
 
 ```
-Xanadu Project (1980s–1990s)
+Xanadu Project (1960s–1990s)
         ↓
 Xanadu 92.1 (Udanax Gold)
         ↓
@@ -45,7 +45,7 @@ xudanu (Rust / WebAssembly)
 
 The original Xanadu system explored new models for hypertext, identity, and structure that remain relevant today.
 
-xudanu aims to make those ideas accessible and practical with modern tooling.
+The Udanax Gold source code was released open-source on August 23, 1999 under the MIT/X11 license. See [udanax.xanadu.com](http://udanax.xanadu.com/) for the original announcement, license, and supporting documents.
 
 ---
 
@@ -82,7 +82,7 @@ This project is an ongoing evolution, not a static port.
 
 ## Status
 
-Actively developed. 1,643 tests passing. Server, web frontend, transclusion queries, and compare view all working. See [src-rust/README.md](original-code/xanadugold/src-rust/README.md) for build instructions and usage guide.
+**Developer Preview** — the system is functional and tested (1,657 tests passing) but APIs and data formats may evolve. Snapshot migration ensures your data survives upgrades. Versioned wire protocol supports backward-compatible API changes.
 
 ## Quick Start
 

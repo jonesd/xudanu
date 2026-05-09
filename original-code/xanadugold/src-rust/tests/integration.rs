@@ -4034,9 +4034,14 @@ async fn persistence_federation_state_in_snapshot() {
 
     let json = std::fs::read_to_string(dir.join("server.json")).unwrap();
     let snap: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert!(snap["federation"].is_object(), "federation state should be in snapshot");
-    assert!(snap["content_address"].is_object(), "content address index should be in snapshot");
-    assert!(snap["blob_metas"].is_array(), "blob metas should be in snapshot");
+    let data = if snap["format_version"].is_number() {
+        &snap["data"]
+    } else {
+        &snap
+    };
+    assert!(data["federation"].is_object(), "federation state should be in snapshot");
+    assert!(data["content_address"].is_object(), "content address index should be in snapshot");
+    assert!(data["blob_metas"].is_array(), "blob metas should be in snapshot");
 }
 
 #[tokio::test]
