@@ -149,6 +149,11 @@ fn dispatch_inner(
             srv.work_release(session_id, work_id)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::WorkSaveAndRelease { work_id, edition } => {
+            let ed = edition.to_edition();
+            srv.work_save_and_release(session_id, work_id, ed)?;
+            Ok(ResponseValue::Void)
+        }
         WireRequest::WorkIsGrabbed { work_id } => {
             let grabbed = srv.work_is_grabbed(work_id)?;
             Ok(ResponseValue::Boolean(grabbed))

@@ -146,10 +146,7 @@ impl LabelledEdition {
             None => Carrier::new(value),
         };
         LabelledEdition {
-            edition: Edition {
-                orgl: self.edition.orgl.with(position, std::sync::Arc::new(carrier)),
-                endorsements: self.edition.endorsements.clone(),
-            },
+            edition: Edition::new_inner(self.edition.orgl.with(position, std::sync::Arc::new(carrier)), self.edition.endorsements.clone()),
             label: self.label.clone(),
         }
     }
@@ -175,10 +172,7 @@ impl LabelledEdition {
             }
         };
         Ok(LabelledEdition {
-            edition: Edition {
-                orgl: self.edition.orgl.with(position, std::sync::Arc::new(new_carrier)),
-                endorsements: self.edition.endorsements.clone(),
-            },
+            edition: Edition::new_inner(self.edition.orgl.with(position, std::sync::Arc::new(new_carrier)), self.edition.endorsements.clone()),
             label: self.label.clone(),
         })
     }
@@ -457,10 +451,10 @@ pub fn make_range_identical(
         } else {
             XnRegion::empty()
         };
-        Edition {
-            orgl: super::orgl::OrglRoot::from_bulk_entries(failed_entries, None, region),
-            endorsements: super::endorsement::EndorsementSet::new(),
-        }
+        Edition::new_inner(
+            super::orgl::OrglRoot::from_bulk_entries(failed_entries, None, region),
+            super::endorsement::EndorsementSet::new(),
+        )
     };
 
     let outcome = if failed_positions.is_empty() {
