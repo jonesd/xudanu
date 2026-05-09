@@ -501,7 +501,11 @@ impl Server {
         let title = Self::extract_title(&edition);
         let mut work = Work::new_with_owner(be_id, owner, edition);
 
-        if let Some(owner_id) = owner {
+        let is_public_session = owner == Some(self.system_clubs.public_club);
+        if is_public_session {
+            work.set_read_club(Some(self.system_clubs.public_club));
+            work.set_edit_club(Some(self.system_clubs.public_club));
+        } else if let Some(owner_id) = owner {
             if let Some(club) = self.clubs.get(&owner_id) {
                 work.set_read_club(club.default_read_club().or(Some(owner_id)));
                 work.set_edit_club(club.default_edit_club().or(Some(owner_id)));
@@ -651,6 +655,59 @@ impl Server {
         self.grant_pending_grab(work_be_id);
 
         Ok(())
+    }
+
+    pub fn work_save_and_release(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        new_edition: Edition,
+    ) -> Result<u64, ServerError> {
+        self.ensure_session(session_id)?;
+        self.ensure_grabbed_by(session_id, work_be_id)?;
+
+        let author_club = self
+            .sessions
+            .get(&session_id)
+            .and_then(|s| s.initial_login());
+
+        let revision = {
+            let ws = self
+                .works
+                .get_mut(&work_be_id)
+                .ok_or(ServerError::WorkNotFound(work_be_id))?;
+
+            ws.last_revision_author = author_club;
+            ws.work.revise(new_edition);
+            ws.cached_title = Self::extract_title(ws.work.current_edition());
+            let revision = ws.work.revision_count();
+
+            ws.revision_detectors.fire(&Event::WorkRevised {
+                work_be_id,
+                revision,
+                session_id,
+            });
+
+            ws.grabber = None;
+            ws.grabbed_at = None;
+            ws.status_detectors.fire(&Event::WorkReleased {
+                work_be_id,
+                session_id,
+            });
+
+            let updated_edition = ws.work.edition().clone();
+            let bf_work = ws.work.clone();
+            self.content_address.intern_edition_elements(&updated_edition);
+            self.backfollow.update_work_with_parent(work_be_id, work_be_id, bf_work);
+            self.reconcile_record_local_revision(work_be_id, &updated_edition, Self::current_timestamp_secs());
+
+            revision
+        };
+
+        self.grant_pending_grab(work_be_id);
+        self.auto_checkpoint();
+
+        Ok(revision)
     }
 
     pub fn work_request_grab(
@@ -1564,7 +1621,7 @@ impl Server {
     pub fn find_transcluders(&self, content_be_id: BeId) -> Vec<(String, BeId, bool)> {
         let content = RangeElement::edition(content_be_id);
         let query = TransclusionQuery::all();
-        let results = self.backfollow.find_transcluders(&content, &query);
+        let results = self.backfollow.find_transcluders_with_backfollow(&content, &query);
         results.into_iter().map(|r| {
             let elem = &r.element;
             if let Some(wid) = elem.as_work_id() {
@@ -1587,13 +1644,40 @@ impl Server {
         &self,
         search_text: &str,
     ) -> Vec<(BeId, Option<BeId>, u64, Vec<(i64, i64)>)> {
-        let search_elem = RangeElement::text(search_text);
-        let fp = search_elem.content_fingerprint();
-        let exact_matches: std::collections::HashSet<BeId> =
-            self.backfollow.find_works_by_fingerprint(&fp).into_iter().collect();
+        if search_text.is_empty() {
+            return Vec::new();
+        }
+
+        let mut char_fps: Vec<[u8; 32]> = Vec::new();
+        {
+            let mut seen = std::collections::HashSet::new();
+            for ch in search_text.chars() {
+                let fp = RangeElement::text(&ch.to_string()).content_fingerprint();
+                if seen.insert(fp) {
+                    char_fps.push(fp);
+                }
+            }
+        }
+
+        let mut candidate_set: Option<std::collections::HashSet<BeId>> = None;
+        for fp in &char_fps {
+            let works: std::collections::HashSet<BeId> =
+                self.backfollow.find_works_by_fingerprint(fp).into_iter().collect();
+            candidate_set = Some(match candidate_set {
+                None => works,
+                Some(prev) => prev.intersection(&works).copied().collect(),
+            });
+            if candidate_set.as_ref().map_or(true, |s| s.is_empty()) {
+                return Vec::new();
+            }
+        }
+        let candidates = candidate_set.unwrap_or_default();
 
         let mut results = Vec::new();
         for (work_id, ws) in &self.works {
+            if !candidates.contains(work_id) {
+                continue;
+            }
             let ed = ws.work.current_edition();
             let text: String = ed
                 .all_entries()
@@ -1604,13 +1688,14 @@ impl Server {
                 continue;
             }
             let mut matches = Vec::new();
-            let mut start = 0;
-            while let Some(pos) = text[start..].find(search_text) {
-                let abs_start = (start + pos) as i64;
-                let abs_end = abs_start + search_text.len() as i64;
-                matches.push((abs_start, abs_end));
-                start += pos + 1;
-                if start >= text.len() { break; }
+            let mut byte_start = 0;
+            while let Some(byte_pos) = text[byte_start..].find(search_text) {
+                let abs_byte = byte_start + byte_pos;
+                let char_start = text[..abs_byte].chars().count() as i64;
+                let char_end = char_start + search_text.chars().count() as i64;
+                matches.push((char_start, char_end));
+                byte_start = abs_byte + 1;
+                if byte_start >= text.len() { break; }
             }
             if !matches.is_empty() {
                 results.push((
@@ -1621,7 +1706,6 @@ impl Server {
                 ));
             }
         }
-        let _ = exact_matches;
         results
     }
 
@@ -2025,10 +2109,10 @@ impl Server {
             Some(lid) => crate::edition::range_element::Carrier::labelled(lid.clone(), new_elem),
             None => crate::edition::range_element::Carrier::new(new_elem),
         };
-        let updated = Edition {
-            orgl: current.orgl.with(position, std::sync::Arc::new(new_carrier)),
-            endorsements: current.endorsements.clone(),
-        };
+        let updated = Edition::new_inner(
+            current.orgl.with(position, std::sync::Arc::new(new_carrier)),
+            current.endorsements.clone(),
+        );
         ws.work.revise(updated.clone());
         let bf_work = ws.work.clone();
         self.backfollow.update_work_with_parent(work_id, work_id, bf_work);
@@ -3812,6 +3896,30 @@ mod tests_find_text {
         assert_eq!(results[0].0, doc);
         assert!(results[0].1.is_some());
         assert_eq!(results[0].2, 0);
+    }
+
+    #[test]
+    fn find_text_transcluders_fingerprint_intersection_filters() {
+        let (mut server, sid) = setup();
+        let _doc_a = server.create_work(sid, Edition::from_text("the quick brown fox")).unwrap();
+        let _doc_b = server.create_work(sid, Edition::from_text("aaa bbb ccc")).unwrap();
+        let doc_c = server.create_work(sid, Edition::from_text("the slow brown bear")).unwrap();
+
+        let results = server.find_text_transcluders("brown");
+        let found_ids: Vec<BeId> = results.iter().map(|(id, _, _, _)| *id).collect();
+        assert!(found_ids.contains(&doc_c), "doc_c contains 'brown'");
+        assert_eq!(results.len(), 2, "two works contain 'b','r','o','w','n'");
+    }
+
+    #[test]
+    fn find_text_transcluders_long_text_performance() {
+        let (mut server, sid) = setup();
+        let long_text: String = "abcdefghijklmnopqrstuvwxyz".repeat(200);
+        let _doc = server.create_work(sid, Edition::from_text(&long_text)).unwrap();
+
+        let results = server.find_text_transcluders("xyzabc");
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].3.is_empty(), "should find 'xyzabc' at wrap-around boundary");
     }
 
     #[test]

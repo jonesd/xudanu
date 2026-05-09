@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::OnceLock;
 
 use super::bundle::{
     Bundle, CostMethod, RetrieveFlags, StorageCost,
@@ -15,6 +16,14 @@ use super::endorsement::EndorsementSet;
 pub struct Edition {
     pub(crate) orgl: OrglRoot,
     pub(crate) endorsements: EndorsementSet,
+    #[allow(dead_code)]
+    pub(crate) entries_cache: Arc<OnceLock<Vec<(i64, Arc<Carrier>)>>>,
+}
+
+impl Edition {
+    pub(crate) fn new_inner(orgl: OrglRoot, endorsements: EndorsementSet) -> Self {
+        Edition { orgl, endorsements, entries_cache: Arc::new(OnceLock::new()) }
+    }
 }
 
 impl PartialEq for Edition {
@@ -35,24 +44,29 @@ impl PartialEq for Edition {
         true
     }
 }
-
 impl Edition {
+
+    pub fn cached_entries(&self) -> &Vec<(i64, Arc<Carrier>)> {
+        self.entries_cache.get_or_init(|| self.orgl.all_entries())
+    }
+
     pub fn empty() -> Self {
         Edition {
             orgl: OrglRoot::empty(),
             endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
         }
     }
 
     pub fn from_one(position: i64, value: RangeElement) -> Self {
         let orgl = OrglRoot::empty().with(position, Arc::new(Carrier::new(value)));
-        Edition { orgl, endorsements: EndorsementSet::new() }
+        Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) }
     }
 
     pub fn from_all(region: &XnRegion, value: RangeElement) -> Self {
         if !region.is_finite() {
             let orgl = OrglRoot::with_default(region.clone(), Arc::new(Carrier::new(value)));
-            return Edition { orgl, endorsements: EndorsementSet::new() };
+            return Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) };
         }
         let mut orgl = OrglRoot::empty();
         for (start, stop) in region.intervals() {
@@ -60,7 +74,7 @@ impl Edition {
                 orgl = orgl.with(pos, Arc::new(Carrier::new(value.clone())));
             }
         }
-        Edition { orgl, endorsements: EndorsementSet::new() }
+        Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) }
     }
 
     pub fn from_text(text: &str) -> Self {
@@ -73,7 +87,7 @@ impl Edition {
             .collect();
         let n = entries.len();
         let region = if n > 0 { XnRegion::interval(0, n as i64) } else { XnRegion::empty() };
-        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region), endorsements: EndorsementSet::new() }
+        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region), endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) }
     }
 
     pub fn from_text_elements(elements: &[RangeElement]) -> Self {
@@ -82,7 +96,7 @@ impl Edition {
             .collect();
         let n = entries.len();
         let region = if n > 0 { XnRegion::interval(0, n as i64) } else { XnRegion::empty() };
-        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region), endorsements: EndorsementSet::new() }
+        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region), endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) }
     }
 
     pub fn place_holders(region: &XnRegion) -> Self {
@@ -94,12 +108,12 @@ impl Edition {
                 next_id += 1;
             }
         }
-        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region.clone()), endorsements: EndorsementSet::new() }
+        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region.clone()), endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) }
     }
 
     pub fn with_default(region: XnRegion, value: RangeElement) -> Self {
         let orgl = OrglRoot::with_default(region, Arc::new(Carrier::new(value)));
-        Edition { orgl, endorsements: EndorsementSet::new() }
+        Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -147,7 +161,7 @@ impl Edition {
     }
 
     pub fn all_entries(&self) -> Vec<(i64, Arc<Carrier>)> {
-        self.orgl.all_entries()
+        self.cached_entries().clone()
     }
 
     pub fn endorsements(&self) -> &EndorsementSet {
@@ -187,6 +201,7 @@ impl Edition {
         Edition {
             orgl: self.orgl.with(position, Arc::new(Carrier::new(value))),
             endorsements: self.endorsements.clone(),
+            entries_cache: Arc::new(OnceLock::new()),
         }
     }
 
@@ -197,13 +212,14 @@ impl Edition {
                 orgl = orgl.with(pos, Arc::new(Carrier::new(value.clone())));
             }
         }
-        Edition { orgl, endorsements: EndorsementSet::new() }
+        Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) }
     }
 
     pub fn without(&self, position: i64) -> Self {
         Edition {
             orgl: self.orgl.without(position),
             endorsements: self.endorsements.clone(),
+            entries_cache: Arc::new(OnceLock::new()),
         }
     }
 
@@ -212,6 +228,7 @@ impl Edition {
         Edition {
             orgl: self.orgl.copy(&keep_region),
             endorsements: self.endorsements.clone(),
+            entries_cache: Arc::new(OnceLock::new()),
         }
     }
 
@@ -230,7 +247,7 @@ impl Edition {
             }
         }
         match self.orgl.combine(&other.orgl) {
-            Ok(combined) => Ok(Edition { orgl: combined, endorsements: EndorsementSet::new() }),
+            Ok(combined) => Ok(Edition { orgl: combined, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) }),
             Err(_) => {
                 let mut orgl = self.orgl.clone();
                 for (pos, carrier) in other_entries {
@@ -238,7 +255,7 @@ impl Edition {
                         orgl = orgl.with(pos, carrier);
                     }
                 }
-                Ok(Edition { orgl, endorsements: EndorsementSet::new() })
+                Ok(Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) })
             }
         }
     }
@@ -247,6 +264,7 @@ impl Edition {
         Edition {
             orgl: self.orgl.replace(&other.orgl),
             endorsements: self.endorsements.clone(),
+            entries_cache: Arc::new(OnceLock::new()),
         }
     }
 
@@ -254,6 +272,7 @@ impl Edition {
         Edition {
             orgl: self.orgl.copy(region),
             endorsements: self.endorsements.clone(),
+            entries_cache: Arc::new(OnceLock::new()),
         }
     }
 
@@ -261,6 +280,7 @@ impl Edition {
         Edition {
             orgl: self.orgl.transformed_by(offset),
             endorsements: self.endorsements.clone(),
+            entries_cache: Arc::new(OnceLock::new()),
         }
     }
 
@@ -287,6 +307,7 @@ impl Edition {
         Edition {
             orgl: OrglRoot::from_bulk_entries(new_entries, None, new_domain),
             endorsements: self.endorsements.clone(),
+            entries_cache: Arc::new(OnceLock::new()),
         }
     }
 
@@ -346,7 +367,7 @@ impl Edition {
                 }
             }
         }
-        Edition { orgl, endorsements: EndorsementSet::new() }
+        Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) }
     }
 
     pub fn not_shared_with(&self, other: &Edition) -> Edition {
@@ -362,7 +383,7 @@ impl Edition {
                 orgl = orgl.with(*pos, carrier.clone());
             }
         }
-        Edition { orgl, endorsements: EndorsementSet::new() }
+        Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) }
     }
 
     pub fn map_shared_to(&self, other: &Edition) -> BTreeMap<i64, i64> {
@@ -538,46 +559,87 @@ impl Edition {
     }
 
     pub fn find_content_shared_regions(&self, other: &Edition, min_run: usize) -> Vec<(i64, i64, i64, i64, String)> {
-        let entries_a = self.orgl.all_entries();
-        let entries_b = other.orgl.all_entries();
+        let entries_a = self.cached_entries();
+        let entries_b = other.cached_entries();
         if entries_a.is_empty() || entries_b.is_empty() || min_run == 0 {
             return Vec::new();
         }
-        let mut results = Vec::new();
-        let mut matched_a = vec![false; entries_a.len()];
-        let mut matched_b = vec![false; entries_b.len()];
+
+        let fps_a: Vec<[u8; 32]> = entries_a.iter()
+            .map(|(_, c)| c.element.content_fingerprint())
+            .collect();
+        let fps_b: Vec<[u8; 32]> = entries_b.iter()
+            .map(|(_, c)| c.element.content_fingerprint())
+            .collect();
+
+        let mut fp_to_b: std::collections::HashMap<[u8; 32], Vec<usize>> =
+            std::collections::HashMap::new();
+        for (j, fp) in fps_b.iter().enumerate() {
+            fp_to_b.entry(*fp).or_default().push(j);
+        }
+
+        let mut run_at_a: Vec<Option<(usize, usize)>> = vec![None; entries_a.len()];
+
         for i in 0..entries_a.len() {
-            if matched_a[i] {
+            if run_at_a[i].is_some() {
                 continue;
             }
-            for j in 0..entries_b.len() {
-                if matched_b[j] {
-                    continue;
-                }
-                let mut len = 0usize;
-                while i + len < entries_a.len() && j + len < entries_b.len()
-                    && !matched_a[i + len] && !matched_b[j + len]
-                    && *entries_a[i + len].1 == *entries_b[j + len].1
+            let b_cands = match fp_to_b.get(&fps_a[i]) {
+                Some(v) => v,
+                None => continue,
+            };
+            for &j in b_cands {
+                let mut len = 1usize;
+                while i + len < fps_a.len() && j + len < fps_b.len()
+                    && fps_a[i + len] == fps_b[j + len]
                 {
                     len += 1;
                 }
                 if len >= min_run {
-                    let pos_a_start = entries_a[i].0;
-                    let pos_a_end = entries_a[i + len - 1].0 + 1;
-                    let pos_b_start = entries_b[j].0;
-                    let pos_b_end = entries_b[j + len - 1].0 + 1;
-                    let text: String = entries_a[i..i + len].iter()
-                        .filter_map(|(_, c)| c.element.as_text())
-                        .collect();
-                    results.push((pos_a_start, pos_a_end, pos_b_start, pos_b_end, text));
-                    for k in 0..len {
-                        matched_a[i + k] = true;
-                        matched_b[j + k] = true;
-                    }
+                    run_at_a[i] = Some((j, len));
                     break;
                 }
             }
         }
+
+        let mut seeds: Vec<(usize, usize, usize)> = Vec::new();
+        for i in 0..entries_a.len() {
+            if let Some((j, len)) = run_at_a[i] {
+                seeds.push((i, j, len));
+            }
+        }
+
+        seeds.sort_by(|a, b| b.2.cmp(&a.2));
+
+        let mut results = Vec::new();
+        let mut claimed_a = vec![false; entries_a.len()];
+        let mut claimed_b = vec![false; entries_b.len()];
+
+        for (i, j, len) in &seeds {
+            let mut conflict = false;
+            for k in 0..*len {
+                if claimed_a[i + k] || claimed_b[j + k] {
+                    conflict = true;
+                    break;
+                }
+            }
+            if conflict {
+                continue;
+            }
+            for k in 0..*len {
+                claimed_a[i + k] = true;
+                claimed_b[j + k] = true;
+            }
+            let pos_a_start = entries_a[*i].0;
+            let pos_a_end = entries_a[*i + *len - 1].0 + 1;
+            let pos_b_start = entries_b[*j].0;
+            let pos_b_end = entries_b[*j + *len - 1].0 + 1;
+            let text: String = entries_a[*i..*i + *len].iter()
+                .filter_map(|(_, c)| c.element.as_text())
+                .collect();
+            results.push((pos_a_start, pos_a_end, pos_b_start, pos_b_end, text));
+        }
+
         results
     }
 }
@@ -1265,7 +1327,7 @@ mod tests {
             let start = Instant::now();
             let region = XnRegion::interval(0, n as i64);
             let orgl = OrglRoot::from_bulk_entries(carriers.clone(), None, region);
-            let bulk_edition = Edition { orgl, endorsements: EndorsementSet::new() };
+            let bulk_edition = Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()) };
             let bulk_dur = start.elapsed();
             let bulk_count = bulk_edition.count();
 

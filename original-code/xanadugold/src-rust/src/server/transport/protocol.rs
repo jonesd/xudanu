@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::edition::{BeId, Edition, RangeElement, XnRegion, ImageOp, Bundle, StorageCost, CostMethod};
+use crate::edition::{BeId, Edition, RangeElement, XnRegion, ImageOp, Bundle};
 use crate::server::lock::LockCredential;
 
 pub const PROTOCOL_VERSION: u8 = 0x02;
@@ -96,6 +96,7 @@ pub enum OperationCode {
     WorkRevise,
     WorkGrab,
     WorkRelease,
+    WorkSaveAndRelease,
     WorkIsGrabbed,
     WorkGrabber,
     WorkRequestGrab,
@@ -259,10 +260,11 @@ impl OperationCode {
             0x0305 => Some(OperationCode::WorkRelease),
             0x0306 => Some(OperationCode::WorkIsGrabbed),
             0x0307 => Some(OperationCode::WorkGrabber),
+            0x0308 => Some(OperationCode::WorkCanRead),
+            0x0333 => Some(OperationCode::WorkSaveAndRelease),
             0x0330 => Some(OperationCode::WorkRequestGrab),
             0x0331 => Some(OperationCode::WorkCancelGrabRequest),
             0x0332 => Some(OperationCode::WorkGrabWaiters),
-            0x0308 => Some(OperationCode::WorkCanRead),
             0x0309 => Some(OperationCode::WorkCanRevise),
             0x030A => Some(OperationCode::WorkSetReadClub),
             0x030B => Some(OperationCode::WorkSetEditClub),
@@ -423,10 +425,11 @@ impl OperationCode {
             OperationCode::WorkRelease       => 0x0305,
             OperationCode::WorkIsGrabbed     => 0x0306,
             OperationCode::WorkGrabber       => 0x0307,
+            OperationCode::WorkCanRead       => 0x0308,
+            OperationCode::WorkSaveAndRelease => 0x0333,
             OperationCode::WorkRequestGrab     => 0x0330,
             OperationCode::WorkCancelGrabRequest => 0x0331,
             OperationCode::WorkGrabWaiters    => 0x0332,
-            OperationCode::WorkCanRead       => 0x0308,
             OperationCode::WorkCanRevise     => 0x0309,
             OperationCode::WorkSetReadClub   => 0x030A,
             OperationCode::WorkSetEditClub   => 0x030B,
@@ -630,6 +633,7 @@ pub enum WireRequest {
     WorkRevise { work_id: BeId, edition: EditionPayload },
     WorkGrab { work_id: BeId },
     WorkRelease { work_id: BeId },
+    WorkSaveAndRelease { work_id: BeId, edition: EditionPayload },
     WorkIsGrabbed { work_id: BeId },
     WorkGrabber { work_id: BeId },
     WorkRequestGrab { work_id: BeId },

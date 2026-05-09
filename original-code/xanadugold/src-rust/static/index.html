@@ -93,6 +93,8 @@ header .session-info{font-size:11px;color:var(--fg2);background:var(--bg3);paddi
 .editor-content:empty::before{content:'Select or create a document...';color:var(--fg3)}
 textarea.editor-content{width:100%;height:100%;border:none;background:rgba(88,166,255,0.03);color:var(--fg);resize:none;display:block;box-sizing:border-box}
 textarea.editor-content:focus{outline:none}
+.editing-pane{background:rgba(88,166,255,0.03)!important;outline:none;-webkit-user-modify:read-write-plaintext-only;-moz-user-modify:read-write-plaintext-only;user-modify:read-write-plaintext-only;cursor:text;min-height:100%}
+.editing-pane:focus{outline:none}
 .placeholder-text{color:var(--fg3);font-style:italic}
 .doc-image{max-width:100%;border-radius:var(--radius);margin:8px 0;display:block;border:1px solid var(--border)}
 .doc-image-link{color:var(--accent);font-size:12px;font-family:'SF Mono',Menlo,monospace;cursor:pointer}
@@ -144,6 +146,25 @@ textarea.editor-content:focus{outline:none}
 .transclusion-hl[data-cidx="7"]{background:rgba(213,94,0,0.22);border-color:#d55e00}
 .editor-area.split .transclusion-hl{cursor:pointer;transition:background .15s}
 .editor-area.split .transclusion-hl:hover{filter:brightness(1.4)}
+.unique-left{background:rgba(88,166,255,0.10);border-radius:2px}
+.unique-right{background:rgba(255,140,50,0.10);border-radius:2px}
+.pane-toolbar{display:flex;gap:4px;padding:4px 8px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:25;align-items:center;flex-shrink:0}
+.pane-toolbar .pt-label{font-size:10px;color:var(--fg3);text-transform:uppercase;letter-spacing:1px;margin-right:auto}
+.pane-toolbar button{background:var(--bg3);color:var(--fg);border:none;padding:3px 10px;border-radius:var(--radius);cursor:pointer;font-size:11px}
+.pane-toolbar button:hover{background:var(--bg4)}
+.pane-toolbar button:disabled{opacity:.4;cursor:default}
+.pane-toolbar button.pt-primary{background:var(--green);color:var(--bg);font-weight:600}
+.pane-toolbar button.pt-primary:hover{opacity:.85}
+.pane-toolbar button.pt-danger{background:#c33;color:#fff}
+.pane-toolbar button.pt-danger:hover{opacity:.85}
+.pane-toolbar .pt-editing{font-size:10px;color:var(--orange);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.pane-close-btn{margin-left:auto!important;background:var(--bg3)!important;color:var(--fg)!important;border:none!important;padding:3px 10px!important;border-radius:var(--radius)!important;cursor:pointer!important;font-size:11px!important}
+.pane-close-btn:hover{background:var(--bg4)!important}
+.legend-inline{font-size:10px;color:var(--fg3);margin-left:auto;display:inline-flex;align-items:center;gap:2px;white-space:nowrap;cursor:help}
+.legend-swatch{display:inline-block;width:12px;height:8px;border-radius:2px;vertical-align:middle;margin-right:3px}
+.legend-swatch.shared{background:rgba(210,153,34,0.35);border-bottom:2px solid #d29922}
+.legend-swatch.left-only{background:rgba(88,166,255,0.20)}
+.legend-swatch.right-only{background:rgba(255,140,50,0.20)}
 
 .svg-overlay{position:absolute;top:0;left:0;width:100%;height:100%;z-index:15;overflow:visible}
 
@@ -207,24 +228,70 @@ function computeDelta(oldText, newText) {
   return ops;
 }
 
- function highlightRegions(text, regions, cls) {
-   if (!regions || !regions.length) return escapeHtml(text);
-   var sorted = regions.slice().sort(function(a,b){return a.start - b.start});
-   var html = '', pos = 0;
-   for (var i = 0; i < sorted.length; i++) {
-     var r = sorted[i];
-     if (r.end <= pos) continue;
-     var start = Math.max(r.start, pos);
-     if (start > pos) html += escapeHtml(text.slice(pos, start));
-     var cidx = r.cidx !== undefined ? r.cidx : (i % 8);
-     html += '<span class="' + cls + '" data-idx="' + i + '" data-cidx="' + cidx + '">';
-     html += escapeHtml(text.slice(start, r.end));
-     html += '</span>';
-     pos = r.end;
-   }
-   if (pos < text.length) html += escapeHtml(text.slice(pos));
-   return html;
- }
+  function saveCursor(el) {
+    var sel = window.getSelection();
+    if (!sel.rangeCount) return 0;
+    var range = sel.getRangeAt(0);
+    var pre = range.cloneRange();
+    pre.selectNodeContents(el);
+    pre.setEnd(range.startContainer, range.startOffset);
+    return pre.toString().length;
+  }
+
+  function restoreCursor(el, offset) {
+    var range = document.createRange();
+    var pos = 0, found = false;
+    function walk(node) {
+      if (found) return;
+      if (node.nodeType === 3) {
+        if (pos + node.length >= offset) {
+          range.setStart(node, offset - pos);
+          range.collapse(true);
+          found = true;
+        }
+        pos += node.length;
+      } else {
+        for (var i = 0; i < node.childNodes.length; i++) {
+          walk(node.childNodes[i]);
+          if (found) return;
+        }
+      }
+    }
+    walk(el);
+    if (!found) { range.selectNodeContents(el); range.collapse(false); }
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function highlightRegions(text, regions, cls, uniqueCls) {
+    if (!regions || !regions.length) {
+      if (uniqueCls) return '<span class="' + uniqueCls + '">' + escapeHtml(text) + '</span>';
+      return escapeHtml(text);
+    }
+    var sorted = regions.slice().sort(function(a,b){return a.start - b.start});
+    var html = '', pos = 0;
+    for (var i = 0; i < sorted.length; i++) {
+      var r = sorted[i];
+      if (r.end <= pos) continue;
+      var start = Math.max(r.start, pos);
+      if (start > pos && uniqueCls) {
+        html += '<span class="' + uniqueCls + '">' + escapeHtml(text.slice(pos, start)) + '</span>';
+      } else if (start > pos) {
+        html += escapeHtml(text.slice(pos, start));
+      }
+      var cidx = r.cidx !== undefined ? r.cidx : (i % 8);
+      html += '<span class="' + cls + '" data-idx="' + i + '" data-cidx="' + cidx + '">';
+      html += escapeHtml(text.slice(start, r.end));
+      html += '</span>';
+      pos = r.end;
+    }
+    if (pos < text.length) {
+      if (uniqueCls) html += '<span class="' + uniqueCls + '">' + escapeHtml(text.slice(pos)) + '</span>';
+      else html += escapeHtml(text.slice(pos));
+    }
+    return html;
+  }
 
 function editionText(ed) {
   if (!ed) return '';
@@ -391,6 +458,10 @@ function App() {
   var _sw = useState(null), splitWorkId = _sw[0], setSplitWorkId = _sw[1];
   var _st = useState(''), splitText = _st[0], setSplitText = _st[1];
   var _sr = useState([]), sharedRegions = _sr[0], setSharedRegions = _sr[1];
+  var _le = useState(false), leftEditing = _le[0], setLeftEditing = _le[1];
+  var _re = useState(false), rightEditing = _re[0], setRightEditing = _re[1];
+  var _lt = useState(''), leftEditText = _lt[0], setLeftEditText = _lt[1];
+  var _rt = useState(''), rightEditText = _rt[0], setRightEditText = _rt[1];
   var _toasts = useState([]), toasts = _toasts[0], setToasts = _toasts[1];
   var _cmd = useState(''), cmdText = _cmd[0], setCmdText = _cmd[1];
   var _sf = useState(false), showFooter = _sf[0], setShowFooter = _sf[1];
@@ -428,6 +499,17 @@ function App() {
   var selectedImgRef = useRef(null);
   var showHistoryRef = useRef(false);
   var splitModeRef = useRef(false);
+  var leftEditingRef = useRef(false);
+  var rightEditingRef = useRef(false);
+  var leftEditorRef = useRef(null);
+  var rightEditorRef = useRef(null);
+  var leftCursorRef = useRef(0);
+  var rightCursorRef = useRef(0);
+  var leftLastSavedRef = useRef('');
+  var rightLastSavedRef = useRef('');
+  var splitGrabTargetRef = useRef(null);
+  var splitReleaseTargetRef = useRef(null);
+  var splitWorkIdRef = useRef(null);
   var sessionIdRef = useRef(null);
   var revSliderTimer = useRef(null);
   var subsRef = useRef({});
@@ -506,6 +588,16 @@ function App() {
   }
 
   function closeSplitView() {
+    if (leftEditingRef.current && currentWorkIdRef.current) {
+      req('work_release', {work_id: currentWorkIdRef.current});
+      setLeftEditing(false);
+      leftEditingRef.current = false;
+    }
+    if (rightEditingRef.current && splitWorkId) {
+      req('work_release', {work_id: splitWorkId});
+      setRightEditing(false);
+      rightEditingRef.current = false;
+    }
     setSplitMode(false);
     splitModeRef.current = false;
     setSplitWorkId(null);
@@ -514,16 +606,95 @@ function App() {
     splitEditionTarget.current = null;
   }
 
+  function doLeftEdit() {
+    if (!currentWorkId || leftEditingRef.current) return;
+    leftLastSavedRef.current = currentText;
+    setLeftEditText(currentText);
+    splitGrabTargetRef.current = currentWorkId;
+    req('work_grab', {work_id: currentWorkId});
+  }
+
+  function doLeftSave() {
+    if (!currentWorkId || !leftEditingRef.current) return;
+    var text = leftEditorRef.current ? leftEditorRef.current.textContent || '' : leftEditText;
+    req('work_save_and_release', {work_id: currentWorkId, edition:{text:text}});
+    setCurrentText(text);
+    currentTextRef.current = text;
+    lastSavedRef.current = text;
+    setLeftEditing(false);
+    leftEditingRef.current = false;
+    req('work_get_edition', {work_id: currentWorkId});
+  }
+
+  function doLeftCancel() {
+    if (!currentWorkId || !leftEditingRef.current) return;
+    splitReleaseTargetRef.current = currentWorkId;
+    req('work_release', {work_id: currentWorkId});
+    setLeftEditing(false);
+    leftEditingRef.current = false;
+  }
+
+  function doRightEdit() {
+    if (!splitWorkId || rightEditingRef.current) return;
+    rightLastSavedRef.current = splitText;
+    setRightEditText(splitText);
+    splitGrabTargetRef.current = splitWorkId;
+    req('work_grab', {work_id: splitWorkId});
+  }
+
+  function doRightSave() {
+    if (!splitWorkId || !rightEditingRef.current) return;
+    var text = rightEditorRef.current ? rightEditorRef.current.textContent || '' : rightEditText;
+    req('work_save_and_release', {work_id: splitWorkId, edition:{text:text}});
+    setSplitText(text);
+    setRightEditing(false);
+    rightEditingRef.current = false;
+    req('work_get_edition', {work_id: splitWorkId});
+    splitEditionTarget.current = splitWorkId;
+  }
+
+  function doRightCancel() {
+    if (!splitWorkId || !rightEditingRef.current) return;
+    splitReleaseTargetRef.current = splitWorkId;
+    req('work_release', {work_id: splitWorkId});
+    setRightEditing(false);
+    rightEditingRef.current = false;
+  }
+
+  function saveAndRelease() {
+    if (!isEditingRef.current || !currentWorkIdRef.current) return;
+    writeGenRef.current++;
+    clearAutoSave();
+    var text = editorRef.current ? editorRef.current.value : currentTextRef.current;
+    currentTextRef.current = text;
+    setCurrentText(text);
+    lastSavedRef.current = text;
+    req('work_save_and_release', {work_id:currentWorkIdRef.current, edition:{text:text}});
+    setIsEditing(false);
+    isEditingRef.current = false;
+  }
+
   function showWork(id) {
     if (isEditingRef.current && currentWorkIdRef.current && currentWorkIdRef.current !== id) {
-      writeGenRef.current++;
-      clearAutoSave();
-      req('work_release', {work_id: currentWorkIdRef.current});
+      saveAndRelease();
+    }
+    if (splitModeRef.current) {
+      if (leftEditingRef.current && currentWorkIdRef.current) {
+        req('work_release', {work_id: currentWorkIdRef.current});
+        setLeftEditing(false);
+        leftEditingRef.current = false;
+      }
+      if (rightEditingRef.current && splitWorkIdRef.current) {
+        req('work_release', {work_id: splitWorkIdRef.current});
+        setRightEditing(false);
+        rightEditingRef.current = false;
+      }
     }
     setIsEditing(false);
     isEditingRef.current = false;
     setSplitMode(false);
     splitModeRef.current = false;
+    setSplitWorkId(null);
     setCurrentWorkId(id);
     setCurrentText('');
     setCurrentRev(0);
@@ -537,7 +708,14 @@ function App() {
     req('link_list_for_work', {work_id:id});
   }
 
+  var creatingRef = useRef(false);
+
   function doCreate() {
+    if (creatingRef.current) return;
+    if (isEditingRef.current && currentWorkIdRef.current) {
+      saveAndRelease();
+    }
+    creatingRef.current = true;
     req('work_create', {edition:{text:''}});
   }
 
@@ -650,6 +828,8 @@ function App() {
   }
 
   function openSplitView(wid) {
+    if (wid === currentWorkId) return;
+    console.log('openSplitView', wid, 'currentWorkId:', currentWorkId);
     setShowFindRefs(false);
     if (!splitModeRef.current) {
       setSplitMode(true);
@@ -660,7 +840,7 @@ function App() {
       setSharedRegions([]);
       req('work_get_edition', {work_id:wid});
     }
-    req('find_shared_regions', {work_a:currentWorkId, work_b: splitModeRef.current ? splitWorkId : wid, filter_text: selectedText || undefined});
+    req('find_shared_regions', {work_a:currentWorkId, work_b: wid, filter_text: selectedText || undefined});
   }
 
   function sendCmd() {
@@ -701,6 +881,7 @@ function App() {
       if (msg.type === 'error') {
         console.error('ws error', msg);
         var errOp = pendingRef.current[msg.id];
+        if (errOp === 'work_create') creatingRef.current = false;
         toast((msg.message||msg.code||'Error').replace(/^Error:\s*/,''));
         if (errOp === 'work_revise' || errOp === 'work_revise_delta') {
           req('work_release', {work_id:currentWorkIdRef.current});
@@ -813,12 +994,14 @@ function App() {
         }
 
         if (v && v.type === 'shared_regions') {
+          console.log('shared_regions received:', (v.value||[]).length, 'regions', v.value);
           setSharedRegions(v.value || []);
           setTimeout(function(){ window.dispatchEvent(new Event('resize')); }, 100);
           return;
         }
 
         if (op === 'work_create') {
+          creatingRef.current = false;
           var wid = (v && v.type==='id') ? v.value : (v && v.type==='humber') ? v.value : null;
           if (wid !== null) {
             req('work_list');
@@ -830,6 +1013,20 @@ function App() {
 
         if (op === 'work_grab') {
           if ((v && v.type === 'boolean' && v.value === true) || (v && v.type === 'void')) {
+            var grabTarget = splitGrabTargetRef.current;
+            splitGrabTargetRef.current = null;
+            if (grabTarget != null && splitModeRef.current) {
+              if (grabTarget === currentWorkIdRef.current) {
+                setLeftEditing(true);
+                leftEditingRef.current = true;
+                toast('Editing left pane');
+              } else if (grabTarget === splitWorkIdRef.current) {
+                setRightEditing(true);
+                rightEditingRef.current = true;
+                toast('Editing right pane');
+              }
+              return;
+            }
             if (window._autoEditCreate !== undefined) {
               var createWid = window._autoEditCreate;
               delete window._autoEditCreate;
@@ -911,6 +1108,12 @@ function App() {
         }
 
         if (v && v.type === 'void' && op === 'work_release') {
+          var releaseTarget = splitReleaseTargetRef.current;
+          splitReleaseTargetRef.current = null;
+          if (releaseTarget != null && splitModeRef.current) {
+            req('work_list');
+            return;
+          }
           setIsEditing(false);
           isEditingRef.current = false;
           req('work_list');
@@ -975,6 +1178,9 @@ function App() {
     selectedImgRef.current = selectedImg;
     showHistoryRef.current = showHistory;
     splitModeRef.current = splitMode;
+    splitWorkIdRef.current = splitWorkId;
+    leftEditingRef.current = leftEditing;
+    rightEditingRef.current = rightEditing;
     sessionIdRef.current = sessionId;
   });
 
@@ -1108,17 +1314,17 @@ function App() {
 
   var leftHtml = useMemo(function(){
     if (!splitMode) return '';
-    var t = currentText;
+    var t = leftEditing ? leftEditText : currentText;
     if (!t) return '';
-    return renderImageMarkers(highlightRegions(t, leftRegions, 'transclusion-hl'), selectedImg);
-  }, [splitMode, currentText, leftRegions, selectedImg, sharedRegions]);
+    return renderImageMarkers(highlightRegions(t, leftRegions, 'transclusion-hl', 'unique-left'), selectedImg);
+  }, [splitMode, currentText, leftEditText, leftEditing, leftRegions, selectedImg, sharedRegions]);
 
   var rightHtml = useMemo(function(){
     if (!splitMode) return '';
-    var t = splitText;
+    var t = rightEditing ? rightEditText : splitText;
     if (!t) return '<span style="color:var(--fg3)">Loading...</span>';
-    return renderImageMarkers(highlightRegions(t, rightRegions, 'transclusion-hl'), null);
-  }, [splitMode, splitText, rightRegions, sharedRegions]);
+    return renderImageMarkers(highlightRegions(t, rightRegions, 'transclusion-hl', 'unique-right'), null);
+  }, [splitMode, splitText, rightEditText, rightEditing, rightRegions, sharedRegions]);
 
   function handleSelectionCheck() {
     setTimeout(handleMouseUp, 10);
@@ -1194,7 +1400,12 @@ function App() {
             disabled:!currentWorkId || isEditing || works.length < 2,
             onClick:function(){setShowCompare(!showCompare)}
           }, 'Compare'),
-          revInfo
+          revInfo,
+          splitMode ? h('span', {className:'legend-inline', title:'Colours in the compare view: amber = text shared between both documents, blue tint = only in the left (current) document, orange tint = only in the right (reference) document'},
+            h('span', {className:'legend-swatch shared'}), 'Shared',
+            h('span', {className:'legend-swatch left-only', style:{marginLeft:8}}), 'Left only',
+            h('span', {className:'legend-swatch right-only', style:{marginLeft:8}}), 'Right only'
+          ) : null
         ),
         showHistory ? h('div', {className:'revision-slider'},
           h('label', null, 'Revision'),
@@ -1408,24 +1619,88 @@ function App() {
           ) : null,
           splitMode ? h(Fragment, null,
             h('div', {className:'editor-pane-wrap', ref: leftWrapRef},
-              h('div', {className:'split-label'}, 'Current'),
-              h('div', {
-                ref: leftPaneRef,
-                className:'editor-content',
-                dangerouslySetInnerHTML: {__html: leftHtml || '<span style="color:var(--fg3)">Loading...</span>'},
-                onMouseUp: handleSelectionCheck
-              })
+              h('div', {className:'pane-toolbar'},
+                h('span', {className:'pt-label'}, 'Current' + (currentWorkId ? ' #' + currentWorkId : '')),
+                leftEditing
+                  ? h(Fragment, null,
+                      h('span', {className:'pt-editing'}, 'EDITING'),
+                      h('button', {className:'pt-primary', onClick:doLeftSave}, 'Save'),
+                      h('button', {className:'pt-danger', onClick:doLeftCancel}, 'Cancel')
+                    )
+                  : h('button', {disabled:!currentWorkId || rightEditing, onClick:doLeftEdit}, 'Edit')
+              ),
+              leftEditing
+                ? h('div', {
+                    ref: function(el) {
+                      if (!el) return;
+                      leftEditorRef.current = el;
+                      var newHtml = leftHtml || '';
+                      if (el.innerHTML !== newHtml) {
+                        var cur = saveCursor(el);
+                        leftCursorRef.current = cur;
+                        el.innerHTML = newHtml;
+                        restoreCursor(el, cur);
+                      }
+                    },
+                    className: 'editor-content editing-pane',
+                    contentEditable: true,
+                    suppressContentEditableWarning: true,
+                    onInput: function(e){
+                      leftCursorRef.current = saveCursor(e.currentTarget);
+                      setLeftEditText(e.currentTarget.textContent || '');
+                    },
+                    onKeyDown: function(e){ if(e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); } },
+                    spellcheck: false
+                  })
+                : h('div', {
+                    ref: leftPaneRef,
+                    className:'editor-content',
+                    dangerouslySetInnerHTML: {__html: leftHtml || '<span style="color:var(--fg3)">Loading...</span>'},
+                    onMouseUp: handleSelectionCheck
+                  })
             ),
             h('div', {className:'editor-divider'}),
             h('div', {className:'editor-pane-wrap', ref: rightWrapRef},
-              h('div', {className:'split-label'}, 'Reference'),
-              h('button', {className:'split-close', onClick:closeSplitView}, 'Close'),
-              h('div', {
-                ref: rightPaneRef,
-                className:'editor-content',
-                dangerouslySetInnerHTML: {__html: rightHtml || '<span style="color:var(--fg3)">Loading...</span>'},
-                onMouseUp: handleSelectionCheck
-              })
+              h('div', {className:'pane-toolbar'},
+                h('span', {className:'pt-label'}, 'Reference' + (splitWorkId ? ' #' + splitWorkId : '')),
+                rightEditing
+                  ? h(Fragment, null,
+                      h('span', {className:'pt-editing'}, 'EDITING'),
+                      h('button', {className:'pt-primary', onClick:doRightSave}, 'Save'),
+                      h('button', {className:'pt-danger', onClick:doRightCancel}, 'Cancel')
+                    )
+                  : h('button', {disabled:!splitWorkId || leftEditing, onClick:doRightEdit}, 'Edit'),
+                h('button', {className:'pane-close-btn', onClick:closeSplitView}, 'Close')
+              ),
+              rightEditing
+                ? h('div', {
+                    ref: function(el) {
+                      if (!el) return;
+                      rightEditorRef.current = el;
+                      var newHtml = rightHtml || '';
+                      if (el.innerHTML !== newHtml) {
+                        var cur = saveCursor(el);
+                        rightCursorRef.current = cur;
+                        el.innerHTML = newHtml;
+                        restoreCursor(el, cur);
+                      }
+                    },
+                    className: 'editor-content editing-pane',
+                    contentEditable: true,
+                    suppressContentEditableWarning: true,
+                    onInput: function(e){
+                      rightCursorRef.current = saveCursor(e.currentTarget);
+                      setRightEditText(e.currentTarget.textContent || '');
+                    },
+                    onKeyDown: function(e){ if(e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); } },
+                    spellcheck: false
+                  })
+                : h('div', {
+                    ref: rightPaneRef,
+                    className:'editor-content',
+                    dangerouslySetInnerHTML: {__html: rightHtml || '<span style="color:var(--fg3)">Loading...</span>'},
+                    onMouseUp: handleSelectionCheck
+                  })
             ),
             h('canvas', {className:'_bridge', style:{position:'absolute',top:0,left:0,zIndex:20,pointerEvents:'none'}})
           ) : h(Fragment, null,

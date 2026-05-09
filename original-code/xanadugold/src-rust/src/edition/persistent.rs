@@ -58,7 +58,7 @@ impl EditionSnapshot {
             let carriers: Vec<(i64, Arc<Carrier>)> = self.entries.iter()
                 .map(|(pos, elem)| (*pos, Arc::new(Carrier::new(elem.clone()))))
                 .collect();
-            Edition { orgl: OrglRoot::from_bulk_entries(carriers, Some(Arc::new(Carrier::new(default.clone()))), region), endorsements: super::endorsement::EndorsementSet::new() }
+            Edition::new_inner(OrglRoot::from_bulk_entries(carriers, Some(Arc::new(Carrier::new(default.clone()))), region), super::endorsement::EndorsementSet::new())
         } else {
             let carriers: Vec<(i64, Arc<Carrier>)> = self.entries.iter()
                 .map(|(pos, elem)| (*pos, Arc::new(Carrier::new(elem.clone()))))
@@ -71,7 +71,7 @@ impl EditionSnapshot {
             } else {
                 XnRegion::empty()
             };
-            Edition { orgl: OrglRoot::from_bulk_entries(carriers, None, region), endorsements: super::endorsement::EndorsementSet::new() }
+            Edition::new_inner(OrglRoot::from_bulk_entries(carriers, None, region), super::endorsement::EndorsementSet::new())
         }
     }
 }

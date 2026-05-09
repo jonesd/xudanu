@@ -1488,6 +1488,25 @@ mod tests {
     }
 
     #[test]
+    fn stress_many_revisions_with_backfollow() {
+        crate::edition::init_endorsement_flags();
+        let mut engine = BackfollowEngine::new();
+        let work = Work::new(1, Edition::from_one(0, RangeElement::text("v0")));
+        let prop = BackfollowEngine::make_work_prop(&work, None, None);
+        engine.register_work_with_prop(work, 1, None, prop);
+
+        for i in 1..=200 {
+            let text = format!("v{}", i);
+            let new_work = Work::new(1, Edition::from_one(0, RangeElement::text(&text)));
+            engine.update_work_with_parent(1, 1, new_work);
+
+            let content = RangeElement::text(&text);
+            let query = TransclusionQuery::all();
+            let _results = engine.find_transcluders_with_backfollow(&content, &query);
+        }
+    }
+
+    #[test]
     fn edition_to_assertions_maps_text() {
         use crate::ent::content::AssertionPayload;
         let edition = Edition::from_text("hello");

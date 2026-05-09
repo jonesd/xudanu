@@ -636,6 +636,13 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::WorkRelease { work_id: args.work_id })
             }
+            OperationCode::WorkSaveAndRelease => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, edition: EditionPayload }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkSaveAndRelease { work_id: args.work_id, edition: args.edition })
+            }
             OperationCode::WorkIsGrabbed => {
                 #[derive(Deserialize)]
                 struct Args { work_id: BeId }

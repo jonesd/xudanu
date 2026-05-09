@@ -38,7 +38,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/blobs/{hash}/preview", get(blob_preview_handler))
         .route("/health", get(health_handler))
         .route("/", get(index_handler))
-        .fallback(static_fallback_handler)
+        .fallback(get(static_fallback_handler))
         .with_state(state)
 }
 
@@ -70,14 +70,18 @@ async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
 }
 
 async fn static_fallback_handler(
-    axum::extract::Path(path): axum::extract::Path<String>,
+    axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
     State(state): State<SharedState>,
 ) -> impl IntoResponse {
     let dir = match &state.static_dir {
         Some(d) => d,
         None => return axum::http::StatusCode::NOT_FOUND.into_response(),
     };
-    let file_path = dir.join(&path);
+    let path = uri.path().trim_start_matches('/');
+    if path.is_empty() {
+        return axum::http::StatusCode::NOT_FOUND.into_response();
+    }
+    let file_path = dir.join(path);
     if !file_path.starts_with(dir) {
         return axum::http::StatusCode::FORBIDDEN.into_response();
     }
