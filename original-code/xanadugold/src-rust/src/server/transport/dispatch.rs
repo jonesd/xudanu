@@ -154,6 +154,19 @@ fn dispatch_inner(
             srv.work_save_and_release(session_id, work_id, ed)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::WorkForceRelease { work_id } => {
+            let prev = srv.work_force_release(work_id)?;
+            match prev {
+                Some(prev_session) => {
+                    tracing::info!(work_id, ?prev_session, "Force-released work");
+                    Ok(ResponseValue::Void)
+                }
+                None => {
+                    tracing::info!(work_id, "Work was not grabbed, nothing to release");
+                    Ok(ResponseValue::Void)
+                }
+            }
+        }
         WireRequest::WorkIsGrabbed { work_id } => {
             let grabbed = srv.work_is_grabbed(work_id)?;
             Ok(ResponseValue::Boolean(grabbed))

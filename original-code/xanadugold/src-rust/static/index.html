@@ -379,8 +379,9 @@ function renderImageMarkers(html, selectedHash, linkList) {
   });
 }
 
-function renderContent(text, selectedHash, linkList) {
-  return renderImageMarkers(escapeHtml(text), selectedHash || null, linkList);
+function renderContent(text, selectedHash, linkList, highlights) {
+  var html = highlights && highlights.length ? highlightRegions(text, highlights, 'transclusion-hl') : escapeHtml(text);
+  return renderImageMarkers(html, selectedHash || null, linkList);
 }
 
     function blobUpload(wsRef, req, currentWorkId, currentRev, lastSavedRef, toast, editorRef) {
@@ -448,12 +449,10 @@ function App() {
   var _hvt = useState(null), historyViewText = _hvt[0], setHistoryViewText = _hvt[1];
   var _sel = useState(''), selectedText = _sel[0], setSelectedText = _sel[1];
   var _sfr = useState(false), showFindRefs = _sfr[0], setShowFindRefs = _sfr[1];
-  var _sc = useState(false), showCompare = _sc[0], setShowCompare = _sc[1];
-  var _cti = useState(''), compareTargetId = _cti[0], setCompareTargetId = _cti[1];
-  var splitEditionTarget = useRef(null);
   var _frp = useState({x:0,y:0}), findRefsPos = _frp[0], setFindRefsPos = _frp[1];
-  var _tres = useState([]), transclusionResults = _tres[0], setTransclusionResults = _tres[1];
   var _frl = useState(false), findRefsLoading = _frl[0], setFindRefsLoading = _frl[1];
+  var _tr = useState([]), transclusionResults = _tr[0], setTransclusionResults = _tr[1];
+  var _rfh = useState([]), refHighlights = _rfh[0], setRefHighlights = _rfh[1];
   var _sm = useState(false), splitMode = _sm[0], setSplitMode = _sm[1];
   var _sw = useState(null), splitWorkId = _sw[0], setSplitWorkId = _sw[1];
   var _st = useState(''), splitText = _st[0], setSplitText = _st[1];
@@ -468,7 +467,9 @@ function App() {
   var _drag = useState(false), dragOver = _drag[0], setDragOver = _drag[1];
   var _selImg = useState(null), selectedImg = _selImg[0], setSelectedImg = _selImg[1];
   var _olOps = useState([]), overlayOps = _olOps[0], setOverlayOps = _olOps[1];
-  var _sl = useState(false), showLinks = _sl[0], setShowLinks = _sl[1];
+   var _sl = useState(false), showLinks = _sl[0], setShowLinks = _sl[1];
+  var _sc = useState(false), showCompare = _sc[0], setShowCompare = _sc[1];
+  var _ct = useState(''), compareTargetId = _ct[0], setCompareTargetId = _ct[1];
   var _links = useState([]), links = _links[0], setLinks = _links[1];
   var _linkTarget = useState(''), linkTargetId = _linkTarget[0], setLinkTargetId = _linkTarget[1];
   var savedTheme = typeof localStorage !== 'undefined' && localStorage.getItem('xudanu-theme');
@@ -491,6 +492,7 @@ function App() {
   var autoSaveRef = useRef(null);
   var autoSaveInFlightRef = useRef(false);
   var isEditingRef = useRef(false);
+  var pendingGrabIdRef = useRef(null);
   var currentTextRef = useRef('');
   var cursorPosRef = useRef(-1);
   var currentWorkIdRef = useRef(null);
@@ -509,6 +511,7 @@ function App() {
   var rightLastSavedRef = useRef('');
   var splitGrabTargetRef = useRef(null);
   var splitReleaseTargetRef = useRef(null);
+  var splitEditionTarget = useRef(null);
   var splitWorkIdRef = useRef(null);
   var sessionIdRef = useRef(null);
   var revSliderTimer = useRef(null);
@@ -675,8 +678,16 @@ function App() {
   }
 
   function showWork(id) {
-    if (isEditingRef.current && currentWorkIdRef.current && currentWorkIdRef.current !== id) {
-      saveAndRelease();
+    if (currentWorkIdRef.current && currentWorkIdRef.current !== id) {
+      if (isEditingRef.current) {
+        saveAndRelease();
+      } else {
+        req('work_release', {work_id: currentWorkIdRef.current});
+      }
+    }
+    if (pendingGrabIdRef.current != null) {
+      req('work_release', {work_id: pendingGrabIdRef.current});
+      pendingGrabIdRef.current = null;
     }
     if (splitModeRef.current) {
       if (leftEditingRef.current && currentWorkIdRef.current) {
@@ -695,11 +706,13 @@ function App() {
     setSplitMode(false);
     splitModeRef.current = false;
     setSplitWorkId(null);
+    if (window._autoEditCreate !== undefined) delete window._autoEditCreate;
     setCurrentWorkId(id);
     setCurrentText('');
     setCurrentRev(0);
     setLinks([]);
     setShowLinks(false);
+    setRefHighlights([]);
     var s1 = sub('revision', id);
     var s2 = sub('status', id);
     subsRef.current = {revision:s1, status:s2};
@@ -722,6 +735,8 @@ function App() {
   function doEdit() {
     if (!currentWorkId) return;
     lastSavedRef.current = currentText;
+    setRefHighlights([]);
+    pendingGrabIdRef.current = currentWorkId;
     req('work_grab', {work_id:currentWorkId});
   }
 
@@ -882,6 +897,7 @@ function App() {
         console.error('ws error', msg);
         var errOp = pendingRef.current[msg.id];
         if (errOp === 'work_create') creatingRef.current = false;
+        if (errOp === 'work_release' && msg.code === 'not_grabbed') return;
         toast((msg.message||msg.code||'Error').replace(/^Error:\s*/,''));
         if (errOp === 'work_revise' || errOp === 'work_revise_delta') {
           req('work_release', {work_id:currentWorkIdRef.current});
@@ -1005,14 +1021,15 @@ function App() {
           var wid = (v && v.type==='id') ? v.value : (v && v.type==='humber') ? v.value : null;
           if (wid !== null) {
             req('work_list');
-            req('work_grab', {work_id:wid});
-            window._autoEditCreate = wid;
+            showWork(wid);
+            toast('Document created — click Edit to start typing');
           }
           return;
         }
 
         if (op === 'work_grab') {
           if ((v && v.type === 'boolean' && v.value === true) || (v && v.type === 'void')) {
+            pendingGrabIdRef.current = null;
             var grabTarget = splitGrabTargetRef.current;
             splitGrabTargetRef.current = null;
             if (grabTarget != null && splitModeRef.current) {
@@ -1027,28 +1044,7 @@ function App() {
               }
               return;
             }
-            if (window._autoEditCreate !== undefined) {
-              var createWid = window._autoEditCreate;
-              delete window._autoEditCreate;
-              setCurrentWorkId(createWid);
-              currentWorkIdRef.current = createWid;
-              setCurrentRev(0);
-              currentRevRef.current = 0;
-              setTotalRevs(0);
-              totalRevsRef.current = 0;
-              setCurrentText('');
-              currentTextRef.current = '';
-              lastSavedRef.current = '';
-              setLinks([]);
-              setShowLinks(false);
-              var s1 = sub('revision', createWid);
-              var s2 = sub('status', createWid);
-              subsRef.current = {revision:s1, status:s2};
-              req('work_revision_count', {work_id:createWid});
-              setIsEditing(true);
-              isEditingRef.current = true;
-              toast('Document created \u2014 start typing');
-            } else if (window._overlayInsert !== undefined) {
+            if (window._overlayInsert !== undefined) {
               var insert = window._overlayInsert;
               delete window._overlayInsert;
               req('work_revise', {work_id:currentWorkIdRef.current, edition:{text:insert.text}});
@@ -1380,6 +1376,16 @@ function App() {
           h('button', {onClick:doCancel, className:'danger', disabled:!isEditing}, 'Cancel'),
           h('div', {className:'sep'}),
           h('button', {
+            disabled:!currentWorkId || isEditing,
+            onClick:function(){
+              if (!currentWorkId) return;
+              req('work_force_release', {work_id: currentWorkId});
+              toast('Force-released work #' + currentWorkId);
+            },
+            title:'Force unlock this work if it is stuck locked by another session'
+          }, 'Unlock'),
+          h('div', {className:'sep'}),
+          h('button', {
             disabled:!isEditing,
             onClick:function(){ blobUpload(wsRef, req, currentWorkId, currentRev, lastSavedRef, toast, editorRef); },
             title: 'Upload image (or drag & drop while editing)'
@@ -1478,7 +1484,14 @@ function App() {
             h('span', null, 'Compare with'),
             h('select', {
               value: compareTargetId,
-              onChange: function(e){setCompareTargetId(e.target.value)},
+              onChange: function(e){
+                var val = e.target.value;
+                if (val && currentWorkId) {
+                  openSplitView(parseInt(val));
+                  setShowCompare(false);
+                  setCompareTargetId('');
+                }
+              },
               style:{marginLeft:8}
             },
               h('option', {value:''}, '\u2014 select document \u2014'),
@@ -1489,17 +1502,9 @@ function App() {
               })
             ),
             h('button', {
-              disabled: !compareTargetId || !currentWorkId,
-              onClick: function(){
-                openSplitView(parseInt(compareTargetId));
-                setShowCompare(false);
-                setCompareTargetId('');
-              }
-            }, 'Open'),
-            h('button', {
               onClick: function(){setShowCompare(false); setCompareTargetId('');},
               style:{marginLeft:4}
-            }, 'Cancel')
+            }, '\u00d7')
           )
         ) : null,
         !isEditing && links.length > 0 ? h('div', {className:'link-nav-bar'},
@@ -1723,7 +1728,7 @@ function App() {
                     ref: editorRef,
                     className: 'editor-content',
                     onMouseUp: handleSelectionCheck,
-                    dangerouslySetInnerHTML: {__html: renderContent(currentText, selectedImg, links)}
+                    dangerouslySetInnerHTML: {__html: renderContent(currentText, selectedImg, links, refHighlights)}
                   })
           ),
           showFindRefs && currentWorkId ? h('div', {
@@ -1740,7 +1745,21 @@ function App() {
                 return h('div', {
                   key: i,
                   className: 'find-refs-result',
-                  onClick: function(){ openSplitView(r.work_id); }
+                  onClick: function(){
+                    var matches = r.matches || [];
+                    if (r.work_id === currentWorkId) {
+                      setRefHighlights(matches.map(function(m, j){
+                        return {start: m.start, end: m.end, cidx: j % 8};
+                      }));
+                      setShowFindRefs(false);
+                      return;
+                    }
+                    showWork(r.work_id);
+                    setRefHighlights(matches.map(function(m, j){
+                      return {start: m.start, end: m.end, cidx: j % 8};
+                    }));
+                    setShowFindRefs(false);
+                  }
                 },
                   h('span', {className:'fr-id'}, r.work_id),
                   h('span', {className:'fr-owner'}, r.owner || 'unknown'),
