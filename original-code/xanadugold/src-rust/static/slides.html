@@ -97,7 +97,7 @@ h1.slide-title{background:linear-gradient(135deg,#58a6ff 0%,#a371f7 50%,#d29922 
     <h1 class="slide-title" style="font-size:56px;max-width:800px">30 Years of Hypertext Innovation</h1>
     <p class="slide-subtitle" style="font-size:20px;margin-top:8px">From Ted Nelson's 1963 vision, through Udanax Gold's C++ implementation, to a modern Rust engine with optimized transclusion queries.</p>
     <div style="margin-top:40px;font-size:13px;color:#444">
-      <span style="color:#666">Show &amp; Tell</span> &middot; 2026
+      <span style="color:#666">Show &amp;amp; Tell</span> &middot; 2026
     </div>
   </div>
   <div class="slide-number">1 / 10</div>
@@ -160,9 +160,9 @@ h1.slide-title{background:linear-gradient(135deg,#58a6ff 0%,#a371f7 50%,#d29922 
       <div>
         <h3 style="font-size:16px;margin-bottom:16px;color:#f85149">The Challenges</h3>
         <ul class="feature-list">
-          <li>Every <code class="mono">.cxx</code> file begins with "Output from Objectworks for Smalltalk-80, v2.5, 29 July 1989" &mdash; machine-translated, not human-written</li>
+          <li>Every .cxx file begins with "Output from Objectworks for Smalltalk-80, v2.5, 29 July 1989" &mdash; machine-translated, not human-written</li>
           <li>Smalltalk idioms everywhere: fluid variables (dynamic scope), become: (object identity swap), deferred classes, sender-seeking message dispatch</li>
-          <li>All components ported but <em>disconnected</em> &mdash; transclusion queries were dead code, H-tree traversal never executed, canopy flags allocated but never checked</li>
+          <li>All components ported but disconnected &mdash; transclusion queries were dead code, H-tree traversal never executed, canopy flags allocated but never checked</li>
           <li>No test suite for transclusion behavior &mdash; had to derive correctness from first principles</li>
           <li>Two-tier dual-write to separate indexes caused stale data accumulation</li>
         </ul>
@@ -171,7 +171,7 @@ h1.slide-title{background:linear-gradient(135deg,#58a6ff 0%,#a371f7 50%,#d29922 
         <h3 style="font-size:16px;margin-bottom:16px;color:#3fb950">What LLMs Enabled</h3>
         <ul class="feature-list">
           <li>Read and understand 200+ interconnected C++ files with cross-references across Smalltalk, front-end, back-end, and storage layers</li>
-          <li>Trace data flow from <code class="mono">BeGrandMap</code> through <code class="mono">BackfollowEngine</code> to <code class="mono">TransclusionIndex</code> to identify the disconnection points</li>
+          <li>Trace data flow from BeGrandMap through BackfollowEngine to TransclusionIndex to identify the disconnection points</li>
           <li>Generate idiomatic Rust for each component while preserving the original's algebraic invariants</li>
           <li>Write property-based tests (1,643 total) covering 17 phases of incremental functionality</li>
           <li>Debug performance by reading both the C++ and Rust simultaneously, comparing algorithms</li>

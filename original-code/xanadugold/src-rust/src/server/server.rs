@@ -632,6 +632,23 @@ impl Server {
         Ok(())
     }
 
+    pub fn work_force_release(
+        &mut self,
+        work_be_id: BeId,
+    ) -> Result<Option<SessionId>, ServerError> {
+        let ws = self
+            .works
+            .get_mut(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+
+        let prev = ws.grabber.take();
+        ws.grabbed_at = None;
+        if prev.is_some() {
+            self.grant_pending_grab(work_be_id);
+        }
+        Ok(prev)
+    }
+
     pub fn work_release(
         &mut self,
         session_id: SessionId,
