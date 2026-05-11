@@ -12,6 +12,8 @@ fn usage() {
     eprintln!();
     eprintln!("Run options:");
     eprintln!("  --static-dir <dir>       Serve frontend from directory instead of embedded HTML");
+    eprintln!("  --tls-cert <path>        TLS certificate PEM file");
+    eprintln!("  --tls-key <path>         TLS private key PEM file");
     eprintln!("  --peer <addr>            Federation peer address (repeatable, e.g. ws://host:port/federation)");
     eprintln!("  --federation-mode <mode> Federation mode: closed (default) or open");
 }
@@ -115,6 +117,9 @@ async fn main() {
     }
 
     match args[1].as_str() {
+        "--version" | "-V" => {
+            println!("xudanu {}", env!("CARGO_PKG_VERSION"));
+        }
         "init" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
             cmd_init(data_dir);
@@ -127,6 +132,8 @@ async fn main() {
             let mut addr = "127.0.0.1:8080".to_string();
             let mut data_dir: Option<String> = None;
             let mut static_dir: Option<PathBuf> = None;
+            let mut tls_cert: Option<PathBuf> = None;
+            let mut tls_key: Option<PathBuf> = None;
             let mut federation_peers: Vec<String> = Vec::new();
             let mut federation_mode = "closed".to_string();
             let mut i = 2;
@@ -136,6 +143,20 @@ async fn main() {
                         i += 1;
                         static_dir = Some(PathBuf::from(args.get(i).map(|s| s.as_str()).unwrap_or_else(|| {
                             eprintln!("Error: --static-dir requires a path");
+                            std::process::exit(1);
+                        })));
+                    }
+                    "--tls-cert" => {
+                        i += 1;
+                        tls_cert = Some(PathBuf::from(args.get(i).map(|s| s.as_str()).unwrap_or_else(|| {
+                            eprintln!("Error: --tls-cert requires a path");
+                            std::process::exit(1);
+                        })));
+                    }
+                    "--tls-key" => {
+                        i += 1;
+                        tls_key = Some(PathBuf::from(args.get(i).map(|s| s.as_str()).unwrap_or_else(|| {
+                            eprintln!("Error: --tls-key requires a path");
                             std::process::exit(1);
                         })));
                     }
@@ -244,9 +265,7 @@ async fn main() {
             let federation_router = xudanu::server::transport::federation_handler::build_federation_router(state.clone());
             let app = xudanu::server::transport::federation_handler::merge_routers(client_router, federation_router);
 
-            tracing::info!("xudanu server listening on {}", addr);
-
-            let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+            tracing::info!("xudanu server listening on {}{}", addr, if tls_cert.is_some() { " (TLS)" } else { "" });
 
             let shutdown_state = state.clone();
             let shutdown_data_dir = data_dir.clone();
@@ -270,12 +289,66 @@ async fn main() {
                 std::process::exit(0);
             });
 
-            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-                .with_graceful_shutdown(async {
+            if let (Some(cert_path), Some(key_path)) = (tls_cert, tls_key) {
+                rustls::crypto::ring::default_provider()
+                    .install_default()
+                    .expect("failed to install rustls crypto provider");
+                let certs = {
+                    let f = std::fs::File::open(&cert_path).unwrap_or_else(|e| {
+                        eprintln!("Error: cannot open TLS cert {}: {}", cert_path.display(), e);
+                        std::process::exit(1);
+                    });
+                    let mut reader = std::io::BufReader::new(f);
+                    rustls_pemfile::certs(&mut reader)
+                        .collect::<Result<Vec<_>, _>>()
+                        .unwrap_or_else(|e| {
+                            eprintln!("Error: failed to parse TLS cert: {}", e);
+                            std::process::exit(1);
+                        })
+                };
+                let key = {
+                    let f = std::fs::File::open(&key_path).unwrap_or_else(|e| {
+                        eprintln!("Error: cannot open TLS key {}: {}", key_path.display(), e);
+                        std::process::exit(1);
+                    });
+                    let mut reader = std::io::BufReader::new(f);
+                    rustls_pemfile::private_key(&mut reader)
+                        .unwrap_or_else(|e| {
+                            eprintln!("Error: failed to parse TLS key: {}", e);
+                            std::process::exit(1);
+                        })
+                        .expect("no private key found in TLS key file")
+                };
+                let mut server_config = rustls::ServerConfig::builder()
+                    .with_no_client_auth()
+                    .with_single_cert(certs, key)
+                    .unwrap_or_else(|e| {
+                        eprintln!("Error: invalid TLS config: {}", e);
+                        std::process::exit(1);
+                    });
+                server_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+                let config = axum_server::tls_rustls::RustlsConfig::from_config(std::sync::Arc::new(server_config));
+                tracing::info!("TLS enabled");
+                let handle = axum_server::Handle::new();
+                let shutdown_handle = handle.clone();
+                tokio::spawn(async move {
                     shutdown_handler.await.ok();
-                })
-                .await
-                .unwrap();
+                    shutdown_handle.shutdown();
+                });
+                axum_server::bind_rustls(addr.parse().unwrap(), config)
+                    .handle(handle)
+                    .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+                    .await
+                    .unwrap();
+            } else {
+                let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+                axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+                    .with_graceful_shutdown(async {
+                        shutdown_handler.await.ok();
+                    })
+                    .await
+                    .unwrap();
+            }
         }
         _ => {
             usage();

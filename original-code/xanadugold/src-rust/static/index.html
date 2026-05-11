@@ -472,7 +472,7 @@ function App() {
   var _ct = useState(''), compareTargetId = _ct[0], setCompareTargetId = _ct[1];
   var _links = useState([]), links = _links[0], setLinks = _links[1];
   var _linkTarget = useState(''), linkTargetId = _linkTarget[0], setLinkTargetId = _linkTarget[1];
-  var savedTheme = typeof localStorage !== 'undefined' && localStorage.getItem('xudanu-theme');
+  var savedTheme = (function(){ try { return localStorage.getItem('xudanu-theme'); } catch(e) { return null; } })();
   var _theme = useState(savedTheme === 'light' ? 'light' : 'dark'), theme = _theme[0], setTheme = _theme[1];
 
   var wsRef = useRef(null);
@@ -1154,8 +1154,18 @@ function App() {
       }
     };
 
-    ws.onclose = function() { setStatus('disconnected'); };
-    ws.onerror = function() { setStatus('error'); };
+    var reconnectTimer = null;
+    ws.onclose = function() {
+      setStatus('disconnected');
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(function() {
+        setStatus('reconnecting');
+        location.reload();
+      }, 3000);
+    };
+    ws.onerror = function() {
+      setStatus('error');
+    };
 
     return function(){ ws.close(); };
   }, []);
@@ -1237,8 +1247,8 @@ function App() {
         var rr = rhl[i].getBoundingClientRect();
         if (lr.bottom < lwRect.top || lr.top > lwRect.bottom) continue;
         if (rr.bottom < rwRect.top || rr.top > rwRect.bottom) continue;
-        var ly = lr.bottom - areaRect.top;
-        var ry = rr.bottom - areaRect.top;
+        var ly = (lr.top + lr.bottom) / 2 - areaRect.top;
+        var ry = (rr.top + rr.bottom) / 2 - areaRect.top;
         var lx = lr.right - areaRect.left;
         var lEdge = lwRect.right - areaRect.left;
         var rx = rr.left - areaRect.left;
