@@ -1,0 +1,71 @@
+# Caddy reverse proxy for Xudanu server
+#
+# SECURITY: The Xudanu server has no built-in user authentication yet.
+# This Caddy config adds HTTP Basic Auth to protect the server.
+# Change the default password before exposing to the internet!
+#
+# Puts HTTP Basic Auth + HTTPS in front of Xudanu.
+#
+# Usage:
+#   ./scripts/caddy.sh              # local dev (localhost:8443)
+#   ./scripts/caddy.sh production   # production (your domain)
+#
+# To change the password:
+#   1. caddy hash-password --plaintext 'your-new-password'
+#   2. Replace the hash in the basic_auth block below
+
+# ── Local development ───────────────────────────────────────────────────
+# Self-signed cert, accessible at https://localhost:8443
+# Username: admin  Password: changeme
+#
+# This config assumes Xudanu is running with --tls-cert/--tls-key on port 8090.
+# If running plain HTTP (no TLS flags), remove the transport block and use
+# a plain reverse_proxy line.
+
+localhost:8443 {
+	reverse_proxy 127.0.0.1:8090 {
+		transport http {
+			tls
+			tls_insecure_skip_verify
+		}
+	}
+
+	basic_auth * {
+		admin $2a$14$DYk0UCq/ed9v7Ysg1TqWDuf9y2OjSclU2hv1VjzduE17rDPCsP1sK
+	}
+
+	tls internal
+}
+
+# ── Production ──────────────────────────────────────────────────────────
+# Uncomment and set your domain. Caddy auto-provisions Let's Encrypt certs.
+#
+# Run Xudanu WITHOUT --tls-cert/--tls-key (plain HTTP) and let Caddy
+# handle TLS termination. This is the recommended production setup.
+#
+# Username: admin  Password: (change the hash below)
+
+# dgjones.info {
+#     reverse_proxy 127.0.0.1:8090
+#
+#     basic_auth * {
+#         admin $2a$14$REPLACE_WITH_HASH_FROM_CADDY_HASH_PASSWORD
+#     }
+# }
+
+# ── Production (Xudanu with its own TLS) ────────────────────────────────
+# Use this if Xudanu is started with --tls-cert/--tls-key and you still
+# want Caddy in front for auth.
+
+# dgjones.info {
+#     reverse_proxy 127.0.0.1:8090 {
+#         transport http {
+#             tls
+#             tls_insecure_skip_verify
+#         }
+#     }
+#
+#     basic_auth * {
+#         admin $2a$14$REPLACE_WITH_HASH_FROM_CADDY_HASH_PASSWORD
+#     }
+# }

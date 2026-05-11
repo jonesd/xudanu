@@ -14,7 +14,7 @@ The core data structure is a partially ordered trace history (DagWood) that pres
   ```
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
   ```
-- **A browser** — Firefox recommended (Safari has WebSocket restrictions with HTTP)
+- **A browser** — Firefox, Safari, or Chrome. Use `./scripts/caddy.sh` for HTTPS if needed (Safari requires HTTPS for WebSocket)
 
 ## Quick Start
 
@@ -61,6 +61,25 @@ cargo run --features server --bin xudanu-server --manifest-path original-code/xa
 
 Both can be opened directly in a browser while the server is running.
 
+## Security Warning
+
+**Do not expose this server directly to the internet without additional protection.**
+
+The server's built-in Club-based access control system (clubs, read/edit permissions, admin roles) is **not yet fully implemented** for production use. Currently:
+
+- All documents are readable and editable by anyone who connects
+- The admin API has no authentication gate
+- There is no user account or login system wired up for general use
+
+If you are making the service available beyond your local machine, **you must add your own security layer**. The recommended approach is to run a reverse proxy with authentication in front of the server (see "Caddy Reverse Proxy" below). Options include:
+
+- **Caddy** with HTTP Basic Auth (see below -- easiest)
+- **nginx** with HTTP Basic Auth or OAuth2 proxy
+- **Cloudflare Tunnel** with Access policies
+- **Tailscale / WireGuard** for private network access
+
+The Club and KeyMaster security infrastructure exists in the codebase and will be activated in a future release.
+
 ## CLI Reference
 
 ```
@@ -72,11 +91,73 @@ xudanu-server verify <data-dir>            Verify snapshot integrity
 Run options:
 
 ```
---static-dir <dir>    Serve frontend from a custom directory instead of embedded HTML
---peer <addr>         Connect to a federated peer server
+--static-dir <dir>       Serve frontend from a custom directory instead of embedded HTML
+--tls-cert <path>        TLS certificate PEM file (enables HTTPS)
+--tls-key <path>         TLS private key PEM file (enables HTTPS)
+--peer <addr>            Connect to a federated peer server
+--federation-mode <mode> Federation mode: closed (default) or open
 ```
 
 Data is checkpointed to `server.json` in the data directory on graceful shutdown (Ctrl-C).
+
+### HTTPS / TLS Setup
+
+For local development, plain HTTP on localhost works fine. For remote access or production use, you need TLS. There are two approaches:
+
+**Self-signed certificate (testing):**
+
+```bash
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+
+./target/debug/xudanu-server run 0.0.0.0:443 /tmp/xudanu-data --tls-cert cert.pem --tls-key key.pem
+```
+
+**Let's Encrypt (production) — automated with certbot:**
+
+```bash
+sudo apt install certbot
+sudo certbot certonly --standalone -d yourdomain.com
+
+./target/debug/xudanu-server run 0.0.0.0:443 /path/to/data \
+  --tls-cert /etc/letsencrypt/live/yourdomain.com/fullchain.pem \
+  --tls-key /etc/letsencrypt/live/yourdomain.com/privkey.pem
+```
+
+Certbot will renew certs automatically. Add a cron job to restart the server after renewal:
+
+```bash
+echo '0 3 * * * root certbot renew --quiet --deploy-hook "systemctl restart xudanu"' | sudo tee /etc/cron.d/xudanu-renew
+```
+
+See [docs/tls-setup.md](docs/tls-setup.md) for detailed instructions including DNS setup, firewall config, and multi-domain certificates.
+
+### Caddy Reverse Proxy (Auth + HTTPS)
+
+**Recommended if exposing the server beyond localhost.** Caddy provides password protection, HTTPS, and WebSocket proxying in a single binary.
+
+**1. Install Caddy:**
+```bash
+brew install caddy                    # macOS
+sudo apt install caddy                # Ubuntu/Debian
+```
+
+**2. Start Xudanu + Caddy together:**
+```bash
+./scripts/caddy.sh                    # local dev: https://localhost:8443
+./scripts/caddy.sh production         # production: https://yourdomain.com
+```
+
+This starts Xudanu on port 8090 (no TLS) and Caddy on port 8443 with self-signed HTTPS and HTTP Basic Auth in front.
+
+**3. Change the default password:**
+```bash
+caddy hash-password --plaintext 'your-new-password'
+# Edit the hash in Caddyfile
+```
+
+Default credentials: `admin` / `changeme` -- **change this before exposing to the internet.**
+
+For production, uncomment the production block in `Caddyfile` and set your domain. Caddy will automatically provision a Let's Encrypt certificate. See [docs/tls-setup.md](docs/tls-setup.md) for full details.
 
 ## Feature Flags
 
