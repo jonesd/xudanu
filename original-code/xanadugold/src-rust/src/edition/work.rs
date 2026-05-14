@@ -138,6 +138,10 @@ impl Work {
         self.revision_history = history;
     }
 
+    pub fn set_revision_count(&mut self, count: u64) {
+        self.revision_count = count;
+    }
+
     pub fn endorsements(&self) -> &EndorsementSet {
         &self.endorsements
     }
