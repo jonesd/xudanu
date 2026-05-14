@@ -15,10 +15,10 @@ use crate::persist::traits::Persistent;
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EditionSnapshot {
-    entries: Vec<(i64, RangeElement)>,
-    default: Option<RangeElement>,
-    domain_start: Option<i64>,
-    domain_infinite_above: bool,
+    pub entries: Vec<(i64, RangeElement)>,
+    pub default: Option<RangeElement>,
+    pub domain_start: Option<i64>,
+    pub domain_infinite_above: bool,
 }
 
 impl EditionSnapshot {

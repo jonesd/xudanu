@@ -1,5 +1,6 @@
 pub mod chunk_store;
 pub mod counter;
+pub mod edition_chunks;
 pub mod engine;
 pub mod file_storage;
 pub mod memory;
