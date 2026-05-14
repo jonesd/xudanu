@@ -3,6 +3,7 @@ pub mod counter;
 pub mod edition_chunks;
 pub mod engine;
 pub mod file_storage;
+pub mod manifest;
 pub mod memory;
 pub mod packer;
 pub mod persistent;
