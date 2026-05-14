@@ -86,17 +86,49 @@ This project is an ongoing evolution, not a static port.
 
 ## Quick Start
 
-```bash
-# Build
-cd original-code/xanadugold/src-rust
-cargo build --features server
+### 1. Prerequisites
 
-# Run
-./target/debug/xudanu-server init /tmp/xudanu-data
-./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data --static-dir ./static
+- **Rust** 1.56 or later (edition 2021). Latest stable recommended. Install via [rustup](https://rustup.rs):
+  ```bash
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  ```
+- **A browser** — Firefox, Safari, or Chrome.
+
+### 2. Clone and build
+
+```bash
+git clone <repo-url> xudanu
+cd xudanu
+cargo build --features server -p xudanu
 ```
 
-Open http://127.0.0.1:8090 in Firefox. See [src-rust/README.md](original-code/xanadugold/src-rust/README.md) for full walkthrough, CLI reference, and architecture details.
+This builds the `xudanu-server` binary at `./target/debug/xudanu-server`.
+
+### 3. Run the server
+
+**In-memory (no persistence, good for trying it out):**
+
+```bash
+./target/debug/xudanu-server run 127.0.0.1:8090
+```
+
+**With persistent storage:**
+
+```bash
+./target/debug/xudanu-server init /tmp/xudanu-data
+./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data --static-dir original-code/xanadugold/src-rust/static
+```
+
+Data is saved to `server.json` on graceful shutdown (Ctrl-C) and restored on next start.
+
+### 4. Open in your browser
+
+Go to **http://127.0.0.1:8090** — you'll see the document editor.
+
+### Next steps
+
+- **[Technical Architecture](docs/technical-architecture.html)** — a detailed walkthrough of the core data structures, algorithms, and performance characteristics (O-trees, GrandMap, Canopy pruning, H-trees, transclusion queries, DagWood concurrent edits). Recommended for all developers and architects working with the codebase.
+- [src-rust/README.md](original-code/xanadugold/src-rust/README.md) — full walkthrough, CLI reference, web UI guide, TLS setup, federation, and architecture details.
 
 ---
 

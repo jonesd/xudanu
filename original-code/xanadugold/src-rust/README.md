@@ -4,6 +4,8 @@ Conflict-preserving hypertext document store. A Rust implementation of the Udana
 
 ## What It Is
 
+**One-line summary:** xudanu is a document server where content is identity — the same text in multiple documents is automatically shared (transcluded), every revision is preserved, and bidirectional links connect everything.
+
 xudanu implements the Udanax Gold hypertext model, where content is identity. Documents are content-addressed O-trees stored in a GrandMap that deduplicates at the byte level. The same text appearing in multiple documents shares a single `BeId`, making transclusion automatic rather than manual.
 
 The core data structure is a partially ordered trace history (DagWood) that preserves all revisions and their relationships. Editions build on previous editions with structural sharing, so nothing is overwritten or lost. Bidirectional links connect documents without embedding, and every link is tracked in both directions.
@@ -18,35 +20,56 @@ The core data structure is a partially ordered trace history (DagWood) that pres
 
 ## Quick Start
 
-**1. Build the server:**
-```
-cd original-code/xanadugold/src-rust
-cargo build --features server
+```bash
+git clone <repo-url> xudanu
+cd xudanu
+cargo build --features server -p xudanu
+./target/debug/xudanu-server run 127.0.0.1:8090
 ```
 
-**2. Initialize a data directory and start the server:**
+Then open **http://127.0.0.1:8090** in your browser. Documents are stored in memory and lost on restart — see below for persistent storage options.
+
+### Persistent Storage
+
 ```
 ./target/debug/xudanu-server init /tmp/xudanu-data
-./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data --static-dir ./static
+./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data --static-dir original-code/xanadugold/src-rust/static
 ```
 
-**3. Open in your browser:**
+Data is saved to `server.json` on graceful shutdown (Ctrl-C) and restored on next start.
+
+### Using `./scripts/single.sh`
+
+```bash
+# From the repo root:
+cd original-code/xanadugold/src-rust
+./scripts/single.sh 8090
 ```
-http://127.0.0.1:8090
-```
 
-The `--static-dir` flag serves frontend files directly from disk, so HTML/JS changes take effect on refresh without rebuilding.
+### Using the Web UI
 
-### First Steps
+The web interface has a document list on the left and an editor on the right:
 
-1. **Create a document** — click the **+** button in the sidebar. A new empty document opens in edit mode. Type some text and click **Save**.
-2. **Edit and revise** — click **Edit** to grab the document, make changes, then **Save**. Use the revision slider to browse history.
-3. **Upload images** — paste an image or drag-and-drop a file into the editor. Images are content-addressed and deduplicated via BLAKE3 fingerprints.
-4. **Compare two documents** — create a second document with some overlapping text. Select the first document, click **Compare**, choose the second document, and click **Open**. You'll see:
-   - **Amber underlines** = shared content (transclusions), with bridge curves connecting them across panes
-   - **Blue tint** = content unique to the left document
-   - **Orange tint** = content unique to the right document
-5. **Edit in compare view** — each pane has its own **Edit/Save/Cancel** buttons. Edits update the highlighting live.
+- **Sidebar** — lists all documents. Click to open. Click **+** to create a new document.
+- **Editor** — displays document content. Click **Edit** to grab the document for editing, make changes, then **Save** (or **Cancel** to discard). Only one person can edit a document at a time.
+- **Revision history** — after saving, use the slider above the editor to browse previous versions.
+- **Compare view** — click **Compare** to open a second document side-by-side. Shared content is highlighted:
+  - **Amber underlines** = transclusions (shared text), with bridge curves connecting them
+  - **Blue tint** = content unique to the left document
+  - **Orange tint** = content unique to the right document
+- **Images** — paste an image or drag-and-drop a file into the editor. Images are content-addressed and deduplicated via BLAKE3 fingerprints.
+- **Links** — click **Links** to see bidirectional connections between documents.
+- **Find refs** — click **Find Refs** to discover other documents that share content with the current document.
+- **Theme** — toggle between dark and light mode with the theme button in the header.
+- **Command bar** — type commands in the URL-style bar at the top:
+  - `help` — list available commands
+  - `create <text>` — create a new document with optional text
+  - `list` — refresh the document list
+  - `open <id>` — open a document by ID
+  - `grab <id>` — grab a document for editing
+  - `revise <id> <text>` — revise a document with new text
+  - `release <id>` — release a grabbed document
+  - `info` — show server statistics
 
 ### From the workspace root
 
@@ -56,10 +79,11 @@ cargo run --features server --bin xudanu-server --manifest-path original-code/xa
 
 ### Presentations and Diagrams
 
+- **[Technical Architecture](../../docs/technical-architecture.html)** — comprehensive walkthrough of core mechanisms: O-trees, GrandMap deduplication, Canopy flag-bit pruning, H-tree version ancestry, transclusion queries at O(log n), DagWood concurrent edits, and Big-O analysis with worked examples. Recommended for all developers and architects.
 - **[slides.html](static/slides.html)** — 10-slide presentation covering Xanadu history, architecture, optimizations, and demo (arrow keys to navigate)
 - **[diagram.html](static/diagram.html)** — interactive architecture diagram showing O-tree / H-tree / Canopy layering with Big-O performance table
 
-Both can be opened directly in a browser while the server is running.
+All can be opened directly in a browser.
 
 ## Security Warning
 
