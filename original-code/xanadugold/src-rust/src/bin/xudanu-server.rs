@@ -11,6 +11,7 @@ fn usage() {
     eprintln!("  init <data-dir>          Initialize a new data directory");
     eprintln!("  run [addr] [data-dir]    Run the server (default: 127.0.0.1:8080)");
     eprintln!("  verify <data-dir>        Verify data integrity");
+    eprintln!("  rebuild-manifest <dir>   Rebuild manifest from chunks");
     eprintln!();
     eprintln!("Run options:");
     eprintln!("  --static-dir <dir>       Serve frontend from directory instead of embedded HTML");
@@ -25,85 +26,79 @@ fn usage() {
 }
 
 fn cmd_init(data_dir: &str) {
-    let path = PathBuf::from(data_dir);
-    if path.exists() {
-        let snapshot_path = path.join("server.json");
-        if snapshot_path.exists() {
-            eprintln!("Error: data directory already exists: {}", data_dir);
-            std::process::exit(1);
-        }
+    let path = std::path::PathBuf::from(data_dir);
+    if path.join("manifest.json").exists() || path.join("server.json").exists() {
+        eprintln!("Error: data directory already exists: {}", data_dir);
+        std::process::exit(1);
     }
-    std::fs::create_dir_all(&path).expect("failed to create data directory");
-    std::fs::create_dir_all(path.join("blobs")).expect("failed to create blobs directory");
     let mut server = Server::new();
-    let snapshot_path = path.join("server.json");
-    server.restore_keypair_from_dir(&path).expect("failed to init keypair");
-    server.set_checkpoint_path(snapshot_path.clone());
-    server.checkpoint_to_file(&snapshot_path).expect("failed to write initial checkpoint");
-    eprintln!("Initialized xudanu data directory: {}", data_dir);
+    server.init_data_dir(&path).expect("failed to initialize data directory");
 }
 
 fn cmd_verify(data_dir: &str) {
     let path = PathBuf::from(data_dir);
-    let snapshot_path = path.join("server.json");
-    if !snapshot_path.exists() {
-        eprintln!("Error: no snapshot found at {}", snapshot_path.display());
+    if !path.join("manifest.json").exists() {
+        eprintln!("Error: no manifest.json found at {}", path.join("manifest.json").display());
         std::process::exit(1);
     }
-    let content = match std::fs::read_to_string(&snapshot_path) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: cannot read snapshot: {}", e);
-            std::process::exit(1);
-        }
-    };
-    let raw: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Error: corrupt JSON: {}", e);
-            std::process::exit(1);
-        }
-    };
-    let version = xudanu::server::transport::snapshot::detect_version(&raw);
-    let data = if version >= 1 {
-        let versioned: serde_json::Value = raw.clone();
-        match xudanu::server::transport::snapshot::read_and_migrate(&snapshot_path) {
-            Ok((d, _, _)) => d,
-            Err(e) => {
-                eprintln!("Error: migration failed: {}", e);
+    match xudanu::persist::verify::verify_store(&path) {
+        Ok(report) => {
+            println!("Verification report:");
+            println!("  Chunks: {} total, {} verified", report.chunks_total, report.chunks_verified);
+            if !report.chunks_missing.is_empty() {
+                println!("  MISSING chunks: {}", report.chunks_missing.len());
+                for h in &report.chunks_missing {
+                    println!("    {}", h);
+                }
+            }
+            if !report.chunks_corrupt.is_empty() {
+                println!("  CORRUPT chunks: {}", report.chunks_corrupt.len());
+                for h in &report.chunks_corrupt {
+                    println!("    {}", h);
+                }
+            }
+            if !report.chunks_orphaned.is_empty() {
+                println!("  Orphaned chunks: {}", report.chunks_orphaned.len());
+            }
+            if !report.deserialization_errors.is_empty() {
+                println!("  Deserialization errors: {}", report.deserialization_errors.len());
+                for e in &report.deserialization_errors {
+                    println!("    {}", e);
+                }
+            }
+            println!("  Works: {} ok, {} failed", report.works_ok, report.works_failed);
+            println!("  Clubs: {} ok, {} failed", report.clubs_ok, report.clubs_failed);
+            println!("  Standalone editions: {} ok, {} failed", report.standalone_ok, report.standalone_failed);
+
+            if report.is_ok() {
+                println!("  Status: OK");
+            } else {
+                println!("  Status: ISSUES FOUND");
                 std::process::exit(1);
             }
         }
-    } else {
-        raw.clone()
-    };
-    let report = xudanu::server::transport::snapshot::validate_snapshot(&data);
-    match Server::restore_from_file_with_persistence(&snapshot_path) {
-        Ok(server) => {
-            println!("Snapshot OK");
-            println!("  Format version: v{}", version);
-            println!("  Server version: {}", env!("CARGO_PKG_VERSION"));
-            println!("  Works: {}", server.work_count());
-            println!("  Clubs: {}", server.club_count());
-            println!("  Blobs: {}", server.blob_count());
-            println!("  Server ID: {}", server.federation_server_id());
-            if report.has_warnings() {
-                for w in &report.warnings {
-                    println!("  Warning: {}", w);
-                }
-            }
-            if !report.is_valid() {
-                for e in &report.errors {
-                    eprintln!("  Error: {}", e);
-                }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_rebuild_manifest(data_dir: &str) {
+    let path = PathBuf::from(data_dir);
+    match xudanu::persist::verify::rebuild_manifest(&path) {
+        Ok(report) => {
+            println!("Rebuild complete:");
+            println!("  Chunks: {} total, {} verified", report.chunks_total, report.chunks_verified);
+            if report.is_ok() {
+                println!("  Status: OK");
+            } else {
+                println!("  Status: ISSUES FOUND (see verify for details)");
                 std::process::exit(1);
-            }
-            if version < 1 {
-                println!("  Note: snapshot is v0 (legacy). It will be auto-migrated to v1 on next startup.");
             }
         }
         Err(e) => {
-            eprintln!("Error: corrupt snapshot: {}", e);
+            eprintln!("Error: {}", e);
             std::process::exit(1);
         }
     }
@@ -136,6 +131,10 @@ async fn main() {
         "verify" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
             cmd_verify(data_dir);
+        }
+        "rebuild-manifest" => {
+            let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
+            cmd_rebuild_manifest(data_dir);
         }
         "run" => {
             let mut addr = "127.0.0.1:8080".to_string();
@@ -196,12 +195,15 @@ async fn main() {
 
             let mut server = if let Some(ref dir) = data_dir {
                 let path = PathBuf::from(dir);
-                let snapshot_path = path.join("server.json");
-                if snapshot_path.exists() {
-                    tracing::info!("Restoring from {}", snapshot_path.display());
+                let manifest_path = path.join("manifest.json");
+                let legacy_path = path.join("server.json");
+
+                if manifest_path.exists() {
+                    tracing::info!("Restoring from {}", manifest_path.display());
                     let start = std::time::Instant::now();
-                    let mut s = Server::restore_from_file_with_persistence(&snapshot_path)
-                        .expect("failed to restore snapshot");
+                    let mut s = Server::new();
+                    s.restore_from_data_dir(&path)
+                        .expect("failed to restore from data directory");
                     let elapsed = start.elapsed();
                     tracing::info!(
                         "Restored in {:.2}ms: {}",
@@ -209,14 +211,15 @@ async fn main() {
                         s.recovery_stats()
                     );
                     s
+                } else if legacy_path.exists() {
+                    eprintln!("Error: Found legacy server.json in {} — this format is no longer supported.", dir);
+                    eprintln!("To migrate, rename server.json and run `xudanu-server init {}` to start fresh.", dir);
+                    eprintln!("Your data in server.json will NOT be loaded. Back it up first.");
+                    std::process::exit(1);
                 } else {
                     tracing::info!("Initializing new data directory: {}", dir);
-                    std::fs::create_dir_all(&path).expect("failed to create data directory");
-                    std::fs::create_dir_all(path.join("blobs")).expect("failed to create blobs directory");
                     let mut s = Server::new();
-                    let _ = s.restore_keypair_from_dir(&path);
-                    s.set_checkpoint_path(snapshot_path.clone());
-                    s.checkpoint_to_file(&snapshot_path).expect("failed to write initial checkpoint");
+                    s.init_data_dir(&path).expect("failed to initialize data directory");
                     s
                 }
             } else {
@@ -282,16 +285,25 @@ async fn main() {
                 tokio::signal::ctrl_c().await.expect("failed to listen for ctrl-c");
                 tracing::info!("Shutting down...");
                 if let Some(ref dir) = shutdown_data_dir {
-                    let snapshot_path = PathBuf::from(dir).join("server.json");
                     shutdown_state.server.with_server_ref(|server| {
                         let start = std::time::Instant::now();
-                        match server.checkpoint_to_file(&snapshot_path) {
-                            Ok(()) => tracing::info!(
-                                "Checkpoint saved to {} in {:.2}ms",
-                                snapshot_path.display(),
-                                start.elapsed().as_secs_f64() * 1000.0
-                            ),
-                            Err(e) => tracing::error!("Checkpoint failed: {}", e),
+                        if server.chunk_store().is_some() {
+                            match server.checkpoint_to_store() {
+                                Ok(()) => tracing::info!(
+                                    "Checkpoint saved in {:.2}ms (chunk store)",
+                                    start.elapsed().as_secs_f64() * 1000.0
+                                ),
+                                Err(e) => tracing::error!("Checkpoint failed: {}", e),
+                            }
+                        } else if let Some(ref path) = server.checkpoint_path() {
+                            match server.checkpoint_to_file(path) {
+                                Ok(()) => tracing::info!(
+                                    "Checkpoint saved to {} in {:.2}ms",
+                                    path.display(),
+                                    start.elapsed().as_secs_f64() * 1000.0
+                                ),
+                                Err(e) => tracing::error!("Checkpoint failed: {}", e),
+                            }
                         }
                     });
                 }

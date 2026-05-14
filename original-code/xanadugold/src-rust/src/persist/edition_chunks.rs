@@ -178,6 +178,7 @@ pub fn work_from_chunks_current(
     for s in &chunk_ref.sponsors {
         work.add_sponsor(*s);
     }
+    work.set_revision_count(chunk_ref.revision_count);
     Ok(work)
 }
 
@@ -354,7 +355,7 @@ mod tests {
 
         let restored = work_from_chunks_current(&chunk_ref, &store).unwrap();
         assert_eq!(restored.edition().to_text(), "version three");
-        assert_eq!(restored.revision_count(), 0);
+        assert_eq!(restored.revision_count(), 2);
 
         let rev0 = work_load_revision(&chunk_ref, 0, &store).unwrap();
         assert_eq!(rev0.to_text(), "version one");
