@@ -11,6 +11,7 @@ pub mod snarf;
 pub mod transaction;
 pub mod traits;
 pub mod urdi;
+pub mod verify;
 
 pub use chunk_store::{ChunkStore, ChunkError};
 pub use counter::{BatchCounter, Counter, SingleCounter};
