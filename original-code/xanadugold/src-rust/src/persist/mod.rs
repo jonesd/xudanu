@@ -1,3 +1,4 @@
+pub mod chunk_store;
 pub mod counter;
 pub mod engine;
 pub mod file_storage;
@@ -9,6 +10,7 @@ pub mod transaction;
 pub mod traits;
 pub mod urdi;
 
+pub use chunk_store::{ChunkStore, ChunkError};
 pub use counter::{BatchCounter, Counter, SingleCounter};
 pub use engine::{StorageEngine, StorageError, StorageResult};
 pub use file_storage::FileBackedStorage;
