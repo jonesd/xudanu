@@ -3,6 +3,8 @@ use xudanu::server::Server;
 use xudanu::server::transport::{AppState, build_router};
 
 fn usage() {
+    eprintln!("xudanu {} — conflict-preserving hypertext document store", env!("CARGO_PKG_VERSION"));
+    eprintln!();
     eprintln!("Usage: xudanu-server <command> [options]");
     eprintln!();
     eprintln!("Commands:");
@@ -16,6 +18,10 @@ fn usage() {
     eprintln!("  --tls-key <path>         TLS private key PEM file");
     eprintln!("  --peer <addr>            Federation peer address (repeatable, e.g. ws://host:port/federation)");
     eprintln!("  --federation-mode <mode> Federation mode: closed (default) or open");
+    eprintln!();
+    eprintln!("Flags:");
+    eprintln!("  --version, -V            Print version");
+    eprintln!("  --help, -h               Print this help message");
 }
 
 fn cmd_init(data_dir: &str) {
@@ -119,6 +125,9 @@ async fn main() {
     match args[1].as_str() {
         "--version" | "-V" => {
             println!("xudanu {}", env!("CARGO_PKG_VERSION"));
+        }
+        "--help" | "-h" => {
+            usage();
         }
         "init" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");

@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Xudanu: Content + Performance Architecture</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif; background: #0d1117; color: #c9d1d9; padding: 40px; line-height: 1.5; }
+h1 { font-size: 24px; color: #58a6ff; margin-bottom: 8px; }
+h2 { font-size: 16px; color: #8b949e; font-weight: 400; margin-bottom: 32px; }
+.subtitle { color: #8b949e; font-size: 14px; margin-bottom: 32px; }
+
+.diagram { display: flex; flex-direction: column; gap: 0; max-width: 900px; margin: 0 auto; }
+
+.layer { padding: 16px 20px; border: 1px solid #30363d; position: relative; }
+.layer-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 10px; }
+
+.layer-otree { background: #1a1e24; border-radius: 8px 8px 0 0; border-bottom: 2px solid #238636; }
+.layer-otree .layer-title { color: #3fb950; }
+
+.layer-htree { background: #1a1e2e; border-top: none; border-bottom: 2px solid #1f6feb; }
+.layer-htree .layer-title { color: #58a6ff; }
+
+.layer-canopy { background: #1e1a24; border-top: none; border-bottom: 2px solid #a371f7; }
+.layer-canopy .layer-title { color: #a371f7; }
+
+.layer-query { background: #1e241a; border-top: none; border-radius: 0 0 8px 8px; }
+.layer-query .layer-title { color: #d29922; }
+
+.content { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+
+.box { background: rgba(255,255,255,0.05); border: 1px solid #30363d; border-radius: 6px; padding: 10px 14px; font-size: 12px; }
+.box strong { display: block; color: #e6edf3; font-size: 13px; margin-bottom: 3px; }
+.box code { color: #79c0ff; font-family: 'SF Mono', Menlo, monospace; font-size: 11px; }
+
+.arrow-section { text-align: center; padding: 10px 0; color: #484f58; font-size: 20px; position: relative; }
+.arrow-section .arrow-label { font-size: 11px; color: #8b949e; position: absolute; right: 20px; top: 50%; transform: translateY(-50%); font-family: 'SF Mono', Menlo, monospace; }
+
+.otree-demo { display: flex; gap: 2px; margin: 8px 0; flex-wrap: wrap; }
+.otree-elem { background: #238636; color: #0d1117; padding: 3px 8px; border-radius: 3px; font-family: 'SF Mono', Menlo, monospace; font-size: 11px; font-weight: 600; }
+.otree-elem.shared { background: #d29922; }
+.otree-elem.gap { background: #30363d; color: #8b949e; }
+
+.htree-nodes { display: flex; align-items: center; gap: 4px; margin: 8px 0; flex-wrap: wrap; }
+.htree-node { background: #1f6feb; color: #fff; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-family: 'SF Mono', Menlo, monospace; font-weight: 600; position: relative; }
+.htree-node::after { content: ''; position: absolute; right: -6px; top: 50%; width: 8px; height: 1px; background: #1f6feb; }
+.htree-node:last-child::after { display: none; }
+.htree-edge { color: #1f6feb; font-size: 18px; }
+
+.canopy-flags { display: flex; gap: 2px; margin: 8px 0; }
+.flag { width: 24px; height: 24px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-family: 'SF Mono', Menlo, monospace; font-size: 10px; font-weight: 700; }
+.flag.on { background: #a371f7; color: #0d1117; }
+.flag.off { background: #21262d; color: #484f58; }
+.flag.mask { background: #30363d; color: #a371f7; border: 1px dashed #a371f7; }
+
+.query-flow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.q-step { background: rgba(210,153,34,0.15); border: 1px solid #d29922; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-family: 'SF Mono', Menlo, monospace; }
+.q-arrow { color: #d29922; font-size: 16px; }
+
+.big-o-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+.big-o-table th { text-align: left; padding: 8px 12px; border-bottom: 1px solid #30363d; color: #8b949e; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.big-o-table td { padding: 8px 12px; border-bottom: 1px solid #21262d; }
+.big-o-table .naive { color: #f85149; font-family: 'SF Mono', Menlo, monospace; }
+.big-o-table .fast { color: #3fb950; font-family: 'SF Mono', Menlo, monospace; font-weight: 600; }
+.big-o-table .cached { color: #58a6ff; font-family: 'SF Mono', Menlo, monospace; font-weight: 600; }
+
+.section { margin: 32px 0; }
+.section h3 { font-size: 16px; color: #58a6ff; margin-bottom: 12px; }
+.section p { color: #8b949e; font-size: 13px; margin-bottom: 8px; max-width: 700px; }
+
+.legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8b949e; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 2px; }
+
+.note { background: rgba(88,166,255,0.08); border-left: 3px solid #58a6ff; padding: 10px 14px; margin: 12px 0; font-size: 12px; color: #8b949e; border-radius: 0 4px 4px 0; }
+.note strong { color: #58a6ff; }
+
+.footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #21262d; font-size: 11px; color: #484f58; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>Xudanu Content + Performance Architecture</h1>
+<p class="subtitle">How O-tree, H-tree, and Canopy work together for O(log n) transclusion queries</p>
+
+<div class="diagram">
+
+  <div class="layer layer-otree">
+    <div class="layer-title">O-Tree (OrglRoot) &mdash; Document Content Storage</div>
+    <div class="content">
+      <div style="flex:1;min-width:280px">
+        <p style="font-size:12px;color:#8b949e;margin-bottom:6px">Each document is an ordered sequence of RangeElements stored in a BTree. Elements are content-addressed via BLAKE3 fingerprints.</p>
+        <div style="font-size:11px;color:#3fb950;font-family:'SF Mono',Menlo,monospace;margin-bottom:4px">Doc A:</div>
+        <div class="otree-demo">
+          <div class="otree-elem">"The "</div>
+          <div class="otree-elem shared">"quick brown fox"</div>
+          <div class="otree-elem">" sat down"</div>
+        </div>
+        <div style="font-size:11px;color:#3fb950;font-family:'SF Mono',Menlo,monospace;margin-bottom:4px">Doc B:</div>
+        <div class="otree-demo">
+          <div class="otree-elem">"I saw a "</div>
+          <div class="otree-elem shared">"quick brown fox"</div>
+          <div class="otree-elem">" yesterday"</div>
+        </div>
+      </div>
+      <div class="box" style="min-width:180px">
+        <strong>RangeElement</strong>
+        <code>Text("quick brown fox")</code>
+        <code>fp: blake3 &rarr; 0xa3f7...</code>
+        <code>BeId: 1002 (shared)</code>
+        <div style="margin-top:6px;font-size:10px;color:#8b949e">Same content = same fingerprint = same BeId. Deduplication is automatic.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-section">
+    &darr;
+    <span class="arrow-label">fingerprint &rarr; TransclusionIndex</span>
+  </div>
+
+  <div class="layer layer-htree">
+    <div class="layer-title">H-Tree &mdash; Version Ancestry + Transclusion Navigation</div>
+    <div class="content">
+      <div style="flex:1;min-width:280px">
+        <p style="font-size:12px;color:#8b949e;margin-bottom:6px">Editions are linked into a version DAG. Each node (crum) carries metadata about its subtree. Traversal walks parent&harr;child edges to find transclusion relationships.</p>
+        <div class="htree-nodes">
+          <div class="htree-node">Rev 0</div>
+          <span class="htree-edge">&rarr;</span>
+          <div class="htree-node">Rev 1</div>
+          <span class="htree-edge">&rarr;</span>
+          <div class="htree-node">Rev 2</div>
+          <span class="htree-edge">&rarr;</span>
+          <div class="htree-node" style="background:#d29922;color:#0d1117">Rev 3 (current)</div>
+        </div>
+        <div style="font-size:11px;color:#484f58;font-family:'SF Mono',Menlo,monospace;margin-top:4px">Each crum: { prop flags, fingerprint summary, parent ref }</div>
+      </div>
+      <div class="box" style="min-width:200px">
+        <strong>H-Tree Query</strong>
+        <div style="font-size:11px;color:#8b949e;margin-top:4px">"Find all editions containing fingerprint 0xa3f7..."</div>
+        <div style="font-size:11px;color:#58a6ff;margin-top:4px">&rarr; Walk from root, skip subtrees whose fingerprint summary doesn't match</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-section">
+    &darr;
+    <span class="arrow-label">canopy flags prune branches</span>
+  </div>
+
+  <div class="layer layer-canopy">
+    <div class="layer-title">Canopy &mdash; Flag-Bit Pruning for O(log n) Traversal</div>
+    <div class="content">
+      <div style="flex:1;min-width:280px">
+        <p style="font-size:12px;color:#8b949e;margin-bottom:6px">Each H-tree node carries a bitmap of endorsement types (Text=1, Link=2, Blob=4...). The canopy merges these bitmaps upward so a parent's flags are the union of all children's flags. During traversal, if a parent's flags don't include the type you're looking for, skip the entire subtree.</p>
+        <div style="font-size:11px;color:#a371f7;font-family:'SF Mono',Menlo,monospace;margin-bottom:4px">Endorsement flags at each level:</div>
+        <div style="margin-bottom:6px">
+          <div style="font-size:10px;color:#484f58;margin-bottom:2px">Root (merged):</div>
+          <div class="canopy-flags">
+            <div class="flag on">T</div><div class="flag on">L</div><div class="flag off">B</div><div class="flag on">I</div><div class="flag off">.</div><div class="flag off">.</div><div class="flag off">.</div><div class="flag off">.</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:24px">
+          <div>
+            <div style="font-size:10px;color:#484f58;margin-bottom:2px">Left child:</div>
+            <div class="canopy-flags">
+              <div class="flag on">T</div><div class="flag off">L</div><div class="flag off">B</div><div class="flag on">I</div><div class="flag off">.</div><div class="flag off">.</div><div class="flag off">.</div><div class="flag off">.</div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:#484f58;margin-bottom:2px">Right child:</div>
+            <div class="canopy-flags">
+              <div class="flag off">T</div><div class="flag on">L</div><div class="flag off">B</div><div class="flag off">I</div><div class="flag off">.</div><div class="flag off">.</div><div class="flag off">.</div><div class="flag off">.</div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size:11px;margin-top:8px;color:#a371f7">Query: "find Text transclusions" &rarr; skip right child (no T flag) &rarr; half the tree pruned</div>
+      </div>
+      <div class="box" style="min-width:160px">
+        <strong>Pruning Result</strong>
+        <div style="font-size:11px;color:#8b949e;margin-top:4px">
+        Without canopy: visit every node<br>
+        With canopy: visit only matching subtrees<br>
+        <span style="color:#3fb950;font-weight:600">&rarr; O(log n) not O(n)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-section">
+    &darr;
+    <span class="arrow-label">BackfollowEngine orchestrates</span>
+  </div>
+
+  <div class="layer layer-query">
+    <div class="layer-title">Query Flow &mdash; find_transcluders("quick brown fox")</div>
+    <div class="query-flow">
+      <div class="q-step">1. BLAKE3 hash query text</div>
+      <div class="q-arrow">&rarr;</div>
+      <div class="q-step">2. Fingerprint &rarr; TransclusionIndex</div>
+      <div class="q-arrow">&rarr;</div>
+      <div class="q-step">3. H-tree walk (canopy-filtered)</div>
+      <div class="q-arrow">&rarr;</div>
+      <div class="q-step">4. Collect matching works</div>
+      <div class="q-arrow">&rarr;</div>
+      <div class="q-step" style="border-color:#3fb950;color:#3fb950">5. Results!</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="section">
+  <h3>Big-O Performance</h3>
+  <table class="big-o-table">
+    <tr><th>Operation</th><th>Naive</th><th>Xudanu (optimized)</th><th>How</th></tr>
+    <tr>
+      <td>Find works containing text</td>
+      <td class="naive">O(W &times; L)</td>
+      <td class="fast">O(U &times; A)</td>
+      <td style="font-size:12px;color:#8b949e">Fingerprint intersection: U = unique chars, A = avg works per char. HashMap lookup, no scan.</td>
+    </tr>
+    <tr>
+      <td>Find shared regions (diff)</td>
+      <td class="naive">O(n &times; m)</td>
+      <td class="fast">O(L<sub>a</sub> + L<sub>b</sub>)</td>
+      <td style="font-size:12px;color:#8b949e">Fingerprint HashMap for seed discovery, then greedy longest-first claiming.</td>
+    </tr>
+    <tr>
+      <td>Edition element listing</td>
+      <td class="naive">O(n log n) every call</td>
+      <td class="cached">O(1) after first</td>
+      <td style="font-size:12px;color:#8b949e">OnceLock cache on Edition struct. Shared via Arc on clone.</td>
+    </tr>
+    <tr>
+      <td>Transclusion index lookup</td>
+      <td class="naive">O(n) flat scan</td>
+      <td class="fast">O(log n)</td>
+      <td style="font-size:12px;color:#8b949e">H-tree canopy-filtered traversal. Flag bits prune entire subtrees.</td>
+    </tr>
+    <tr>
+      <td>Shared region highlighting</td>
+      <td class="naive">O(r &times; t)</td>
+      <td class="fast">O(r + t)</td>
+      <td style="font-size:12px;color:#8b949e">Sorted regions, single pass through text. No nested loops.</td>
+    </tr>
+  </table>
+  <div style="font-size:11px;color:#484f58;margin-top:4px">W = total works, L = text length, U = unique fingerprints, A = avg works per fingerprint, n/m = document lengths, r = regions, t = text</div>
+</div>
+
+<div class="section">
+  <h3>The Key Insight for Developers</h3>
+  <div class="note">
+    <strong>Content identity enables all the optimizations.</strong> Because BLAKE3 fingerprints give us content-addressed identity for free, we can build inverted indexes (fingerprint &rarr; works), intersect them (shared content), cache them (OnceLock), and prune tree traversals (canopy flags). Without content-addressing, none of these O(log n) shortcuts work &mdash; you're back to O(n) string comparison.
+  </div>
+  <p style="margin-top:12px">This is the same insight behind Git (content-addressed objects), IPFS (content-addressed storage), and modern databases (hash indexes). Udanax Gold had it in the 1990s &mdash; just without BLAKE3.</p>
+</div>
+
+<div class="footer">Xudanu &mdash; Ted Nelson's hypertext, optimized for the 2020s</div>
+
+</body>
+</html>

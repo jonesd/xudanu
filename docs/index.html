@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xudanu Documentation</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+
+h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing:-0.5px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:48px}
+
+.section{margin-bottom:48px}
+.section h2{font-size:20px;font-weight:700;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d;color:#e6edf3;display:flex;align-items:center;gap:10px}
+.section h2 .badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;letter-spacing:0.5px}
+
+.badge-green{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3)}
+.badge-blue{background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)}
+.badge-purple{background:rgba(163,113,247,0.15);color:#a371f7;border:1px solid rgba(163,113,247,0.3)}
+.badge-amber{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3)}
+
+.doc-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.doc-card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;transition:border-color 0.2s}
+.doc-card:hover{border-color:#58a6ff}
+.doc-card h3{font-size:14px;font-weight:600;margin-bottom:4px}
+.doc-card h3 a{color:#e6edf3}
+.doc-card h3 a:hover{color:#58a6ff}
+.doc-card p{font-size:13px;color:#8b949e;line-height:1.5}
+.doc-card .tag{display:inline-block;font-size:10px;padding:1px 6px;border-radius:3px;margin-right:4px;margin-top:6px;font-weight:500}
+
+.tag-html{background:rgba(210,153,34,0.12);color:#d29922}
+.tag-md{background:rgba(88,166,255,0.12);color:#58a6ff}
+.tag-featured{background:rgba(63,185,80,0.12);color:#3fb950}
+
+/* Hero cards - the big standouts */
+.hero-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:32px}
+.hero-card{
+  background:#161b22;
+  border:2px solid #30363d;
+  border-radius:12px;
+  padding:28px 24px 24px;
+  position:relative;
+  overflow:hidden;
+  transition:all 0.25s;
+}
+.hero-card::before{
+  content:'';
+  position:absolute;
+  top:0;left:0;right:0;
+  height:4px;
+}
+.hero-card:hover{
+  transform:translateY(-2px);
+  box-shadow:0 8px 24px rgba(0,0,0,0.3);
+}
+.hero-card h3{font-size:18px;font-weight:700;margin-bottom:8px;line-height:1.3}
+.hero-card h3 a{color:#e6edf3}
+.hero-card h3 a:hover{text-decoration:none;color:#fff}
+.hero-card p{font-size:13px;color:#8b949e;line-height:1.6;margin-bottom:12px}
+.hero-card .hero-tag{
+  display:inline-block;
+  font-size:11px;
+  padding:3px 10px;
+  border-radius:12px;
+  font-weight:600;
+  letter-spacing:0.3px;
+}
+
+.hero-arch{border-color:#3fb950}
+.hero-arch::before{background:linear-gradient(90deg,#3fb950,#58a6ff)}
+.hero-arch:hover{border-color:#3fb950;box-shadow:0 8px 24px rgba(63,185,80,0.15)}
+.hero-arch .hero-tag{background:rgba(63,185,80,0.15);color:#3fb950}
+
+.hero-diagram{border-color:#58a6ff}
+.hero-diagram::before{background:linear-gradient(90deg,#58a6ff,#a371f7)}
+.hero-diagram:hover{border-color:#58a6ff;box-shadow:0 8px 24px rgba(88,166,255,0.15)}
+.hero-diagram .hero-tag{background:rgba(88,166,255,0.15);color:#58a6ff}
+
+.hero-slides{border-color:#d29922}
+.hero-slides::before{background:linear-gradient(90deg,#d29922,#f85149)}
+.hero-slides:hover{border-color:#d29922;box-shadow:0 8px 24px rgba(210,153,34,0.15)}
+.hero-slides .hero-tag{background:rgba(210,153,34,0.15);color:#d29922}
+
+.footer{margin-top:64px;padding-top:20px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+
+@media(max-width:640px){
+  .content-wrap{padding:24px 16px 60px}
+  .doc-grid{grid-template-columns:1fr}
+  .hero-grid{grid-template-columns:1fr}
+  h1{font-size:28px}
+}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Xudanu Documentation</h1>
+<p class="subtitle">Everything you need to understand, run, and extend the Udanax Gold hypertext engine.</p>
+
+<!-- Getting Started -->
+<div class="section">
+  <h2>Getting Started <span class="badge badge-green">START HERE</span></h2>
+  <div class="doc-grid">
+    <div class="doc-card">
+      <h3><a href="https://github.com/jonesd/xudanu/blob/main/README.md">README</a></h3>
+      <p>Quick Start guide, prerequisites, CLI reference, security notes, and macOS Gatekeeper instructions.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="manual.md">User Manual</a></h3>
+      <p>Complete manual covering server setup, web UI guide, command bar, document operations, and troubleshooting.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="tls-setup.md">TLS Setup Guide</a></h3>
+      <p>Configure HTTPS and WSS for encrypted connections. Self-signed certs, Caddy reverse proxy, and Safari compatibility.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="test-registry.md">Test Registry</a></h3>
+      <p>How to run the 1,664 tests (unit, integration, TLS, proptest). Stress testing and coverage expectations.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+  </div>
+</div>
+
+<!-- Hero: standout docs -->
+<div class="section">
+  <div class="hero-grid">
+    <div class="hero-card hero-arch">
+      <h3><a href="technical-architecture.html">Technical Architecture</a></h3>
+      <p>15-section deep dive with 9 SVG diagrams, worked examples, and Big-O analysis of every data structure.</p>
+      <span class="hero-tag">9 diagrams &middot; interactive</span>
+    </div>
+    <div class="hero-card hero-diagram">
+      <h3><a href="diagram.html">Content + Performance</a></h3>
+      <p>How O-tree, H-tree, and Canopy combine for O(log n) transclusion queries. Visual layer-by-layer walkthrough.</p>
+      <span class="hero-tag">interactive diagram</span>
+    </div>
+    <div class="hero-card hero-slides">
+      <h3><a href="slides.html">30 Years of Innovation</a></h3>
+      <p>Presentation: Xanadu history, migration story, architecture, performance, and live demo. Arrow keys to navigate.</p>
+      <span class="hero-tag">10 slides</span>
+    </div>
+  </div>
+</div>
+
+<!-- Architecture -->
+<div class="section">
+  <h2>Architecture &amp; Design <span class="badge badge-blue">DEEP DIVES</span></h2>
+  <div class="doc-grid">
+    <div class="doc-card">
+      <h3><a href="architecture.md">System Overview</a></h3>
+      <p>Xanadu Gold as a Rust library compiling to WebAssembly. High-level component map and design philosophy.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="architecture-three-layers.md">Three-Layer Architecture</a></h3>
+      <p>Separation of the core hypertext engine from the applications and clients built on top of it.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="content-model.md">Content Model</a></h3>
+      <p>The Udanax Gold content model where content is identity &mdash; bytes are their own addressing key.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="xanadu-17-rules.md">The 17 Rules of Xanadu</a></h3>
+      <p>Nelson's original 17 rules for Xanadu systems with xudanu's compliance status for each rule.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="rule8-publication-model.md">Rule 8: Publication Model</a></h3>
+      <p>How Xudanu's publication model compares to the original Udanax Gold and Nelson's specifications.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="migration-notes.md">Migration Notes</a></h3>
+      <p>Tracking the port from Udanax Gold C++ to Rust. Edition, XnRegion, RangeElement, and connected components.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+  </div>
+</div>
+
+<!-- Protocol & Integration -->
+<div class="section">
+  <h2>Protocol &amp; Integration <span class="badge badge-purple">FOR DEVELOPERS</span></h2>
+  <div class="doc-grid">
+    <div class="doc-card">
+      <h3><a href="api-reference.md">API Reference</a></h3>
+      <p>Wire protocol API reference (v2). WebSocket JSON message format, all operations, request/response schemas.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="protocol-and-audit.md">Protocol &amp; Audit</a></h3>
+      <p>WebSocket protocol details, session lifecycle, and server-side audit/logging capabilities.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="integration-guide.md">Integration Guide</a></h3>
+      <p>How to integrate Xanadu Gold into a JavaScript or TypeScript application.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="custom-frontend.md">Custom Frontend Guide</a></h3>
+      <p>Building custom frontends that connect to the xudanu server over its WebSocket JSON API.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="cost-utility-meter-micropayments.md">Micropayments &amp; Cost Model</a></h3>
+      <p>Ted Nelson's micropayment vision, storage cost accounting, the utility meter, and per-use billing.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="path-navigation-snapshots-endorsements.md">Paths, Snapshots, Endorsements</a></h3>
+      <p>Label sequences through nested editions, snapshot persistence, and the endorsement system.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="transclusion-plan.md">Transclusion Plan</a></h3>
+      <p>Plan for connecting BackfollowEngine, canopy, recorder, and ENT into a working transclusion detection pipeline.</p>
+      <span class="tag tag-md">markdown</span>
+    </div>
+  </div>
+</div>
+
+<!-- Implementation Phases -->
+<div class="section">
+  <h2>Implementation Phases <span class="badge badge-purple">BUILD LOG</span></h2>
+  <p style="color:#8b949e;font-size:13px;margin-bottom:16px">Design documents for each phase of the Rust implementation, from core data structures through federation.</p>
+  <div class="doc-grid">
+    <div class="doc-card">
+      <h3><a href="phases-4-6-mapping-fetext-wrapper-clubs.md">Phases 4&ndash;6: Mapping, FeText, Wrappers, Clubs</a></h3>
+      <p>Mapping algebra, text manipulation, type wrappers with certification, and the club-based permission hierarchy.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-7-label-identity-unification.md">Phase 7: Label &amp; Identity Unification</a></h3>
+      <p>Label system and identity unification &mdash; two critical features from the Udanax Gold model.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-8-bundle-retrieval-storage-cost.md">Phase 8: Bundle Retrieval &amp; Storage Cost</a></h3>
+      <p>Reading content from the document store and storage cost accounting for editions.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-9-shared-content-mapping.md">Phase 9: Shared Content Mapping</a></h3>
+      <p>Content-fingerprint-based shared detection and proper mapping types beyond positional matching.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-10-full-transclusion-queries.md">Phase 10: Full Transclusion Queries</a></h3>
+      <p>Range-based transclusion queries and an ordered bundle stepper with merge-sort for the O-tree.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-11-recorder-fossil-agenda.md">Phase 11: Recorder, Fossil, Agenda</a></h3>
+      <p>Persistent queries that accumulate results over time, plus admin health monitoring.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-12-modern-encryption.md">Phase 12: Modern Encryption</a></h3>
+      <p>Production-grade cryptography: Ed25519, X25519, ChaCha20-Poly1305, HKDF-SHA256, Argon2id.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-13-endorsement-authority.md">Phase 13: Endorsement Authority</a></h3>
+      <p>Endorsement system wired into the server API with authority validation.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-14-federation-foundation.md">Phase 14: Federation Foundation</a></h3>
+      <p>Types, identity, and addressing for multi-server federation.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-15-server-to-server-transport.md">Phase 15: Server-to-Server Transport</a></h3>
+      <p>Mutual authentication and encrypted channels between federated servers.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-16-content-replication.md">Phase 16: Content Replication</a></h3>
+      <p>G-Set CRDT with BLAKE3 verification for cross-server content replication.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-18-dagwood-reconciliation.md">Phase 18: DagWood Reconciliation</a></h3>
+      <p>The Reconciliation Plane &mdash; mutable state via DagWood for concurrent edit resolution.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-19a-trust-membership.md">Phase 19a: Trust &amp; Membership</a></h3>
+      <p>Web-of-trust join protocol and membership management for federated servers.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="phase-19b-governance-bft.md">Phase 19b: Governance (PBFT)</a></h3>
+      <p>Governance Plane using lightweight PBFT consensus for federation-wide decisions.</p>
+      <span class="tag tag-md">phase</span>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  Xudanu Documentation &mdash; v0.1.1 &mdash; <a href="https://dgjones.info/xudanu/">dgjones.info/xudanu</a>
+</div>
+
+</div>
+</body>
+</html>

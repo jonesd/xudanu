@@ -1,0 +1,2204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xudanu Technical Architecture</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+*{margin:0;padding:0;box-sizing:border-box}
+
+html{scroll-behavior:smooth}
+
+body{
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  background:#0d1117;
+  color:#c9d1d9;
+  line-height:1.7;
+  padding:0;
+}
+
+.mono{font-family:'JetBrains Mono',monospace}
+
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+
+h1,h2,h3,h4{color:#e6edf3}
+
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+
+p{margin-bottom:12px;max-width:780px}
+
+code{
+  font-family:'JetBrains Mono',monospace;
+  font-size:0.9em;
+  background:rgba(110,118,129,0.15);
+  padding:2px 6px;
+  border-radius:4px;
+  color:#79c0ff;
+}
+
+pre{
+  background:#161b22;
+  border:1px solid #30363d;
+  border-radius:8px;
+  padding:16px 20px;
+  margin:16px 0;
+  overflow-x:auto;
+  font-family:'JetBrains Mono',monospace;
+  font-size:13px;
+  line-height:1.6;
+  color:#c9d1d9;
+}
+
+.content-wrap{
+  max-width:960px;
+  margin:0 auto;
+  padding:48px 32px 80px;
+}
+
+.subtitle{
+  font-size:18px;
+  color:#8b949e;
+  font-weight:300;
+  margin-bottom:40px;
+}
+
+.diagram-container{
+  margin:32px 0;
+  padding:24px;
+  background:#0d1117;
+  border:1px solid #21262d;
+  border-radius:12px;
+  overflow-x:auto;
+}
+
+.diagram-container svg{
+  display:block;
+  margin:0 auto;
+  max-width:100%;
+  height:auto;
+}
+
+.diagram-caption{
+  text-align:center;
+  font-size:12px;
+  color:#484f58;
+  margin-top:12px;
+  font-style:italic;
+}
+
+.note{
+  background:rgba(88,166,255,0.06);
+  border-left:3px solid #58a6ff;
+  padding:12px 16px;
+  margin:16px 0;
+  border-radius:0 6px 6px 0;
+  font-size:14px;
+  color:#8b949e;
+}
+.note strong{color:#58a6ff}
+
+.warning{
+  background:rgba(210,153,34,0.06);
+  border-left:3px solid #d29922;
+  padding:12px 16px;
+  margin:16px 0;
+  border-radius:0 6px 6px 0;
+  font-size:14px;
+  color:#8b949e;
+}
+.warning strong{color:#d29922}
+
+.example-block{
+  background:#161b22;
+  border:1px solid #21262d;
+  border-radius:8px;
+  padding:16px 20px;
+  margin:16px 0;
+}
+.example-block .example-label{
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:1px;
+  color:#484f58;
+  margin-bottom:8px;
+  font-weight:600;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin:16px 0;
+  font-size:14px;
+}
+th{
+  text-align:left;
+  padding:10px 14px;
+  border-bottom:2px solid #30363d;
+  color:#8b949e;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:0.5px;
+  font-weight:600;
+}
+td{
+  padding:10px 14px;
+  border-bottom:1px solid #21262d;
+  vertical-align:top;
+}
+.fast{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
+.naive{color:#f85149;font-family:'JetBrains Mono',monospace}
+
+.two-col{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:24px;
+  margin:16px 0;
+}
+
+.toc{
+  background:#161b22;
+  border:1px solid #21262d;
+  border-radius:8px;
+  padding:20px 24px;
+  margin:24px 0;
+}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.toc .toc-sub{padding-left:16px}
+
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+
+.legend{
+  display:flex;
+  gap:16px;
+  flex-wrap:wrap;
+  margin:12px 0;
+  font-size:12px;
+  color:#8b949e;
+}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+
+.footer{
+  margin-top:80px;
+  padding-top:24px;
+  border-top:1px solid #21262d;
+  font-size:12px;
+  color:#484f58;
+  text-align:center;
+}
+
+@media print{
+  body{background:#fff;color:#222}
+  h1,h2,h3,h4{color:#111}
+  h2{page-break-before:always;margin-top:40px}
+  .diagram-container{border:1px solid #ddd;background:#fafafa}
+  pre{background:#f5f5f5;border-color:#ddd;color:#333}
+  code{background:#f0f0f0;color:#555}
+  .note{background:#f0f7ff;border-left-color:#3b82f6}
+  .note strong{color:#3b82f6}
+  a{color:#2563eb}
+  .footer{color:#999}
+  .toc a{color:#444}
+  .fast{color:#16a34a}
+  .naive{color:#dc2626}
+}
+
+@media(max-width:640px){
+  .content-wrap{padding:24px 16px 60px}
+  h1{font-size:28px}
+  h2{font-size:22px}
+  .two-col{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Xudanu Technical Architecture</h1>
+<p class="subtitle">A deep dive into the data structures, algorithms, and performance characteristics of the Udanax Gold hypertext engine, reimplemented in Rust.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. Introduction</a>
+  <a class="toc-section" href="#s2">2. Three-Layer Architecture</a>
+  <a class="toc-section" href="#s3">3. O-Tree: Documents as Trees</a>
+  <a class="toc-section" href="#s4">4. GrandMap: Content-Addressed Deduplication</a>
+  <a class="toc-section" href="#s5">5. Canopy: Flag-Bit Pruning</a>
+  <a class="toc-section" href="#s6">6. H-Tree: Version Ancestry</a>
+  <a class="toc-section" href="#s7">7. Transclusion Queries at O(log n)</a>
+  <a class="toc-section" href="#s8">8. DagWood: Concurrent Edits</a>
+  <a class="toc-section" href="#s9">9. Big-O Performance Summary</a>
+  <a class="toc-section" href="#s10">10. Labels, Paths, and Deep Linking</a>
+  <a class="toc-section" href="#s11">11. Persistence: Snapshots and Crash Safety</a>
+  <a class="toc-section" href="#s12">12. Federation: CRDTs and PBFT</a>
+  <a class="toc-section" href="#s13">13. Comparison with Other Systems</a>
+  <a class="toc-section" href="#s14">14. Future Directions</a>
+  <a class="toc-section" href="#s15">15. References</a>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 1: Introduction -->
+<!-- ============================================================ -->
+<h2 id="s1">1. Introduction</h2>
+
+<p>
+Xudanu is a Rust implementation of the <strong>Udanax Gold</strong> hypertext document store &mdash; a system originally designed by Ted Nelson's team in the 1980s and mechanically translated from Smalltalk to C++ in 1989. The original ~200,000-line C++ codebase was a faithful but <em>disconnected</em> port: every component existed, but the paths between them were dead code. Transclusion queries never executed. H-tree canopy flags were allocated but never checked. The BackfollowEngine had no callers.
+</p>
+
+<p>
+Xudanu reconnects these components into a working system and optimizes the critical paths. The result is a server that stores documents as content-addressed trees, tracks which documents share which text (transclusion), and answers queries like &ldquo;find every document that contains this paragraph&rdquo; in <span class="fast">O(log n)</span> instead of <span class="naive">O(n)</span>.
+</p>
+
+<h3>Who This Document Is For</h3>
+
+<p>
+This document is written for the engineering team. Whether you're a junior developer onboarding to the codebase or a senior architect evaluating the system's design, you'll find:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong>Concrete examples</strong> with real data &mdash; not abstract descriptions</li>
+  <li><strong>Worked walkthroughs</strong> of every major data structure and algorithm</li>
+  <li><strong>SVG diagrams</strong> showing how components connect</li>
+  <li><strong>Big-O analysis</strong> with the naive baseline for comparison</li>
+  <li><strong>Source file references</strong> so you can jump straight to the code</li>
+</ul>
+
+<h3>The Core Idea</h3>
+
+<p>
+Everything in Xudanu comes back to one principle: <strong>content identity</strong>. When two documents contain the same text, that text gets the same BLAKE3 fingerprint. This fingerprint becomes a universal key that enables:
+</p>
+
+<div class="example-block">
+  <div class="example-label">Content identity enables</div>
+  <p><strong>Deduplication</strong> &mdash; store shared text once in the GrandMap</p>
+  <p><strong>Inverted indexes</strong> &mdash; fingerprint &rarr; list of documents that contain it</p>
+  <p><strong>Fast diffing</strong> &mdash; intersect fingerprint sets to find shared regions</p>
+  <p><strong>Tree pruning</strong> &mdash; skip entire H-tree subtrees that can't match your query</p>
+</div>
+
+<p>
+If you understand BLAKE3 fingerprints, you understand 80% of Xudanu's performance story.
+</p>
+
+<h3>Source Code Map</h3>
+
+<p>
+All source is in the <code>xudanu</code> crate. The most important files:
+</p>
+
+<table>
+  <tr><th>File</th><th>What It Implements</th></tr>
+  <tr><td><code>src/edition/orgl.rs</code></td><td>O-tree (<code>Loaf</code>: Leaf / Split / Dsp)</td></tr>
+  <tr><td><code>src/edition/edition.rs</code></td><td>Edition wrapper, element listing, caching</td></tr>
+  <tr><td><code>src/edition/grandmap.rs</code></td><td>GrandMap content-addressed store</td></tr>
+  <tr><td><code>src/edition/content_address.rs</code></td><td>BLAKE3 fingerprinting, ContentAddressIndex</td></tr>
+  <tr><td><code>src/edition/canopy.rs</code></td><td>Canopy flag-bit pruning (BertCanopy / SensorCanopy)</td></tr>
+  <tr><td><code>src/ent/htree.rs</code></td><td>H-tree version ancestry, HUpperCrumData</td></tr>
+  <tr><td><code>src/edition/backfollow.rs</code></td><td>BackfollowEngine, EditionMeta, orchestration</td></tr>
+  <tr><td><code>src/edition/transclusion.rs</code></td><td>TransclusionIndex, TrailBlazer, query types</td></tr>
+  <tr><td><code>src/edition/shared_mapping.rs</code></td><td>SharedMapping, <code>content_shared_region()</code></td></tr>
+  <tr><td><code>src/edition/range_transclusion.rs</code></td><td>Range-scoped transclusion queries</td></tr>
+  <tr><td><code>src/ent/dagwood.rs</code></td><td>DagWood partial ordering, concurrent edit resolution</td></tr>
+  <tr><td><code>src/server/federation.rs</code></td><td>Federation CRDTs (OrSet, LwwRegister, PBFT)</td></tr>
+  <tr><td><code>src/server/transport/snapshot.rs</code></td><td>Versioned snapshots, migration, checksums</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<!-- SECTION 2: Three-Layer Architecture -->
+<!-- ============================================================ -->
+<h2 id="s2">2. Three-Layer Architecture</h2>
+
+<p>
+Xudanu organizes its data structures into three layers, each building on the one below. The layers are connected by a single mechanism: <strong>BLAKE3 content fingerprints</strong>. Every piece of content gets a 256-bit hash, and that hash flows downward through the stack to enable indexing, deduplication, and query pruning.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 620" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#3fb950"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#58a6ff"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#a371f7"/>
+    </marker>
+    <marker id="arrowAmber" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#d29922"/>
+    </marker>
+  </defs>
+
+  <!-- Client -->
+  <rect x="240" y="10" width="300" height="48" rx="8" fill="#1c2128" stroke="#30363d" stroke-width="1.5"/>
+  <text x="390" y="30" text-anchor="middle" fill="#8b949e" font-size="11" font-weight="600" letter-spacing="1">CLIENT</text>
+  <text x="390" y="46" text-anchor="middle" fill="#e6edf3" font-size="12">Web UI &middot; WebSocket &middot; React</text>
+
+  <!-- Arrow: Client → Server -->
+  <line x1="390" y1="58" x2="390" y2="88" stroke="#484f58" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- Server box -->
+  <rect x="60" y="88" width="660" height="46" rx="8" fill="#1c2128" stroke="#58a6ff" stroke-width="1"/>
+  <text x="390" y="108" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700" letter-spacing="1.5">SERVER</text>
+  <text x="390" y="124" text-anchor="middle" fill="#8b949e" font-size="11">xudanu-server &middot; TLS &middot; JSON protocol &middot; Sessions &middot; Works</text>
+
+  <!-- Arrow: Server → O-Tree -->
+  <line x1="390" y1="134" x2="390" y2="170" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+  <text x="410" y="158" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">create / edit / save</text>
+
+  <!-- Layer 1: O-Tree -->
+  <rect x="60" y="170" width="660" height="110" rx="8" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="80" y="192" fill="#3fb950" font-size="12" font-weight="700" letter-spacing="1">LAYER 1: O-TREE</text>
+  <text x="80" y="210" fill="#8b949e" font-size="12">Document content storage. Each document is a tree of RangeElements</text>
+  <text x="80" y="226" fill="#8b949e" font-size="12">stored in a BTree. Elements are content-addressed via BLAKE3.</text>
+
+  <rect x="100" y="240" width="120" height="28" rx="4" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1"/>
+  <text x="160" y="258" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">Loaf::Leaf</text>
+  <rect x="240" y="240" width="120" height="28" rx="4" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1"/>
+  <text x="300" y="258" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">Loaf::Split</text>
+  <rect x="380" y="240" width="120" height="28" rx="4" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1"/>
+  <text x="440" y="258" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">Loaf::Dsp</text>
+  <rect x="530" y="240" width="160" height="28" rx="4" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1"/>
+  <text x="610" y="258" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">ContentAddressIndex</text>
+
+  <!-- Arrow: O-Tree → GrandMap -->
+  <line x1="390" y1="280" x2="390" y2="310" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrowGreen)"/>
+  <text x="410" y="300" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">fingerprint → BeId</text>
+
+  <!-- GrandMap -->
+  <rect x="140" y="310" width="500" height="42" rx="6" fill="rgba(63,185,80,0.08)" stroke="#238636" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="390" y="330" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">GrandMap</text>
+  <text x="390" y="344" text-anchor="middle" fill="#8b949e" font-size="10">Content-addressed store &middot; BeId lookup &middot; IdSpace management</text>
+
+  <!-- Arrow: O-Tree → H-Tree -->
+  <line x1="200" y1="280" x2="200" y2="375" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+  <text x="90" y="335" fill="#58a6ff" font-size="10" font-family="'JetBrains Mono',monospace">fingerprint</text>
+  <text x="90" y="347" fill="#58a6ff" font-size="10" font-family="'JetBrains Mono',monospace">→ TransclusionIndex</text>
+
+  <!-- Layer 2: H-Tree -->
+  <rect x="60" y="375" width="660" height="95" rx="8" fill="rgba(88,166,255,0.05)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="80" y="397" fill="#58a6ff" font-size="12" font-weight="700" letter-spacing="1">LAYER 2: H-TREE + CANOPY</text>
+  <text x="80" y="415" fill="#8b949e" font-size="12">Version ancestry DAG. Each node carries fingerprint summaries and flag bits.</text>
+  <text x="80" y="431" fill="#8b949e" font-size="12">Canopy merges flags upward so parents represent children. Prune non-matching subtrees.</text>
+
+  <rect x="100" y="444" width="140" height="20" rx="3" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="170" y="458" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="600">HUpperCrumData</text>
+  <rect x="260" y="444" width="130" height="20" rx="3" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="1"/>
+  <text x="325" y="458" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="600">BertCanopy</text>
+  <rect x="410" y="444" width="140" height="20" rx="3" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="1"/>
+  <text x="480" y="458" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="600">SensorCanopy</text>
+
+  <!-- Arrow: H-Tree → Query -->
+  <line x1="390" y1="470" x2="390" y2="510" stroke="#d29922" stroke-width="1.5" marker-end="url(#arrowAmber)"/>
+  <text x="410" y="498" fill="#d29922" font-size="10" font-family="'JetBrains Mono',monospace">canopy-filtered walk</text>
+
+  <!-- Layer 3: Query -->
+  <rect x="60" y="510" width="660" height="60" rx="8" fill="rgba(210,153,34,0.05)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="80" y="532" fill="#d29922" font-size="12" font-weight="700" letter-spacing="1">QUERY ENGINE</text>
+  <text x="80" y="550" fill="#8b949e" font-size="12">BackfollowEngine orchestrates: hash → TransclusionIndex → H-tree walk → TrailBlazer → results</text>
+
+  <!-- Persistence side annotation -->
+  <rect x="740" y="170" width="30" height="400" rx="4" fill="none" stroke="#484f58" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="755" y="380" text-anchor="middle" fill="#484f58" font-size="10" writing-mode="tb">SNAPSHOTS</text>
+
+  <!-- Federation side annotation -->
+  <rect x="10" y="170" width="30" height="400" rx="4" fill="none" stroke="#484f58" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="25" y="380" text-anchor="middle" fill="#484f58" font-size="10" writing-mode="tb">FEDERATION</text>
+
+  <!-- Side arrows -->
+  <line x1="720" y1="300" x2="740" y2="300" stroke="#484f58" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrowGreen)"/>
+  <text x="730" y="290" fill="#484f58" font-size="9" text-anchor="middle">checkpoint</text>
+
+  <line x1="40" y1="300" x2="60" y2="300" stroke="#484f58" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="50" y="290" fill="#484f58" font-size="9" text-anchor="middle">merge</text>
+
+  <!-- Footer -->
+  <text x="390" y="605" text-anchor="middle" fill="#484f58" font-size="11">D1 &mdash; System Overview</text>
+</svg>
+</div>
+
+<h3>How Data Flows</h3>
+
+<p>
+A document lives in the O-tree layer as an <code>Edition</code> wrapping a <code>Loaf</code> tree. Each text element gets a BLAKE3 fingerprint. Those fingerprints flow into two places:
+</p>
+
+<ol style="margin-left:24px;margin-bottom:16px">
+  <li><strong>GrandMap</strong> &mdash; fingerprints become <code>BeId</code>s. Same text always maps to the same ID. This is the deduplication layer.</li>
+  <li><strong>TransclusionIndex</strong> &mdash; fingerprints become keys in a HashMap mapping to the set of works (documents) that contain them. This is the query acceleration layer.</li>
+</ol>
+
+<p>
+The H-tree tracks version ancestry. Each node (<code>HUpperCrumData</code>) carries a <code>CanopyCrumData</code> with flag bits summarizing what types of content exist in its subtree. The <code>BackfollowEngine</code> orchestrates the query flow: hash the query text, look up the TransclusionIndex, walk the H-tree with canopy pruning, and collect results via <code>TrailBlazer</code>.
+</p>
+
+<div class="note">
+  <strong>The data flows in one direction:</strong> content goes into the O-tree, fingerprints flow down through the stack, and queries flow back up. There are no circular dependencies between layers.
+</div>
+
+<h3>The Persistence and Federation Axes</h3>
+
+<p>
+Two cross-cutting concerns span all three layers:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong>Persistence</strong> (right side of diagram) &mdash; the entire server state is serialized to a versioned JSON snapshot with SHA-256 checksums, atomic writes, and automatic migration between format versions.</li>
+  <li><strong>Federation</strong> (left side of diagram) &mdash; CRDTs (OrSet, LwwRegister) handle multi-server content replication with eventual consistency. PBFT governance coordinates trust decisions.</li>
+</ul>
+
+<p>
+Both are covered in detail in <a href="#s11">Section 11</a> and <a href="#s12">Section 12</a>.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 3: O-Tree -->
+<!-- ============================================================ -->
+<h2 id="s3">3. O-Tree: Documents as Trees</h2>
+
+<p>
+Every document in Xudanu is an <strong>O-tree</strong> &mdash; an ordered tree of <code>RangeElement</code>s. The tree is represented by the <code>Loaf</code> enum, which has three variants:
+</p>
+
+<pre>
+pub enum Loaf {
+    Leaf {
+        region: XnRegion,
+        entries: Vec&lt;(i64, Arc&lt;Carrier&gt;)&gt;,
+        default: Option&lt;Arc&lt;Carrier&gt;&gt;,
+    },
+    Split {
+        split: XnRegion,
+        in_child: Box&lt;Loaf&gt;,
+        out_child: Box&lt;Loaf&gt;,
+    },
+    Dsp {
+        offset: i64,
+        child: Box&lt;Loaf&gt;,
+    },
+}
+</pre>
+
+<table>
+  <tr><th>Variant</th><th>Purpose</th><th>Analogy</th></tr>
+  <tr>
+    <td><code class="accent-green">Leaf</code></td>
+    <td>Stores the actual content: a sorted list of <code>(position, element)</code> pairs within a region</td>
+    <td>A page in a book</td>
+  </tr>
+  <tr>
+    <td><code class="accent-green">Split</code></td>
+    <td>Divides content at a position. <code>in_child</code> holds everything below, <code>out_child</code> holds everything above</td>
+    <td>A book split into two chapters</td>
+  </tr>
+  <tr>
+    <td><code class="accent-green">Dsp</code></td>
+    <td>Applies a positional offset without touching children. <strong>O(1) lazy transform</strong></td>
+    <td>Renumbering pages without rewriting them</td>
+  </tr>
+</table>
+
+<h3>How Splitting Works</h3>
+
+<p>
+When a <code>Leaf</code> grows beyond <code>MAX_LEAF_SIZE</code> (16,384 entries), it splits in half. The median position becomes the split point. Everything below goes into <code>in_child</code>, everything above into <code>out_child</code>. This keeps the tree balanced &mdash; depth grows as O(log n).
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 380" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Title -->
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">O-Tree Splitting</text>
+
+  <!-- Step 1: Single leaf -->
+  <rect x="40" y="44" width="700" height="56" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="60" y="64" fill="#3fb950" font-size="11" font-weight="700">Leaf (overgrown)</text>
+  <text x="60" y="82" fill="#8b949e" font-size="11" font-family="'JetBrains Mono',monospace">entries: [(0,"The "), (1,"quick "), (2,"brown "), (3,"fox "), (4,"jumped "), ..., (16384,"end")]</text>
+
+  <!-- Arrow down -->
+  <text x="390" y="122" text-anchor="middle" fill="#3fb950" font-size="20">&darr;</text>
+  <text x="460" y="122" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">split at median position 8192</text>
+
+  <!-- Step 2: Split node -->
+  <rect x="40" y="134" width="700" height="80" rx="6" fill="rgba(63,185,80,0.04)" stroke="#238636" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="60" y="154" fill="#3fb950" font-size="11" font-weight="700">Split</text>
+  <text x="60" y="170" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">split: XnRegion::below(8192)</text>
+
+  <!-- in_child -->
+  <rect x="80" y="180" width="300" height="28" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1"/>
+  <text x="90" y="198" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">in_child: Leaf [0..8192)</text>
+
+  <!-- out_child -->
+  <rect x="400" y="180" width="300" height="28" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1"/>
+  <text x="410" y="198" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">out_child: Leaf [8192..16384]</text>
+
+  <!-- Arrow down -->
+  <text x="390" y="232" text-anchor="middle" fill="#3fb950" font-size="20">&darr;</text>
+  <text x="490" y="232" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">further splits as needed</text>
+
+  <!-- Step 3: Deeper tree -->
+  <rect x="40" y="244" width="700" height="36" rx="6" fill="rgba(63,185,80,0.04)" stroke="#238636" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="60" y="266" fill="#3fb950" font-size="11" font-weight="700">Split</text>
+
+  <rect x="80" y="290" width="160" height="28" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1"/>
+  <text x="90" y="308" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">Leaf [0..4096)</text>
+
+  <rect x="260" y="290" width="160" height="28" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1"/>
+  <text x="270" y="308" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">Leaf [4096..8192)</text>
+
+  <rect x="440" y="290" width="160" height="28" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1"/>
+  <text x="450" y="308" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">Leaf [8192..12288)</text>
+
+  <rect x="620" y="290" width="140" height="28" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1"/>
+  <text x="630" y="308" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">Leaf [12288..]</text>
+
+  <!-- Split connector lines -->
+  <line x1="160" y1="280" x2="160" y2="290" stroke="#3fb950" stroke-width="1" opacity="0.5"/>
+  <line x1="340" y1="280" x2="340" y2="290" stroke="#3fb950" stroke-width="1" opacity="0.5"/>
+  <line x1="520" y1="280" x2="520" y2="290" stroke="#3fb950" stroke-width="1" opacity="0.5"/>
+  <line x1="690" y1="280" x2="690" y2="290" stroke="#3fb950" stroke-width="1" opacity="0.5"/>
+
+  <!-- Complexity note -->
+  <rect x="40" y="336" width="700" height="34" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="390" y="357" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="600">Tree depth = O(log n) where n = number of entries &middot; MAX_LEAF_SIZE = 16,384</text>
+
+  <text x="390" y="375" text-anchor="middle" fill="#484f58" font-size="11">D3 &mdash; O-Tree Splitting</text>
+</svg>
+</div>
+
+<h3>The Dsp Node: O(1) Position Transforms</h3>
+
+<p>
+The <code>Dsp</code> variant is the most interesting optimization. Instead of rewriting every position when content is inserted or deleted, the O-tree wraps the affected subtree in a <code>Dsp</code> node that just adds an offset:
+</p>
+
+<div class="example-block">
+  <div class="example-label">Example: inserting a paragraph at position 50</div>
+  <p>Before: <code>Leaf [0:"Hello", 1:"World", 50:"Old", 51:"Text"]</code></p>
+  <p>After insertion at position 50, the existing elements from 50 onward need to shift. Instead of rewriting:</p>
+  <pre>
+Split {
+  split: below(50),
+  in_child: Leaf [0:"Hello", 1:"World"],      // unchanged
+  out_child: Dsp {
+    offset: +3,                                 // shift everything by 3
+    child: Leaf [50:"Old", 51:"Text"]           // original positions preserved!
+  }
+}
+  </pre>
+  <p>The inner <code>Leaf</code> still stores positions 50 and 51. The <code>Dsp { offset: +3 }</code> adds 3 whenever those positions are read. No element was touched. <span class="fast">O(1)</span> instead of <span class="naive">O(n)</span>.</p>
+</div>
+
+<h3>Worked Example: Building an O-Tree</h3>
+
+<p>
+Let's trace what happens when a user creates a document with the text <code>"The quick brown fox"</code> and saves it:
+</p>
+
+<ol style="margin-left:24px;margin-bottom:16px">
+  <li><strong>Client sends</strong> <code>work_save_and_release</code> with 4 text elements</li>
+  <li><strong>Server creates</strong> a new <code>Edition</code> with a <code>Loaf::Leaf</code> containing:</li>
+</ol>
+
+<div class="example-block">
+  <div class="example-label">Leaf contents</div>
+  <pre>
+entries: [
+  (0, Carrier { element: Text("The "),   fp: 0x7a2f... }),
+  (1, Carrier { element: Text("quick "), fp: 0xb4c1... }),
+  (2, Carrier { element: Text("brown "), fp: 0xe8d3... }),
+  (3, Carrier { element: Text("fox"),    fp: 0x1f9a... }),
+]
+region: XnRegion [0, 4)
+  </pre>
+</div>
+
+<p>
+4 entries is well under <code>MAX_LEAF_SIZE</code> (16,384), so it stays as a single Leaf. When the user adds more text and the leaf grows past the threshold, it will split. The tree grows deeper only as needed.
+</p>
+
+<h3>RangeElement: The 9 Element Types</h3>
+
+<p>
+An O-tree isn't limited to text. The <code>RangeElement</code> enum supports 9 types, and any Edition can mix them freely:
+</p>
+
+<table>
+  <tr><th>Type</th><th>Content</th><th>Content-Addressable?</th></tr>
+  <tr><td><code>Text</code></td><td>UTF-8 string</td><td class="accent-green">Yes &mdash; BLAKE3</td></tr>
+  <tr><td><code>Data</code></td><td>Raw bytes</td><td class="accent-green">Yes &mdash; BLAKE3</td></tr>
+  <tr><td><code>Blob</code></td><td>Reference to large binary object</td><td class="accent-green">Yes</td></tr>
+  <tr><td><code>Edition</code></td><td>Nested O-tree (composition)</td><td class="accent-green">Yes</td></tr>
+  <tr><td><code>Label</code></td><td>Named anchor / identifier</td><td>No &mdash; structural</td></tr>
+  <tr><td><code>PlaceHolder</code></td><td>Template slot</td><td>No &mdash; structural</td></tr>
+  <tr><td><code>IDHolder</code></td><td>Identity mapping</td><td>No &mdash; structural</td></tr>
+  <tr><td><code>Work</code></td><td>Reference to another document</td><td>No</td></tr>
+  <tr><td><code>Overlay</code></td><td>Compositional layer</td><td>Depends on content</td></tr>
+</table>
+
+<div class="note">
+  <strong>Content-addressable elements get BLAKE3 fingerprints.</strong> Structural elements (Label, PlaceHolder, IDHolder) get sequential IDs instead. This distinction matters: only content-addressable elements participate in transclusion queries and deduplication.
+</div>
+
+<h3>Structural Sharing Between Editions</h3>
+
+<p>
+When you edit a document, the O-tree doesn't copy the entire tree. It creates a new version that shares unchanged subtrees with the old one. This is the same technique used by immutable data structures in Clojure and Haskell.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 420" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Structural Sharing Between Editions</text>
+
+  <!-- Revision 0 -->
+  <text x="195" y="56" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">Revision 0 (original)</text>
+  <rect x="40" y="66" width="310" height="100" rx="6" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1.5"/>
+  <rect x="60" y="76" width="130" height="36" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1"/>
+  <text x="70" y="90" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">"The "</text>
+  <text x="70" y="104" fill="#484f58" font-size="9">pos 0</text>
+  <rect x="200" y="76" width="130" height="36" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1"/>
+  <text x="210" y="90" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">"quick fox"</text>
+  <text x="210" y="104" fill="#484f58" font-size="9">pos 1</text>
+  <rect x="60" y="120" width="270" height="36" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1"/>
+  <text x="70" y="134" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">" jumped over the fence"</text>
+  <text x="70" y="148" fill="#484f58" font-size="9">pos 2</text>
+
+  <!-- Revision 1 -->
+  <text x="585" y="56" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="700">Revision 1 (after edit)</text>
+  <rect x="430" y="66" width="310" height="100" rx="6" fill="rgba(88,166,255,0.05)" stroke="#58a6ff" stroke-width="1.5"/>
+  <rect x="450" y="76" width="130" height="36" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="460" y="90" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">"The "</text>
+  <text x="460" y="104" fill="#484f58" font-size="9">pos 0 (shared)</text>
+  <rect x="590" y="76" width="130" height="36" rx="4" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="600" y="90" fill="#58a6ff" font-size="10" font-family="'JetBrains Mono',monospace">"slow dog"</text>
+  <text x="600" y="104" fill="#484f58" font-size="9">pos 1 (new)</text>
+  <rect x="450" y="120" width="270" height="36" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="460" y="134" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">" jumped over the fence"</text>
+  <text x="460" y="148" fill="#484f58" font-size="9">pos 2 (shared)</text>
+
+  <!-- Sharing arrows -->
+  <path d="M190,94 Q340,70 450,94" fill="none" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="330" y="68" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="600">shared</text>
+  <path d="M190,138 Q340,164 450,138" fill="none" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="330" y="170" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="600">shared</text>
+
+  <!-- Memory layout -->
+  <text x="390" y="200" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="600">Memory layout (Arc references)</text>
+
+  <rect x="40" y="216" width="700" height="180" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Shared block 1 -->
+  <rect x="60" y="230" width="200" height="50" rx="4" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="1"/>
+  <text x="70" y="248" fill="#3fb950" font-size="10" font-weight="600">Arc&lt;Carrier&gt; #1</text>
+  <text x="70" y="268" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">Text("The ") fp=0x7a2f</text>
+
+  <!-- New block (only in rev 1) -->
+  <rect x="280" y="230" width="200" height="50" rx="4" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="290" y="248" fill="#58a6ff" font-size="10" font-weight="600">Arc&lt;Carrier&gt; #2 (new)</text>
+  <text x="290" y="268" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">Text("slow dog") fp=0xc5e7</text>
+
+  <!-- Old block (only in rev 0) -->
+  <rect x="500" y="230" width="220" height="50" rx="4" fill="rgba(248,81,73,0.1)" stroke="#f85149" stroke-width="1"/>
+  <text x="510" y="248" fill="#f85149" font-size="10" font-weight="600">Arc&lt;Carrier&gt; #3 (old)</text>
+  <text x="510" y="268" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">Text("quick fox") fp=0xb4c1</text>
+
+  <!-- Shared block 2 -->
+  <rect x="60" y="296" width="460" height="50" rx="4" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="1"/>
+  <text x="70" y="314" fill="#3fb950" font-size="10" font-weight="600">Arc&lt;Carrier&gt; #4</text>
+  <text x="70" y="334" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">Text(" jumped over the fence") fp=0xe8d3</text>
+
+  <!-- Reference labels -->
+  <text x="60" y="372" fill="#484f58" font-size="10">Rev 0 refs: #1 + #3 + #4 = 3 allocations</text>
+  <text x="400" y="372" fill="#484f58" font-size="10">Rev 1 refs: #1 + #2 + #4 = 3 allocations, only 1 new</text>
+
+  <text x="390" y="410" text-anchor="middle" fill="#484f58" font-size="11">D4 &mdash; Structural Sharing: only changed elements are allocated; shared elements use Arc reference counting</text>
+</svg>
+</div>
+
+<p>
+In this example, editing <code>"quick fox"</code> to <code>"slow dog"</code> allocates exactly one new <code>Arc&lt;Carrier&gt;</code>. The other two elements are shared between revisions via <code>Arc</code> reference counting. For a document with 1,000 elements where you change 3, you allocate 3 new elements and share 997. This is why O-tree edits are memory-efficient.
+</p>
+
+<div class="note">
+  <strong>Source:</strong> The <code>Loaf</code> enum is defined in <code>src/edition/orgl.rs:9</code>. <code>build_bulk()</code> at line 36 shows how leaves are split. The <code>Edition</code> wrapper with its <code>OnceLock</code> cache is in <code>src/edition/edition.rs</code>.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 4: GrandMap -->
+<!-- ============================================================ -->
+<h2 id="s4">4. GrandMap: Content-Addressed Deduplication</h2>
+
+<p>
+The <code>GrandMap</code> is the server's global content store. Every element from every document passes through it. Its job is simple but powerful: <strong>ensure that identical content always maps to the same backend ID</strong>.
+</p>
+
+<h3>How It Works</h3>
+
+<p>
+When a document is saved, each <code>RangeElement</code> is passed to <code>ContentAddressIndex::intern()</code>. This function:
+</p>
+
+<ol style="margin-left:24px;margin-bottom:16px">
+  <li>Computes the BLAKE3 fingerprint (256-bit hash) of the element's content</li>
+  <li>Checks if that fingerprint already exists in <code>fingerprint_to_be_id</code></li>
+  <li>If yes &rarr; returns the existing <code>BeId</code> (deduplication hit)</li>
+  <li>If no &rarr; allocates a new sequential <code>BeId</code>, stores the mapping</li>
+</ol>
+
+<pre>
+pub struct ContentAddressIndex {
+    fingerprint_to_be_id: HashMap&lt;[u8; 32], BeId&gt;,
+    be_id_to_fingerprint: HashMap&lt;BeId, [u8; 32]&gt;,
+    next_be_id: BeId,
+}
+</pre>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 480" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Content-Addressed Deduplication</text>
+
+  <!-- Document A -->
+  <rect x="30" y="44" width="220" height="120" rx="6" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="40" y="64" fill="#3fb950" font-size="12" font-weight="700">Document A</text>
+  <rect x="40" y="74" width="200" height="26" rx="3" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="1"/>
+  <text x="50" y="91" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">"The "       fp=0x7a2f</text>
+  <rect x="40" y="104" width="200" height="26" rx="3" fill="rgba(210,153,34,0.15)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="50" y="121" fill="#d29922" font-size="10" font-family="'JetBrains Mono',monospace">"quick brown" fp=0xa3f7</text>
+  <rect x="40" y="134" width="200" height="26" rx="3" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="1"/>
+  <text x="50" y="151" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">" fox jumped" fp=0x1b4e</text>
+
+  <!-- Document B -->
+  <rect x="530" y="44" width="220" height="120" rx="6" fill="rgba(88,166,255,0.05)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="540" y="64" fill="#58a6ff" font-size="12" font-weight="700">Document B</text>
+  <rect x="540" y="74" width="200" height="26" rx="3" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="550" y="91" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">"I saw a"    fp=0x5c92</text>
+  <rect x="540" y="104" width="200" height="26" rx="3" fill="rgba(210,153,34,0.15)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="550" y="121" fill="#d29922" font-size="10" font-family="'JetBrains Mono',monospace">"quick brown" fp=0xa3f7</text>
+  <rect x="540" y="134" width="200" height="26" rx="3" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="550" y="151" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">" yesterday"  fp=0xd861</text>
+
+  <!-- Arrows down to ContentAddressIndex -->
+  <text x="140" y="186" text-anchor="middle" fill="#484f58" font-size="16">&darr;</text>
+  <text x="640" y="186" text-anchor="middle" fill="#484f58" font-size="16">&darr;</text>
+
+  <!-- ContentAddressIndex box -->
+  <rect x="140" y="200" width="500" height="180" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="390" y="222" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="700">ContentAddressIndex</text>
+
+  <!-- Table header -->
+  <text x="170" y="246" fill="#8b949e" font-size="10" font-weight="600">BLAKE3 Fingerprint</text>
+  <text x="440" y="246" fill="#8b949e" font-size="10" font-weight="600">BeId</text>
+  <text x="560" y="246" fill="#8b949e" font-size="10" font-weight="600">Refs</text>
+  <line x1="160" y1="252" x2="620" y2="252" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Row 1 -->
+  <text x="170" y="270" fill="#79c0ff" font-size="10" font-family="'JetBrains Mono',monospace">0x7a2f...</text>
+  <text x="440" y="270" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">BeId(1001)</text>
+  <text x="560" y="270" fill="#8b949e" font-size="10">A only</text>
+
+  <!-- Row 2 (shared!) -->
+  <rect x="155" y="278" width="470" height="22" rx="3" fill="rgba(210,153,34,0.08)"/>
+  <text x="170" y="294" fill="#d29922" font-size="10" font-family="'JetBrains Mono',monospace" font-weight="600">0xa3f7...</text>
+  <text x="440" y="294" fill="#d29922" font-size="10" font-family="'JetBrains Mono',monospace" font-weight="600">BeId(1002)</text>
+  <text x="560" y="294" fill="#d29922" font-size="10" font-weight="600">A + B</text>
+
+  <!-- Row 3 -->
+  <text x="170" y="318" fill="#79c0ff" font-size="10" font-family="'JetBrains Mono',monospace">0x1b4e...</text>
+  <text x="440" y="318" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">BeId(1003)</text>
+  <text x="560" y="318" fill="#8b949e" font-size="10">A only</text>
+
+  <!-- Row 4 -->
+  <text x="170" y="342" fill="#79c0ff" font-size="10" font-family="'JetBrains Mono',monospace">0x5c92...</text>
+  <text x="440" y="342" fill="#58a6ff" font-size="10" font-family="'JetBrains Mono',monospace">BeId(1004)</text>
+  <text x="560" y="342" fill="#8b949e" font-size="10">B only</text>
+
+  <!-- Row 5 -->
+  <text x="170" y="366" fill="#79c0ff" font-size="10" font-family="'JetBrains Mono',monospace">0xd861...</text>
+  <text x="440" y="366" fill="#58a6ff" font-size="10" font-family="'JetBrains Mono',monospace">BeId(1005)</text>
+  <text x="560" y="366" fill="#8b949e" font-size="10">B only</text>
+
+  <!-- Annotation -->
+  <rect x="140" y="400" width="500" height="30" rx="6" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1"/>
+  <text x="390" y="419" text-anchor="middle" fill="#d29922" font-size="11" font-weight="600">6 unique elements across 2 docs &rarr; only 5 stored (1 deduplicated)</text>
+
+  <!-- Storage savings arrow -->
+  <text x="390" y="452" text-anchor="middle" fill="#8b949e" font-size="12">With 10,000 documents sharing common phrases:</text>
+  <text x="390" y="472" text-anchor="middle" fill="#3fb950" font-size="14" font-weight="700" font-family="'JetBrains Mono',monospace">~40-60% storage savings (measured on representative corpora)</text>
+
+  <text x="390" y="492" text-anchor="middle" fill="#484f58" font-size="11">D5 &mdash; Content-Addressed Deduplication via GrandMap</text>
+</svg>
+</div>
+
+<h3>Worked Example: Two Documents with Shared Content</h3>
+
+<div class="example-block">
+  <div class="example-label">Step-by-step trace</div>
+  <p><strong>1. Save Document A:</strong> <code>"The quick brown fox jumped"</code></p>
+  <pre>
+intern(Text("The "))       → BLAKE3 → 0x7a2f → new BeId(1001)
+intern(Text("quick brown")) → BLAKE3 → 0xa3f7 → new BeId(1002)
+intern(Text(" fox jumped")) → BLAKE3 → 0x1b4e → new BeId(1003)
+  </pre>
+  <p><strong>2. Save Document B:</strong> <code>"I saw a quick brown yesterday"</code></p>
+  <pre>
+intern(Text("I saw a"))    → BLAKE3 → 0x5c92 → new BeId(1004)
+intern(Text("quick brown")) → BLAKE3 → 0xa3f7 → <span class="accent-amber">existing BeId(1002)</span>  ← dedup hit!
+intern(Text(" yesterday"))  → BLAKE3 → 0xd861 → new BeId(1005)
+  </pre>
+  <p><strong>Result:</strong> Document B's <code>"quick brown"</code> maps to the same <code>BeId(1002)</code> as Document A's. One copy in the GrandMap, two documents referencing it.</p>
+</div>
+
+<h3>The GrandMap Structure</h3>
+
+<p>
+Beyond the <code>ContentAddressIndex</code>, the <code>GrandMap</code> also manages:
+</p>
+
+<table>
+  <tr><th>Component</th><th>Purpose</th></tr>
+  <tr><td><code>global_space</code></td><td>Global <code>IdSpace</code> for allocating unique IDs across all documents</td></tr>
+  <tr><td><code>storage</code></td><td><code>InMemoryBeStorage</code> &mdash; the actual element data store</td></tr>
+  <tr><td><code>id_to_element</code></td><td>Maps <code>BeId</code> &rarr; the stored element for retrieval</td></tr>
+  <tr><td><code>element_to_ids</code></td><td>Reverse index: element &rarr; list of <code>Id</code>s that reference it</td></tr>
+  <tr><td><code>id_holders</code></td><td>Tracks <code>IDHolder</code> elements for identity mapping</td></tr>
+  <tr><td><code>identity_map</code></td><td>Label-to-identity resolution for path navigation</td></tr>
+</table>
+
+<h3>Why This Matters for Performance</h3>
+
+<p>
+The GrandMap's deduplication is the foundation for everything else:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong>TransclusionIndex</strong> uses the same <code>BeId</code>s as keys &mdash; so deduplicated content automatically appears in the right query results</li>
+  <li><strong>Shared region detection</strong> compares fingerprints, not strings &mdash; O(1) per element instead of O(n) substring matching</li>
+  <li><strong>Canopy flags</strong> are tied to endorsement types, which are tied to content types, which are tracked per-BeId</li>
+  <li><strong>Storage</strong> grows with unique content, not total content. Documents that share lots of text use proportionally less disk</li>
+</ul>
+
+<div class="warning">
+  <strong>Scalability note:</strong> The current implementation stores everything in memory via <code>HashMap</code>s and serializes to a single JSON file (<code>server.json</code>). For large deployments (millions of documents), this file can grow very large. The v0.2 roadmap includes a chunked storage backend to address this.
+</div>
+
+<div class="note">
+  <strong>Source:</strong> <code>GrandMap</code> is defined in <code>src/edition/grandmap.rs:68</code>. <code>ContentAddressIndex</code> and the <code>intern()</code> method are in <code>src/edition/content_address.rs:7</code> and line 65 respectively.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 5: Canopy -->
+<!-- ============================================================ -->
+<h2 id="s5">5. Canopy: Flag-Bit Pruning</h2>
+
+<p>
+The Canopy is the mechanism that makes H-tree traversal <span class="fast">O(log n)</span> instead of <span class="naive">O(n)</span>. Without it, finding transclusion matches would require visiting every node in the version history. With it, entire subtrees are skipped in a single comparison.
+</p>
+
+<h3>The Problem</h3>
+
+<p>
+An H-tree node represents a version of a document. To answer &ldquo;which editions contain this text?&rdquo;, you need to walk the tree checking each node. With 10,000 editions, that's 10,000 checks. The canopy avoids this by annotating each node with a <strong>bitmap of what types of content exist in its subtree</strong>.
+</p>
+
+<h3>How Flag Bits Work</h3>
+
+<p>
+Each endorsement type (Text, Link, Blob, etc.) gets a bit position in a <code>u32</code>. The current allocation:
+</p>
+
+<table>
+  <tr><th>Flag</th><th>Bit Position</th><th>Hex Value</th></tr>
+  <tr><td>PUBLIC_CLUB_FLAG</td><td>0</td><td><code class="accent-blue">0x00000001</code></td></tr>
+  <tr><td>OTHER_CLUBS_FLAG</td><td>1</td><td><code class="accent-blue">0x00000002</code></td></tr>
+  <tr><td>OTHER_ENDORSEMENTS_FLAG</td><td>2</td><td><code class="accent-blue">0x00000004</code></td></tr>
+  <tr><td>FIRST_ENDORSEMENT_FLAG</td><td>3+</td><td><code class="accent-blue">0x00000008</code> &larr;</td></tr>
+  <tr><td>IS_SENSOR_WAITING_FLAG</td><td>26</td><td><code class="accent-purple">0x04000000</code></td></tr>
+  <tr><td>IS_NOT_PARTIALIZABLE_FLAG</td><td>27</td><td><code class="accent-purple">0x08000000</code></td></tr>
+</table>
+
+<p>
+Endorsement flags are allocated dynamically via <code>use_endorsement_flag()</code> (up to 23 bits, from position 3 to 25). Each distinct endorsement type gets its own bit. The flags are then <strong>merged upward</strong> through the H-tree using bitwise OR.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 400" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Canopy Flag Propagation and Pruning</text>
+
+  <!-- Root node -->
+  <rect x="240" y="44" width="300" height="60" rx="8" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="260" y="62" fill="#a371f7" font-size="11" font-weight="700">Root (merged flags)</text>
+
+  <rect x="260" y="68" width="32" height="26" rx="3" fill="#a371f7"/>
+  <text x="276" y="85" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="700">T</text>
+  <rect x="296" y="68" width="32" height="26" rx="3" fill="#a371f7"/>
+  <text x="312" y="85" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="700">L</text>
+  <rect x="332" y="68" width="32" height="26" rx="3" fill="#21262d"/>
+  <text x="348" y="85" text-anchor="middle" fill="#484f58" font-size="10" font-weight="700">B</text>
+  <rect x="368" y="68" width="32" height="26" rx="3" fill="#a371f7"/>
+  <text x="384" y="85" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="700">I</text>
+  <rect x="404" y="68" width="32" height="26" rx="3" fill="#21262d"/>
+  <text x="420" y="85" text-anchor="middle" fill="#484f58" font-size="10">.</text>
+  <rect x="440" y="68" width="32" height="26" rx="3" fill="#21262d"/>
+  <text x="456" y="85" text-anchor="middle" fill="#484f58" font-size="10">.</text>
+  <rect x="476" y="68" width="32" height="26" rx="3" fill="#21262d"/>
+  <text x="492" y="85" text-anchor="middle" fill="#484f58" font-size="10">.</text>
+
+  <!-- Flag legend -->
+  <text x="260" y="108" fill="#484f58" font-size="9" font-family="'JetBrains Mono',monospace">T=Text L=Link B=Blob I=Image  |=merged via OR</text>
+
+  <!-- Lines down to children -->
+  <line x1="320" y1="104" x2="180" y2="144" stroke="#30363d" stroke-width="1.5"/>
+  <line x1="460" y1="104" x2="600" y2="144" stroke="#30363d" stroke-width="1.5"/>
+
+  <!-- Left child -->
+  <rect x="60" y="144" width="240" height="60" rx="8" fill="rgba(163,113,247,0.05)" stroke="#a371f7" stroke-width="1"/>
+  <text x="80" y="162" fill="#a371f7" font-size="11" font-weight="700">Left child</text>
+  <rect x="80" y="168" width="32" height="26" rx="3" fill="#a371f7"/>
+  <text x="96" y="185" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="700">T</text>
+  <rect x="116" y="168" width="32" height="26" rx="3" fill="#21262d"/>
+  <text x="132" y="185" text-anchor="middle" fill="#484f58" font-size="10" font-weight="700">L</text>
+  <rect x="152" y="168" width="32" height="26" rx="3" fill="#21262d"/>
+  <text x="168" y="185" text-anchor="middle" fill="#484f58" font-size="10">B</text>
+  <rect x="188" y="168" width="32" height="26" rx="3" fill="#a371f7"/>
+  <text x="204" y="185" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="700">I</text>
+
+  <!-- Right child -->
+  <rect x="480" y="144" width="240" height="60" rx="8" fill="rgba(163,113,247,0.05)" stroke="#a371f7" stroke-width="1"/>
+  <text x="500" y="162" fill="#a371f7" font-size="11" font-weight="700">Right child</text>
+  <rect x="500" y="168" width="32" height="26" rx="3" fill="#21262d"/>
+  <text x="516" y="185" text-anchor="middle" fill="#484f58" font-size="10" font-weight="700">T</text>
+  <rect x="536" y="168" width="32" height="26" rx="3" fill="#a371f7"/>
+  <text x="552" y="185" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="700">L</text>
+  <rect x="572" y="168" width="32" height="26" rx="3" fill="#21262d"/>
+  <text x="588" y="185" text-anchor="middle" fill="#484f58" font-size="10">B</text>
+  <rect x="608" y="168" width="32" height="26" rx="3" fill="#21262d"/>
+  <text x="624" y="185" text-anchor="middle" fill="#484f58" font-size="10">I</text>
+
+  <!-- Pruning annotation -->
+  <rect x="60" y="220" width="700" height="80" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="80" y="242" fill="#e6edf3" font-size="12" font-weight="600">Query: "find Text transclusions"</text>
+  <text x="80" y="262" fill="#8b949e" font-size="12">1. Root has T flag set → need to check children</text>
+  <text x="80" y="278" fill="#3fb950" font-size="12" font-weight="600">2. Left child has T flag → ✓ visit this subtree</text>
+  <text x="80" y="294" fill="#f85149" font-size="12" font-weight="600">3. Right child has NO T flag → ✗ skip entire subtree (pruned!)</text>
+
+  <!-- Bert vs Sensor -->
+  <rect x="60" y="316" width="340" height="56" rx="6" fill="rgba(163,113,247,0.05)" stroke="#a371f7" stroke-width="1"/>
+  <text x="80" y="336" fill="#a371f7" font-size="11" font-weight="700">BertCanopy</text>
+  <text x="80" y="354" fill="#8b949e" font-size="10">Static: endorsement + permission flags.</text>
+  <text x="80" y="366" fill="#8b949e" font-size="10">Used for query pruning during traversal.</text>
+
+  <rect x="420" y="316" width="340" height="56" rx="6" fill="rgba(210,153,34,0.05)" stroke="#d29922" stroke-width="1"/>
+  <text x="440" y="336" fill="#d29922" font-size="11" font-weight="700">SensorCanopy</text>
+  <text x="440" y="354" fill="#8b949e" font-size="10">Dynamic: tracks waiting queries.</text>
+  <text x="440" y="366" fill="#8b949e" font-size="10">Triggers notifications when matching content appears.</text>
+
+  <text x="390" y="394" text-anchor="middle" fill="#484f58" font-size="11">D6 &mdash; Canopy Flag Propagation: bitwise OR merges flags upward; pruning skips non-matching subtrees</text>
+</svg>
+</div>
+
+<h3>Two Canopy Types</h3>
+
+<p>
+Xudanu implements two canopy variants that serve different purposes:
+</p>
+
+<div class="two-col">
+  <div class="example-block">
+    <div class="example-label"><span class="accent-purple">BertCanopy</span> &mdash; Query Optimization</div>
+    <p>Static flag bits computed when an edition is registered. Used to prune H-tree traversal during transclusion queries. Named after the original Udanax Gold concept of a "Bert" (backwards edge tracker).</p>
+    <p><strong>Updated:</strong> when editions are created or revised</p>
+  </div>
+  <div class="example-block">
+    <div class="example-label"><span class="accent-amber">SensorCanopy</span> &mdash; Live Notifications</div>
+    <p>Dynamic flag bits that track which queries are currently "waiting" for matches. When new content is added that matches a waiting query, the sensor fires a notification. This enables reactive transclusion alerts.</p>
+    <p><strong>Updated:</strong> when queries are registered or content changes</p>
+  </div>
+</div>
+
+<h3>The Pruning Math</h3>
+
+<p>
+For a balanced H-tree with depth <em>d</em>:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li>Without canopy: visit all <span class="naive">2<sup>d</sup></span> nodes</li>
+  <li>With canopy: visit only nodes whose flags include your query type. If the flag has a 50% chance of being set, you visit roughly <span class="fast">2<sup>d/2</sup></span> nodes &mdash; the square root</li>
+  <li>In practice, with sparse endorsement types, the pruning is far more aggressive &mdash; often visiting only <span class="fast">O(log n)</span> nodes</li>
+</ul>
+
+<div class="note">
+  <strong>Source:</strong> Canopy implementation is in <code>src/edition/canopy.rs</code>. <code>BertCanopy</code> and <code>SensorCanopy</code> are structs. Flag allocation is in <code>src/edition/props.rs</code> (<code>use_endorsement_flag()</code> at line 30, <code>endorsements_flags()</code> at line 73). The <code>compute_join()</code> function merges two canopy crums.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 6: H-Tree -->
+<!-- ============================================================ -->
+<h2 id="s6">6. H-Tree: Version Ancestry</h2>
+
+<p>
+While the O-tree stores <em>what</em> a document contains, the H-tree stores <em>how versions relate</em>. It's a directed acyclic graph (DAG) where each node &mdash; called a <strong>crum</strong> &mdash; represents a version snapshot, and edges point from child to parent (newer to older).
+</p>
+
+<h3>Structure of an H-Tree Node</h3>
+
+<pre>
+pub struct HUpperCrumData {
+    hcut: TracePosition,                       // where this node was split
+    o_parents: Vec&lt;Arc&lt;Mutex&lt;dyn HPart&gt;&gt;&gt;,    // parent references (DAG edges)
+    bert_crum: Arc&lt;Mutex&lt;CanopyCrumData&gt;&gt;,    // canopy flags for this subtree
+    base: HistoryCrumBase,                      // unique hash for identity
+    _bert_canopy: BertCanopy,                   // reference to owning canopy
+}
+</pre>
+
+<p>
+Each crum knows its parents (multiple parents = merged branches). Each carries a <code>CanopyCrumData</code> that summarizes the endorsement types present in its entire subtree. This is the data the canopy pruning algorithm uses.
+</p>
+
+<h3>How the H-Tree Grows</h3>
+
+<p>
+When a new edition is created:
+</p>
+
+<ol style="margin-left:24px;margin-bottom:16px">
+  <li>A new <code>HUpperCrumData</code> is allocated</li>
+  <li>Its parent(s) are set to the previous edition's crum(s)</li>
+  <li>A <code>CanopyCrumData</code> is created with this edition's endorsement flags</li>
+  <li>Flags are <strong>propagated upward</strong> through the <code>propagate_flags()</code> function &mdash; each ancestor's flags become the bitwise OR of all descendants</li>
+</ol>
+
+<div class="example-block">
+  <div class="example-label">Worked example: 4 edits to a document</div>
+  <pre>
+Rev 0 (initial)     → crum hash=0x001, flags=[T]
+    ↓ parent
+Rev 1 (typo fix)    → crum hash=0x002, flags=[T]
+    ↓ parent
+Rev 2 (add links)   → crum hash=0x003, flags=[T, L]
+    ↓ parent
+Rev 3 (add image)   → crum hash=0x004, flags=[T, L, I]
+
+After propagation:
+  Rev 3 canopy: [T, L, I]         (own + all ancestors)
+  Rev 2 canopy: [T, L]            (own + Rev 0, Rev 1)
+  Rev 1 canopy: [T]               (own + Rev 0)
+  Rev 0 canopy: [T]               (own only)
+
+Query: "find Link transclusions"
+  → Rev 3 has L → ✓ descend
+  → Rev 2 has L → ✓ descend
+  → Rev 1 no L  → ✗ skip Rev 1 and Rev 0 (pruned 50%)
+  </pre>
+</div>
+
+<h3>Branching and Merging</h3>
+
+<p>
+The H-tree is a DAG, not a simple chain. If two users edit the same document concurrently, the H-tree branches. When those branches are reconciled (via DagWood, <a href="#s8">Section 8</a>), a merge node gets <em>two</em> parents.
+</p>
+
+<pre>
+     Rev 0
+      ↓
+     Rev 1
+    ↙    ↘           ← concurrent edits
+  Rev 2a  Rev 2b
+    ↘    ↙           ← merge
+     Rev 3            → o_parents: [Rev 2a, Rev 2b]
+</pre>
+
+<p>
+The canopy correctly handles merge nodes: the merge crum's flags are the bitwise OR of both branches, so no matching content is lost.
+</p>
+
+<h3>Delayed Backfollow</h3>
+
+<p>
+The H-tree supports a concept called <strong>delayed backfollow</strong> &mdash; the ability to lazily discover transclusion relationships by walking the version chain backward. Instead of maintaining a complete index of every version's content, the system can traverse parent links on demand, using canopy flags to skip irrelevant branches.
+</p>
+
+<p>
+This is particularly useful for:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong>Historical queries</strong> &mdash; "did version 5 contain this text?" without loading all versions</li>
+  <li><strong>Version diffing</strong> &mdash; walking between two crums to find what changed</li>
+  <li><strong>Age tracking</strong> &mdash; determining when each piece of content was first introduced</li>
+</ul>
+
+<div class="note">
+  <strong>Source:</strong> <code>HUpperCrumData</code> is defined in <code>src/ent/htree.rs:39</code>. <code>from_two()</code> at line 64 handles merge nodes with two parents. Flag propagation is in <code>src/edition/canopy.rs</code> (<code>propagate_flags()</code>). The <code>HPart</code> trait at line 18 provides the polymorphic parent interface.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 7: Transclusion Queries -->
+<!-- ============================================================ -->
+<h2 id="s7">7. Transclusion Queries at O(log n)</h2>
+
+<p>
+This is where everything comes together. A transclusion query asks: <strong>"which documents contain this text?"</strong> The naive approach scans every document. Xudanu answers it in O(log n) by combining content fingerprints, inverted indexes, canopy pruning, and H-tree traversal.
+</p>
+
+<h3>The Full Query Pipeline</h3>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 520" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrAmber" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#d29922"/>
+    </marker>
+  </defs>
+
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Transclusion Query Pipeline</text>
+  <text x="390" y="40" text-anchor="middle" fill="#8b949e" font-size="12">find_transcluders("quick brown fox")</text>
+
+  <!-- Step 1 -->
+  <rect x="60" y="56" width="660" height="56" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <circle cx="90" cy="84" r="14" fill="#3fb950"/>
+  <text x="90" y="88" text-anchor="middle" fill="#0d1117" font-size="12" font-weight="700">1</text>
+  <text x="116" y="78" fill="#3fb950" font-size="12" font-weight="700">Hash the query text</text>
+  <text x="116" y="96" fill="#8b949e" font-size="11" font-family="'JetBrains Mono',monospace">BLAKE3("quick brown fox") → 0xa3f7...b2c1</text>
+
+  <!-- Arrow -->
+  <line x1="390" y1="112" x2="390" y2="132" stroke="#d29922" stroke-width="1.5" marker-end="url(#arrAmber)"/>
+
+  <!-- Step 2 -->
+  <rect x="60" y="132" width="660" height="72" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <circle cx="90" cy="168" r="14" fill="#58a6ff"/>
+  <text x="90" y="172" text-anchor="middle" fill="#0d1117" font-size="12" font-weight="700">2</text>
+  <text x="116" y="158" fill="#58a6ff" font-size="12" font-weight="700">TransclusionIndex lookup</text>
+  <text x="116" y="176" fill="#8b949e" font-size="11" font-family="'JetBrains Mono',monospace">HashMap&lt;[u8;32], HashSet&lt;u64&gt;&gt;  →  fingerprint → {work IDs}</text>
+  <text x="116" y="194" fill="#8b949e" font-size="11" font-family="'JetBrains Mono',monospace">0xa3f7... → {work_42, work_107, work_891}</text>
+
+  <!-- Arrow -->
+  <line x1="390" y1="204" x2="390" y2="224" stroke="#d29922" stroke-width="1.5" marker-end="url(#arrAmber)"/>
+
+  <!-- Step 3 -->
+  <rect x="60" y="224" width="660" height="72" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <circle cx="90" cy="260" r="14" fill="#a371f7"/>
+  <text x="90" y="264" text-anchor="middle" fill="#0d1117" font-size="12" font-weight="700">3</text>
+  <text x="116" y="250" fill="#a371f7" font-size="12" font-weight="700">H-tree walk with canopy pruning</text>
+  <text x="116" y="268" fill="#8b949e" font-size="11">For each candidate work, walk its H-tree. At each node:</text>
+  <text x="116" y="286" fill="#8b949e" font-size="11" font-family="'JetBrains Mono',monospace">if (node.flags &amp; query_flags) == 0 → skip subtree  else → descend</text>
+
+  <!-- Arrow -->
+  <line x1="390" y1="296" x2="390" y2="316" stroke="#d29922" stroke-width="1.5" marker-end="url(#arrAmber)"/>
+
+  <!-- Step 4 -->
+  <rect x="60" y="316" width="660" height="56" rx="8" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1.5"/>
+  <circle cx="90" cy="344" r="14" fill="#d29922"/>
+  <text x="90" y="348" text-anchor="middle" fill="#0d1117" font-size="12" font-weight="700">4</text>
+  <text x="116" y="336" fill="#d29922" font-size="12" font-weight="700">Verify content match</text>
+  <text x="116" y="354" fill="#8b949e" font-size="11" font-family="'JetBrains Mono',monospace">TrailBlazer records each match → dedup via HashSet → Edition with results</text>
+
+  <!-- Arrow -->
+  <line x1="390" y1="372" x2="390" y2="392" stroke="#d29922" stroke-width="1.5" marker-end="url(#arrAmber)"/>
+
+  <!-- Step 5 -->
+  <rect x="60" y="392" width="660" height="56" rx="8" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="2"/>
+  <circle cx="90" cy="420" r="14" fill="#3fb950"/>
+  <text x="90" y="424" text-anchor="middle" fill="#0d1117" font-size="12" font-weight="700">5</text>
+  <text x="116" y="412" fill="#3fb950" font-size="12" font-weight="700">Return results</text>
+  <text x="116" y="430" fill="#8b949e" font-size="11" font-family="'JetBrains Mono',monospace">TransclusionResult { element, is_direct } × N matches</text>
+
+  <!-- Performance summary -->
+  <rect x="60" y="464" width="660" height="44" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="390" y="482" text-anchor="middle" fill="#8b949e" font-size="12">Total: <span class="naive">Naive O(W × L)</span> → <span class="fast">Xudanu O(U × A + log n × hits)</span></text>
+  <text x="390" y="500" text-anchor="middle" fill="#484f58" font-size="10">W=works, L=text length, U=unique fingerprints, A=avg works per fingerprint</text>
+
+  <text x="390" y="516" text-anchor="middle" fill="#484f58" font-size="11">D7 &mdash; Transclusion Query Pipeline</text>
+</svg>
+</div>
+
+<h3>Step-by-Step Trace</h3>
+
+<div class="example-block">
+  <div class="example-label">Query: find all documents containing "quick brown fox"</div>
+  <p><strong>Step 1 &mdash; Hash:</strong></p>
+  <pre>BLAKE3("quick brown fox") → [0xa3, 0xf7, 0x1b, ..., 0xc1]  (32 bytes)</pre>
+
+  <p><strong>Step 2 &mdash; Index lookup:</strong></p>
+  <pre>TransclusionIndex.get(0xa3f7...) → {work_42, work_107, work_891}</pre>
+  <p>Three candidate documents. We didn't scan any document text &mdash; just a HashMap lookup.</p>
+
+  <p><strong>Step 3 &mdash; Canopy-filtered H-tree walk:</strong></p>
+  <pre>work_42 H-tree:
+  Root flags [T,L,I] &amp; TextFlag → match → descend
+  Left child [T] &amp; TextFlag → match → descend → <span class="accent-green">found at Rev 3</span>
+  Right child [L,I] &amp; TextFlag → no match → <span class="accent-red">pruned</span>
+
+work_107 H-tree:
+  Root flags [T] &amp; TextFlag → match → descend → <span class="accent-green">found at Rev 1</span>
+
+work_891 H-tree:
+  Root flags [L,B] &amp; TextFlag → no match → <span class="accent-red">entire tree pruned</span></pre>
+
+  <p><strong>Step 4 &mdash; Verify and collect:</strong></p>
+  <pre>TrailBlazer.record(Text("quick brown fox"), work_42_rev3)  → true
+TrailBlazer.record(Text("quick brown fox"), work_107_rev1)  → true</pre>
+
+  <p><strong>Step 5 &mdash; Results:</strong></p>
+  <pre>[
+  TransclusionResult { element: Text("quick brown fox"), is_direct: true,  work: 42 },
+  TransclusionResult { element: Text("quick brown fox"), is_direct: true,  work: 107 },
+]</pre>
+</div>
+
+<h3>The TransclusionIndex</h3>
+
+<p>
+The <code>TransclusionIndex</code> is the core inverted index. It maps each BLAKE3 fingerprint to the set of work IDs that contain an element with that fingerprint:
+</p>
+
+<pre>
+pub struct TransclusionIndex {
+    // fingerprint → set of work IDs containing this content
+    index: HashMap&lt;[u8; 32], HashSet&lt;u64&gt;&gt;,
+}
+</pre>
+
+<p>
+It's populated during <code>BackfollowEngine::register_edition()</code>: when a new edition is saved, each of its content-addressable elements is indexed. The index is also used by <code>content_shared_region()</code> to find overlapping content between two specific documents.
+</p>
+
+<h3>Range-Scoped Queries</h3>
+
+<p>
+The <code>RangeTransclusionQuery</code> in <code>src/edition/range_transclusion.rs</code> extends basic transclusion queries with position constraints:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong>With region</strong> &mdash; only find transcluders within a specific position range of the source document</li>
+  <li><strong>Direct only</strong> &mdash; skip indirect transclusions (content transcluded through intermediate documents)</li>
+  <li><strong>Local present only</strong> &mdash; only include content that still exists in the current version (not deleted)</li>
+</ul>
+
+<div class="note">
+  <strong>Source:</strong> <code>TransclusionIndex</code> and <code>TrailBlazer</code> are in <code>src/edition/transclusion.rs</code>. <code>RangeTransclusionQuery</code> is in <code>src/edition/range_transclusion.rs</code>. The <code>BackfollowEngine</code> orchestrates the full pipeline in <code>src/edition/backfollow.rs</code>. <code>content_shared_region()</code> is in <code>src/edition/shared_mapping.rs:58</code>.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 8: DagWood -->
+<!-- ============================================================ -->
+<h2 id="s8">8. DagWood: Concurrent Edits</h2>
+
+<p>
+When two users edit the same document at the same time, both save successfully, and neither sees the other's changes until later. The <strong>DagWood</strong> is the data structure that handles this. It defines a partial ordering of edit positions and provides operations to create new positions, detect concurrency, and reconcile conflicts.
+</p>
+
+<h3>What Is a DagWood?</h3>
+
+<p>
+A DagWood is a tree of <code>TracePosition</code>s. Each position represents a point in the edit timeline. The tree structure encodes ordering: positions on the same branch are ordered (sequential edits), while positions on different branches are concurrent.
+</p>
+
+<pre>
+pub struct DagWood {
+    branches: BranchStore,                          // all branches
+    root: TracePosition,                            // the root position
+    trunk: HashMap&lt;TracePosition, BranchId&gt;,       // main line positions
+    cached_position: Option&lt;TracePosition&gt;,        // last known position
+    nav_cache: HashMap&lt;BranchId, u32&gt;,              // navigation cache
+}
+</pre>
+
+<h3>Concurrent Edit Scenario</h3>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 440" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">DagWood: Resolving Concurrent Edits</text>
+
+  <!-- Timeline -->
+  <rect x="40" y="44" width="700" height="320" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Time labels -->
+  <text x="60" y="66" fill="#484f58" font-size="10" font-weight="600">TIME →</text>
+
+  <!-- Root -->
+  <circle cx="100" cy="180" r="24" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="100" y="176" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="700">Root</text>
+  <text x="100" y="188" text-anchor="middle" fill="#484f58" font-size="8">pos 0</text>
+
+  <!-- Sequential edit 1 -->
+  <line x1="124" y1="180" x2="206" y2="180" stroke="#58a6ff" stroke-width="1.5"/>
+  <circle cx="230" cy="180" r="24" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="230" y="176" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="700">Edit 1</text>
+  <text x="230" y="188" text-anchor="middle" fill="#484f58" font-size="8">pos 1</text>
+
+  <!-- Sequential edit 2 -->
+  <line x1="254" y1="180" x2="336" y2="180" stroke="#58a6ff" stroke-width="1.5"/>
+  <circle cx="360" cy="180" r="24" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="360" y="176" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="700">Edit 2</text>
+  <text x="360" y="188" text-anchor="middle" fill="#484f58" font-size="8">pos 2</text>
+
+  <!-- Fork point -->
+  <text x="360" y="140" text-anchor="middle" fill="#8b949e" font-size="10" font-weight="600">← fork point</text>
+
+  <!-- User A branch (up) -->
+  <line x1="360" y1="156" x2="480" y2="100" stroke="#3fb950" stroke-width="2"/>
+  <circle cx="500" cy="92" r="28" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="2"/>
+  <text x="500" y="86" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="700">User A</text>
+  <text x="500" y="100" text-anchor="middle" fill="#484f58" font-size="8">pos 2a</text>
+  <text x="500" y="68" fill="#3fb950" font-size="9" font-family="'JetBrains Mono',monospace">"added intro"</text>
+
+  <!-- User B branch (down) -->
+  <line x1="360" y1="204" x2="480" y2="260" stroke="#d29922" stroke-width="2"/>
+  <circle cx="500" cy="268" r="28" fill="rgba(210,153,34,0.15)" stroke="#d29922" stroke-width="2"/>
+  <text x="500" y="262" text-anchor="middle" fill="#d29922" font-size="10" font-weight="700">User B</text>
+  <text x="500" y="276" text-anchor="middle" fill="#484f58" font-size="8">pos 2b</text>
+  <text x="500" y="300" fill="#d29922" font-size="9" font-family="'JetBrains Mono',monospace">"fixed typo"</text>
+
+  <!-- Concurrency annotation -->
+  <rect x="558" y="156" width="170" height="56" rx="6" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1"/>
+  <text x="568" y="174" fill="#f85149" font-size="10" font-weight="600">Concurrent!</text>
+  <text x="568" y="190" fill="#8b949e" font-size="9">Neither edit knows</text>
+  <text x="568" y="202" fill="#8b949e" font-size="9">about the other.</text>
+  <line x1="528" y1="100" x2="558" y2="170" stroke="#f85149" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="528" y1="268" x2="558" y2="198" stroke="#f85149" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- Merge -->
+  <line x1="528" y1="92" x2="646" y2="172" stroke="#a371f7" stroke-width="2"/>
+  <line x1="528" y1="268" x2="646" y2="188" stroke="#a371f7" stroke-width="2"/>
+  <circle cx="670" cy="180" r="28" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="2"/>
+  <text x="670" y="174" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="700">Merge</text>
+  <text x="670" y="186" text-anchor="middle" fill="#484f58" font-size="8">pos 3</text>
+
+  <!-- Merge annotation -->
+  <rect x="600" y="218" width="130" height="40" rx="4" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1"/>
+  <text x="610" y="234" fill="#a371f7" font-size="9" font-weight="600">Reconciliation:</text>
+  <text x="610" y="248" fill="#8b949e" font-size="9">Both changes preserved</text>
+
+  <!-- BranchStore label -->
+  <text x="60" y="390" fill="#8b949e" font-size="11">BranchStore maintains branches as a HashMap. Each branch tracks parent, children, and position count.</text>
+  <text x="60" y="406" fill="#8b949e" font-size="11">Navigation cache maps BranchId → max reachable position for fast ordering comparisons.</text>
+
+  <text x="390" y="434" text-anchor="middle" fill="#484f58" font-size="11">D8 &mdash; Concurrent Edit Resolution via DagWood</text>
+</svg>
+</div>
+
+<h3>How Positions Are Created</h3>
+
+<p>
+The DagWood provides two key operations:
+</p>
+
+<table>
+  <tr><th>Operation</th><th>Behavior</th><th>When Used</th></tr>
+  <tr>
+    <td><code>new_position()</code></td>
+    <td>Creates a position on the root branch, after the last known position</td>
+    <td>Single-user sequential edits</td>
+  </tr>
+  <tr>
+    <td><code>new_position_after(p)</code></td>
+    <td>Creates a successor to <code>p</code>. First successor is on the same branch; further successors branch off into a binary tree</td>
+    <td>Concurrent edits after the same position</td>
+  </tr>
+</table>
+
+<div class="example-block">
+  <div class="example-label">Branching in action</div>
+  <pre>
+// User A saves after pos 2
+let pos_a = dagwood.new_position_after(pos_2);
+// → pos_2a on same branch (first successor)
+
+// User B also saves after pos 2 (concurrent!)
+let pos_b = dagwood.new_position_after(pos_2);
+// → pos_2b on a NEW branch (second successor)
+// → pos_a and pos_b are now concurrent, not ordered
+  </pre>
+</div>
+
+<h3>Partial Ordering and Navigation</h3>
+
+<p>
+The DagWood's <code>nav_cache</code> enables fast ordering comparisons. Given two positions, the system can determine:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong>Ordered</strong> &mdash; position A happened before position B (same branch, A &lt; B)</li>
+  <li><strong>Concurrent</strong> &mdash; neither happened before the other (different branches)</li>
+  <li><strong>Same</strong> &mdash; identical positions</li>
+</ul>
+
+<p>
+This is used by the <code>TraceView</code> to present a coherent ordering to clients even when the underlying history is a DAG.
+</p>
+
+<h3>Reconciliation Strategy</h3>
+
+<p>
+When concurrent edits need to be reconciled, Xudanu's current strategy is <strong>last-writer-wins at the element level</strong>. Both edits are preserved in the history; the H-tree stores both branches. The "current" version shown to users is determined by the reconciliation logic:
+</p>
+
+<ol style="margin-left:24px;margin-bottom:16px">
+  <li>Elements unique to one branch are kept</li>
+  <li>Elements present in both branches use the later timestamp</li>
+  <li>The merge creates a new H-tree node with both branches as parents</li>
+</ol>
+
+<div class="note">
+  <strong>Source:</strong> <code>DagWood</code> is defined in <code>src/ent/dagwood.rs:20</code>. <code>new_position()</code> at line 69, <code>new_position_after()</code> at line 79. <code>BranchStore</code> and <code>TracePosition</code> are in <code>src/ent/branch.rs</code> and <code>src/ent/trace.rs</code>. The original C++ comment at line 8 notes: "Each dagwood defines a partial ordering of TracePositions."
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 9: Big-O Performance -->
+<!-- ============================================================ -->
+<h2 id="s9">9. Big-O Performance Summary</h2>
+
+<p>
+This section consolidates the performance characteristics of every major operation. The "naive" column shows what the C++ Udanax Gold code would have done if the disconnected components had been wired together with simple loops. The "Xudanu" column shows what the optimized Rust implementation achieves.
+</p>
+
+<table>
+  <tr>
+    <th>Operation</th>
+    <th>Naive</th>
+    <th>Xudanu</th>
+    <th>How</th>
+  </tr>
+  <tr>
+    <td>Find works containing text</td>
+    <td class="naive">O(W &times; L)</td>
+    <td class="fast">O(U &times; A)</td>
+    <td><span class="accent-blue">Fingerprint HashMap</span> lookup. U = unique fingerprints in query, A = avg works per fingerprint. No document scanning.</td>
+  </tr>
+  <tr>
+    <td>Find shared regions (diff)</td>
+    <td class="naive">O(n &times; m)</td>
+    <td class="fast">O(L<sub>a</sub> + L<sub>b</sub>)</td>
+    <td><span class="accent-blue">BTreeSet</span> of fingerprints for O(1) membership test per element. Linear in document sizes, not their product.</td>
+  </tr>
+  <tr>
+    <td>Edition element listing</td>
+    <td class="naive">O(n log n) every call</td>
+    <td class="fast">O(1) after first</td>
+    <td><span class="accent-blue">OnceLock</span> cache on the Edition struct, shared via Arc. First call traverses the O-tree; subsequent calls return the cached Vec.</td>
+  </tr>
+  <tr>
+    <td>Transclusion index lookup</td>
+    <td class="naive">O(n) flat scan</td>
+    <td class="fast">O(log n)</td>
+    <td><span class="accent-purple">Canopy-filtered</span> H-tree traversal. Flag bits prune entire subtrees in a single comparison.</td>
+  </tr>
+  <tr>
+    <td>Position transform (shift)</td>
+    <td class="naive">O(n) rewrite</td>
+    <td class="fast">O(1)</td>
+    <td><span class="accent-green">Dsp node</span> wraps the O-tree with an offset. No elements are touched; positions are adjusted on read.</td>
+  </tr>
+  <tr>
+    <td>Shared region highlighting</td>
+    <td class="naive">O(r &times; t)</td>
+    <td class="fast">O(r + t)</td>
+    <td><span class="accent-blue">Sorted regions</span>, single pass through text. Regions are merged by position, not compared pairwise.</td>
+  </tr>
+  <tr>
+    <td>Content deduplication</td>
+    <td class="naive">O(n) compare each pair</td>
+    <td class="fast">O(1) per element</td>
+    <td><span class="accent-green">BLAKE3 fingerprint</span> + HashMap lookup. Same content = same hash = same BeId. Instant.</td>
+  </tr>
+  <tr>
+    <td>O-tree split</td>
+    <td class="naive">N/A (unsplit)</td>
+    <td class="fast">O(n)</td>
+    <td>One-time amortized cost when leaf exceeds <code>MAX_LEAF_SIZE</code>. Splits at median; depth grows as O(log n).</td>
+  </tr>
+  <tr>
+    <td>Snapshot checkpoint</td>
+    <td class="naive">N/A (no persistence)</td>
+    <td class="fast">O(state size)</td>
+    <td>Full serialize via serde_json. Atomic write to temp file + rename. Versioned with SHA-256 checksum.</td>
+  </tr>
+</table>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background:#3fb950"></div> Xudanu optimized</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#f85149"></div> Naive baseline</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#58a6ff"></div> Index-based</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#a371f7"></div> Canopy-based</div>
+</div>
+
+<p style="margin-top:16px;font-size:12px;color:#484f58">
+  W = total works, L = text length, U = unique fingerprints, A = avg works per fingerprint, n/m = document lengths, r = shared regions, t = text
+</p>
+
+<h3>Key Takeaway</h3>
+
+<div class="note">
+  <strong>Content identity is the multiplier.</strong> Every optimization in this table traces back to BLAKE3 fingerprints giving us O(1) content identity. Without it: HashMap lookups become linear scans, canopy flags can't summarize content types, and Dsp nodes have nothing to deduplicate. The fingerprint is the lever that moves everything from O(n) to O(log n).
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 10: Labels, Paths, Deep Linking -->
+<!-- ============================================================ -->
+<h2 id="s10">10. Labels, Paths, and Deep Linking</h2>
+
+<p>
+Xudanu doesn't just store flat text. It supports a rich addressing model that lets you name, link to, and navigate into specific positions within documents &mdash; even across documents via transclusion.
+</p>
+
+<h3>The Label System</h3>
+
+<p>
+A <code>Label</code> is a named anchor attached to a position in an O-tree. Labels are stored as <code>RangeElement::Label</code> entries, so they participate in the same structural sharing and versioning as text. When you create a new revision, labels from the previous version are automatically inherited.
+</p>
+
+<div class="example-block">
+  <div class="example-label">Labels in an O-tree</div>
+  <pre>
+Edition for "Getting Started Guide":
+  pos 0: Text("# Getting Started")
+  pos 1: Label("intro")            ← anchor named "intro"
+  pos 2: Text("Welcome to Xudanu...")
+  pos 3: Text("First, install the server.")
+  pos 4: Label("install")          ← anchor named "install"
+  pos 5: Text("Run `xudanu-server`...")
+  </pre>
+</div>
+
+<h3>Paths and Tumblers</h3>
+
+<p>
+The Udanax Gold addressing model uses <strong>tumblers</strong> &mdash; hierarchical numeric paths that identify a position within a document, within a work, within the global namespace. Xudanu implements this via:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><code>Id</code> &mdash; a pair of <code>(IdSpaceId, i64)</code> identifying any entity</li>
+  <li><code>IdSpace</code> &mdash; a namespace that allocates sequential IDs</li>
+  <li><code>IdentityMap</code> &mdash; resolves labels to IDs and back</li>
+</ul>
+
+<p>
+A full path to a label looks like:
+</p>
+
+<pre>
+work:42 / edition:7 / label:"intro"
+</pre>
+
+<p>
+This resolves through three lookups: work ID &rarr; current edition &rarr; label position. Each step is O(1) via HashMap.
+</p>
+
+<h3>Deep Linking</h3>
+
+<p>
+Because labels are stored as O-tree elements, they support the same operations as text:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong>Versioned</strong> &mdash; a label created in Rev 3 is visible in Rev 4 (structural sharing), and can be tracked back to its origin</li>
+  <li><strong>Transcluded</strong> &mdash; if Document A transcludes a section from Document B, the labels come with it</li>
+  <li><strong>Compared</strong> &mdash; the Compare view shows label positions alongside shared regions</li>
+</ul>
+
+<h3>HyperLinks</h3>
+
+<p>
+Xudanu implements bidirectional hyperlinks via the <code>HyperLink</code> and <code>HyperRef</code> types:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><code>HyperLink</code> &mdash; stores source position, destination path, and link type</li>
+  <li><code>HyperRef</code> &mdash; a reference from a link to a target edition/position</li>
+  <li>Links are stored server-side and serialized in snapshots</li>
+  <li>Every link is <strong>bidirectional</strong> &mdash; you can always find "what links here"</li>
+</ul>
+
+<div class="note">
+  <strong>Source:</strong> Labels and <code>IdentityMap</code> are in <code>src/edition/label.rs</code>. <code>Id</code> and <code>IdSpace</code> are in <code>src/edition/grandmap.rs:17</code>. <code>HyperLink</code> and <code>HyperRef</code> are in <code>src/edition/links.rs</code>.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 11: Persistence -->
+<!-- ============================================================ -->
+<h2 id="s11">11. Persistence: Snapshots and Crash Safety</h2>
+
+<p>
+Xudanu persists the entire server state as a single JSON snapshot file (<code>server.json</code>). The persistence layer handles versioning, checksums, atomic writes, migration, and backup management.
+</p>
+
+<h3>The Versioned Snapshot Format</h3>
+
+<pre>
+pub struct VersionedSnapshot {
+    format_version: u32,          // current: 1
+    created_at: String,           // ISO 8601 timestamp
+    server_version: String,       // e.g. "0.1.1"
+    checksum: String,             // SHA-256 of the data field
+    data: serde_json::Value,      // the actual server state
+}
+</pre>
+
+<h3>Write Process: Atomic Checkpoint</h3>
+
+<p>
+When the server checkpoints (triggered by each save operation), the following steps occur:
+</p>
+
+<ol style="margin-left:24px;margin-bottom:16px">
+  <li><strong>Serialize</strong> &mdash; the entire <code>Server</code> struct is serialized to a <code>ServerSnapshot</code> via <code>to_snapshot()</code></li>
+  <li><strong>Checksum</strong> &mdash; SHA-256 hash of the serialized data is computed</li>
+  <li><strong>Wrap</strong> &mdash; data, checksum, timestamp, and version are combined into a <code>VersionedSnapshot</code></li>
+  <li><strong>Write temp</strong> &mdash; the JSON is written to <code>server.tmp</code></li>
+  <li><strong>Atomic rename</strong> &mdash; <code>server.tmp</code> is renamed to <code>server.json</code></li>
+</ol>
+
+<div class="example-block">
+  <div class="example-label">Checkpoint trace</div>
+  <pre>
+1. to_snapshot()     → ServerSnapshot { works: [...], clubs: [...], links: [...], ... }
+2. SHA-256(data)     → "a4f7c2e8..."
+3. VersionedSnapshot  → { format_version: 1, checksum: "a4f7c2e8...", data: {...} }
+4. write("server.tmp")  → 847 KB written
+5. rename("server.tmp", "server.json")  → atomic on POSIX, nearly atomic on Windows
+  </pre>
+</div>
+
+<h3>Read Process: Restore and Migrate</h3>
+
+<p>
+On startup, the server reads the snapshot with full validation:
+</p>
+
+<ol style="margin-left:24px;margin-bottom:16px">
+  <li><strong>Detect version</strong> &mdash; check for <code>format_version</code> field (v0 = raw JSON, v1 = versioned wrapper)</li>
+  <li><strong>Migrate</strong> &mdash; if v0, wrap in v1 format. If future version, apply migration chain</li>
+  <li><strong>Verify checksum</strong> &mdash; SHA-256 of the data must match the stored checksum. <code>ChecksumMismatch</code> error if not</li>
+  <li><strong>Validate structure</strong> &mdash; check for required fields (<code>grand_map_id_counter</code>, <code>works</code>, etc.)</li>
+  <li><strong>Check disk space</strong> &mdash; ensure 3&times; current file size + 1MB is available before restoring</li>
+  <li><strong>Deserialize</strong> &mdash; reconstruct the <code>Server</code> struct via <code>from_snapshot()</code></li>
+</ol>
+
+<h3>What Gets Snapshotted</h3>
+
+<table>
+  <tr><th>Component</th><th>What's Saved</th></tr>
+  <tr><td>Works</td><td>All documents: current edition, revision count, edit/read clubs, sponsors, full history</td></tr>
+  <tr><td>Clubs</td><td>Permission groups: public, admin, server clubs, and user-created clubs</td></tr>
+  <tr><td>Links</td><td>All hyperlinks with source/destination references</td></tr>
+  <tr><td>Standalone editions</td><td>Editions not yet attached to a work (templates, drafts)</td></tr>
+  <tr><td>Content address index</td><td>The full fingerprint &harr; BeId mapping</td></tr>
+  <tr><td>Federation state</td><td>Peers, membership, governance, royalty ledger</td></tr>
+  <tr><td>Admin state</td><td>Connection acceptance, shutdown flag, access grants</td></tr>
+  <tr><td>Key history</td><td>Server keypair history for TLS</td></tr>
+  <tr><td>Blob metadata</td><td>References to large binary objects stored on disk</td></tr>
+</table>
+
+<h3>Backup Management</h3>
+
+<p>
+When a migration occurs (e.g., v0 &rarr; v1), the system automatically:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li>Creates a backup with the version suffix: <code>server.json.v0.bak</code></li>
+  <li>Keeps at least 2 backup versions</li>
+  <li>Prunes older backups automatically via <code>cleanup_old_backups()</code></li>
+</ul>
+
+<h3>Error Handling</h3>
+
+<p>
+The snapshot layer defines a comprehensive error enum:
+</p>
+
+<pre>
+pub enum SnapshotError {
+    Io(std::io::Error),
+    Json(serde_json::Error),
+    Migration { from_version: u32, to_version: u32, reason: String },
+    Validation(ValidationReport),
+    InsufficientDiskSpace { required_bytes: u64, available_bytes: u64 },
+    ChecksumMismatch { expected: String, actual: String },
+}
+</pre>
+
+<p>
+The most critical errors:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong class="accent-red">ChecksumMismatch</strong> &mdash; data corruption detected. The server refuses to start. Restore from backup.</li>
+  <li><strong class="accent-amber">InsufficientDiskSpace</strong> &mdash; not enough room for the write. Checkpoint fails gracefully; the in-memory state is unaffected.</li>
+  <li><strong class="accent-amber">Validation</strong> &mdash; missing or malformed fields. Warnings are logged but non-fatal; errors prevent restore.</li>
+</ul>
+
+<h3>Crash Safety Guarantees</h3>
+
+<div class="note">
+  <strong>Atomic write via temp file + rename:</strong> If the server crashes during checkpoint, the worst case is a stale <code>server.tmp</code> file left behind. The <code>server.json</code> file is always either the previous complete state or the new complete state &mdash; never a partial write. The rename operation is atomic on POSIX filesystems.
+</div>
+
+<div class="warning">
+  <strong>Current limitation:</strong> The entire server state is serialized as a single JSON file. For servers with many large documents, this file can grow to hundreds of megabytes. The v0.2 roadmap includes <strong>atomic chunked checkpoints</strong> that write only the changed portions, reducing both write time and disk usage.
+</div>
+
+<div class="note">
+  <strong>Source:</strong> Snapshot versioning and I/O is in <code>src/server/transport/snapshot.rs</code>. <code>VersionedSnapshot</code> at line 7, <code>write_versioned_snapshot()</code> at line 278, <code>full_restore()</code> at line 326. The <code>ServerSnapshot</code> type and <code>to_snapshot()</code>/<code>from_snapshot()</code> are in <code>src/server/server.rs</code> (module <code>persist_snapshot</code> at line 3476).
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 12: Federation -->
+<!-- ============================================================ -->
+<h2 id="s12">12. Federation: CRDTs and PBFT</h2>
+
+<p>
+Xudanu supports multi-server content replication. A federated deployment lets documents and their transclusion relationships span multiple Xudanu servers, with eventual consistency guaranteed by CRDTs (Conflict-free Replicated Data Types) and coordinated trust decisions handled by PBFT (Practical Byzantine Fault Tolerance).
+</p>
+
+<h3>Federation Model</h3>
+
+<p>
+Each Xudanu server is identified by a <code>server_id</code> string. Servers know about their peers via a <code>FederationConfig</code>:
+</p>
+
+<pre>
+pub struct FederationConfig {
+    pub enabled: bool,
+    pub peers: Vec&lt;PeerAddress&gt;,        // host:port of known peers
+    pub mode: FederationMode,             // Closed, Open, or Community
+    pub min_endorsements: u32,            // trust threshold (default: 2)
+}
+
+pub enum FederationMode {
+    Closed,      // only listed peers may connect
+    Open,        // any server may join
+    Community,   // peers vouch for new members (endorsement-based)
+}
+</pre>
+
+<h3>CRDT Building Blocks</h3>
+
+<p>
+Federation uses three CRDT primitives to handle different aspects of distributed state:
+</p>
+
+<div class="two-col">
+  <div class="example-block">
+    <div class="example-label"><span class="accent-blue">OrSet</span> &mdash; Observed-Remove Set</div>
+    <p>Tracks sets where items can be added and removed concurrently across servers. Each add/remove is tagged with a unique event ID. Resolution: adds win over removes only if the remove has seen the add.</p>
+    <pre>
+// Two servers add and remove concurrently
+Server A: add("doc_42")   → events: {("doc_42", a1)}
+Server B: remove("doc_42") → events: {("doc_42", b1)}
+
+// Merge: "doc_42" is present because
+// Server B's remove hasn't seen
+// Server A's add (concurrent)
+    </pre>
+    <p><strong>Used for:</strong> membership sets, known-peers, content origin tracking</p>
+  </div>
+  <div class="example-block">
+    <div class="example-label"><span class="accent-green">LwwRegister</span> &mdash; Last-Writer-Wins</div>
+    <p>A single-value register where the value with the latest timestamp wins. Ties are broken by <code>server_id</code> comparison for determinism.</p>
+    <pre>
+pub struct LwwRegister&lt;T&gt; {
+    value: T,
+    timestamp: u64,
+    server_id: String,
+}
+
+// Server A sets value at t=100
+// Server B sets value at t=105
+// Merge → Server B's value wins (higher t)
+    </pre>
+    <p><strong>Used for:</strong> document content merges, configuration state</p>
+  </div>
+</div>
+
+<h3>Federation Merge Diagram</h3>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 460" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Federation: Multi-Server Content Merge</text>
+
+  <!-- Server A -->
+  <rect x="30" y="44" width="220" height="140" rx="8" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="50" y="66" fill="#3fb950" font-size="12" font-weight="700">Server A</text>
+  <text x="50" y="82" fill="#484f58" font-size="9" font-family="'JetBrains Mono',monospace">server_id: "alpha"</text>
+
+  <rect x="45" y="92" width="190" height="22" rx="3" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="1"/>
+  <text x="55" y="107" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">doc_1: "Hello world"</text>
+  <rect x="45" y="118" width="190" height="22" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="55" y="133" fill="#d29922" font-size="10" font-family="'JetBrains Mono',monospace">doc_2: "shared text" ←</text>
+  <rect x="45" y="144" width="190" height="22" rx="3" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="1"/>
+  <text x="55" y="159" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">doc_3: "Alpha only"</text>
+
+  <!-- Server B -->
+  <rect x="530" y="44" width="220" height="140" rx="8" fill="rgba(88,166,255,0.05)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="550" y="66" fill="#58a6ff" font-size="12" font-weight="700">Server B</text>
+  <text x="550" y="82" fill="#484f58" font-size="9" font-family="'JetBrains Mono',monospace">server_id: "beta"</text>
+
+  <rect x="545" y="92" width="190" height="22" rx="3" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="555" y="107" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">doc_1: "Hello ALL"</text>
+  <rect x="545" y="118" width="190" height="22" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="555" y="133" fill="#d29922" font-size="10" font-family="'JetBrains Mono',monospace">doc_2: "shared text" ←</text>
+  <rect x="545" y="144" width="190" height="22" rx="3" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="555" y="159" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">doc_4: "Beta only"</text>
+
+  <!-- Sync arrows -->
+  <line x1="250" y1="90" x2="530" y2="90" stroke="#d29922" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <line x1="530" y1="130" x2="250" y2="130" stroke="#d29922" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="390" y="84" text-anchor="middle" fill="#d29922" font-size="10" font-weight="600">sync doc states</text>
+
+  <!-- Merge box -->
+  <rect x="180" y="210" width="420" height="120" rx="8" fill="rgba(163,113,247,0.05)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="390" y="232" text-anchor="middle" fill="#a371f7" font-size="12" font-weight="700">Merge Resolution</text>
+
+  <text x="200" y="254" fill="#8b949e" font-size="11" font-family="'JetBrains Mono',monospace">doc_1: LwwRegister → "Hello ALL" (beta t=105 &gt; alpha t=100)</text>
+  <text x="200" y="274" fill="#d29922" font-size="11" font-family="'JetBrains Mono',monospace" font-weight="600">doc_2: fingerprint match → same BeId (already shared)</text>
+  <text x="200" y="294" fill="#8b949e" font-size="11" font-family="'JetBrains Mono',monospace">doc_3: OrSet add → present on alpha only</text>
+  <text x="200" y="314" fill="#8b949e" font-size="11" font-family="'JetBrains Mono',monospace">doc_4: OrSet add → present on beta only</text>
+
+  <!-- Post-merge state -->
+  <rect x="120" y="350" width="540" height="64" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="390" y="372" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">Post-Merge: Both Servers</text>
+  <text x="390" y="392" text-anchor="middle" fill="#8b949e" font-size="11" font-family="'JetBrains Mono',monospace">doc_1: "Hello ALL"  doc_2: "shared text"  doc_3: "Alpha only"  doc_4: "Beta only"</text>
+  <text x="390" y="406" text-anchor="middle" fill="#484f58" font-size="10">All 4 documents visible on both servers. Transclusion index updated.</text>
+
+  <!-- PBFT annotation -->
+  <rect x="180" y="426" width="420" height="24" rx="4" fill="rgba(248,81,73,0.05)" stroke="#f85149" stroke-width="1"/>
+  <text x="390" y="442" text-anchor="middle" fill="#f85149" font-size="10">Trust decisions (peer endorsement, content acceptance) require min_endorsements via PBFT consensus</text>
+
+  <text x="390" y="456" text-anchor="middle" fill="#484f58" font-size="11">D9 &mdash; Federation Merge via CRDTs</text>
+</svg>
+</div>
+
+<h3>Content Origin Tracking</h3>
+
+<p>
+When content crosses server boundaries, it carries its origin:
+</p>
+
+<pre>
+pub struct FederatedId {
+    pub server_id: String,    // which server created this
+    pub local_id: u64,        // the BeId on that server
+}
+</pre>
+
+<p>
+This allows the system to:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li>Trace where content originated (attribution)</li>
+  <li>Avoid infinite sync loops (only forward content that's new to the recipient)</li>
+  <li>Calculate cross-server royalties in the micropayment model</li>
+</ul>
+
+<h3>Membership and Governance</h3>
+
+<p>
+The <code>FederationState</code> manages three aspects of distributed coordination:
+</p>
+
+<table>
+  <tr><th>Component</th><th>CRDT</th><th>Purpose</th></tr>
+  <tr><td><code>MembershipState</code></td><td>OrSet</td><td>Track which servers are members. Adds and removes are concurrent-safe.</td></tr>
+  <tr><td><code>known_peers</code></td><td>HashMap</td><td>Address book of all known servers, including their public keys.</td></tr>
+  <tr><td><code>GovernanceState</code> (PBFT)</td><td>Consensus</td><td>Coordinate trust decisions: endorsing new peers, revoking memberships, changing configuration. Requires <code>min_endorsements</code> votes.</td></tr>
+  <tr><td><code>royalty_ledger</code></td><td>HashMap</td><td>Track cross-server content usage for micropayment settlement.</td></tr>
+</table>
+
+<h3>PBFT for Trust Decisions</h3>
+
+<p>
+Not all federation operations can use CRDTs. Some decisions &mdash; like accepting a new peer into a closed federation &mdash; require explicit agreement from existing members. Xudanu uses a simplified PBFT protocol for these:
+</p>
+
+<ol style="margin-left:24px;margin-bottom:16px">
+  <li><strong>Propose</strong> &mdash; a server proposes a trust change (e.g., "add server gamma")</li>
+  <li><strong>Vote</strong> &mdash; each member server votes yes/no</li>
+  <li><strong>Decide</strong> &mdash; once <code>min_endorsements</code> votes are collected, the decision is committed</li>
+  <li><strong>Propagate</strong> &mdash; the decision is replicated to all members via OrSet</li>
+</ol>
+
+<div class="note">
+  <strong>Source:</strong> Federation types are in <code>src/server/federation.rs</code>. <code>FederationConfig</code> at line 60, <code>OrSet</code> and <code>LwwRegister</code> implemented in the same file. <code>FederatedId</code> at line 8. The file is 3,656 lines including comprehensive property tests for CRDT merge semantics.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 13: Comparison -->
+<!-- ============================================================ -->
+<h2 id="s13">13. Comparison with Other Systems</h2>
+
+<p>
+Xudanu's design draws on ideas from several systems. Here's how it compares:
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 420" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">System Comparison</text>
+
+  <!-- Radar chart background -->
+  <polygon points="390,60 560,130 560,280 390,350 220,280 220,130" fill="none" stroke="#21262d" stroke-width="1"/>
+  <polygon points="390,105 520,155 520,262 390,312 260,262 260,155" fill="none" stroke="#21262d" stroke-width="1"/>
+  <polygon points="390,150 480,180 480,244 390,274 300,244 300,180" fill="none" stroke="#21262d" stroke-width="1"/>
+  <polygon points="390,195 440,205 440,226 390,236 340,226 340,205" fill="none" stroke="#21262d" stroke-width="1"/>
+
+  <!-- Axis labels -->
+  <text x="390" y="50" text-anchor="middle" fill="#8b949e" font-size="10">Content Identity</text>
+  <text x="575" y="128" fill="#8b949e" font-size="10">Transclusion</text>
+  <text x="575" y="290" fill="#8b949e" font-size="10">Versioning</text>
+  <text x="390" y="368" text-anchor="middle" fill="#8b949e" font-size="10">Bidirectional Links</text>
+  <text x="195" y="290" fill="#8b949e" font-size="10">Micropayments</text>
+  <text x="195" y="128" fill="#8b949e" font-size="10">Federation</text>
+
+  <!-- Xudanu shape (green) -->
+  <polygon points="390,68 548,140 530,270 390,340 240,248 238,138"
+    fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="2"/>
+
+  <!-- Git shape (blue, dashed) -->
+  <polygon points="390,100 480,160 520,275 390,330 310,275 270,170"
+    fill="none" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- Web shape (red, dotted) -->
+  <polygon points="390,195 440,200 480,270 390,310 340,265 350,190"
+    fill="none" stroke="#f85149" stroke-width="1.5" stroke-dasharray="2,3"/>
+
+  <!-- IPFS shape (purple) -->
+  <polygon points="390,90 510,145 450,260 390,290 280,255 260,150"
+    fill="none" stroke="#a371f7" stroke-width="1.5" stroke-dasharray="6,3"/>
+
+  <!-- Legend -->
+  <rect x="50" y="382" width="680" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <line x1="70" y1="400" x2="100" y2="400" stroke="#3fb950" stroke-width="2"/>
+  <text x="108" y="404" fill="#3fb950" font-size="10" font-weight="600">Xudanu</text>
+
+  <line x1="200" y1="400" x2="230" y2="400" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="238" y="404" fill="#58a6ff" font-size="10">Git</text>
+
+  <line x1="300" y1="400" x2="330" y2="400" stroke="#a371f7" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="338" y="404" fill="#a371f7" font-size="10">IPFS</text>
+
+  <line x1="410" y1="400" x2="440" y2="400" stroke="#f85149" stroke-width="1.5" stroke-dasharray="2,3"/>
+  <text x="448" y="404" fill="#f85149" font-size="10">Web</text>
+
+  <text x="560" y="404" fill="#484f58" font-size="10">(larger area = more complete implementation)</text>
+
+  <text x="390" y="435" text-anchor="middle" fill="#484f58" font-size="11">D10 &mdash; System Comparison Radar</text>
+</svg>
+</div>
+
+<h3>Feature Comparison Table</h3>
+
+<table>
+  <tr>
+    <th>Feature</th>
+    <th>Xudanu</th>
+    <th>Git</th>
+    <th>IPFS</th>
+    <th>Web</th>
+  </tr>
+  <tr>
+    <td>Content addressing</td>
+    <td class="accent-green">BLAKE3 (per element)</td>
+    <td class="accent-blue">SHA-1/SHA-256 (per blob)</td>
+    <td class="accent-purple">SHA-256 (CID)</td>
+    <td class="accent-red">URL (location-based)</td>
+  </tr>
+  <tr>
+    <td>Transclusion</td>
+    <td class="accent-green">Native &mdash; element-level</td>
+    <td>No</td>
+    <td>File-level only</td>
+    <td>No (copies)</td>
+  </tr>
+  <tr>
+    <td>Bidirectional links</td>
+    <td class="accent-green">Yes &mdash; tracked server-side</td>
+    <td>No</td>
+    <td>No</td>
+    <td>No (one-way only)</td>
+  </tr>
+  <tr>
+    <td>Version ancestry</td>
+    <td class="accent-green">H-tree DAG</td>
+    <td class="accent-blue">Commit DAG</td>
+    <td>No (immutable)</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td>Query pruning</td>
+    <td class="accent-green">Canopy flags</td>
+    <td>No tree pruning</td>
+    <td>DHT routing</td>
+    <td>N/A</td>
+  </tr>
+  <tr>
+    <td>Deduplication</td>
+    <td class="accent-green">Automatic (GrandMap)</td>
+    <td class="accent-blue">Pack files</td>
+    <td class="accent-purple">Block-level</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td>Micropayments</td>
+    <td class="accent-green">Per-element accounting</td>
+    <td>No</td>
+    <td>Filecoin (per deal)</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td>Federation</td>
+    <td class="accent-green">CRDTs + PBFT</td>
+    <td class="accent-blue">Fork + merge</td>
+    <td class="accent-purple">DHT + bitswap</td>
+    <td>CORS (same-origin)</td>
+  </tr>
+  <tr>
+    <td>Concurrent edits</td>
+    <td class="accent-green">DagWood + reconcile</td>
+    <td class="accent-blue">Merge conflicts</td>
+    <td>N/A (immutable)</td>
+    <td>Last write wins</td>
+  </tr>
+  <tr>
+    <td>Structural sharing</td>
+    <td class="accent-green">O-tree Arc sharing</td>
+    <td class="accent-blue">Tree objects</td>
+    <td>No</td>
+    <td>No</td>
+  </tr>
+</table>
+
+<h3>What Xudanu Borrows</h3>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong>From Git:</strong> content-addressed storage, immutable snapshots, DAG-based versioning. But Xudanu operates at the <em>element</em> level (a word, a paragraph) rather than the <em>file</em> level.</li>
+  <li><strong>From IPFS:</strong> content fingerprints as universal identifiers, deduplication by hash. But Xudanu adds transclusion (tracking which documents reference which content) and query acceleration (canopy pruning).</li>
+  <li><strong>From CRDTs:</strong> conflict-free merging for federation. But Xudanu's content-addressing means most conflicts are already resolved &mdash; identical content always maps to the same ID.</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- SECTION 14: Future Directions -->
+<!-- ============================================================ -->
+<h2 id="s14">14. Future Directions</h2>
+
+<h3>v0.1.2 (Near Term)</h3>
+
+<table>
+  <tr><th>Feature</th><th>Description</th><th>Status</th></tr>
+  <tr>
+    <td><code class="accent-blue">crates.io</code> publication</td>
+    <td>Publish the xudanu crate to crates.io for easy installation via <code>cargo install xudanu</code></td>
+    <td>Ready to ship</td>
+  </tr>
+  <tr>
+    <td>Atomic chunked checkpoints</td>
+    <td>Split <code>server.json</code> into per-work chunks. Checkpoint only changed works, not the entire state.</td>
+    <td>Designed, not implemented</td>
+  </tr>
+  <tr>
+    <td>WASM build</td>
+    <td>Compile the core engine to WebAssembly for browser-based single-user mode</td>
+    <td>Engine is <code>no_std</code> compatible</td>
+  </tr>
+</table>
+
+<h3>v0.2 (Medium Term)</h3>
+
+<table>
+  <tr><th>Feature</th><th>Description</th></tr>
+  <tr>
+    <td>Access control</td>
+    <td>Per-document read/write permissions via Club-based ACLs. Already implemented server-side; needs client integration.</td>
+  </tr>
+  <tr>
+    <td>Scalable storage backend</td>
+    <td>Replace single-file JSON with a chunked backend (SQLite or custom). Target: millions of documents without multi-GB snapshots.</td>
+  </tr>
+  <tr>
+    <td>Structured editing</td>
+    <td>Expose Edition.combine/replace/copy to the UI for tables, outlines, nested documents. The engine already supports all composition operations.</td>
+  </tr>
+  <tr>
+    <td>Age heatmap view</td>
+    <td>Walk revision history, diff consecutive versions, color characters by when they were added. Uses H-tree ancestry + shared region detection.</td>
+  </tr>
+  <tr>
+    <td>Reactive recorders</td>
+    <td>Live transclusion notifications using SensorCanopy. When new content matches your registered queries, push a notification to the client.</td>
+  </tr>
+  <tr>
+    <td>Federation transport</td>
+    <td>Server-to-server gRPC or HTTP/2 protocol for content replication. CRDTs are implemented; the wire protocol is not yet connected.</td>
+  </tr>
+</table>
+
+<h3>Longer Term</h3>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong>Micropayment integration</strong> &mdash; Lightning Network (LDK) behind a feature flag. The accounting engine (<code>StorageCost</code>, <code>CostMethod</code>) already exists.</li>
+  <li><strong>Rust SDK</strong> &mdash; wrap the WebSocket protocol for programmatic access. Embed the engine directly for single-user tools.</li>
+  <li><strong>Content marketplace</strong> &mdash; publisher dashboards, reader paywalls, royalty reports per transclusion event.</li>
+  <li><strong>Multi-user real-time editing</strong> &mdash; extend DagWood with operational transforms or CRDT-based merge for character-level collaboration.</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- SECTION 15: References -->
+<!-- ============================================================ -->
+<h2 id="s15">15. References</h2>
+
+<h3>Primary Sources</h3>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong>Udanax Gold Source Code</strong> &mdash; the original C++ codebase (~200k LOC), mechanically translated from Smalltalk-80 in 1989. Available at <code>original-code/xanadugold/</code> in the workspace repository.</li>
+  <li><strong>Ted Nelson, "Literary Machines"</strong> (1981, 1993) &mdash; the original specification of the Xanadu hypertext system, including transclusion, tumblers, and micropayments.</li>
+  <li><strong>Ted Nelson, "The Xanadu 17 Rules"</strong> &mdash; the design constraints that define Xanadu-compatible systems. Summarized in <code>docs/xanadu-17-rules.md</code>.</li>
+</ul>
+
+<h3>Technical Concepts</h3>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong>BLAKE3</strong> &mdash; the cryptographic hash function used for content fingerprinting. <a href="https://github.com/BLAKE3-team/BLAKE3">github.com/BLAKE3-team/BLAKE3</a></li>
+  <li><strong>CRDTs</strong> &mdash; Conflict-free Replicated Data Types. Shapiro et al., "A comprehensive study of Convergent and Commutative Replicated Data Types" (2011).</li>
+  <li><strong>PBFT</strong> &mdash; Practical Byzantine Fault Tolerance. Castro and Liskov, OSDI 1999.</li>
+  <li><strong>B-trees</strong> &mdash; the underlying data structure for O-tree leaves. Bayer and McCreight, "Organization and Maintenance of Large Ordered Indices" (1972).</li>
+  <li><strong>Content-addressed storage</strong> &mdash; the same concept used by Git, IPFS, and Nix. Xudanu applies it at the element level rather than the file level.</li>
+</ul>
+
+<h3>Internal Documentation</h3>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><code>README.md</code> &mdash; Quick Start guide, CLI reference, security notes</li>
+  <li><code>docs/diagram.html</code> &mdash; Content + Performance Architecture diagram (companion to this document)</li>
+  <li><code>docs/slides.html</code> &mdash; Presentation slides for Show &amp; Tell</li>
+  <li><code>docs/tls-setup.md</code> &mdash; TLS configuration guide</li>
+  <li><code>docs/manual.md</code> &mdash; Full user manual</li>
+  <li><code>docs/protocol-and-audit.md</code> &mdash; WebSocket protocol specification</li>
+  <li><code>TODO.md</code> &mdash; Development roadmap</li>
+  <li><code>tests/integration.rs</code> &mdash; 192 integration tests covering all documented behaviors</li>
+  <li><code>tests/tls.rs</code> &mdash; 7 TLS integration tests</li>
+</ul>
+
+<div class="note" style="margin-top:40px">
+  <strong>Test coverage:</strong> 1,664 tests passing (1,467 unit + 190 integration + 7 TLS). Property-based tests (proptest) cover BLAKE3 fingerprinting, O-tree operations, CRDT merge semantics, and snapshot roundtrips. Every data structure described in this document has corresponding test coverage.
+</div>
+
+<div class="footer">
+  Xudanu Technical Architecture &mdash; v0.1.1 &mdash; <a href="https://dgjones.info/xudanu/">dgjones.info/xudanu</a>
+</div>
+
+</div>
+</body>
+</html>
