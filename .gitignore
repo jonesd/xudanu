@@ -3,3 +3,7 @@ data/
 .DS_Store
 nohup.out
 --data-dir
+*.key
+server.json
+key_history.json
+*.cha
