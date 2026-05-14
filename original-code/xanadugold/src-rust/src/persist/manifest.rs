@@ -119,13 +119,35 @@ impl From<serde_json::Error> for ManifestError {
     fn from(e: serde_json::Error) -> Self { ManifestError::Json(e) }
 }
 
+fn sort_json_value(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut entries: Vec<_> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            map.clear();
+            for (k, mut v) in entries {
+                sort_json_value(&mut v);
+                map.insert(k, v);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                sort_json_value(v);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn compute_manifest_checksum(manifest: &Manifest) -> String {
     use sha2::{Sha256, Digest};
     let mut copy = manifest.clone();
     copy.checksum = String::new();
     copy.created_at = String::new();
     copy.server_version = String::new();
-    let json_str = serde_json::to_string(&copy).unwrap_or_default();
+    let mut value = serde_json::to_value(&copy).unwrap_or_default();
+    sort_json_value(&mut value);
+    let json_str = serde_json::to_string(&value).unwrap_or_default();
     let mut hasher = Sha256::new();
     hasher.update(json_str.as_bytes());
     format!("{:x}", hasher.finalize())
