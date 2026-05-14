@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            artifact: xudanu-${{ github.ref_name }}-x86_64-linux-musl.tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-13
+            artifact: xudanu-${{ github.ref_name }}-x86_64-macos.tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: xudanu-${{ github.ref_name }}-aarch64-macos.tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: xudanu-${{ github.ref_name }}-x86_64-windows.zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release --features server --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/xudanu-server dist/
+          cp -r static dist/
+          cp README.md LICENSE NOTICE dist/
+          tar -czf ${{ matrix.artifact }} -C dist .
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          mkdir dist
+          cp target/${{ matrix.target }}/release/xudanu-server.exe dist/
+          cp -r static dist/
+          cp README.md dist/
+          cp LICENSE dist/
+          cp NOTICE dist/
+          Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          body: |
+            ## xudanu ${{ github.ref_name }}
+
+            Conflict-preserving hypertext document store.
+
+            ### Quick Start
+            ```bash
+            tar -xzf xudanu-${{ github.ref_name }}-*.tar.gz
+            ./xudanu-server run 127.0.0.1:8090
+            ```
+            Then open http://127.0.0.1:8090 in your browser.
+
+            ### Security Warning
+            **Do not expose this server directly to the internet.** See README.md for Caddy reverse proxy setup.

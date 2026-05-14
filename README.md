@@ -97,7 +97,7 @@ This project is an ongoing evolution, not a static port.
 ### 2. Clone and build
 
 ```bash
-git clone <repo-url> xudanu
+git clone https://github.com/jonesd/xudanu.git
 cd xudanu
 cargo build --features server -p xudanu
 ```
@@ -120,6 +120,16 @@ This builds the `xudanu-server` binary at `./target/debug/xudanu-server`.
 ```
 
 Data is saved to `server.json` on graceful shutdown (Ctrl-C) and restored on next start.
+
+### macOS Users
+
+If you downloaded a pre-built binary and see "Apple could not verify xudanu-server":
+
+```bash
+xattr -cr /path/to/xudanu-server
+```
+
+Or right-click the binary → Open → click Open again in the dialog.
 
 ### 4. Open in your browser
 
