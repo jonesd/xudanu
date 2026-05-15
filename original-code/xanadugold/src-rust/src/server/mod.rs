@@ -3,6 +3,8 @@ pub mod admin;
 #[cfg(feature = "server")]
 pub mod club;
 #[cfg(feature = "server")]
+pub mod crdt_manager;
+#[cfg(feature = "server")]
 pub mod detector;
 #[cfg(feature = "server")]
 pub mod error;
@@ -28,12 +30,12 @@ pub use detector::{Detector, Event, FnDetector};
 pub use error::ServerError;
 #[cfg(feature = "server")]
 pub use federation::{
-    AlternativeEdition, ConsensusRound, EndorsementEntry, EndorsementProof, FederatedId,
-    FederationConfig, FederationInfo, FederationMode, FederationPeerInfo, FederationState,
-    GovernanceProposal, GovernanceState, GovernanceTx, JoinResult, LwwRegister, LwwSnapshot,
-    MembershipEntry, MembershipState, MembershipStatus, MembershipVerifyResult, OrSet, OrSetEntry,
-    OrSetTag, PbftPhase, PbftVote, PeerAddress, ReconcileState, ReconcileStore, RoundPhase,
-    RoyaltyEntry, RoyaltyType, SealedBatch,
+    AlternativeEdition, ConsensusRound, CrdtSyncResult, CrdtWorkUpdate, EndorsementEntry,
+    EndorsementProof, FederatedId, FederationConfig, FederationInfo, FederationMode,
+    FederationPeerInfo, FederationState, GovernanceProposal, GovernanceState, GovernanceTx,
+    JoinResult, LwwRegister, LwwSnapshot, MembershipEntry, MembershipState, MembershipStatus,
+    MembershipVerifyResult, OrSet, OrSetEntry, OrSetTag, PbftPhase, PbftVote, PeerAddress,
+    ReconcileState, ReconcileStore, RoundPhase, RoyaltyEntry, RoyaltyType, SealedBatch,
 };
 #[cfg(feature = "server")]
 pub use keymaster::KeyMaster;

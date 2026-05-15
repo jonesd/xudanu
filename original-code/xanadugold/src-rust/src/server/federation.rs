@@ -379,6 +379,18 @@ fn default_max_entries() -> usize {
 pub const MAX_SYNC_ENTRIES: usize = 1000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrdtWorkUpdate {
+    pub work_id: BeId,
+    pub update_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrdtSyncResult {
+    pub updates_applied: usize,
+    pub updates_failed: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentSyncResult {
     pub works_received: usize,
     pub editions_received: usize,

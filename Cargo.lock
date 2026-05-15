@@ -3028,6 +3028,7 @@ dependencies = [
  "tracing-subscriber",
  "wasm-bindgen",
  "x25519-dalek",
+ "yrs",
  "zeroize",
 ]
 

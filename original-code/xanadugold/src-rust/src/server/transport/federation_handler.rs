@@ -106,6 +106,18 @@ pub enum FederationFrame {
     GovernanceSealed {
         batch: crate::server::federation::SealedBatch,
     },
+
+    CrdtSyncPush {
+        server_id: String,
+        updates: Vec<crate::server::federation::CrdtWorkUpdate>,
+    },
+    CrdtSyncPull {
+        server_id: String,
+        work_ids: Vec<crate::edition::BeId>,
+    },
+    CrdtSyncResult {
+        updates: Vec<crate::server::federation::CrdtWorkUpdate>,
+    },
 }
 
 pub fn build_federation_router(state: SharedState) -> Router {
@@ -676,6 +688,48 @@ async fn handle_federation_socket(
                                     }
                                     srv.governance_mark_applied(batch.sequence_number);
                                 });
+                            }
+                            Ok(FederationFrame::CrdtSyncPull { server_id, work_ids }) => {
+                                if server_id != peer_server_id {
+                                    tracing::warn!(
+                                        "CrdtSyncPull: rejected — claimed {} but authenticated as {}",
+                                        server_id, peer_server_id
+                                    );
+                                } else {
+                                    let updates = state.server.with_server(|srv| {
+                                        srv.federation_crdt_pull(&work_ids)
+                                    });
+                                    send_encrypted_frame(
+                                        &mut ws_sender,
+                                        &FederationFrame::CrdtSyncResult { updates },
+                                        &mut outbound_cipher,
+                                    ).await;
+                                }
+                            }
+                            Ok(FederationFrame::CrdtSyncPush { server_id, updates }) => {
+                                if server_id != peer_server_id {
+                                    tracing::warn!(
+                                        "CrdtSyncPush: rejected — claimed {} but authenticated as {}",
+                                        server_id, peer_server_id
+                                    );
+                                } else {
+                                    let result = state.server.with_server(|srv| {
+                                        srv.federation_crdt_apply(&updates)
+                                    });
+                                    tracing::info!(
+                                        "CRDT federation: applied {} updates, {} failed from {}",
+                                        result.updates_applied, result.updates_failed, peer_server_id
+                                    );
+                                }
+                            }
+                            Ok(FederationFrame::CrdtSyncResult { updates }) => {
+                                let result = state.server.with_server(|srv| {
+                                    srv.federation_crdt_apply(&updates)
+                                });
+                                tracing::info!(
+                                    "CRDT federation sync result: applied {}, failed {}",
+                                    result.updates_applied, result.updates_failed
+                                );
                             }
                             Ok(frame) => {
                                 tracing::warn!("Federation: unexpected frame type from {}: {:?}", peer_server_id, frame);

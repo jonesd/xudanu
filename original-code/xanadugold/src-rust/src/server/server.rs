@@ -12,6 +12,7 @@ use crate::edition::links::{HyperLink, HyperRef};
 use crate::edition::transclusion::{TransclusionQuery, WorkQuery};
 use super::admin::{AdminState, IdGrant, SessionInfo};
 use super::club::Club;
+use super::crdt_manager::CrdtManager;
 use super::detector::{Detector, DetectorList, Event};
 use super::error::ServerError;
 use super::keymaster::KeyMaster;
@@ -83,6 +84,7 @@ pub struct Server {
     reconcile_store: crate::server::federation::ReconcileStore,
     reconcile_counter: u64,
     last_checkpoint_time: u64,
+    crdt_manager: CrdtManager,
 }
 
 pub struct ServerHealth {
@@ -205,6 +207,7 @@ impl Server {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
+            crdt_manager: CrdtManager::new(3),
         };
 
         let pub_club = Club::new_with_owner(
@@ -561,27 +564,18 @@ impl Server {
         Ok(ws.work.edition().clone())
     }
 
-    pub fn work_revise(
+    fn revise_work(
         &mut self,
-        session_id: SessionId,
         work_be_id: BeId,
-        new_edition: Edition,
+        session_id: SessionId,
+        edition: Edition,
+        author_club: Option<BeId>,
     ) -> Result<u64, ServerError> {
-        self.ensure_session(session_id)?;
-        self.ensure_grabbed_by(session_id, work_be_id)?;
-
-        let ws = self
-            .works
-            .get_mut(&work_be_id)
+        let ws = self.works.get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
 
-        let author_club = self
-            .sessions
-            .get(&session_id)
-            .and_then(|s| s.initial_login());
-
         ws.last_revision_author = author_club;
-        ws.work.revise(new_edition);
+        ws.work.revise(edition);
         ws.cached_title = Self::extract_title(ws.work.current_edition());
         let revision = ws.work.revision_count();
 
@@ -592,12 +586,30 @@ impl Server {
         });
 
         let updated_edition = ws.work.edition().clone();
-        self.content_address.intern_edition_elements(&updated_edition);
         let bf_work = ws.work.clone();
+        self.content_address.intern_edition_elements(&updated_edition);
         self.backfollow.update_work_with_parent(work_be_id, work_be_id, bf_work);
         self.reconcile_record_local_revision(work_be_id, &updated_edition, Self::current_timestamp_secs());
         self.auto_checkpoint();
 
+        Ok(revision)
+    }
+
+    pub fn work_revise(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        new_edition: Edition,
+    ) -> Result<u64, ServerError> {
+        self.ensure_session(session_id)?;
+        self.ensure_grabbed_by(session_id, work_be_id)?;
+
+        let author_club = self
+            .sessions
+            .get(&session_id)
+            .and_then(|s| s.initial_login());
+
+        let revision = self.revise_work(work_be_id, session_id, new_edition, author_club)?;
         Ok(revision)
     }
 
@@ -692,22 +704,11 @@ impl Server {
             .get(&session_id)
             .and_then(|s| s.initial_login());
 
-        let revision = {
+        {
             let ws = self
                 .works
                 .get_mut(&work_be_id)
                 .ok_or(ServerError::WorkNotFound(work_be_id))?;
-
-            ws.last_revision_author = author_club;
-            ws.work.revise(new_edition);
-            ws.cached_title = Self::extract_title(ws.work.current_edition());
-            let revision = ws.work.revision_count();
-
-            ws.revision_detectors.fire(&Event::WorkRevised {
-                work_be_id,
-                revision,
-                session_id,
-            });
 
             ws.grabber = None;
             ws.grabbed_at = None;
@@ -715,18 +716,10 @@ impl Server {
                 work_be_id,
                 session_id,
             });
+        }
 
-            let updated_edition = ws.work.edition().clone();
-            let bf_work = ws.work.clone();
-            self.content_address.intern_edition_elements(&updated_edition);
-            self.backfollow.update_work_with_parent(work_be_id, work_be_id, bf_work);
-            self.reconcile_record_local_revision(work_be_id, &updated_edition, Self::current_timestamp_secs());
-
-            revision
-        };
-
+        let revision = self.revise_work(work_be_id, session_id, new_edition, author_club)?;
         self.grant_pending_grab(work_be_id);
-        self.auto_checkpoint();
 
         Ok(revision)
     }
@@ -1123,6 +1116,168 @@ impl Server {
 
     pub fn work_count(&self) -> usize {
         self.works.len()
+    }
+
+    // === CRDT sync methods ===
+
+    pub fn crdt_open_session(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<super::crdt_manager::SyncStartResult, ServerError> {
+        self.ensure_session(session_id)?;
+        self.ensure_can_edit(session_id, work_be_id)?;
+
+        let initial_text = if !self.crdt_manager.is_active(work_be_id) {
+            let edition = self.work_edition(work_be_id)?;
+            Some(
+                edition
+                    .all_entries()
+                    .iter()
+                    .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                    .collect::<String>(),
+            )
+        } else {
+            None
+        };
+
+        Ok(self.crdt_manager.open_sync_session(work_be_id, session_id, initial_text.as_deref()))
+    }
+
+    pub fn crdt_close_session(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        self.crdt_manager
+            .close_sync_session(work_be_id, session_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn crdt_apply_update(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        update_bytes: Vec<u8>,
+    ) -> Result<super::crdt_manager::ApplyUpdateResult, ServerError> {
+        self.ensure_session(session_id)?;
+        self.ensure_can_edit(session_id, work_be_id)?;
+
+        let result = self.crdt_manager
+            .apply_update(work_be_id, session_id, &update_bytes)
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+        self.try_materialize(work_be_id, session_id)?;
+
+        Ok(result)
+    }
+
+    pub fn crdt_get_diff(
+        &self,
+        work_be_id: BeId,
+        state_vector: Vec<u8>,
+    ) -> Result<Vec<u8>, ServerError> {
+        self.crdt_manager
+            .get_diff_since(work_be_id, &state_vector)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn crdt_get_full_state(
+        &self,
+        work_be_id: BeId,
+    ) -> Result<Vec<u8>, ServerError> {
+        self.crdt_manager
+            .get_full_state(work_be_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn crdt_subscriber_count(&self, work_be_id: BeId) -> usize {
+        self.crdt_manager.subscriber_count(work_be_id)
+    }
+
+    pub fn crdt_is_active(&self, work_be_id: BeId) -> bool {
+        self.crdt_manager.is_active(work_be_id)
+    }
+
+    fn try_materialize(
+        &mut self,
+        work_be_id: BeId,
+        session_id: SessionId,
+    ) -> Result<(), ServerError> {
+        let should = self.crdt_manager.needs_materialization(work_be_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+        let elapsed = self.crdt_manager.debounce_elapsed(work_be_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+        if should && elapsed {
+            let edition = self.crdt_manager
+                .materialize_edition(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+            let author_club = self.sessions
+                .get(&session_id)
+                .and_then(|s| s.initial_login());
+
+            self.revise_work(work_be_id, session_id, edition, author_club)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn crdt_materialize_now(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<u64, ServerError> {
+        self.ensure_session(session_id)?;
+
+        if !self.crdt_manager.is_active(work_be_id) {
+            return Err(ServerError::Internal("no active CRDT session for this work".into()));
+        }
+
+        let edition = self.crdt_manager
+            .materialize_edition(work_be_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+        let author_club = self.sessions
+            .get(&session_id)
+            .and_then(|s| s.initial_login());
+
+        let revision = self.revise_work(work_be_id, session_id, edition, author_club)?;
+        Ok(revision)
+    }
+
+    pub fn crdt_update_awareness(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        state: super::crdt_manager::AwarenessState,
+    ) -> Result<super::crdt_manager::AwarenessRelayResult, ServerError> {
+        self.ensure_session(session_id)?;
+        self.crdt_manager
+            .update_awareness(work_be_id, session_id, state)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn crdt_remove_awareness(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<super::crdt_manager::AwarenessRelayResult, ServerError> {
+        self.crdt_manager
+            .remove_awareness(work_be_id, session_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn crdt_get_awareness(
+        &self,
+        work_be_id: BeId,
+    ) -> Result<Vec<super::crdt_manager::AwarenessState>, ServerError> {
+        let states = self.crdt_manager
+            .get_awareness(work_be_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+        Ok(states.into_iter().cloned().collect())
     }
 
     pub fn list_works(&self) -> Vec<(BeId, Option<BeId>, u64, bool)> {
@@ -3018,6 +3173,62 @@ impl Server {
         self.server_keypair.identity_id()
     }
 
+    pub fn federation_crdt_pull(
+        &mut self,
+        work_ids: &[BeId],
+    ) -> Vec<crate::server::federation::CrdtWorkUpdate> {
+        let mut updates = Vec::new();
+        for &work_id in work_ids {
+            if let Ok(bytes) = self.crdt_manager.extract_update_for_federation(work_id) {
+                if bytes.len() > 2 {
+                    updates.push(crate::server::federation::CrdtWorkUpdate {
+                        work_id,
+                        update_bytes: bytes,
+                    });
+                }
+            }
+        }
+        updates
+    }
+
+    pub fn federation_crdt_apply(
+        &mut self,
+        updates: &[crate::server::federation::CrdtWorkUpdate],
+    ) -> crate::server::federation::CrdtSyncResult {
+        let mut applied = 0usize;
+        let mut failed = 0usize;
+        for update in updates {
+            let initial_text = if !self.crdt_manager.is_active(update.work_id) {
+                if let Ok(edition) = self.work_edition(update.work_id) {
+                    Some(
+                        edition
+                            .all_entries()
+                            .iter()
+                            .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                            .collect::<String>(),
+                    )
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            match self.crdt_manager.apply_federation_update(
+                update.work_id,
+                &update.update_bytes,
+                initial_text.as_deref(),
+            ) {
+                Ok(_) => applied += 1,
+                Err(_) => failed += 1,
+            }
+        }
+        crate::server::federation::CrdtSyncResult {
+            updates_applied: applied,
+            updates_failed: failed,
+        }
+    }
+
     pub fn server_verifying_key(&self) -> ed25519_dalek::VerifyingKey {
         self.server_keypair.signing_verifying_key()
     }
@@ -3893,6 +4104,7 @@ pub(crate) mod persist_snapshot {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
+                crdt_manager: CrdtManager::new(3),
              };
             for club_snap in &snapshot.clubs {
                 let work = club_snap.work.to_work(
