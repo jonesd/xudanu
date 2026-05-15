@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Mutex;
 
 const CACHE_CAPACITY: usize = 1024;
@@ -116,6 +117,8 @@ impl Cache {
 pub struct ChunkStore {
     base_dir: PathBuf,
     cache: Mutex<Cache>,
+    cache_hits: AtomicU64,
+    cache_misses: AtomicU64,
 }
 
 impl ChunkStore {
@@ -126,6 +129,8 @@ impl ChunkStore {
         Ok(ChunkStore {
             base_dir: base_dir.to_path_buf(),
             cache: Mutex::new(Cache::new(CACHE_CAPACITY)),
+            cache_hits: AtomicU64::new(0),
+            cache_misses: AtomicU64::new(0),
         })
     }
 
@@ -152,9 +157,11 @@ impl ChunkStore {
         {
             let mut cache = self.cache.lock().unwrap();
             if let Some(data) = cache.get(hash).cloned() {
+                self.cache_hits.fetch_add(1, AtomicOrdering::Relaxed);
                 return Ok(data);
             }
         }
+        self.cache_misses.fetch_add(1, AtomicOrdering::Relaxed);
         let path = chunk_path(&self.base_dir, hash);
         if !path.exists() {
             return Err(ChunkError::CorruptData(format!(
@@ -231,6 +238,61 @@ impl ChunkStore {
 
     pub fn base_dir(&self) -> &Path {
         &self.base_dir
+    }
+
+    pub fn cache_stats(&self) -> (u64, u64, f64, usize) {
+        let hits = self.cache_hits.load(AtomicOrdering::Relaxed);
+        let misses = self.cache_misses.load(AtomicOrdering::Relaxed);
+        let total = hits + misses;
+        let rate = if total > 0 { hits as f64 / total as f64 } else { 0.0 };
+        let len = self.cache_len();
+        (hits, misses, rate, len)
+    }
+
+    pub fn reset_stats(&self) {
+        self.cache_hits.store(0, AtomicOrdering::Relaxed);
+        self.cache_misses.store(0, AtomicOrdering::Relaxed);
+    }
+
+    pub fn cache_capacity(&self) -> usize {
+        CACHE_CAPACITY
+    }
+
+    pub fn total_chunks_on_disk(&self) -> Result<usize, ChunkError> {
+        Ok(self.all_chunk_hashes()?.len())
+    }
+
+    pub fn disk_bytes(&self) -> Result<u64, ChunkError> {
+        let chunks_dir = self.base_dir.join("chunks");
+        if !chunks_dir.exists() {
+            return Ok(0);
+        }
+        let mut total: u64 = 0;
+        for entry in std::fs::read_dir(&chunks_dir)
+            .map_err(|e| ChunkError::Io(e.to_string()))?
+        {
+            let entry = entry.map_err(|e| ChunkError::Io(e.to_string()))?;
+            if !entry.path().is_dir() {
+                continue;
+            }
+            for file_entry in std::fs::read_dir(entry.path())
+                .map_err(|e| ChunkError::Io(e.to_string()))?
+            {
+                let file_entry = file_entry.map_err(|e| ChunkError::Io(e.to_string()))?;
+                let name = file_entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.ends_with(".tmp") {
+                    continue;
+                }
+                if hex_to_hash(&name_str).is_none() {
+                    continue;
+                }
+                if let Ok(meta) = file_entry.metadata() {
+                    total += meta.len();
+                }
+            }
+        }
+        Ok(total)
     }
 }
 

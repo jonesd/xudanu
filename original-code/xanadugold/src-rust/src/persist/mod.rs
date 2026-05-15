@@ -8,6 +8,8 @@ pub mod memory;
 pub mod packer;
 pub mod persistent;
 pub mod snarf;
+#[cfg(test)]
+mod stress;
 pub mod transaction;
 pub mod traits;
 pub mod urdi;
