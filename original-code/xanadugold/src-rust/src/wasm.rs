@@ -351,7 +351,7 @@ mod wasm_tests {
         let store = WasmAssertionStore::new();
         let root = dw.root();
         let view = dw.trace_view(&root);
-        let result = store.materialize_document(&view, 1).unwrap();
+        let result = store.materialize_document(&view, 1.0).unwrap();
         let doc = js_sys::JSON::stringify(&result).unwrap().as_string().unwrap();
         assert!(doc.contains("\"doc_id\":1"));
         assert!(doc.contains("\"root\":null"));
@@ -380,7 +380,7 @@ mod wasm_tests {
         store.add(&pos, r#"{"AttachSpanToNode":{"node_id":1,"span_id":10,"ordinal":1}}"#).unwrap();
 
         let view = dw.trace_view(&pos);
-        let result = store.materialize_document(&view, 1).unwrap();
+        let result = store.materialize_document(&view, 1.0).unwrap();
         let doc_str = js_sys::JSON::stringify(&result).unwrap().as_string().unwrap();
         assert!(doc_str.contains("Hello WASM"));
         assert!(doc_str.contains("document"));
@@ -394,7 +394,7 @@ mod wasm_tests {
         store.add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"doc"}}"#).unwrap();
 
         let view = dw.trace_view(&pos);
-        let json = store.materialize_document_json(&view, 1).unwrap();
+        let json = store.materialize_document_json(&view, 1.0).unwrap();
         assert!(json.contains("\"doc_id\":\"1\""));
         assert!(json.contains("\"kind\":\"doc\""));
     }
@@ -423,7 +423,7 @@ mod wasm_tests {
         assert_eq!(store.assertion_count(), 401);
 
         let view = dw.trace_view(&pos);
-        let result = store.materialize_document(&view, 1).unwrap();
+        let result = store.materialize_document(&view, 1.0).unwrap();
         let doc_str = js_sys::JSON::stringify(&result).unwrap().as_string().unwrap();
         assert!(doc_str.contains("paragraph"));
 
