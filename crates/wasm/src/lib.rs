@@ -3,6 +3,8 @@ use xudanu_core::Document;
 use xudanu_signing::Signer;
 use xudanu_types::SiteId;
 
+pub mod sync;
+
 #[wasm_bindgen(start)]
 pub fn init() {
     console_error_panic_hook::set_once();

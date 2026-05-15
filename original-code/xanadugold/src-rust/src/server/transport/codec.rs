@@ -239,7 +239,13 @@ impl BinaryCodec {
             | OperationCode::WorkPublish
             | OperationCode::WorkUnpublish
             | OperationCode::WorkIrrevocablyUnpublish
-            | OperationCode::WorkIsPublished => {
+            | OperationCode::WorkIsPublished
+            | OperationCode::CrdtSyncClose
+            |             OperationCode::CrdtSyncFullState
+            | OperationCode::CrdtSyncMaterialize
+            | OperationCode::CrdtSyncSubscriberCount
+            | OperationCode::CrdtSyncOpen
+            | OperationCode::CrdtAwarenessGet => {
                 let id: BeId = postcard::from_bytes(payload_data)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 self.work_id_request(op, id)
@@ -249,6 +255,27 @@ impl BinaryCodec {
                 let id: BeId = postcard::from_bytes(payload_data)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 self.club_id_request(op, id)
+            }
+            OperationCode::CrdtSyncUpdate => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, update: Vec<u8> }
+                let args: Args = serde_json::from_slice(payload_data)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrdtSyncUpdate { work_id: args.work_id, update: args.update })
+            }
+            OperationCode::CrdtSyncDiff => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, state_vector: Vec<u8> }
+                let args: Args = serde_json::from_slice(payload_data)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrdtSyncDiff { work_id: args.work_id, state_vector: args.state_vector })
+            }
+            OperationCode::CrdtAwarenessUpdate => {
+                let req: serde_json::Value = serde_json::from_slice(payload_data)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                let wire: WireRequest = serde_json::from_value(req)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(wire)
             }
             _ => {
                 let req: serde_json::Value = serde_json::from_slice(payload_data)
@@ -313,6 +340,12 @@ impl BinaryCodec {
             OperationCode::WorkUnpublish => Ok(WireRequest::WorkUnpublish { work_id: id }),
             OperationCode::WorkIrrevocablyUnpublish => Ok(WireRequest::WorkIrrevocablyUnpublish { work_id: id }),
             OperationCode::WorkIsPublished => Ok(WireRequest::WorkIsPublished { work_id: id }),
+            OperationCode::CrdtSyncOpen => Ok(WireRequest::CrdtSyncOpen { work_id: id }),
+            OperationCode::CrdtSyncClose => Ok(WireRequest::CrdtSyncClose { work_id: id }),
+            OperationCode::CrdtSyncFullState => Ok(WireRequest::CrdtSyncFullState { work_id: id }),
+            OperationCode::CrdtSyncMaterialize => Ok(WireRequest::CrdtSyncMaterialize { work_id: id }),
+            OperationCode::CrdtSyncSubscriberCount => Ok(WireRequest::CrdtSyncSubscriberCount { work_id: id }),
+            OperationCode::CrdtAwarenessGet => Ok(WireRequest::CrdtAwarenessGet { work_id: id }),
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
@@ -1367,6 +1400,50 @@ impl JsonCodec {
                 Ok(WireRequest::GovernanceCommit {
                     vote: args.vote,
                 })
+            }
+            OperationCode::CrdtSyncOpen
+            | OperationCode::CrdtSyncClose
+            | OperationCode::CrdtSyncFullState
+            | OperationCode::CrdtSyncMaterialize
+            | OperationCode::CrdtSyncSubscriberCount
+            | OperationCode::CrdtAwarenessGet => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                match op {
+                    OperationCode::CrdtSyncOpen => Ok(WireRequest::CrdtSyncOpen { work_id: args.work_id }),
+                    OperationCode::CrdtSyncClose => Ok(WireRequest::CrdtSyncClose { work_id: args.work_id }),
+                    OperationCode::CrdtSyncFullState => Ok(WireRequest::CrdtSyncFullState { work_id: args.work_id }),
+                    OperationCode::CrdtSyncMaterialize => Ok(WireRequest::CrdtSyncMaterialize { work_id: args.work_id }),
+                    OperationCode::CrdtSyncSubscriberCount => Ok(WireRequest::CrdtSyncSubscriberCount { work_id: args.work_id }),
+                    OperationCode::CrdtAwarenessGet => Ok(WireRequest::CrdtAwarenessGet { work_id: args.work_id }),
+                    _ => unreachable!(),
+                }
+            }
+            OperationCode::CrdtSyncUpdate => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, update: Vec<u8> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrdtSyncUpdate { work_id: args.work_id, update: args.update })
+            }
+            OperationCode::CrdtSyncDiff => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, state_vector: Vec<u8> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrdtSyncDiff { work_id: args.work_id, state_vector: args.state_vector })
+            }
+            OperationCode::CrdtAwarenessUpdate => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    state: crate::server::crdt_manager::AwarenessState,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrdtAwarenessUpdate { work_id: args.work_id, state: args.state })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }

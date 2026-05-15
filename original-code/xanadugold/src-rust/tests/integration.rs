@@ -4655,3 +4655,170 @@ async fn work_list_filters_private_from_other_session() {
     assert!(visible_ids.contains(&pub_wid), "published work should be visible to other session");
     assert!(!visible_ids.contains(&priv_wid), "private work should not be visible to other session");
 }
+
+#[tokio::test]
+async fn json_crdt_sync_lifecycle() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _sid) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "Hello"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "crdt_sync_open", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "crdt_sync_open_result");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "crdt_sync_subscriber_count", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["count"], 1);
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(13, "crdt_sync_close", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "void");
+}
+
+#[tokio::test]
+async fn json_crdt_update_and_materialize() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _sid) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "Hello"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    send_recv_json(&mut s, &mut r,
+        json_req(11, "crdt_sync_open", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+
+    let full_state = send_recv_json(&mut s, &mut r,
+        json_req(12, "crdt_sync_full_state", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+    assert_eq!(full_state["type"], "response");
+    assert!(full_state["value"]["type"] == "crdt_sync_full_state_result");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(13, "crdt_sync_materialize", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "crdt_sync_materialize_result");
+
+    send_recv_json(&mut s, &mut r,
+        json_req(14, "crdt_sync_close", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+}
+
+#[tokio::test]
+async fn json_crdt_awareness() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _sid) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "Hello"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    send_recv_json(&mut s, &mut r,
+        json_req(11, "crdt_sync_open", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(12, "crdt_awareness_update", Some(serde_json::json!({
+            "work_id": work_id,
+            "state": {
+                "session_id": 0,
+                "user_name": "Alice",
+                "cursor": {"index": 5},
+                "selection": null,
+                "is_typing": true
+            }
+        })))).await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "crdt_awareness_update_result");
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(13, "crdt_awareness_get", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "crdt_awareness_get_result");
+
+    send_recv_json(&mut s, &mut r,
+        json_req(14, "crdt_sync_close", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+}
+
+#[tokio::test]
+async fn json_crdt_requires_login() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(1, "crdt_sync_open", Some(serde_json::json!({"work_id": 1}))))
+        .await;
+    assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn json_crdt_update_requires_subscription() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _sid) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "Hello"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let resp = send_recv_json(&mut s, &mut r,
+        json_req(11, "crdt_sync_update", Some(serde_json::json!({
+            "work_id": work_id,
+            "update": ""
+        })))).await;
+    assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn json_crdt_multi_user_sync() {
+    let srv = TestServer::start().await;
+
+    let (mut s1, mut r1, _) = json_setup(&srv).await;
+    let (mut s2, mut r2, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(&mut s1, &mut r1,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "Hello"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    send_recv_json(&mut s1, &mut r1,
+        json_req(11, "crdt_sync_open", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+
+    send_recv_json(&mut s2, &mut r2,
+        json_req(10, "crdt_sync_open", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+
+    let count1 = send_recv_json(&mut s1, &mut r1,
+        json_req(12, "crdt_sync_subscriber_count", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+    assert_eq!(count1["value"]["value"]["count"], 2);
+
+    let count2 = send_recv_json(&mut s2, &mut r2,
+        json_req(11, "crdt_sync_subscriber_count", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+    assert_eq!(count2["value"]["value"]["count"], 2);
+
+    send_recv_json(&mut s1, &mut r1,
+        json_req(13, "crdt_sync_close", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+
+    let count2_after = send_recv_json(&mut s2, &mut r2,
+        json_req(12, "crdt_sync_subscriber_count", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+    assert_eq!(count2_after["value"]["value"]["count"], 1);
+
+    send_recv_json(&mut s2, &mut r2,
+        json_req(13, "crdt_sync_close", Some(serde_json::json!({"work_id": work_id}))))
+        .await;
+}

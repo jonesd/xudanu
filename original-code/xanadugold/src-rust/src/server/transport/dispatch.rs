@@ -1155,6 +1155,67 @@ fn dispatch_inner(
                 pending: srv.governance_pending_round().is_some(),
             })
         }
+
+        WireRequest::CrdtSyncOpen { work_id } => {
+            srv.ensure_logged_in(session_id)?;
+            let result = srv.crdt_open_session(session_id, work_id)?;
+            Ok(ResponseValue::CrdtSyncOpenResult {
+                state_vector: result.state_vector,
+                current_text: result.current_text,
+            })
+        }
+
+        WireRequest::CrdtSyncClose { work_id } => {
+            srv.ensure_logged_in(session_id)?;
+            srv.crdt_close_session(session_id, work_id)?;
+            Ok(ResponseValue::Void)
+        }
+
+        WireRequest::CrdtSyncUpdate { work_id, update } => {
+            srv.ensure_logged_in(session_id)?;
+            let result = srv.crdt_apply_update(session_id, work_id, update)?;
+            Ok(ResponseValue::CrdtSyncUpdateResult {
+                relay_count: result.relay_to.len(),
+            })
+        }
+
+        WireRequest::CrdtSyncDiff { work_id, state_vector } => {
+            srv.ensure_logged_in(session_id)?;
+            let update = srv.crdt_get_diff(work_id, state_vector)?;
+            Ok(ResponseValue::CrdtSyncDiffResult { update })
+        }
+
+        WireRequest::CrdtSyncFullState { work_id } => {
+            srv.ensure_logged_in(session_id)?;
+            let state = srv.crdt_get_full_state(work_id)?;
+            Ok(ResponseValue::CrdtSyncFullStateResult { state })
+        }
+
+        WireRequest::CrdtSyncMaterialize { work_id } => {
+            srv.ensure_logged_in(session_id)?;
+            let revision = srv.crdt_materialize_now(session_id, work_id)?;
+            Ok(ResponseValue::CrdtSyncMaterializeResult { revision })
+        }
+
+        WireRequest::CrdtSyncSubscriberCount { work_id } => {
+            srv.ensure_logged_in(session_id)?;
+            let count = srv.crdt_subscriber_count(work_id);
+            Ok(ResponseValue::CrdtSyncSubscriberCountResult { count })
+        }
+
+        WireRequest::CrdtAwarenessUpdate { work_id, state } => {
+            srv.ensure_logged_in(session_id)?;
+            let result = srv.crdt_update_awareness(session_id, work_id, state)?;
+            Ok(ResponseValue::CrdtAwarenessUpdateResult {
+                relay_count: result.relay_to.len(),
+            })
+        }
+
+        WireRequest::CrdtAwarenessGet { work_id } => {
+            srv.ensure_logged_in(session_id)?;
+            let states = srv.crdt_get_awareness(work_id)?;
+            Ok(ResponseValue::CrdtAwarenessGetResult { states })
+        }
     }
 }
 

@@ -231,6 +231,17 @@ pub enum OperationCode {
     GovernanceSeal,
     GovernanceLog,
     GovernanceStatus,
+
+    CrdtSyncOpen,
+    CrdtSyncClose,
+    CrdtSyncUpdate,
+    CrdtSyncDiff,
+    CrdtSyncFullState,
+    CrdtSyncMaterialize,
+    CrdtSyncSubscriberCount,
+
+    CrdtAwarenessUpdate,
+    CrdtAwarenessGet,
 }
 
 impl OperationCode {
@@ -395,6 +406,17 @@ impl OperationCode {
             0x1B04 => Some(OperationCode::GovernanceSeal),
             0x1B05 => Some(OperationCode::GovernanceLog),
             0x1B06 => Some(OperationCode::GovernanceStatus),
+
+            0x1C01 => Some(OperationCode::CrdtSyncOpen),
+            0x1C02 => Some(OperationCode::CrdtSyncClose),
+            0x1C03 => Some(OperationCode::CrdtSyncUpdate),
+            0x1C04 => Some(OperationCode::CrdtSyncDiff),
+            0x1C05 => Some(OperationCode::CrdtSyncFullState),
+            0x1C06 => Some(OperationCode::CrdtSyncMaterialize),
+            0x1C07 => Some(OperationCode::CrdtSyncSubscriberCount),
+
+            0x1C08 => Some(OperationCode::CrdtAwarenessUpdate),
+            0x1C09 => Some(OperationCode::CrdtAwarenessGet),
 
             _ => None,
         }
@@ -562,6 +584,17 @@ impl OperationCode {
             OperationCode::GovernanceSeal => 0x1B04,
             OperationCode::GovernanceLog => 0x1B05,
             OperationCode::GovernanceStatus => 0x1B06,
+
+            OperationCode::CrdtSyncOpen => 0x1C01,
+            OperationCode::CrdtSyncClose => 0x1C02,
+            OperationCode::CrdtSyncUpdate => 0x1C03,
+            OperationCode::CrdtSyncDiff => 0x1C04,
+            OperationCode::CrdtSyncFullState => 0x1C05,
+            OperationCode::CrdtSyncMaterialize => 0x1C06,
+            OperationCode::CrdtSyncSubscriberCount => 0x1C07,
+
+            OperationCode::CrdtAwarenessUpdate => 0x1C08,
+            OperationCode::CrdtAwarenessGet => 0x1C09,
         }
     }
 }
@@ -784,6 +817,17 @@ pub enum WireRequest {
     GovernanceSeal,
     GovernanceLog,
     GovernanceStatus,
+
+    CrdtSyncOpen { work_id: BeId },
+    CrdtSyncClose { work_id: BeId },
+    CrdtSyncUpdate { work_id: BeId, update: Vec<u8> },
+    CrdtSyncDiff { work_id: BeId, state_vector: Vec<u8> },
+    CrdtSyncFullState { work_id: BeId },
+    CrdtSyncMaterialize { work_id: BeId },
+    CrdtSyncSubscriberCount { work_id: BeId },
+
+    CrdtAwarenessUpdate { work_id: BeId, state: crate::server::crdt_manager::AwarenessState },
+    CrdtAwarenessGet { work_id: BeId },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1005,6 +1049,33 @@ pub enum ResponseValue {
         is_leader: bool,
         leader_id: Option<String>,
         pending: bool,
+    },
+
+    CrdtSyncOpenResult {
+        state_vector: Vec<u8>,
+        current_text: String,
+    },
+    CrdtSyncUpdateResult {
+        relay_count: usize,
+    },
+    CrdtSyncDiffResult {
+        update: Vec<u8>,
+    },
+    CrdtSyncFullStateResult {
+        state: Vec<u8>,
+    },
+    CrdtSyncMaterializeResult {
+        revision: u64,
+    },
+    CrdtSyncSubscriberCountResult {
+        count: usize,
+    },
+
+    CrdtAwarenessUpdateResult {
+        relay_count: usize,
+    },
+    CrdtAwarenessGetResult {
+        states: Vec<crate::server::crdt_manager::AwarenessState>,
     },
 }
 
