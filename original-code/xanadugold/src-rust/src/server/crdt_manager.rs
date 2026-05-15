@@ -161,6 +161,62 @@ impl CrdtManager {
         Ok(())
     }
 
+    pub fn apply_text_delta(
+        &mut self,
+        work_id: BeId,
+        sender_session: SessionId,
+        ops: &[crate::server::transport::protocol::TextDeltaOp],
+    ) -> Result<ApplyUpdateResult, CrdtError> {
+        let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        if !wd.subscribers.contains_key(&sender_session) {
+            return Err(CrdtError::NotSubscribed(work_id, sender_session));
+        }
+
+        {
+            let mut txn = wd.doc.transact_mut();
+            let mut pos: u32 = 0;
+            for op in ops {
+                match op {
+                    crate::server::transport::protocol::TextDeltaOp::Retain { count } => {
+                        pos += *count as u32;
+                    }
+                    crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
+                        wd.text.insert(&mut txn, pos, text);
+                        pos += utf16_len(text) as u32;
+                    }
+                    crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
+                        let end = pos + *count as u32;
+                        wd.text.remove_range(&mut txn, pos, end - pos);
+                    }
+                }
+            }
+        }
+
+        wd.last_change_timestamp = current_timestamp_secs();
+
+        let pending = {
+            let txn = wd.doc.transact();
+            let sv = wd.last_materialized_sv.as_ref()
+                .cloned()
+                .unwrap_or_else(|| StateVector::default());
+            let diff = txn.encode_diff_v1(&sv);
+            if diff.len() > 2 {
+                Some(diff)
+            } else {
+                None
+            }
+        };
+        wd.pending_update = pending;
+
+        let relay_to: Vec<(SessionId, SyncSessionId)> = wd.subscribers
+            .iter()
+            .filter(|(sid, _)| **sid != sender_session)
+            .map(|(sid, sync_id)| (*sid, *sync_id))
+            .collect();
+
+        Ok(ApplyUpdateResult { relay_to })
+    }
+
     pub fn apply_update(
         &mut self,
         work_id: BeId,
@@ -214,6 +270,12 @@ impl CrdtManager {
         Ok(txn.encode_diff_v1(&remote_sv))
     }
 
+    pub fn current_text(&self, work_id: BeId) -> Result<String, CrdtError> {
+        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let txn = wd.doc.transact();
+        Ok(wd.text.get_string(&txn))
+    }
+
     pub fn get_full_state(&self, work_id: BeId) -> Result<Vec<u8>, CrdtError> {
         let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
         let txn = wd.doc.transact();
@@ -260,6 +322,12 @@ impl CrdtManager {
 
     pub fn is_active(&self, work_id: BeId) -> bool {
         self.docs.contains_key(&work_id)
+    }
+
+    pub fn is_subscriber(&self, work_id: BeId, session_id: SessionId) -> bool {
+        self.docs.get(&work_id)
+            .map(|wd| wd.subscribers.contains_key(&session_id))
+            .unwrap_or(false)
     }
 
     pub fn active_works(&self) -> Vec<BeId> {
@@ -379,6 +447,10 @@ fn text_to_edition(text: &str) -> Edition {
     Edition::from_text(text)
 }
 
+fn utf16_len(s: &str) -> usize {
+    s.chars().map(|c| c.len_utf16()).sum()
+}
+
 fn current_timestamp_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -389,6 +461,7 @@ fn current_timestamp_secs() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server::transport::protocol::TextDeltaOp;
 
     fn make_session(id: u64) -> SessionId {
         SessionId::new(id)
@@ -504,5 +577,99 @@ mod tests {
             .map(|(_, c)| c.element.as_text().unwrap_or(""))
             .collect();
         assert_eq!(roundtrip, text);
+    }
+
+    #[test]
+    fn test_apply_text_delta_basic() {
+        let mut mgr = CrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+
+        mgr.open_sync_session(work_id, s1, Some("hello world"));
+
+        let ops = vec![
+            TextDeltaOp::Retain { count: 6 },
+            TextDeltaOp::Delete { count: 5 },
+            TextDeltaOp::Insert { text: "xudanu".to_string() },
+        ];
+
+        let result = mgr.apply_text_delta(work_id, s1, &ops).unwrap();
+        assert_eq!(result.relay_to.len(), 0);
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert_eq!(text, "hello xudanu");
+    }
+
+    #[test]
+    fn test_apply_text_delta_emoji() {
+        let mut mgr = CrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+
+        mgr.open_sync_session(work_id, s1, Some("hi 🌍 world"));
+
+        let ops = vec![
+            TextDeltaOp::Retain { count: 3 },
+            TextDeltaOp::Insert { text: "there ".to_string() },
+        ];
+
+        mgr.apply_text_delta(work_id, s1, &ops).unwrap();
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert_eq!(text, "hi there 🌍 world");
+    }
+
+    #[test]
+    fn test_utf16_len() {
+        assert_eq!(utf16_len("hello"), 5);
+        assert_eq!(utf16_len("🌍"), 2);
+        assert_eq!(utf16_len("hi 🌍"), 5);
+        assert_eq!(utf16_len("日本語"), 3);
+    }
+
+    #[test]
+    fn test_apply_text_delta_complex_emoji() {
+        let mut mgr = CrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        mgr.open_sync_session(work_id, s1, Some("hello world"));
+
+        let ops = vec![
+            TextDeltaOp::Retain { count: 6 },
+            TextDeltaOp::Delete { count: 5 },
+            TextDeltaOp::Insert { text: "🌍 world".to_string() },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops).unwrap();
+        assert_eq!(mgr.current_text(work_id).unwrap(), "hello 🌍 world");
+
+        mgr.open_sync_session(work_id, s2, None);
+
+        let ops2 = vec![
+            TextDeltaOp::Retain { count: 1 },
+            TextDeltaOp::Delete { count: 2 },
+            TextDeltaOp::Insert { text: "XX".to_string() },
+            TextDeltaOp::Retain { count: 1 },
+        ];
+        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+        assert_eq!(mgr.current_text(work_id).unwrap(), "hXXlo 🌍 world");
+    }
+
+    #[test]
+    fn test_apply_text_delta_zwj_emoji() {
+        let mut mgr = CrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+
+        mgr.open_sync_session(work_id, s1, Some("hello"));
+
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}";
+        let ops = vec![
+            TextDeltaOp::Retain { count: 5 },
+            TextDeltaOp::Insert { text: family.to_string() },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops).unwrap();
+        assert_eq!(mgr.current_text(work_id).unwrap(), format!("hello{}", family));
     }
 }
