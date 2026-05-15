@@ -129,17 +129,23 @@ fn dispatch_inner(
             Ok(ResponseValue::Humber(rev))
         }
         WireRequest::WorkReviseDelta { work_id, base_revision, ops } => {
-            use super::protocol::apply_text_delta;
-            let current_ed = srv.work_edition(work_id)?;
-            let current_rev = srv.work_revision_count(work_id)?;
-            if current_rev != base_revision {
-                return Ok(ResponseValue::Edition(EditionPayload::from_edition(&current_ed)));
+            if srv.crdt_is_active(work_id) {
+                let (_relay, revision) = srv.crdt_apply_text_delta(session_id, work_id, &ops)?;
+                let rev = revision.unwrap_or_else(|| srv.work_revision_count(work_id).unwrap_or(0));
+                Ok(ResponseValue::Humber(rev))
+            } else {
+                use super::protocol::apply_text_delta;
+                let current_ed = srv.work_edition(work_id)?;
+                let current_rev = srv.work_revision_count(work_id)?;
+                if current_rev != base_revision {
+                    return Ok(ResponseValue::Edition(EditionPayload::from_edition(&current_ed)));
+                }
+                let current_text = edition_to_text(&current_ed);
+                let new_text = apply_text_delta(&current_text, &ops);
+                let new_ed = Edition::from_text(&new_text);
+                let rev = srv.work_revise(session_id, work_id, new_ed)?;
+                Ok(ResponseValue::Humber(rev))
             }
-            let current_text = edition_to_text(&current_ed);
-            let new_text = apply_text_delta(&current_text, &ops);
-            let new_ed = Edition::from_text(&new_text);
-            let rev = srv.work_revise(session_id, work_id, new_ed)?;
-            Ok(ResponseValue::Humber(rev))
         }
         WireRequest::WorkGrab { work_id } => {
             srv.work_grab(session_id, work_id)?;
@@ -1201,6 +1207,12 @@ fn dispatch_inner(
             srv.ensure_logged_in(session_id)?;
             let count = srv.crdt_subscriber_count(work_id);
             Ok(ResponseValue::CrdtSyncSubscriberCountResult { count })
+        }
+
+        WireRequest::CrdtSyncText { work_id } => {
+            srv.ensure_logged_in(session_id)?;
+            let text = srv.crdt_current_text(work_id)?;
+            Ok(ResponseValue::CrdtSyncTextResult { text })
         }
 
         WireRequest::CrdtAwarenessUpdate { work_id, state } => {

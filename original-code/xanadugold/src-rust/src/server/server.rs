@@ -116,7 +116,7 @@ impl Server {
             .iter()
             .map(|(_, c)| c.element.as_text().unwrap_or(""))
             .collect();
-        text.lines().next().unwrap_or("").chars().take(60).collect()
+        text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(80).collect()
     }
 
     pub fn new() -> Self {
@@ -1128,6 +1128,28 @@ impl Server {
         self.ensure_session(session_id)?;
         self.ensure_can_edit(session_id, work_be_id)?;
 
+        if self.crdt_manager.is_active(work_be_id) {
+            let needs = self.crdt_manager.needs_materialization(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            if needs {
+                let edition = self.crdt_manager
+                    .materialize_edition(work_be_id)
+                    .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+                let author_club = self.sessions
+                    .iter()
+                    .find_map(|(sid, s)| {
+                        if self.crdt_manager.is_subscriber(work_be_id, *sid) {
+                            s.initial_login()
+                        } else {
+                            None
+                        }
+                    });
+
+                self.revise_work(work_be_id, session_id, edition, author_club)?;
+            }
+        }
+
         let initial_text = if !self.crdt_manager.is_active(work_be_id) {
             let edition = self.work_edition(work_be_id)?;
             Some(
@@ -1150,9 +1172,58 @@ impl Server {
         work_be_id: BeId,
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
+
+        let needs = self.crdt_manager.needs_materialization(work_be_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+        if needs {
+            let edition = self.crdt_manager
+                .materialize_edition(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+            let author_club = self.sessions
+                .get(&session_id)
+                .and_then(|s| s.initial_login());
+
+            self.revise_work(work_be_id, session_id, edition, author_club)?;
+        }
+
         self.crdt_manager
             .close_sync_session(work_be_id, session_id)
             .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn crdt_apply_text_delta(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        ops: &[crate::server::transport::protocol::TextDeltaOp],
+    ) -> Result<(super::crdt_manager::ApplyUpdateResult, Option<u64>), ServerError> {
+        self.ensure_session(session_id)?;
+        self.ensure_can_edit(session_id, work_be_id)?;
+
+        let result = self.crdt_manager
+            .apply_text_delta(work_be_id, session_id, ops)
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+        let revision = if self.crdt_manager.needs_materialization(work_be_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))?
+        {
+            let ed = self.crdt_manager
+                .materialize_edition(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+            let author_club = self.sessions
+                .get(&session_id)
+                .and_then(|s| s.initial_login());
+
+            let rev = self.revise_work(work_be_id, session_id, ed, author_club)?;
+            Some(rev)
+        } else {
+            None
+        };
+
+        Ok((result, revision))
     }
 
     pub fn crdt_apply_update(
@@ -1198,6 +1269,12 @@ impl Server {
 
     pub fn crdt_is_active(&self, work_be_id: BeId) -> bool {
         self.crdt_manager.is_active(work_be_id)
+    }
+
+    pub fn crdt_current_text(&self, work_be_id: BeId) -> Result<String, ServerError> {
+        self.crdt_manager
+            .current_text(work_be_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))
     }
 
     fn try_materialize(
@@ -2053,22 +2130,35 @@ impl Server {
                 Some(prev) => prev.intersection(&works).copied().collect(),
             });
             if candidate_set.as_ref().map_or(true, |s| s.is_empty()) {
-                return Vec::new();
+                candidate_set = Some(std::collections::HashSet::new());
+                break;
             }
         }
-        let candidates = candidate_set.unwrap_or_default();
+
+        let mut candidates = candidate_set.unwrap_or_default();
+        for work_id in self.crdt_manager.active_works() {
+            candidates.insert(work_id);
+        }
 
         let mut results = Vec::new();
         for (work_id, ws) in &self.works {
             if !candidates.contains(work_id) {
                 continue;
             }
-            let ed = ws.work.current_edition();
-            let text: String = ed
-                .all_entries()
-                .iter()
-                .map(|(_, carrier)| carrier.element.as_text().unwrap_or(""))
-                .collect();
+
+            let text = if self.crdt_manager.is_active(*work_id) {
+                match self.crdt_manager.current_text(*work_id) {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                }
+            } else {
+                let ed = ws.work.current_edition();
+                ed.all_entries()
+                    .iter()
+                    .map(|(_, carrier)| carrier.element.as_text().unwrap_or(""))
+                    .collect()
+            };
+
             if !text.contains(search_text) {
                 continue;
             }

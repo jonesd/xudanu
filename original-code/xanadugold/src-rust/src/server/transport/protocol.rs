@@ -239,6 +239,7 @@ pub enum OperationCode {
     CrdtSyncFullState,
     CrdtSyncMaterialize,
     CrdtSyncSubscriberCount,
+    CrdtSyncText,
 
     CrdtAwarenessUpdate,
     CrdtAwarenessGet,
@@ -414,6 +415,7 @@ impl OperationCode {
             0x1C05 => Some(OperationCode::CrdtSyncFullState),
             0x1C06 => Some(OperationCode::CrdtSyncMaterialize),
             0x1C07 => Some(OperationCode::CrdtSyncSubscriberCount),
+            0x1C0A => Some(OperationCode::CrdtSyncText),
 
             0x1C08 => Some(OperationCode::CrdtAwarenessUpdate),
             0x1C09 => Some(OperationCode::CrdtAwarenessGet),
@@ -592,6 +594,7 @@ impl OperationCode {
             OperationCode::CrdtSyncFullState => 0x1C05,
             OperationCode::CrdtSyncMaterialize => 0x1C06,
             OperationCode::CrdtSyncSubscriberCount => 0x1C07,
+            OperationCode::CrdtSyncText => 0x1C0A,
 
             OperationCode::CrdtAwarenessUpdate => 0x1C08,
             OperationCode::CrdtAwarenessGet => 0x1C09,
@@ -825,6 +828,7 @@ pub enum WireRequest {
     CrdtSyncFullState { work_id: BeId },
     CrdtSyncMaterialize { work_id: BeId },
     CrdtSyncSubscriberCount { work_id: BeId },
+    CrdtSyncText { work_id: BeId },
 
     CrdtAwarenessUpdate { work_id: BeId, state: crate::server::crdt_manager::AwarenessState },
     CrdtAwarenessGet { work_id: BeId },
@@ -1069,6 +1073,9 @@ pub enum ResponseValue {
     },
     CrdtSyncSubscriberCountResult {
         count: usize,
+    },
+    CrdtSyncTextResult {
+        text: String,
     },
 
     CrdtAwarenessUpdateResult {

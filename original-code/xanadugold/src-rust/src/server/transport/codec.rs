@@ -345,6 +345,7 @@ impl BinaryCodec {
             OperationCode::CrdtSyncFullState => Ok(WireRequest::CrdtSyncFullState { work_id: id }),
             OperationCode::CrdtSyncMaterialize => Ok(WireRequest::CrdtSyncMaterialize { work_id: id }),
             OperationCode::CrdtSyncSubscriberCount => Ok(WireRequest::CrdtSyncSubscriberCount { work_id: id }),
+            OperationCode::CrdtSyncText => Ok(WireRequest::CrdtSyncText { work_id: id }),
             OperationCode::CrdtAwarenessGet => Ok(WireRequest::CrdtAwarenessGet { work_id: id }),
             _ => Err(FrameParseError::MissingPayload.into()),
         }
@@ -1406,6 +1407,7 @@ impl JsonCodec {
             | OperationCode::CrdtSyncFullState
             | OperationCode::CrdtSyncMaterialize
             | OperationCode::CrdtSyncSubscriberCount
+            | OperationCode::CrdtSyncText
             | OperationCode::CrdtAwarenessGet => {
                 #[derive(Deserialize)]
                 struct Args { work_id: BeId }
@@ -1417,6 +1419,7 @@ impl JsonCodec {
                     OperationCode::CrdtSyncFullState => Ok(WireRequest::CrdtSyncFullState { work_id: args.work_id }),
                     OperationCode::CrdtSyncMaterialize => Ok(WireRequest::CrdtSyncMaterialize { work_id: args.work_id }),
                     OperationCode::CrdtSyncSubscriberCount => Ok(WireRequest::CrdtSyncSubscriberCount { work_id: args.work_id }),
+                    OperationCode::CrdtSyncText => Ok(WireRequest::CrdtSyncText { work_id: args.work_id }),
                     OperationCode::CrdtAwarenessGet => Ok(WireRequest::CrdtAwarenessGet { work_id: args.work_id }),
                     _ => unreachable!(),
                 }
