@@ -4,6 +4,13 @@ use crate::edition::{BeId, Edition, EndorsementSet, Endorsement, Work};
 use crate::edition::RangeElement;
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Credential {
+    Password { phc_hash: String },
+    PublicKey { verifying_key: [u8; 32] },
+}
+
+#[derive(Debug, Clone)]
 pub struct Club {
     be_id: BeId,
     work: Work,
@@ -13,6 +20,10 @@ pub struct Club {
     sponsored_works: HashSet<BeId>,
     default_read_club: Option<BeId>,
     default_edit_club: Option<BeId>,
+    credential: Option<Credential>,
+    display_name: Option<String>,
+    is_personal: bool,
+    encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
 }
 
 impl Club {
@@ -26,6 +37,10 @@ impl Club {
             sponsored_works: HashSet::new(),
             default_read_club: None,
             default_edit_club: None,
+            credential: None,
+            display_name: None,
+            is_personal: false,
+            encrypted_signing_key: None,
         }
     }
 
@@ -39,6 +54,33 @@ impl Club {
             sponsored_works: HashSet::new(),
             default_read_club: None,
             default_edit_club: None,
+            credential: None,
+            display_name: None,
+            is_personal: false,
+            encrypted_signing_key: None,
+        }
+    }
+
+    pub fn new_personal(
+        be_id: BeId,
+        owner: Option<BeId>,
+        description: Edition,
+        display_name: Option<String>,
+        credential: Option<Credential>,
+    ) -> Self {
+        Club {
+            be_id,
+            work: Work::new_with_owner(be_id, owner, description),
+            signature_club: owner,
+            name: None,
+            members: HashSet::new(),
+            sponsored_works: HashSet::new(),
+            default_read_club: None,
+            default_edit_club: None,
+            credential,
+            display_name,
+            is_personal: true,
+            encrypted_signing_key: None,
         }
     }
 
@@ -100,6 +142,38 @@ impl Club {
 
     pub fn set_edit_club(&mut self, club: Option<BeId>) {
         self.work.set_edit_club(club);
+    }
+
+    pub fn credential(&self) -> Option<&Credential> {
+        self.credential.as_ref()
+    }
+
+    pub fn set_credential(&mut self, credential: Option<Credential>) {
+        self.credential = credential;
+    }
+
+    pub fn display_name(&self) -> Option<&str> {
+        self.display_name.as_deref().or(self.name.as_deref())
+    }
+
+    pub fn set_display_name(&mut self, name: Option<String>) {
+        self.display_name = name;
+    }
+
+    pub fn is_personal(&self) -> bool {
+        self.is_personal
+    }
+
+    pub fn set_is_personal(&mut self, val: bool) {
+        self.is_personal = val;
+    }
+
+    pub fn encrypted_signing_key(&self) -> Option<&crate::crypto::club_keys::EncryptedSigningKey> {
+        self.encrypted_signing_key.as_ref()
+    }
+
+    pub fn set_encrypted_signing_key(&mut self, key: Option<crate::crypto::club_keys::EncryptedSigningKey>) {
+        self.encrypted_signing_key = key;
     }
 
     pub fn members(&self) -> &HashSet<BeId> {

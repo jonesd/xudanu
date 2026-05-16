@@ -5,7 +5,7 @@ use crate::edition::backend::BeId;
 use crate::persist::chunk_store::ChunkStore;
 use crate::persist::edition_chunks::{EditionChunkRef, WorkChunkRef};
 
-const CURRENT_MANIFEST_VERSION: u32 = 2;
+const CURRENT_MANIFEST_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ClubChunkRef {
@@ -17,6 +17,18 @@ pub struct ClubChunkRef {
     pub default_read_club: Option<BeId>,
     #[serde(default)]
     pub default_edit_club: Option<BeId>,
+    #[serde(default)]
+    pub is_personal: bool,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub credential: Option<crate::server::club::Credential>,
+    #[serde(default)]
+    pub encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
+    #[serde(default)]
+    pub members: Vec<BeId>,
+    #[serde(default)]
+    pub sponsored_works: Vec<BeId>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

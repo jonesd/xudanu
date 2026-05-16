@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod chained_log;
 pub mod channel;
 pub mod codec;
 pub mod dispatch;

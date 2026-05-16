@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU16, Ordering};
 
+use crate::server::transport::shared::MAX_CSRF_TOKENS;
+
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -28,6 +30,7 @@ static SUBSCRIPTION_COUNTER: AtomicU16 = AtomicU16::new(1);
 pub struct WsQuery {
     pub format: Option<String>,
     pub version: Option<u8>,
+    pub csrf_token: Option<String>,
 }
 
 pub fn build_router(state: SharedState) -> Router {
@@ -37,6 +40,7 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/blobs/{hash}", get(blob_get_handler))
         .route("/blobs/{hash}/preview", get(blob_preview_handler))
         .route("/health", get(health_handler))
+        .route("/csrf-token", get(csrf_token_handler))
         .route("/", get(index_handler))
         .fallback(get(static_fallback_handler))
         .with_state(state)
@@ -69,6 +73,35 @@ async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
     ([(axum::http::header::CONTENT_TYPE, "application/json")], json)
 }
 
+async fn csrf_token_handler(State(state): State<SharedState>) -> impl IntoResponse {
+    if !state.csrf_enabled {
+        return (axum::http::StatusCode::NOT_FOUND, "CSRF protection not enabled").into_response();
+    }
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    let token = hex_encode(&bytes);
+    let mut tokens = state.csrf_tokens.lock().unwrap();
+    tokens.push_back(token.clone());
+    while tokens.len() > MAX_CSRF_TOKENS {
+        tokens.pop_front();
+    }
+    drop(tokens);
+
+    let body = serde_json::json!({"csrf_token": token});
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "application/json"),
+            (axum::http::header::SET_COOKIE, format!("xudanu_csrf={}; HttpOnly; SameSite=Strict; Path=/csrf-token", token).as_str()),
+        ],
+        serde_json::to_string(&body).unwrap_or_default(),
+    ).into_response()
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
 async fn static_fallback_handler(
     axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
     State(state): State<SharedState>,
@@ -99,12 +132,55 @@ async fn ws_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(query): Query<WsQuery>,
     State(state): State<SharedState>,
+    headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
+    if let Some(ref allowed) = state.allowed_origins {
+        let origin = headers.get("origin")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+            if !allowed.contains(origin) {
+                tracing::warn!(
+                    target: "xudanu::security",
+                    origin = origin,
+                    remote_addr = %addr,
+                    event = "SECURITY:ws_origin_rejected",
+                    "WebSocket origin rejected"
+                );
+            return (axum::http::StatusCode::FORBIDDEN, "Origin not allowed").into_response();
+        }
+    }
+
+    if state.csrf_enabled {
+        if let Some(ref token) = query.csrf_token {
+            let valid = {
+                let mut tokens = state.csrf_tokens.lock().unwrap();
+                if let Some(pos) = tokens.iter().position(|t| t == token) {
+                    tokens.remove(pos);
+                    true
+                } else {
+                    false
+                }
+            };
+            if !valid {
+                tracing::warn!(
+                    target: "xudanu::security",
+                    remote_addr = %addr,
+                    event = "SECURITY:ws_csrf_invalid",
+                    "WebSocket CSRF token invalid"
+                );
+                return (axum::http::StatusCode::FORBIDDEN, "Invalid CSRF token").into_response();
+            }
+        } else {
+            return (axum::http::StatusCode::FORBIDDEN, "CSRF token required").into_response();
+        }
+    }
+
     let format = query.format.as_deref().unwrap_or("binary").to_string();
     let client_version = query.version.unwrap_or(PROTOCOL_VERSION);
     ws.max_frame_size(16 * 1024 * 1024)
         .max_message_size(64 * 1024 * 1024)
         .on_upgrade(move |socket| handle_socket(socket, state, format, Some(addr), client_version))
+        .into_response()
 }
 
 fn safe_content_type(mime: &str) -> axum::http::HeaderValue {
@@ -318,6 +394,15 @@ async fn handle_socket(
         {
             let shutting_down = state.server.with_server_ref(|srv| srv.is_shutdown_requested());
             if shutting_down {
+                break;
+            }
+        }
+
+        {
+            let session_valid = state.server.with_server_ref(|srv| {
+                srv.session(session_id).map(|s| s.is_valid()).unwrap_or(false)
+            });
+            if !session_valid {
                 break;
             }
         }

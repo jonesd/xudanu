@@ -56,15 +56,15 @@ impl std::fmt::Debug for WorkState {
 }
 
 pub struct Server {
-    grand_map: GrandMap,
-    sessions: HashMap<SessionId, Session>,
+    pub(crate) grand_map: GrandMap,
+    pub(crate) sessions: HashMap<SessionId, Session>,
     session_counter: u64,
-    clubs: HashMap<BeId, Club>,
-    club_names: HashMap<String, BeId>,
+    pub(crate) clubs: HashMap<BeId, Club>,
+    pub(crate) club_names: HashMap<String, BeId>,
     works: HashMap<BeId, WorkState>,
     standalone_editions: HashMap<BeId, Edition>,
     edition_detectors: HashMap<BeId, DetectorList>,
-    system_clubs: SystemClubs,
+    pub(crate) system_clubs: SystemClubs,
     operation_counter: u64,
     admin: AdminState,
     links: HashMap<BeId, LinkState>,
@@ -84,7 +84,10 @@ pub struct Server {
     reconcile_store: crate::server::federation::ReconcileStore,
     reconcile_counter: u64,
     last_checkpoint_time: u64,
-    crdt_manager: CrdtManager,
+    pub(crate) crdt_manager: CrdtManager,
+    pub(crate) personal_club_count: usize,
+    pub(crate) max_personal_clubs: usize,
+    pub(crate) login_attempts: HashMap<BeId, crate::server::identity::ClubAttemptTracker>,
 }
 
 pub struct ServerHealth {
@@ -208,6 +211,9 @@ impl Server {
                 .unwrap_or_default()
                 .as_secs(),
             crdt_manager: CrdtManager::new(3),
+            personal_club_count: 0,
+            max_personal_clubs: 10_000,
+            login_attempts: HashMap::new(),
         };
 
         let pub_club = Club::new_with_owner(
@@ -289,10 +295,8 @@ impl Server {
     pub fn connect(&mut self) -> SessionId {
         static SESSION_SECRET: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
         let secret = *SESSION_SECRET.get_or_init(|| {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos() as u64
+            use rand::RngCore;
+            rand::rngs::OsRng.next_u64()
         });
         self.session_counter += 1;
         let id_val = self.session_counter ^ secret.wrapping_mul(0x5851F42D4C957F2D);
@@ -354,67 +358,6 @@ impl Server {
         self.sessions.values().filter(|s| s.is_connected()).count()
     }
 
-    // === Authentication ===
-
-    pub fn login(
-        &mut self,
-        session_id: SessionId,
-        club_id: BeId,
-    ) -> Result<Box<dyn Lock>, ServerError> {
-        self.ensure_session(session_id)?;
-
-        let club = self
-            .clubs
-            .get(&club_id)
-            .ok_or(ServerError::ClubNotFound(club_id))?;
-
-        if club.read_club() == Some(self.system_clubs.public_club) {
-            let lock = BooLockSmith::new().create_lock(Some(club_id));
-            return Ok(lock);
-        }
-
-        let lock: Box<dyn Lock> = if club_id == self.system_clubs.public_club {
-            Box::new(super::lock::BooLock::new(club_id))
-        } else {
-            Box::new(super::lock::WallLock::new())
-        };
-
-        Ok(lock)
-    }
-
-    pub fn login_by_name(
-        &mut self,
-        session_id: SessionId,
-        club_name: &str,
-    ) -> Result<Box<dyn Lock>, ServerError> {
-        let club_id = self
-            .club_names
-            .get(club_name)
-            .copied()
-            .ok_or_else(|| ServerError::NotFound(format!("club '{}'", club_name)))?;
-        self.login(session_id, club_id)
-    }
-
-    pub fn authenticate(
-        &mut self,
-        session_id: SessionId,
-        lock: &dyn Lock,
-        credential: &LockCredential,
-    ) -> Result<KeyMaster, ServerError> {
-        let km = lock.try_open(credential)?;
-        let session = self
-            .sessions
-            .get_mut(&session_id)
-            .ok_or(ServerError::SessionNotFound(session_id))?;
-        session.set_key_master(km.clone());
-        Ok(km)
-    }
-
-    pub fn login_public(&mut self, session_id: SessionId) -> Result<KeyMaster, ServerError> {
-        let lock = super::lock::BooLock::new(self.system_clubs.public_club);
-        self.authenticate(session_id, &lock, &LockCredential::Boo)
-    }
-
     // === Club operations ===
 
     pub fn create_club(
@@ -457,6 +400,10 @@ impl Server {
         self.clubs
             .get(&club_id)
             .ok_or(ServerError::ClubNotFound(club_id))
+    }
+
+    pub fn personal_club_count(&self) -> usize {
+        self.personal_club_count
     }
 
     pub fn club_mut(&mut self, club_id: BeId) -> Result<&mut Club, ServerError> {
@@ -1163,7 +1110,42 @@ impl Server {
             None
         };
 
-        Ok(self.crdt_manager.open_sync_session(work_be_id, session_id, initial_text.as_deref()))
+        let result = self.crdt_manager.open_sync_session(work_be_id, session_id, initial_text.as_deref());
+
+        if let Some(session) = self.sessions.get(&session_id) {
+            let author_club = session.initial_login()
+                .and_then(|id| self.clubs.get(&id))
+                .filter(|c| c.is_personal())
+                .map(|c| c.be_id())
+                .or_else(|| {
+                    session.authority_clubs().iter().find_map(|id| {
+                        self.clubs.get(id).filter(|c| c.is_personal()).map(|c| c.be_id())
+                    })
+                })
+                .or(session.initial_login());
+
+            if let Some(login_club) = author_club {
+                let display_name = self.clubs.get(&login_club)
+                    .and_then(|c| c.display_name().map(|s| s.to_string()))
+                    .unwrap_or_else(|| format!("club-{}", login_club));
+                let public_key = session.club_verifying_key()
+                    .map(|vk| vk.to_bytes())
+                    .unwrap_or_else(|| {
+                        let mut pk = [0u8; 32];
+                        pk[..8].copy_from_slice(&login_club.to_le_bytes());
+                        pk
+                    });
+                let author = super::crdt_manager::AuthorIdentity {
+                    public_key,
+                    display_name,
+                };
+                if let Err(e) = self.crdt_manager.register_author(work_be_id, session_id, author) {
+                    tracing::warn!(target: "xudanu::security", work_id = work_be_id, session_id = session_id.as_u64(), error = %e, event = "SECURITY:author_register_failed", "failed to register CRDT author");
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     pub fn crdt_close_session(
@@ -1683,8 +1665,20 @@ impl Server {
                 club.set_name(name.clone());
                 self.club_names.insert(name.clone(), club_ref.be_id);
             }
+            club.set_is_personal(club_ref.is_personal);
+            club.set_display_name(club_ref.display_name.clone());
+            club.set_credential(club_ref.credential.clone());
+            club.set_encrypted_signing_key(club_ref.encrypted_signing_key.clone());
+            for member_id in &club_ref.members {
+                club.add_member(*member_id);
+            }
+            for work_id in &club_ref.sponsored_works {
+                club.add_sponsored_work(*work_id);
+            }
             self.clubs.insert(club_ref.be_id, club);
         }
+
+        self.personal_club_count = self.clubs.values().filter(|c| c.is_personal()).count();
 
         for (id, work_ref) in &manifest.works {
             let work = crate::persist::edition_chunks::work_from_chunks_current(
@@ -2429,12 +2423,12 @@ impl Server {
 
     // === Private helpers ===
 
-    fn ensure_session(&self, session_id: SessionId) -> Result<(), ServerError> {
+    pub(crate) fn ensure_session(&self, session_id: SessionId) -> Result<(), ServerError> {
         let session = self
             .sessions
             .get(&session_id)
             .ok_or(ServerError::SessionNotFound(session_id))?;
-        if !session.is_connected() {
+        if !session.is_valid() {
             return Err(ServerError::SessionNotFound(session_id));
         }
         Ok(())
@@ -4052,6 +4046,18 @@ pub(crate) mod persist_snapshot {
         default_read_club: Option<BeId>,
         #[serde(default)]
         default_edit_club: Option<BeId>,
+        #[serde(default)]
+        is_personal: bool,
+        #[serde(default)]
+        display_name: Option<String>,
+        #[serde(default)]
+        credential: Option<crate::server::club::Credential>,
+        #[serde(default)]
+        encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
+        #[serde(default)]
+        members: Vec<BeId>,
+        #[serde(default)]
+        sponsored_works: Vec<BeId>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -4130,6 +4136,12 @@ pub(crate) mod persist_snapshot {
                     work: WorkSnapshot::from_work(club.work()),
                     default_read_club: club.default_read_club(),
                     default_edit_club: club.default_edit_club(),
+                    is_personal: club.is_personal(),
+                    display_name: club.display_name().map(|s| s.to_string()),
+                    credential: club.credential().cloned(),
+                    encrypted_signing_key: club.encrypted_signing_key().cloned(),
+                    members: club.members().iter().copied().collect(),
+                    sponsored_works: club.sponsored_works().iter().copied().collect(),
                 }
             }).collect();
 
@@ -4237,8 +4249,11 @@ pub(crate) mod persist_snapshot {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
-                crdt_manager: CrdtManager::new(3),
-             };
+             crdt_manager: CrdtManager::new(3),
+             personal_club_count: 0,
+             max_personal_clubs: 10_000,
+             login_attempts: HashMap::new(),
+              };
             for club_snap in &snapshot.clubs {
                 let work = club_snap.work.to_work(
                     crate::persist::FlockId::new(club_snap.be_id, 0),
@@ -4256,8 +4271,20 @@ pub(crate) mod persist_snapshot {
                     club.set_name(name.clone());
                     server.club_names.insert(name.clone(), club_snap.be_id);
                 }
+                club.set_is_personal(club_snap.is_personal);
+                club.set_display_name(club_snap.display_name.clone());
+                club.set_credential(club_snap.credential.clone());
+                club.set_encrypted_signing_key(club_snap.encrypted_signing_key.clone());
+                for member_id in &club_snap.members {
+                    club.add_member(*member_id);
+                }
+                for work_id in &club_snap.sponsored_works {
+                    club.add_sponsored_work(*work_id);
+                }
                 server.clubs.insert(club_snap.be_id, club);
             }
+
+            server.personal_club_count = server.clubs.values().filter(|c| c.is_personal()).count();
 
             for (id, ws_snap) in &snapshot.works {
                 let work = ws_snap.work.to_work(
@@ -4379,6 +4406,12 @@ pub(crate) mod persist_snapshot {
                     work_root: work_ref,
                     default_read_club: club.default_read_club(),
                     default_edit_club: club.default_edit_club(),
+                    is_personal: club.is_personal(),
+                    display_name: club.display_name().map(|s| s.to_string()),
+                    credential: club.credential().cloned(),
+                    encrypted_signing_key: club.encrypted_signing_key().cloned(),
+                    members: club.members().iter().copied().collect(),
+                    sponsored_works: club.sponsored_works().iter().copied().collect(),
                 });
             }
 

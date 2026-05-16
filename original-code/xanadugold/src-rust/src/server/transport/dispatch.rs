@@ -1,7 +1,6 @@
 use crate::edition::{BeId, Edition};
 use crate::server::Server;
 use crate::server::lock::LockCredential;
-use crate::server::lock::{BooLock, ChallengeLock, MatchLockSmith, LockSmith};
 use super::protocol::*;
 use super::shared::ServerHandle;
 
@@ -34,33 +33,29 @@ fn dispatch_inner(
             Ok(ResponseValue::Void)
         }
         WireRequest::SessionLogin { club_id } => {
-            let _lock = srv.login(session_id, club_id)?;
-            Ok(ResponseValue::Void)
+            let lock = srv.login(session_id, club_id)?;
+            let challenge = lock.as_ref()
+                .as_any()
+                .downcast_ref::<crate::server::ChallengeLock>()
+                .map(|cl| cl.challenge().to_vec());
+            match challenge {
+                Some(ch) => Ok(ResponseValue::AuthChallenge { challenge: ch }),
+                None => Ok(ResponseValue::Void),
+            }
         }
         WireRequest::SessionLoginByName { club_name } => {
-            let _lock = srv.login_by_name(session_id, &club_name)?;
-            Ok(ResponseValue::Void)
+            let lock = srv.login_by_name(session_id, &club_name)?;
+            let challenge = lock.as_ref()
+                .as_any()
+                .downcast_ref::<crate::server::ChallengeLock>()
+                .map(|cl| cl.challenge().to_vec());
+            match challenge {
+                Some(ch) => Ok(ResponseValue::AuthChallenge { challenge: ch }),
+                None => Ok(ResponseValue::Void),
+            }
         }
-        WireRequest::SessionAuthenticate { club_id, credential } => {
-            let lock = match &credential {
-                LockCredential::Boo => {
-                    Box::new(BooLock::new(club_id)) as Box<dyn crate::server::Lock>
-                }
-                LockCredential::ChallengeResponse(resp) => {
-                    Box::new(ChallengeLock::new(club_id, vec![], resp.clone()))
-                }
-                LockCredential::Password(pw) => {
-                    let smith = MatchLockSmith::from_password(pw)
-                        .map_err(|e| crate::server::ServerError::Internal(e.to_string()))?;
-                    smith.create_lock(Some(club_id))
-                }
-                LockCredential::Named { .. } => {
-                    return Err(crate::server::ServerError::InvalidArgument(
-                        "multi-lock not supported via authenticate; use named locks directly".into(),
-                    ));
-                }
-            };
-            let km = srv.authenticate(session_id, lock.as_ref(), &credential)?;
+        WireRequest::SessionAuthenticate { credential } => {
+            let km = srv.authenticate_with_pending(session_id, &credential)?;
             let clubs: Vec<BeId> = km.actual_authority().into_iter().collect();
             Ok(ResponseValue::Ids(clubs))
         }
@@ -273,6 +268,43 @@ fn dispatch_inner(
         WireRequest::ClubSetDefaultEditClub { club_id, default_edit_club } => {
             srv.club_set_default_edit_club(session_id, club_id, default_edit_club)?;
             Ok(ResponseValue::Void)
+        }
+        WireRequest::ClubSetPassword { club_id, password } => {
+            srv.club_set_password(session_id, club_id, &password)?;
+            Ok(ResponseValue::ClubSetPasswordResult { set: true })
+        }
+        WireRequest::ClubClearCredential { club_id } => {
+            srv.club_clear_credential(session_id, club_id)?;
+            Ok(ResponseValue::ClubClearCredentialResult { cleared: true })
+        }
+        WireRequest::ClubCreatePersonal { display_name, password } => {
+            use crate::server::club::Credential;
+            let (credential, raw_password) = match password {
+                Some(pw) => {
+                    let phc_hash = crate::crypto::password::hash_password(&pw)
+                        .map_err(|e| crate::server::ServerError::Internal(format!("password hash failed: {}", e)))?;
+                    (Some(Credential::Password { phc_hash }), Some(pw))
+                }
+                None => (None, None),
+            };
+            let id = srv.create_personal_club(session_id, display_name, credential, raw_password)?;
+            Ok(ResponseValue::Id(id))
+        }
+        WireRequest::ClubWhoAmI => {
+            let clubs = srv.who_am_i(session_id)?;
+            Ok(ResponseValue::ClubWhoAmIResult { clubs })
+        }
+        WireRequest::ClubAddMember { club_id, member_id } => {
+            srv.club_add_member(session_id, club_id, member_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::ClubRemoveMember { club_id, member_id } => {
+            srv.club_remove_member(session_id, club_id, member_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::ClubMembers { club_id } => {
+            let members = srv.club_members(session_id, club_id)?;
+            Ok(ResponseValue::ClubMembersResult { members })
         }
 
         WireRequest::EditionStore { edition } => {
@@ -1229,14 +1261,10 @@ fn dispatch_inner(
             Ok(ResponseValue::CrdtAwarenessGetResult { states })
         }
 
-        WireRequest::CrdtRegisterAuthor { work_id, public_key, display_name } => {
-            srv.ensure_logged_in(session_id)?;
-            let author = crate::server::crdt_manager::AuthorIdentity {
-                public_key,
-                display_name,
-            };
-            srv.crdt_register_author(session_id, work_id, author)?;
-            Ok(ResponseValue::CrdtRegisterAuthorResult { registered: true })
+        WireRequest::CrdtRegisterAuthor { work_id: _, public_key: _, display_name: _ } => {
+            Err(crate::server::ServerError::InvalidArgument(
+                "CrdtRegisterAuthor is deprecated; author identity is auto-assigned from session".into(),
+            ))
         }
     }
 }

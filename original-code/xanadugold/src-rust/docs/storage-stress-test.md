@@ -211,6 +211,17 @@ custom tests or debugging.
 4. Build a `StressReport` and call `.print()` at the end
 5. Clean up the temp directory with `cleanup(&dir)`
 
+## Performance TODOs
+
+### Batched write buffer
+
+Write latency (~250µs per chunk) is dominated by `fs::write` + `rename` (the
+atomic-write pattern). At 100K+ chunks (heavy scale), this compounds to
+meaningful time. If write throughput becomes a bottleneck in production, a
+batched write buffer could help -- accumulate chunks in memory, flush to disk
+in batches. This would trade off against the current per-chunk atomic-write
+durability guarantee (a crash during a batch could lose unflushed chunks).
+
 ## What This Does Not Test
 
 - **Concurrent access** -- All tests are single-threaded. The `Mutex` around

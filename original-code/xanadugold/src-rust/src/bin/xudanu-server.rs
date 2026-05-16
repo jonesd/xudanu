@@ -2,6 +2,55 @@ use std::path::PathBuf;
 use xudanu::server::Server;
 use xudanu::server::transport::{AppState, build_router};
 
+fn init_tracing(data_dir: Option<&str>) {
+    use tracing_subscriber::prelude::*;
+    use xudanu::server::transport::chained_log::ChainedLogWriter;
+
+    let console = tracing_subscriber::fmt::layer()
+        .with_target(true)
+        .with_timer(tracing_subscriber::fmt::time::time());
+
+    let security_filter = tracing_subscriber::filter::Targets::new()
+        .with_target("xudanu::security", tracing::Level::INFO);
+
+    if let Some(dir) = data_dir {
+        let log_dir = PathBuf::from(dir);
+        if let Err(e) = std::fs::create_dir_all(&log_dir) {
+            eprintln!("warning: cannot create log directory {}: {}", log_dir.display(), e);
+            tracing_subscriber::registry()
+                .with(console)
+                .init();
+            return;
+        }
+        let file_appender = tracing_appender::rolling::daily(&log_dir, "security.log");
+        let seed_path = log_dir.join("security.log.seed");
+        let chained = match ChainedLogWriter::new(file_appender, &seed_path) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("warning: cannot create chained log writer: {}", e);
+                tracing_subscriber::registry()
+                    .with(console)
+                    .init();
+                return;
+            }
+        };
+        let security_file = tracing_subscriber::fmt::layer()
+            .with_writer(std::sync::Mutex::new(chained))
+            .with_timer(tracing_subscriber::fmt::time::time())
+            .with_target(true)
+            .with_filter(security_filter);
+
+        tracing_subscriber::registry()
+            .with(console)
+            .with(security_file)
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(console)
+            .init();
+    }
+}
+
 fn usage() {
     eprintln!("xudanu {} — conflict-preserving hypertext document store", env!("CARGO_PKG_VERSION"));
     eprintln!();
@@ -12,6 +61,7 @@ fn usage() {
     eprintln!("  run [addr] [data-dir]    Run the server (default: 127.0.0.1:8080)");
     eprintln!("  verify <data-dir>        Verify data integrity");
     eprintln!("  rebuild-manifest <dir>   Rebuild manifest from chunks");
+    eprintln!("  verify-security-log <dir> Verify security log chain integrity");
     eprintln!();
     eprintln!("Run options:");
     eprintln!("  --static-dir <dir>       Serve frontend from directory instead of embedded HTML");
@@ -19,6 +69,8 @@ fn usage() {
     eprintln!("  --tls-key <path>         TLS private key PEM file");
     eprintln!("  --peer <addr>            Federation peer address (repeatable, e.g. ws://host:port/federation)");
     eprintln!("  --federation-mode <mode> Federation mode: closed (default) or open");
+    eprintln!("  --allowed-origin <url>   Allowed WebSocket origin (repeatable, e.g. https://example.com)");
+    eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
     eprintln!();
     eprintln!("Flags:");
     eprintln!("  --version, -V            Print version");
@@ -104,18 +156,92 @@ fn cmd_rebuild_manifest(data_dir: &str) {
     }
 }
 
+fn cmd_verify_security_log(data_dir: &str) {
+    use xudanu::server::transport::chained_log::ChainedLogWriter;
+    let path = PathBuf::from(data_dir);
+    let seed_path = path.join("security.log.seed");
+
+    let seed = match std::fs::read_to_string(&seed_path) {
+        Ok(s) => s.trim().to_string(),
+        Err(e) => {
+            eprintln!("Error: cannot read {}: {}", seed_path.display(), e);
+            std::process::exit(1);
+        }
+    };
+
+    let mut log_files: Vec<PathBuf> = std::fs::read_dir(&path)
+        .unwrap_or_else(|e| {
+            eprintln!("Error: cannot read {}: {}", path.display(), e);
+            std::process::exit(1);
+        })
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            name.starts_with("security.log") && !name.ends_with(".seed")
+        })
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .collect();
+
+    if log_files.is_empty() {
+        println!("No security log files found in {}", path.display());
+        return;
+    }
+
+    log_files.sort();
+
+    let mut total_lines = 0;
+    let mut errors = 0;
+    let mut chain_seed = seed;
+    for log_file in &log_files {
+        let content = std::fs::read_to_string(log_file)
+            .unwrap_or_else(|e| {
+                eprintln!("Error: cannot read {}: {}", log_file.display(), e);
+                std::process::exit(1);
+            });
+        match ChainedLogWriter::<std::fs::File>::verify_log(&content, &chain_seed) {
+            Ok((count, final_hash)) => {
+                println!("  {}  {} lines  OK", log_file.file_name().unwrap_or_default().to_string_lossy(), count);
+                total_lines += count;
+                chain_seed = final_hash;
+            }
+            Err(e) => {
+                println!("  {}  FAIL at line {}", log_file.file_name().unwrap_or_default().to_string_lossy(), e.line_number);
+                println!("    {}", e);
+                errors += 1;
+            }
+        }
+    }
+
+    println!();
+    if errors == 0 {
+        println!("Verification passed: {} log lines, {} files, chain intact", total_lines, log_files.len());
+    } else {
+        println!("Verification FAILED: {} error(s) in {} files", errors, log_files.len());
+        std::process::exit(1);
+    }
+}
+
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_target(true)
-        .with_timer(tracing_subscriber::fmt::time::time())
-        .init();
-
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
         usage();
         std::process::exit(1);
     }
+
+    let data_dir_for_tracing = match args[1].as_str() {
+        "run" => {
+            args.iter().position(|a| !a.starts_with('-') && !a.contains(':'))
+                .and_then(|p| args.get(p + 1).cloned())
+                .or_else(|| args.get(2).and_then(|a| {
+                    if !a.starts_with('-') && !a.contains(':') { Some(a.clone()) } else { None }
+                }))
+        }
+        "init" | "verify" | "rebuild-manifest" | "verify-security-log" => args.get(2).cloned(),
+        _ => None,
+    };
+    init_tracing(data_dir_for_tracing.as_deref());
 
     match args[1].as_str() {
         "--version" | "-V" => {
@@ -136,6 +262,10 @@ async fn main() {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
             cmd_rebuild_manifest(data_dir);
         }
+        "verify-security-log" => {
+            let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
+            cmd_verify_security_log(data_dir);
+        }
         "run" => {
             let mut addr = "127.0.0.1:8080".to_string();
             let mut data_dir: Option<String> = None;
@@ -144,6 +274,8 @@ async fn main() {
             let mut tls_key: Option<PathBuf> = None;
             let mut federation_peers: Vec<String> = Vec::new();
             let mut federation_mode = "closed".to_string();
+            let mut allowed_origins: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut csrf_enabled = false;
             let mut i = 2;
             while i < args.len() {
                 match args[i].as_str() {
@@ -182,6 +314,17 @@ async fn main() {
                             eprintln!("Error: --federation-mode requires a value");
                             std::process::exit(1);
                         });
+                    }
+                    "--allowed-origin" => {
+                        i += 1;
+                        let origin = args.get(i).map(|s| s.to_string()).unwrap_or_else(|| {
+                            eprintln!("Error: --allowed-origin requires a URL origin");
+                            std::process::exit(1);
+                        });
+                        allowed_origins.insert(origin);
+                    }
+                    "--csrf-token" => {
+                        csrf_enabled = true;
                     }
                     s if s.contains(':') => {
                         addr = s.to_string();
@@ -270,6 +413,18 @@ async fn main() {
                         app.with_static_dir(dir.clone())
                     }
                     None => app,
+                };
+                let app = if !allowed_origins.is_empty() {
+                    tracing::info!("WebSocket origin check: {} allowed origin(s)", allowed_origins.len());
+                    app.with_allowed_origins(allowed_origins)
+                } else {
+                    app
+                };
+                let app = if csrf_enabled {
+                    tracing::info!("CSRF token protection enabled for WebSocket");
+                    app.with_csrf(true)
+                } else {
+                    app
                 };
                 app.shared()
             };

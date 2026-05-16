@@ -251,7 +251,9 @@ impl BinaryCodec {
                 self.work_id_request(op, id)
             }
             OperationCode::ClubGet
-            | OperationCode::ClubNameById => {
+            | OperationCode::ClubNameById
+            | OperationCode::ClubClearCredential
+            | OperationCode::ClubMembers => {
                 let id: BeId = postcard::from_bytes(payload_data)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 self.club_id_request(op, id)
@@ -362,6 +364,8 @@ impl BinaryCodec {
         match op {
             OperationCode::ClubGet => Ok(WireRequest::ClubGet { club_id: id }),
             OperationCode::ClubNameById => Ok(WireRequest::ClubNameById { club_id: id }),
+            OperationCode::ClubClearCredential => Ok(WireRequest::ClubClearCredential { club_id: id }),
+            OperationCode::ClubMembers => Ok(WireRequest::ClubMembers { club_id: id }),
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
@@ -527,6 +531,7 @@ impl JsonCodec {
             OperationCode::GovernanceSeal,
             OperationCode::GovernanceLog,
             OperationCode::GovernanceStatus,
+            OperationCode::ClubWhoAmI,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -555,7 +560,8 @@ impl JsonCodec {
                 OperationCode::MembershipList => Ok(WireRequest::MembershipList),
                 OperationCode::GovernanceSeal => Ok(WireRequest::GovernanceSeal),
                 OperationCode::GovernanceLog => Ok(WireRequest::GovernanceLog),
-                OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
+             OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
+             OperationCode::ClubWhoAmI => Ok(WireRequest::ClubWhoAmI),
                 _ => unreachable!(),
             };
         }
@@ -580,10 +586,10 @@ impl JsonCodec {
             OperationCode::SessionAuthenticate => {
                 let args: serde_json::Value = p;
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId, credential: LockCredential }
+                struct Args { credential: LockCredential }
                 let a: Args = serde_json::from_value(args)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::SessionAuthenticate { club_id: a.club_id, credential: a.credential })
+                Ok(WireRequest::SessionAuthenticate { credential: a.credential })
             }
             OperationCode::ServerGetById => {
                 #[derive(Deserialize)]
@@ -795,6 +801,48 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::ClubSetDefaultEditClub { club_id: args.club_id, default_edit_club: args.default_edit_club })
+            }
+            OperationCode::ClubSetPassword => {
+                #[derive(Deserialize)]
+                struct Args { club_id: BeId, password: Vec<u8> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ClubSetPassword { club_id: args.club_id, password: args.password })
+            }
+            OperationCode::ClubClearCredential => {
+                #[derive(Deserialize)]
+                struct Args { club_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ClubClearCredential { club_id: args.club_id })
+            }
+            OperationCode::ClubCreatePersonal => {
+                #[derive(Deserialize)]
+                struct Args { display_name: String, password: Option<Vec<u8>> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ClubCreatePersonal { display_name: args.display_name, password: args.password })
+            }
+            OperationCode::ClubAddMember => {
+                #[derive(Deserialize)]
+                struct Args { club_id: BeId, member_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ClubAddMember { club_id: args.club_id, member_id: args.member_id })
+            }
+            OperationCode::ClubRemoveMember => {
+                #[derive(Deserialize)]
+                struct Args { club_id: BeId, member_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ClubRemoveMember { club_id: args.club_id, member_id: args.member_id })
+            }
+            OperationCode::ClubMembers => {
+                #[derive(Deserialize)]
+                struct Args { club_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ClubMembers { club_id: args.club_id })
             }
             OperationCode::WorkReadClub => {
                 #[derive(Deserialize)]

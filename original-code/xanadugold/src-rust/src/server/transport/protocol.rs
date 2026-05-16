@@ -123,6 +123,14 @@ pub enum OperationCode {
     ClubSetDefaultReadClub,
     ClubSetDefaultEditClub,
 
+    ClubSetPassword,
+    ClubClearCredential,
+    ClubCreatePersonal,
+    ClubWhoAmI,
+    ClubAddMember,
+    ClubRemoveMember,
+    ClubMembers,
+
     EditionStore,
     EditionGet,
 
@@ -302,6 +310,13 @@ impl OperationCode {
 
             0x0208 => Some(OperationCode::ClubSetDefaultReadClub),
             0x0209 => Some(OperationCode::ClubSetDefaultEditClub),
+            0x020A => Some(OperationCode::ClubSetPassword),
+            0x020B => Some(OperationCode::ClubClearCredential),
+            0x020C => Some(OperationCode::ClubCreatePersonal),
+            0x020D => Some(OperationCode::ClubWhoAmI),
+            0x020E => Some(OperationCode::ClubAddMember),
+            0x020F => Some(OperationCode::ClubRemoveMember),
+            0x0210 => Some(OperationCode::ClubMembers),
 
             0x0401 => Some(OperationCode::EditionStore),
             0x0402 => Some(OperationCode::EditionGet),
@@ -479,6 +494,13 @@ impl OperationCode {
 
             OperationCode::ClubSetDefaultReadClub  => 0x0208,
             OperationCode::ClubSetDefaultEditClub  => 0x0209,
+            OperationCode::ClubSetPassword         => 0x020A,
+            OperationCode::ClubClearCredential     => 0x020B,
+            OperationCode::ClubCreatePersonal      => 0x020C,
+            OperationCode::ClubWhoAmI              => 0x020D,
+            OperationCode::ClubAddMember            => 0x020E,
+            OperationCode::ClubRemoveMember         => 0x020F,
+            OperationCode::ClubMembers              => 0x0210,
 
             OperationCode::EditionStore => 0x0401,
             OperationCode::EditionGet   => 0x0402,
@@ -657,7 +679,6 @@ pub enum WireRequest {
         club_name: String,
     },
     SessionAuthenticate {
-        club_id: BeId,
         credential: LockCredential,
     },
     SessionLoginPublic,
@@ -704,6 +725,14 @@ pub enum WireRequest {
 
     ClubSetDefaultReadClub { club_id: BeId, default_read_club: Option<BeId> },
     ClubSetDefaultEditClub { club_id: BeId, default_edit_club: Option<BeId> },
+
+    ClubSetPassword { club_id: BeId, password: Vec<u8> },
+    ClubClearCredential { club_id: BeId },
+    ClubCreatePersonal { display_name: String, password: Option<Vec<u8>> },
+    ClubWhoAmI,
+    ClubAddMember { club_id: BeId, member_id: BeId },
+    ClubRemoveMember { club_id: BeId, member_id: BeId },
+    ClubMembers { club_id: BeId },
 
     EditionStore { edition: EditionPayload },
     EditionGet { be_id: BeId },
@@ -1099,6 +1128,26 @@ pub enum ResponseValue {
 
     CrdtRegisterAuthorResult {
         registered: bool,
+    },
+
+    AuthChallenge {
+        challenge: Vec<u8>,
+    },
+
+    ClubWhoAmIResult {
+        clubs: Vec<(BeId, String)>,
+    },
+
+    ClubSetPasswordResult {
+        set: bool,
+    },
+
+    ClubClearCredentialResult {
+        cleared: bool,
+    },
+
+    ClubMembersResult {
+        members: Vec<BeId>,
     },
 }
 

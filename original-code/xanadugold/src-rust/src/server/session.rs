@@ -1,9 +1,14 @@
 use std::collections::HashSet;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+use ed25519_dalek::SigningKey;
 
 use crate::edition::BeId;
 
 use super::keymaster::KeyMaster;
+use super::lock::Lock;
+
+const DEFAULT_SESSION_TIMEOUT: Duration = Duration::from_secs(3600);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -31,6 +36,10 @@ pub struct Session {
     _connect_time: Instant,
     initial_login: Option<BeId>,
     active: bool,
+    pending_lock: Option<Box<dyn Lock>>,
+    pending_lock_club: Option<BeId>,
+    expires_at: Option<Instant>,
+    club_signing_key: Option<SigningKey>,
 }
 
 impl Session {
@@ -41,6 +50,17 @@ impl Session {
             _connect_time: Instant::now(),
             initial_login: None,
             active: true,
+            pending_lock: None,
+            pending_lock_club: None,
+            expires_at: Some(Instant::now() + DEFAULT_SESSION_TIMEOUT),
+            club_signing_key: None,
+        }
+    }
+
+    pub fn new_with_timeout(id: SessionId, timeout: Duration) -> Self {
+        Session {
+            expires_at: Some(Instant::now() + timeout),
+            ..Session::new(id)
         }
     }
 
@@ -52,8 +72,19 @@ impl Session {
         self.active
     }
 
+    pub fn is_expired(&self) -> bool {
+        self.expires_at
+            .map(|t| Instant::now() > t)
+            .unwrap_or(false)
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.active && !self.is_expired()
+    }
+
     pub fn end(&mut self) {
         self.active = false;
+        self.club_signing_key = None;
     }
 
     pub fn _connect_time(&self) -> Instant {
@@ -107,6 +138,32 @@ impl Session {
             .map(|km| km.actual_authority())
             .unwrap_or_default()
     }
+
+    pub fn set_pending_lock(&mut self, lock: Box<dyn Lock>, club_id: BeId) {
+        self.pending_lock = Some(lock);
+        self.pending_lock_club = Some(club_id);
+    }
+
+    pub fn take_pending_lock(&mut self) -> Option<(Box<dyn Lock>, BeId)> {
+        let club = self.pending_lock_club.take();
+        self.pending_lock.take().zip(club)
+    }
+
+    pub fn pending_lock_club(&self) -> Option<BeId> {
+        self.pending_lock_club
+    }
+
+    pub fn club_signing_key(&self) -> Option<&SigningKey> {
+        self.club_signing_key.as_ref()
+    }
+
+    pub fn set_club_signing_key(&mut self, key: Option<SigningKey>) {
+        self.club_signing_key = key;
+    }
+
+    pub fn club_verifying_key(&self) -> Option<ed25519_dalek::VerifyingKey> {
+        self.club_signing_key.as_ref().map(|k| k.verifying_key())
+    }
 }
 
 impl std::fmt::Debug for Session {
@@ -114,8 +171,10 @@ impl std::fmt::Debug for Session {
         f.debug_struct("Session")
             .field("id", &self.id)
             .field("active", &self.active)
+            .field("expired", &self.is_expired())
             .field("initial_login", &self.initial_login)
             .field("is_logged_in", &self.is_logged_in())
+            .field("pending_lock_club", &self.pending_lock_club)
             .finish()
     }
 }
