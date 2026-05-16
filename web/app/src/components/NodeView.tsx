@@ -1,4 +1,4 @@
-import type { ApiNode, ApiText } from "../types/api";
+import type { ApiNode } from "../types/api";
 import { SpanView } from "./SpanView";
 import { EditableSpan } from "./EditableSpan";
 

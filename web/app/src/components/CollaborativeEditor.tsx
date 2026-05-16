@@ -23,7 +23,8 @@ export function CollaborativeEditor({
     const el = editorRef.current;
     if (!el) return;
 
-    if (el.textContent !== text) {
+    const currentText = getEditorText(el);
+    if (currentText !== text) {
       const sel = window.getSelection();
       const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
       let offset = 0;
@@ -58,12 +59,59 @@ export function CollaborativeEditor({
     if (isComposing.current) return;
     const el = editorRef.current;
     if (!el) return;
-    const newText = el.textContent || "";
+    const newText = getEditorText(el);
     if (newText !== lastText.current) {
       lastText.current = newText;
       onTextChange(newText);
     }
   }, [onTextChange]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const textNode = document.createTextNode("\n");
+      range.insertNode(textNode);
+      range.setStartAfter(textNode);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      handleInput();
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const textNode = document.createTextNode("\t");
+      range.insertNode(textNode);
+      range.setStartAfter(textNode);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      handleInput();
+    }
+  }, [handleInput]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData("text/plain");
+    if (!text) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const textNode = document.createTextNode(text);
+    range.insertNode(textNode);
+    range.setStartAfter(textNode);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    handleInput();
+  }, [handleInput]);
 
   const handleSelectionChange = useCallback(() => {
     const sel = window.getSelection();
@@ -106,6 +154,8 @@ export function CollaborativeEditor({
         contentEditable
         suppressContentEditableWarning
         onInput={handleInput}
+        onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         onCompositionStart={() => { isComposing.current = true; }}
         onCompositionEnd={() => {
           isComposing.current = false;
@@ -120,6 +170,27 @@ export function CollaborativeEditor({
       </div>
     </div>
   );
+}
+
+function getEditorText(el: HTMLElement): string {
+  let result = "";
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      result += node.textContent || "";
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const tag = (node as Element).tagName;
+      if (tag === "BR") {
+        result += "\n";
+      } else if (tag === "DIV" || tag === "P") {
+        if (result.length > 0 && !result.endsWith("\n")) {
+          result += "\n";
+        }
+      }
+    }
+  }
+  return result;
 }
 
 function findPosition(

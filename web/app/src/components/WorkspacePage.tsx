@@ -52,8 +52,7 @@ export function WorkspacePage() {
         });
       };
 
-      const connectResp = await send("session_connect");
-      const sessionId = (connectResp as Record<string, unknown>)?.value as number;
+      await send("session_connect");
       await send("session_login_public");
 
       const edition = { text: "Start typing here..." };

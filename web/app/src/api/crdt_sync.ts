@@ -214,20 +214,9 @@ export class CrdtSyncClient {
   private async refreshText(): Promise<void> {
     if (!this.crdtReady) return;
     try {
-      const resp = await this.sendRequest("crdt_sync_full_state", {
+      await this.sendRequest("crdt_sync_full_state", {
         work_id: this.workBeId,
       });
-      const inner = extractValue(resp) as Record<string, unknown>;
-      if (inner.state) {
-        // The state is the full yrs update — but we can get the text
-        // by materializing. Let's use materialize to get the text.
-      }
-      const matResp = await this.sendRequest("work_get_edition", {
-        work_id: this.workBeId,
-      });
-      const matVal = extractValue(matResp) as Record<string, unknown>;
-      // Edition response has text field — but the format depends on the codec
-      // For now, we keep the CRDT text as-is and only update from the CRDT layer
     } catch {
       // ignore
     }
@@ -260,12 +249,15 @@ export class CrdtSyncClient {
     const deleteLen = oldText.length - prefix - suffix;
     const insertText = newText.slice(prefix, newText.length - suffix);
 
-    const ops: Array<{ delete?: [number, number]; insert?: [number, string] }> = [];
+    const ops: Array<{ type: string; count?: number; text?: string }> = [];
+    if (prefix > 0) {
+      ops.push({ type: "retain", count: prefix });
+    }
     if (deleteLen > 0) {
-      ops.push({ delete: [prefix, deleteLen] });
+      ops.push({ type: "delete", count: deleteLen });
     }
     if (insertText.length > 0) {
-      ops.push({ insert: [prefix, insertText] });
+      ops.push({ type: "insert", text: insertText });
     }
 
     this.sendRequest("work_revise_delta", {

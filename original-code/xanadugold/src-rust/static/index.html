@@ -233,6 +233,62 @@ function computeDelta(oldText, newText) {
   return ops;
 }
 
+  function getEditorText(el) {
+    var result = '';
+    var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    var node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeType === 3) {
+        result += node.textContent || '';
+      } else if (node.nodeType === 1) {
+        var tag = node.tagName;
+        if (tag === 'BR') {
+          result += '\n';
+        } else if (tag === 'DIV' || tag === 'P') {
+          if (result.length > 0 && !result.endsWith('\n')) {
+            result += '\n';
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  function insertTextNodeAtCursor(text) {
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return false;
+    var range = sel.getRangeAt(0);
+    range.deleteContents();
+    var textNode = document.createTextNode(text);
+    range.insertNode(textNode);
+    range.setStartAfter(textNode);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    return true;
+  }
+
+  function editorKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      insertTextNodeAtCursor('\n');
+      e.currentTarget.dispatchEvent(new Event('input', {bubbles: true}));
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      insertTextNodeAtCursor('\t');
+      e.currentTarget.dispatchEvent(new Event('input', {bubbles: true}));
+    }
+  }
+
+  function editorPaste(e) {
+    e.preventDefault();
+    var text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    if (text) {
+      insertTextNodeAtCursor(text);
+      e.currentTarget.dispatchEvent(new Event('input', {bubbles: true}));
+    }
+  }
+
   function saveCursor(el) {
     var sel = window.getSelection();
     if (!sel.rangeCount) return 0;
@@ -625,7 +681,7 @@ function App() {
 
   function doLeftSave() {
     if (!currentWorkId || !leftEditingRef.current) return;
-    var text = leftEditorRef.current ? leftEditorRef.current.textContent || '' : leftEditText;
+    var text = leftEditorRef.current ? getEditorText(leftEditorRef.current) : leftEditText;
     req('work_save_and_release', {work_id: currentWorkId, edition:{text:text}});
     setCurrentText(text);
     currentTextRef.current = text;
@@ -653,7 +709,7 @@ function App() {
 
   function doRightSave() {
     if (!splitWorkId || !rightEditingRef.current) return;
-    var text = rightEditorRef.current ? rightEditorRef.current.textContent || '' : rightEditText;
+    var text = rightEditorRef.current ? getEditorText(rightEditorRef.current) : rightEditText;
     req('work_save_and_release', {work_id: splitWorkId, edition:{text:text}});
     setSplitText(text);
     setRightEditing(false);
@@ -674,7 +730,7 @@ function App() {
     if (!currentWorkIdRef.current) return;
     writeGenRef.current++;
     clearAutoSave();
-    var text = editorRef.current ? editorRef.current.textContent || '' : currentTextRef.current;
+    var text = editorRef.current ? getEditorText(editorRef.current) : currentTextRef.current;
     currentTextRef.current = text;
     setCurrentText(text);
     lastSavedRef.current = text;
@@ -762,7 +818,7 @@ function App() {
   }
 
   function handleEditorInput(e) {
-    currentTextRef.current = e.target.textContent || '';
+    currentTextRef.current = getEditorText(e.currentTarget);
     setCurrentText(currentTextRef.current);
     scheduleAutoSave();
   }
@@ -1633,9 +1689,10 @@ function App() {
                     suppressContentEditableWarning: true,
                     onInput: function(e){
                       leftCursorRef.current = saveCursor(e.currentTarget);
-                      setLeftEditText(e.currentTarget.textContent || '');
+                      setLeftEditText(getEditorText(e.currentTarget));
                     },
-                    onKeyDown: function(e){ if(e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); } },
+                    onKeyDown: editorKeyDown,
+                    onPaste: editorPaste,
                     spellcheck: false
                   })
                 : h('div', {
@@ -1676,9 +1733,10 @@ function App() {
                     suppressContentEditableWarning: true,
                     onInput: function(e){
                       rightCursorRef.current = saveCursor(e.currentTarget);
-                      setRightEditText(e.currentTarget.textContent || '');
+                      setRightEditText(getEditorText(e.currentTarget));
                     },
-                    onKeyDown: function(e){ if(e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); } },
+                    onKeyDown: editorKeyDown,
+                    onPaste: editorPaste,
                     spellcheck: false
                   })
                 : h('div', {
@@ -1712,18 +1770,14 @@ function App() {
                   contentEditable: true,
                   suppressContentEditableWarning: true,
                   onInput: function(e) {
-                    var text = e.currentTarget.textContent || '';
+                    var text = getEditorText(e.currentTarget);
                     currentTextRef.current = text;
                     setCurrentText(text);
                     scheduleAutoSave();
                   },
                   onMouseUp: handleSelectionCheck,
-                  onKeyDown: function(e) {
-                    if (e.key === 'Tab') {
-                      e.preventDefault();
-                      document.execCommand('insertText', false, '  ');
-                    }
-                  },
+                  onKeyDown: editorKeyDown,
+                  onPaste: editorPaste,
                   spellcheck: true
                 })
           ),
