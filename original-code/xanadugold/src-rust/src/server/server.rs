@@ -1357,6 +1357,49 @@ impl Server {
         Ok(states.into_iter().cloned().collect())
     }
 
+    pub fn crdt_register_author(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        author: super::crdt_manager::AuthorIdentity,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        self.crdt_manager
+            .register_author(work_be_id, session_id, author)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn crdt_sign_update(
+        &self,
+        update_bytes: &[u8],
+    ) -> super::crdt_manager::SignedUpdate {
+        self.crdt_manager.sign_update(update_bytes, &self.server_keypair.signing_key)
+    }
+
+    pub fn crdt_extract_signed_update_for_federation(
+        &mut self,
+        work_be_id: BeId,
+    ) -> Result<super::crdt_manager::SignedUpdate, ServerError> {
+        self.crdt_manager
+            .extract_signed_update_for_federation(work_be_id, &self.server_keypair.signing_key)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn crdt_apply_signed_federation_update(
+        &mut self,
+        work_be_id: BeId,
+        signed: &super::crdt_manager::SignedUpdate,
+        initial_text: Option<&str>,
+    ) -> Result<super::crdt_manager::ApplyUpdateResult, ServerError> {
+        let mut known_keys = std::collections::HashMap::new();
+        let server_vk = self.server_keypair.signing_key.verifying_key();
+        known_keys.insert(server_vk.to_bytes(), server_vk);
+
+        self.crdt_manager
+            .apply_signed_federation_update(work_be_id, signed, &known_keys, initial_text)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
     pub fn list_works(&self) -> Vec<(BeId, Option<BeId>, u64, bool)> {
         self.works
             .iter()

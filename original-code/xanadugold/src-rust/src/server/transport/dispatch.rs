@@ -1228,6 +1228,16 @@ fn dispatch_inner(
             let states = srv.crdt_get_awareness(work_id)?;
             Ok(ResponseValue::CrdtAwarenessGetResult { states })
         }
+
+        WireRequest::CrdtRegisterAuthor { work_id, public_key, display_name } => {
+            srv.ensure_logged_in(session_id)?;
+            let author = crate::server::crdt_manager::AuthorIdentity {
+                public_key,
+                display_name,
+            };
+            srv.crdt_register_author(session_id, work_id, author)?;
+            Ok(ResponseValue::CrdtRegisterAuthorResult { registered: true })
+        }
     }
 }
 

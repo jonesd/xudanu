@@ -1,10 +1,13 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
-use yrs::{Doc, GetString, ReadTxn, StateVector, Text, Transact, Update};
+use yrs::{Any, Doc, GetString, ReadTxn, StateVector, Text, Transact, Update};
 
+use crate::crypto::sign::{sign_bytes, verify_signature};
 use crate::edition::{BeId, Edition};
 use super::session::SessionId;
 
@@ -46,10 +49,41 @@ pub struct AwarenessRelayResult {
     pub relay_to: Vec<(SessionId, SyncSessionId)>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthorIdentity {
+    pub public_key: [u8; 32],
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignedUpdate {
+    pub update_bytes: Vec<u8>,
+    pub signature: Vec<u8>,
+    pub signer_public_key: [u8; 32],
+}
+
+#[derive(Debug)]
+pub enum SigningError {
+    VerificationFailed(String),
+    UnknownSigner([u8; 32]),
+    InvalidSignatureBytes,
+}
+
+impl std::fmt::Display for SigningError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SigningError::VerificationFailed(msg) => write!(f, "signature verification failed: {}", msg),
+            SigningError::UnknownSigner(key) => write!(f, "unknown signer: {:02x?}", &key[..8]),
+            SigningError::InvalidSignatureBytes => write!(f, "invalid signature bytes (expected 64)"),
+        }
+    }
+}
+
 struct WorkDoc {
     doc: Doc,
     text: yrs::TextRef,
     subscribers: HashMap<SessionId, SyncSessionId>,
+    author_keys: HashMap<SessionId, AuthorIdentity>,
     last_materialized_sv: Option<StateVector>,
     pending_update: Option<Vec<u8>>,
     last_change_timestamp: u64,
@@ -67,6 +101,8 @@ pub enum CrdtError {
     WorkNotFound(BeId),
     NotSubscribed(BeId, SessionId),
     InvalidUpdate(String),
+    AuthorNotRegistered(BeId, SessionId),
+    SigningFailed(SigningError),
 }
 
 impl std::fmt::Display for CrdtError {
@@ -75,6 +111,8 @@ impl std::fmt::Display for CrdtError {
             CrdtError::WorkNotFound(id) => write!(f, "CRDT work not found: {:016x}", id),
             CrdtError::NotSubscribed(work, sess) => write!(f, "session not subscribed to work {:016x}", work),
             CrdtError::InvalidUpdate(msg) => write!(f, "invalid yrs update: {}", msg),
+            CrdtError::AuthorNotRegistered(work, sess) => write!(f, "author not registered for work {:016x}", work),
+            CrdtError::SigningFailed(err) => write!(f, "signing error: {}", err),
         }
     }
 }
@@ -124,6 +162,7 @@ impl CrdtManager {
                 doc,
                 text,
                 subscribers: HashMap::new(),
+                author_keys: HashMap::new(),
                 last_materialized_sv: None,
                 pending_update: None,
                 last_change_timestamp: 0,
@@ -154,6 +193,7 @@ impl CrdtManager {
     pub fn close_sync_session(&mut self, work_id: BeId, session_id: SessionId) -> Result<(), CrdtError> {
         let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
         wd.subscribers.remove(&session_id);
+        wd.author_keys.remove(&session_id);
         wd.awareness.remove(&session_id);
         if wd.subscribers.is_empty() {
             self.docs.remove(&work_id);
@@ -172,6 +212,9 @@ impl CrdtManager {
             return Err(CrdtError::NotSubscribed(work_id, sender_session));
         }
 
+        let author_hex = wd.author_keys.get(&sender_session)
+            .map(|a| bytes_to_hex(&a.public_key));
+
         {
             let mut txn = wd.doc.transact_mut();
             let mut pos: u32 = 0;
@@ -181,7 +224,15 @@ impl CrdtManager {
                         pos += *count as u32;
                     }
                     crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
-                        wd.text.insert(&mut txn, pos, text);
+                        if let Some(ref hex) = author_hex {
+                            let attrs = yrs::types::Attrs::from([(
+                                Arc::from("__author"),
+                                Any::String(Arc::from(hex.as_str())),
+                            )]);
+                            wd.text.insert_with_attributes(&mut txn, pos, text, attrs);
+                        } else {
+                            wd.text.insert(&mut txn, pos, text);
+                        }
                         pos += utf16_len(text) as u32;
                     }
                     crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
@@ -368,6 +419,7 @@ impl CrdtManager {
             doc,
             text: text_ref,
             subscribers: HashMap::new(),
+            author_keys: HashMap::new(),
             last_materialized_sv: Some(sv),
             pending_update: None,
             last_change_timestamp: 0,
@@ -441,6 +493,78 @@ impl CrdtManager {
         let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
         Ok(wd.awareness.values().collect())
     }
+
+    pub fn register_author(
+        &mut self,
+        work_id: BeId,
+        session_id: SessionId,
+        author: AuthorIdentity,
+    ) -> Result<(), CrdtError> {
+        let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        if !wd.subscribers.contains_key(&session_id) {
+            return Err(CrdtError::NotSubscribed(work_id, session_id));
+        }
+        wd.author_keys.insert(session_id, author);
+        Ok(())
+    }
+
+    pub fn get_author(&self, work_id: BeId, session_id: SessionId) -> Result<Option<AuthorIdentity>, CrdtError> {
+        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        Ok(wd.author_keys.get(&session_id).cloned())
+    }
+
+    pub fn sign_update(&self, update_bytes: &[u8], signing_key: &SigningKey) -> SignedUpdate {
+        let signature = sign_bytes(signing_key, update_bytes);
+        let verifying_key = signing_key.verifying_key();
+        SignedUpdate {
+            update_bytes: update_bytes.to_vec(),
+            signature: signature.to_bytes().to_vec(),
+            signer_public_key: verifying_key.to_bytes(),
+        }
+    }
+
+    pub fn verify_signed_update(
+        &self,
+        signed: &SignedUpdate,
+        known_keys: &HashMap<[u8; 32], VerifyingKey>,
+    ) -> Result<(), SigningError> {
+        let vk = known_keys
+            .get(&signed.signer_public_key)
+            .ok_or_else(|| SigningError::UnknownSigner(signed.signer_public_key))?;
+
+        let sig_bytes: [u8; 64] = signed.signature.clone().try_into()
+            .map_err(|_| SigningError::InvalidSignatureBytes)?;
+        let signature = Signature::from_bytes(&sig_bytes);
+
+        verify_signature(vk, &signed.update_bytes, &signature)
+            .map_err(|_| SigningError::VerificationFailed("signature does not verify".into()))
+    }
+
+    pub fn extract_signed_update_for_federation(
+        &mut self,
+        work_id: BeId,
+        signing_key: &SigningKey,
+    ) -> Result<SignedUpdate, CrdtError> {
+        let update_bytes = self.extract_update_for_federation(work_id)?;
+        Ok(self.sign_update(&update_bytes, signing_key))
+    }
+
+    pub fn apply_signed_federation_update(
+        &mut self,
+        work_id: BeId,
+        signed: &SignedUpdate,
+        known_keys: &HashMap<[u8; 32], VerifyingKey>,
+        initial_text: Option<&str>,
+    ) -> Result<ApplyUpdateResult, CrdtError> {
+        self.verify_signed_update(signed, known_keys)
+            .map_err(CrdtError::SigningFailed)?;
+
+        let federation_session = SessionId::new(u64::MAX);
+        if !self.docs.contains_key(&work_id) {
+            self.open_sync_session(work_id, federation_session, initial_text);
+        }
+        self.apply_update(work_id, federation_session, &signed.update_bytes)
+    }
 }
 
 fn text_to_edition(text: &str) -> Edition {
@@ -449,6 +573,14 @@ fn text_to_edition(text: &str) -> Edition {
 
 fn utf16_len(s: &str) -> usize {
     s.chars().map(|c| c.len_utf16()).sum()
+}
+
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        s.push_str(&format!("{:02x}", b));
+    }
+    s
 }
 
 fn current_timestamp_secs() -> u64 {
@@ -671,5 +803,261 @@ mod tests {
         ];
         mgr.apply_text_delta(work_id, s1, &ops).unwrap();
         assert_eq!(mgr.current_text(work_id).unwrap(), format!("hello{}", family));
+    }
+
+    #[test]
+    fn test_register_author() {
+        let mut mgr = CrdtManager::new(3);
+        let work_id: BeId = 42;
+        let sid = make_session(1);
+
+        mgr.open_sync_session(work_id, sid, Some("hello"));
+
+        let author = AuthorIdentity {
+            public_key: [1u8; 32],
+            display_name: "Alice".to_string(),
+        };
+        mgr.register_author(work_id, sid, author.clone()).unwrap();
+
+        let retrieved = mgr.get_author(work_id, sid).unwrap().unwrap();
+        assert_eq!(retrieved.public_key, [1u8; 32]);
+        assert_eq!(retrieved.display_name, "Alice");
+    }
+
+    #[test]
+    fn test_register_author_not_subscriber() {
+        let mut mgr = CrdtManager::new(3);
+        let work_id: BeId = 42;
+        let sid = make_session(1);
+        let other_sid = make_session(2);
+
+        mgr.open_sync_session(work_id, sid, Some("hello"));
+
+        let author = AuthorIdentity {
+            public_key: [1u8; 32],
+            display_name: "Eve".to_string(),
+        };
+        let result = mgr.register_author(work_id, other_sid, author);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_close_session_removes_author() {
+        let mut mgr = CrdtManager::new(3);
+        let work_id: BeId = 42;
+        let sid = make_session(1);
+
+        mgr.open_sync_session(work_id, sid, Some("hello"));
+        mgr.register_author(work_id, sid, AuthorIdentity {
+            public_key: [1u8; 32],
+            display_name: "Alice".to_string(),
+        }).unwrap();
+
+        mgr.close_sync_session(work_id, sid).unwrap();
+        assert!(!mgr.is_active(work_id));
+    }
+
+    #[test]
+    fn test_author_attribute_on_insert() {
+        let mut mgr = CrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+        let s2 = make_session(2);
+
+        mgr.open_sync_session(work_id, s1, Some(""));
+
+        let alice_key = [0xABu8; 32];
+        mgr.register_author(work_id, s1, AuthorIdentity {
+            public_key: alice_key,
+            display_name: "Alice".to_string(),
+        }).unwrap();
+
+        let ops = vec![TextDeltaOp::Insert { text: "hello".to_string() }];
+        mgr.apply_text_delta(work_id, s1, &ops).unwrap();
+
+        assert_eq!(mgr.current_text(work_id).unwrap(), "hello");
+
+        mgr.open_sync_session(work_id, s2, None);
+
+        let bob_key = [0xCDu8; 32];
+        mgr.register_author(work_id, s2, AuthorIdentity {
+            public_key: bob_key,
+            display_name: "Bob".to_string(),
+        }).unwrap();
+
+        let ops2 = vec![
+            TextDeltaOp::Retain { count: 5 },
+            TextDeltaOp::Insert { text: " world".to_string() },
+        ];
+        mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
+
+        assert_eq!(mgr.current_text(work_id).unwrap(), "hello world");
+    }
+
+    #[test]
+    fn test_insert_without_author_still_works() {
+        let mut mgr = CrdtManager::new(3);
+        let work_id: BeId = 42;
+        let sid = make_session(1);
+
+        mgr.open_sync_session(work_id, sid, Some(""));
+
+        let ops = vec![TextDeltaOp::Insert { text: "no author".to_string() }];
+        mgr.apply_text_delta(work_id, sid, &ops).unwrap();
+
+        assert_eq!(mgr.current_text(work_id).unwrap(), "no author");
+    }
+
+    #[test]
+    fn test_sign_and_verify_update() {
+        use crate::crypto::sign::generate_signing_key;
+        use std::collections::HashMap;
+
+        let mut mgr = CrdtManager::new(3);
+        let work_id: BeId = 42;
+        let sid = make_session(1);
+
+        mgr.open_sync_session(work_id, sid, Some("hello"));
+
+        let signing_key = generate_signing_key();
+        let verifying_key = signing_key.verifying_key();
+
+        let update_bytes = {
+            let txn = {
+                let wd = mgr.docs.get(&work_id).unwrap();
+                wd.doc.transact()
+            };
+            txn.encode_diff_v1(&StateVector::default())
+        };
+
+        let signed = mgr.sign_update(&update_bytes, &signing_key);
+
+        assert_eq!(signed.update_bytes, update_bytes);
+        assert_eq!(signed.signer_public_key, verifying_key.to_bytes());
+        assert_eq!(signed.signature.len(), 64);
+
+        let mut known_keys = HashMap::new();
+        known_keys.insert(verifying_key.to_bytes(), verifying_key);
+
+        let result = mgr.verify_signed_update(&signed, &known_keys);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_sign_rejects_tampered_update() {
+        use crate::crypto::sign::generate_signing_key;
+        use std::collections::HashMap;
+
+        let mgr = CrdtManager::new(3);
+        let signing_key = generate_signing_key();
+        let verifying_key = signing_key.verifying_key();
+
+        let mut signed = mgr.sign_update(b"original payload", &signing_key);
+        signed.update_bytes.push(0xFF);
+
+        let mut known_keys = HashMap::new();
+        known_keys.insert(verifying_key.to_bytes(), verifying_key);
+
+        let result = mgr.verify_signed_update(&signed, &known_keys);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sign_rejects_unknown_signer() {
+        use crate::crypto::sign::generate_signing_key;
+        use std::collections::HashMap;
+
+        let mgr = CrdtManager::new(3);
+        let signing_key = generate_signing_key();
+
+        let signed = mgr.sign_update(b"some data", &signing_key);
+
+        let known_keys: HashMap<[u8; 32], ed25519_dalek::VerifyingKey> = HashMap::new();
+        let result = mgr.verify_signed_update(&signed, &known_keys);
+        assert!(matches!(result, Err(SigningError::UnknownSigner(_))));
+    }
+
+    #[test]
+    fn test_sign_rejects_wrong_key() {
+        use crate::crypto::sign::generate_signing_key;
+        use std::collections::HashMap;
+
+        let mgr = CrdtManager::new(3);
+        let signing_key = generate_signing_key();
+        let wrong_key = generate_signing_key();
+        let wrong_vk = wrong_key.verifying_key();
+
+        let signed = mgr.sign_update(b"some data", &signing_key);
+
+        let mut known_keys = HashMap::new();
+        known_keys.insert(wrong_vk.to_bytes(), wrong_vk);
+
+        let result = mgr.verify_signed_update(&signed, &known_keys);
+        assert!(matches!(result, Err(SigningError::UnknownSigner(_))));
+    }
+
+    #[test]
+    fn test_signed_federation_update_roundtrip() {
+        use crate::crypto::sign::generate_signing_key;
+        use std::collections::HashMap;
+
+        let mut mgr = CrdtManager::new(3);
+        let work_id: BeId = 42;
+        let s1 = make_session(1);
+
+        mgr.open_sync_session(work_id, s1, Some(""));
+        let ops = vec![TextDeltaOp::Insert { text: "hello world".to_string() }];
+        mgr.apply_text_delta(work_id, s1, &ops).unwrap();
+        mgr.materialize_edition(work_id).unwrap();
+
+        let ops2 = vec![
+            TextDeltaOp::Retain { count: 6 },
+            TextDeltaOp::Delete { count: 5 },
+            TextDeltaOp::Insert { text: "xudanu".to_string() },
+        ];
+        mgr.apply_text_delta(work_id, s1, &ops2).unwrap();
+
+        let signing_key = generate_signing_key();
+        let verifying_key = signing_key.verifying_key();
+
+        let full_state = mgr.get_full_state(work_id).unwrap();
+        let signed = mgr.sign_update(&full_state, &signing_key);
+
+        let mut known_keys = HashMap::new();
+        known_keys.insert(verifying_key.to_bytes(), verifying_key);
+
+        let mut mgr2 = CrdtManager::new(3);
+        let result = mgr2.apply_signed_federation_update(
+            work_id, &signed, &known_keys, None,
+        );
+        assert!(result.is_ok());
+        assert_eq!(mgr2.current_text(work_id).unwrap(), "hello xudanu");
+    }
+
+    #[test]
+    fn test_signed_federation_rejects_tampered() {
+        use crate::crypto::sign::generate_signing_key;
+        use std::collections::HashMap;
+
+        let mut mgr = CrdtManager::new(3);
+        let work_id: BeId = 42;
+        let sid = make_session(1);
+
+        mgr.open_sync_session(work_id, sid, Some("hello"));
+
+        let signing_key = generate_signing_key();
+        let verifying_key = signing_key.verifying_key();
+
+        let mut signed = mgr.extract_signed_update_for_federation(work_id, &signing_key).unwrap();
+        signed.update_bytes.push(0xFF);
+
+        let mut known_keys = HashMap::new();
+        known_keys.insert(verifying_key.to_bytes(), verifying_key);
+
+        let mut mgr2 = CrdtManager::new(3);
+        let result = mgr2.apply_signed_federation_update(
+            work_id, &signed, &known_keys, Some("fallback"),
+        );
+        assert!(result.is_err());
     }
 }
