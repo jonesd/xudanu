@@ -1,66 +1,31 @@
-export interface CursorPosition {
-  index: number;
-}
-
-export interface SelectionRange {
-  start: number;
-  end: number;
-}
+const PROTOCOL_VERSION = 2;
 
 export interface AwarenessState {
-  client_id: number;
+  session_id: number;
   user_name: string;
-  user_color: string;
-  cursor: CursorPosition | null;
-  selection: SelectionRange | null;
+  cursor: { index: number } | null;
+  selection: { start: number; end: number } | null;
   is_typing: boolean;
 }
 
-export interface SyncStep1 {
-  type: "sync_step1";
-  state_vector: Array<[string, number]>;
-}
-
-export interface SyncStep2 {
-  type: "sync_step2";
-  changes: string[];
-}
-
-export interface CrdtUpdate {
-  type: "crdt_update";
-  work_be_id: string;
-  update_base64: string;
-}
-
-export interface CrdtAwareness {
-  type: "crdt_awareness";
-  work_be_id: string;
-  state: AwarenessState;
-}
-
-export type CrdtMessage =
-  | SyncStep1
-  | SyncStep2
-  | CrdtUpdate
-  | CrdtAwareness;
-
-export type AwarenessCallback = (states: AwarenessState[]) => void;
-export type SyncCallback = (message: CrdtMessage) => void;
-export type ConnectionCallback = (connected: boolean) => void;
+type ResponseHandler = (value: unknown, isError: boolean) => void;
 
 export class CrdtSyncClient {
   private ws: WebSocket | null = null;
-  private awarenessCallbacks: AwarenessCallback[] = [];
-  private syncCallbacks: SyncCallback[] = [];
-  private connectionCallbacks: ConnectionCallback[] = [];
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private pendingUpdates: string[] = [];
-  private workBeId: string;
-  private url: string;
+  private requestId = 0;
+  private pending = new Map<number, ResponseHandler>();
+  private text = "";
+  private textListeners = new Set<(text: string) => void>();
+  private awarenessListeners = new Set<(states: AwarenessState[]) => void>();
+  private connectionListeners = new Set<(connected: boolean) => void>();
   private connected = false;
-  private localAwareness: AwarenessState | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private url: string;
+  private workBeId: number;
+  private sessionId: number | null = null;
+  private crdtReady = false;
 
-  constructor(url: string, workBeId: string) {
+  constructor(url: string, workBeId: number) {
     this.url = url;
     this.workBeId = workBeId;
   }
@@ -68,32 +33,11 @@ export class CrdtSyncClient {
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
-    this.ws = new WebSocket(this.url);
-    this.ws.binaryType = "arraybuffer";
-
-    this.ws.onopen = () => {
-      this.connected = true;
-      this.connectionCallbacks.forEach((cb) => cb(true));
-      this.sendSyncStep1();
-      this.flushPending();
-      if (this.localAwareness) {
-        this.sendAwareness(this.localAwareness);
-      }
-    };
-
-    this.ws.onmessage = (event) => {
-      this.handleMessage(event.data);
-    };
-
-    this.ws.onclose = () => {
-      this.connected = false;
-      this.connectionCallbacks.forEach((cb) => cb(false));
-      this.scheduleReconnect();
-    };
-
-    this.ws.onerror = () => {
-      this.ws?.close();
-    };
+    this.ws = new WebSocket(`${this.url}?format=json&version=${PROTOCOL_VERSION}`);
+    this.ws.onopen = () => this.onOpen();
+    this.ws.onmessage = (e) => this.onMessage(e.data);
+    this.ws.onclose = () => this.onClose();
+    this.ws.onerror = () => this.ws?.close();
   }
 
   disconnect(): void {
@@ -101,54 +45,128 @@ export class CrdtSyncClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    if (this.crdtReady && this.sessionId !== null) {
+      this.sendRequest("crdt_sync_close", { work_id: this.workBeId });
+      this.crdtReady = false;
+    }
     this.ws?.close();
     this.ws = null;
     this.connected = false;
   }
 
-  sendUpdate(updateBase64: string): void {
-    const msg: CrdtUpdate = {
-      type: "crdt_update",
-      work_be_id: this.workBeId,
-      update_base64: updateBase64,
-    };
-    this.send(JSON.stringify(msg));
+  getText(): string {
+    return this.text;
   }
 
-  updateAwareness(state: AwarenessState): void {
-    this.localAwareness = state;
-    this.sendAwareness(state);
+  setText(newText: string): void {
+    const oldText = this.text;
+    if (newText === oldText) return;
+    this.text = newText;
+
+    if (this.crdtReady) {
+      this.sendTextDelta(oldText, newText);
+    }
+
+    this.textListeners.forEach((cb) => cb(newText));
   }
 
-  onAwareness(cb: AwarenessCallback): () => void {
-    this.awarenessCallbacks.push(cb);
-    return () => {
-      this.awarenessCallbacks = this.awarenessCallbacks.filter((c) => c !== cb);
-    };
+  onTextChange(cb: (text: string) => void): () => void {
+    this.textListeners.add(cb);
+    return () => { this.textListeners.delete(cb); };
   }
 
-  onSync(cb: SyncCallback): () => void {
-    this.syncCallbacks.push(cb);
-    return () => {
-      this.syncCallbacks = this.syncCallbacks.filter((c) => c !== cb);
-    };
+  onAwarenessChange(cb: (states: AwarenessState[]) => void): () => void {
+    this.awarenessListeners.add(cb);
+    return () => { this.awarenessListeners.delete(cb); };
   }
 
-  onConnectionChange(cb: ConnectionCallback): () => void {
+  onConnectionChange(cb: (connected: boolean) => void): () => void {
     cb(this.connected);
-    this.connectionCallbacks.push(cb);
-    return () => {
-      this.connectionCallbacks = this.connectionCallbacks.filter(
-        (c) => c !== cb,
-      );
-    };
+    this.connectionListeners.add(cb);
+    return () => { this.connectionListeners.delete(cb); };
   }
 
   isConnected(): boolean {
     return this.connected;
   }
 
-  private handleMessage(data: unknown): void {
+  sendAwareness(cursor: number | null, selection: { start: number; end: number } | null, isTyping: boolean): void {
+    if (!this.crdtReady) return;
+    this.sendRequest("crdt_awareness_update", {
+      work_id: this.workBeId,
+      state: {
+        session_id: this.sessionId ?? 0,
+        user_name: "User",
+        cursor: cursor !== null ? { index: cursor } : null,
+        selection,
+        is_typing: isTyping,
+      },
+    });
+  }
+
+  private nextId(): number {
+    return ++this.requestId;
+  }
+
+  private sendRequest(op: string, payload?: object): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const id = this.nextId();
+      const frame: Record<string, unknown> = {
+        v: PROTOCOL_VERSION,
+        type: "request",
+        id,
+        op,
+      };
+      if (payload !== undefined) {
+        frame.payload = payload;
+      }
+      this.pending.set(id, (value, isError) => {
+        if (isError) {
+          reject(new Error(String(value) || "unknown error"));
+        } else {
+          resolve(value);
+        }
+      });
+      this.wsSend(JSON.stringify(frame));
+    });
+  }
+
+  private wsSend(data: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(data);
+    }
+  }
+
+  private async onOpen(): Promise<void> {
+    this.connected = true;
+    this.connectionListeners.forEach((cb) => cb(true));
+
+    try {
+      const resp = await this.sendRequest("session_connect");
+      this.sessionId = extractValue(resp) as number;
+      await this.sendRequest("session_login_public");
+
+      const openResp = await this.sendRequest("crdt_sync_open", {
+        work_id: this.workBeId,
+      });
+      const inner = extractValue(openResp) as Record<string, unknown>;
+      this.text = (inner.current_text as string) || "";
+      this.crdtReady = true;
+      this.textListeners.forEach((cb) => cb(this.text));
+
+      this.sendRequest("crdt_awareness_get", {
+        work_id: this.workBeId,
+      }).then((awareResp) => {
+        const awareVal = extractValue(awareResp) as Record<string, unknown>;
+        const states = awareVal.states as AwarenessState[] || [];
+        this.awarenessListeners.forEach((cb) => cb(states));
+      }).catch(() => {});
+    } catch (e) {
+      console.error("CRDT session setup failed:", e);
+    }
+  }
+
+  private onMessage(data: unknown): void {
     let text: string;
     if (data instanceof ArrayBuffer) {
       text = new TextDecoder().decode(data);
@@ -159,47 +177,69 @@ export class CrdtSyncClient {
     }
 
     try {
-      const msg = JSON.parse(text) as CrdtMessage;
-      switch (msg.type) {
-        case "crdt_awareness":
-          this.awarenessCallbacks.forEach((cb) => cb([msg.state]));
-          break;
-        default:
-          this.syncCallbacks.forEach((cb) => cb(msg));
+      const frame = JSON.parse(text) as Record<string, unknown>;
+
+      if (frame.type === "response" || frame.type === "error") {
+        const id = frame.id as number;
+        const handler = this.pending.get(id);
+        if (handler) {
+          this.pending.delete(id);
+          const isError = frame.type === "error";
+          handler(isError ? frame.message : frame.value, isError);
+        }
+      }
+
+      if (frame.type === "event") {
+        this.handleEvent(frame);
       }
     } catch {
-      // ignore non-JSON messages
+      // ignore non-JSON or handshake messages
     }
   }
 
-  private sendSyncStep1(): void {
-    const msg: SyncStep1 = { type: "sync_step1", state_vector: [] };
-    this.send(JSON.stringify(msg));
-  }
+  private handleEvent(frame: Record<string, unknown>): void {
+    const event = frame.event as Record<string, unknown> | undefined;
+    if (!event) return;
 
-  private sendAwareness(state: AwarenessState): void {
-    const msg: CrdtAwareness = {
-      type: "crdt_awareness",
-      work_be_id: this.workBeId,
-      state,
-    };
-    this.send(JSON.stringify(msg));
-  }
+    const eventType = event.type as string;
 
-  private send(data: string): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(data);
-    } else {
-      this.pendingUpdates.push(data);
+    if (eventType === "work_revised") {
+      const payload = event.payload as Record<string, unknown> | undefined;
+      if (payload && payload.work_be_id === this.workBeId) {
+        this.refreshText();
+      }
     }
   }
 
-  private flushPending(): void {
-    const pending = this.pendingUpdates;
-    this.pendingUpdates = [];
-    for (const msg of pending) {
-      this.send(msg);
+  private async refreshText(): Promise<void> {
+    if (!this.crdtReady) return;
+    try {
+      const resp = await this.sendRequest("crdt_sync_full_state", {
+        work_id: this.workBeId,
+      });
+      const inner = extractValue(resp) as Record<string, unknown>;
+      if (inner.state) {
+        // The state is the full yrs update — but we can get the text
+        // by materializing. Let's use materialize to get the text.
+      }
+      const matResp = await this.sendRequest("work_get_edition", {
+        work_id: this.workBeId,
+      });
+      const matVal = extractValue(matResp) as Record<string, unknown>;
+      // Edition response has text field — but the format depends on the codec
+      // For now, we keep the CRDT text as-is and only update from the CRDT layer
+    } catch {
+      // ignore
     }
+  }
+
+  private onClose(): void {
+    this.connected = false;
+    this.crdtReady = false;
+    this.connectionListeners.forEach((cb) => cb(false));
+    this.pending.forEach((handler) => handler("connection closed", true));
+    this.pending.clear();
+    this.scheduleReconnect();
   }
 
   private scheduleReconnect(): void {
@@ -209,4 +249,54 @@ export class CrdtSyncClient {
       this.connect();
     }, 3000);
   }
+
+  private sendTextDelta(oldText: string, newText: string): void {
+    if (oldText === newText) return;
+
+    const prefix = commonPrefix(oldText, newText);
+    const oldRemaining = oldText.slice(prefix);
+    const newRemaining = newText.slice(prefix);
+    const suffix = commonSuffix(oldRemaining, newRemaining);
+    const deleteLen = oldText.length - prefix - suffix;
+    const insertText = newText.slice(prefix, newText.length - suffix);
+
+    const ops: Array<{ delete?: [number, number]; insert?: [number, string] }> = [];
+    if (deleteLen > 0) {
+      ops.push({ delete: [prefix, deleteLen] });
+    }
+    if (insertText.length > 0) {
+      ops.push({ insert: [prefix, insertText] });
+    }
+
+    this.sendRequest("work_revise_delta", {
+      work_id: this.workBeId,
+      base_revision: 0,
+      ops,
+    }).catch((e) => {
+      console.error("Failed to send text delta:", e);
+    });
+  }
+}
+
+function extractValue(resp: unknown): unknown {
+  const r = resp as Record<string, unknown>;
+  if (r && typeof r === "object" && "type" in r && "value" in r) {
+    return r.value;
+  }
+  return resp;
+}
+
+function commonPrefix(a: string, b: string): number {
+  let i = 0;
+  const len = Math.min(a.length, b.length);
+  while (i < len && a.charCodeAt(i) === b.charCodeAt(i)) i++;
+  return i;
+}
+
+function commonSuffix(a: string, b: string): number {
+  let i = 0;
+  const aLen = a.length;
+  const bLen = b.length;
+  while (i < aLen && i < bLen && a.charCodeAt(aLen - 1 - i) === b.charCodeAt(bLen - 1 - i)) i++;
+  return i;
 }

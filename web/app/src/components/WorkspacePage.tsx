@@ -1,105 +1,99 @@
-import { useState, useEffect, useCallback } from "react";
-import type { WorkspaceListItem, BranchItem, DocumentResponse } from "../types/api";
-import * as api from "../api/client";
-import { BranchPanel } from "../components/BranchPanel";
-import { DocumentRenderer } from "../components/DocumentRenderer";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useCrdtSync } from "../hooks/useCrdtSync";
+import { CollaborativeEditor } from "../components/CollaborativeEditor";
+import { AwarenessIndicators } from "../components/AwarenessIndicators";
 import { DebugPanel } from "../components/DebugPanel";
 
+const WS_URL = `ws://${window.location.host}/xudanu`;
+
 export function WorkspacePage() {
-  const [workspaces, setWorkspaces] = useState<WorkspaceListItem[]>([]);
-  const [selectedWs, setSelectedWs] = useState<WorkspaceListItem | null>(null);
-  const [branches, setBranches] = useState<BranchItem[]>([]);
-  const [selectedBranch, setSelectedBranch] = useState<BranchItem | null>(null);
-  const [document, setDocument] = useState<DocumentResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
+  const [workBeId, setWorkBeId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api
-      .listWorkspaces()
-      .then(async (ws) => {
-        if (ws.length === 0) {
-          const resp = await api.createWorkspace({ name: "Welcome" });
-          const initial: WorkspaceListItem = {
-            workspaceId: resp.workspaceId,
-            name: "Welcome",
-          };
-          setWorkspaces([initial]);
-          setSelectedWs(initial);
-        } else {
-          setWorkspaces(ws);
-          setSelectedWs(ws[0]);
-        }
-      })
-      .catch((e) => setError(e.message));
+    const params = new URLSearchParams(window.location.search);
+    const wid = params.get("work");
+    if (wid) {
+      setWorkBeId(parseInt(wid, 10));
+    }
   }, []);
 
-  const refreshDocument = useCallback(async () => {
-    if (!selectedWs) return;
+  const handleCreate = useCallback(async () => {
+    setError(null);
     try {
-      const bs = await api.listBranches(selectedWs.workspaceId);
-      setBranches(bs);
-      const updated = bs.find((b) => b.branchId === selectedBranch?.branchId);
-      if (updated) {
-        setSelectedBranch(updated);
-        const doc = await api.getDocument(selectedWs.workspaceId, updated.headTraceId);
-        setDocument(doc);
-      }
-    } catch (e: unknown) {
+      const ws = new WebSocket(`${WS_URL}?format=json&version=2`);
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => resolve();
+        ws.onerror = () => reject(new Error("Connection failed"));
+      });
+
+      let id = 0;
+      const send = (op: string, payload?: object): Promise<unknown> => {
+        return new Promise((resolve, reject) => {
+          const reqId = ++id;
+          const frame: Record<string, unknown> = { v: 2, type: "request", id: reqId, op };
+          if (payload) frame.payload = payload;
+          const handler = (e: MessageEvent) => {
+            try {
+              const msg = JSON.parse(e.data as string) as Record<string, unknown>;
+              if (msg.id === reqId) {
+                ws.removeEventListener("message", handler);
+                if (msg.type === "error") {
+                  reject(new Error(String(msg.message)));
+                } else {
+                  resolve(msg.value);
+                }
+              }
+            } catch { /* ignore */ }
+          };
+          ws.addEventListener("message", handler);
+          ws.send(JSON.stringify(frame));
+        });
+      };
+
+      const connectResp = await send("session_connect");
+      const sessionId = (connectResp as Record<string, unknown>)?.value as number;
+      await send("session_login_public");
+
+      const edition = { text: "Start typing here..." };
+      const createResp = await send("work_create", { edition });
+      const newId = (createResp as Record<string, unknown>)?.value as number;
+
+      ws.close();
+      setWorkBeId(newId);
+      const url = new URL(window.location.href);
+      url.searchParams.set("work", String(newId));
+      window.history.replaceState({}, "", url.toString());
+    } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [selectedWs, selectedBranch]);
-
-  useEffect(() => {
-    if (!selectedWs) return;
-    setSelectedBranch(null);
-    setDocument(null);
-    api
-      .listBranches(selectedWs.workspaceId)
-      .then((bs) => {
-        setBranches(bs);
-        if (bs.length > 0) setSelectedBranch(bs[0]);
-      })
-      .catch((e) => setError(e.message));
-  }, [selectedWs]);
-
-  useEffect(() => {
-    if (!selectedWs || !selectedBranch) return;
-    setDocument(null);
-    api
-      .getDocument(selectedWs.workspaceId, selectedBranch.headTraceId)
-      .then(setDocument)
-      .catch((e) => setError(e.message));
-  }, [selectedWs, selectedBranch]);
-
-  const handleBranchSelect = useCallback(
-    (branch: BranchItem) => setSelectedBranch(branch),
-    [],
-  );
-
-  const handleCreateWorkspace = useCallback(() => {
-    const name = prompt("Workspace name:");
-    if (!name) return;
-    api
-      .createWorkspace({ name })
-      .then((resp) => {
-        const newItem: WorkspaceListItem = {
-          workspaceId: resp.workspaceId,
-          name,
-        };
-        setWorkspaces((prev) => [...prev, newItem]);
-        setSelectedWs(newItem);
-      })
-      .catch((e) => setError(e.message));
   }, []);
+
+  const {
+    text,
+    connected,
+    awareness,
+    setText,
+    sendCursor,
+    sendSelection,
+  } = useCrdtSync(WS_URL, workBeId);
+
+  const workIdDisplay = useMemo(() => {
+    if (workBeId === null) return null;
+    return workBeId.toString(16).padStart(4, "0");
+  }, [workBeId]);
 
   return (
     <div className="workspace-page">
       <header className="workspace-header">
         <h1>
-          {selectedWs ? selectedWs.name : "No workspace"}
+          {workIdDisplay ? `Work ${workIdDisplay}` : "Xanadu Gold"}
         </h1>
         <div className="header-actions">
+          <span className={`sync-status ${connected ? "sync-connected" : "sync-disconnected"}`}>
+            {connected ? "Live" : "Offline"}
+          </span>
           <button
             onClick={() => setShowDebug((d) => !d)}
             type="button"
@@ -107,34 +101,42 @@ export function WorkspacePage() {
           >
             Debug
           </button>
-          <button onClick={handleCreateWorkspace} type="button">
-            New Workspace
-          </button>
+          {workBeId === null && (
+            <button onClick={handleCreate} type="button">
+              New Document
+            </button>
+          )}
         </div>
       </header>
 
       {error && <div className="error">{error}</div>}
 
       <div className="workspace-body">
-        <BranchPanel
-          branches={branches}
-          selectedBranchId={selectedBranch?.branchId ?? null}
-          onSelect={handleBranchSelect}
-        />
-
         <main className="document-area">
-          {document ? (
-            <DocumentRenderer response={document} onContentChanged={refreshDocument} />
-          ) : selectedBranch ? (
-            <div className="loading">Loading...</div>
+          {workBeId !== null ? (
+            <>
+              <AwarenessIndicators states={awareness} connected={connected} />
+              <CollaborativeEditor
+                text={text}
+                onTextChange={setText}
+                onCursorChange={sendCursor}
+                onSelectionChange={(s, e) => sendSelection(s, e)}
+                connected={connected}
+              />
+            </>
           ) : (
-            <div className="loading">Select a branch</div>
+            <div className="welcome">
+              <p>Create a new document or open an existing one to start collaborating.</p>
+              <button onClick={handleCreate} type="button" className="welcome-create">
+                Create Document
+              </button>
+            </div>
           )}
         </main>
       </div>
 
-      {selectedWs && (
-        <DebugPanel workspaceId={selectedWs.workspaceId} visible={showDebug} />
+      {showDebug && (
+        <DebugPanel workspaceId={workBeId?.toString(16) ?? ""} visible={showDebug} />
       )}
     </div>
   );
