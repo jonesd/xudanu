@@ -243,6 +243,8 @@ pub enum OperationCode {
 
     CrdtAwarenessUpdate,
     CrdtAwarenessGet,
+
+    CrdtRegisterAuthor,
 }
 
 impl OperationCode {
@@ -419,6 +421,8 @@ impl OperationCode {
 
             0x1C08 => Some(OperationCode::CrdtAwarenessUpdate),
             0x1C09 => Some(OperationCode::CrdtAwarenessGet),
+
+            0x1C0B => Some(OperationCode::CrdtRegisterAuthor),
 
             _ => None,
         }
@@ -598,6 +602,8 @@ impl OperationCode {
 
             OperationCode::CrdtAwarenessUpdate => 0x1C08,
             OperationCode::CrdtAwarenessGet => 0x1C09,
+
+            OperationCode::CrdtRegisterAuthor => 0x1C0B,
         }
     }
 }
@@ -832,6 +838,12 @@ pub enum WireRequest {
 
     CrdtAwarenessUpdate { work_id: BeId, state: crate::server::crdt_manager::AwarenessState },
     CrdtAwarenessGet { work_id: BeId },
+
+    CrdtRegisterAuthor {
+        work_id: BeId,
+        public_key: [u8; 32],
+        display_name: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1083,6 +1095,10 @@ pub enum ResponseValue {
     },
     CrdtAwarenessGetResult {
         states: Vec<crate::server::crdt_manager::AwarenessState>,
+    },
+
+    CrdtRegisterAuthorResult {
+        registered: bool,
     },
 }
 

@@ -277,6 +277,13 @@ impl BinaryCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(wire)
             }
+            OperationCode::CrdtRegisterAuthor => {
+                let req: serde_json::Value = serde_json::from_slice(payload_data)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                let wire: WireRequest = serde_json::from_value(req)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(wire)
+            }
             _ => {
                 let req: serde_json::Value = serde_json::from_slice(payload_data)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
@@ -1447,6 +1454,21 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::CrdtAwarenessUpdate { work_id: args.work_id, state: args.state })
+            }
+            OperationCode::CrdtRegisterAuthor => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    public_key: [u8; 32],
+                    display_name: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrdtRegisterAuthor {
+                    work_id: args.work_id,
+                    public_key: args.public_key,
+                    display_name: args.display_name,
+                })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
