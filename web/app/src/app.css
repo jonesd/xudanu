@@ -275,3 +275,151 @@ body {
   color: #c00;
   font-size: 14px;
 }
+
+/* Collaborative editor */
+
+.collaborative-editor {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.editor-content {
+  padding: 16px 20px;
+  min-height: 300px;
+  font-size: 15px;
+  line-height: 1.7;
+  outline: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.editor-content:empty::before {
+  content: "Start typing...";
+  color: #aaa;
+}
+
+.editor-status {
+  padding: 6px 20px;
+  border-top: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+
+.sync-indicator {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.sync-indicator::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.sync-connected {
+  color: #2e7d32;
+}
+
+.sync-connected::before {
+  background: #4caf50;
+}
+
+.sync-disconnected {
+  color: #999;
+}
+
+.sync-disconnected::before {
+  background: #bbb;
+}
+
+/* Sync status in header */
+
+.sync-status {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 12px;
+  letter-spacing: 0.02em;
+}
+
+.sync-connected.sync-status {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.sync-disconnected.sync-status {
+  background: #f5f5f5;
+  color: #999;
+}
+
+/* Awareness indicators */
+
+.awareness-indicators {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.awareness-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  border-left: 3px solid;
+  background: #f8f8f8;
+  color: #555;
+}
+
+.awareness-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.awareness-typing {
+  color: #999;
+  animation: typing-pulse 1.2s infinite;
+}
+
+@keyframes typing-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* Welcome screen */
+
+.welcome {
+  text-align: center;
+  padding: 80px 24px;
+  color: #666;
+}
+
+.welcome p {
+  font-size: 16px;
+  margin-bottom: 24px;
+}
+
+.welcome-create {
+  padding: 10px 24px;
+  background: #4361ee;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.welcome-create:hover {
+  background: #3a56d4;
+}
