@@ -21,6 +21,7 @@ pub trait Lock: Send + Sync + std::fmt::Debug {
     fn try_open(&self, credential: &LockCredential) -> Result<KeyMaster, ServerError>;
     fn club_id(&self) -> Option<BeId>;
     fn clone_boxed(&self) -> Box<dyn Lock>;
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 impl Clone for Box<dyn Lock> {
@@ -57,6 +58,8 @@ impl Lock for BooLock {
     fn clone_boxed(&self) -> Box<dyn Lock> {
         Box::new(self.clone())
     }
+
+    fn as_any(&self) -> &dyn std::any::Any { self }
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +83,8 @@ impl Lock for WallLock {
     fn clone_boxed(&self) -> Box<dyn Lock> {
         Box::new(self.clone())
     }
+
+    fn as_any(&self) -> &dyn std::any::Any { self }
 }
 
 #[derive(Debug, Clone)]
@@ -126,6 +131,8 @@ impl Lock for ChallengeLock {
     fn clone_boxed(&self) -> Box<dyn Lock> {
         Box::new(self.clone())
     }
+
+    fn as_any(&self) -> &dyn std::any::Any { self }
 }
 
 #[derive(Debug, Clone)]
@@ -161,6 +168,8 @@ impl Lock for MatchLock {
     fn clone_boxed(&self) -> Box<dyn Lock> {
         Box::new(self.clone())
     }
+
+    fn as_any(&self) -> &dyn std::any::Any { self }
 }
 
 #[derive(Debug, Clone)]
@@ -221,6 +230,8 @@ impl Lock for MultiLock {
             sub_locks: cloned_sub,
         })
     }
+
+    fn as_any(&self) -> &dyn std::any::Any { self }
 }
 
 pub trait LockSmith: Send + Sync + std::fmt::Debug {

@@ -7,3 +7,5 @@ nohup.out
 server.json
 key_history.json
 *.cha
+.idea/
+run/

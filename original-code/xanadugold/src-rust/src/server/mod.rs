@@ -11,6 +11,8 @@ pub mod error;
 #[cfg(feature = "server")]
 pub mod federation;
 #[cfg(feature = "server")]
+pub mod identity;
+#[cfg(feature = "server")]
 pub mod keymaster;
 #[cfg(feature = "server")]
 pub mod lock;

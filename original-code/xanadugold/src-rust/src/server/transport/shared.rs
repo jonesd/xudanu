@@ -1,9 +1,12 @@
+use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::server::Server;
 use super::audit::SecurityMonitor;
 use super::channel::EventMessage;
+
+pub const MAX_CSRF_TOKENS: usize = 10_000;
 
 pub type SharedState = Arc<AppState>;
 
@@ -12,6 +15,9 @@ pub struct AppState {
     pub event_bus: tokio::sync::broadcast::Sender<EventMessage>,
     pub security: Arc<Mutex<SecurityMonitor>>,
     pub static_dir: Option<PathBuf>,
+    pub allowed_origins: Option<HashSet<String>>,
+    pub csrf_enabled: bool,
+    pub csrf_tokens: Arc<Mutex<VecDeque<String>>>,
 }
 
 impl AppState {
@@ -27,11 +33,24 @@ impl AppState {
             event_bus: tx,
             security: Arc::new(Mutex::new(monitor)),
             static_dir: None,
+            allowed_origins: None,
+            csrf_enabled: false,
+            csrf_tokens: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
     pub fn with_static_dir(mut self, dir: PathBuf) -> Self {
         self.static_dir = Some(dir);
+        self
+    }
+
+    pub fn with_allowed_origins(mut self, origins: HashSet<String>) -> Self {
+        self.allowed_origins = Some(origins);
+        self
+    }
+
+    pub fn with_csrf(mut self, enabled: bool) -> Self {
+        self.csrf_enabled = enabled;
         self
     }
 

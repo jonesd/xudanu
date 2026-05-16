@@ -4822,3 +4822,39 @@ async fn json_crdt_multi_user_sync() {
         json_req(13, "crdt_sync_close", Some(serde_json::json!({"work_id": work_id}))))
         .await;
 }
+
+#[test]
+fn personal_club_with_password_survives_persistence_roundtrip() {
+    let mut srv = xudanu::server::Server::new();
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let phc_hash = xudanu::crypto::password::hash_password(b"testpass123").unwrap();
+    let credential = Some(xudanu::server::club::Credential::Password { phc_hash });
+    let club_id = srv.create_personal_club(
+        sid,
+        "alice".to_string(),
+        credential,
+        Some(b"testpass123".to_vec()),
+    ).unwrap();
+
+    let club = srv.club(club_id).unwrap();
+    assert!(club.is_personal());
+    assert!(club.encrypted_signing_key().is_some());
+    let verifying_key_bytes = club.encrypted_signing_key().unwrap().verifying_key;
+
+    let snapshot = srv.to_snapshot();
+    let mut restored = xudanu::server::Server::from_snapshot(&snapshot);
+
+    let restored_club = restored.club(club_id).unwrap();
+    assert!(restored_club.is_personal(), "is_personal should survive roundtrip");
+    assert_eq!(restored_club.display_name(), Some("alice"), "display_name should survive roundtrip");
+    assert!(restored_club.credential().is_some(), "credential should survive roundtrip");
+    assert!(restored_club.encrypted_signing_key().is_some(), "encrypted_signing_key should survive roundtrip");
+    assert_eq!(
+        restored_club.encrypted_signing_key().unwrap().verifying_key,
+        verifying_key_bytes,
+        "signing key should be identical after roundtrip"
+    );
+    assert_eq!(restored.personal_club_count(), 1, "personal_club_count should be reconstructed");
+}
