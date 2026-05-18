@@ -37,7 +37,7 @@ pub use bundle::{
 };
 pub use canopy::{BertCanopy, CanopyCrumData, CanopyCrumKind, SensorCanopy};
 pub use content_address::ContentAddressIndex;
-pub use edition::Edition;
+pub use edition::{Edition, jaccard_similarity};
 pub use endorsement::{Endorsement, EndorsementSet, EndorsementFilter, Endorseable, endorsements_from_ids, endorsement_ids_to_grandmap};
 pub use fetext::{FeText, FeTextError};
 pub use grandmap::{GrandMap, Id, IdSpace, IdSpaceId};
