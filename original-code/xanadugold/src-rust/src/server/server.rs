@@ -2382,8 +2382,13 @@ impl Server {
                 edition_id, "trigger_planted_recorders: no edition fingerprints");
             return;
         }
+        let trigger_words: std::collections::HashSet<String> = self.get_edition(edition_id)
+            .ok()
+            .flatten()
+            .map(|ed| ed.word_set())
+            .unwrap_or_default();
         tracing::debug!(target: "xudanu::content_watch",
-            edition_id, fp_count = edition_fps.len(), "trigger_planted_recorders: checking");
+            edition_id, fp_count = edition_fps.len(), word_count = trigger_words.len(), "trigger_planted_recorders: checking");
         let triggered_fossils = self.backfollow.check_recorders_by_content(&edition_fps);
         tracing::debug!(target: "xudanu::content_watch",
             edition_id, triggered_count = triggered_fossils.len(), "trigger_planted_recorders: fossils triggered");
@@ -2398,6 +2403,20 @@ impl Server {
                 }
                 (fossil.source_edition_id, fossil.query.clone())
             };
+            let source_words: std::collections::HashSet<String> = source_edition_id
+                .and_then(|sid| self.get_edition(sid).ok().flatten())
+                .map(|ed| ed.word_set())
+                .unwrap_or_default();
+            if !source_words.is_empty() && !trigger_words.is_empty() {
+                let similarity = crate::edition::jaccard_similarity(&source_words, &trigger_words);
+                if similarity < 0.05 {
+                    tracing::debug!(target: "xudanu::content_watch",
+                        fossil_id, similarity, "trigger_planted_recorders: below Jaccard threshold, skipping");
+                    continue;
+                }
+                tracing::debug!(target: "xudanu::content_watch",
+                    fossil_id, similarity, "trigger_planted_recorders: above Jaccard threshold");
+            }
             let mut all_results = Vec::new();
             for content in &query.watched_content {
                 let results = match query.kind {
