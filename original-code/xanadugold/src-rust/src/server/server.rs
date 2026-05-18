@@ -55,6 +55,12 @@ impl std::fmt::Debug for WorkState {
     }
 }
 
+pub struct ContentNotification {
+    pub fossil_id: crate::edition::RecorderId,
+    pub edition_be_id: BeId,
+    pub is_direct: bool,
+}
+
 pub struct Server {
     pub(crate) grand_map: GrandMap,
     pub(crate) sessions: HashMap<SessionId, Session>,
@@ -77,6 +83,7 @@ pub struct Server {
     data_dir: Option<std::path::PathBuf>,
     chunk_store: Option<crate::persist::chunk_store::ChunkStore>,
     recorder_system: crate::edition::RecorderSystem,
+    pending_content_notifications: Vec<ContentNotification>,
     start_time: u64,
     server_keypair: crate::crypto::keys::ServerKeyPair,
     key_history: crate::crypto::keys::KeyHistory,
@@ -197,6 +204,7 @@ impl Server {
             data_dir: None,
             chunk_store: None,
             recorder_system: crate::edition::RecorderSystem::new(),
+            pending_content_notifications: Vec::new(),
             start_time: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -491,6 +499,9 @@ impl Server {
             self.works[&be_id].work.edit_club(),
         );
         self.backfollow.register_work_with_prop(bf_work, be_id, None, prop);
+        // Newly created works may share content with already-watched documents,
+        // so planted recorders must be checked here just as they are in revise_work.
+        self.trigger_planted_recorders(be_id);
         self.auto_checkpoint();
 
         Ok(be_id)
@@ -536,6 +547,7 @@ impl Server {
         let bf_work = ws.work.clone();
         self.content_address.intern_edition_elements(&updated_edition);
         self.backfollow.update_work_with_parent(work_be_id, work_be_id, bf_work);
+        self.trigger_planted_recorders(work_be_id);
         self.reconcile_record_local_revision(work_be_id, &updated_edition, Self::current_timestamp_secs());
         self.auto_checkpoint();
 
@@ -1580,7 +1592,7 @@ impl Server {
         self.checkpoint_path = Some(path);
     }
 
-    pub fn init_data_dir(&mut self, data_dir: &std::path::Path) -> std::io::Result<()> {
+    pub fn init_data_dir(&mut self, data_dir: &std::path::Path, passphrase: Option<&[u8]>) -> std::io::Result<()> {
         std::fs::create_dir_all(data_dir)?;
         std::fs::create_dir_all(data_dir.join("blobs"))?;
 
@@ -1589,7 +1601,7 @@ impl Server {
         self.chunk_store = Some(chunk_store);
         self.data_dir = Some(data_dir.to_path_buf());
 
-        self.restore_keypair_from_dir(data_dir)?;
+        self.restore_keypair_from_dir(data_dir, passphrase)?;
         self.restore_blob_store_from_dir(data_dir)?;
 
         let manifest_path = data_dir.join("manifest.json");
@@ -1600,7 +1612,7 @@ impl Server {
         Ok(())
     }
 
-    pub fn restore_from_data_dir(&mut self, data_dir: &std::path::Path) -> std::io::Result<()> {
+    pub fn restore_from_data_dir(&mut self, data_dir: &std::path::Path, passphrase: Option<&[u8]>) -> std::io::Result<()> {
         let manifest_path = data_dir.join("manifest.json");
 
         let chunk_store = crate::persist::chunk_store::ChunkStore::open(data_dir)
@@ -1616,7 +1628,7 @@ impl Server {
             ));
         };
 
-        self.restore_keypair_from_dir(data_dir)?;
+        self.restore_keypair_from_dir(data_dir, passphrase)?;
         self.restore_blob_store_from_dir(data_dir)?;
 
         self.grand_map.set_id_counter(manifest.grand_map_id_counter);
@@ -1750,10 +1762,24 @@ impl Server {
         Ok(())
     }
 
-    pub fn restore_keypair_from_dir(&mut self, data_dir: &std::path::Path) -> std::io::Result<()> {
+    pub fn restore_keypair_from_dir(&mut self, data_dir: &std::path::Path, passphrase: Option<&[u8]>) -> std::io::Result<()> {
         let key_path = data_dir.join("server.key");
         if key_path.exists() {
-            let kp = crate::crypto::keys::ServerKeyPair::load_from_file(&key_path)?;
+            let kp = if let Some(pass) = passphrase {
+                crate::crypto::keys::ServerKeyPair::load_from_file_with_passphrase(&key_path, pass)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+            } else {
+                match crate::crypto::keys::ServerKeyPair::load_from_file_auto(&key_path, None) {
+                    Ok(kp) => kp,
+                    Err(crate::crypto::keys::KeypairFileError::WrongPassphrase) => {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "server key file is encrypted but no passphrase provided (use --key-passphrase or XUDANU_KEY_PASSPHRASE)",
+                        ));
+                    }
+                    Err(e) => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+                }
+            };
             tracing::info!("Restored server identity: {}", kp.identity_id());
             self.server_keypair = kp.clone();
             self.key_history = crate::crypto::keys::KeyHistory::new(&kp);
@@ -1761,23 +1787,41 @@ impl Server {
         } else {
             let kp = crate::crypto::keys::ServerKeyPair::generate("xudanu-server");
             tracing::info!("Generated new server identity: {}", kp.identity_id());
-            kp.save_to_file(&key_path)?;
+            if let Some(pass) = passphrase {
+                kp.save_to_file_encrypted(&key_path, pass)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            } else {
+                kp.save_to_file(&key_path)?;
+            }
             self.server_keypair = kp.clone();
             self.key_history = crate::crypto::keys::KeyHistory::new(&kp);
             Ok(())
         }
     }
 
-    pub fn load_keypair_from_dir(&mut self, data_dir: &std::path::Path) -> std::io::Result<()> {
+    pub fn load_keypair_from_dir(&mut self, data_dir: &std::path::Path, passphrase: Option<&[u8]>) -> std::io::Result<()> {
         let key_path = data_dir.join("server.key");
         let kp = if key_path.exists() {
-            let kp = crate::crypto::keys::ServerKeyPair::load_from_file(&key_path)?;
+            let kp = if let Some(pass) = passphrase {
+                crate::crypto::keys::ServerKeyPair::load_from_file_with_passphrase(&key_path, pass)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+            } else {
+                match crate::crypto::keys::ServerKeyPair::load_from_file_auto(&key_path, None) {
+                    Ok(kp) => kp,
+                    Err(e) => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+                }
+            };
             tracing::info!("Restored server identity: {}", kp.identity_id());
             kp
         } else {
             let kp = crate::crypto::keys::ServerKeyPair::generate("xudanu-server");
             tracing::info!("Generated new server identity: {}", kp.identity_id());
-            kp.save_to_file(&key_path)?;
+            if let Some(pass) = passphrase {
+                kp.save_to_file_encrypted(&key_path, pass)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            } else {
+                kp.save_to_file(&key_path)?;
+            }
             kp
         };
         self.server_keypair = kp.clone();
@@ -2303,6 +2347,9 @@ impl Server {
     pub fn recorder_create_for_content(&mut self, query: crate::edition::RecorderQuery, edition_id: u64) -> crate::edition::RecorderId {
         let matcher_query = query.clone();
         let fossil_id = self.recorder_system.create_fossil(query);
+        if let Some(fossil) = self.recorder_system.get_fossil_mut(fossil_id) {
+            fossil.source_edition_id = Some(edition_id);
+        }
         self.recorder_system.schedule_matcher(fossil_id, matcher_query, Some(edition_id));
         fossil_id
     }
@@ -2313,6 +2360,96 @@ impl Server {
 
     pub fn recorder_process(&mut self) -> usize {
         self.recorder_system.process_agenda_with_engine(&mut self.backfollow)
+    }
+
+    pub fn recorder_plant(&mut self, edition_id: u64, fossil_id: crate::edition::RecorderId, content: &[crate::edition::RangeElement]) {
+        self.backfollow.plant_recorder(edition_id, fossil_id, content);
+        self.recorder_process();
+    }
+
+    pub fn recorder_unplant(&mut self, edition_id: u64, fossil_id: crate::edition::RecorderId, content: &[crate::edition::RangeElement]) {
+        self.backfollow.remove_planted_recorder(edition_id, fossil_id, content);
+    }
+
+    pub fn trigger_planted_recorders(&mut self, edition_id: u64) {
+        let edition_fps: Vec<[u8; 32]> = self.get_edition(edition_id)
+            .ok()
+            .flatten()
+            .map(|ed| ed.all_entries().iter().map(|(_, c)| c.element.content_fingerprint()).collect())
+            .unwrap_or_default();
+        if edition_fps.is_empty() {
+            tracing::debug!(target: "xudanu::content_watch",
+                edition_id, "trigger_planted_recorders: no edition fingerprints");
+            return;
+        }
+        tracing::debug!(target: "xudanu::content_watch",
+            edition_id, fp_count = edition_fps.len(), "trigger_planted_recorders: checking");
+        let triggered_fossils = self.backfollow.check_recorders_by_content(&edition_fps);
+        tracing::debug!(target: "xudanu::content_watch",
+            edition_id, triggered_count = triggered_fossils.len(), "trigger_planted_recorders: fossils triggered");
+        for fossil_id in triggered_fossils {
+            let (source_edition_id, query) = {
+                let fossil = match self.recorder_system.get_fossil(fossil_id) {
+                    Some(f) => f,
+                    None => continue,
+                };
+                if fossil.is_extinct {
+                    continue;
+                }
+                (fossil.source_edition_id, fossil.query.clone())
+            };
+            let mut all_results = Vec::new();
+            for content in &query.watched_content {
+                let results = match query.kind {
+                    crate::edition::RecorderKind::Transcluders => {
+                        let tq = crate::edition::TransclusionQuery::all();
+                        self.backfollow.find_transcluders_with_backfollow(content, &tq)
+                    }
+                    crate::edition::RecorderKind::Works => {
+                        let wq = crate::edition::WorkQuery::all();
+                        self.backfollow.find_works_for_content(content, &wq)
+                            .into_iter()
+                            .map(|wid| crate::edition::TransclusionResult {
+                                element: crate::edition::RangeElement::work(wid),
+                                is_direct: true,
+                            })
+                            .collect()
+                    }
+                };
+                tracing::debug!(target: "xudanu::content_watch",
+                    fossil_id, result_count = results.len(), "trigger_planted_recorders: query results");
+                all_results.extend(results);
+            }
+            tracing::debug!(target: "xudanu::content_watch",
+                fossil_id, total_results = all_results.len(),
+                source_edition_id = ?source_edition_id,
+                "trigger_planted_recorders: total results after dedup");
+            let mut notified_ids: std::collections::HashSet<BeId> = std::collections::HashSet::new();
+            for result in all_results {
+                let result_edition_id = result.element.as_edition_id().or(result.element.as_work_id());
+                if result_edition_id == source_edition_id {
+                    continue;
+                }
+                let result_be_id = result.element.as_work_id().or(result.element.as_edition_id());
+                let _recorded = self.recorder_system.record_result(
+                    fossil_id,
+                    result.element,
+                    Some(edition_id),
+                    None,
+                    result.is_direct,
+                );
+                if let Some(be_id) = result_be_id {
+                    if !notified_ids.contains(&be_id) {
+                        notified_ids.insert(be_id);
+                        self.pending_content_notifications.push(ContentNotification {
+                            fossil_id,
+                            edition_be_id: be_id,
+                            is_direct: result.is_direct,
+                        });
+                    }
+                }
+            }
+        }
     }
 
     pub fn version_is_before(&mut self, work_a: BeId, work_b: BeId) -> Option<bool> {
@@ -2419,6 +2556,50 @@ impl Server {
                 region,
             });
         }
+    }
+
+    pub fn remove_detector(
+        &mut self,
+        det_type: super::transport::protocol::DetectorType,
+        target_id: BeId,
+        sub_id: u16,
+    ) {
+        match det_type {
+            super::transport::protocol::DetectorType::Status => {
+                if let Some(ws) = self.works.get_mut(&target_id) {
+                    ws.status_detectors.remove(sub_id);
+                }
+            }
+            super::transport::protocol::DetectorType::Revision => {
+                if let Some(ws) = self.works.get_mut(&target_id) {
+                    ws.revision_detectors.remove(sub_id);
+                }
+            }
+            super::transport::protocol::DetectorType::Fill => {
+                if let Some(list) = self.edition_detectors.get_mut(&target_id) {
+                    list.remove(sub_id);
+                }
+            }
+            super::transport::protocol::DetectorType::ContentTranscluders
+            | super::transport::protocol::DetectorType::ContentWorks => {}
+        }
+    }
+
+    pub fn drain_content_notifications_for(
+        &mut self,
+        fossil_ids: &std::collections::HashSet<crate::edition::RecorderId>,
+    ) -> Vec<ContentNotification> {
+        let mut matching = Vec::new();
+        let mut remaining = Vec::new();
+        for notif in self.pending_content_notifications.drain(..) {
+            if fossil_ids.contains(&notif.fossil_id) {
+                matching.push(notif);
+            } else {
+                remaining.push(notif);
+            }
+        }
+        self.pending_content_notifications = remaining;
+        matching
     }
 
     // === Private helpers ===
@@ -4236,6 +4417,7 @@ pub(crate) mod persist_snapshot {
                 data_dir: None,
                 chunk_store: None,
                 recorder_system: crate::edition::RecorderSystem::new(),
+                pending_content_notifications: Vec::new(),
                 start_time: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -4520,7 +4702,7 @@ pub(crate) mod persist_snapshot {
             let mut server = Self::from_snapshot(snapshot);
             server.checkpoint_path = Some(snapshot_path.to_path_buf());
             if let Some(data_dir) = snapshot_path.parent() {
-                let _ = server.load_keypair_from_dir(data_dir);
+                let _ = server.load_keypair_from_dir(data_dir, None);
                 server.restore_key_history_from_snapshot();
                 let _ = server.restore_blob_store(data_dir, snapshot.blob_metas.clone());
             }
@@ -6977,5 +7159,286 @@ mod tests {
 
         let no_match = server.find_shared_regions_filtered(id_a, id_b, "nonexistent");
         assert!(no_match.is_empty(), "filter for nonexistent text should return empty");
+    }
+
+    #[test]
+    fn watch_plant_and_trigger_finds_matching_work() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server.create_work(sid, Edition::from_text("hello world")).unwrap();
+
+        let edition = server.get_edition(work_a).unwrap().unwrap();
+        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
+        assert!(!content_elements.is_empty(), "edition should have content elements");
+
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements.clone());
+        let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
+        server.recorder_plant(work_a, fossil_id, &query.watched_content);
+
+        let work_b = server.create_work(sid, Edition::from_text("hello world")).unwrap();
+
+        let notifications = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_id])
+        );
+        assert!(!notifications.is_empty(), "revising work_b with shared content should trigger notifications for the watcher on work_a");
+    }
+
+    #[test]
+    fn watch_no_notification_for_unrelated_content() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server.create_work(sid, Edition::from_text("alpha")).unwrap();
+
+        let edition = server.get_edition(work_a).unwrap().unwrap();
+        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements.clone());
+        let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
+        server.recorder_plant(work_a, fossil_id, &query.watched_content);
+
+        let work_b = server.create_work(sid, Edition::from_text("zzzzz")).unwrap();
+
+        let notifications = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_id])
+        );
+        assert!(notifications.is_empty(), "work_b with no shared content should not trigger notifications");
+    }
+
+    #[test]
+    fn watch_trigger_on_revision_of_existing_work() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server.create_work(sid, Edition::from_text("monitor this text")).unwrap();
+
+        let edition = server.get_edition(work_a).unwrap().unwrap();
+        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements.clone());
+        let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
+        server.recorder_plant(work_a, fossil_id, &query.watched_content);
+
+        let work_b = server.create_work(sid, Edition::from_text("ZZZZZ")).unwrap();
+
+        let before = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_id])
+        );
+        assert!(before.is_empty(), "unrelated content should not trigger");
+
+        server.work_grab(sid, work_b).unwrap();
+        server.work_revise(sid, work_b, Edition::from_text("monitor this text")).unwrap();
+
+        let after = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_id])
+        );
+        assert!(!after.is_empty(), "revising work_b to match watched content should trigger notification");
+    }
+
+    #[test]
+    fn watch_unplant_stops_notifications() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server.create_work(sid, Edition::from_text("shared content")).unwrap();
+
+        let edition = server.get_edition(work_a).unwrap().unwrap();
+        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements.clone());
+        let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
+        server.recorder_plant(work_a, fossil_id, &query.watched_content);
+
+        server.recorder_unplant(work_a, fossil_id, &query.watched_content);
+
+        let work_b = server.create_work(sid, Edition::from_text("shared content")).unwrap();
+
+        let notifications = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_id])
+        );
+        assert!(notifications.is_empty(), "unplanted watcher should not receive notifications");
+    }
+
+    #[test]
+    fn watch_extinguish_stops_recording() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server.create_work(sid, Edition::from_text("track me")).unwrap();
+
+        let edition = server.get_edition(work_a).unwrap().unwrap();
+        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements.clone());
+        let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
+        server.recorder_plant(work_a, fossil_id, &query.watched_content);
+
+        server.recorder_extinguish(fossil_id);
+
+        let work_b = server.create_work(sid, Edition::from_text("track me")).unwrap();
+
+        let notifications = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_id])
+        );
+        assert!(notifications.is_empty(), "extinguished fossil should not produce notifications");
+    }
+
+    #[test]
+    fn watch_multiple_watchers_independent() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server.create_work(sid, Edition::from_text("alpha")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("ZZZZZ")).unwrap();
+
+        let ed_a = server.get_edition(work_a).unwrap().unwrap();
+        let content_a: Vec<RangeElement> = ed_a.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
+        let query_a = crate::edition::RecorderQuery::works().with_watched_content(content_a.clone());
+        let fossil_a = server.recorder_create_for_content(query_a.clone(), work_a);
+        server.recorder_plant(work_a, fossil_a, &query_a.watched_content);
+
+        let ed_b = server.get_edition(work_b).unwrap().unwrap();
+        let content_b: Vec<RangeElement> = ed_b.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
+        let query_b = crate::edition::RecorderQuery::works().with_watched_content(content_b.clone());
+        let fossil_b = server.recorder_create_for_content(query_b.clone(), work_b);
+        server.recorder_plant(work_b, fossil_b, &query_b.watched_content);
+
+        let work_c = server.create_work(sid, Edition::from_text("alpha")).unwrap();
+
+        let notifs_a = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_a])
+        );
+        let notifs_b = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_b])
+        );
+        assert!(!notifs_a.is_empty(), "watcher for alpha should trigger on alpha content");
+        assert!(notifs_b.is_empty(), "watcher for ZZZZZ should NOT trigger on alpha content");
+    }
+
+    #[test]
+    fn watch_notification_contains_work_id() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server.create_work(sid, Edition::from_text("hello")).unwrap();
+
+        let edition = server.get_edition(work_a).unwrap().unwrap();
+        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements.clone());
+        let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
+        server.recorder_plant(work_a, fossil_id, &query.watched_content);
+
+        let work_b = server.create_work(sid, Edition::from_text("hello")).unwrap();
+
+        let notifications = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_id])
+        );
+        assert!(!notifications.is_empty());
+        let notif = &notifications[0];
+        assert_eq!(notif.fossil_id, fossil_id);
+        assert_eq!(notif.edition_be_id, work_b, "notification should reference the work that triggered it");
+    }
+
+    #[test]
+    fn watch_drain_is_consumed() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server.create_work(sid, Edition::from_text("payload")).unwrap();
+
+        let edition = server.get_edition(work_a).unwrap().unwrap();
+        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements.clone());
+        let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
+        server.recorder_plant(work_a, fossil_id, &query.watched_content);
+
+        let work_b = server.create_work(sid, Edition::from_text("payload")).unwrap();
+
+        let first = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_id])
+        );
+        assert!(!first.is_empty());
+
+        let second = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_id])
+        );
+        assert!(second.is_empty(), "drain should consume notifications");
+    }
+
+    #[test]
+    fn watch_initial_results_find_existing_work() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server.create_work(sid, Edition::from_text("one two three")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("two three four")).unwrap();
+
+        let edition = server.get_edition(work_a).unwrap().unwrap();
+        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements);
+        let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
+        server.recorder_plant(work_a, fossil_id, &query.watched_content);
+
+        let fossil = server.recorder_get(fossil_id).unwrap();
+        let results = fossil.results.clone();
+        assert!(!results.is_empty(), "initial matcher should find work_b sharing content with work_a");
+        let found_works: Vec<u64> = results.iter()
+            .filter_map(|r| if let RangeElement::Work { work_id } = &r.element { Some(work_id.0) } else { None })
+            .collect();
+        assert!(found_works.contains(&work_b), "results should include work_b ({:?}), got: {:?}", work_b, found_works);
+    }
+
+    #[test]
+    fn watch_initial_results_edition_be_id_is_matching_work() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server.create_work(sid, Edition::from_text("one two three")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("two three four")).unwrap();
+
+        let edition = server.get_edition(work_a).unwrap().unwrap();
+        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements);
+        let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
+        server.recorder_plant(work_a, fossil_id, &query.watched_content);
+
+        let fossil = server.recorder_get(fossil_id).unwrap();
+        for result in &fossil.results {
+            if let RangeElement::Work { work_id } = &result.element {
+                if work_id.0 == work_b {
+                    let edition_be_id = result.source_edition_id.unwrap_or(work_a);
+                    assert_eq!(edition_be_id, work_b,
+                        "source_edition_id for work_b result should be work_b ({:?}), not work_a ({:?}). \
+                         The UI uses this field to identify the matching document.",
+                        work_b, work_a);
+                }
+            }
+        }
     }
 }
