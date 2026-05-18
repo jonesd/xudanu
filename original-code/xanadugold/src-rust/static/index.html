@@ -580,6 +580,9 @@ function App() {
   var subsRef = useRef({});
   var bridgeContainerRef = useRef(null);
   var toastTimers = useRef({});
+  var watchSubRef = useRef(null);
+  var _watchResults = useState([]), watchResults = _watchResults[0], setWatchResults = _watchResults[1];
+  var _showWatch = useState(false), showWatch = _showWatch[0], setShowWatch = _showWatch[1];
 
   function toast(msg) {
     var id = ++toastId;
@@ -744,6 +747,17 @@ function App() {
     if (currentWorkIdRef.current) {
       req('crdt_sync_close', {work_id: currentWorkIdRef.current});
     }
+    if (subsRef.current) {
+      if (subsRef.current.revision) unsub(subsRef.current.revision);
+      if (subsRef.current.status) unsub(subsRef.current.status);
+      subsRef.current = null;
+    }
+    if (watchSubRef.current) {
+      unsub(watchSubRef.current);
+      watchSubRef.current = null;
+      setWatchResults([]);
+      setShowWatch(false);
+    }
     setIsEditing(false);
     isEditingRef.current = false;
     setSplitMode(false);
@@ -888,7 +902,15 @@ function App() {
 
   useEffect(function(){
     var proto = location.protocol==='https:' ? 'wss:' : 'ws:';
-    var ws = new WebSocket(proto+'//'+location.host+'/xudanu?format=json&version=2');
+    var wsUrl = proto+'//'+location.host+'/xudanu?format=json&version=2';
+    fetch('/csrf-token').then(function(r){ return r.json(); }).then(function(d){
+      if (d.csrf_token) wsUrl += '&csrf_token=' + encodeURIComponent(d.csrf_token);
+      connect(wsUrl);
+    }).catch(function(){
+      connect(wsUrl);
+    });
+    function connect(url) {
+    var ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = function() { setStatus('connected'); };
@@ -1185,6 +1207,16 @@ function App() {
             toast('User ' + payload.session_id + ' saved revision ' + payload.revision);
           }
         }
+
+        if (e.type === 'content_match') {
+          var p = e.payload;
+          setWatchResults(function(prev) {
+            var dup = prev.some(function(r){ return r.edition_be_id === p.edition_be_id; });
+            if (dup) return prev;
+            return prev.concat([{edition_be_id: p.edition_be_id, is_direct: p.is_direct, fossil_id: p.fossil_id}]);
+          });
+          toast('Transclusion found: edition ' + p.edition_be_id.toString(16) + (p.is_direct ? ' (direct)' : ''));
+        }
       }
     };
 
@@ -1202,6 +1234,7 @@ function App() {
     };
 
     return function(){ ws.close(); };
+    }
   }, []);
 
   useEffect(function(){
@@ -1449,6 +1482,22 @@ function App() {
             disabled:!currentWorkId || works.length < 2,
             onClick:function(){setShowCompare(!showCompare)}
           }, 'Compare'),
+          h('button', {
+            disabled:!currentWorkId,
+            onClick:function(){
+              if (watchSubRef.current) {
+                unsub(watchSubRef.current);
+                watchSubRef.current = null;
+                setShowWatch(false);
+                setWatchResults([]);
+              } else {
+                setWatchResults([]);
+                var sid = sub('content_works', currentWorkId);
+                watchSubRef.current = sid;
+                setShowWatch(true);
+              }
+            }
+          }, watchSubRef.current ? 'Stop Watch' : 'Watch'),
           revInfo
         ),
         showHistory ? h('div', {className:'revision-slider'},
@@ -1544,6 +1593,28 @@ function App() {
               style:{marginLeft:4}
             }, '\u00d7')
           )
+        ) : null,
+        showWatch ? h('div', {className:'links-panel'},
+          h('div', {className:'links-header'},
+            h('span', null, 'Transclusion Watch (' + watchResults.length + ' matches)'),
+            h('button', {
+              onClick: function(){setShowWatch(false);}
+            }, '\u00d7')
+          ),
+          watchResults.length === 0
+            ? h('div', {style:{padding:8, color:'var(--fg3)', fontSize:12}}, 'Watching for transclusions...')
+            : h('div', {className:'links-list'},
+              watchResults.map(function(r, i) {
+                return h('div', {key: i, className:'link-item'},
+                  h('span', {className:'link-dir'}, r.is_direct ? 'D' : 'I'),
+                  h('span', {
+                    className:'link-target',
+                    onClick: function(){ showWork(r.edition_be_id); },
+                    style: {cursor:'pointer', color:'var(--accent)'}
+                  }, 'edition ' + r.edition_be_id.toString(16))
+                );
+              })
+            )
         ) : null,
         !splitMode && links.length > 0 ? h('div', {className:'link-nav-bar'},
           links.map(function(lnk) {
