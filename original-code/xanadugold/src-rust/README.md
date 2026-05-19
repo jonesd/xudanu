@@ -31,12 +31,35 @@ Then open **http://127.0.0.1:8090** in your browser. Documents are stored in mem
 
 ### Persistent Storage
 
-```
+```bash
+# Initialize a data directory (creates manifest.json, blobs/, server.key)
 ./target/debug/xudanu-server init /tmp/xudanu-data
+
+# Run with persistent storage
 ./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data --static-dir original-code/xanadugold/src-rust/static
 ```
 
-Data is saved to `server.json` on graceful shutdown (Ctrl-C) and restored on next start.
+Data is saved to `manifest.json` on graceful shutdown (Ctrl-C) and restored on next start. The server's identity key (`server.key`) is generated automatically on first init.
+
+### Encrypted Server Keys
+
+By default, the server key file (`server.key`) is stored as plaintext JSON. To encrypt it with a passphrase:
+
+```bash
+# Initialize with an encrypted key
+XUDANU_KEY_PASSPHRASE="your-secret" ./target/debug/xudanu-server init /tmp/xudanu-data
+
+# Run with the same passphrase to decrypt the key
+XUDANU_KEY_PASSPHRASE="your-secret" ./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data
+```
+
+Or use the CLI flag (note: visible in `ps aux`, prefer the env var for production):
+
+```bash
+./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data --key-passphrase "your-secret"
+```
+
+The encrypted key file uses Argon2id key derivation + ChaCha20-Poly1305 AEAD encryption with a BLAKE3 integrity check — the same scheme used for club keys. Old plaintext key files are still loaded for backward compatibility (a warning is logged).
 
 ### Using `./scripts/single.sh`
 
@@ -120,9 +143,10 @@ Run options:
 --tls-key <path>         TLS private key PEM file (enables HTTPS)
 --peer <addr>            Connect to a federated peer server
 --federation-mode <mode> Federation mode: closed (default) or open
+--key-passphrase <pw>    Passphrase for encrypted server key file (env: XUDANU_KEY_PASSPHRASE)
 ```
 
-Data is checkpointed to `server.json` in the data directory on graceful shutdown (Ctrl-C).
+Data is checkpointed to `manifest.json` in the data directory on graceful shutdown (Ctrl-C).
 
 ### HTTPS / TLS Setup
 

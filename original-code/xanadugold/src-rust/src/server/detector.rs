@@ -31,6 +31,7 @@ pub enum Event {
 
 pub trait Detector: Send + Sync + std::fmt::Debug {
     fn on_event(&mut self, event: &Event);
+    fn subscription_id(&self) -> u16 { u16::MAX }
 }
 
 pub struct FnDetector<F>
@@ -95,5 +96,11 @@ impl DetectorList {
 
     pub fn _is_empty(&self) -> bool {
         self.detectors.is_empty()
+    }
+
+    pub fn remove(&mut self, sub_id: u16) -> bool {
+        let before = self.detectors.len();
+        self.detectors.retain(|d| d.subscription_id() != sub_id);
+        self.detectors.len() < before
     }
 }

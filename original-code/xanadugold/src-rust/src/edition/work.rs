@@ -138,6 +138,12 @@ impl Work {
         self.revision_history = history;
     }
 
+    pub fn load_revision(&mut self, number: u64, edition: Edition) {
+        if number != self.revision_count {
+            self.revision_history.insert(number, edition);
+        }
+    }
+
     pub fn set_revision_count(&mut self, count: u64) {
         self.revision_count = count;
     }

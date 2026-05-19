@@ -72,12 +72,18 @@ impl ServerHandle {
     }
 
     pub fn with_server<R>(&self, f: impl FnOnce(&mut Server) -> R) -> R {
-        let mut guard = self.inner.lock().unwrap();
+        let mut guard = self.inner.lock().unwrap_or_else(|e| {
+            tracing::error!("Server mutex poisoned, recovering: {}", e);
+            e.into_inner()
+        });
         f(&mut guard)
     }
 
     pub fn with_server_ref<R>(&self, f: impl FnOnce(&Server) -> R) -> R {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(|e| {
+            tracing::error!("Server mutex poisoned, recovering: {}", e);
+            e.into_inner()
+        });
         f(&guard)
     }
 }

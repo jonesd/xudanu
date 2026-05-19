@@ -18,10 +18,12 @@ struct ContentAddressFile {
 
 impl serde::Serialize for ContentAddressIndex {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut entries: Vec<(String, BeId)> = self.fingerprint_to_be_id.iter().map(|(k, v)| {
+            (k.iter().map(|b| format!("{:02x}", b)).collect::<String>(), *v)
+        }).collect();
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
         let file = ContentAddressFile {
-            entries: self.fingerprint_to_be_id.iter().map(|(k, v)| {
-                (k.iter().map(|b| format!("{:02x}", b)).collect::<String>(), *v)
-            }).collect(),
+            entries,
             next_be_id: self.next_be_id,
         };
         file.serialize(s)

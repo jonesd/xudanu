@@ -2,9 +2,10 @@ use std::sync::Mutex;
 use std::sync::Arc;
 
 use super::props::{
-    bert_flags_for, sensor_flags_for, PropFinder,
+    bert_flags_for, sensor_flags_for, IS_SENSOR_WAITING_FLAG, PropFinder,
 };
 use super::grandmap::Id;
+use super::recorder::RecorderId;
 
 #[derive(Debug, Clone)]
 struct CanopyCacheInner {
@@ -40,7 +41,7 @@ impl CanopyCacheInner {
         while let Some(c) = cur {
             self.cached_root = Some(c.clone());
             self.cached_path.push(c.clone());
-            let parent = c.lock().unwrap().parent.clone();
+            let parent = c.lock().unwrap_or_else(|e| e.into_inner()).parent.clone();
             cur = parent;
         }
         self.cached_path.clone()
@@ -88,6 +89,7 @@ pub struct CanopyCrumData {
     ref_count: u64,
     kind: CanopyCrumKind,
     cache: Arc<Mutex<CanopyCacheInner>>,
+    recorders: Vec<RecorderId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +111,7 @@ impl CanopyCrumData {
             ref_count: 0,
             kind,
             cache,
+            recorders: Vec::new(),
         }
     }
 
@@ -118,8 +121,8 @@ impl CanopyCrumData {
         kind: CanopyCrumKind,
         cache: Arc<Mutex<CanopyCacheInner>>,
     ) -> Self {
-        let child_min_h = first.lock().unwrap().min_h.min(second.lock().unwrap().min_h);
-        let child_max_h = first.lock().unwrap().max_h.max(second.lock().unwrap().max_h);
+        let child_min_h = first.lock().unwrap_or_else(|e| e.into_inner()).min_h.min(second.lock().unwrap_or_else(|e| e.into_inner()).min_h);
+        let child_max_h = first.lock().unwrap_or_else(|e| e.into_inner()).max_h.max(second.lock().unwrap_or_else(|e| e.into_inner()).max_h);
         CanopyCrumData {
             child1: Some(first.clone()),
             child2: Some(second.clone()),
@@ -127,10 +130,11 @@ impl CanopyCrumData {
             min_h: child_min_h - 1,
             max_h: child_max_h + 1,
             own_flags: 0,
-            flags: first.lock().unwrap().flags | second.lock().unwrap().flags,
+            flags: first.lock().unwrap_or_else(|e| e.into_inner()).flags | second.lock().unwrap_or_else(|e| e.into_inner()).flags,
             ref_count: 0,
             kind,
             cache,
+            recorders: Vec::new(),
         }
     }
 
@@ -200,6 +204,33 @@ impl CanopyCrumData {
             ref_count: self.ref_count,
             kind: self.kind,
             cache: self.cache.clone(),
+            recorders: self.recorders.clone(),
+        }
+    }
+
+    pub fn recorders(&self) -> &[RecorderId] {
+        &self.recorders
+    }
+
+    pub fn has_recorders(&self) -> bool {
+        !self.recorders.is_empty()
+    }
+
+    pub fn install_recorders(&mut self, ids: &[RecorderId]) {
+        for id in ids {
+            if !self.recorders.contains(id) {
+                self.recorders.push(*id);
+            }
+        }
+        if !self.recorders.is_empty() {
+            self.own_flags |= IS_SENSOR_WAITING_FLAG;
+        }
+    }
+
+    pub fn remove_recorders(&mut self, ids: &[RecorderId]) {
+        self.recorders.retain(|r| !ids.contains(r));
+        if self.recorders.is_empty() {
+            self.own_flags &= !IS_SENSOR_WAITING_FLAG;
         }
     }
 
@@ -214,8 +245,8 @@ impl CanopyCrumData {
     pub fn change_canopy(&mut self) -> bool {
         let old = self.flags;
         let new_flags = self.own_flags
-            | self.child1.as_ref().map_or(0, |c| c.lock().unwrap().flags)
-            | self.child2.as_ref().map_or(0, |c| c.lock().unwrap().flags);
+            | self.child1.as_ref().map_or(0, |c| c.lock().unwrap_or_else(|e| e.into_inner()).flags)
+            | self.child2.as_ref().map_or(0, |c| c.lock().unwrap_or_else(|e| e.into_inner()).flags);
         self.flags = new_flags;
         new_flags != old
     }
@@ -224,8 +255,8 @@ impl CanopyCrumData {
         let old_min = self.min_h;
         let old_max = self.max_h;
         if let (Some(ref c1), Some(ref c2)) = (&self.child1, &self.child2) {
-            self.min_h = c1.lock().unwrap().min_h.min(c2.lock().unwrap().min_h) - 1;
-            self.max_h = c1.lock().unwrap().max_h.max(c2.lock().unwrap().max_h) + 1;
+            self.min_h = c1.lock().unwrap_or_else(|e| e.into_inner()).min_h.min(c2.lock().unwrap_or_else(|e| e.into_inner()).min_h) - 1;
+            self.max_h = c1.lock().unwrap_or_else(|e| e.into_inner()).max_h.max(c2.lock().unwrap_or_else(|e| e.into_inner()).max_h) + 1;
         }
         self.min_h != old_min || self.max_h != old_max
     }
@@ -234,20 +265,20 @@ impl CanopyCrumData {
         crum: &Arc<Mutex<CanopyCrumData>>,
         other: Arc<Mutex<CanopyCrumData>>,
     ) -> Arc<Mutex<CanopyCrumData>> {
-        let is_leaf = crum.lock().unwrap().is_leaf();
-        let other_is_leaf = other.lock().unwrap().is_leaf();
-        let height_diff = crum.lock().unwrap().height_diff();
-        let other_h = other.lock().unwrap().height_diff();
+        let is_leaf = crum.lock().unwrap_or_else(|e| e.into_inner()).is_leaf();
+        let other_is_leaf = other.lock().unwrap_or_else(|e| e.into_inner()).is_leaf();
+        let height_diff = crum.lock().unwrap_or_else(|e| e.into_inner()).height_diff();
+        let other_h = other.lock().unwrap_or_else(|e| e.into_inner()).height_diff();
 
         if is_leaf && other_is_leaf && height_diff == 0 {
             return Self::make_parent(crum, other);
         }
         if other_h < height_diff {
-            let child1 = crum.lock().unwrap().child1.clone();
-            let child2 = crum.lock().unwrap().child2.clone();
+            let child1 = crum.lock().unwrap_or_else(|e| e.into_inner()).child1.clone();
+            let child2 = crum.lock().unwrap_or_else(|e| e.into_inner()).child2.clone();
             if let (Some(c1), Some(c2)) = (child1, child2) {
-                let c1_hd = c1.lock().unwrap().height_diff();
-                let c2_hd = c2.lock().unwrap().height_diff();
+                let c1_hd = c1.lock().unwrap_or_else(|e| e.into_inner()).height_diff();
+                let c2_hd = c2.lock().unwrap_or_else(|e| e.into_inner()).height_diff();
                 if c1_hd > c2_hd {
                     return Self::include_canopy(&c1, other);
                 } else {
@@ -262,16 +293,16 @@ impl CanopyCrumData {
         a: &Arc<Mutex<CanopyCrumData>>,
         b: Arc<Mutex<CanopyCrumData>>,
     ) -> Arc<Mutex<CanopyCrumData>> {
-        let cache = a.lock().unwrap().cache.clone();
-        let kind = a.lock().unwrap().kind;
+        let cache = a.lock().unwrap_or_else(|e| e.into_inner()).cache.clone();
+        let kind = a.lock().unwrap_or_else(|e| e.into_inner()).kind;
         let parent = Arc::new(Mutex::new(CanopyCrumData::new_parent(
             a.clone(),
             b.clone(),
             kind,
             cache,
         )));
-        a.lock().unwrap().parent = Some(parent.clone());
-        b.lock().unwrap().parent = Some(parent.clone());
+        a.lock().unwrap_or_else(|e| e.into_inner()).parent = Some(parent.clone());
+        b.lock().unwrap_or_else(|e| e.into_inner()).parent = Some(parent.clone());
         parent
     }
 }
@@ -283,12 +314,12 @@ pub fn is_le(
     if Arc::ptr_eq(crum, other) {
         return true;
     }
-    let mut cur = crum.lock().unwrap().parent.clone();
+    let mut cur = crum.lock().unwrap_or_else(|e| e.into_inner()).parent.clone();
     while let Some(p) = cur {
         if Arc::ptr_eq(&p, other) {
             return true;
         }
-        cur = p.lock().unwrap().parent.clone();
+        cur = p.lock().unwrap_or_else(|e| e.into_inner()).parent.clone();
     }
     false
 }
@@ -313,7 +344,7 @@ pub fn compute_join(
 pub fn find_root(crum: &Arc<Mutex<CanopyCrumData>>) -> Arc<Mutex<CanopyCrumData>> {
     let mut cur = crum.clone();
     loop {
-        let parent = cur.lock().unwrap().parent.clone();
+        let parent = cur.lock().unwrap_or_else(|e| e.into_inner()).parent.clone();
         match parent {
             Some(p) => cur = p,
             None => return cur,
@@ -324,9 +355,9 @@ pub fn find_root(crum: &Arc<Mutex<CanopyCrumData>>) -> Arc<Mutex<CanopyCrumData>
 pub fn propagate_flags(crum: &Arc<Mutex<CanopyCrumData>>) {
     let mut current = Some(crum.clone());
     while let Some(c) = current {
-        let changed = c.lock().unwrap().change_canopy();
+        let changed = c.lock().unwrap_or_else(|e| e.into_inner()).change_canopy();
         if changed {
-            current = c.lock().unwrap().parent.clone();
+            current = c.lock().unwrap_or_else(|e| e.into_inner()).parent.clone();
         } else {
             break;
         }
@@ -336,9 +367,9 @@ pub fn propagate_flags(crum: &Arc<Mutex<CanopyCrumData>>) {
 pub fn propagate_height(crum: &Arc<Mutex<CanopyCrumData>>) {
     let mut current = Some(crum.clone());
     while let Some(c) = current {
-        let changed = c.lock().unwrap().change_height();
+        let changed = c.lock().unwrap_or_else(|e| e.into_inner()).change_height();
         if changed {
-            current = c.lock().unwrap().parent.clone();
+            current = c.lock().unwrap_or_else(|e| e.into_inner()).parent.clone();
         } else {
             break;
         }
@@ -385,7 +416,7 @@ impl BertCanopy {
     }
 
     pub fn root_of(&self, crum: &Arc<Mutex<CanopyCrumData>>) -> Arc<Mutex<CanopyCrumData>> {
-        self.cache.lock().unwrap().root_for(crum)
+        self.cache.lock().unwrap_or_else(|e| e.into_inner()).root_for(crum)
     }
 
     pub fn propagate(&self, crum: &Arc<Mutex<CanopyCrumData>>) {
@@ -439,7 +470,7 @@ impl SensorCanopy {
     }
 
     pub fn root_of(&self, crum: &Arc<Mutex<CanopyCrumData>>) -> Arc<Mutex<CanopyCrumData>> {
-        self.cache.lock().unwrap().root_for(crum)
+        self.cache.lock().unwrap_or_else(|e| e.into_inner()).root_for(crum)
     }
 
     pub fn propagate(&self, crum: &Arc<Mutex<CanopyCrumData>>) {
@@ -464,17 +495,17 @@ pub fn walk_northward<F>(
     if finder.is_empty() {
         return;
     }
-    let crum_flags = crum.lock().unwrap().flags();
+    let crum_flags = crum.lock().unwrap_or_else(|e| e.into_inner()).flags();
     if !finder.does_pass(crum_flags) {
         return;
     }
     if visitor(crum) {
         return;
     }
-    if let Some(ref c1) = crum.lock().unwrap().child1 {
+    if let Some(ref c1) = crum.lock().unwrap_or_else(|e| e.into_inner()).child1 {
         walk_northward(c1, finder, visitor);
     }
-    if let Some(ref c2) = crum.lock().unwrap().child2 {
+    if let Some(ref c2) = crum.lock().unwrap_or_else(|e| e.into_inner()).child2 {
         walk_northward(c2, finder, visitor);
     }
 }
@@ -490,9 +521,9 @@ mod tests {
     fn bert_canopy_make_crum() {
         let canopy = BertCanopy::new();
         let crum = canopy.make_crum(PUBLIC_CLUB_FLAG);
-        assert!(crum.lock().unwrap().is_leaf());
-        assert_eq!(crum.lock().unwrap().flags(), PUBLIC_CLUB_FLAG);
-        assert_eq!(crum.lock().unwrap().kind(), CanopyCrumKind::Bert);
+        assert!(crum.lock().unwrap_or_else(|e| e.into_inner()).is_leaf());
+        assert_eq!(crum.lock().unwrap_or_else(|e| e.into_inner()).flags(), PUBLIC_CLUB_FLAG);
+        assert_eq!(crum.lock().unwrap_or_else(|e| e.into_inner()).kind(), CanopyCrumKind::Bert);
     }
 
     #[test]
@@ -504,18 +535,18 @@ mod tests {
             false,
             false,
         );
-        assert_eq!(crum.lock().unwrap().flags(), PUBLIC_CLUB_FLAG);
+        assert_eq!(crum.lock().unwrap_or_else(|e| e.into_inner()).flags(), PUBLIC_CLUB_FLAG);
     }
 
     #[test]
     fn canopy_crum_add_remove_pointer() {
         let canopy = BertCanopy::new();
         let crum = canopy.make_crum(0);
-        assert_eq!(crum.lock().unwrap().ref_count(), 0);
-        crum.lock().unwrap().add_pointer();
-        assert_eq!(crum.lock().unwrap().ref_count(), 1);
-        crum.lock().unwrap().remove_pointer();
-        assert_eq!(crum.lock().unwrap().ref_count(), 0);
+        assert_eq!(crum.lock().unwrap_or_else(|e| e.into_inner()).ref_count(), 0);
+        crum.lock().unwrap_or_else(|e| e.into_inner()).add_pointer();
+        assert_eq!(crum.lock().unwrap_or_else(|e| e.into_inner()).ref_count(), 1);
+        crum.lock().unwrap_or_else(|e| e.into_inner()).remove_pointer();
+        assert_eq!(crum.lock().unwrap_or_else(|e| e.into_inner()).ref_count(), 0);
     }
 
     #[test]
@@ -524,9 +555,9 @@ mod tests {
         let a = canopy.make_crum(PUBLIC_CLUB_FLAG);
         let b = canopy.make_crum(IS_SENSOR_WAITING_FLAG);
         let join = canopy.join(&a, &b);
-        assert!(!join.lock().unwrap().is_leaf());
+        assert!(!join.lock().unwrap_or_else(|e| e.into_inner()).is_leaf());
         assert_eq!(
-            join.lock().unwrap().flags(),
+            join.lock().unwrap_or_else(|e| e.into_inner()).flags(),
             PUBLIC_CLUB_FLAG | IS_SENSOR_WAITING_FLAG
         );
     }
@@ -581,18 +612,18 @@ mod tests {
         let a = canopy.make_crum(PUBLIC_CLUB_FLAG);
         let b = canopy.make_crum(0);
         let join = canopy.join(&a, &b);
-        a.lock().unwrap().set_own_flags(0);
+        a.lock().unwrap_or_else(|e| e.into_inner()).set_own_flags(0);
         canopy.propagate(&a);
-        assert_eq!(a.lock().unwrap().flags(), 0);
-        assert_eq!(join.lock().unwrap().flags(), 0);
+        assert_eq!(a.lock().unwrap_or_else(|e| e.into_inner()).flags(), 0);
+        assert_eq!(join.lock().unwrap_or_else(|e| e.into_inner()).flags(), 0);
     }
 
     #[test]
     fn sensor_canopy_make_crum() {
         let canopy = SensorCanopy::new();
         let crum = canopy.make_crum(crate::edition::props::IS_PARTIAL_FLAG);
-        assert!(crum.lock().unwrap().is_leaf());
-        assert_eq!(crum.lock().unwrap().kind(), CanopyCrumKind::Sensor);
+        assert!(crum.lock().unwrap_or_else(|e| e.into_inner()).is_leaf());
+        assert_eq!(crum.lock().unwrap_or_else(|e| e.into_inner()).kind(), CanopyCrumKind::Sensor);
     }
 
     #[test]
@@ -605,8 +636,8 @@ mod tests {
         let finder = PropFinder::open();
         let mut found = Vec::new();
         walk_northward(&find_root(&a), &finder, &mut |crum| {
-            if crum.lock().unwrap().is_leaf() {
-                found.push(crum.lock().unwrap().flags());
+            if crum.lock().unwrap_or_else(|e| e.into_inner()).is_leaf() {
+                found.push(crum.lock().unwrap_or_else(|e| e.into_inner()).flags());
             }
             false
         });
@@ -623,8 +654,8 @@ mod tests {
         let finder = PropFinder::closed();
         let mut found = Vec::new();
         walk_northward(&find_root(&a), &finder, &mut |crum| {
-            if crum.lock().unwrap().is_leaf() {
-                found.push(crum.lock().unwrap().flags());
+            if crum.lock().unwrap_or_else(|e| e.into_inner()).is_leaf() {
+                found.push(crum.lock().unwrap_or_else(|e| e.into_inner()).flags());
             }
             false
         });
@@ -637,6 +668,6 @@ mod tests {
         let a = canopy.make_crum(0);
         let b = canopy.make_crum(0);
         let join = canopy.join(&a, &b);
-        assert!(join.lock().unwrap().height_diff() >= 2);
+        assert!(join.lock().unwrap_or_else(|e| e.into_inner()).height_diff() >= 2);
     }
 }

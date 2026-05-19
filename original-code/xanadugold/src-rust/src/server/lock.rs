@@ -91,15 +91,15 @@ impl Lock for WallLock {
 pub struct ChallengeLock {
     club_id: BeId,
     challenge: Vec<u8>,
-    expected_response: Vec<u8>,
+    verifying_key: [u8; 32],
 }
 
 impl ChallengeLock {
-    pub fn new(club_id: BeId, challenge: Vec<u8>, expected_response: Vec<u8>) -> Self {
+    pub fn new(club_id: BeId, challenge: Vec<u8>, verifying_key: [u8; 32]) -> Self {
         ChallengeLock {
             club_id,
             challenge,
-            expected_response,
+            verifying_key,
         }
     }
 
@@ -111,12 +111,17 @@ impl ChallengeLock {
 impl Lock for ChallengeLock {
     fn try_open(&self, credential: &LockCredential) -> Result<KeyMaster, ServerError> {
         match credential {
-            LockCredential::ChallengeResponse(response) => {
-                if crate::crypto::password::constant_time_eq(response, &self.expected_response) {
-                    Ok(KeyMaster::make(self.club_id))
-                } else {
-                    Err(ServerError::LockFailed("challenge response mismatch".into()))
-                }
+            LockCredential::ChallengeResponse(signature_bytes) => {
+                let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&self.verifying_key)
+                    .map_err(|_| ServerError::LockFailed("invalid verifying key".into()))?;
+                let signature: ed25519_dalek::Signature = signature_bytes.as_slice().try_into()
+                    .map_err(|_| ServerError::LockFailed("invalid signature length (expected 64 bytes)".into()))?;
+                let mut message = Vec::with_capacity(8 + self.challenge.len());
+                message.extend_from_slice(b"xudanu/v1/");
+                message.extend_from_slice(&self.challenge);
+                crate::crypto::sign::verify_signature(&verifying_key, &message, &signature)
+                    .map(|_| KeyMaster::make(self.club_id))
+                    .map_err(|_| ServerError::LockFailed("challenge signature verification failed".into()))
             }
             _ => Err(ServerError::LockFailed(
                 "challenge lock requires ChallengeResponse credential".into(),
@@ -282,44 +287,21 @@ impl LockSmith for WallLockSmith {
 
 #[derive(Debug, Clone)]
 pub struct ChallengeLockSmith {
-    pub public_key: Vec<u8>,
-    pub encrypter_name: String,
+    pub verifying_key: [u8; 32],
 }
 
 impl ChallengeLockSmith {
-    pub fn new(public_key: Vec<u8>, encrypter_name: String) -> Self {
-        ChallengeLockSmith {
-            public_key,
-            encrypter_name,
-        }
-    }
-
-    pub fn create_challenge(&self, challenge_data: &[u8]) -> Result<Vec<u8>, ServerError> {
-        if self.public_key.len() != 32 {
-            return Err(ServerError::Internal("invalid public key length for challenge".into()));
-        }
-        let peer_pub_bytes: [u8; 32] = self.public_key.clone().try_into()
-            .map_err(|_| ServerError::Internal("public key must be 32 bytes".into()))?;
-        let peer_pub = x25519_dalek::PublicKey::from(peer_pub_bytes);
-        let eph_secret = x25519_dalek::EphemeralSecret::random_from_rng(rand::rngs::OsRng);
-        let eph_public = x25519_dalek::PublicKey::from(&eph_secret);
-        let shared = eph_secret.diffie_hellman(&peer_pub);
-        let key = crate::crypto::kdf::derive_key(shared.as_bytes(), None, crate::crypto::kdf::DomainLabel::CHALLENGE_KEY, b"challenge-aead");
-        let sealed = crate::crypto::aead::seal_standalone(&key, challenge_data, b"xudanu-challenge", 0)
-            .map_err(|e| ServerError::Internal(format!("challenge encryption failed: {}", e)))?;
-        let mut result = Vec::with_capacity(32 + sealed.ciphertext.len());
-        result.extend_from_slice(eph_public.as_bytes());
-        result.extend(sealed.ciphertext);
-        Ok(result)
+    pub fn new(verifying_key: [u8; 32]) -> Self {
+        ChallengeLockSmith { verifying_key }
     }
 }
 
 impl LockSmith for ChallengeLockSmith {
     fn create_lock(&self, club_id: Option<BeId>) -> Box<dyn Lock> {
         let id = club_id.unwrap_or(0);
-        let challenge = self.public_key.clone();
-        let expected = vec![0u8; 32];
-        Box::new(ChallengeLock::new(id, challenge, expected))
+        let mut challenge = vec![0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut challenge);
+        Box::new(ChallengeLock::new(id, challenge, self.verifying_key))
     }
 
     fn clone_boxed(&self) -> Box<dyn LockSmith> {
@@ -390,18 +372,33 @@ mod tests {
     }
 
     #[test]
-    fn challenge_lock_opens_with_correct_response() {
-        let lock = ChallengeLock::new(10, vec![1, 2, 3], vec![4, 5, 6]);
+    fn challenge_lock_opens_with_correct_signature() {
+        let signing_key = crate::crypto::sign::generate_signing_key();
+        let verifying_key = signing_key.verifying_key().to_bytes();
+        let challenge = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let lock = ChallengeLock::new(10, challenge.clone(), verifying_key);
+        let mut message = Vec::with_capacity(8 + challenge.len());
+        message.extend_from_slice(b"xudanu/v1/");
+        message.extend_from_slice(&challenge);
+        let sig = crate::crypto::sign::sign_bytes(&signing_key, &message);
         let km = lock
-            .try_open(&LockCredential::ChallengeResponse(vec![4, 5, 6]))
+            .try_open(&LockCredential::ChallengeResponse(sig.to_bytes().to_vec()))
             .unwrap();
         assert!(km.has_authority(10));
     }
 
     #[test]
-    fn challenge_lock_rejects_wrong_response() {
-        let lock = ChallengeLock::new(10, vec![1, 2, 3], vec![4, 5, 6]);
-        let result = lock.try_open(&LockCredential::ChallengeResponse(vec![7, 8, 9]));
+    fn challenge_lock_rejects_wrong_signature() {
+        let signing_key = crate::crypto::sign::generate_signing_key();
+        let wrong_key = crate::crypto::sign::generate_signing_key();
+        let verifying_key = signing_key.verifying_key().to_bytes();
+        let challenge = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let lock = ChallengeLock::new(10, challenge.clone(), verifying_key);
+        let mut message = Vec::with_capacity(8 + challenge.len());
+        message.extend_from_slice(b"xudanu/v1/");
+        message.extend_from_slice(&challenge);
+        let sig = crate::crypto::sign::sign_bytes(&wrong_key, &message);
+        let result = lock.try_open(&LockCredential::ChallengeResponse(sig.to_bytes().to_vec()));
         assert!(result.is_err());
     }
 
