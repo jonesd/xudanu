@@ -126,12 +126,37 @@ impl ChunkStore {
         let chunks_dir = base_dir.join("chunks");
         std::fs::create_dir_all(&chunks_dir)
             .map_err(|e| ChunkError::Io(e.to_string()))?;
+        Self::cleanup_tmp_files(&chunks_dir);
         Ok(ChunkStore {
             base_dir: base_dir.to_path_buf(),
             cache: Mutex::new(Cache::new(CACHE_CAPACITY)),
             cache_hits: AtomicU64::new(0),
             cache_misses: AtomicU64::new(0),
         })
+    }
+
+    fn cleanup_tmp_files(chunks_dir: &Path) {
+        let mut cleaned = 0u64;
+        if let Ok(entries) = std::fs::read_dir(chunks_dir) {
+            for entry in entries.flatten() {
+                if !entry.path().is_dir() {
+                    continue;
+                }
+                if let Ok(sub_entries) = std::fs::read_dir(entry.path()) {
+                    for sub in sub_entries.flatten() {
+                        let name = sub.file_name();
+                        if name.to_string_lossy().ends_with(".tmp") {
+                            if std::fs::remove_file(sub.path()).is_ok() {
+                                cleaned += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if cleaned > 0 {
+            tracing::info!("Cleaned up {} stale .tmp chunk files", cleaned);
+        }
     }
 
     pub fn write_chunk(&self, data: &[u8]) -> Result<[u8; 32], ChunkError> {
