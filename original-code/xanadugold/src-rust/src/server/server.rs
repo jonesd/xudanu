@@ -777,7 +777,10 @@ impl Server {
 
         for candidate in candidates {
             if self.session_can_edit(candidate, work_be_id) {
-                let ws = self.works.get_mut(&work_be_id).unwrap();
+                let ws = match self.works.get_mut(&work_be_id) {
+                    Some(ws) => ws,
+                    None => return,
+                };
                 ws.grabber = Some(candidate);
                 ws.grabbed_at = Some(
                     std::time::SystemTime::now()
@@ -793,8 +796,9 @@ impl Server {
                 });
                 return;
             }
-            let ws = self.works.get_mut(&work_be_id).unwrap();
-            ws.grab_waiters.retain(|w| w.session_id != candidate);
+            if let Some(ws) = self.works.get_mut(&work_be_id) {
+                ws.grab_waiters.retain(|w| w.session_id != candidate);
+            }
         }
     }
 
@@ -981,7 +985,8 @@ impl Server {
             Err(_) => return Ok(None),
         };
 
-        let ws = self.works.get_mut(&work_be_id).unwrap();
+        let ws = self.works.get_mut(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.load_revision(number, edition.clone());
         Ok(Some(edition))
     }
@@ -1515,7 +1520,9 @@ impl Server {
         let (be_id, elem) = self.grand_map.new_edition_element();
         self.grand_map.assign_new_id(elem);
         self.standalone_editions.insert(be_id, edition);
-        let edition = self.standalone_editions.get(&be_id).unwrap().clone();
+        let edition = self.standalone_editions.get(&be_id)
+            .ok_or_else(|| ServerError::Internal("standalone edition not found after insert".to_string()))?
+            .clone();
         let edition_elem = RangeElement::edition(be_id);
         self.backfollow.transclusion_index_mut().register_edition(&edition, &edition_elem, None);
         Ok(be_id)
@@ -1557,7 +1564,8 @@ impl Server {
 
     pub fn ensure_admin(&self, session_id: SessionId) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
-        let session = self.sessions.get(&session_id).unwrap();
+        let session = self.sessions.get(&session_id)
+            .ok_or(ServerError::SessionNotFound(session_id))?;
         if session.has_authority(self.system_clubs.admin_club)
             || session.has_authority(self.system_clubs.access_club)
         {
@@ -2726,7 +2734,8 @@ impl Server {
 
     pub(crate) fn ensure_logged_in(&self, session_id: SessionId) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
-        let session = self.sessions.get(&session_id).unwrap();
+        let session = self.sessions.get(&session_id)
+            .ok_or(ServerError::SessionNotFound(session_id))?;
         if !session.is_logged_in() {
             return Err(ServerError::NotAuthorized);
         }
@@ -3186,7 +3195,8 @@ impl Server {
             return Ok(());
         }
         self.ensure_session(session_id)?;
-        let session = self.sessions.get(&session_id).unwrap();
+        let session = self.sessions.get(&session_id)
+            .ok_or(ServerError::SessionNotFound(session_id))?;
         let km = session._key_master()
             .ok_or(ServerError::NotAuthorized)?;
         for club_id in endorsements.club_ids() {
@@ -3530,7 +3540,10 @@ impl Server {
                 self.works.insert(be_id, ws);
                 imported += 1;
 
-                let ws = self.works.get(&be_id).unwrap();
+                let ws = match self.works.get(&be_id) {
+                    Some(ws) => ws,
+                    None => continue,
+                };
                 for (_, carrier) in ws.work.current_edition().all_entries() {
                     let fp = carrier.element.content_fingerprint();
                     self.federation.record_remote_origin(fp, crate::server::federation::RemoteOrigin {
