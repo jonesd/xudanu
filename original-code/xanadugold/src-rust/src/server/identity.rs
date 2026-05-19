@@ -51,7 +51,11 @@ impl Server {
             ));
         }
         if !self.session(session_id)?.has_authority(club_id) {
-            return Err(ServerError::NotAuthorized);
+            let session = self.session(session_id)?;
+            let km = session._key_master().ok_or(ServerError::NotAuthorized)?;
+            if !km.has_signature_authority(club_id, &self.clubs) {
+                return Err(ServerError::NotAuthorized);
+            }
         }
         let phc_hash = crate::crypto::password::hash_password(password)
             .map_err(|e| ServerError::Internal(format!("password hash failed: {}", e)))?;
@@ -62,6 +66,7 @@ impl Server {
         let club = self.clubs.get_mut(&club_id)
             .ok_or(ServerError::ClubNotFound(club_id))?;
         club.set_credential(Some(Credential::Password { phc_hash }));
+        self.dirty_clubs.insert(club_id);
 
         if is_personal {
             let existing_key = self.sessions.get(&session_id)
@@ -97,7 +102,11 @@ impl Server {
     ) -> Result<(), ServerError> {
         self.ensure_logged_in(session_id)?;
         if !self.session(session_id)?.has_authority(club_id) {
-            return Err(ServerError::NotAuthorized);
+            let session = self.session(session_id)?;
+            let km = session._key_master().ok_or(ServerError::NotAuthorized)?;
+            if !km.has_signature_authority(club_id, &self.clubs) {
+                return Err(ServerError::NotAuthorized);
+            }
         }
         let verifying_key = self.clubs.get(&club_id)
             .ok_or(ServerError::ClubNotFound(club_id))?
@@ -107,6 +116,7 @@ impl Server {
             .ok_or(ServerError::ClubNotFound(club_id))?;
         club.set_credential(None);
         club.set_encrypted_signing_key(None);
+        self.dirty_clubs.insert(club_id);
         security_info!(
             club_id = ?club_id,
             session_id = session_id.as_u64(),
@@ -183,6 +193,7 @@ impl Server {
         }
 
         self.clubs.insert(be_id, club);
+        self.dirty_clubs.insert(be_id);
         self.club_names.insert(display_name, be_id);
         self.personal_club_count += 1;
 
@@ -237,6 +248,8 @@ impl Server {
         let club = self.clubs.get_mut(&club_id)
             .ok_or(ServerError::ClubNotFound(club_id))?;
         club.add_member(member_id);
+        self.dirty_clubs.insert(club_id);
+        self.refresh_all_session_authority();
         Ok(())
     }
 
@@ -259,6 +272,8 @@ impl Server {
         let club = self.clubs.get_mut(&club_id)
             .ok_or(ServerError::ClubNotFound(club_id))?;
         club.remove_member(member_id);
+        self.dirty_clubs.insert(club_id);
+        self.refresh_all_session_authority();
         Ok(())
     }
 
@@ -304,20 +319,11 @@ impl Server {
                 smith.create_lock(Some(club_id))
             }
             Some(Credential::PublicKey { verifying_key }) => {
-                let smith = super::lock::ChallengeLockSmith::new(
-                    verifying_key.to_vec(),
-                    "x25519-dalek".to_string(),
-                );
+                let smith = super::lock::ChallengeLockSmith::new(*verifying_key);
                 smith.create_lock(Some(club_id))
             }
             None => {
-                if club.read_club() == Some(self.system_clubs.public_club)
-                    || club_id == self.system_clubs.public_club
-                {
-                    super::lock::BooLock::new(club_id).clone_boxed()
-                } else {
-                    super::lock::WallLock::new().clone_boxed()
-                }
+                super::lock::WallLock::new().clone_boxed()
             }
         };
 
@@ -347,7 +353,8 @@ impl Server {
         lock: &dyn Lock,
         credential: &LockCredential,
     ) -> Result<KeyMaster, ServerError> {
-        let km = lock.try_open(credential)?;
+        let mut km = lock.try_open(credential)?;
+        km.update_authority(&self.clubs);
         let session = self
             .sessions
             .get_mut(&session_id)
@@ -502,8 +509,7 @@ mod tests {
     fn public_club_login_still_works() {
         let mut server = Server::new();
         let sid = server.connect();
-        let _lock = server.login(sid, server.public_club_id()).unwrap();
-        let km = server.authenticate_with_pending(sid, &LockCredential::Boo).unwrap();
+        let km = server.login_public(sid).unwrap();
         assert!(km.has_authority(server.public_club_id()));
     }
 
@@ -551,7 +557,13 @@ mod tests {
     #[test]
     fn set_password_requires_authority() {
         let (mut server, sid) = setup_logged_in();
-        let club_id = server.create_personal_club(sid, "alice".to_string(), None, None).unwrap();
+        let alice_id = server.create_personal_club(sid, "alice".to_string(), None, None).unwrap();
+        server.club_set_password(sid, alice_id, b"alicepass").unwrap();
+
+        let sid_alice = server.connect();
+        let _lock = server.login(sid_alice, alice_id).unwrap();
+        server.authenticate_with_pending(sid_alice, &LockCredential::Password(b"alicepass".to_vec())).unwrap();
+        let club_id = server.create_club(sid_alice, Edition::from_text("target")).unwrap();
 
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();

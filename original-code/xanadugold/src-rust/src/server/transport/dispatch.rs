@@ -85,22 +85,26 @@ fn dispatch_inner(
             Ok(ResponseValue::Id(id))
         }
         WireRequest::ClubGet { club_id } => {
+            srv.ensure_session(session_id)?;
             let _club = srv.club(club_id)?;
             Ok(ResponseValue::Id(club_id))
         }
         WireRequest::ClubByName { name } | WireRequest::ClubIdByName { name } => {
+            srv.ensure_session(session_id)?;
             match srv.club_id_by_name(&name) {
                 Some(id) => Ok(ResponseValue::Id(id)),
                 None => Err(crate::server::ServerError::NotFound(format!("club '{}'", name))),
             }
         }
         WireRequest::ClubNameById { club_id } => {
+            srv.ensure_session(session_id)?;
             let name = srv.club_name_by_id(club_id)
                 .map(|s| s.to_string())
                 .ok_or_else(|| crate::server::ServerError::ClubNotFound(club_id))?;
             Ok(ResponseValue::String(name))
         }
         WireRequest::ClubNames => {
+            srv.ensure_session(session_id)?;
             let names = srv.club_names_list()
                 .into_iter()
                 .map(|(n, id)| (n.to_string(), id))
@@ -156,7 +160,7 @@ fn dispatch_inner(
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkForceRelease { work_id } => {
-            let prev = srv.work_force_release(work_id)?;
+            let prev = srv.work_force_release(session_id, work_id)?;
             match prev {
                 Some(prev_session) => {
                     tracing::info!(work_id, ?prev_session, "Force-released work");
@@ -225,12 +229,12 @@ fn dispatch_inner(
         }
         WireRequest::WorkSponsor { work_id, club_id } => {
             srv.ensure_logged_in(session_id)?;
-            srv.work_sponsor(work_id, club_id)?;
+            srv.work_sponsor(session_id, work_id, club_id)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkUnsponsor { work_id, club_id } => {
             srv.ensure_logged_in(session_id)?;
-            srv.work_unsponsor(work_id, club_id)?;
+            srv.work_unsponsor(session_id, work_id, club_id)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkSponsors { work_id } => {
@@ -753,6 +757,7 @@ fn dispatch_inner(
                 direct_only: direct_only.unwrap_or(false),
                 authority_clubs: Vec::new(),
                 endorsement_filter: None,
+                watched_content: Vec::new(),
             };
             let id = srv.recorder_create(query)?;
             Ok(ResponseValue::RecorderCreateResult { recorder_id: id })
@@ -887,6 +892,7 @@ fn dispatch_inner(
             Ok(ResponseValue::Void)
         }
         WireRequest::EditionEndorsements { edition_id } => {
+            srv.ensure_session(session_id)?;
             let es = srv.edition_endorsements(edition_id)?;
             Ok(ResponseValue::EndorsementResult {
                 endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
@@ -899,6 +905,7 @@ fn dispatch_inner(
             })
         }
         WireRequest::EditionTotalEndorsements { edition_id } => {
+            srv.ensure_session(session_id)?;
             let es = srv.edition_total_endorsements(edition_id)?;
             Ok(ResponseValue::EndorsementResult {
                 endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),

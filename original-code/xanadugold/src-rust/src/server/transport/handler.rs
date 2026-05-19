@@ -81,7 +81,7 @@ async fn csrf_token_handler(State(state): State<SharedState>) -> impl IntoRespon
     let mut bytes = [0u8; 32];
     rand::rngs::OsRng.fill_bytes(&mut bytes);
     let token = hex_encode(&bytes);
-    let mut tokens = state.csrf_tokens.lock().unwrap();
+    let mut tokens = state.csrf_tokens.lock().unwrap_or_else(|e| e.into_inner());
     tokens.push_back(token.clone());
     while tokens.len() > MAX_CSRF_TOKENS {
         tokens.pop_front();
@@ -153,7 +153,7 @@ async fn ws_handler(
     if state.csrf_enabled {
         if let Some(ref token) = query.csrf_token {
             let valid = {
-                let mut tokens = state.csrf_tokens.lock().unwrap();
+                let mut tokens = state.csrf_tokens.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(pos) = tokens.iter().position(|t| t == token) {
                     tokens.remove(pos);
                     true
@@ -323,7 +323,7 @@ async fn handle_socket(
     }
 
     let too_many = {
-        let sec = state.security.lock().unwrap();
+        let sec = state.security.lock().unwrap_or_else(|e| e.into_inner());
         sec.active_sessions_for_ip(remote_addr) >= 50
     };
     if too_many {
@@ -335,7 +335,7 @@ async fn handle_socket(
     let session_id = state.server.with_server(|srv| srv.connect());
 
     {
-        let mut sec = state.security.lock().unwrap();
+        let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());
         sec.on_session_opened(session_id, remote_addr, format!("session opened from {}", remote_addr.map(|a| a.to_string()).unwrap_or_default()));
     }
 
@@ -453,7 +453,7 @@ async fn handle_socket(
                 }
 
                 {
-                    let mut sec = state.security.lock().unwrap();
+                    let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());
                     let threat = sec.on_request(session_id, remote_addr);
                     if threat == ThreatLevel::Critical {
                         let _ = out_tx.send(vec![]);
@@ -473,7 +473,7 @@ async fn handle_socket(
                     Ok(msg) => msg,
                     Err(e) => {
                         {
-                            let mut sec = state.security.lock().unwrap();
+                            let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());
                             sec.on_protocol_violation(session_id, remote_addr, e.to_string());
                             if sec.should_disconnect(session_id, remote_addr) {
                                 break;
@@ -512,7 +512,7 @@ async fn handle_socket(
                         let result = dispatch::dispatch(&state.server, session_id, parsed.inner);
 
                         if let Err(ref err) = result {
-                            let mut sec = state.security.lock().unwrap();
+                            let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());
                             let code = ErrorCode::from_server_error(err);
                             match code {
                                 ErrorCode::NotAuthorized => {
@@ -535,7 +535,7 @@ async fn handle_socket(
                                 break;
                             }
                         } else if is_auth_op {
-                            let mut sec = state.security.lock().unwrap();
+                            let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());
                             sec.on_auth_success(session_id, remote_addr, "login".to_string());
                         }
 
@@ -732,7 +732,7 @@ async fn handle_socket(
         let _ = srv.disconnect(session_id);
     });
     {
-        let mut sec = state.security.lock().unwrap();
+        let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());
         sec.on_session_closed(session_id, remote_addr, "connection closed".to_string());
     }
     drop(out_tx_clone);

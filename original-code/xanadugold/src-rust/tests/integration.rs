@@ -20,9 +20,21 @@ struct TestServer {
     addr: SocketAddr,
 }
 
+const ADMIN_PASSWORD: &[u8] = b"admin";
+
+fn password_credential(pw: &[u8]) -> serde_json::Value {
+    serde_json::json!({"Password": pw.iter().map(|&b| serde_json::Value::from(b)).collect::<Vec<_>>()})
+}
+
 impl TestServer {
     async fn start() -> Self {
-        let server = Server::new();
+        let mut server = Server::new();
+        let admin_club = server.admin_club_id();
+        let setup_sid = server.connect();
+        server.login_public(setup_sid).unwrap();
+        server.grant_admin_authority(setup_sid).unwrap();
+        server.club_set_password(setup_sid, admin_club, ADMIN_PASSWORD).unwrap();
+        server.disconnect(setup_sid).unwrap();
         let state = AppState::new(server).shared();
         let app = build_router(state)
             .into_make_service_with_connect_info::<std::net::SocketAddr>();
@@ -132,7 +144,7 @@ async fn json_admin_login(srv: &TestServer) -> (SplitSender, SplitReceiver, u64)
         serde_json::json!({"club_id": admin_club_id})
     ))).await;
     send_recv_json(&mut s, &mut r, json_req(4, "session_authenticate", Some(
-        serde_json::json!({"club_id": admin_club_id, "credential": "Boo"})
+        serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})
     ))).await;
     (s, r, sid)
 }
@@ -3343,7 +3355,13 @@ async fn reconcile_merge_across_servers() {
 // =============================================================================
 
 fn setup_federated_server_state() -> xudanu::server::transport::SharedState {
-    let server = Server::new();
+    let mut server = Server::new();
+    let admin_club = server.admin_club_id();
+    let setup_sid = server.connect();
+    server.login_public(setup_sid).unwrap();
+    server.grant_admin_authority(setup_sid).unwrap();
+    server.club_set_password(setup_sid, admin_club, ADMIN_PASSWORD).unwrap();
+    server.disconnect(setup_sid).unwrap();
     let state = AppState::new(server).shared();
     state.server.with_server(|srv| {
         let mut config = xudanu::server::federation::FederationConfig::closed(vec![]);
@@ -3476,7 +3494,7 @@ async fn membership_leave_via_wire_op() {
         serde_json::json!({"club_id": admin_club_id})
     ))).await;
     send_recv_json(&mut s, &mut r, json_req(4, "session_authenticate", Some(
-        serde_json::json!({"club_id": admin_club_id, "credential": "Boo"})
+        serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})
     ))).await;
 
     let resp = send_recv_json(&mut s, &mut r, json_req(10, "membership_leave", None)).await;
@@ -3692,7 +3710,7 @@ async fn governance_propose_via_wire_op() {
         serde_json::json!({"club_id": admin_club_id})
     ))).await;
     send_recv_json(&mut s, &mut r, json_req(4, "session_authenticate", Some(
-        serde_json::json!({"club_id": admin_club_id, "credential": "Boo"})
+        serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})
     ))).await;
 
     let tx = serde_json::json!({
@@ -3863,7 +3881,7 @@ async fn governance_seal_via_wire_op() {
         serde_json::json!({"club_id": admin_club_id})
     ))).await;
     send_recv_json(&mut s, &mut r, json_req(4, "session_authenticate", Some(
-        serde_json::json!({"club_id": admin_club_id, "credential": "Boo"})
+        serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})
     ))).await;
 
     let resp = send_recv_json(&mut s, &mut r, json_req(10, "governance_seal", None)).await;
@@ -3886,7 +3904,7 @@ fn temp_data_dir(name: &str) -> std::path::PathBuf {
 
 fn server_init(data_dir: &std::path::Path) -> xudanu::server::Server {
     let mut server = xudanu::server::Server::new();
-    let _ = server.restore_keypair_from_dir(data_dir);
+    let _ = server.restore_keypair_from_dir(data_dir, None);
     let snapshot_path = data_dir.join("server.json");
     server.set_checkpoint_path(snapshot_path.clone());
     server.init_blob_store(data_dir).unwrap();
@@ -4568,10 +4586,12 @@ async fn publish_unpublish_via_wire() {
     let club_id = send_recv_json(&mut s, &mut r,
         json_req(10, "club_create", Some(serde_json::json!({"description": {"text": "owner club"}}))))
         .await["value"]["value"].as_u64().unwrap();
+    send_recv_json(&mut s, &mut r,
+        json_req(11, "club_set_password", Some(serde_json::json!({"club_id": club_id, "password": b"owner" })))).await;
     let _ = send_recv_json(&mut s, &mut r,
-        json_req(11, "session_login", Some(serde_json::json!({"club_id": club_id})))).await;
+        json_req(12, "session_login", Some(serde_json::json!({"club_id": club_id})))).await;
     let _ = send_recv_json(&mut s, &mut r,
-        json_req(12, "session_authenticate", Some(serde_json::json!({"club_id": club_id, "credential": "Boo"})))).await;
+        json_req(13, "session_authenticate", Some(serde_json::json!({"credential": password_credential(b"owner")})))).await;
 
     let work_id = send_recv_json(&mut s, &mut r,
         json_req(20, "work_create", Some(serde_json::json!({"edition": {"text": "wire test"}}))))
@@ -4608,10 +4628,12 @@ async fn irrevocably_unpublish_via_wire() {
     let club_id = send_recv_json(&mut s, &mut r,
         json_req(10, "club_create", Some(serde_json::json!({"description": {"text": "owner club"}}))))
         .await["value"]["value"].as_u64().unwrap();
+    send_recv_json(&mut s, &mut r,
+        json_req(11, "club_set_password", Some(serde_json::json!({"club_id": club_id, "password": b"owner" })))).await;
     let _ = send_recv_json(&mut s, &mut r,
-        json_req(11, "session_login", Some(serde_json::json!({"club_id": club_id})))).await;
+        json_req(12, "session_login", Some(serde_json::json!({"club_id": club_id})))).await;
     let _ = send_recv_json(&mut s, &mut r,
-        json_req(12, "session_authenticate", Some(serde_json::json!({"club_id": club_id, "credential": "Boo"})))).await;
+        json_req(13, "session_authenticate", Some(serde_json::json!({"credential": password_credential(b"owner")})))).await;
 
     let work_id = send_recv_json(&mut s, &mut r,
         json_req(20, "work_create", Some(serde_json::json!({"edition": {"text": "permanent"}}))))
@@ -4634,10 +4656,12 @@ async fn work_list_filters_private_from_other_session() {
     let club_id = send_recv_json(&mut s1, &mut r1,
         json_req(10, "club_create", Some(serde_json::json!({"description": {"text": "owner club"}}))))
         .await["value"]["value"].as_u64().unwrap();
+    send_recv_json(&mut s1, &mut r1,
+        json_req(11, "club_set_password", Some(serde_json::json!({"club_id": club_id, "password": b"owner" })))).await;
     let _ = send_recv_json(&mut s1, &mut r1,
-        json_req(11, "session_login", Some(serde_json::json!({"club_id": club_id})))).await;
+        json_req(12, "session_login", Some(serde_json::json!({"club_id": club_id})))).await;
     let _ = send_recv_json(&mut s1, &mut r1,
-        json_req(12, "session_authenticate", Some(serde_json::json!({"club_id": club_id, "credential": "Boo"})))).await;
+        json_req(13, "session_authenticate", Some(serde_json::json!({"credential": password_credential(b"owner")})))).await;
     let pub_wid = send_recv_json(&mut s1, &mut r1,
         json_req(20, "work_create", Some(serde_json::json!({"edition": {"text": "will publish"}}))))
         .await["value"]["value"].as_u64().unwrap();
@@ -4857,4 +4881,844 @@ fn personal_club_with_password_survives_persistence_roundtrip() {
         "signing key should be identical after roundtrip"
     );
     assert_eq!(restored.personal_club_count(), 1, "personal_club_count should be reconstructed");
+}
+
+// ============================================================
+// Content Watch (Watch feature)
+// ============================================================
+
+#[tokio::test]
+async fn content_watch_receives_initial_match_for_existing_work() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _sid) = json_setup(&srv).await;
+
+    let resp_a = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "one two three"}}))))
+        .await;
+    let work_a = resp_a["value"]["value"].as_u64().expect("work_a should be u64");
+
+    let resp_b = send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "two three four"}}))))
+        .await;
+    let work_b = resp_b["value"]["value"].as_u64().expect("work_b should be u64");
+
+    let sub_frame = serde_json::json!({
+        "v": PROTOCOL_VERSION,
+        "type": "subscribe",
+        "id": 20,
+        "payload": {
+            "detector_type": "content_works",
+            "target_id": work_a
+        }
+    });
+    let resp = send_recv_json(&mut s, &mut r, sub_frame).await;
+    assert_eq!(resp["type"], "response", "subscribe should succeed, got: {:?}", resp);
+
+    let deadline = std::time::Duration::from_secs(3);
+    let start = std::time::Instant::now();
+    let mut found_work_b = false;
+    let mut events: Vec<serde_json::Value> = Vec::new();
+    while start.elapsed() < deadline {
+        match tokio::time::timeout(std::time::Duration::from_millis(200), r.next()).await {
+            Ok(Some(Ok(msg))) => {
+                let val: serde_json::Value = match msg {
+                    Message::Text(t) => serde_json::from_str(&t).unwrap(),
+                    Message::Binary(b) => serde_json::from_slice(&b).unwrap(),
+                    _ => continue,
+                };
+                events.push(val.clone());
+                if val["type"] == "event" {
+                    let event_type = val["event"]["type"].as_str().unwrap_or("");
+                    if event_type == "content_match" {
+                        let matched_id = val["event"]["payload"]["edition_be_id"].as_u64().unwrap_or(0);
+                        if matched_id == work_b {
+                            found_work_b = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            _ => continue,
+        }
+    }
+    assert!(found_work_b,
+        "expected content_match event for work_b ({}) within 3s. Received events: {:?}", work_b, events);
+}
+
+#[tokio::test]
+async fn content_watch_receives_notification_on_revision() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _sid) = json_setup(&srv).await;
+
+    let work_a = send_recv_json(&mut s, &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "hello"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let work_b = send_recv_json(&mut s, &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "zzzzz"}}))))
+        .await["value"]["value"].as_u64().unwrap();
+
+    let sub_frame = serde_json::json!({
+        "v": PROTOCOL_VERSION,
+        "type": "subscribe",
+        "id": 20,
+        "payload": {
+            "detector_type": "content_works",
+            "target_id": work_a
+        }
+    });
+    let resp = send_recv_json(&mut s, &mut r, sub_frame).await;
+    assert_eq!(resp["type"], "response", "subscribe should succeed, got: {:?}", resp);
+
+    // drain any initial events
+    while tokio::time::timeout(std::time::Duration::from_millis(50), r.next()).await.is_ok() {}
+
+    send_recv_json(&mut s, &mut r,
+        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_b})))).await;
+    send_recv_json(&mut s, &mut r,
+        json_req(31, "work_revise", Some(serde_json::json!({"work_id": work_b, "edition": {"text": "hello"}}))))
+        .await;
+
+    // content notifications are drained on every incoming message, so the
+    // work_revise response comes first, then we need another message to flush
+    // the notification that was queued during the revise
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let _ = s.send(Message::Text(
+        serde_json::to_string(&serde_json::json!({
+            "v": PROTOCOL_VERSION, "type": "request", "id": 32, "op": "server_health"
+        })).unwrap().into()
+    )).await;
+
+    let deadline = std::time::Duration::from_secs(3);
+    let start = std::time::Instant::now();
+    let mut found = false;
+    while start.elapsed() < deadline {
+        match tokio::time::timeout(std::time::Duration::from_millis(200), r.next()).await {
+            Ok(Some(Ok(msg))) => {
+                let val: serde_json::Value = match msg {
+                    Message::Text(t) => serde_json::from_str(&t).unwrap(),
+                    Message::Binary(b) => serde_json::from_slice(&b).unwrap(),
+                    _ => continue,
+                };
+                if val["type"] == "event" && val["event"]["type"].as_str() == Some("content_match") {
+                    found = true;
+                    break;
+                }
+            }
+            _ => break,
+        }
+    }
+    assert!(found, "expected content_match event after revising work_b to match work_a");
+}
+
+// ================================================================
+// ChunkStore persistence + concurrent server access tests
+// ================================================================
+
+fn temp_chunk_data_dir(name: &str) -> std::path::PathBuf {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("xudanu-chunk-{}-{}-{}", name, std::process::id(), id));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
+}
+
+fn server_init_chunk_store(data_dir: &std::path::Path) -> xudanu::server::Server {
+    let mut server = xudanu::server::Server::new();
+    server.init_data_dir(data_dir, None).unwrap();
+    server
+}
+
+fn server_restore_chunk_store(data_dir: &std::path::Path) -> xudanu::server::Server {
+    let mut server = xudanu::server::Server::new();
+    server.restore_from_data_dir(data_dir, None).unwrap();
+    server
+}
+
+#[test]
+fn chunk_store_persistence_works_survive_restart() {
+    let dir = temp_chunk_data_dir("works");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let w1 = srv.create_work(sid, xudanu::edition::Edition::from_text("chunk doc one")).unwrap();
+    let w2 = srv.create_work(sid, xudanu::edition::Edition::from_text("chunk doc two")).unwrap();
+    assert_eq!(srv.work_count(), 2);
+
+    srv.checkpoint_to_store().unwrap();
+    drop(srv);
+
+    let mut srv2 = server_restore_chunk_store(&dir);
+    assert_eq!(srv2.work_count(), 2);
+    assert!(srv2.work(w1).is_ok());
+    assert!(srv2.work(w2).is_ok());
+    assert_eq!(srv2.work_edition(w1).unwrap().to_text(), "chunk doc one");
+    assert_eq!(srv2.work_edition(w2).unwrap().to_text(), "chunk doc two");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn chunk_store_persistence_revision_history() {
+    let dir = temp_chunk_data_dir("history");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("v0")).unwrap();
+    srv.work_grab(sid, wid).unwrap();
+    srv.work_revise(sid, wid, xudanu::edition::Edition::from_text("v1")).unwrap();
+    srv.work_revise(sid, wid, xudanu::edition::Edition::from_text("v2")).unwrap();
+    srv.work_release(sid, wid).unwrap();
+    assert_eq!(srv.work_revision_count(wid).unwrap(), 2);
+
+    srv.checkpoint_to_store().unwrap();
+    drop(srv);
+
+    let mut srv2 = server_restore_chunk_store(&dir);
+    assert_eq!(srv2.work_revision_count(wid).unwrap(), 2);
+    assert_eq!(srv2.work_edition(wid).unwrap().to_text(), "v2");
+
+    let rev0 = srv2.work_fetch_revision(wid, 0).unwrap().unwrap();
+    assert_eq!(rev0.to_text(), "v0");
+
+    let rev1 = srv2.work_fetch_revision(wid, 1).unwrap().unwrap();
+    assert_eq!(rev1.to_text(), "v1");
+
+    let rev2 = srv2.work_fetch_revision(wid, 2).unwrap().unwrap();
+    assert_eq!(rev2.to_text(), "v2");
+
+    assert!(srv2.work_fetch_revision(wid, 99).unwrap().is_none());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn chunk_store_persistence_clubs_survive_restart() {
+    let dir = temp_chunk_data_dir("clubs");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let club_id = srv.create_club(sid, xudanu::edition::Edition::from_text("my club")).unwrap();
+
+    srv.checkpoint_to_store().unwrap();
+    drop(srv);
+
+    let srv2 = server_restore_chunk_store(&dir);
+    let club = srv2.club(club_id).unwrap();
+    assert_eq!(club.work().edition().to_text(), "my club");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn chunk_store_multiple_checkpoints() {
+    let dir = temp_chunk_data_dir("multi_cp");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let w1 = srv.create_work(sid, xudanu::edition::Edition::from_text("first")).unwrap();
+    srv.checkpoint_to_store().unwrap();
+
+    srv.work_grab(sid, w1).unwrap();
+    srv.work_revise(sid, w1, xudanu::edition::Edition::from_text("second")).unwrap();
+    srv.work_release(sid, w1).unwrap();
+    srv.checkpoint_to_store().unwrap();
+
+    let w2 = srv.create_work(sid, xudanu::edition::Edition::from_text("third")).unwrap();
+    srv.checkpoint_to_store().unwrap();
+    drop(srv);
+
+    let mut srv2 = server_restore_chunk_store(&dir);
+    assert_eq!(srv2.work_count(), 2);
+    assert_eq!(srv2.work_edition(w1).unwrap().to_text(), "second");
+    assert_eq!(srv2.work_edition(w2).unwrap().to_text(), "third");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn read_only_data_dir_returns_error() {
+    let dir = temp_chunk_data_dir("readonly");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+    let _wid = srv.create_work(sid, xudanu::edition::Edition::from_text("should fail on checkpoint")).unwrap();
+    srv.checkpoint_to_store().unwrap();
+    drop(srv);
+
+    #[cfg(unix)]
+    {
+        let chunks_dir = dir.join("chunks");
+        make_tree_readonly(&chunks_dir);
+
+        let mut srv2 = xudanu::server::Server::new();
+        srv2.restore_from_data_dir(&dir, None).unwrap();
+
+        let sid2 = srv2.connect();
+        srv2.login_public(sid2).unwrap();
+        let _wid2 = srv2.create_work(sid2, xudanu::edition::Edition::from_text("new work needs new chunks")).unwrap();
+
+        let result = srv2.checkpoint_to_store();
+        assert!(result.is_err(), "checkpoint to read-only dir should fail");
+
+        make_tree_writable(&chunks_dir);
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(unix)]
+fn make_tree_readonly(dir: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                make_tree_readonly(&path);
+            }
+        }
+    }
+    let mut perms = std::fs::metadata(dir).unwrap().permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o555);
+    let _ = std::fs::set_permissions(dir, perms);
+}
+
+#[cfg(unix)]
+fn make_tree_writable(dir: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(dir).unwrap().permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+    let _ = std::fs::set_permissions(dir, perms);
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                make_tree_writable(&path);
+            }
+        }
+    }
+}
+
+#[test]
+fn chunk_store_verify_after_checkpoint() {
+    use std::sync::Arc;
+
+    let dir = temp_chunk_data_dir("concurrent");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let mut work_ids = Vec::new();
+    for i in 0..20 {
+        work_ids.push(srv.create_work(sid, xudanu::edition::Edition::from_text(&format!("doc {}", i))).unwrap());
+    }
+    srv.checkpoint_to_store().unwrap();
+
+    let handle = Arc::new(xudanu::server::transport::ServerHandle::new(srv));
+
+    let mut threads = Vec::new();
+    for t in 0..4 {
+        let handle = Arc::clone(&handle);
+        let work_ids = work_ids.clone();
+        threads.push(std::thread::spawn(move || {
+            let mut ok = 0u64;
+            for i in 0..100 {
+                let idx = ((t * 100 + i) as usize) % work_ids.len();
+                let wid = work_ids[idx];
+                handle.with_server_ref(|srv| {
+                    let edition = srv.work_edition(wid).unwrap();
+                    assert_eq!(edition.to_text(), format!("doc {}", idx));
+                });
+                ok += 1;
+            }
+            ok
+        }));
+    }
+
+    let total: u64 = threads.into_iter().map(|t| t.join().unwrap()).sum();
+    assert_eq!(total, 400);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn concurrent_server_writes_dont_corrupt() {
+    use std::sync::Arc;
+
+    let dir = temp_chunk_data_dir("concurrent_writes");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let handle = Arc::new(xudanu::server::transport::ServerHandle::new(srv));
+    let created_ids: Arc<std::sync::Mutex<Vec<u64>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+    let mut threads = Vec::new();
+    for t in 0..4 {
+        let handle = Arc::clone(&handle);
+        let ids = Arc::clone(&created_ids);
+        threads.push(std::thread::spawn(move || {
+            for i in 0..10 {
+                let text = format!("t{}-doc{}", t, i);
+                handle.with_server(|srv| {
+                    let sid = srv.connect();
+                    srv.login_public(sid).unwrap();
+                    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text(&text)).unwrap();
+                    ids.lock().unwrap_or_else(|e| e.into_inner()).push(wid);
+                });
+            }
+        }));
+    }
+
+    for t in threads {
+        t.join().unwrap();
+    }
+
+    handle.with_server(|srv| {
+        assert_eq!(srv.work_count(), 40);
+        srv.checkpoint_to_store().unwrap();
+    });
+
+    drop(handle);
+
+    let mut srv2 = server_restore_chunk_store(&dir);
+    assert_eq!(srv2.work_count(), 40);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn concurrent_checkpoint_while_editing() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+    let dir = temp_chunk_data_dir("cp_edit");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("v0")).unwrap();
+
+    let handle = Arc::new(xudanu::server::transport::ServerHandle::new(srv));
+    let stop = Arc::new(AtomicBool::new(false));
+    let revisions = Arc::new(AtomicU64::new(0));
+
+    let h_cp = Arc::clone(&handle);
+    let stop_cp = Arc::clone(&stop);
+    let checkpoint_thread = std::thread::spawn(move || {
+        while !stop_cp.load(Ordering::Relaxed) {
+            h_cp.with_server(|srv| {
+                let _ = srv.checkpoint_to_store();
+            });
+            std::thread::sleep(std::time::Duration::from_micros(100));
+        }
+    });
+
+    let h_edit = Arc::clone(&handle);
+    let stop_edit = Arc::clone(&stop);
+    let revs = Arc::clone(&revisions);
+    let edit_thread = std::thread::spawn(move || {
+        for i in 1..=50u64 {
+            h_edit.with_server(|srv| {
+                let sid = srv.connect();
+                srv.login_public(sid).unwrap();
+                srv.work_grab(sid, wid).unwrap();
+                srv.work_revise(sid, wid, xudanu::edition::Edition::from_text(&format!("v{}", i))).unwrap();
+                srv.work_release(sid, wid).unwrap();
+            });
+            revs.store(i, Ordering::Relaxed);
+        }
+        stop_edit.store(true, Ordering::Relaxed);
+    });
+
+    checkpoint_thread.join().unwrap();
+    edit_thread.join().unwrap();
+
+    let final_revs = revisions.load(Ordering::Relaxed);
+    handle.with_server(|srv| {
+        assert_eq!(srv.work_revision_count(wid).unwrap(), final_revs);
+        assert_eq!(srv.work_edition(wid).unwrap().to_text(), format!("v{}", final_revs));
+    });
+
+    drop(handle);
+
+    let mut srv2 = server_restore_chunk_store(&dir);
+    let restored_rev = srv2.work_revision_count(wid).unwrap();
+    assert!(restored_rev <= final_revs);
+    assert!(restored_rev > 0, "at least one revision should have been checkpointed");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn corrupt_chunk_detected_on_restore() {
+    let dir = temp_chunk_data_dir("corrupt_chunk");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("will be corrupted")).unwrap();
+    srv.checkpoint_to_store().unwrap();
+    drop(srv);
+
+    let chunks_dir = dir.join("chunks");
+    for entry in std::fs::read_dir(&chunks_dir).unwrap() {
+        let entry = entry.unwrap();
+        if entry.path().is_dir() {
+            for file_entry in std::fs::read_dir(entry.path()).unwrap() {
+                let file_entry = file_entry.unwrap();
+                let name = file_entry.file_name().to_string_lossy().to_string();
+                if !name.ends_with(".tmp") && !name.ends_with(".json") {
+                    let path = file_entry.path();
+                    let original = std::fs::read(&path).unwrap();
+                    if original.len() > 10 {
+                        let mut corrupted = original.clone();
+                        corrupted[5] = !corrupted[5];
+                        corrupted[6] = !corrupted[6];
+                        std::fs::write(&path, corrupted).unwrap();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut srv2 = xudanu::server::Server::new();
+    let result = srv2.restore_from_data_dir(&dir, None);
+    assert!(result.is_err(), "restore with corrupted chunk should fail");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn missing_chunk_detected_on_restore() {
+    let dir = temp_chunk_data_dir("missing_chunk");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let _wid = srv.create_work(sid, xudanu::edition::Edition::from_text("will go missing")).unwrap();
+    srv.checkpoint_to_store().unwrap();
+    drop(srv);
+
+    let chunks_dir = dir.join("chunks");
+    let _ = std::fs::remove_dir_all(&chunks_dir);
+    std::fs::create_dir_all(&chunks_dir).unwrap();
+
+    let mut srv2 = xudanu::server::Server::new();
+    let result = srv2.restore_from_data_dir(&dir, None);
+    assert!(result.is_err(), "restore with missing chunks should fail");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// Dirty-only checkpoint tests
+// ================================================================
+
+#[test]
+fn dirty_checkpoint_only_reserializes_changed_works() {
+    let dir = temp_chunk_data_dir("dirty_works");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let w1 = srv.create_work(sid, xudanu::edition::Edition::from_text("work one")).unwrap();
+    let w2 = srv.create_work(sid, xudanu::edition::Edition::from_text("work two")).unwrap();
+    let w3 = srv.create_work(sid, xudanu::edition::Edition::from_text("work three")).unwrap();
+
+    srv.checkpoint_to_store().unwrap();
+
+    assert!(!srv.is_work_dirty(w1).unwrap());
+    assert!(!srv.is_work_dirty(w2).unwrap());
+    assert!(!srv.is_work_dirty(w3).unwrap());
+
+    srv.work_grab(sid, w2).unwrap();
+    let _ = srv.work_revise(sid, w2, xudanu::edition::Edition::from_text("work two revised")).unwrap();
+    assert!(!srv.is_work_dirty(w1).unwrap(), "w1 should still be clean");
+    assert!(srv.is_work_dirty(w2).unwrap(), "w2 should be dirty");
+    assert!(!srv.is_work_dirty(w3).unwrap(), "w3 should still be clean");
+
+    srv.checkpoint_to_store().unwrap();
+
+    assert!(!srv.is_work_dirty(w1).unwrap());
+    assert!(!srv.is_work_dirty(w2).unwrap());
+    assert!(!srv.is_work_dirty(w3).unwrap());
+
+    drop(srv);
+
+    let mut srv2 = server_restore_chunk_store(&dir);
+    let sid2 = srv2.connect();
+    srv2.login_public(sid2).unwrap();
+
+    let ed1 = srv2.work_edition(w1).unwrap();
+    let ed2 = srv2.work_edition(w2).unwrap();
+    let ed3 = srv2.work_edition(w3).unwrap();
+
+    let t1: String = ed1.all_entries().iter().map(|(_, c)| c.element.as_text().unwrap_or("")).collect();
+    let t2: String = ed2.all_entries().iter().map(|(_, c)| c.element.as_text().unwrap_or("")).collect();
+    let t3: String = ed3.all_entries().iter().map(|(_, c)| c.element.as_text().unwrap_or("")).collect();
+
+    assert_eq!(t1, "work one");
+    assert_eq!(t2, "work two revised");
+    assert_eq!(t3, "work three");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn dirty_checkpoint_tracks_club_mutations() {
+    let dir = temp_chunk_data_dir("dirty_clubs");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let club1 = srv.create_named_club(sid, "club1", xudanu::edition::Edition::from_text("club one")).unwrap();
+
+    srv.checkpoint_to_store().unwrap();
+
+    assert!(!srv.is_club_dirty(club1), "club should be clean after checkpoint");
+
+    srv.club_add_member(sid, club1, srv.system_clubs().public_club).unwrap();
+    assert!(srv.is_club_dirty(club1), "club should be dirty after add_member");
+
+    srv.checkpoint_to_store().unwrap();
+
+    assert!(!srv.is_club_dirty(club1), "club should be clean after second checkpoint");
+
+    drop(srv);
+
+    let srv2 = server_restore_chunk_store(&dir);
+    let club = srv2.club(club1).unwrap();
+    assert_eq!(club.name(), Some("club1"));
+    assert!(club.is_member(srv2.system_clubs().public_club));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn dirty_checkpoint_all_work_mutation_paths() {
+    let dir = temp_chunk_data_dir("dirty_mutation_paths");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let w_set_read = srv.create_work(sid, xudanu::edition::Edition::from_text("a")).unwrap();
+    let w_set_edit = srv.create_work(sid, xudanu::edition::Edition::from_text("b")).unwrap();
+    let w_sponsor = srv.create_work(sid, xudanu::edition::Edition::from_text("c")).unwrap();
+    let w_publish = srv.create_work(sid, xudanu::edition::Edition::from_text("d")).unwrap();
+
+    srv.checkpoint_to_store().unwrap();
+
+    srv.work_set_read_club(sid, w_set_read, Some(srv.system_clubs().public_club)).unwrap();
+    assert!(srv.is_work_dirty(w_set_read).unwrap(), "set_read_club should dirty work");
+
+    srv.work_set_edit_club(sid, w_set_edit, Some(srv.system_clubs().public_club)).unwrap();
+    assert!(srv.is_work_dirty(w_set_edit).unwrap(), "set_edit_club should dirty work");
+
+    srv.work_sponsor(sid, w_sponsor, srv.system_clubs().public_club).unwrap();
+    assert!(srv.is_work_dirty(w_sponsor).unwrap(), "sponsor should dirty work");
+
+    srv.work_publish(sid, w_publish).unwrap();
+    assert!(srv.is_work_dirty(w_publish).unwrap(), "publish should dirty work");
+
+    srv.checkpoint_to_store().unwrap();
+
+    assert!(!srv.is_work_dirty(w_set_read).unwrap());
+    assert!(!srv.is_work_dirty(w_set_edit).unwrap());
+    assert!(!srv.is_work_dirty(w_sponsor).unwrap());
+    assert!(!srv.is_work_dirty(w_publish).unwrap());
+
+    drop(srv);
+
+    let mut srv2 = server_restore_chunk_store(&dir);
+    let sid2 = srv2.connect();
+    srv2.login_public(sid2).unwrap();
+
+    let ed_pub = srv2.work_edition(w_publish).unwrap();
+    let t: String = ed_pub.all_entries().iter().map(|(_, c)| c.element.as_text().unwrap_or("")).collect();
+    assert_eq!(t, "d");
+    assert!(srv2.work_is_published(sid2, w_publish).unwrap());
+
+    let sponsors = srv2.work_sponsors(w_sponsor).unwrap();
+    assert_eq!(sponsors.len(), 1);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn dirty_checkpoint_survives_multiple_rounds() {
+    let dir = temp_chunk_data_dir("dirty_multi_round");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let w = srv.create_work(sid, xudanu::edition::Edition::from_text("v0")).unwrap();
+
+    for i in 1..=5 {
+        srv.work_grab(sid, w).unwrap();
+        let _ = srv.work_revise(sid, w, xudanu::edition::Edition::from_text(&format!("v{}", i))).unwrap();
+        srv.work_release(sid, w).unwrap();
+        srv.checkpoint_to_store().unwrap();
+        assert!(!srv.is_work_dirty(w).unwrap(), "work should be clean after checkpoint round {}", i);
+    }
+
+    drop(srv);
+
+    let mut srv2 = server_restore_chunk_store(&dir);
+    let sid2 = srv2.connect();
+    srv2.login_public(sid2).unwrap();
+
+    let ed = srv2.work_edition(w).unwrap();
+    let t: String = ed.all_entries().iter().map(|(_, c)| c.element.as_text().unwrap_or("")).collect();
+    assert_eq!(t, "v5");
+
+    let rev_count = srv2.work_revision_count(w).unwrap();
+    assert_eq!(rev_count, 5);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn authority_refreshes_immediately_after_membership_change() {
+    let mut srv = xudanu::server::Server::new();
+
+    let sid1 = srv.connect();
+    srv.login_public(sid1).unwrap();
+
+    let club_a = srv.create_named_club(sid1, "clubA", xudanu::edition::Edition::from_text("a")).unwrap();
+    let club_b = srv.create_named_club(sid1, "clubB", xudanu::edition::Edition::from_text("b")).unwrap();
+
+    let w = srv.create_work(sid1, xudanu::edition::Edition::from_text("secret")).unwrap();
+    srv.work_set_edit_club(sid1, w, Some(club_b)).unwrap();
+
+    let sid2 = srv.connect();
+    let lock2 = xudanu::server::lock::BooLock::new(club_a);
+    srv.authenticate(sid2, &lock2, &xudanu::server::lock::LockCredential::Boo).unwrap();
+
+    assert!(!srv.work_can_revise(sid2, w).unwrap(), "sid2 should NOT be able to edit before clubA is added to clubB");
+
+    srv.club_add_member(sid1, club_b, club_a).unwrap();
+
+    assert!(srv.work_can_revise(sid2, w).unwrap(), "sid2 should gain access after clubA added to clubB (existing session refreshed)");
+
+    let sid3 = srv.connect();
+    let lock3 = xudanu::server::lock::BooLock::new(club_a);
+    srv.authenticate(sid3, &lock3, &xudanu::server::lock::LockCredential::Boo).unwrap();
+
+    assert!(srv.work_can_revise(sid3, w).unwrap(), "new session logged in as clubA should also have access (resolved at login)");
+}
+
+#[test]
+fn authority_revoked_after_member_removal() {
+    let mut srv = xudanu::server::Server::new();
+
+    let sid1 = srv.connect();
+    srv.login_public(sid1).unwrap();
+
+    let club_a = srv.create_named_club(sid1, "clubA", xudanu::edition::Edition::from_text("a")).unwrap();
+    let club_b = srv.create_named_club(sid1, "clubB", xudanu::edition::Edition::from_text("b")).unwrap();
+
+    srv.club_add_member(sid1, club_b, club_a).unwrap();
+
+    let w = srv.create_work(sid1, xudanu::edition::Edition::from_text("secret")).unwrap();
+    srv.work_set_edit_club(sid1, w, Some(club_b)).unwrap();
+
+    let sid2 = srv.connect();
+    let lock2 = xudanu::server::lock::BooLock::new(club_a);
+    srv.authenticate(sid2, &lock2, &xudanu::server::lock::LockCredential::Boo).unwrap();
+
+    assert!(srv.work_can_revise(sid2, w).unwrap(), "sid2 should be able to edit while clubA is member of clubB");
+
+    srv.club_remove_member(sid1, club_b, club_a).unwrap();
+
+    assert!(!srv.work_can_revise(sid2, w).unwrap(), "sid2 should LOSE access after clubA removed from clubB");
+}
+
+#[test]
+fn init_data_dir_refuses_if_manifest_exists() {
+    let dir = temp_chunk_data_dir("init_exists");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+    srv.create_work(sid, xudanu::edition::Edition::from_text("existing")).unwrap();
+    srv.checkpoint_to_store().unwrap();
+    drop(srv);
+
+    let mut srv2 = xudanu::server::Server::new();
+    let result = srv2.init_data_dir(&dir, None);
+    assert!(result.is_err(), "init_data_dir should fail when manifest already exists");
+    match result.unwrap_err().kind() {
+        std::io::ErrorKind::AlreadyExists => {}
+        other => panic!("expected AlreadyExists, got {:?}", other),
+    }
+
+    let mut srv3 = xudanu::server::Server::new();
+    srv3.restore_from_data_dir(&dir, None).unwrap();
+    assert_eq!(srv3.work_count(), 1);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn gc_removes_orphaned_chunks_after_work_changes() {
+    let dir = temp_chunk_data_dir("gc_revision");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let w1 = srv.create_work(sid, xudanu::edition::Edition::from_text("temp work")).unwrap();
+    let w2 = srv.create_work(sid, xudanu::edition::Edition::from_text("keep work")).unwrap();
+    srv.checkpoint_to_store().unwrap();
+
+    srv.work_grab(sid, w1).unwrap();
+    srv.work_revise(sid, w1, xudanu::edition::Edition::from_text("revised temp")).unwrap();
+    srv.work_release(sid, w1).unwrap();
+    srv.checkpoint_to_store().unwrap();
+
+    drop(srv);
+
+    let mut srv2 = server_restore_chunk_store(&dir);
+    assert_eq!(srv2.work_edition(w2).unwrap().to_text(), "keep work");
+    assert_eq!(srv2.work_edition(w1).unwrap().to_text(), "revised temp");
+    assert_eq!(srv2.work_revision_count(w1).unwrap(), 1);
+    let rev0 = srv2.work_fetch_revision(w1, 0).unwrap().unwrap();
+    assert_eq!(rev0.to_text(), "temp work");
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

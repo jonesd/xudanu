@@ -112,29 +112,29 @@ impl Default for MemoryBackend {
 
 impl BlobBackend for MemoryBackend {
     fn store(&self, hash: &[u8; 32], data: &[u8]) -> Result<(), BlobError> {
-        let mut blobs = self.blobs.lock().unwrap();
+        let mut blobs = self.blobs.lock().unwrap_or_else(|e| e.into_inner());
         blobs.insert(*hash, data.to_vec());
         Ok(())
     }
 
     fn retrieve(&self, hash: &[u8; 32]) -> Result<Vec<u8>, BlobError> {
-        let blobs = self.blobs.lock().unwrap();
+        let blobs = self.blobs.lock().unwrap_or_else(|e| e.into_inner());
         blobs.get(hash).cloned().ok_or_else(|| BlobError::NotFound(*hash))
     }
 
     fn exists(&self, hash: &[u8; 32]) -> Result<bool, BlobError> {
-        let blobs = self.blobs.lock().unwrap();
+        let blobs = self.blobs.lock().unwrap_or_else(|e| e.into_inner());
         Ok(blobs.contains_key(hash))
     }
 
     fn delete(&self, hash: &[u8; 32]) -> Result<(), BlobError> {
-        let mut blobs = self.blobs.lock().unwrap();
+        let mut blobs = self.blobs.lock().unwrap_or_else(|e| e.into_inner());
         blobs.remove(hash);
         Ok(())
     }
 
     fn retrieve_range(&self, hash: &[u8; 32], offset: u64, len: u64) -> Result<Vec<u8>, BlobError> {
-        let blobs = self.blobs.lock().unwrap();
+        let blobs = self.blobs.lock().unwrap_or_else(|e| e.into_inner());
         let data = blobs.get(hash).ok_or_else(|| BlobError::NotFound(*hash))?;
         let start = offset as usize;
         let end = (offset + len) as usize;
@@ -145,7 +145,7 @@ impl BlobBackend for MemoryBackend {
     }
 
     fn stats(&self) -> BlobBackendStats {
-        let blobs = self.blobs.lock().unwrap();
+        let blobs = self.blobs.lock().unwrap_or_else(|e| e.into_inner());
         BlobBackendStats {
             total_blobs: blobs.len() as u64,
             total_bytes: blobs.values().map(|v| v.len() as u64).sum(),
@@ -298,7 +298,7 @@ impl BlobStore {
         let hash = hash_content(data);
         let byte_size = data.len() as u64;
         self.backend.store(&hash, data)?;
-        if let Some(existing) = self.meta.lock().unwrap().get(&hash).cloned() {
+        if let Some(existing) = self.meta.lock().unwrap_or_else(|e| e.into_inner()).get(&hash).cloned() {
             return Ok(existing);
         }
         let mut meta = BlobMeta::new(hash, byte_size, mime_type);
@@ -309,8 +309,8 @@ impl BlobStore {
                 meta = meta.with_preview(preview_hash);
             }
         }
-        self.meta.lock().unwrap().insert(hash, meta.clone());
-        self.by_u64.lock().unwrap().insert(meta.hash_u64(), hash);
+        self.meta.lock().unwrap_or_else(|e| e.into_inner()).insert(hash, meta.clone());
+        self.by_u64.lock().unwrap_or_else(|e| e.into_inner()).insert(meta.hash_u64(), hash);
         Ok(meta)
     }
 
@@ -328,7 +328,7 @@ impl BlobStore {
     }
 
     pub fn retrieve_overlay_by_u64(&self, hash_u64: u64) -> Result<ImageOverlay, BlobError> {
-        let full_hash = self.by_u64.lock().unwrap()
+        let full_hash = self.by_u64.lock().unwrap_or_else(|e| e.into_inner())
             .get(&hash_u64).copied()
             .ok_or(BlobError::NotFound([0u8; 32]))?;
         self.retrieve_overlay(&full_hash)
@@ -352,8 +352,8 @@ impl BlobStore {
 
     pub fn delete(&self, hash: &[u8; 32]) -> Result<(), BlobError> {
         self.backend.delete(hash)?;
-        if let Some(meta) = self.meta.lock().unwrap().remove(hash) {
-            self.by_u64.lock().unwrap().remove(&meta.hash_u64());
+        if let Some(meta) = self.meta.lock().unwrap_or_else(|e| e.into_inner()).remove(hash) {
+            self.by_u64.lock().unwrap_or_else(|e| e.into_inner()).remove(&meta.hash_u64());
         }
         Ok(())
     }
@@ -363,19 +363,19 @@ impl BlobStore {
     }
 
     pub fn get_meta(&self, hash: &[u8; 32]) -> Option<BlobMeta> {
-        self.meta.lock().unwrap().get(hash).cloned()
+        self.meta.lock().unwrap_or_else(|e| e.into_inner()).get(hash).cloned()
     }
 
     pub fn get_meta_by_u64(&self, hash_u64: u64) -> Option<BlobMeta> {
-        let full_hash = self.by_u64.lock().unwrap().get(&hash_u64).copied()?;
-        self.meta.lock().unwrap().get(&full_hash).cloned()
+        let full_hash = self.by_u64.lock().unwrap_or_else(|e| e.into_inner()).get(&hash_u64).copied()?;
+        self.meta.lock().unwrap_or_else(|e| e.into_inner()).get(&full_hash).cloned()
     }
 
     pub fn register_meta(&self, meta: BlobMeta) {
         let hash_u64 = meta.hash_u64();
         let full_hash = meta.content_hash;
-        self.meta.lock().unwrap().insert(full_hash, meta);
-        self.by_u64.lock().unwrap().insert(hash_u64, full_hash);
+        self.meta.lock().unwrap_or_else(|e| e.into_inner()).insert(full_hash, meta);
+        self.by_u64.lock().unwrap_or_else(|e| e.into_inner()).insert(hash_u64, full_hash);
     }
 
     pub fn stats(&self) -> BlobBackendStats {
@@ -383,19 +383,19 @@ impl BlobStore {
     }
 
     pub fn all_hashes(&self) -> Vec<[u8; 32]> {
-        self.meta.lock().unwrap().keys().copied().collect()
+        self.meta.lock().unwrap_or_else(|e| e.into_inner()).keys().copied().collect()
     }
 
     pub fn all_metas(&self) -> Vec<([u8; 32], BlobMeta)> {
-        self.meta.lock().unwrap().iter().map(|(k, v)| (*k, v.clone())).collect()
+        self.meta.lock().unwrap_or_else(|e| e.into_inner()).iter().map(|(k, v)| (*k, v.clone())).collect()
     }
 
     pub fn restore_metas(&self, metas: Vec<BlobMeta>) {
         for meta in metas {
             let hash_u64 = meta.hash_u64();
             let full_hash = meta.content_hash;
-            self.meta.lock().unwrap().insert(full_hash, meta);
-            self.by_u64.lock().unwrap().insert(hash_u64, full_hash);
+            self.meta.lock().unwrap_or_else(|e| e.into_inner()).insert(full_hash, meta);
+            self.by_u64.lock().unwrap_or_else(|e| e.into_inner()).insert(hash_u64, full_hash);
         }
     }
 }

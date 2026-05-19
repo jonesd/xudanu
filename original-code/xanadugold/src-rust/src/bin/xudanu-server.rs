@@ -70,21 +70,23 @@ fn usage() {
     eprintln!("  --peer <addr>            Federation peer address (repeatable, e.g. ws://host:port/federation)");
     eprintln!("  --federation-mode <mode> Federation mode: closed (default) or open");
     eprintln!("  --allowed-origin <url>   Allowed WebSocket origin (repeatable, e.g. https://example.com)");
-    eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
-    eprintln!();
+  eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
+  eprintln!("  --key-passphrase <pw>   Passphrase for encrypted server key file");
+  eprintln!("                         (can also set XUDANU_KEY_PASSPHRASE env var)");
+  eprintln!();
     eprintln!("Flags:");
     eprintln!("  --version, -V            Print version");
     eprintln!("  --help, -h               Print this help message");
 }
 
-fn cmd_init(data_dir: &str) {
+fn cmd_init(data_dir: &str, passphrase: Option<&[u8]>) {
     let path = std::path::PathBuf::from(data_dir);
     if path.join("manifest.json").exists() || path.join("server.json").exists() {
         eprintln!("Error: data directory already exists: {}", data_dir);
         std::process::exit(1);
     }
     let mut server = Server::new();
-    server.init_data_dir(&path).expect("failed to initialize data directory");
+    server.init_data_dir(&path, passphrase).expect("failed to initialize data directory");
 }
 
 fn cmd_verify(data_dir: &str) {
@@ -252,7 +254,8 @@ async fn main() {
         }
         "init" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
-            cmd_init(data_dir);
+            let passphrase = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
+            cmd_init(data_dir, passphrase.as_deref().map(|s| s.as_bytes()));
         }
         "verify" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
@@ -276,6 +279,7 @@ async fn main() {
             let mut federation_mode = "closed".to_string();
             let mut allowed_origins: std::collections::HashSet<String> = std::collections::HashSet::new();
             let mut csrf_enabled = false;
+            let mut key_passphrase: Option<String> = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
             let mut i = 2;
             while i < args.len() {
                 match args[i].as_str() {
@@ -326,6 +330,13 @@ async fn main() {
                     "--csrf-token" => {
                         csrf_enabled = true;
                     }
+                    "--key-passphrase" => {
+                        i += 1;
+                        key_passphrase = Some(args.get(i).map(|s| s.to_string()).unwrap_or_else(|| {
+                            eprintln!("Error: --key-passphrase requires a value");
+                            std::process::exit(1);
+                        }));
+                    }
                     s if s.contains(':') => {
                         addr = s.to_string();
                     }
@@ -336,6 +347,8 @@ async fn main() {
                 i += 1;
             }
 
+            let pass_bytes: Option<&[u8]> = key_passphrase.as_deref().map(|s| s.as_bytes());
+
             let mut server = if let Some(ref dir) = data_dir {
                 let path = PathBuf::from(dir);
                 let manifest_path = path.join("manifest.json");
@@ -345,7 +358,7 @@ async fn main() {
                     tracing::info!("Restoring from {}", manifest_path.display());
                     let start = std::time::Instant::now();
                     let mut s = Server::new();
-                    s.restore_from_data_dir(&path)
+                    s.restore_from_data_dir(&path, pass_bytes)
                         .expect("failed to restore from data directory");
                     let elapsed = start.elapsed();
                     tracing::info!(
@@ -362,7 +375,7 @@ async fn main() {
                 } else {
                     tracing::info!("Initializing new data directory: {}", dir);
                     let mut s = Server::new();
-                    s.init_data_dir(&path).expect("failed to initialize data directory");
+                    s.init_data_dir(&path, pass_bytes).expect("failed to initialize data directory");
                     s
                 }
             } else {
@@ -440,7 +453,7 @@ async fn main() {
                 tokio::signal::ctrl_c().await.expect("failed to listen for ctrl-c");
                 tracing::info!("Shutting down...");
                 if let Some(ref dir) = shutdown_data_dir {
-                    shutdown_state.server.with_server_ref(|server| {
+                    shutdown_state.server.with_server(|server| {
                         let start = std::time::Instant::now();
                         if server.chunk_store().is_some() {
                             match server.checkpoint_to_store() {

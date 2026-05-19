@@ -51,7 +51,7 @@ impl HUpperCrumData {
         bert_crum: Arc<Mutex<CanopyCrumData>>,
         bert_canopy: BertCanopy,
     ) -> Self {
-        bert_crum.lock().unwrap().add_pointer();
+        bert_crum.lock().unwrap_or_else(|e| e.into_inner()).add_pointer();
         HUpperCrumData {
             hcut,
             o_parents: Vec::new(),
@@ -68,17 +68,17 @@ impl HUpperCrumData {
         bert_canopy: BertCanopy,
     ) -> Self {
         let first_bert = first
-            .lock().unwrap()
+            .lock().unwrap_or_else(|e| e.into_inner())
             .h_crum()
-            .map(|c| c.lock().unwrap().bert_crum.clone())
+            .map(|c| c.lock().unwrap_or_else(|e| e.into_inner()).bert_crum.clone())
             .unwrap_or_else(|| bert_canopy.make_crum(0));
         let second_bert = second
-            .lock().unwrap()
+            .lock().unwrap_or_else(|e| e.into_inner())
             .h_crum()
-            .map(|c| c.lock().unwrap().bert_crum.clone())
+            .map(|c| c.lock().unwrap_or_else(|e| e.into_inner()).bert_crum.clone())
             .unwrap_or_else(|| bert_canopy.make_crum(0));
         let bert_crum = compute_join(&first_bert, &second_bert);
-        bert_crum.lock().unwrap().add_pointer();
+        bert_crum.lock().unwrap_or_else(|e| e.into_inner()).add_pointer();
 
         let mut data = HUpperCrumData {
             hcut,
@@ -105,8 +105,8 @@ impl HUpperCrumData {
     }
 
     pub fn add_o_parent(&mut self, new_parent: Arc<Mutex<dyn HPart>>) {
-        if let Some(hc) = new_parent.lock().unwrap().h_crum() {
-            self.update_bert_canopy(&hc.lock().unwrap().bert_crum.clone());
+        if let Some(hc) = new_parent.lock().unwrap_or_else(|e| e.into_inner()).h_crum() {
+            self.update_bert_canopy(&hc.lock().unwrap_or_else(|e| e.into_inner()).bert_crum.clone());
         }
         self.o_parents.push(new_parent);
     }
@@ -124,8 +124,8 @@ impl HUpperCrumData {
             return true;
         }
         for op in &self.o_parents {
-            if let Some(hc) = op.lock().unwrap().h_crum() {
-                if hc.lock().unwrap().in_trace(trace) {
+            if let Some(hc) = op.lock().unwrap_or_else(|e| e.into_inner()).h_crum() {
+                if hc.lock().unwrap_or_else(|e| e.into_inner()).in_trace(trace) {
                     return true;
                 }
             }
@@ -134,13 +134,13 @@ impl HUpperCrumData {
     }
 
     pub fn any_passes(&self, finder: &PropFinder) -> bool {
-        let flags = self.bert_crum.lock().unwrap().flags();
+        let flags = self.bert_crum.lock().unwrap_or_else(|e| e.into_inner()).flags();
         if !finder.does_pass(flags) {
             return false;
         }
         for op in &self.o_parents {
-            if let Some(hc) = op.lock().unwrap().h_crum() {
-                if hc.lock().unwrap().any_passes(finder) {
+            if let Some(hc) = op.lock().unwrap_or_else(|e| e.into_inner()).h_crum() {
+                if hc.lock().unwrap_or_else(|e| e.into_inner()).any_passes(finder) {
                     return true;
                 }
             }
@@ -154,7 +154,7 @@ impl HUpperCrumData {
         hcrum_cache: &mut HashSet<u32>,
         visitor: &mut dyn FnMut(&Arc<Mutex<HUpperCrumData>>),
     ) {
-        let hash = crum.lock().unwrap().base.hash;
+        let hash = crum.lock().unwrap_or_else(|e| e.into_inner()).base.hash;
         if hcrum_cache.contains(&hash) {
             return;
         }
@@ -169,8 +169,8 @@ impl HUpperCrumData {
         visitor: &mut dyn FnMut(&Arc<Mutex<HUpperCrumData>>),
     ) {
         let new_finder = {
-            let data = crum.lock().unwrap();
-            let crum_flags = data.bert_crum.lock().unwrap().flags();
+            let data = crum.lock().unwrap_or_else(|e| e.into_inner());
+            let crum_flags = data.bert_crum.lock().unwrap_or_else(|e| e.into_inner()).flags();
             finder.pass(crum_flags)
         };
         if new_finder.is_empty() {
@@ -179,9 +179,9 @@ impl HUpperCrumData {
         visitor(crum);
 
         let o_parents: Vec<Arc<Mutex<dyn HPart>>> =
-            crum.lock().unwrap().o_parents.clone();
+            crum.lock().unwrap_or_else(|e| e.into_inner()).o_parents.clone();
         for loaf in &o_parents {
-            if let Some(hc) = loaf.lock().unwrap().h_crum() {
+            if let Some(hc) = loaf.lock().unwrap_or_else(|e| e.into_inner()).h_crum() {
                 Self::delayed_store_backfollow(&hc, &new_finder, hcrum_cache, visitor);
             }
         }
@@ -199,8 +199,8 @@ impl HUpperCrumData {
         if !is_le(&self.bert_crum, b_crum) {
             let old = self.bert_crum.clone();
             self.bert_crum = compute_join(&old, b_crum);
-            self.bert_crum.lock().unwrap().add_pointer();
-            old.lock().unwrap().remove_pointer();
+            self.bert_crum.lock().unwrap_or_else(|e| e.into_inner()).add_pointer();
+            old.lock().unwrap_or_else(|e| e.into_inner()).remove_pointer();
         }
     }
 }
@@ -227,8 +227,8 @@ mod tests {
             bert,
             BertCanopy::new(),
         )));
-        assert!(hcrum.lock().unwrap().is_empty());
-        assert_eq!(hcrum.lock().unwrap().o_parents().len(), 0);
+        assert!(hcrum.lock().unwrap_or_else(|e| e.into_inner()).is_empty());
+        assert_eq!(hcrum.lock().unwrap_or_else(|e| e.into_inner()).o_parents().len(), 0);
     }
 
     #[test]
@@ -276,7 +276,7 @@ mod tests {
             bert,
             BertCanopy::new(),
         )));
-        assert!(hcrum.lock().unwrap().in_trace(&make_trace(5)));
+        assert!(hcrum.lock().unwrap_or_else(|e| e.into_inner()).in_trace(&make_trace(5)));
     }
 
     #[test]
@@ -294,7 +294,7 @@ mod tests {
         let mut cache = HashSet::new();
         let mut visited = Vec::new();
         HUpperCrumData::delayed_store_backfollow(&hcrum, &finder, &mut cache, &mut |c| {
-            visited.push(c.lock().unwrap().base.hash);
+            visited.push(c.lock().unwrap_or_else(|e| e.into_inner()).base.hash);
         });
         assert_eq!(visited.len(), 1);
     }
@@ -312,10 +312,10 @@ mod tests {
 
         let finder = PropFinder::open();
         let mut cache = HashSet::new();
-        cache.insert(hcrum.lock().unwrap().base.hash);
+        cache.insert(hcrum.lock().unwrap_or_else(|e| e.into_inner()).base.hash);
         let mut visited = Vec::new();
         HUpperCrumData::delayed_store_backfollow(&hcrum, &finder, &mut cache, &mut |c| {
-            visited.push(c.lock().unwrap().base.hash);
+            visited.push(c.lock().unwrap_or_else(|e| e.into_inner()).base.hash);
         });
         assert_eq!(visited.len(), 0);
     }
@@ -387,6 +387,6 @@ mod tests {
         )));
 
         let finder = PropFinder::open();
-        assert!(!hcrum.lock().unwrap().any_passes(&finder));
+        assert!(!hcrum.lock().unwrap_or_else(|e| e.into_inner()).any_passes(&finder));
     }
 }

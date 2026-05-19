@@ -9,6 +9,7 @@ use super::links::{HyperLink, HyperRef};
 use super::props::{BertProp, PropFinder};
 use super::range_element::RangeElement;
 use super::transclusion::{TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery};
+use super::recorder::RecorderId;
 use super::work::Work;
 use super::wrapper::{WRAPPER_CLUB_ID, TEXT_TOKEN};
 use crate::ent::htree::{HUpperCrumData, HPart};
@@ -79,7 +80,7 @@ impl EditionMeta {
     pub fn update_prop(&mut self, new_prop: BertProp) {
         self.prop = new_prop;
         let flags = self.prop.flags();
-        self.bert_crum.lock().unwrap().set_own_flags(flags);
+        self.bert_crum.lock().unwrap_or_else(|e| e.into_inner()).set_own_flags(flags);
         propagate_flags(&self.bert_crum);
     }
 
@@ -98,12 +99,12 @@ impl EditionMeta {
     }
 
     pub fn any_passes(&self, finder: &PropFinder) -> bool {
-        let flags = self.bert_crum.lock().unwrap().flags();
+        let flags = self.bert_crum.lock().unwrap_or_else(|e| e.into_inner()).flags();
         if !finder.does_pass(flags) {
             return false;
         }
         if let Some(ref hc) = self.h_crum {
-            return hc.lock().unwrap().any_passes(finder);
+            return hc.lock().unwrap_or_else(|e| e.into_inner()).any_passes(finder);
         }
         true
     }
@@ -126,6 +127,7 @@ pub struct BackfollowEngine {
     work_storage: std::collections::HashMap<u64, Work>,
     link_storage: std::collections::HashMap<u64, HyperLink>,
     fingerprint_to_works: std::collections::HashMap<[u8; 32], std::collections::HashSet<u64>>,
+    fossil_by_fingerprint: std::collections::HashMap<[u8; 32], std::collections::HashSet<RecorderId>>,
     dagwood: DagWood,
     parent_of: std::collections::HashMap<u64, Vec<u64>>,
     next_edition_id: u64,
@@ -145,6 +147,7 @@ impl BackfollowEngine {
             work_storage: std::collections::HashMap::new(),
             link_storage: std::collections::HashMap::new(),
             fingerprint_to_works: std::collections::HashMap::new(),
+            fossil_by_fingerprint: std::collections::HashMap::new(),
             dagwood: DagWood::new(),
             parent_of: std::collections::HashMap::new(),
             next_edition_id: 1,
@@ -194,7 +197,7 @@ impl BackfollowEngine {
         let meta = EditionMeta::new(edition_id, bert_crum, sensor_crum, prop);
         if let Some(parent_meta) = self.edition_metas.get(&parent_id) {
             if let Some(ref parent_hc) = parent_meta.h_crum {
-                let parent_bert = parent_hc.lock().unwrap().bert_crum().clone();
+                let parent_bert = parent_hc.lock().unwrap_or_else(|e| e.into_inner()).bert_crum().clone();
                 let _joined = compute_join(&meta.bert_crum, &parent_bert);
             }
         }
@@ -456,7 +459,7 @@ impl BackfollowEngine {
                             &finder,
                             &mut hcrum_cache,
                             &mut |visited_hc| {
-                                let visited_flags = visited_hc.lock().unwrap().bert_crum().lock().unwrap().flags();
+                                let visited_flags = visited_hc.lock().unwrap_or_else(|e| e.into_inner()).bert_crum().lock().unwrap_or_else(|e| e.into_inner()).flags();
                                 if finder.does_pass(visited_flags) {
                                     for (eid, em) in &self.edition_metas {
                                         if let Some(ref em_hc) = em.h_crum() {
@@ -574,6 +577,95 @@ impl BackfollowEngine {
 
     pub fn sensor_canopy(&self) -> &SensorCanopy {
         &self.sensor_canopy
+    }
+
+    pub fn plant_recorder(&mut self, edition_id: u64, fossil_id: RecorderId, content: &[RangeElement]) {
+        tracing::debug!(target: "xudanu::content_watch",
+            edition_id, fossil_id, content_count = content.len(),
+            "plant_recorder: installing fossil");
+        if let Some(meta) = self.edition_metas.get(&edition_id) {
+            let scrum = meta.sensor_crum();
+            scrum.lock().unwrap_or_else(|e| e.into_inner()).install_recorders(&[fossil_id]);
+            propagate_flags(scrum);
+        } else {
+            tracing::debug!(target: "xudanu::content_watch",
+                edition_id, fossil_id,
+                "plant_recorder: no edition_meta found for edition_id");
+        }
+        for elem in content {
+            let fp = elem.content_fingerprint();
+            self.fossil_by_fingerprint.entry(fp).or_default().insert(fossil_id);
+        }
+        tracing::debug!(target: "xudanu::content_watch",
+            fossil_id, total_fp_entries = self.fossil_by_fingerprint.len(),
+            "plant_recorder: fossil_by_fingerprint updated");
+    }
+
+    pub fn remove_planted_recorder(&mut self, edition_id: u64, fossil_id: RecorderId, content: &[RangeElement]) {
+        if let Some(meta) = self.edition_metas.get(&edition_id) {
+            let scrum = meta.sensor_crum();
+            scrum.lock().unwrap_or_else(|e| e.into_inner()).remove_recorders(&[fossil_id]);
+            propagate_flags(scrum);
+        }
+        for elem in content {
+            let fp = elem.content_fingerprint();
+            if let Some(set) = self.fossil_by_fingerprint.get_mut(&fp) {
+                set.remove(&fossil_id);
+            }
+        }
+        self.fossil_by_fingerprint.retain(|_, set| !set.is_empty());
+    }
+
+    pub fn recorders_on_edition(&self, edition_id: u64) -> Vec<RecorderId> {
+        self.edition_metas
+            .get(&edition_id)
+            .map(|meta| meta.sensor_crum().lock().unwrap_or_else(|e| e.into_inner()).recorders().to_vec())
+            .unwrap_or_default()
+    }
+
+    pub fn check_recorders_for_change(&self, edition_id: u64) -> Vec<(RecorderId, u64)> {
+        let mut results = Vec::new();
+        let meta = match self.edition_metas.get(&edition_id) {
+            Some(m) => m,
+            None => return results,
+        };
+        let scrum = meta.sensor_crum();
+        {
+            let guard = scrum.lock().unwrap_or_else(|e| e.into_inner());
+            for &fossil_id in guard.recorders() {
+                results.push((fossil_id, edition_id));
+            }
+        }
+        let mut current = scrum.lock().unwrap_or_else(|e| e.into_inner()).parent().cloned();
+        while let Some(p) = current {
+            let guard = p.lock().unwrap_or_else(|e| e.into_inner());
+            for &fossil_id in guard.recorders() {
+                results.push((fossil_id, edition_id));
+            }
+            current = guard.parent().cloned();
+        }
+        results
+    }
+
+    pub fn check_recorders_by_content(&self, fingerprints: &[[u8; 32]]) -> Vec<RecorderId> {
+        let mut seen = std::collections::HashSet::new();
+        let mut results = Vec::new();
+        let mut matched_fps = 0usize;
+        for fp in fingerprints {
+            if let Some(fossil_ids) = self.fossil_by_fingerprint.get(fp) {
+                matched_fps += 1;
+                for &fossil_id in fossil_ids {
+                    if seen.insert(fossil_id) {
+                        results.push(fossil_id);
+                    }
+                }
+            }
+        }
+        tracing::debug!(target: "xudanu::content_watch",
+            input_fp_count = fingerprints.len(), matched_fps, triggered_fossils = results.len(),
+            total_fp_entries = self.fossil_by_fingerprint.len(),
+            "check_recorders_by_content: lookup results");
+        results
     }
 
     pub fn edition_count(&self) -> usize {
@@ -699,7 +791,7 @@ impl BackfollowEngine {
                     finder,
                     hcrum_cache,
                     &mut |visited_hc| {
-                        let flags = visited_hc.lock().unwrap().bert_crum().lock().unwrap().flags();
+                        let flags = visited_hc.lock().unwrap_or_else(|e| e.into_inner()).bert_crum().lock().unwrap_or_else(|e| e.into_inner()).flags();
                         if finder.does_pass(flags) {
                             for (eid, em) in &self.edition_metas {
                                 if let Some(ref em_hc) = em.h_crum() {
@@ -941,13 +1033,13 @@ mod tests {
         engine.register_edition(edition, id, BertProp::make());
 
         let meta = engine.get_edition_meta(id).unwrap();
-        assert_eq!(meta.bert_crum().lock().unwrap().flags(), 0);
+        assert_eq!(meta.bert_crum().lock().unwrap_or_else(|e| e.into_inner()).flags(), 0);
 
         let new_prop = BertProp::permissions_prop(vec![Id::global(0)]);
         engine.update_edition_prop(id, new_prop);
 
         let meta = engine.get_edition_meta(id).unwrap();
-        assert_eq!(meta.bert_crum().lock().unwrap().own_flags(), PUBLIC_CLUB_FLAG);
+        assert_eq!(meta.bert_crum().lock().unwrap_or_else(|e| e.into_inner()).own_flags(), PUBLIC_CLUB_FLAG);
     }
 
     #[test]
@@ -987,9 +1079,9 @@ mod tests {
         let sensor_crum = sensor.make_crum(0);
         let mut meta = EditionMeta::new(1, bert.clone(), sensor_crum, BertProp::make());
 
-        assert_eq!(bert.lock().unwrap().flags(), 0);
+        assert_eq!(bert.lock().unwrap_or_else(|e| e.into_inner()).flags(), 0);
         meta.update_prop(BertProp::permissions_prop(vec![Id::global(0)]));
-        assert_eq!(bert.lock().unwrap().own_flags(), PUBLIC_CLUB_FLAG);
+        assert_eq!(bert.lock().unwrap_or_else(|e| e.into_inner()).own_flags(), PUBLIC_CLUB_FLAG);
     }
 
     #[test]
@@ -1425,7 +1517,7 @@ mod tests {
 
         let meta = engine.get_edition_meta(1).unwrap();
         assert!(meta.h_crum().is_some(), "updated work should have h_crum");
-        let hc = meta.h_crum().unwrap().lock().unwrap();
+        let hc = meta.h_crum().unwrap().lock().unwrap_or_else(|e| e.into_inner());
         assert!(!hc.o_parents().is_empty(), "updated work should have o_parents linking to previous version");
     }
 

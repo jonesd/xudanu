@@ -38,6 +38,24 @@ impl ChannelDetector {
             sender,
         }
     }
+
+    pub fn send_content_match(
+        &self,
+        fossil_id: u64,
+        edition_be_id: crate::edition::BeId,
+        is_direct: bool,
+    ) {
+        let msg = EventMessage {
+            session_id: self.session_id,
+            subscription_id: self.subscription_id,
+            event: EventPayload::ContentMatch {
+                fossil_id,
+                edition_be_id,
+                is_direct,
+            },
+        };
+        let _ = self.sender.send(msg);
+    }
 }
 
 impl Detector for ChannelDetector {
@@ -48,6 +66,10 @@ impl Detector for ChannelDetector {
             event: EventPayload::from_event(event),
         };
         let _ = self.sender.send(msg);
+    }
+
+    fn subscription_id(&self) -> u16 {
+        self.subscription_id
     }
 }
 

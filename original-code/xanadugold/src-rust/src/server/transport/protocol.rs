@@ -1479,6 +1479,8 @@ pub enum DetectorType {
     Status,
     Revision,
     Fill,
+    ContentTranscluders,
+    ContentWorks,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1497,6 +1499,7 @@ pub enum EventCode {
     RangeFilled   = 0x04,
     ElementFilled = 0x05,
     Done          = 0x06,
+    ContentMatch  = 0x07,
 }
 
 impl EventCode {
@@ -1508,6 +1511,7 @@ impl EventCode {
             0x04 => Some(EventCode::RangeFilled),
             0x05 => Some(EventCode::ElementFilled),
             0x06 => Some(EventCode::Done),
+            0x07 => Some(EventCode::ContentMatch),
             _ => None,
         }
     }
@@ -1529,6 +1533,7 @@ pub enum EventPayload {
     RangeFilled { edition_be_id: BeId, region: XnRegion },
     ElementFilled { element_be_id: BeId },
     Done { operation_id: u64 },
+    ContentMatch { fossil_id: u64, edition_be_id: BeId, is_direct: bool },
 }
 
 impl EventPayload {

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::edition::backend::BeId;
 use crate::edition::edition::Edition;
@@ -429,4 +429,30 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+}
+
+pub fn collect_edition_hashes(
+    chunk_ref: &EditionChunkRef,
+    store: &ChunkStore,
+) -> Result<HashSet<[u8; 32]>, ChunkSerError> {
+    let mut hashes = HashSet::new();
+    hashes.insert(chunk_ref.root_hash);
+    let root_data = store.read_chunk(&chunk_ref.root_hash)?;
+    let root: EditionRootChunk = deserialize_from_bytes(&root_data)?;
+    for h in &root.entry_chunk_hashes {
+        hashes.insert(*h);
+    }
+    Ok(hashes)
+}
+
+pub fn collect_work_hashes(
+    work_ref: &WorkChunkRef,
+    store: &ChunkStore,
+) -> Result<HashSet<[u8; 32]>, ChunkSerError> {
+    let mut hashes = collect_edition_hashes(&work_ref.current_root, store)?;
+    for edition_ref in work_ref.history.values() {
+        let edition_hashes = collect_edition_hashes(edition_ref, store)?;
+        hashes.extend(edition_hashes);
+    }
+    Ok(hashes)
 }

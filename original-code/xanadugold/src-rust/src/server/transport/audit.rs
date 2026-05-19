@@ -97,7 +97,7 @@ impl CollectorAuditLog {
     }
 
     pub fn events(&self) -> Vec<AuditEvent> {
-        self.events.lock().unwrap().clone()
+        self.events.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn events_of_kind(&self, kind: AuditEventKind) -> Vec<AuditEvent> {
@@ -111,13 +111,13 @@ impl CollectorAuditLog {
     }
 
     pub fn clear(&self) {
-        self.events.lock().unwrap().clear();
+        self.events.lock().unwrap_or_else(|e| e.into_inner()).clear();
     }
 }
 
 impl AuditLog for CollectorAuditLog {
     fn record(&self, event: AuditEvent) {
-        self.events.lock().unwrap().push(event);
+        self.events.lock().unwrap_or_else(|e| e.into_inner()).push(event);
     }
 }
 

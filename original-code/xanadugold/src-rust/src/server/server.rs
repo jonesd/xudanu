@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::edition::{
     BeId, BeRangeElement, BeStorage, Edition, GrandMap, InMemoryBeStorage,
@@ -36,6 +36,7 @@ struct GrabWaiter {
 
 struct WorkState {
     work: Work,
+    chunk_ref: Option<crate::persist::edition_chunks::WorkChunkRef>,
     grabber: Option<SessionId>,
     grabbed_at: Option<u64>,
     grab_waiters: Vec<GrabWaiter>,
@@ -69,6 +70,9 @@ pub struct Server {
     pub(crate) club_names: HashMap<String, BeId>,
     works: HashMap<BeId, WorkState>,
     standalone_editions: HashMap<BeId, Edition>,
+    pub(crate) standalone_edition_refs: HashMap<BeId, crate::persist::edition_chunks::EditionChunkRef>,
+    pub(crate) dirty_clubs: HashSet<BeId>,
+    pub(crate) club_refs: HashMap<BeId, crate::persist::manifest::ClubChunkRef>,
     edition_detectors: HashMap<BeId, DetectorList>,
     pub(crate) system_clubs: SystemClubs,
     operation_counter: u64,
@@ -190,6 +194,9 @@ impl Server {
             club_names: HashMap::new(),
             works: HashMap::new(),
             standalone_editions: HashMap::new(),
+            standalone_edition_refs: HashMap::new(),
+            dirty_clubs: HashSet::new(),
+            club_refs: HashMap::new(),
             edition_detectors: HashMap::new(),
             system_clubs,
             operation_counter: 0,
@@ -384,6 +391,7 @@ impl Server {
         club.set_edit_club(Some(be_id));
 
         self.clubs.insert(be_id, club);
+        self.dirty_clubs.insert(be_id);
         Ok(be_id)
     }
 
@@ -401,6 +409,7 @@ impl Server {
             club.set_name(name.to_string());
         }
         self.club_names.insert(name.to_string(), be_id);
+        self.dirty_clubs.insert(be_id);
         Ok(be_id)
     }
 
@@ -479,6 +488,7 @@ impl Server {
 
         let ws = WorkState {
             work,
+            chunk_ref: None,
             grabber: None,
             grabbed_at: None,
             grab_waiters: Vec::new(),
@@ -533,6 +543,7 @@ impl Server {
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
 
         ws.last_revision_author = author_club;
+        ws.chunk_ref = None;
         ws.work.revise(edition);
         ws.cached_title = Self::extract_title(ws.work.current_edition());
         let revision = ws.work.revision_count();
@@ -609,8 +620,10 @@ impl Server {
 
     pub fn work_force_release(
         &mut self,
+        session_id: SessionId,
         work_be_id: BeId,
     ) -> Result<Option<SessionId>, ServerError> {
+        self.ensure_can_edit(session_id, work_be_id)?;
         let ws = self
             .works
             .get_mut(&work_be_id)
@@ -848,6 +861,7 @@ impl Server {
             return Err(ServerError::ReadClubIrrevocablyRemoved(work_be_id));
         }
         ws.work.set_read_club(club_id);
+        ws.chunk_ref = None;
         self.auto_checkpoint();
         Ok(())
     }
@@ -864,6 +878,7 @@ impl Server {
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.set_edit_club(club_id);
+        ws.chunk_ref = None;
         Ok(())
     }
 
@@ -885,27 +900,33 @@ impl Server {
 
     pub fn work_sponsor(
         &mut self,
+        session_id: SessionId,
         work_be_id: BeId,
         club_id: BeId,
     ) -> Result<(), ServerError> {
+        self.ensure_can_edit(session_id, work_be_id)?;
         let ws = self
             .works
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.add_sponsor(club_id);
+        ws.chunk_ref = None;
         Ok(())
     }
 
     pub fn work_unsponsor(
         &mut self,
+        session_id: SessionId,
         work_be_id: BeId,
         club_id: BeId,
     ) -> Result<(), ServerError> {
+        self.ensure_can_edit(session_id, work_be_id)?;
         let ws = self
             .works
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.remove_sponsor(club_id);
+        ws.chunk_ref = None;
         Ok(())
     }
 
@@ -926,7 +947,7 @@ impl Server {
     }
 
     pub fn work_fetch_revision(
-        &self,
+        &mut self,
         work_be_id: BeId,
         number: u64,
     ) -> Result<Option<Edition>, ServerError> {
@@ -934,7 +955,35 @@ impl Server {
             .works
             .get(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
-        Ok(ws.work.fetch_revision(number).cloned())
+
+        if ws.work.fetch_revision(number).is_some() {
+            return Ok(ws.work.fetch_revision(number).cloned());
+        }
+
+        if number > ws.work.revision_count() {
+            return Ok(None);
+        }
+
+        let chunk_ref = match ws.chunk_ref {
+            Some(ref cr) => cr.clone(),
+            None => return Ok(None),
+        };
+
+        let chunk_store = match self.chunk_store {
+            Some(ref cs) => cs,
+            None => return Ok(None),
+        };
+
+        let edition = match crate::persist::edition_chunks::work_load_revision(
+            &chunk_ref, number, chunk_store,
+        ) {
+            Ok(ed) => ed,
+            Err(_) => return Ok(None),
+        };
+
+        let ws = self.works.get_mut(&work_be_id).unwrap();
+        ws.work.load_revision(number, edition.clone());
+        Ok(Some(edition))
     }
 
     pub fn work_last_revision_author(
@@ -958,15 +1007,17 @@ impl Server {
 
     pub fn work_set_owner(
         &mut self,
-        _session_id: SessionId,
+        session_id: SessionId,
         work_be_id: BeId,
         owner: Option<BeId>,
     ) -> Result<(), ServerError> {
+        self.ensure_can_edit(session_id, work_be_id)?;
         let ws = self
             .works
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.set_owner(owner);
+        ws.chunk_ref = None;
         Ok(())
     }
 
@@ -984,6 +1035,7 @@ impl Server {
             return Err(ServerError::ReadClubIrrevocablyRemoved(work_be_id));
         }
         ws.work.set_read_club(Some(self.system_clubs.public_club));
+        ws.chunk_ref = None;
         self.auto_checkpoint();
         Ok(())
     }
@@ -1003,6 +1055,7 @@ impl Server {
         }
         let owner = ws.work.owner();
         ws.work.set_read_club(owner);
+        ws.chunk_ref = None;
         self.auto_checkpoint();
         Ok(())
     }
@@ -1018,6 +1071,7 @@ impl Server {
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.set_read_club(None);
+        ws.chunk_ref = None;
         self.auto_checkpoint();
         Ok(())
     }
@@ -1048,6 +1102,7 @@ impl Server {
         let club = self.clubs.get_mut(&club_id)
             .ok_or(ServerError::ClubNotFound(club_id))?;
         club.set_default_read_club(default_read_club);
+        self.dirty_clubs.insert(club_id);
         self.auto_checkpoint();
         Ok(())
     }
@@ -1069,12 +1124,28 @@ impl Server {
         let club = self.clubs.get_mut(&club_id)
             .ok_or(ServerError::ClubNotFound(club_id))?;
         club.set_default_edit_club(default_edit_club);
+        self.dirty_clubs.insert(club_id);
         self.auto_checkpoint();
         Ok(())
     }
 
     pub fn work_count(&self) -> usize {
         self.works.len()
+    }
+
+    #[cfg(feature = "server")]
+    pub fn is_work_dirty(&self, work_id: BeId) -> Option<bool> {
+        self.works.get(&work_id).map(|ws| ws.chunk_ref.is_none())
+    }
+
+    #[cfg(feature = "server")]
+    pub fn is_club_dirty(&self, club_id: BeId) -> bool {
+        self.dirty_clubs.contains(&club_id)
+    }
+
+    #[cfg(feature = "server")]
+    pub fn has_edition_ref(&self, edition_id: BeId) -> bool {
+        self.standalone_edition_refs.contains_key(&edition_id)
     }
 
     // === CRDT sync methods ===
@@ -1593,6 +1664,14 @@ impl Server {
     }
 
     pub fn init_data_dir(&mut self, data_dir: &std::path::Path, passphrase: Option<&[u8]>) -> std::io::Result<()> {
+        let manifest_path = data_dir.join("manifest.json");
+        if manifest_path.exists() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("data directory already initialized: {}", data_dir.display()),
+            ));
+        }
+
         std::fs::create_dir_all(data_dir)?;
         std::fs::create_dir_all(data_dir.join("blobs"))?;
 
@@ -1604,7 +1683,6 @@ impl Server {
         self.restore_keypair_from_dir(data_dir, passphrase)?;
         self.restore_blob_store_from_dir(data_dir)?;
 
-        let manifest_path = data_dir.join("manifest.json");
         self.checkpoint_path = Some(manifest_path);
         self.checkpoint_to_store()?;
 
@@ -1688,6 +1766,7 @@ impl Server {
                 club.add_sponsored_work(*work_id);
             }
             self.clubs.insert(club_ref.be_id, club);
+            self.club_refs.insert(club_ref.be_id, club_ref.clone());
         }
 
         self.personal_club_count = self.clubs.values().filter(|c| c.is_personal()).count();
@@ -1698,6 +1777,7 @@ impl Server {
             ).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
             let ws = WorkState {
                 work: work.clone(),
+                chunk_ref: Some(work_ref.clone()),
                 grabber: None,
                 grabbed_at: None,
                 grab_waiters: Vec::new(),
@@ -1714,6 +1794,7 @@ impl Server {
                 &se_ref.edition_ref, &chunk_store,
             ).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
             self.standalone_editions.insert(se_ref.be_id, edition);
+            self.standalone_edition_refs.insert(se_ref.be_id, se_ref.edition_ref.clone());
         }
 
         for link in &manifest.links {
@@ -1857,8 +1938,17 @@ impl Server {
             let file = self.key_history.to_file_repr();
             match serde_json::to_string_pretty(&file) {
                 Ok(json) => {
-                    if let Err(e) = std::fs::write(&kh_path, json) {
-                        tracing::warn!("Failed to write key history: {}", e);
+                    let tmp_path = kh_path.with_extension("tmp");
+                    match std::fs::write(&tmp_path, &json) {
+                        Ok(()) => {
+                            if let Err(e) = std::fs::rename(&tmp_path, &kh_path) {
+                                tracing::warn!("Failed to rename key history: {}", e);
+                                let _ = std::fs::remove_file(&tmp_path);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to write key history tmp: {}", e);
+                        }
                     }
                 }
                 Err(e) => {
@@ -2772,6 +2862,20 @@ impl Server {
             && self.check_edit_permission(session_id, &ws.work)
     }
 
+    pub(crate) fn refresh_all_session_authority(&mut self) {
+        let session_ids: Vec<SessionId> = self.sessions.keys().copied().collect();
+        for sid in session_ids {
+            let km = self.sessions.get(&sid)
+                .and_then(|s| s._key_master().cloned());
+            if let Some(mut km) = km {
+                km.update_authority(&self.clubs);
+                if let Some(session) = self.sessions.get_mut(&sid) {
+                    session.set_key_master(km);
+                }
+            }
+        }
+    }
+
     fn _find_grabbed_works(&self, session_id: SessionId) -> Option<Vec<BeId>> {
         let grabbed: Vec<BeId> = self
             .works
@@ -2826,6 +2930,7 @@ impl Server {
             current.endorsements.clone(),
         );
         ws.work.revise(updated.clone());
+        ws.chunk_ref = None;
         let bf_work = ws.work.clone();
         self.backfollow.update_work_with_parent(work_id, work_id, bf_work);
         self.reconcile_record_local_revision(work_id, &updated, Self::current_timestamp_secs());
@@ -3104,6 +3209,7 @@ impl Server {
         let ws = self.works.get_mut(&work_id)
             .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
         ws.work.endorse(&endorsements);
+        ws.chunk_ref = None;
         Ok(())
     }
 
@@ -3117,6 +3223,7 @@ impl Server {
         let ws = self.works.get_mut(&work_id)
             .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
         ws.work.retract(&endorsements);
+        ws.chunk_ref = None;
         Ok(())
     }
 
@@ -3136,6 +3243,7 @@ impl Server {
         let edition = self.standalone_editions.get_mut(&edition_id)
             .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
         edition.endorse(&endorsements);
+        self.standalone_edition_refs.remove(&edition_id);
         Ok(())
     }
 
@@ -3149,6 +3257,7 @@ impl Server {
         let edition = self.standalone_editions.get_mut(&edition_id)
             .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
         edition.retract(&endorsements);
+        self.standalone_edition_refs.remove(&edition_id);
         Ok(())
     }
 
@@ -3409,6 +3518,7 @@ impl Server {
                 work.set_read_club(Some(self.system_clubs.public_club));
                 let ws = WorkState {
                     work,
+                    chunk_ref: None,
                     grabber: None,
                     grabbed_at: None,
                     grab_waiters: Vec::new(),
@@ -4226,8 +4336,8 @@ pub enum FederationFetchResponse {
 #[cfg(feature = "server")]
 pub(crate) mod persist_snapshot {
     use super::*;
+    use std::collections::{HashMap, HashSet};
     use crate::edition::persistent::{EditionSnapshot, WorkSnapshot};
-    use std::collections::HashMap;
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     struct WorkStateSnapshot {
@@ -4422,6 +4532,9 @@ pub(crate) mod persist_snapshot {
                 club_names: HashMap::new(),
                 works: HashMap::new(),
                 standalone_editions: HashMap::new(),
+                standalone_edition_refs: HashMap::new(),
+                dirty_clubs: HashSet::new(),
+                club_refs: HashMap::new(),
                 edition_detectors: HashMap::new(),
                 system_clubs: snapshot.system_clubs,
                 operation_counter: snapshot.operation_counter,
@@ -4494,6 +4607,7 @@ pub(crate) mod persist_snapshot {
                 ).work().clone();
                 let ws = WorkState {
                     work: work.clone(),
+                    chunk_ref: None,
                     grabber: None,
                     grabbed_at: None,
                     grab_waiters: Vec::new(),
@@ -4569,14 +4683,14 @@ pub(crate) mod persist_snapshot {
             Ok(())
         }
 
-        pub fn checkpoint_to_store(&self) -> std::io::Result<()> {
-            let chunk_store = match self.chunk_store {
-                Some(ref cs) => cs,
-                None => return Err(std::io::Error::new(
+        pub fn checkpoint_to_store(&mut self) -> std::io::Result<()> {
+            let has_chunk_store = self.chunk_store.is_some();
+            if !has_chunk_store {
+                return Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     "no chunk store configured",
-                )),
-            };
+                ));
+            }
             let manifest_path = match self.checkpoint_path {
                 Some(ref p) => p.clone(),
                 None => return Err(std::io::Error::new(
@@ -4586,21 +4700,45 @@ pub(crate) mod persist_snapshot {
             };
             let start = std::time::Instant::now();
 
-            let mut work_refs = Vec::new();
+            let chunk_store = self.chunk_store.as_ref().unwrap();
+
+            let mut dirty_work_count = 0u64;
+            let mut work_refs: Vec<(BeId, crate::persist::edition_chunks::WorkChunkRef)> = Vec::new();
             for (id, ws) in &self.works {
-                let work_ref = crate::persist::edition_chunks::work_to_chunks(
-                    &ws.work, chunk_store,
-                ).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-                work_refs.push((*id, work_ref));
+                if let Some(ref existing_ref) = ws.chunk_ref {
+                    work_refs.push((*id, existing_ref.clone()));
+                } else {
+                    dirty_work_count += 1;
+                    let work_ref = crate::persist::edition_chunks::work_to_chunks(
+                        &ws.work, chunk_store,
+                    ).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    work_refs.push((*id, work_ref));
+                }
             }
 
+            for (id, work_ref) in &work_refs {
+                if let Some(ws) = self.works.get_mut(id) {
+                    if ws.chunk_ref.is_none() {
+                        ws.chunk_ref = Some(work_ref.clone());
+                    }
+                }
+            }
+
+            let mut dirty_club_count = 0u64;
             let mut club_refs = Vec::new();
             for (id, club) in &self.clubs {
+                if !self.dirty_clubs.contains(id) {
+                    if let Some(existing_ref) = self.club_refs.get(id) {
+                        club_refs.push(existing_ref.clone());
+                        continue;
+                    }
+                }
+                dirty_club_count += 1;
                 let work = club.work();
                 let work_ref = crate::persist::edition_chunks::work_to_chunks(
                     work, chunk_store,
                 ).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-                club_refs.push(crate::persist::manifest::ClubChunkRef {
+                let club_ref = crate::persist::manifest::ClubChunkRef {
                     be_id: *id,
                     name: club.name().map(|s| s.to_string()),
                     signature_club: club.signature_club(),
@@ -4613,18 +4751,34 @@ pub(crate) mod persist_snapshot {
                     encrypted_signing_key: club.encrypted_signing_key().cloned(),
                     members: club.members().iter().copied().collect(),
                     sponsored_works: club.sponsored_works().iter().copied().collect(),
-                });
+                };
+                club_refs.push(club_ref);
             }
 
+            for club_ref in &club_refs {
+                self.club_refs.insert(club_ref.be_id, club_ref.clone());
+            }
+            self.dirty_clubs.clear();
+
+            let mut dirty_edition_count = 0u64;
             let mut standalone_refs = Vec::new();
             for (id, edition) in &self.standalone_editions {
+                if let Some(existing_ref) = self.standalone_edition_refs.get(id) {
+                    standalone_refs.push(crate::persist::manifest::StandaloneEditionChunkRef {
+                        be_id: *id,
+                        edition_ref: existing_ref.clone(),
+                    });
+                    continue;
+                }
+                dirty_edition_count += 1;
                 let ed_ref = crate::persist::edition_chunks::edition_to_chunks(
                     edition, chunk_store,
                 ).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                 standalone_refs.push(crate::persist::manifest::StandaloneEditionChunkRef {
                     be_id: *id,
-                    edition_ref: ed_ref,
+                    edition_ref: ed_ref.clone(),
                 });
+                self.standalone_edition_refs.insert(*id, ed_ref);
             }
 
             let links: Vec<_> = self.links.iter().map(|(id, ls)| {
@@ -4694,11 +4848,67 @@ pub(crate) mod persist_snapshot {
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             self.save_key_history();
 
+            if let Err(e) = self.gc_orphaned_chunks() {
+                tracing::warn!("Chunk GC failed: {}", e);
+            }
+
             tracing::info!(
-                "Checkpoint saved in {:.2}ms (chunk store)",
+                "Checkpoint saved in {:.2}ms (dirty: {}/{}/{} works/clubs/editions)",
                 start.elapsed().as_secs_f64() * 1000.0,
+                dirty_work_count,
+                dirty_club_count,
+                dirty_edition_count,
             );
             Ok(())
+        }
+
+        pub fn gc_orphaned_chunks(&self) -> std::io::Result<u64> {
+            let chunk_store = match self.chunk_store.as_ref() {
+                Some(cs) => cs,
+                None => return Ok(0),
+            };
+
+            let mut referenced: std::collections::HashSet<[u8; 32]> = std::collections::HashSet::new();
+            for ws in self.works.values() {
+                if let Some(ref work_ref) = ws.chunk_ref {
+                    if let Ok(hashes) = crate::persist::edition_chunks::collect_work_hashes(work_ref, chunk_store) {
+                        referenced.extend(hashes);
+                    }
+                }
+            }
+            for club_ref in self.club_refs.values() {
+                if let Ok(hashes) = crate::persist::edition_chunks::collect_work_hashes(&club_ref.work_root, chunk_store) {
+                    referenced.extend(hashes);
+                }
+            }
+            for ed_ref in self.standalone_edition_refs.values() {
+                if let Ok(hashes) = crate::persist::edition_chunks::collect_edition_hashes(ed_ref, chunk_store) {
+                    referenced.extend(hashes);
+                }
+            }
+
+            let all_chunks = chunk_store.all_chunk_hashes()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+            let mut removed = 0u64;
+            for hash in &all_chunks {
+                if !referenced.contains(hash) {
+                    if let Ok(()) = chunk_store.delete_chunk(hash) {
+                        removed += 1;
+                    }
+                }
+            }
+
+            if removed > 0 {
+                tracing::info!(
+                    "Chunk GC: removed {} orphaned chunks ({} referenced, {} total on disk)",
+                    removed,
+                    referenced.len(),
+                    all_chunks.len(),
+                );
+            }
+
+            Ok(removed)
         }
 
         pub fn restore_from_file(path: &std::path::Path) -> std::io::Result<Self> {
@@ -4957,8 +5167,9 @@ mod tests {
     fn server_login_public_club_by_name() {
         let mut server = Server::new();
         let sid = server.connect();
-        let lock = server.login_by_name(sid, "public").unwrap();
-        let km = server.authenticate(sid, lock.as_ref(), &LockCredential::Boo).unwrap();
+        let club_id = server.club_id_by_name("public").unwrap();
+        assert_eq!(club_id, server.public_club_id());
+        let km = server.login_public(sid).unwrap();
         assert!(km.has_authority(server.public_club_id()));
     }
 
@@ -5127,10 +5338,10 @@ mod tests {
         let club_id = server.create_club(sid, Edition::empty()).unwrap();
         let work_id = server.create_work(sid, Edition::from_text("doc")).unwrap();
 
-        server.work_sponsor(work_id, club_id).unwrap();
+        server.work_sponsor(sid, work_id, club_id).unwrap();
         assert_eq!(server.work_sponsors(work_id).unwrap(), &[club_id]);
 
-        server.work_unsponsor(work_id, club_id).unwrap();
+        server.work_unsponsor(sid, work_id, club_id).unwrap();
         assert!(server.work_sponsors(work_id).unwrap().is_empty());
     }
 
@@ -5237,7 +5448,7 @@ mod tests {
         let events_clone = events.clone();
         let detector = Box::new(crate::server::detector::FnDetector::new(
             move |event: &Event| {
-                events_clone.lock().unwrap().push(event.clone());
+                events_clone.lock().unwrap_or_else(|e| e.into_inner()).push(event.clone());
             },
         ));
         server.add_revision_detector(work_id, detector).unwrap();
@@ -5247,7 +5458,7 @@ mod tests {
             .work_revise(sid, work_id, Edition::from_text("v1"))
             .unwrap();
 
-        let captured = events.lock().unwrap();
+        let captured = events.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(captured.len(), 1);
         match &captured[0] {
             Event::WorkRevised {
@@ -5275,7 +5486,7 @@ mod tests {
         let events_clone = events.clone();
         let detector = Box::new(crate::server::detector::FnDetector::new(
             move |event: &Event| {
-                events_clone.lock().unwrap().push(event.clone());
+                events_clone.lock().unwrap_or_else(|e| e.into_inner()).push(event.clone());
             },
         ));
         server.add_status_detector(work_id, detector).unwrap();
@@ -5283,7 +5494,7 @@ mod tests {
         server.work_grab(sid, work_id).unwrap();
         server.work_release(sid, work_id).unwrap();
 
-        let captured = events.lock().unwrap();
+        let captured = events.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(captured.len(), 2);
         assert!(matches!(&captured[0], Event::WorkGrabbed { .. }));
         assert!(matches!(&captured[1], Event::WorkReleased { .. }));
@@ -5410,14 +5621,14 @@ mod tests {
         let events_clone = events.clone();
         let detector = Box::new(crate::server::detector::FnDetector::new(
             move |event: &Event| {
-                events_clone.lock().unwrap().push(event.clone());
+                events_clone.lock().unwrap_or_else(|e| e.into_inner()).push(event.clone());
             },
         ));
         server.add_fill_detector(edition_id, detector).unwrap();
 
         server.fire_fill_event(edition_id, crate::edition::XnRegion::interval(0, 7));
 
-        let captured = events.lock().unwrap();
+        let captured = events.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(captured.len(), 1);
         assert!(matches!(&captured[0], Event::RangeFilled { .. }));
     }
@@ -5434,17 +5645,30 @@ mod tests {
             .create_named_club(sid, "challenge_club", Edition::empty())
             .unwrap();
 
-        let lock = ChallengeLock::new(club_id, b"challenge_data".to_vec(), b"expected_response".to_vec());
+        let signing_key = crate::crypto::sign::generate_signing_key();
+        let verifying_key = signing_key.verifying_key().to_bytes();
+        let challenge = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
+        let lock = ChallengeLock::new(club_id, challenge.clone(), verifying_key);
 
-        let result = lock.try_open(&LockCredential::ChallengeResponse(b"wrong".to_vec()));
+        let wrong_key = crate::crypto::sign::generate_signing_key();
+        let mut wrong_msg = Vec::new();
+        wrong_msg.extend_from_slice(b"xudanu/v1/");
+        wrong_msg.extend_from_slice(&challenge);
+        let wrong_sig = crate::crypto::sign::sign_bytes(&wrong_key, &wrong_msg);
+        let result = lock.try_open(&LockCredential::ChallengeResponse(wrong_sig.to_bytes().to_vec()));
         assert!(result.is_err());
 
+        let mut correct_msg = Vec::new();
+        correct_msg.extend_from_slice(b"xudanu/v1/");
+        correct_msg.extend_from_slice(&challenge);
+        let correct_sig = crate::crypto::sign::sign_bytes(&signing_key, &correct_msg);
         let km = lock
-            .try_open(&LockCredential::ChallengeResponse(b"expected_response".to_vec()))
+            .try_open(&LockCredential::ChallengeResponse(correct_sig.to_bytes().to_vec()))
             .unwrap();
         assert!(km.has_authority(club_id));
 
-        server.authenticate(sid, &lock, &LockCredential::ChallengeResponse(b"expected_response".to_vec())).unwrap();
+        let correct_sig2 = crate::crypto::sign::sign_bytes(&signing_key, &correct_msg);
+        server.authenticate(sid, &lock, &LockCredential::ChallengeResponse(correct_sig2.to_bytes().to_vec())).unwrap();
         assert!(server.session(sid).unwrap().has_authority(club_id));
     }
 
@@ -6825,8 +7049,9 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
         let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid, owner_club, b"testpass").unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let work_id = server.create_work(sid, Edition::from_text("pub test")).unwrap();
 
         assert!(!server.work_is_published(sid, work_id).unwrap());
@@ -6844,8 +7069,9 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
         let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid, owner_club, b"testpass").unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let work_id = server.create_work(sid, Edition::from_text("permanent")).unwrap();
 
         server.work_irrevocably_unpublish(sid, work_id).unwrap();
@@ -6866,8 +7092,9 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
         let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid, owner_club, b"testpass").unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let work_id = server.create_work(sid, Edition::from_text("secret doc")).unwrap();
 
         assert!(server.work_is_readable(sid, server.work(work_id).unwrap()));
@@ -6879,8 +7106,9 @@ mod tests {
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
         let owner_club = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid1, owner_club, b"testpass").unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
-        server.authenticate(sid1, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid1, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let work_id = server.create_work(sid1, Edition::from_text("private")).unwrap();
 
         let sid2 = server.connect();
@@ -6895,8 +7123,9 @@ mod tests {
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
         let owner_club = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid1, owner_club, b"testpass").unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
-        server.authenticate(sid1, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid1, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let work_id = server.create_work(sid1, Edition::from_text("public doc")).unwrap();
         server.work_publish(sid1, work_id).unwrap();
 
@@ -6912,8 +7141,9 @@ mod tests {
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
         let owner_club = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid1, owner_club, b"testpass").unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
-        server.authenticate(sid1, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid1, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let work_id = server.create_work(sid1, Edition::from_text("gone")).unwrap();
         server.work_irrevocably_unpublish(sid1, work_id).unwrap();
 
@@ -6936,8 +7166,9 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
         let club_id = server.create_club(sid, Edition::from_text("snap club")).unwrap();
+        server.club_set_password(sid, club_id, b"testpass").unwrap();
         let lock = server.login(sid, club_id).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let custom_club = server.create_club(sid, Edition::from_text("custom")).unwrap();
         server.club_set_default_read_club(sid, club_id, Some(custom_club)).unwrap();
         server.club_set_default_edit_club(sid, club_id, Some(custom_club)).unwrap();
@@ -6954,8 +7185,9 @@ mod tests {
     fn publish_unpublish_snapshot_roundtrip() {
         let (mut server, sid) = setup_logged_in_server();
         let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid, owner_club, b"testpass").unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let work_id = server.create_work(sid, Edition::from_text("persist test")).unwrap();
         server.work_publish(sid, work_id).unwrap();
 
@@ -6973,8 +7205,9 @@ mod tests {
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
         let owner_club = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid1, owner_club, b"testpass").unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
-        server.authenticate(sid1, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid1, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let work_id = server.create_work(sid1, Edition::from_text("hidden")).unwrap();
 
         let sid2 = server.connect();
@@ -6990,8 +7223,9 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
         let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid, owner_club, b"testpass").unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let work_id = server.create_work(sid, Edition::from_text("mine")).unwrap();
 
         let result = server.ensure_can_read(sid, work_id);
@@ -7004,8 +7238,9 @@ mod tests {
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
         let owner_club = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid1, owner_club, b"testpass").unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
-        server.authenticate(sid1, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid1, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let work_id = server.create_work(sid1, Edition::from_text("owned")).unwrap();
 
         let sid2 = server.connect();
@@ -7021,15 +7256,17 @@ mod tests {
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
         let club1 = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid1, club1, b"testpass").unwrap();
         let lock = server.login(sid1, club1).unwrap();
-        server.authenticate(sid1, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid1, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let work_id = server.create_work(sid1, Edition::from_text("owned")).unwrap();
 
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
         let club2 = server.create_club(sid2, Edition::from_text("editor club")).unwrap();
+        server.club_set_password(sid2, club2, b"testpass").unwrap();
         let lock2 = server.login(sid2, club2).unwrap();
-        server.authenticate(sid2, &*lock2, &LockCredential::Boo).unwrap();
+        server.authenticate(sid2, &*lock2, &LockCredential::Password(b"testpass".to_vec())).unwrap();
 
         assert!(!server.work_is_readable(sid2, server.work(work_id).unwrap()),
             "non-editor should not read private work");
@@ -7046,8 +7283,9 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
         let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid, owner_club, b"testpass").unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
 
         let custom_club = server.create_club(sid, Edition::from_text("custom")).unwrap();
         let work_id = server.create_work(sid, Edition::from_text("test")).unwrap();
@@ -7067,14 +7305,16 @@ mod tests {
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
         let club1 = server.create_club(sid1, Edition::from_text("club1")).unwrap();
+        server.club_set_password(sid1, club1, b"testpass").unwrap();
         let lock1 = server.login(sid1, club1).unwrap();
-        server.authenticate(sid1, &*lock1, &LockCredential::Boo).unwrap();
+        server.authenticate(sid1, &*lock1, &LockCredential::Password(b"testpass".to_vec())).unwrap();
 
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
         let club2 = server.create_club(sid2, Edition::from_text("club2")).unwrap();
+        server.club_set_password(sid2, club2, b"testpass").unwrap();
         let lock2 = server.login(sid2, club2).unwrap();
-        server.authenticate(sid2, &*lock2, &LockCredential::Boo).unwrap();
+        server.authenticate(sid2, &*lock2, &LockCredential::Password(b"testpass".to_vec())).unwrap();
 
         let result = server.club_set_default_read_club(sid2, club1, Some(club2));
         assert!(result.is_err(), "non-owner should not set defaults on club");
@@ -7089,8 +7329,9 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
         let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
+        server.club_set_password(sid, owner_club, b"testpass").unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Boo).unwrap();
+        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
         let work_id = server.create_work(sid, Edition::from_text("gone")).unwrap();
 
         server.work_grab(sid, work_id).unwrap();

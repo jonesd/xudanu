@@ -1256,4 +1256,317 @@ mod tests {
     fn stress_10_cold_restart_heavy() {
         run_scenario_10(Scale::Heavy);
     }
+
+    // ================================================================
+    // Scenario 11: Concurrent Read/Write Stress
+    // ================================================================
+
+    fn run_scenario_11(scale: Scale) {
+        use std::sync::Arc;
+        use std::thread;
+
+        let dir = temp_dir("s11");
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = Arc::new(ChunkStore::open(&dir).unwrap());
+
+        let seed_count = scale.unique_chunks() / 10;
+        let ops_per_thread = scale.read_samples() / 4;
+        let n_threads = 4;
+
+        let mut seed_hashes: Vec<[u8; 32]> = Vec::with_capacity(seed_count);
+        for i in 0..seed_count {
+            let data = format!("concurrent-seed-{}-{:016x}", i, (i as u64).wrapping_mul(987654321));
+            seed_hashes.push(store.write_chunk(data.as_bytes()).unwrap());
+        }
+
+        store.reset_stats();
+
+        let new_hashes: Vec<Arc<std::sync::Mutex<Vec<[u8; 32]>>>> =
+            (0..n_threads).map(|_| Arc::new(std::sync::Mutex::new(Vec::new()))).collect();
+
+        let start = Instant::now();
+        let mut handles = Vec::new();
+
+        for t in 0..n_threads {
+            let store = Arc::clone(&store);
+            let seed_hashes = seed_hashes.clone();
+            let new_hashes_t = Arc::clone(&new_hashes[t]);
+
+            handles.push(thread::spawn(move || {
+                let mut rng_state: u64 = (t as u64).wrapping_mul(1111111111111111111);
+                let mut local_writes: u64 = 0;
+                let mut local_reads: u64 = 0;
+                let mut local_errors: u64 = 0;
+
+                for _ in 0..ops_per_thread {
+                    rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    let op = (rng_state >> 33) as usize % 100;
+
+                    if op < 15 {
+                        let data = format!(
+                            "t{}-new-{}-{:032x}",
+                            t, local_writes,
+                            local_writes.wrapping_mul(0x9e3779b97f4a7c15)
+                        );
+                        match store.write_chunk(data.as_bytes()) {
+                            Ok(hash) => {
+                                new_hashes_t.lock().unwrap_or_else(|e| e.into_inner()).push(hash);
+                            }
+                            Err(_) => { local_errors += 1; }
+                        }
+                        local_writes += 1;
+                    } else {
+                        let all_hashes = {
+                            let mut combined = seed_hashes.clone();
+                            let extra = new_hashes_t.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                            combined.extend(extra);
+                            combined
+                        };
+                        if all_hashes.is_empty() { continue; }
+                        let idx = ((rng_state >> 16) as usize) % all_hashes.len();
+                        match store.read_chunk(&all_hashes[idx]) {
+                            Ok(_) => { local_reads += 1; }
+                            Err(_) => { local_errors += 1; }
+                        }
+                    }
+                }
+
+                (local_writes, local_reads, local_errors)
+            }));
+        }
+
+        let (total_writes, total_reads, total_errors): (u64, u64, u64) =
+            handles.into_iter().map(|h| h.join().unwrap())
+                .fold((0, 0, 0), |(w, r, e), (dw, dr, de)| (w + dw, r + dr, e + de));
+
+        let total = start.elapsed();
+        let (hits, misses, hit_rate, cache_len) = store.cache_stats();
+
+        let all_new: Vec<[u8; 32]> = new_hashes.iter()
+            .flat_map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone())
+            .collect();
+
+        let verify_start = Instant::now();
+        let mut verified = 0usize;
+        let mut verify_errors = 0usize;
+        for hash in all_new.iter() {
+            match store.read_chunk(hash) {
+                Ok(_) => verified += 1,
+                Err(_) => verify_errors += 1,
+            }
+        }
+        let verify_dur = verify_start.elapsed();
+
+        let report = StressReport {
+            scenario: "11: Concurrent Read/Write",
+            scale,
+            total_duration_ms: total.as_millis(),
+            write_stats: TimingStats::new(),
+            read_stats: TimingStats::new(),
+            cache_hits: hits,
+            cache_misses: misses,
+            cache_hit_rate: hit_rate,
+            cache_len_at_end: cache_len,
+            chunks_on_disk: store.total_chunks_on_disk().unwrap(),
+            disk_bytes: store.disk_bytes().unwrap(),
+            extras: vec![
+                ("Threads", format!("{}", n_threads)),
+                ("Seed chunks", format!("{}", seed_count)),
+                ("Ops/thread", format!("{}", ops_per_thread)),
+                ("Total writes", format!("{}", total_writes)),
+                ("Total reads", format!("{}", total_reads)),
+                ("Errors during run", format!("{}", total_errors)),
+                ("Ops/sec", format!("{:.0}", (total_writes + total_reads) as f64 / total.as_secs_f64())),
+                ("New chunks written", format!("{}", all_new.len())),
+                ("Verified readable", format!("{}/{}", verified, all_new.len())),
+                ("Verify errors", format!("{}", verify_errors)),
+                ("Verify time", format!("{:.1}ms", verify_dur.as_millis())),
+                ("Cache contention", format!("{:.1} ops/µs", (total_writes + total_reads) as f64 / total.as_micros() as f64)),
+            ],
+        };
+        report.print();
+
+        assert_eq!(total_errors, 0, "no errors expected during concurrent operations");
+        assert_eq!(verify_errors, 0, "all written chunks must be readable after concurrent ops");
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn stress_11_concurrent_fast() {
+        run_scenario_11(Scale::Fast);
+    }
+
+    #[test]
+    #[ignore]
+    fn stress_11_concurrent_medium() {
+        run_scenario_11(Scale::Medium);
+    }
+
+    #[test]
+    #[ignore]
+    fn stress_11_concurrent_heavy() {
+        run_scenario_11(Scale::Heavy);
+    }
+
+    // ================================================================
+    // Scenario 12: Lazy Revision Loading Performance
+    // ================================================================
+
+    fn run_scenario_12(scale: Scale) {
+        let dir = temp_dir("s12");
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = ChunkStore::open(&dir).unwrap();
+
+        let n_works = 3.min(scale.editions() / 10).max(1);
+        let n_revisions = scale.revisions();
+        let entries_per = 50.min(scale.large_edition_entries());
+
+        let mut work_refs: Vec<WorkChunkRef> = Vec::new();
+
+        eprintln!("  Building {} works x {} revisions x {} entries...",
+            n_works, n_revisions, entries_per);
+
+        for w in 0..n_works {
+            let v0 = make_edition_with_entries(entries_per, w as u64 * 10000);
+            let mut work = Work::new(w as u64, v0);
+
+            for rev in 1..n_revisions {
+                let edition = make_edition_with_entries(
+                    entries_per,
+                    w as u64 * 10000 + rev as u64 * 100,
+                );
+                work.revise(edition);
+            }
+
+            let chunk_ref = work_to_chunks(&work, &store).unwrap();
+            work_refs.push(chunk_ref);
+        }
+
+        let chunks_after_build = store.total_chunks_on_disk().unwrap();
+        let disk_after_build = store.disk_bytes().unwrap();
+
+        store.reset_stats();
+        store.clear_cache();
+
+        let mut cold_read_ns: TimingStats = TimingStats::new();
+        let mut warm_read_ns: TimingStats = TimingStats::new();
+        let mut sequential_scan_ns: TimingStats = TimingStats::new();
+        let mut prefetch_ns: TimingStats = TimingStats::new();
+
+        for chunk_ref in &work_refs {
+            for rev in 0..chunk_ref.revision_count {
+                let t0 = Instant::now();
+                let edition = work_load_revision(chunk_ref, rev, &store).unwrap();
+                cold_read_ns.record(t0.elapsed().as_micros() as f64);
+                assert!(edition.count() > 0);
+            }
+        }
+        let cold_dur = cold_read_ns.count() as f64 / cold_read_ns.mean() * 1000.0;
+
+        let (cold_hits, cold_misses, cold_rate, _) = store.cache_stats();
+        store.reset_stats();
+
+        for chunk_ref in &work_refs {
+            for rev in 0..chunk_ref.revision_count {
+                let t0 = Instant::now();
+                let edition = work_load_revision(chunk_ref, rev, &store).unwrap();
+                warm_read_ns.record(t0.elapsed().as_micros() as f64);
+                assert!(edition.count() > 0);
+            }
+        }
+
+        let (warm_hits, warm_misses, warm_rate, _) = store.cache_stats();
+        store.reset_stats();
+        store.clear_cache();
+
+        for chunk_ref in &work_refs {
+            for rev in 0..chunk_ref.revision_count {
+                let t0 = Instant::now();
+                let edition = work_load_revision(chunk_ref, rev, &store).unwrap();
+                sequential_scan_ns.record(t0.elapsed().as_micros() as f64);
+                assert!(edition.count() > 0);
+
+                if rev + 1 < chunk_ref.revision_count {
+                    let t_prefetch = Instant::now();
+                    let _ = work_load_revision(chunk_ref, rev + 1, &store).unwrap();
+                    prefetch_ns.record(t_prefetch.elapsed().as_micros() as f64);
+                }
+            }
+        }
+
+        let (seq_hits, seq_misses, seq_rate, _) = store.cache_stats();
+
+        let total_revisions: u64 = work_refs.iter().map(|r| r.revision_count).sum();
+        let history_chunks: usize = work_refs.iter().map(|r| r.history.len()).sum();
+
+        let report = StressReport {
+            scenario: "12: Lazy Revision Loading",
+            scale,
+            total_duration_ms: cold_dur as u128,
+            write_stats: TimingStats::new(),
+            read_stats: TimingStats::new(),
+            cache_hits: cold_hits + warm_hits,
+            cache_misses: cold_misses + warm_misses,
+            cache_hit_rate: (cold_hits + warm_hits) as f64
+                / (cold_hits + warm_misses + warm_hits + warm_misses) as f64,
+            cache_len_at_end: 0,
+            chunks_on_disk: chunks_after_build,
+            disk_bytes: disk_after_build,
+            extras: vec![
+                ("Works", format!("{}", n_works)),
+                ("Revisions/work", format!("{}", n_revisions)),
+                ("Entries/revision", format!("{}", entries_per)),
+                ("Total revisions", format!("{}", total_revisions)),
+                ("History chunk refs", format!("{}", history_chunks)),
+                ("", String::new()),
+                ("--- COLD READS (cache empty) ---", String::new()),
+                ("Cold reads", format!("{}", cold_read_ns.count())),
+                ("Cold avg", format!("{:.1}µs", cold_read_ns.mean())),
+                ("Cold p50", format!("{:.1}µs", cold_read_ns.percentile(50.0))),
+                ("Cold p95", format!("{:.1}µs", cold_read_ns.percentile(95.0))),
+                ("Cold p99", format!("{:.1}µs", cold_read_ns.percentile(99.0))),
+                ("Cold hit rate", format!("{:.1}%", cold_rate * 100.0)),
+                ("", String::new()),
+                ("--- WARM READS (cache populated) ---", String::new()),
+                ("Warm reads", format!("{}", warm_read_ns.count())),
+                ("Warm avg", format!("{:.1}µs", warm_read_ns.mean())),
+                ("Warm p50", format!("{:.1}µs", warm_read_ns.percentile(50.0))),
+                ("Warm p95", format!("{:.1}µs", warm_read_ns.percentile(95.0))),
+                ("Warm hit rate", format!("{:.1}%", warm_rate * 100.0)),
+                ("", String::new()),
+                ("--- SEQUENTIAL + PREFETCH ---", String::new()),
+                ("Seq avg", format!("{:.1}µs", sequential_scan_ns.mean())),
+                ("Prefetch+1 avg", format!("{:.1}µs", prefetch_ns.mean())),
+                ("Seq hit rate", format!("{:.1}%", seq_rate * 100.0)),
+                ("", String::new()),
+                ("--- FULL HISTORY LOAD COST ---", String::new()),
+                ("Full history cost", format!("{:.0}µs (est {} × cold avg)",
+                    total_revisions as f64 * cold_read_ns.mean(),
+                    total_revisions)),
+                ("Lazy first-access", format!("{:.0}µs (1 × cold avg)", cold_read_ns.mean())),
+                ("Speedup", format!("{:.0}x", total_revisions as f64)),
+            ],
+        };
+        report.print();
+
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn stress_12_lazy_revision_fast() {
+        run_scenario_12(Scale::Fast);
+    }
+
+    #[test]
+    #[ignore]
+    fn stress_12_lazy_revision_medium() {
+        run_scenario_12(Scale::Medium);
+    }
+
+    #[test]
+    #[ignore]
+    fn stress_12_lazy_revision_heavy() {
+        run_scenario_12(Scale::Heavy);
+    }
 }

@@ -1,11 +1,13 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
 use x25519_dalek::{StaticSecret, PublicKey};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use zeroize::Zeroize;
 
+use super::aead::{self, SealedEnvelope};
 use super::sign::{sign_bytes, verify_signature, generate_signing_key};
 
 pub type KeyId = u64;
@@ -297,6 +299,61 @@ pub struct KeypairFile {
     not_after: Option<u64>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct KeypairFileV2 {
+    pub version: u8,
+    pub salt: String,
+    pub envelope: String,
+    pub integrity: String,
+}
+
+#[derive(Debug)]
+pub enum KeypairFileError {
+    Io(std::io::Error),
+    Json(serde_json::Error),
+    Encryption(aead::AeadError),
+    Decryption(aead::AeadError),
+    WrongPassphrase,
+    CorruptIntegrity,
+    InvalidFormat,
+}
+
+impl std::fmt::Display for KeypairFileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeypairFileError::Io(e) => write!(f, "I/O error: {}", e),
+            KeypairFileError::Json(e) => write!(f, "JSON error: {}", e),
+            KeypairFileError::Encryption(e) => write!(f, "encryption failed: {}", e),
+            KeypairFileError::Decryption(e) => write!(f, "decryption failed: {}", e),
+            KeypairFileError::WrongPassphrase => write!(f, "wrong passphrase or corrupt key file"),
+            KeypairFileError::CorruptIntegrity => write!(f, "key file integrity check failed (corrupt or tampered)"),
+            KeypairFileError::InvalidFormat => write!(f, "invalid key file format"),
+        }
+    }
+}
+
+impl std::error::Error for KeypairFileError {}
+
+impl From<std::io::Error> for KeypairFileError {
+    fn from(e: std::io::Error) -> Self { KeypairFileError::Io(e) }
+}
+
+impl From<serde_json::Error> for KeypairFileError {
+    fn from(e: serde_json::Error) -> Self { KeypairFileError::Json(e) }
+}
+
+const KEYFILE_V2: u8 = 2;
+
+fn derive_keyfile_key(passphrase: &[u8], salt: &[u8; 32]) -> [u8; 32] {
+    let params = argon2::Params::new(19456, 2, 1, Some(32))
+        .expect("valid argon2 params");
+    let argon2 = argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
+    let mut key = [0u8; 32];
+    argon2.hash_password_into(passphrase, salt, &mut key)
+        .expect("argon2 derivation should not fail with valid params");
+    key
+}
+
 impl ServerKeyPair {
     pub fn save_to_file(&self, path: &std::path::Path) -> std::io::Result<()> {
         let file = KeypairFile {
@@ -319,6 +376,53 @@ impl ServerKeyPair {
         std::fs::rename(&tmp_path, path)
     }
 
+    pub fn save_to_file_encrypted(&self, path: &std::path::Path, passphrase: &[u8]) -> Result<(), KeypairFileError> {
+        let mut plaintext = Vec::with_capacity(32 + 32 + 8 + 8 + 8 + 1);
+        plaintext.extend_from_slice(&self.signing_key.to_bytes());
+        plaintext.extend_from_slice(&self.kex_secret.to_bytes());
+        plaintext.extend_from_slice(&self.key_id.to_be_bytes());
+        plaintext.extend_from_slice(&self.created_at.to_be_bytes());
+        plaintext.extend_from_slice(&self.not_before.to_be_bytes());
+        if let Some(na) = self.not_after {
+            plaintext.push(1u8);
+            plaintext.extend_from_slice(&na.to_be_bytes());
+        } else {
+            plaintext.push(0u8);
+        }
+
+        let mut salt = [0u8; 32];
+        OsRng.fill_bytes(&mut salt);
+        let key = derive_keyfile_key(passphrase, &salt);
+
+        let envelope = aead::seal_standalone(&key, &plaintext, b"xudanu-server-key", 0)
+            .map_err(KeypairFileError::Encryption)?;
+
+        let envelope_bytes = envelope.encode();
+        let mut integrity_input = Vec::with_capacity(32 + envelope_bytes.len());
+        integrity_input.extend_from_slice(&salt);
+        integrity_input.extend_from_slice(&envelope_bytes);
+        let integrity = blake3::hash(&integrity_input).to_hex().to_string();
+
+        let v2 = KeypairFileV2 {
+            version: KEYFILE_V2,
+            salt: BASE64.encode(salt),
+            envelope: BASE64.encode(&envelope_bytes),
+            integrity,
+        };
+
+        let json = serde_json::to_string(&v2)?;
+        let tmp_path = path.with_extension("keytmp");
+        std::fs::write(&tmp_path, json.as_bytes())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o600))
+                .map_err(KeypairFileError::Io)?;
+        }
+        std::fs::rename(&tmp_path, path)?;
+        Ok(())
+    }
+
     pub fn load_from_file(path: &std::path::Path) -> std::io::Result<Self> {
         let json = std::fs::read_to_string(path)?;
         let file: KeypairFile = serde_json::from_str(&json)
@@ -335,6 +439,115 @@ impl ServerKeyPair {
             is_active: true,
         })
     }
+
+    pub fn load_from_file_with_passphrase(path: &std::path::Path, passphrase: &[u8]) -> Result<Self, KeypairFileError> {
+        let json = std::fs::read_to_string(path)?;
+
+        if let Ok(v2) = serde_json::from_str::<KeypairFileV2>(&json) {
+            if v2.version != KEYFILE_V2 {
+                return Err(KeypairFileError::InvalidFormat);
+            }
+
+            let salt: [u8; 32] = BASE64.decode(&v2.salt)
+                .map_err(|_| KeypairFileError::InvalidFormat)?
+                .try_into()
+                .map_err(|_| KeypairFileError::InvalidFormat)?;
+
+            let envelope_bytes = BASE64.decode(&v2.envelope)
+                .map_err(|_| KeypairFileError::InvalidFormat)?;
+
+            let mut integrity_input = Vec::with_capacity(32 + envelope_bytes.len());
+            integrity_input.extend_from_slice(&salt);
+            integrity_input.extend_from_slice(&envelope_bytes);
+            let expected = blake3::hash(&integrity_input).to_hex().to_string();
+            if !constant_time_eq(&expected, &v2.integrity) {
+                return Err(KeypairFileError::CorruptIntegrity);
+            }
+
+            let envelope = SealedEnvelope::decode(&envelope_bytes)
+                .map_err(KeypairFileError::Decryption)?;
+            let key = derive_keyfile_key(passphrase, &salt);
+            let plaintext = aead::open_standalone(&key, &envelope, b"xudanu-server-key")
+                .map_err(|_| KeypairFileError::WrongPassphrase)?;
+
+            if plaintext.len() < 32 + 32 + 8 + 8 + 8 + 1 {
+                return Err(KeypairFileError::InvalidFormat);
+            }
+            let signing_key_bytes: [u8; 32] = plaintext[0..32].try_into()
+                .map_err(|_| KeypairFileError::InvalidFormat)?;
+            let kex_secret_bytes: [u8; 32] = plaintext[32..64].try_into()
+                .map_err(|_| KeypairFileError::InvalidFormat)?;
+            let key_id = KeyId::from_be_bytes(plaintext[64..72].try_into()
+                .map_err(|_| KeypairFileError::InvalidFormat)?);
+            let created_at = u64::from_be_bytes(plaintext[72..80].try_into()
+                .map_err(|_| KeypairFileError::InvalidFormat)?);
+            let not_before = u64::from_be_bytes(plaintext[80..88].try_into()
+                .map_err(|_| KeypairFileError::InvalidFormat)?);
+            let has_not_after = plaintext[88];
+            let not_after = if has_not_after == 1 {
+                if plaintext.len() < 89 + 8 {
+                    return Err(KeypairFileError::InvalidFormat);
+                }
+                Some(u64::from_be_bytes(plaintext[89..97].try_into()
+                    .map_err(|_| KeypairFileError::InvalidFormat)?))
+            } else {
+                None
+            };
+
+            let signing_key = SigningKey::from_bytes(&signing_key_bytes);
+            let kex_secret = StaticSecret::from(kex_secret_bytes);
+
+            return Ok(ServerKeyPair {
+                key_id,
+                signing_key,
+                kex_secret,
+                created_at,
+                not_before,
+                not_after,
+                is_active: true,
+            });
+        }
+
+        if let Ok(v1) = serde_json::from_str::<KeypairFile>(&json) {
+            let signing_key = SigningKey::from_bytes(&v1.signing_key_bytes);
+            let kex_secret = StaticSecret::from(v1.kex_secret_bytes);
+            return Ok(ServerKeyPair {
+                key_id: v1.key_id,
+                signing_key,
+                kex_secret,
+                created_at: v1.created_at,
+                not_before: v1.not_before,
+                not_after: v1.not_after,
+                is_active: true,
+            });
+        }
+
+        Err(KeypairFileError::InvalidFormat)
+    }
+
+    pub fn load_from_file_auto(path: &std::path::Path, passphrase: Option<&[u8]>) -> Result<Self, KeypairFileError> {
+        let json = std::fs::read_to_string(path)?;
+        if let Ok(v2) = serde_json::from_str::<KeypairFileV2>(&json) {
+            let pass = passphrase.ok_or(KeypairFileError::WrongPassphrase)?;
+            return Self::load_from_file_with_passphrase(path, pass);
+        }
+        tracing::warn!("Server key file is unencrypted (v1 format). Consider migrating with --key-passphrase.");
+        Self::load_from_file(path)
+            .map_err(KeypairFileError::Io)
+    }
+}
+
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    let mut result = 0u8;
+    for i in 0..a_bytes.len() {
+        result |= a_bytes[i] ^ b_bytes[i];
+    }
+    result == 0
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -555,5 +768,134 @@ mod tests {
         assert_eq!(identity.signing_key_bytes().len(), 32);
         assert_eq!(identity.kex_public_bytes().len(), 32);
         assert_eq!(identity.federation_domain, "xudanu");
+    }
+
+    #[test]
+    fn encrypted_keyfile_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.key");
+        let kp = ServerKeyPair::generate("test-server");
+        let original_id = kp.identity_id();
+        let original_key_id = kp.key_id;
+
+        kp.save_to_file_encrypted(&path, b"correct-password").unwrap();
+
+        let loaded = ServerKeyPair::load_from_file_with_passphrase(&path, b"correct-password").unwrap();
+        assert_eq!(loaded.identity_id(), original_id);
+        assert_eq!(loaded.key_id, original_key_id);
+        assert_eq!(loaded.created_at, kp.created_at);
+    }
+
+    #[test]
+    fn encrypted_keyfile_wrong_password() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.key");
+        let kp = ServerKeyPair::generate("test-server");
+        kp.save_to_file_encrypted(&path, b"correct").unwrap();
+
+        let result = ServerKeyPair::load_from_file_with_passphrase(&path, b"wrong");
+        assert!(matches!(result, Err(KeypairFileError::WrongPassphrase)));
+    }
+
+    #[test]
+    fn encrypted_keyfile_with_not_after() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.key");
+        let kp = ServerKeyPair::generate("test-server").expires_in(3600);
+        let original_not_after = kp.not_after;
+
+        kp.save_to_file_encrypted(&path, b"pw").unwrap();
+        let loaded = ServerKeyPair::load_from_file_with_passphrase(&path, b"pw").unwrap();
+        assert_eq!(loaded.not_after, original_not_after);
+    }
+
+    #[test]
+    fn v1_keyfile_loads_with_passphrase_method() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.key");
+        let kp = ServerKeyPair::generate("test-server");
+        kp.save_to_file(&path).unwrap();
+
+        let loaded = ServerKeyPair::load_from_file_with_passphrase(&path, b"any").unwrap();
+        assert_eq!(loaded.identity_id(), kp.identity_id());
+    }
+
+    #[test]
+    fn auto_load_v1_without_passphrase() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.key");
+        let kp = ServerKeyPair::generate("test-server");
+        kp.save_to_file(&path).unwrap();
+
+        let loaded = ServerKeyPair::load_from_file_auto(&path, None).unwrap();
+        assert_eq!(loaded.identity_id(), kp.identity_id());
+    }
+
+    #[test]
+    fn auto_load_v2_with_passphrase() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.key");
+        let kp = ServerKeyPair::generate("test-server");
+        kp.save_to_file_encrypted(&path, b"secret").unwrap();
+
+        let loaded = ServerKeyPair::load_from_file_auto(&path, Some(b"secret")).unwrap();
+        assert_eq!(loaded.identity_id(), kp.identity_id());
+    }
+
+    #[test]
+    fn auto_load_v2_without_passphrase_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.key");
+        let kp = ServerKeyPair::generate("test-server");
+        kp.save_to_file_encrypted(&path, b"secret").unwrap();
+
+        let result = ServerKeyPair::load_from_file_auto(&path, None);
+        assert!(matches!(result, Err(KeypairFileError::WrongPassphrase)));
+    }
+
+    #[test]
+    fn encrypted_keyfile_integrity_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.key");
+        let kp = ServerKeyPair::generate("test-server");
+        kp.save_to_file_encrypted(&path, b"pw").unwrap();
+
+        let json = std::fs::read_to_string(&path).unwrap();
+        let mut v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        v["integrity"] = serde_json::Value::String("deadbeef".to_string());
+        std::fs::write(&path, serde_json::to_string(&v).unwrap().as_bytes()).unwrap();
+
+        let result = ServerKeyPair::load_from_file_with_passphrase(&path, b"pw");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn encrypted_keyfile_file_permissions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.key");
+        let kp = ServerKeyPair::generate("test-server");
+        kp.save_to_file_encrypted(&path, b"pw").unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    #[test]
+    fn encrypted_keyfile_is_valid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("server.key");
+        let kp = ServerKeyPair::generate("test-server");
+        kp.save_to_file_encrypted(&path, b"pw").unwrap();
+
+        let json = std::fs::read_to_string(&path).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["version"], 2);
+        assert!(v["salt"].is_string());
+        assert!(v["envelope"].is_string());
+        assert!(v["integrity"].is_string());
     }
 }

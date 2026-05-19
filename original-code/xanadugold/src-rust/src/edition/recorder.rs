@@ -19,6 +19,7 @@ pub struct RecorderQuery {
     pub direct_only: bool,
     pub authority_clubs: Vec<u64>,
     pub endorsement_filter: Option<Vec<u64>>,
+    pub watched_content: Vec<RangeElement>,
 }
 
 impl RecorderQuery {
@@ -29,6 +30,7 @@ impl RecorderQuery {
             direct_only: false,
             authority_clubs: Vec::new(),
             endorsement_filter: None,
+            watched_content: Vec::new(),
         }
     }
 
@@ -39,6 +41,7 @@ impl RecorderQuery {
             direct_only: false,
             authority_clubs: Vec::new(),
             endorsement_filter: None,
+            watched_content: Vec::new(),
         }
     }
 
@@ -61,6 +64,15 @@ impl RecorderQuery {
         self.endorsement_filter = Some(endorsements);
         self
     }
+
+    pub fn with_watched_content(mut self, content: Vec<RangeElement>) -> Self {
+        self.watched_content = content;
+        self
+    }
+
+    pub fn content_fingerprints(&self) -> Vec<[u8; 32]> {
+        self.watched_content.iter().map(|e| e.content_fingerprint()).collect()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +93,7 @@ pub struct Fossil {
     pub is_extinct: bool,
     pub reference_count: u64,
     pub created_at: u64,
+    pub source_edition_id: Option<u64>,
 }
 
 impl Fossil {
@@ -96,6 +109,7 @@ impl Fossil {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
+            source_edition_id: None,
         }
     }
 
@@ -408,7 +422,7 @@ impl RecorderSystem {
     }
 
     pub fn process_agenda_with_engine(&mut self, engine: &mut super::backfollow::BackfollowEngine) -> usize {
-        use super::transclusion::TransclusionQuery;
+        use super::transclusion::{TransclusionQuery, WorkQuery};
         let mut matchers: Vec<(RecorderId, RecorderQuery, Option<u64>)> = Vec::new();
         for item in &mut self.agenda.items {
             if let Some(matcher) = item.as_any_mut().downcast_mut::<Matcher>() {
@@ -419,14 +433,38 @@ impl RecorderSystem {
             }
         }
         self.agenda.items.retain(|item| !item.is_complete());
-        for (fossil_id, _query, target_edition_id) in matchers {
-            let tq = TransclusionQuery::all();
-            if let Some(eid) = target_edition_id {
-                let content = super::range_element::RangeElement::edition(eid);
-                let results = engine.find_transcluders_with_backfollow(&content, &tq);
-                for result in results {
-                    self.record_result(fossil_id, result.element, Some(eid), None, result.is_direct);
+        for (fossil_id, query, target_edition_id) in matchers {
+            let mut all_results = Vec::new();
+            if query.watched_content.is_empty() {
+                if let Some(eid) = target_edition_id {
+                    let content = super::range_element::RangeElement::edition(eid);
+                    let tq = TransclusionQuery::all();
+                    all_results = engine.find_transcluders_with_backfollow(&content, &tq);
                 }
+            } else {
+                for content in &query.watched_content {
+                    let results = match query.kind {
+                        super::recorder::RecorderKind::Transcluders => {
+                            let tq = TransclusionQuery::all();
+                            engine.find_transcluders_with_backfollow(content, &tq)
+                        }
+                        super::recorder::RecorderKind::Works => {
+                            let wq = WorkQuery::all();
+                            engine.find_works_for_content(content, &wq)
+                                .into_iter()
+                                .map(|wid| super::transclusion::TransclusionResult {
+                                    element: super::range_element::RangeElement::work(wid),
+                                    is_direct: true,
+                                })
+                                .collect()
+                        }
+                    };
+                    all_results.extend(results);
+                }
+            }
+            for result in all_results {
+                let source_id = result.element.as_work_id().or(result.element.as_edition_id()).or(target_edition_id);
+                self.record_result(fossil_id, result.element, source_id, None, result.is_direct);
             }
         }
         self.agenda.items.len()
