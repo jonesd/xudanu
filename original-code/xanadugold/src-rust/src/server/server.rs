@@ -1699,6 +1699,14 @@ impl Server {
     }
 
     pub fn restore_from_data_dir(&mut self, data_dir: &std::path::Path, passphrase: Option<&[u8]>) -> std::io::Result<()> {
+        for name in &["manifest.json.tmp", "key_history.json.tmp"] {
+            let p = data_dir.join(name);
+            if p.exists() {
+                let _ = std::fs::remove_file(&p);
+                tracing::info!("Cleaned up stale {}", name);
+            }
+        }
+
         let manifest_path = data_dir.join("manifest.json");
 
         let chunk_store = crate::persist::chunk_store::ChunkStore::open(data_dir)
