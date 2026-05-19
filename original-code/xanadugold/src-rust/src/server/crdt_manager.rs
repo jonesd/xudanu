@@ -170,7 +170,8 @@ impl CrdtManager {
             });
         }
 
-        let wd = self.docs.get_mut(&work_id).unwrap();
+        let wd = self.docs.get_mut(&work_id)
+            .expect("work doc must exist after insert");
         wd.subscribers.insert(session_id, sync_id);
 
         let state_vector = {

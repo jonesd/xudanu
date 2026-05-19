@@ -1041,7 +1041,8 @@ impl ReconcileStore {
                 ),
             );
         }
-        self.states.get_mut(work_fingerprint).unwrap()
+        self.states.get_mut(work_fingerprint)
+            .expect("reconcile state must exist after insert")
     }
 
     pub fn get(&self, work_fingerprint: &str) -> Option<&ReconcileState> {
