@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CrdtSyncClient, type AwarenessState, type ContentMatch } from "../api/crdt_sync";
+import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry } from "../api/crdt_sync";
 
 export interface CrdtSyncState {
   text: string;
@@ -12,6 +12,12 @@ export interface CrdtSyncState {
   watchEnabled: boolean;
   toggleWatch: () => void;
   clientRef: React.RefObject<CrdtSyncClient | null>;
+  attributionSpans: AttributionSpan[];
+  attributionLogStatus: AttributionLogStatus | null;
+  refreshAttribution: () => void;
+  identity: WhoAmIEntry | null;
+  createIdentity: (displayName: string, password: string) => Promise<void>;
+  login: (clubName: string, password: string) => Promise<void>;
 }
 
 export function useCrdtSync(
@@ -26,6 +32,9 @@ export function useCrdtSync(
   const [watchEnabled, setWatchEnabled] = useState(false);
   const watchEnabledRef = useRef(false);
   const subscriptionIdRef = useRef<number | null>(null);
+  const [attributionSpans, setAttributionSpans] = useState<AttributionSpan[]>([]);
+  const [attributionLogStatus, setAttributionLogStatus] = useState<AttributionLogStatus | null>(null);
+  const [identity, setIdentity] = useState<WhoAmIEntry | null>(null);
 
   useEffect(() => {
     if (!wsUrl || workBeId === null) return;
@@ -43,6 +52,7 @@ export function useCrdtSync(
         return next.length > MAX_CONTENT_MATCHES ? next.slice(-MAX_CONTENT_MATCHES) : next;
       });
     });
+    const unsubIdentity = client.onIdentityChange(setIdentity);
 
     client.connect();
 
@@ -51,6 +61,7 @@ export function useCrdtSync(
       unsubConn();
       unsubAware();
       unsubMatch();
+      unsubIdentity();
       if (subscriptionIdRef.current !== null) {
         client.unsubscribe(subscriptionIdRef.current);
         subscriptionIdRef.current = null;
@@ -98,5 +109,29 @@ export function useCrdtSync(
     }
   }, [workBeId]);
 
-  return { text, connected, awareness, setText, sendCursor, sendSelection, contentMatches, watchEnabled, toggleWatch, clientRef };
+  const refreshAttribution = useCallback(() => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected() || workBeId === null) return;
+    client.attributionQuery(workBeId).then(setAttributionSpans).catch(() => {});
+    client.attributionLogStatus().then(setAttributionLogStatus).catch(() => {});
+  }, [workBeId]);
+
+  const createIdentity = useCallback(async (displayName: string, password: string) => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected()) return;
+    await client.createIdentity(displayName, password);
+  }, []);
+
+  const login = useCallback(async (clubName: string, password: string) => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected()) return;
+    await client.loginByName(clubName, password);
+  }, []);
+
+  return {
+    text, connected, awareness, setText, sendCursor, sendSelection,
+    contentMatches, watchEnabled, toggleWatch, clientRef,
+    attributionSpans, attributionLogStatus, refreshAttribution,
+    identity, createIdentity, login,
+  };
 }

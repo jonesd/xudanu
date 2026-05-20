@@ -3,11 +3,14 @@ import { useCrdtSync } from "../hooks/useCrdtSync";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
 import { AwarenessIndicators } from "../components/AwarenessIndicators";
 import { DebugPanel } from "../components/DebugPanel";
+import { AttributionPanel } from "../components/AttributionPanel";
+import { IdentityPanel } from "../components/IdentityPanel";
 
 const WS_URL = `ws://${window.location.host}/xudanu`;
 
 export function WorkspacePage() {
   const [showDebug, setShowDebug] = useState(false);
+  const [showAttribution, setShowAttribution] = useState(false);
   const [workBeId, setWorkBeId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -18,6 +21,7 @@ export function WorkspacePage() {
       setWorkBeId(parseInt(wid, 10));
     }
   }, []);
+
 
   const handleCreate = useCallback(async () => {
     setError(null);
@@ -79,7 +83,36 @@ export function WorkspacePage() {
     contentMatches,
     watchEnabled,
     toggleWatch,
+    attributionSpans,
+    attributionLogStatus,
+    refreshAttribution,
+    identity,
+    createIdentity,
+    login,
   } = useCrdtSync(WS_URL, workBeId);
+
+  useEffect(() => {
+    if (workBeId !== null && connected && text === "") {
+      const timer = setTimeout(() => {
+        setWorkBeId((currentId) => {
+          if (currentId !== null) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("work");
+            window.history.replaceState({}, "", url.toString());
+          }
+          return null;
+        });
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [workBeId, connected, text]);
+
+  useEffect(() => {
+    if (showAttribution && connected && workBeId !== null && text.length > 0) {
+      const timer = setTimeout(() => { refreshAttribution(); }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [showAttribution, connected, workBeId, text.length, refreshAttribution]);
 
   const workIdDisplay = useMemo(() => {
     if (workBeId === null) return null;
@@ -96,6 +129,12 @@ export function WorkspacePage() {
           <span className={`sync-status ${connected ? "sync-connected" : "sync-disconnected"}`}>
             {connected ? "Live" : "Offline"}
           </span>
+          <IdentityPanel
+            identity={identity}
+            connected={connected}
+            onCreateIdentity={createIdentity}
+            onLogin={login}
+          />
           {workBeId !== null && (
             <button
               onClick={toggleWatch}
@@ -113,6 +152,22 @@ export function WorkspacePage() {
           >
             Debug
           </button>
+          {workBeId !== null && (
+            <button
+              onClick={() => {
+                setShowAttribution((a) => {
+                  const next = !a;
+                  if (next) refreshAttribution();
+                  return next;
+                });
+              }}
+              type="button"
+              className={showAttribution ? "attribution-toggle-active" : ""}
+              disabled={!connected}
+            >
+              Attribution
+            </button>
+          )}
           {workBeId === null && (
             <button onClick={handleCreate} type="button">
               New Document
@@ -166,6 +221,13 @@ export function WorkspacePage() {
       {showDebug && (
         <DebugPanel workspaceId={workBeId?.toString(16) ?? ""} visible={showDebug} />
       )}
+
+      <AttributionPanel
+        spans={attributionSpans}
+        logStatus={attributionLogStatus}
+        documentLength={text.length}
+        visible={showAttribution && workBeId !== null}
+      />
     </div>
   );
 }

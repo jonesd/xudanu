@@ -16,6 +16,30 @@ export interface ContentMatch {
   title?: string;
 }
 
+export interface AttributionSpan {
+  start: number;
+  end: number;
+  author_public_key: number[];
+  author_display_name: string | null;
+  author_club_id: number | null;
+  signature_valid: boolean;
+  timestamp: number;
+  server_id: number[];
+}
+
+export interface AttributionLogStatus {
+  entry_count: number;
+  chain_valid: boolean;
+  last_sequence: number;
+}
+
+export interface WhoAmIEntry {
+  club_id: number;
+  display_name: string;
+}
+
+type IdentityListener = (identity: WhoAmIEntry | null) => void;
+
 type ResponseHandler = (value: unknown, isError: boolean) => void;
 
 export class CrdtSyncClient {
@@ -27,12 +51,14 @@ export class CrdtSyncClient {
   private awarenessListeners = new Set<(states: AwarenessState[]) => void>();
   private connectionListeners = new Set<(connected: boolean) => void>();
   private contentMatchListeners = new Set<(match: ContentMatch) => void>();
+  private identityListeners = new Set<IdentityListener>();
   private connected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private url: string;
   private workBeId: number;
   private sessionId: number | null = null;
   private crdtReady = false;
+  private currentIdentity: WhoAmIEntry | null = null;
 
   constructor(url: string, workBeId: number) {
     this.url = url;
@@ -134,6 +160,77 @@ export class CrdtSyncClient {
     return this.connected;
   }
 
+  async attributionQuery(workId: number): Promise<AttributionSpan[]> {
+    const resp = await this.sendRequest("attribution_query", {
+      work_id: workId,
+      start: null,
+      end: null,
+    });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.spans as AttributionSpan[]) || [];
+  }
+
+  async attributionLogStatus(): Promise<AttributionLogStatus> {
+    const resp = await this.sendRequest("attribution_log_status");
+    return extractValue(resp) as AttributionLogStatus;
+  }
+
+  async createIdentity(displayName: string, password: string): Promise<WhoAmIEntry> {
+    const pwBytes = Array.from(new TextEncoder().encode(password));
+    const resp = await this.sendRequest("club_create_personal", {
+      display_name: displayName,
+      password: pwBytes,
+    });
+    const clubId = extractValue(resp) as number;
+    const identity: WhoAmIEntry = { club_id: clubId, display_name: displayName };
+    this.currentIdentity = identity;
+    this.identityListeners.forEach((cb) => cb(identity));
+    return identity;
+  }
+
+  async loginByName(clubName: string, password: string): Promise<void> {
+    await this.sendRequest("session_login_by_name", { club_name: clubName });
+    const pwBytes = Array.from(new TextEncoder().encode(password));
+    await this.sendRequest("session_authenticate", {
+      credential: { password: Array.from(pwBytes) },
+    });
+    const whoResp = await this.sendRequest("club_who_am_i");
+    const val = extractValue(whoResp) as { clubs: [number, string][] };
+    const clubs = val.clubs || [];
+    if (clubs.length > 0) {
+      const [clubId, name] = clubs[0];
+      this.currentIdentity = { club_id: clubId, display_name: name };
+    }
+    this.identityListeners.forEach((cb) => cb(this.currentIdentity));
+  }
+
+  async checkWhoAmI(): Promise<WhoAmIEntry | null> {
+    try {
+      const resp = await this.sendRequest("club_who_am_i");
+      const val = extractValue(resp) as { clubs: [number, string][] };
+      const clubs = val.clubs || [];
+      if (clubs.length > 0) {
+        const [clubId, name] = clubs[0];
+        this.currentIdentity = { club_id: clubId, display_name: name };
+      } else {
+        this.currentIdentity = null;
+      }
+    } catch {
+      this.currentIdentity = null;
+    }
+    this.identityListeners.forEach((cb) => cb(this.currentIdentity));
+    return this.currentIdentity;
+  }
+
+  getIdentity(): WhoAmIEntry | null {
+    return this.currentIdentity;
+  }
+
+  onIdentityChange(cb: IdentityListener): () => void {
+    this.identityListeners.add(cb);
+    return () => { this.identityListeners.delete(cb); };
+  }
+
   sendAwareness(cursor: number | null, selection: { start: number; end: number } | null, isTyping: boolean): void {
     if (!this.crdtReady) return;
     this.sendRequest("crdt_awareness_update", {
@@ -205,6 +302,8 @@ export class CrdtSyncClient {
         const states = awareVal.states as AwarenessState[] || [];
         this.awarenessListeners.forEach((cb) => cb(states));
       }).catch(() => {});
+
+      this.checkWhoAmI();
     } catch (e) {
       console.error("CRDT session setup failed:", e);
     }
