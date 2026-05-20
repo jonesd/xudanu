@@ -9,6 +9,7 @@ use yrs::{Any, Doc, GetString, ReadTxn, StateVector, Text, Transact, Update};
 
 use crate::crypto::sign::{sign_bytes, verify_signature};
 use crate::edition::{BeId, Edition};
+use crate::edition::provenance::{sign_span, SpanProvenance};
 use super::session::SessionId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -88,6 +89,7 @@ struct WorkDoc {
     pending_update: Option<Vec<u8>>,
     last_change_timestamp: u64,
     awareness: HashMap<SessionId, AwarenessState>,
+    federated_provenance: Vec<crate::edition::SpanProvenance>,
 }
 
 pub struct CrdtManager {
@@ -167,6 +169,7 @@ impl CrdtManager {
                 pending_update: None,
                 last_change_timestamp: 0,
                 awareness: HashMap::new(),
+                federated_provenance: Vec::new(),
             });
         }
 
@@ -354,6 +357,157 @@ impl CrdtManager {
         Ok(edition)
     }
 
+    pub fn materialize_edition_with_provenance(
+        &mut self,
+        work_id: BeId,
+        signing_key: &SigningKey,
+        server_id_bytes: &[u8; 32],
+        timestamp: u64,
+    ) -> Result<Edition, CrdtError> {
+        let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+
+        let federated_prov: Vec<crate::edition::SpanProvenance> = wd.federated_provenance.clone();
+
+        let text: String = {
+            let txn = wd.doc.transact();
+            wd.text.get_string(&txn)
+        };
+
+        let diffs: Vec<yrs::types::text::Diff<yrs::types::text::YChange>> = {
+            let txn = wd.doc.transact();
+            wd.text.diff(&txn, yrs::types::text::YChange::identity)
+        };
+
+        let author_spans = Self::extract_author_spans(&diffs);
+
+        let current_sv = {
+            let txn = wd.doc.transact();
+            txn.state_vector()
+        };
+
+        wd.last_materialized_sv = Some(current_sv);
+        wd.pending_update = None;
+
+        let edition = text_to_edition(&text);
+
+        let span_provenance = if !federated_prov.is_empty() {
+            federated_prov
+        } else {
+            Self::build_span_provenance_from_authors(
+                &edition, &author_spans, signing_key, server_id_bytes, timestamp,
+            )
+        };
+
+        let mut edition = edition;
+        edition.span_provenance = span_provenance;
+        Ok(edition)
+    }
+
+    fn extract_author_spans(diffs: &[yrs::types::text::Diff<yrs::types::text::YChange>]) -> Vec<(Option<String>, usize, usize)> {
+        let mut spans: Vec<(Option<String>, usize, usize)> = Vec::new();
+        let mut pos = 0usize;
+
+        for d in diffs {
+            let chunk_text = match &d.insert {
+                yrs::Out::Any(Any::String(s)) => s.as_ref().to_string(),
+                _ => String::new(),
+            };
+            if chunk_text.is_empty() {
+                continue;
+            }
+
+            let author_hex = d.attributes.as_ref().and_then(|attrs| {
+                attrs.get(&Arc::from("__author")).and_then(|v| {
+                    if let Any::String(s) = v { Some(s.as_ref().to_string()) } else { None }
+                })
+            });
+
+            let start = pos;
+            pos += chunk_text.chars().count();
+            let end = pos;
+
+            let last_author = spans.last().and_then(|(a, _, _)| a.clone());
+            if last_author == author_hex {
+                if let Some((_, _, ref mut span_end)) = spans.last_mut() {
+                    *span_end = end;
+                }
+            } else {
+                spans.push((author_hex, start, end));
+            }
+        }
+
+        spans
+    }
+
+    fn build_span_provenance_from_authors(
+        edition: &Edition,
+        author_spans: &[(Option<String>, usize, usize)],
+        signing_key: &SigningKey,
+        server_id_bytes: &[u8; 32],
+        timestamp: u64,
+    ) -> Vec<SpanProvenance> {
+        let entries = edition.all_entries();
+        if entries.is_empty() {
+            return Vec::new();
+        }
+
+        let first_pos = entries.first().map(|(p, _)| *p).unwrap_or(0);
+        let last_pos = entries.last().map(|(p, _)| *p).unwrap_or(0);
+
+        if author_spans.is_empty() || author_spans.len() == 1 && author_spans[0].0.is_none() {
+            let fingerprints: Vec<[u8; 32]> = entries.iter()
+                .map(|(_, c)| c.element.content_fingerprint())
+                .collect();
+            if fingerprints.is_empty() {
+                return Vec::new();
+            }
+            return vec![SpanProvenance {
+                start: first_pos,
+                end: last_pos + 1,
+                provenance: sign_span(signing_key, &fingerprints, timestamp, server_id_bytes),
+            }];
+        }
+
+        let mut results = Vec::new();
+        for (_author, text_start, text_end) in author_spans {
+            let start_pos = first_pos + *text_start as i64;
+            let end_pos = first_pos + *text_end as i64;
+
+            let mut fingerprints = Vec::new();
+            for (pos, carrier) in &entries {
+                if *pos >= start_pos && *pos < end_pos {
+                    fingerprints.push(carrier.element.content_fingerprint());
+                }
+            }
+
+            if fingerprints.is_empty() {
+                continue;
+            }
+
+            results.push(SpanProvenance {
+                start: start_pos,
+                end: end_pos,
+                provenance: sign_span(signing_key, &fingerprints, timestamp, server_id_bytes),
+            });
+        }
+
+        if results.is_empty() {
+            let fingerprints: Vec<[u8; 32]> = entries.iter()
+                .map(|(_, c)| c.element.content_fingerprint())
+                .collect();
+            if fingerprints.is_empty() {
+                return Vec::new();
+            }
+            return vec![SpanProvenance {
+                start: first_pos,
+                end: last_pos + 1,
+                provenance: sign_span(signing_key, &fingerprints, timestamp, server_id_bytes),
+            }];
+        }
+
+        results
+    }
+
     pub fn needs_materialization(&self, work_id: BeId) -> Result<bool, CrdtError> {
         let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
         Ok(wd.pending_update.is_some())
@@ -384,6 +538,20 @@ impl CrdtManager {
 
     pub fn active_works(&self) -> Vec<BeId> {
         self.docs.keys().copied().collect()
+    }
+
+    pub fn store_federated_provenance(
+        &mut self,
+        work_id: BeId,
+        provenance: Vec<crate::edition::SpanProvenance>,
+    ) {
+        if let Some(wd) = self.docs.get_mut(&work_id) {
+            wd.federated_provenance = provenance;
+        }
+    }
+
+    pub fn get_federated_provenance(&self, work_id: BeId) -> Option<&[crate::edition::SpanProvenance]> {
+        self.docs.get(&work_id).map(|wd| wd.federated_provenance.as_slice())
     }
 
     pub fn works_needing_materialization(&self) -> Vec<BeId> {
@@ -425,6 +593,7 @@ impl CrdtManager {
             pending_update: None,
             last_change_timestamp: 0,
             awareness: HashMap::new(),
+            federated_provenance: Vec::new(),
         });
     }
 
@@ -576,7 +745,7 @@ fn utf16_len(s: &str) -> usize {
     s.chars().map(|c| c.len_utf16()).sum()
 }
 
-fn bytes_to_hex(bytes: &[u8]) -> String {
+pub fn bytes_to_hex(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 2);
     for &b in bytes {
         s.push_str(&format!("{:02x}", b));

@@ -76,6 +76,9 @@ export function WorkspacePage() {
     setText,
     sendCursor,
     sendSelection,
+    contentMatches,
+    watchEnabled,
+    toggleWatch,
   } = useCrdtSync(WS_URL, workBeId);
 
   const workIdDisplay = useMemo(() => {
@@ -93,6 +96,16 @@ export function WorkspacePage() {
           <span className={`sync-status ${connected ? "sync-connected" : "sync-disconnected"}`}>
             {connected ? "Live" : "Offline"}
           </span>
+          {workBeId !== null && (
+            <button
+              onClick={toggleWatch}
+              type="button"
+              className={watchEnabled ? "watch-toggle-active" : ""}
+              disabled={!connected}
+            >
+              {watchEnabled ? "Watching" : "Watch"}
+            </button>
+          )}
           <button
             onClick={() => setShowDebug((d) => !d)}
             type="button"
@@ -122,6 +135,22 @@ export function WorkspacePage() {
                 onSelectionChange={(s, e) => sendSelection(s, e)}
                 connected={connected}
               />
+              {watchEnabled && contentMatches.length > 0 && (
+                <div className="watch-notifications">
+                  <h3>Content Matches</h3>
+                  <ul>
+                    {contentMatches.map((match, i) => (
+                      <li key={i}>
+                        <span className="match-id">
+                          {match.work_be_id != null
+                            ? `${match.work_be_id}${match.title ? ` ${match.title}` : ""}`
+                            : match.edition_be_id.toString(16).padStart(4, "0")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </>
           ) : (
             <div className="welcome">

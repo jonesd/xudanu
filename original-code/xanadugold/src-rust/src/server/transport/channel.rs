@@ -44,6 +44,8 @@ impl ChannelDetector {
         fossil_id: u64,
         edition_be_id: crate::edition::BeId,
         is_direct: bool,
+        work_be_id: Option<crate::edition::BeId>,
+        title: Option<String>,
     ) {
         let msg = EventMessage {
             session_id: self.session_id,
@@ -52,6 +54,8 @@ impl ChannelDetector {
                 fossil_id,
                 edition_be_id,
                 is_direct,
+                work_be_id,
+                title,
             },
         };
         let _ = self.sender.send(msg);

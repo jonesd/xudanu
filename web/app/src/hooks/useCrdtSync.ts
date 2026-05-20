@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CrdtSyncClient, type AwarenessState } from "../api/crdt_sync";
+import { CrdtSyncClient, type AwarenessState, type ContentMatch } from "../api/crdt_sync";
 
 export interface CrdtSyncState {
   text: string;
@@ -8,6 +8,10 @@ export interface CrdtSyncState {
   setText: (text: string) => void;
   sendCursor: (index: number | null) => void;
   sendSelection: (start: number | null, end: number | null) => void;
+  contentMatches: ContentMatch[];
+  watchEnabled: boolean;
+  toggleWatch: () => void;
+  clientRef: React.RefObject<CrdtSyncClient | null>;
 }
 
 export function useCrdtSync(
@@ -18,6 +22,10 @@ export function useCrdtSync(
   const [text, setTextState] = useState("");
   const [connected, setConnected] = useState(false);
   const [awareness, setAwareness] = useState<AwarenessState[]>([]);
+  const [contentMatches, setContentMatches] = useState<ContentMatch[]>([]);
+  const [watchEnabled, setWatchEnabled] = useState(false);
+  const watchEnabledRef = useRef(false);
+  const subscriptionIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!wsUrl || workBeId === null) return;
@@ -28,6 +36,13 @@ export function useCrdtSync(
     const unsubText = client.onTextChange(setTextState);
     const unsubConn = client.onConnectionChange(setConnected);
     const unsubAware = client.onAwarenessChange(setAwareness);
+    const MAX_CONTENT_MATCHES = 200;
+    const unsubMatch = client.onContentMatch((match) => {
+      setContentMatches((prev) => {
+        const next = [...prev, match];
+        return next.length > MAX_CONTENT_MATCHES ? next.slice(-MAX_CONTENT_MATCHES) : next;
+      });
+    });
 
     client.connect();
 
@@ -35,6 +50,14 @@ export function useCrdtSync(
       unsubText();
       unsubConn();
       unsubAware();
+      unsubMatch();
+      if (subscriptionIdRef.current !== null) {
+        client.unsubscribe(subscriptionIdRef.current);
+        subscriptionIdRef.current = null;
+      }
+      watchEnabledRef.current = false;
+      setWatchEnabled(false);
+      setContentMatches([]);
       client.disconnect();
       clientRef.current = null;
     };
@@ -53,5 +76,27 @@ export function useCrdtSync(
     clientRef.current?.sendAwareness(null, sel, start !== null);
   }, []);
 
-  return { text, connected, awareness, setText, sendCursor, sendSelection };
+  const toggleWatch = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected()) return;
+
+    if (watchEnabledRef.current && subscriptionIdRef.current !== null) {
+      client.unsubscribe(subscriptionIdRef.current);
+      subscriptionIdRef.current = null;
+      watchEnabledRef.current = false;
+      setWatchEnabled(false);
+      setContentMatches([]);
+    } else {
+      try {
+        const subId = await client.subscribeContentWorks(workBeId!);
+        subscriptionIdRef.current = subId;
+        watchEnabledRef.current = true;
+        setWatchEnabled(true);
+      } catch (e) {
+        console.error("Watch subscribe failed:", e);
+      }
+    }
+  }, [workBeId]);
+
+  return { text, connected, awareness, setText, sendCursor, sendSelection, contentMatches, watchEnabled, toggleWatch, clientRef };
 }

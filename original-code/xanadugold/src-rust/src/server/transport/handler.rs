@@ -416,6 +416,8 @@ async fn handle_socket(
                         fossil_id: notif.fossil_id,
                         edition_be_id: notif.edition_be_id,
                         is_direct: notif.is_direct,
+                        work_be_id: notif.work_be_id,
+                        title: notif.title.clone(),
                     },
                 };
                 if let Ok(ev_bytes) = event_codec.encode_event(&wire_event) {
@@ -665,12 +667,19 @@ async fn handle_socket(
                                     }
                                     tracing::debug!(target: "xudanu::content_watch",
                                         edition_be_id, "Sending initial content match");
+                    let (work_be_id, title) = state.server.with_server(|srv| {
+                        srv.find_work_for_edition(edition_be_id)
+                            .map(|(wid, t)| (Some(wid), Some(t)))
+                            .unwrap_or((None, None))
+                    });
                                     let wire_event = WireEvent {
                                         subscription_id: sub_id,
                                         event: EventPayload::ContentMatch {
                                             fossil_id,
                                             edition_be_id,
                                             is_direct: result.is_direct,
+                                            work_be_id,
+                                            title,
                                         },
                                     };
                                     if let Ok(bytes) = event_codec.encode_event(&wire_event) {
