@@ -316,6 +316,7 @@ impl BinaryCodec {
              OperationCode::GovernanceLog => Ok(WireRequest::GovernanceLog),
              OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
              OperationCode::AdminIsAcceptingConnections => Ok(WireRequest::AdminIsAcceptingConnections),
+             OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
              OperationCode::AdminActiveSessions => Ok(WireRequest::AdminActiveSessions),
              OperationCode::AdminShutdown => Ok(WireRequest::AdminShutdown),
              OperationCode::AdminGrants => Ok(WireRequest::AdminGrants),
@@ -532,6 +533,7 @@ impl JsonCodec {
             OperationCode::GovernanceLog,
             OperationCode::GovernanceStatus,
             OperationCode::ClubWhoAmI,
+            OperationCode::AttributionLogStatus,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -560,9 +562,10 @@ impl JsonCodec {
                 OperationCode::MembershipList => Ok(WireRequest::MembershipList),
                 OperationCode::GovernanceSeal => Ok(WireRequest::GovernanceSeal),
                 OperationCode::GovernanceLog => Ok(WireRequest::GovernanceLog),
-             OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
+            OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
              OperationCode::ClubWhoAmI => Ok(WireRequest::ClubWhoAmI),
-                _ => unreachable!(),
+             OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
+                 _ => unreachable!(),
             };
         }
 
@@ -1523,6 +1526,26 @@ impl JsonCodec {
                     work_id: args.work_id,
                     public_key: args.public_key,
                     display_name: args.display_name,
+                })
+            }
+            OperationCode::AttributionQuery => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, start: Option<i64>, end: Option<i64> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AttributionQuery { work_id: args.work_id, start: args.start, end: args.end })
+            }
+            OperationCode::AttributionVerify => {
+                #[derive(Deserialize)]
+                struct Args { author_public_key: Vec<u8>, signature: Vec<u8>, timestamp: u64, server_id: Vec<u8>, span_fingerprint_hex: String }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AttributionVerify {
+                    author_public_key: args.author_public_key,
+                    signature: args.signature,
+                    timestamp: args.timestamp,
+                    server_id: args.server_id,
+                    span_fingerprint_hex: args.span_fingerprint_hex,
                 })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
