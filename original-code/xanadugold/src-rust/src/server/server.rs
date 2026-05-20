@@ -46,6 +46,12 @@ struct WorkState {
     cached_title: String,
 }
 
+impl WorkState {
+    pub fn title(&self) -> &str {
+        &self.cached_title
+    }
+}
+
 impl std::fmt::Debug for WorkState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WorkState")
@@ -60,6 +66,8 @@ pub struct ContentNotification {
     pub fossil_id: crate::edition::RecorderId,
     pub edition_be_id: BeId,
     pub is_direct: bool,
+    pub work_be_id: Option<BeId>,
+    pub title: Option<String>,
 }
 
 pub struct Server {
@@ -99,6 +107,7 @@ pub struct Server {
     pub(crate) personal_club_count: usize,
     pub(crate) max_personal_clubs: usize,
     pub(crate) login_attempts: HashMap<BeId, crate::server::identity::ClubAttemptTracker>,
+    attribution_log: Option<crate::server::transport::attribution_log::AttributionLog>,
 }
 
 pub struct ServerHealth {
@@ -229,6 +238,7 @@ impl Server {
             personal_club_count: 0,
             max_personal_clubs: 10_000,
             login_attempts: HashMap::new(),
+            attribution_log: None,
         };
 
         let pub_club = Club::new_with_owner(
@@ -371,6 +381,81 @@ impl Server {
 
     pub fn session_count(&self) -> usize {
         self.sessions.values().filter(|s| s.is_connected()).count()
+    }
+
+    pub fn display_name_for_session(&self, session_id: SessionId) -> String {
+        let session = match self.sessions.get(&session_id) {
+            Some(s) => s,
+            None => return "anonymous".to_string(),
+        };
+        let author_club = session.initial_login()
+            .and_then(|id| self.clubs.get(&id))
+            .filter(|c| c.is_personal())
+            .map(|c| c.be_id())
+            .or_else(|| {
+                session.authority_clubs().iter().find_map(|id| {
+                    self.clubs.get(id).filter(|c| c.is_personal()).map(|c| c.be_id())
+                })
+            })
+            .or(session.initial_login());
+        match author_club {
+            Some(club_id) => self.clubs.get(&club_id)
+                .and_then(|c| c.display_name().map(|s| s.to_string()))
+                .unwrap_or_else(|| format!("club-{}", club_id)),
+            None => "anonymous".to_string(),
+        }
+    }
+
+    fn materialize_with_provenance(
+        &mut self,
+        work_be_id: BeId,
+        session_id: SessionId,
+    ) -> Result<Edition, ServerError> {
+        let signing_key = self.sessions.get(&session_id)
+            .and_then(|s| s.club_signing_key().cloned());
+        let server_id_bytes = self.federation_server_id_bytes();
+        let timestamp = Self::current_timestamp_secs();
+
+        match signing_key {
+            Some(sk) => {
+                self.crdt_manager
+                    .materialize_edition_with_provenance(work_be_id, &sk, &server_id_bytes, timestamp)
+                    .map_err(|e| ServerError::Internal(e.to_string()))
+            }
+            None => {
+                self.crdt_manager
+                    .materialize_edition(work_be_id)
+                    .map_err(|e| ServerError::Internal(e.to_string()))
+            }
+        }
+    }
+
+    fn build_edition_provenance(
+        &self,
+        session_id: SessionId,
+        edition: &Edition,
+    ) -> Option<Vec<crate::edition::SpanProvenance>> {
+        let session = self.sessions.get(&session_id)?;
+        let signing_key = session.club_signing_key()?;
+        let entries = edition.all_entries();
+        if entries.is_empty() {
+            return None;
+        }
+        let fingerprints: Vec<[u8; 32]> = entries.iter()
+            .map(|(_, c)| c.element.content_fingerprint())
+            .collect();
+        let first_pos = entries.first()?.0;
+        let last_pos = entries.last()?.0;
+        let server_id_bytes = self.federation_server_id_bytes();
+        let timestamp = Self::current_timestamp_secs();
+        let provenance = crate::edition::provenance::sign_span(
+            signing_key, &fingerprints, timestamp, &server_id_bytes,
+        );
+        Some(vec![crate::edition::SpanProvenance {
+            start: first_pos,
+            end: last_pos + 1,
+            provenance,
+        }])
     }
 
     // === Club operations ===
@@ -536,9 +621,40 @@ impl Server {
         &mut self,
         work_be_id: BeId,
         session_id: SessionId,
-        edition: Edition,
+        mut edition: Edition,
         author_club: Option<BeId>,
     ) -> Result<u64, ServerError> {
+        if edition.span_provenance.is_empty() {
+            if let Some(sp) = self.build_edition_provenance(session_id, &edition) {
+                edition.span_provenance = sp;
+            }
+        }
+
+        if let Some(ref mut log) = self.attribution_log {
+            let revision = self.works.get(&work_be_id)
+                .map(|ws| ws.work.revision_count() + 1)
+                .unwrap_or(1);
+            let all_entries = edition.all_entries();
+            for sp in &edition.span_provenance {
+                let fps: Vec<[u8; 32]> = all_entries.iter()
+                    .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
+                    .map(|(_, c)| c.element.content_fingerprint())
+                    .collect();
+                if let Err(e) = log.append(&crate::server::transport::attribution_log::AttributionEntry {
+                    sequence: log.sequence(),
+                    timestamp: sp.provenance.timestamp,
+                    author_pk_hex: crate::server::crdt_manager::bytes_to_hex(&sp.provenance.author_public_key),
+                    span_fp_hex: crate::edition::provenance::compute_span_fingerprint_hex(&fps),
+                    signature_hex: crate::server::crdt_manager::bytes_to_hex(&sp.provenance.signature),
+                    server_id_hex: crate::server::crdt_manager::bytes_to_hex(&sp.provenance.server_id),
+                    work_id: work_be_id,
+                    revision,
+                }) {
+                    tracing::error!("attribution log write failed: {}", e);
+                }
+            }
+        }
+
         let ws = self.works.get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
 
@@ -991,6 +1107,239 @@ impl Server {
         Ok(Some(edition))
     }
 
+    pub fn work_fetch_revision_range(
+        &mut self,
+        work_be_id: BeId,
+        from: u64,
+        to: u64,
+    ) -> Result<Vec<(u64, Edition)>, ServerError> {
+        const MAX_RANGE: u64 = 100;
+
+        if from > to {
+            return Ok(Vec::new());
+        }
+
+        let span = to.checked_sub(from).and_then(|d| d.checked_add(1));
+        match span {
+            None => return Err(ServerError::InvalidArgument("revision range overflow".into())),
+            Some(s) if s > MAX_RANGE => {
+                return Err(ServerError::InvalidArgument(
+                    format!("revision range too large: requested {} but max is {}", s, MAX_RANGE),
+                ));
+            }
+            _ => {}
+        }
+
+        let (revision_count, chunk_ref) = {
+            let ws = self
+                .works
+                .get(&work_be_id)
+                .ok_or(ServerError::WorkNotFound(work_be_id))?;
+            (ws.work.revision_count(), ws.chunk_ref.clone())
+        };
+
+        let mut memory_results: Vec<Option<Edition>> = Vec::new();
+        let mut all_in_memory = true;
+        {
+            let ws = self
+                .works
+                .get(&work_be_id)
+                .ok_or(ServerError::WorkNotFound(work_be_id))?;
+            for number in from..=to {
+                if number > revision_count {
+                    break;
+                }
+                if let Some(edition) = ws.work.fetch_revision(number).cloned() {
+                    memory_results.push(Some(edition));
+                } else {
+                    memory_results.push(None);
+                    all_in_memory = false;
+                }
+            }
+        }
+
+        if all_in_memory && memory_results.len() as u64 == span.unwrap() {
+            return Ok(memory_results.into_iter().enumerate()
+                .map(|(i, opt)| (from + i as u64, opt.unwrap()))
+                .collect());
+        }
+
+        let chunk_ref = match chunk_ref {
+            Some(cr) => cr,
+            None => {
+                return Ok(memory_results.into_iter().enumerate()
+                    .filter_map(|(i, opt)| opt.map(|ed| (from + i as u64, ed)))
+                    .collect());
+            }
+        };
+
+        let mut disk_loaded: Vec<(usize, Edition)> = Vec::new();
+        {
+            let chunk_store = match self.chunk_store {
+                Some(ref cs) => cs,
+                None => {
+                    return Ok(memory_results.into_iter().enumerate()
+                        .filter_map(|(i, opt)| opt.map(|ed| (from + i as u64, ed)))
+                        .collect());
+                }
+            };
+            for (i, opt) in memory_results.iter().enumerate() {
+                if opt.is_some() {
+                    continue;
+                }
+                let number = from + i as u64;
+                if number > revision_count {
+                    break;
+                }
+                if let Ok(edition) = crate::persist::edition_chunks::work_load_revision(
+                    &chunk_ref, number, chunk_store,
+                ) {
+                    disk_loaded.push((i, edition));
+                }
+            }
+        }
+
+        if !disk_loaded.is_empty() {
+            let ws = self.works.get_mut(&work_be_id)
+                .ok_or(ServerError::WorkNotFound(work_be_id))?;
+            for (i, edition) in &disk_loaded {
+                let number = from + *i as u64;
+                ws.work.load_revision(number, edition.clone());
+            }
+        }
+
+        for (i, edition) in disk_loaded {
+            memory_results[i] = Some(edition);
+        }
+
+        Ok(memory_results.into_iter().enumerate()
+            .filter_map(|(i, opt)| opt.map(|ed| (from + i as u64, ed)))
+            .collect())
+    }
+
+    pub fn attribution_query(
+        &self,
+        work_be_id: BeId,
+        start: Option<i64>,
+        end: Option<i64>,
+    ) -> Result<Vec<super::transport::protocol::AttributionSpanPayload>, ServerError> {
+        let ws = self.works.get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        let edition = ws.work.current_edition();
+        let all_entries = edition.all_entries();
+
+        let mut spans = Vec::new();
+        for sp in &edition.span_provenance {
+            if let Some(s) = start {
+                if sp.end <= s {
+                    continue;
+                }
+            }
+            if let Some(e) = end {
+                if sp.start >= e {
+                    continue;
+                }
+            }
+
+            let fps: Vec<[u8; 32]> = all_entries.iter()
+                .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
+                .map(|(_, c)| c.element.content_fingerprint())
+                .collect();
+
+            let signature_valid = crate::edition::provenance::verify_span_provenance(
+                &sp.provenance, &fps,
+            );
+
+            let (author_display_name, author_club_id) = self
+                .clubs.iter()
+                .find(|(_, club)| {
+                    match club.encrypted_signing_key() {
+                        Some(ek) => ek.verifying_key == sp.provenance.author_public_key,
+                        None => false,
+                    }
+                })
+                .map(|(id, club)| (club.display_name().map(|s| s.to_string()), Some(*id)))
+                .unwrap_or((None, None));
+
+            spans.push(super::transport::protocol::AttributionSpanPayload {
+                start: sp.start,
+                end: sp.end,
+                author_public_key: sp.provenance.author_public_key.to_vec(),
+                author_display_name,
+                author_club_id,
+                signature_valid,
+                timestamp: sp.provenance.timestamp,
+                server_id: sp.provenance.server_id.to_vec(),
+            });
+        }
+        Ok(spans)
+    }
+
+    pub fn attribution_verify(
+        &self,
+        author_public_key: [u8; 32],
+        signature: [u8; 64],
+        timestamp: u64,
+        server_id: [u8; 32],
+        span_fingerprint_hex: &str,
+    ) -> bool {
+        let fp_bytes = match Self::hex_decode(span_fingerprint_hex) {
+            Ok(b) => b,
+            Err(_) => return false,
+        };
+        let span_fp: [u8; 32] = match fp_bytes.try_into() {
+            Ok(a) => a,
+            Err(_) => return false,
+        };
+        let provenance = crate::edition::Provenance {
+            author_public_key,
+            signature,
+            timestamp,
+            server_id,
+        };
+        crate::edition::provenance::verify_span_provenance_with_span_fp(&provenance, &span_fp)
+    }
+
+    pub fn attribution_log_status(&self) -> super::transport::protocol::ResponseValue {
+        match &self.attribution_log {
+            Some(log) => {
+                let entry_count = log.sequence();
+                let chain_valid = self.verify_attribution_log_chain();
+                super::transport::protocol::ResponseValue::AttributionLogStatusResult {
+                    entry_count,
+                    chain_valid,
+                    last_sequence: entry_count,
+                }
+            }
+            None => super::transport::protocol::ResponseValue::AttributionLogStatusResult {
+                entry_count: 0,
+                chain_valid: false,
+                last_sequence: 0,
+            },
+        }
+    }
+
+    fn verify_attribution_log_chain(&self) -> bool {
+        let data_dir = match &self.data_dir {
+            Some(d) => d,
+            None => return false,
+        };
+        let log_path = data_dir.join("attribution/attribution.log");
+        let seed_path = data_dir.join("attribution/attribution.log.seed");
+        let content = match std::fs::read_to_string(&log_path) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        if content.trim().is_empty() {
+            return true;
+        }
+        let seed = match std::fs::read_to_string(&seed_path) {
+            Ok(s) => s.trim().to_string(),
+            Err(_) => return false,
+        };
+        crate::server::transport::attribution_log::verify_attribution_log(&content, &seed).is_ok()
+    }
+
     pub fn work_last_revision_author(
         &self,
         work_be_id: BeId,
@@ -1358,9 +1707,7 @@ impl Server {
             .map_err(|e| ServerError::Internal(e.to_string()))?;
 
         if should && elapsed {
-            let edition = self.crdt_manager
-                .materialize_edition(work_be_id)
-                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            let edition = self.materialize_with_provenance(work_be_id, session_id)?;
 
             let author_club = self.sessions
                 .get(&session_id)
@@ -1383,9 +1730,7 @@ impl Server {
             return Err(ServerError::Internal("no active CRDT session for this work".into()));
         }
 
-        let edition = self.crdt_manager
-            .materialize_edition(work_be_id)
-            .map_err(|e| ServerError::Internal(e.to_string()))?;
+        let edition = self.materialize_with_provenance(work_be_id, session_id)?;
 
         let author_club = self.sessions
             .get(&session_id)
@@ -1692,6 +2037,7 @@ impl Server {
         self.restore_blob_store_from_dir(data_dir)?;
 
         self.checkpoint_path = Some(manifest_path);
+        self.attribution_log = crate::server::transport::attribution_log::AttributionLog::open(data_dir).ok();
         self.checkpoint_to_store()?;
 
         tracing::info!("Initialized xudanu data directory: {}", data_dir.display());
@@ -1833,6 +2179,7 @@ impl Server {
         self.chunk_store = Some(chunk_store);
         self.data_dir = Some(data_dir.to_path_buf());
         self.checkpoint_path = Some(manifest_path);
+        self.attribution_log = crate::server::transport::attribution_log::AttributionLog::open(data_dir).ok();
 
         self.restore_blob_metas(manifest.blob_metas);
 
@@ -2414,6 +2761,12 @@ impl Server {
         self.content_address.lookup(element)
     }
 
+    pub fn find_work_for_edition(&self, edition_be_id: BeId) -> Option<(BeId, String)> {
+        self.works.iter().find(|(_, ws)| {
+            ws.work.current_edition().all_entries().iter().any(|(_, c)| c.element.as_edition_id() == Some(edition_be_id))
+        }).map(|(id, ws)| (*id, ws.title().to_string()))
+    }
+
     pub fn content_address_count(&self) -> usize {
         self.content_address.fingerprint_count()
     }
@@ -2556,6 +2909,7 @@ impl Server {
                     continue;
                 }
                 let result_be_id = result.element.as_work_id().or(result.element.as_edition_id());
+                let result_work_id = result.element.as_work_id();
                 let _recorded = self.recorder_system.record_result(
                     fossil_id,
                     result.element,
@@ -2566,10 +2920,19 @@ impl Server {
                 if let Some(be_id) = result_be_id {
                     if !notified_ids.contains(&be_id) {
                         notified_ids.insert(be_id);
+                        let (work_be_id, title) = if let Some(wid) = result_work_id {
+                            (Some(wid), self.works.get(&wid).map(|ws| ws.title().to_string()))
+                        } else {
+                            self.find_work_for_edition(be_id)
+                                .map(|(wid, t)| (Some(wid), Some(t)))
+                                .unwrap_or((None, None))
+                        };
                         self.pending_content_notifications.push(ContentNotification {
                             fossil_id,
                             edition_be_id: be_id,
                             is_direct: result.is_direct,
+                            work_be_id,
+                            title,
                         });
                     }
                 }
@@ -3473,6 +3836,7 @@ impl Server {
                     edition_payload: crate::server::transport::protocol::EditionPayload::from_edition(
                         ws.work.current_edition()
                     ),
+                    span_provenance: ws.work.current_edition().span_provenance.clone(),
                 }
             }).collect()
     }
@@ -3512,7 +3876,10 @@ impl Server {
                 already_known += 1;
                 continue;
             }
-            let edition = entry.edition_payload.to_edition();
+            let mut edition = entry.edition_payload.to_edition();
+            if !entry.span_provenance.is_empty() && edition.span_provenance.is_empty() {
+                edition.span_provenance = entry.span_provenance.clone();
+            }
             let entry_fingerprint = {
                 let entries = edition.all_entries();
                 let mut hasher = blake3::Hasher::new();
@@ -3631,6 +3998,10 @@ impl Server {
         self.server_keypair.identity_id()
     }
 
+    pub fn federation_server_id_bytes(&self) -> [u8; 32] {
+        self.server_keypair.signing_key.verifying_key().to_bytes()
+    }
+
     pub fn federation_crdt_pull(
         &mut self,
         work_ids: &[BeId],
@@ -3642,6 +4013,9 @@ impl Server {
                     updates.push(crate::server::federation::CrdtWorkUpdate {
                         work_id,
                         update_bytes: bytes,
+                        span_provenance: self.works.get(&work_id)
+                            .map(|ws| ws.work.current_edition().span_provenance.clone())
+                            .unwrap_or_default(),
                     });
                 }
             }
@@ -3673,13 +4047,21 @@ impl Server {
             };
 
             match self.crdt_manager.apply_federation_update(
-                update.work_id,
-                &update.update_bytes,
-                initial_text.as_deref(),
-            ) {
-                Ok(_) => applied += 1,
-                Err(_) => failed += 1,
-            }
+                    update.work_id,
+                    &update.update_bytes,
+                    initial_text.as_deref(),
+                ) {
+                    Ok(_) => {
+                        if !update.span_provenance.is_empty() {
+                            self.crdt_manager.store_federated_provenance(
+                                update.work_id,
+                                update.span_provenance.clone(),
+                            );
+                        }
+                        applied += 1
+                    }
+                    Err(_) => failed += 1,
+                }
         }
         crate::server::federation::CrdtSyncResult {
             updates_applied: applied,
@@ -4588,6 +4970,7 @@ pub(crate) mod persist_snapshot {
              personal_club_count: 0,
              max_personal_clubs: 10_000,
              login_attempts: HashMap::new(),
+             attribution_log: None,
               };
             for club_snap in &snapshot.clubs {
                 let work = club_snap.work.to_work(
@@ -6210,6 +6593,7 @@ mod tests {
             origin_server_id: "remote-server".to_string(),
             work_id: 100,
             edition_payload: crate::server::transport::protocol::EditionPayload::Text("hello world".to_string()),
+            span_provenance: vec![],
         }];
         let my_id = server.federation_server_id();
         let (imported, _) = server.federation_import_works(&push, &my_id);
@@ -6224,6 +6608,7 @@ mod tests {
             origin_server_id: "remote-server".to_string(),
             work_id: 200,
             edition_payload: crate::server::transport::protocol::EditionPayload::Text("hi".to_string()),
+            span_provenance: vec![],
         }];
         let my_id = server.federation_server_id();
         server.federation_import_works(&push, &my_id);
@@ -6287,6 +6672,7 @@ mod tests {
             origin_server_id: "remote-server".to_string(),
             work_id: 100,
             edition_payload: crate::server::transport::protocol::EditionPayload::Text("hello".to_string()),
+            span_provenance: vec![],
         };
         let my_id = server.federation_server_id();
 

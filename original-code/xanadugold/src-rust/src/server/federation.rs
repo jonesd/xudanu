@@ -340,6 +340,8 @@ pub struct SyncWorkEntry {
     pub origin_server_id: String,
     pub work_id: u64,
     pub edition_payload: crate::server::transport::protocol::EditionPayload,
+    #[serde(default)]
+    pub span_provenance: Vec<crate::edition::SpanProvenance>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -382,6 +384,8 @@ pub const MAX_SYNC_ENTRIES: usize = 1000;
 pub struct CrdtWorkUpdate {
     pub work_id: BeId,
     pub update_bytes: Vec<u8>,
+    #[serde(default)]
+    pub span_provenance: Vec<crate::edition::SpanProvenance>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

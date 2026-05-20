@@ -8,6 +8,14 @@ export interface AwarenessState {
   is_typing: boolean;
 }
 
+export interface ContentMatch {
+  fossil_id: number;
+  edition_be_id: number;
+  is_direct: boolean;
+  work_be_id?: number;
+  title?: string;
+}
+
 type ResponseHandler = (value: unknown, isError: boolean) => void;
 
 export class CrdtSyncClient {
@@ -18,6 +26,7 @@ export class CrdtSyncClient {
   private textListeners = new Set<(text: string) => void>();
   private awarenessListeners = new Set<(states: AwarenessState[]) => void>();
   private connectionListeners = new Set<(connected: boolean) => void>();
+  private contentMatchListeners = new Set<(match: ContentMatch) => void>();
   private connected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private url: string;
@@ -84,6 +93,41 @@ export class CrdtSyncClient {
     cb(this.connected);
     this.connectionListeners.add(cb);
     return () => { this.connectionListeners.delete(cb); };
+  }
+
+  onContentMatch(cb: (match: ContentMatch) => void): () => void {
+    this.contentMatchListeners.add(cb);
+    return () => { this.contentMatchListeners.delete(cb); };
+  }
+
+  async subscribeContentWorks(targetId: number): Promise<number> {
+    const id = this.nextId();
+    const frame = JSON.stringify({
+      v: PROTOCOL_VERSION,
+      type: "subscribe",
+      id,
+      payload: { detector_type: "content_works", target_id: targetId },
+    });
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, (value, isError) => {
+        if (isError) {
+          reject(new Error(String(value) || "subscribe failed"));
+        } else {
+          const val = extractValue(value) as number;
+          resolve(val);
+        }
+      });
+      this.wsSend(frame);
+    });
+  }
+
+  unsubscribe(subscriptionId: number): void {
+    const frame = JSON.stringify({
+      v: PROTOCOL_VERSION,
+      type: "unsubscribe",
+      id: subscriptionId,
+    });
+    this.wsSend(frame);
   }
 
   isConnected(): boolean {
@@ -207,6 +251,20 @@ export class CrdtSyncClient {
       const payload = event.payload as Record<string, unknown> | undefined;
       if (payload && payload.work_be_id === this.workBeId) {
         this.refreshText();
+      }
+    }
+
+    if (eventType === "content_match") {
+      const payload = event.payload as Record<string, unknown> | undefined;
+      if (payload) {
+        const match: ContentMatch = {
+          fossil_id: payload.fossil_id as number,
+          edition_be_id: payload.edition_be_id as number,
+          is_direct: payload.is_direct as boolean,
+          work_be_id: payload.work_be_id as number | undefined,
+          title: payload.title as string | undefined,
+        };
+        this.contentMatchListeners.forEach((cb) => cb(match));
       }
     }
   }

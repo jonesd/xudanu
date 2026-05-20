@@ -18,6 +18,7 @@ pub mod persistent;
 pub mod orgl;
 pub mod pool;
 pub mod props;
+pub mod provenance;
 pub mod range_element;
 pub mod range_transclusion;
 pub mod recorder;
@@ -52,11 +53,12 @@ pub use mapping::Mapping;
 pub use orgl::{OrglRoot, SplayResult};
 pub use pool::{ContentHash, ContentPool};
 pub use props::{
-    BertProp, Prop, PropChangeKind, PropFinder, SensorProp,
+    BertProp, Prop, PropFinder, SensorProp,
     PUBLIC_CLUB_FLAG, OTHER_CLUBS_FLAG, OTHER_ENDORSEMENTS_FLAG,
     IS_SENSOR_WAITING_FLAG, IS_NOT_PARTIALIZABLE_FLAG, IS_PARTIAL_FLAG,
     init_endorsement_flags,
 };
+pub use provenance::{Provenance, SpanProvenance, sign_span, verify_span_provenance};
 pub use range_element::RangeElement;
 pub use snapshot::{Snapshot, SnapshotStore, SnapshotError, is_frozen, freeze_work, validate_frozen_for_context, validate_not_frozen_for_edit};
 pub use bundle_stepper::{BundleStepper, MergeBundleStepper, loaf_bundle_stepper, loaf_merge_stepper};

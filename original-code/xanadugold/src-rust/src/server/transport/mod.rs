@@ -1,3 +1,4 @@
+pub mod attribution_log;
 pub mod audit;
 pub mod chained_log;
 pub mod channel;

@@ -120,6 +120,8 @@ pub enum OperationCode {
     WorkIrrevocablyUnpublish,
     WorkIsPublished,
 
+    WorkFetchRevisionRange,
+
     ClubSetDefaultReadClub,
     ClubSetDefaultEditClub,
 
@@ -253,6 +255,10 @@ pub enum OperationCode {
     CrdtAwarenessGet,
 
     CrdtRegisterAuthor,
+
+    AttributionQuery,
+    AttributionVerify,
+    AttributionLogStatus,
 }
 
 impl OperationCode {
@@ -304,6 +310,7 @@ impl OperationCode {
             0x0318 => Some(OperationCode::WorkUnpublish),
             0x0319 => Some(OperationCode::WorkIrrevocablyUnpublish),
             0x031A => Some(OperationCode::WorkIsPublished),
+            0x031B => Some(OperationCode::WorkFetchRevisionRange),
             0x0314 => Some(OperationCode::WorkList),
             0x0315 => Some(OperationCode::WorkListByOwner),
             0x0316 => Some(OperationCode::WorkReviseDelta),
@@ -439,6 +446,10 @@ impl OperationCode {
 
             0x1C0B => Some(OperationCode::CrdtRegisterAuthor),
 
+            0x0D01 => Some(OperationCode::AttributionQuery),
+            0x0D02 => Some(OperationCode::AttributionVerify),
+            0x0D03 => Some(OperationCode::AttributionLogStatus),
+
             _ => None,
         }
     }
@@ -491,6 +502,7 @@ impl OperationCode {
             OperationCode::WorkUnpublish     => 0x0318,
             OperationCode::WorkIrrevocablyUnpublish => 0x0319,
             OperationCode::WorkIsPublished        => 0x031A,
+            OperationCode::WorkFetchRevisionRange  => 0x031B,
 
             OperationCode::ClubSetDefaultReadClub  => 0x0208,
             OperationCode::ClubSetDefaultEditClub  => 0x0209,
@@ -626,6 +638,10 @@ impl OperationCode {
             OperationCode::CrdtAwarenessGet => 0x1C09,
 
             OperationCode::CrdtRegisterAuthor => 0x1C0B,
+
+            OperationCode::AttributionQuery => 0x0D01,
+            OperationCode::AttributionVerify => 0x0D02,
+            OperationCode::AttributionLogStatus => 0x0D03,
         }
     }
 }
@@ -714,6 +730,7 @@ pub enum WireRequest {
     WorkEditClub { work_id: BeId },
     WorkRevisionCount { work_id: BeId },
     WorkFetchRevision { work_id: BeId, number: u64 },
+    WorkFetchRevisionRange { work_id: BeId, from: u64, to: u64 },
     WorkSponsor { work_id: BeId, club_id: BeId },
     WorkUnsponsor { work_id: BeId, club_id: BeId },
     WorkSponsors { work_id: BeId },
@@ -873,6 +890,16 @@ pub enum WireRequest {
         public_key: [u8; 32],
         display_name: String,
     },
+
+    AttributionQuery { work_id: BeId, start: Option<i64>, end: Option<i64> },
+    AttributionVerify {
+        author_public_key: Vec<u8>,
+        signature: Vec<u8>,
+        timestamp: u64,
+        server_id: Vec<u8>,
+        span_fingerprint_hex: String,
+    },
+    AttributionLogStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1149,6 +1176,34 @@ pub enum ResponseValue {
     ClubMembersResult {
         members: Vec<BeId>,
     },
+
+    RevisionRangeResult {
+        revisions: Vec<(u64, EditionPayload)>,
+    },
+
+    AttributionQueryResult {
+        spans: Vec<AttributionSpanPayload>,
+    },
+    AttributionVerifyResult {
+        valid: bool,
+    },
+    AttributionLogStatusResult {
+        entry_count: u64,
+        chain_valid: bool,
+        last_sequence: u64,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttributionSpanPayload {
+    pub start: i64,
+    pub end: i64,
+    pub author_public_key: Vec<u8>,
+    pub author_display_name: Option<String>,
+    pub author_club_id: Option<BeId>,
+    pub signature_valid: bool,
+    pub timestamp: u64,
+    pub server_id: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1533,7 +1588,7 @@ pub enum EventPayload {
     RangeFilled { edition_be_id: BeId, region: XnRegion },
     ElementFilled { element_be_id: BeId },
     Done { operation_id: u64 },
-    ContentMatch { fossil_id: u64, edition_be_id: BeId, is_direct: bool },
+    ContentMatch { fossil_id: u64, edition_be_id: BeId, is_direct: bool, work_be_id: Option<BeId>, title: Option<String> },
 }
 
 impl EventPayload {

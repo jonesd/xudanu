@@ -227,6 +227,15 @@ fn dispatch_inner(
                 None => Ok(ResponseValue::Void),
             }
         }
+        WireRequest::WorkFetchRevisionRange { work_id, from, to } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let revisions = srv.work_fetch_revision_range(work_id, from, to)?;
+            let payload: Vec<(u64, EditionPayload)> = revisions
+                .into_iter()
+                .map(|(n, ed)| (n, EditionPayload::from_edition(&ed)))
+                .collect();
+            Ok(ResponseValue::RevisionRangeResult { revisions: payload })
+        }
         WireRequest::WorkSponsor { work_id, club_id } => {
             srv.ensure_logged_in(session_id)?;
             srv.work_sponsor(session_id, work_id, club_id)?;
@@ -1254,8 +1263,9 @@ fn dispatch_inner(
             Ok(ResponseValue::CrdtSyncTextResult { text })
         }
 
-        WireRequest::CrdtAwarenessUpdate { work_id, state } => {
+        WireRequest::CrdtAwarenessUpdate { work_id, mut state } => {
             srv.ensure_logged_in(session_id)?;
+            state.user_name = srv.display_name_for_session(session_id);
             let result = srv.crdt_update_awareness(session_id, work_id, state)?;
             Ok(ResponseValue::CrdtAwarenessUpdateResult {
                 relay_count: result.relay_to.len(),
@@ -1272,6 +1282,27 @@ fn dispatch_inner(
             Err(crate::server::ServerError::InvalidArgument(
                 "CrdtRegisterAuthor is deprecated; author identity is auto-assigned from session".into(),
             ))
+        }
+
+        WireRequest::AttributionQuery { work_id, start, end } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let spans = srv.attribution_query(work_id, start, end)?;
+            Ok(ResponseValue::AttributionQueryResult { spans })
+        }
+
+        WireRequest::AttributionVerify { author_public_key, signature, timestamp, server_id, span_fingerprint_hex } => {
+            let author_pk: [u8; 32] = author_public_key.try_into()
+                .map_err(|_| crate::server::ServerError::InvalidArgument("author_public_key must be 32 bytes".into()))?;
+            let sig: [u8; 64] = signature.try_into()
+                .map_err(|_| crate::server::ServerError::InvalidArgument("signature must be 64 bytes".into()))?;
+            let sid: [u8; 32] = server_id.try_into()
+                .map_err(|_| crate::server::ServerError::InvalidArgument("server_id must be 32 bytes".into()))?;
+            let valid = srv.attribution_verify(author_pk, sig, timestamp, sid, &span_fingerprint_hex);
+            Ok(ResponseValue::AttributionVerifyResult { valid })
+        }
+
+        WireRequest::AttributionLogStatus => {
+            Ok(srv.attribution_log_status())
         }
     }
 }

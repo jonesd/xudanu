@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashSet};
 use crate::edition::backend::BeId;
 use crate::edition::edition::Edition;
 use crate::edition::persistent::{EditionSnapshot, WorkSnapshot};
+use crate::edition::provenance::SpanProvenance;
 use crate::edition::work::Work;
 use crate::persist::chunk_store::ChunkStore;
 
@@ -36,12 +37,20 @@ struct EntryChunk {
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+struct ProvenanceChunk {
+    spans: Vec<SpanProvenance>,
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct EditionRootChunk {
     default: Option<crate::edition::range_element::RangeElement>,
     domain_start: Option<i64>,
     domain_infinite_above: bool,
     entry_count: u32,
     entry_chunk_hashes: Vec<[u8; 32]>,
+    #[serde(default)]
+    provenance_hash: Option<[u8; 32]>,
 }
 
 #[derive(Debug)]
@@ -103,12 +112,21 @@ pub fn edition_to_chunks(
         entry_chunk_hashes.push(hash);
     }
 
+    let provenance_hash = if snapshot.span_provenance.is_empty() {
+        None
+    } else {
+        let prov_chunk = ProvenanceChunk { spans: snapshot.span_provenance };
+        let prov_data = serialize_to_bytes(&prov_chunk)?;
+        Some(store.write_chunk(&prov_data)?)
+    };
+
     let root_chunk = EditionRootChunk {
         default: snapshot.default,
         domain_start: snapshot.domain_start,
         domain_infinite_above: snapshot.domain_infinite_above,
         entry_count: snapshot.entries.len() as u32,
         entry_chunk_hashes,
+        provenance_hash,
     };
     let root_data = serialize_to_bytes(&root_chunk)?;
     let root_hash = store.write_chunk(&root_data)?;
@@ -133,11 +151,34 @@ pub fn edition_from_chunks(
         all_entries.extend(entry_chunk.entries);
     }
 
+    let span_provenance = match root.provenance_hash {
+        Some(hash) => {
+            match store.read_chunk(&hash) {
+                Ok(data) => {
+                    let prov_chunk: Result<ProvenanceChunk, _> = deserialize_from_bytes(&data);
+                    match prov_chunk {
+                        Ok(c) => c.spans,
+                        Err(e) => {
+                            tracing::warn!("provenance chunk deserialization failed: {}", e);
+                            Vec::new()
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("provenance chunk read failed: {}", e);
+                    Vec::new()
+                }
+            }
+        }
+        None => Vec::new(),
+    };
+
     let snapshot = EditionSnapshot {
         entries: all_entries,
         default: root.default,
         domain_start: root.domain_start,
         domain_infinite_above: root.domain_infinite_above,
+        span_provenance,
     };
     Ok(snapshot.to_edition())
 }
@@ -441,6 +482,9 @@ pub fn collect_edition_hashes(
     let root: EditionRootChunk = deserialize_from_bytes(&root_data)?;
     for h in &root.entry_chunk_hashes {
         hashes.insert(*h);
+    }
+    if let Some(ph) = &root.provenance_hash {
+        hashes.insert(*ph);
     }
     Ok(hashes)
 }

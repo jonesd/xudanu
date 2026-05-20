@@ -872,6 +872,13 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::WorkFetchRevision { work_id: args.work_id, number: args.number })
             }
+            OperationCode::WorkFetchRevisionRange => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId, from: u64, to: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkFetchRevisionRange { work_id: args.work_id, from: args.from, to: args.to })
+            }
             OperationCode::WorkSponsor => {
                 #[derive(Deserialize)]
                 struct Args { work_id: BeId, club_id: BeId }

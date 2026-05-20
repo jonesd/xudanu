@@ -6,6 +6,7 @@ use crate::edition::backend::BeId;
 use crate::edition::edition::Edition;
 use crate::edition::orgl::OrglRoot;
 use crate::edition::range_element::{Carrier, RangeElement};
+use crate::edition::provenance::SpanProvenance;
 use crate::edition::work::Work;
 use crate::edition::xn_region::XnRegion;
 use crate::persist::engine::StorageError;
@@ -19,6 +20,8 @@ pub struct EditionSnapshot {
     pub default: Option<RangeElement>,
     pub domain_start: Option<i64>,
     pub domain_infinite_above: bool,
+    #[serde(default)]
+    pub span_provenance: Vec<SpanProvenance>,
 }
 
 impl EditionSnapshot {
@@ -45,6 +48,7 @@ impl EditionSnapshot {
             default,
             domain_start: None,
             domain_infinite_above: !domain.is_finite(),
+            span_provenance: edition.span_provenance.clone(),
         }
     }
 
@@ -58,7 +62,11 @@ impl EditionSnapshot {
             let carriers: Vec<(i64, Arc<Carrier>)> = self.entries.iter()
                 .map(|(pos, elem)| (*pos, Arc::new(Carrier::new(elem.clone()))))
                 .collect();
-            Edition::new_inner(OrglRoot::from_bulk_entries(carriers, Some(Arc::new(Carrier::new(default.clone()))), region), super::endorsement::EndorsementSet::new())
+            Edition::new_inner_with_provenance(
+                OrglRoot::from_bulk_entries(carriers, Some(Arc::new(Carrier::new(default.clone()))), region),
+                super::endorsement::EndorsementSet::new(),
+                self.span_provenance.clone(),
+            )
         } else {
             let carriers: Vec<(i64, Arc<Carrier>)> = self.entries.iter()
                 .map(|(pos, elem)| (*pos, Arc::new(Carrier::new(elem.clone()))))
@@ -71,7 +79,11 @@ impl EditionSnapshot {
             } else {
                 XnRegion::empty()
             };
-            Edition::new_inner(OrglRoot::from_bulk_entries(carriers, None, region), super::endorsement::EndorsementSet::new())
+            Edition::new_inner_with_provenance(
+                OrglRoot::from_bulk_entries(carriers, None, region),
+                super::endorsement::EndorsementSet::new(),
+                self.span_provenance.clone(),
+            )
         }
     }
 }

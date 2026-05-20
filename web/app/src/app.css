@@ -423,3 +423,44 @@ body {
 .welcome-create:hover {
   background: #3a56d4;
 }
+
+.watch-toggle-active {
+  background: #4a6;
+  color: #fff;
+}
+
+.watch-notifications {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: #f0f8ff;
+  border: 1px solid #bcd;
+  border-radius: 6px;
+}
+
+.watch-notifications h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #369;
+}
+
+.watch-notifications ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.watch-notifications li {
+  padding: 6px 0;
+  font-size: 13px;
+  border-bottom: 1px solid #e0e8f0;
+}
+
+.watch-notifications li:last-child {
+  border-bottom: none;
+}
+
+.match-id {
+  font-family: monospace;
+  font-weight: 600;
+  color: #369;
+}
