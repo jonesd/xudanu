@@ -222,10 +222,10 @@ export class CrdtSyncClient {
     if (this.crdtReady && this.workBeId) {
       try {
         await this.sendRequest("crdt_register_author", { work_id: this.workBeId });
-        console.log("[loginByName] crdt_register_author succeeded");
       } catch (e) {
         console.error("[loginByName] crdt_register_author failed:", e);
       }
+      this.sendAwareness(null, null, false);
     }
   }
 
