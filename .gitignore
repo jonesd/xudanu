@@ -1,4 +1,5 @@
 /target
+ent/target/
 data/
 .DS_Store
 nohup.out
