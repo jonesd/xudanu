@@ -34,7 +34,7 @@ export function IdentityPanel({ identity, connected, onCreateIdentity, onLogin }
           type="button"
           className="identity-btn identity-btn-secondary"
           disabled={!connected}
-          onClick={() => { setMode("login"); setError(null); }}
+          onClick={() => { setMode("login"); setError(null); setLoading(false); }}
         >
           Sign In
         </button>
@@ -42,7 +42,7 @@ export function IdentityPanel({ identity, connected, onCreateIdentity, onLogin }
           type="button"
           className="identity-btn"
           disabled={!connected}
-          onClick={() => { setMode("create"); setError(null); }}
+          onClick={() => { setMode("create"); setError(null); setLoading(false); }}
         >
           New Identity
         </button>
@@ -57,7 +57,7 @@ export function IdentityPanel({ identity, connected, onCreateIdentity, onLogin }
     try {
       if (mode === "create") {
         if (!displayName.trim()) { setError("Display name required"); return; }
-        if (password.length < 4) { setError("Password must be at least 4 characters"); return; }
+        if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
         await onCreateIdentity(displayName.trim(), password);
       } else {
         if (!clubName.trim()) { setError("Identity name required"); return; }

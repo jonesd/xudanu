@@ -887,7 +887,9 @@ pub enum WireRequest {
 
     CrdtRegisterAuthor {
         work_id: BeId,
+        #[serde(skip)]
         public_key: [u8; 32],
+        #[serde(skip)]
         display_name: String,
     },
 

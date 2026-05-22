@@ -130,4 +130,68 @@ mod tests {
         assert!(verify_password(&hash, "日本語パスワード".as_bytes()).is_ok());
         assert!(verify_password(&hash, "日本語パスワード!".as_bytes()).is_err());
     }
+
+    #[test]
+    fn hash_single_byte_password() {
+        let hash = hash_password(b"x").unwrap();
+        assert!(verify_password(&hash, b"x").is_ok());
+        assert!(verify_password(&hash, b"y").is_err());
+        assert!(verify_password(&hash, b"").is_err());
+        assert!(verify_password(&hash, b"xx").is_err());
+    }
+
+    #[test]
+    fn hash_password_with_special_chars() {
+        let pw = b"p@$$w0rd!#%^&*()_+-=[]{}|;':\",./<>?\\`~";
+        let hash = hash_password(pw).unwrap();
+        assert!(verify_password(&hash, pw).is_ok());
+        assert!(verify_password(&hash, b"p@$$w0rd").is_err());
+    }
+
+    #[test]
+    fn hash_password_with_null_bytes() {
+        let pw = b"pass\x00word";
+        let hash = hash_password(pw).unwrap();
+        assert!(verify_password(&hash, pw).is_ok());
+        assert!(verify_password(&hash, b"pass").is_err());
+        assert!(verify_password(&hash, b"password").is_err());
+    }
+
+    #[test]
+    fn hash_password_with_whitespace() {
+        let hash = hash_password(b"  spaces  ").unwrap();
+        assert!(verify_password(&hash, b"  spaces  ").is_ok());
+        assert!(verify_password(&hash, b"spaces").is_err());
+        assert!(verify_password(&hash, b" spaces ").is_err());
+    }
+
+    #[test]
+    fn near_miss_passwords_all_fail() {
+        let hash = hash_password(b"password").unwrap();
+        assert!(verify_password(&hash, b"password").is_ok());
+        assert!(verify_password(&hash, b"Password").is_err(), "case change");
+        assert!(verify_password(&hash, b"passwor").is_err(), "truncated");
+        assert!(verify_password(&hash, b"passwords").is_err(), "extra char");
+        assert!(verify_password(&hash, b"passw0rd").is_err(), "l33t speak");
+        assert!(verify_password(&hash, b"pssword").is_err(), "missing char");
+        assert!(verify_password(&hash, b"passwd").is_err(), "abbreviated");
+        assert!(verify_password(&hash, b"password\n").is_err(), "trailing newline");
+        assert!(verify_password(&hash, b"\npassword").is_err(), "leading newline");
+        assert!(verify_password(&hash, b"password ").is_err(), "trailing space");
+    }
+
+    #[test]
+    fn different_hashes_for_different_passwords() {
+        let hashes: Vec<String> = ["alpha", "bravo", "charlie", "delta", "echo"]
+            .iter().map(|pw| hash_password(pw.as_bytes()).unwrap()).collect();
+        for (i, h) in hashes.iter().enumerate() {
+            for (j, pw) in ["alpha", "bravo", "charlie", "delta", "echo"].iter().enumerate() {
+                if i == j {
+                    assert!(verify_password(h, pw.as_bytes()).is_ok());
+                } else {
+                    assert!(verify_password(h, pw.as_bytes()).is_err());
+                }
+            }
+        }
+    }
 }

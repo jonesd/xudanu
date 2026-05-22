@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xudanu Storage System</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.warning{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#d29922}
+.example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
+.example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.fast{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
+.naive{color:#f85149;font-family:'JetBrains Mono',monospace}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-cyan{color:#39d2c0}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0;font-size:12px;color:#8b949e}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}.fast{color:#16a34a}.naive{color:#dc2626}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}.two-col{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Storage System</h1>
+<p class="subtitle">How Xudanu stores and retrieves documents: content-addressed chunks, incremental checkpoints, and O(1) integrity verification.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. Why We Needed a New Storage Engine</a>
+  <a class="toc-section" href="#s2">2. The Problem with Monolithic JSON</a>
+  <a class="toc-section" href="#s3">3. Architecture: Three-Layer Storage</a>
+  <a class="toc-section" href="#s4">4. ChunkStore: Content-Addressed Storage</a>
+  <a class="toc-section" href="#s5">5. BLAKE3 as the Universal Fingerprint</a>
+  <a class="toc-section" href="#s6">6. Edition Chunking: Breaking Documents into Pieces</a>
+  <a class="toc-section" href="#s7">7. Manifest: The Lightweight Index</a>
+  <a class="toc-section" href="#s8">8. Incremental Checkpoints</a>
+  <a class="toc-section" href="#s9">9. Data Integrity and Verification</a>
+  <a class="toc-section" href="#s10">10. Federation: Chunk Replication</a>
+  <a class="toc-section" href="#s11">11. Performance Characteristics</a>
+  <a class="toc-section" href="#s12">12. File Layout and Operations Guide</a>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 1 -->
+<!-- ============================================================ -->
+<h2 id="s1">1. Why We Needed a New Storage Engine</h2>
+
+<p>
+Xudanu's storage engine was designed to solve four specific problems that emerge when a content-addressed hypertext system scales beyond a prototype.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 340" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrG" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#58a6ff"/></marker>
+    <marker id="arrP" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#a371f7"/></marker>
+    <marker id="arrA" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#d29922"/></marker>
+  </defs>
+
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Four Storage Requirements</text>
+
+  <!-- Problem 1 -->
+  <rect x="30" y="60" width="170" height="120" rx="8" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="115" y="84" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700" letter-spacing="1">FAST WRITE/READ</text>
+  <line x1="50" y1="96" x2="180" y2="96" stroke="#21262d" stroke-width="1"/>
+  <text x="50" y="116" fill="#8b949e" font-size="10">Documents are edited</text>
+  <text x="50" y="132" fill="#8b949e" font-size="10">continuously. Checkpoint</text>
+  <text x="50" y="148" fill="#8b949e" font-size="10">must not block requests.</text>
+  <text x="50" y="168" fill="#3fb950" font-size="10" font-weight="600">Target: &lt;50ms checkpoint</text>
+
+  <!-- Problem 2 -->
+  <rect x="220" y="60" width="170" height="120" rx="8" fill="rgba(88,166,255,0.05)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="305" y="84" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700" letter-spacing="1">INCREMENTAL</text>
+  <line x1="240" y1="96" x2="370" y2="96" stroke="#21262d" stroke-width="1"/>
+  <text x="240" y="116" fill="#8b949e" font-size="10">10,000 docs with 1 edit</text>
+  <text x="240" y="132" fill="#8b949e" font-size="10">should write 1 chunk,</text>
+  <text x="240" y="148" fill="#8b949e" font-size="10">not re-serialize all 10K.</text>
+  <text x="240" y="168" fill="#58a6ff" font-size="10" font-weight="600">Only write what changed</text>
+
+  <!-- Problem 3 -->
+  <rect x="410" y="60" width="170" height="120" rx="8" fill="rgba(163,113,247,0.05)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="495" y="84" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="700" letter-spacing="1">FEDERATION</text>
+  <line x1="430" y1="96" x2="560" y2="96" stroke="#21262d" stroke-width="1"/>
+  <text x="430" y="116" fill="#8b949e" font-size="10">Peers sync by exchanging</text>
+  <text x="430" y="132" fill="#8b949e" font-size="10">chunks. Deduplication by</text>
+  <text x="430" y="148" fill="#8b949e" font-size="10">content hash is automatic.</text>
+  <text x="430" y="168" fill="#a371f7" font-size="10" font-weight="600">Content-addressed = ready</text>
+
+  <!-- Problem 4 -->
+  <rect x="600" y="60" width="170" height="120" rx="8" fill="rgba(210,153,34,0.05)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="685" y="84" text-anchor="middle" fill="#d29922" font-size="11" font-weight="700" letter-spacing="1">INTEGRITY</text>
+  <line x1="620" y1="96" x2="750" y2="96" stroke="#21262d" stroke-width="1"/>
+  <text x="620" y="116" fill="#8b949e" font-size="10">Disk corruption, partial</text>
+  <text x="620" y="132" fill="#8b949e" font-size="10">writes, bit rot. Must be</text>
+  <text x="620" y="148" fill="#8b949e" font-size="10">detectable without full</text>
+  <text x="620" y="168" fill="#d29922" font-size="10" font-weight="600">O(1) per-chunk verify</text>
+
+  <!-- Bottom: unified solution -->
+  <rect x="120" y="220" width="540" height="60" rx="10" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="390" y="248" text-anchor="middle" fill="#39d2c0" font-size="14" font-weight="700">ChunkStore: content-addressed BLAKE3-hashed chunk files</text>
+  <text x="390" y="268" text-anchor="middle" fill="#8b949e" font-size="11">One mechanism solves all four problems simultaneously</text>
+
+  <line x1="115" y1="180" x2="200" y2="220" stroke="#3fb950" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="305" y1="180" x2="310" y2="220" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="495" y1="180" x2="480" y2="220" stroke="#a371f7" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="685" y1="180" x2="580" y2="220" stroke="#d29922" stroke-width="1" stroke-dasharray="4,3"/>
+</svg>
+</div>
+<p class="diagram-caption">Figure 1: Four requirements that shaped the storage design, unified by content-addressed chunking.</p>
+
+<p>
+The key insight: Xudanu already uses BLAKE3 content fingerprints throughout the engine &mdash; for transclusion identity, content deduplication, and the ContentAddressIndex. Reusing the same fingerprint as the storage key creates a system where <strong>identity, caching, and persistence all speak the same language</strong>.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 2 -->
+<!-- ============================================================ -->
+<h2 id="s2">2. The Problem with Monolithic JSON</h2>
+
+<p>
+The original storage mechanism wrote the entire server state to a single <code>server.json</code> file on checkpoint. This worked for prototyping but had three critical flaws that would prevent production use:
+</p>
+
+<div class="two-col">
+<div class="example-block">
+  <div class="example-label">Monolithic Write (Old)</div>
+<pre style="background:none;border:none;padding:0;margin:0">
+{
+  "works": [
+    { "be_id": 1, "edition": {
+      "entries": [
+        <span class="accent-amber">/* 10,000 entries */</span>
+      ]
+    }},
+    <span class="accent-amber">/* 5,000 more works */</span>
+  ],
+  "clubs": <span class="accent-amber">/* ... */</span>,
+  "links": <span class="accent-amber">/* ... */</span>
+}</pre>
+</div>
+<div class="example-block">
+  <div class="example-label">Chunked Write (New)</div>
+<pre style="background:none;border:none;padding:0;margin:0">
+manifest.json        <span class="accent-green">/* 12 KB index */</span>
+chunks/
+  0a/
+    0a3f...b2c1      <span class="accent-green">/* entry chunk */</span>
+    0a7e...d4a8      <span class="accent-green">/* entry chunk */</span>
+  3b/
+    3bc9...1f07      <span class="accent-green">/* root chunk */</span>
+  <span class="accent-amber">/* 256 shard dirs max */</span></pre>
+</div>
+</div>
+
+<table>
+  <tr><th>Problem</th><th>Monolithic JSON</th><th>Chunked Storage</th></tr>
+  <tr>
+    <td>Checkpoint cost</td>
+    <td class="naive">O(n) &mdash; re-serialize everything</td>
+    <td class="fast">O(changed) &mdash; write only modified chunks</td>
+  </tr>
+  <tr>
+    <td>Crash safety</td>
+    <td class="naive">Partial write corrupts entire state</td>
+    <td class="fast">Atomic rename per chunk; manifest is separate</td>
+  </tr>
+  <tr>
+    <td>Deduplication</td>
+    <td class="naive">Same content stored N times</td>
+    <td class="fast">BLAKE3 hash = filename; identical content stored once</td>
+  </tr>
+  <tr>
+    <td>Memory usage</td>
+    <td class="naive">Must hold entire JSON in memory to parse</td>
+    <td class="fast">Load only needed chunks; LRU cache for hot data</td>
+  </tr>
+  <tr>
+    <td>Federation sync</td>
+    <td class="naive">Ship entire file to peers</td>
+    <td class="fast">Exchange individual chunks by hash</td>
+  </tr>
+</table>
+
+<div class="note">
+<strong>Content-addressing aligns with Xudanu's core model.</strong> The same text in multiple documents already shares a <code>BeId</code> in the GrandMap. When that text is serialized to a chunk, it gets the same BLAKE3 hash regardless of which document triggered the write. Storage-level deduplication is free.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 3 -->
+<!-- ============================================================ -->
+<h2 id="s3">3. Architecture: Three-Layer Storage</h2>
+
+<p>
+The storage system is organized in three layers, each with a distinct responsibility. The top layer is a lightweight JSON index; the middle layer handles serialization of document structures into binary chunks; the bottom layer is the content-addressed file store.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 500" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrDown" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#484f58"/></marker>
+  </defs>
+
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Three-Layer Storage Architecture</text>
+
+  <!-- Layer 1: Manifest -->
+  <rect x="60" y="50" width="660" height="100" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="80" y="76" fill="#58a6ff" font-size="12" font-weight="700" letter-spacing="1">LAYER 1: MANIFEST</text>
+  <text x="80" y="96" fill="#8b949e" font-size="11">manifest.json &mdash; lightweight JSON index</text>
+  <text x="80" y="116" fill="#8b949e" font-size="11">Contains: work refs (be_id + chunk hashes), club refs, link graph, admin state, federation state</text>
+  <text x="80" y="136" fill="#8b949e" font-size="11">SHA-256 checksum for tamper detection. Atomic write via rename.</text>
+  <rect x="560" y="80" width="140" height="24" rx="4" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="570" y="96" fill="#58a6ff" font-size="10" font-weight="600">Typical: 5&ndash;50 KB</text>
+
+  <!-- Arrow down -->
+  <line x1="390" y1="150" x2="390" y2="180" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrDown)"/>
+  <text x="420" y="170" fill="#484f58" font-size="10">hash refs</text>
+
+  <!-- Layer 2: Edition Chunks -->
+  <rect x="60" y="180" width="660" height="120" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="80" y="206" fill="#a371f7" font-size="12" font-weight="700" letter-spacing="1">LAYER 2: EDITION CHUNKS</text>
+  <text x="80" y="226" fill="#8b949e" font-size="11">Serializes Editions and Works into chunk trees using postcard (binary)</text>
+  <text x="80" y="246" fill="#8b949e" font-size="11">Root chunk = metadata + list of entry-chunk hashes. Entry chunks = up to 256 entries each.</text>
+  <text x="80" y="266" fill="#8b949e" font-size="11">Work refs include revision history as a map of revision-number &rarr; EditionChunkRef.</text>
+  <text x="80" y="286" fill="#8b949e" font-size="11">Source: src/persist/edition_chunks.rs</text>
+
+  <!-- Arrow down -->
+  <line x1="390" y1="300" x2="390" y2="330" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrDown)"/>
+  <text x="420" y="320" fill="#484f58" font-size="10">write/read bytes</text>
+
+  <!-- Layer 3: ChunkStore -->
+  <rect x="60" y="330" width="660" height="140" rx="8" fill="rgba(63,185,80,0.10)" stroke="#3fb950" stroke-width="2"/>
+  <text x="80" y="356" fill="#3fb950" font-size="12" font-weight="700" letter-spacing="1">LAYER 3: CHUNKSTORE</text>
+  <text x="80" y="376" fill="#8b949e" font-size="11">Content-addressed file store. BLAKE3 hash of data = filename.</text>
+  <text x="80" y="396" fill="#8b949e" font-size="11">Directory sharding: chunks/{first-2-hex-chars}/{full-64-char-hash}</text>
+  <text x="80" y="416" fill="#8b949e" font-size="11">Atomic writes via tmp + rename. LRU cache (1024 entries). Integrity verified on every read.</text>
+  <text x="80" y="436" fill="#8b949e" font-size="11">Deduplication is automatic: same bytes &rarr; same hash &rarr; same file. Write is idempotent.</text>
+  <text x="80" y="456" fill="#8b949e" font-size="11">Source: src/persist/chunk_store.rs</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 2: Three layers separate concerns &mdash; indexing, serialization, and physical storage.</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 4 -->
+<!-- ============================================================ -->
+<h2 id="s4">4. ChunkStore: Content-Addressed Storage</h2>
+
+<p>
+<code>ChunkStore</code> is the foundation. It maps arbitrary byte sequences to files named by their BLAKE3 hash. The API is intentionally minimal:
+</p>
+
+<pre>
+pub struct ChunkStore {
+    base_dir: PathBuf,
+    cache: Mutex&lt;Cache&gt;,         // LRU, 1024 entries
+    cache_hits: AtomicU64,
+    cache_misses: AtomicU64,
+}
+
+impl ChunkStore {
+    pub fn write_chunk(&amp;self, data: &amp;[u8]) -&gt; Result&lt;[u8; 32], ChunkError&gt;;
+    pub fn read_chunk(&amp;self, hash: &amp;[u8; 32]) -&gt; Result&lt;Vec&lt;u8&gt;, ChunkError&gt;;
+    pub fn chunk_exists(&amp;self, hash: &amp;[u8; 32]) -&gt; bool;
+    pub fn verify_chunk(&amp;self, hash: &amp;[u8; 32]) -&gt; Result&lt;(), ChunkError&gt;;
+}
+</pre>
+
+<h3>Write Path</h3>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 280" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrG4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+  </defs>
+
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">write_chunk(data) Flow</text>
+
+  <!-- Step 1: Hash -->
+  <rect x="30" y="60" width="160" height="70" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="110" y="84" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700">1. BLAKE3 HASH</text>
+  <text x="110" y="104" text-anchor="middle" fill="#8b949e" font-size="10">hash = blake3(data)</text>
+  <text x="110" y="120" text-anchor="middle" fill="#8b949e" font-size="10">32 bytes, 64 hex chars</text>
+
+  <line x1="190" y1="95" x2="220" y2="95" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrG4)"/>
+
+  <!-- Step 2: Exists? -->
+  <rect x="220" y="60" width="160" height="70" rx="8" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="1"/>
+  <text x="300" y="84" text-anchor="middle" fill="#d29922" font-size="11" font-weight="700">2. EXISTS CHECK</text>
+  <text x="300" y="104" text-anchor="middle" fill="#8b949e" font-size="10">chunks/ab/ab3f...c2d1</text>
+  <text x="300" y="120" text-anchor="middle" fill="#8b949e" font-size="10">Already on disk? Skip.</text>
+
+  <line x1="380" y1="95" x2="410" y2="95" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrG4)"/>
+
+  <!-- Step 3: Atomic write -->
+  <rect x="410" y="60" width="160" height="70" rx="8" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="490" y="84" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">3. ATOMIC WRITE</text>
+  <text x="490" y="104" text-anchor="middle" fill="#8b949e" font-size="10">write ab3f.tmp</text>
+  <text x="490" y="120" text-anchor="middle" fill="#8b949e" font-size="10">rename ab3f.tmp &rarr; ab3f</text>
+
+  <line x1="570" y1="95" x2="600" y2="95" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrG4)"/>
+
+  <!-- Step 4: Cache -->
+  <rect x="600" y="60" width="160" height="70" rx="8" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1"/>
+  <text x="680" y="84" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="700">4. CACHE INSERT</text>
+  <text x="680" y="104" text-anchor="middle" fill="#8b949e" font-size="10">LRU[hash] = data</text>
+  <text x="680" y="120" text-anchor="middle" fill="#8b949e" font-size="10">Return hash</text>
+
+  <!-- Directory structure -->
+  <rect x="60" y="170" width="660" height="100" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="80" y="194" fill="#8b949e" font-size="11" font-weight="600">On-disk layout:</text>
+  <text x="80" y="218" fill="#79c0ff" font-size="11" font-family="'JetBrains Mono',monospace">data-dir/chunks/0a/0a3f7b2c1e8d9a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9</text>
+  <text x="80" y="238" fill="#8b949e" font-size="10">2-hex shard /  &larr; 64-char BLAKE3 hex = filename &rarr;</text>
+  <text x="80" y="258" fill="#484f58" font-size="10">256 possible shard directories (00&ndash;ff). Each contains chunk files named by their full hash.</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 3: Write path &mdash; hash, check existence, atomic write, cache.</p>
+
+<h3>Read Path</h3>
+
+<p>
+Every <code>read_chunk</code> checks the LRU cache first. On a cache hit, no disk I/O occurs. On a miss, the chunk is read from disk and <strong>its BLAKE3 hash is verified against the requested hash</strong> before returning. This means corruption is detected at read time, not just at verification time.
+</p>
+
+<div class="note">
+<strong>Cache hit avoids disk entirely.</strong> In the stress tests, deleting the on-disk file after a write still allows reads via the cache. The LRU holds 1,024 entries with O(1) eviction. Cache stats (hits, misses, rate) are tracked via atomic counters for monitoring.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 5 -->
+<!-- ============================================================ -->
+<h2 id="s5">5. BLAKE3 as the Universal Fingerprint</h2>
+
+<p>
+BLAKE3 serves double duty in Xudanu: it is both the <strong>content fingerprint</strong> used for transclusion identity and the <strong>storage key</strong> used for chunk addressing. This is not coincidental &mdash; it is a design decision that eliminates an entire class of mapping overhead.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 300" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">BLAKE3: Shared Fingerprint Across Engine and Storage</text>
+
+  <!-- Content -->
+  <rect x="40" y="50" width="200" height="80" rx="8" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="140" y="74" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">CONTENT ENGINE</text>
+  <text x="140" y="94" text-anchor="middle" fill="#8b949e" font-size="10">RangeElement.fingerprint()</text>
+  <text x="140" y="110" text-anchor="middle" fill="#8b949e" font-size="10">ContentAddressIndex</text>
+  <text x="140" y="126" text-anchor="middle" fill="#8b949e" font-size="10">Transclusion matching</text>
+
+  <!-- Storage -->
+  <rect x="540" y="50" width="200" height="80" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="640" y="74" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700">STORAGE ENGINE</text>
+  <text x="640" y="94" text-anchor="middle" fill="#8b949e" font-size="10">ChunkStore.write_chunk()</text>
+  <text x="640" y="110" text-anchor="middle" fill="#8b949e" font-size="10">File naming</text>
+  <text x="640" y="126" text-anchor="middle" fill="#8b949e" font-size="10">Integrity verification</text>
+
+  <!-- Shared center -->
+  <rect x="280" y="50" width="220" height="80" rx="10" fill="rgba(57,210,192,0.1)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="390" y="78" text-anchor="middle" fill="#39d2c0" font-size="13" font-weight="700">BLAKE3</text>
+  <text x="390" y="98" text-anchor="middle" fill="#8b949e" font-size="10">32-byte hash</text>
+  <text x="390" y="114" text-anchor="middle" fill="#8b949e" font-size="10">Same input = same output</text>
+  <text x="390" y="130" text-anchor="middle" fill="#8b949e" font-size="10">Immutable, collision-resistant</text>
+
+  <!-- Arrows -->
+  <line x1="240" y1="90" x2="280" y2="90" stroke="#58a6ff" stroke-width="1.5"/>
+  <line x1="500" y1="90" x2="540" y2="90" stroke="#3fb950" stroke-width="1.5"/>
+
+  <!-- Benefits -->
+  <rect x="60" y="170" width="660" height="120" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="80" y="196" fill="#e6edf3" font-size="12" font-weight="600">Consequences of shared fingerprinting:</text>
+  <text x="80" y="220" fill="#3fb950" font-size="11">&#10003; Same text in 10 documents &rarr; one chunk on disk (free deduplication)</text>
+  <text x="80" y="240" fill="#3fb950" font-size="11">&#10003; Federation peers can verify chunks without a separate checksum</text>
+  <text x="80" y="260" fill="#3fb950" font-size="11">&#10003; No mapping table between content IDs and storage keys</text>
+  <text x="80" y="280" fill="#3fb950" font-size="11">&#10003; Content-addressed index can reconstruct chunk location from content alone</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 4: BLAKE3 unifies content identity and storage addressing.</p>
+
+<table>
+  <tr><th>Property</th><th>BLAKE3</th><th>Why It Matters</th></tr>
+  <tr><td>Output size</td><td>256 bits (32 bytes)</td><td>Collision probability &lt; 2<sup>-128</sup> &mdash; negligible for any dataset size</td></tr>
+  <tr><td>Speed</td><td>~1 GB/s single-threaded</td><td>Hashing never becomes the bottleneck</td></tr>
+  <tr><td>Deterministic</td><td>Same input always produces same hash</td><td>Content identity is stable across restarts, peers, and checkpoints</td></tr>
+  <tr><td>Verification</td><td>Re-hash and compare</td><td>Integrity check is just: does <code>blake3(file_contents) == filename</code>?</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<!-- SECTION 6 -->
+<!-- ============================================================ -->
+<h2 id="s6">6. Edition Chunking: Breaking Documents into Pieces</h2>
+
+<p>
+An Edition (Xudanu's document data structure) is an O-tree with entries at integer positions. Rather than serializing an entire edition as one blob, <code>edition_chunks.rs</code> splits it into a <strong>root chunk</strong> and multiple <strong>entry chunks</strong>, each holding up to 256 entries.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 380" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Edition Chunk Tree</text>
+
+  <!-- Edition (source) -->
+  <rect x="20" y="50" width="120" height="180" rx="6" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="80" y="70" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="700">EDITION</text>
+  <text x="30" y="90" fill="#8b949e" font-size="9">pos 0: "Hello"</text>
+  <text x="30" y="104" fill="#8b949e" font-size="9">pos 1: " "</text>
+  <text x="30" y="118" fill="#8b949e" font-size="9">pos 2: "World"</text>
+  <text x="30" y="136" fill="#484f58" font-size="9">&hellip;</text>
+  <text x="30" y="154" fill="#8b949e" font-size="9">pos 255: "end"</text>
+  <text x="30" y="168" fill="#484f58" font-size="9">&mdash; chunk boundary &mdash;</text>
+  <text x="30" y="186" fill="#8b949e" font-size="9">pos 256: "more"</text>
+  <text x="30" y="200" fill="#8b949e" font-size="9">pos 257: "data"</text>
+  <text x="30" y="218" fill="#484f58" font-size="9">&hellip;</text>
+
+  <!-- Arrow -->
+  <line x1="140" y1="140" x2="180" y2="140" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="155" y="130" fill="#a371f7" font-size="9" text-anchor="middle">split</text>
+
+  <!-- Root chunk -->
+  <rect x="180" y="50" width="200" height="100" rx="6" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="280" y="70" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="700">ROOT CHUNK</text>
+  <text x="195" y="90" fill="#8b949e" font-size="9">default: None</text>
+  <text x="195" y="104" fill="#8b949e" font-size="9">domain_start: 0</text>
+  <text x="195" y="118" fill="#8b949e" font-size="9">entry_count: 300</text>
+  <text x="195" y="132" fill="#8b949e" font-size="9">entry_chunk_hashes: [</text>
+  <text x="210" y="146" fill="#3fb950" font-size="9" font-family="'JetBrains Mono',monospace">0xa3f7...,</text>
+  <text x="210" y="160" fill="#3fb950" font-size="9" font-family="'JetBrains Mono',monospace">0xb2c1...</text>
+
+  <!-- Entry chunk 1 -->
+  <rect x="180" y="210" width="180" height="80" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="270" y="230" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="700">ENTRY CHUNK 1</text>
+  <text x="195" y="250" fill="#8b949e" font-size="9">entries[0..255]</text>
+  <text x="195" y="264" fill="#8b949e" font-size="9">256 entries</text>
+  <text x="195" y="278" fill="#3fb950" font-size="9" font-family="'JetBrains Mono',monospace">hash: a3f7...b2c1</text>
+
+  <!-- Entry chunk 2 -->
+  <rect x="390" y="210" width="180" height="80" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="480" y="230" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="700">ENTRY CHUNK 2</text>
+  <text x="405" y="250" fill="#8b949e" font-size="9">entries[256..299]</text>
+  <text x="405" y="264" fill="#8b949e" font-size="9">44 entries</text>
+  <text x="405" y="278" fill="#3fb950" font-size="9" font-family="'JetBrains Mono',monospace">hash: b2c1...e8d9</text>
+
+  <!-- Arrows from root to entry chunks -->
+  <line x1="250" y1="150" x2="250" y2="210" stroke="#3fb950" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="330" y1="150" x2="460" y2="210" stroke="#3fb950" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- Serialization format -->
+  <rect x="420" y="50" width="340" height="130" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="440" y="74" fill="#e6edf3" font-size="11" font-weight="600">Serialization: postcard (binary)</text>
+  <text x="440" y="96" fill="#8b949e" font-size="10">Postcard is a compact binary format (no-tokio serde)</text>
+  <text x="440" y="114" fill="#8b949e" font-size="10">Smaller than JSON, faster to parse</text>
+  <text x="440" y="132" fill="#8b949e" font-size="10">Schema-evolution friendly (optional fields default)</text>
+  <text x="440" y="150" fill="#8b949e" font-size="10">Same postcard library used in federation wire protocol</text>
+  <text x="440" y="168" fill="#484f58" font-size="9">Entries per chunk: ENTRIES_PER_CHUNK = 256</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 5: An Edition with 300 entries becomes 3 chunks: 1 root + 2 entry chunks. Entry chunks hold up to 256 entries each.</p>
+
+<h3>Work Chunk Refs</h3>
+
+<p>
+A <code>Work</code> (document) contains its current edition plus a revision history. Each revision is stored as its own edition chunk tree. The <code>WorkChunkRef</code> is the manifest's pointer to a work's data:
+</p>
+
+<pre>
+pub struct WorkChunkRef {
+    be_id: BeId,
+    owner: Option&lt;BeId&gt;,
+    revision_count: u64,
+    current_root: EditionChunkRef,          // current version
+    history: BTreeMap&lt;u64, EditionChunkRef&gt;, // past versions
+    read_club: Option&lt;BeId&gt;,
+    edit_club: Option&lt;BeId&gt;,
+    sponsors: Vec&lt;BeId&gt;,
+}
+</pre>
+
+<p>
+Revisions are loaded lazily. <code>work_from_chunks_current()</code> reads only the current edition. <code>work_load_revision()</code> loads a specific revision by number. This means opening a document with 200 revisions reads <strong>1 edition</strong>, not 201.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 7 -->
+<!-- ============================================================ -->
+<h2 id="s7">7. Manifest: The Lightweight Index</h2>
+
+<p>
+The manifest (<code>manifest.json</code>) is the only JSON file in the system. It contains references (not data) to all works, clubs, links, and administrative state. It is small by design:
+</p>
+
+<pre>
+pub struct Manifest {
+    format_version: u32,                // schema migration
+    checksum: String,                   // SHA-256 of content (excl. timestamp)
+    grand_map_id_counter: BeId,
+    works: Vec&lt;(BeId, WorkChunkRef)&gt;,   // references to chunk trees
+    clubs: Vec&lt;ClubChunkRef&gt;,
+    links: Vec&lt;LinkEntry&gt;,
+    admin: AdminEntry,
+    federation: Option&lt;FederationSnapshot&gt;,
+    content_address: Option&lt;ContentAddressIndex&gt;,
+    blob_metas: Vec&lt;BlobMetaEntry&gt;,
+    key_history: Option&lt;KeyHistoryEntry&gt;,
+}
+</pre>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Manifest Points to Chunks</text>
+
+  <!-- Manifest box -->
+  <rect x="30" y="50" width="250" height="250" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="155" y="74" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="700">manifest.json</text>
+
+  <rect x="50" y="90" width="210" height="24" rx="3" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="60" y="106" fill="#a371f7" font-size="10">work[0]: be_id=42, current_root</text>
+
+  <rect x="50" y="122" width="210" height="24" rx="3" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="60" y="138" fill="#a371f7" font-size="10">work[1]: be_id=99, current_root</text>
+
+  <rect x="50" y="154" width="210" height="24" rx="3" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="60" y="170" fill="#a371f7" font-size="10">club[0]: be_id=1, work_root</text>
+
+  <rect x="50" y="186" width="210" height="24" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="60" y="202" fill="#d29922" font-size="10">links: [(42, 42, 99)]</text>
+
+  <rect x="50" y="218" width="210" height="24" rx="3" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="1"/>
+  <text x="60" y="234" fill="#3fb950" font-size="10">admin: accepting=true</text>
+
+  <rect x="50" y="250" width="210" height="24" rx="3" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="60" y="266" fill="#a371f7" font-size="10">key_history, federation, blobs</text>
+
+  <!-- Chunk files -->
+  <rect x="430" y="80" width="320" height="200" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="590" y="104" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">chunks/ directory</text>
+  <text x="450" y="128" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">a3/f7a3b2...root chunk for work 42</text>
+  <text x="450" y="148" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">c1/b2c1d4...entry chunk for work 42</text>
+  <text x="450" y="168" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">e8/d9e8f1...root chunk for work 99</text>
+  <text x="450" y="188" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">0a/3f0a7e...club work root</text>
+  <text x="450" y="208" fill="#484f58" font-size="10">&hellip; shared chunks appear once</text>
+
+  <!-- Arrows -->
+  <line x1="260" y1="102" x2="430" y2="128" stroke="#a371f7" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="260" y1="134" x2="430" y2="168" stroke="#a371f7" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="260" y1="166" x2="430" y2="188" stroke="#a371f7" stroke-width="1" stroke-dasharray="3,3"/>
+</svg>
+</div>
+<p class="diagram-caption">Figure 6: The manifest references chunks by BLAKE3 hash. Chunk data lives separately.</p>
+
+<h3>Checksum Protection</h3>
+
+<p>
+The manifest includes an SHA-256 checksum computed over its own content (with timestamp and version fields zeroed). On load, the checksum is recalculated and compared. If they don't match, the manifest is rejected with a <code>ChecksumMismatch</code> error. This catches accidental edits, partial writes, and bit-level corruption.
+</p>
+
+<div class="note">
+<strong>Manifest writes are atomic.</strong> The write path uses <code>write manifest.tmp &rarr; rename manifest.tmp to manifest</code>. On POSIX systems, <code>rename</code> is atomic on the same filesystem, so a crash during write leaves either the old or new manifest &mdash; never a partial file.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 8 -->
+<!-- ============================================================ -->
+<h2 id="s8">8. Incremental Checkpoints</h2>
+
+<p>
+The most significant performance benefit of chunked storage is incremental checkpoints. When a user edits a document:
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 360" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Incremental vs. Full Checkpoint</text>
+
+  <!-- Before: 5 docs -->
+  <rect x="30" y="50" width="700" height="60" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="50" y="74" fill="#e6edf3" font-size="11" font-weight="600">Server state: 5 documents, 1 edit made to doc #3</text>
+
+  <rect x="50" y="86" width="90" height="16" rx="3" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="55" y="98" fill="#58a6ff" font-size="9">doc 1 (clean)</text>
+  <rect x="150" y="86" width="90" height="16" rx="3" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="155" y="98" fill="#58a6ff" font-size="9">doc 2 (clean)</text>
+  <rect x="250" y="86" width="90" height="16" rx="3" fill="rgba(210,153,34,0.3)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="255" y="98" fill="#d29922" font-size="9" font-weight="700">doc 3 (dirty)</text>
+  <rect x="350" y="86" width="90" height="16" rx="3" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="355" y="98" fill="#58a6ff" font-size="9">doc 4 (clean)</text>
+  <rect x="450" y="86" width="90" height="16" rx="3" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="455" y="98" fill="#58a6ff" font-size="9">doc 5 (clean)</text>
+
+  <!-- Old way -->
+  <rect x="30" y="140" width="340" height="100" rx="8" fill="rgba(248,81,73,0.05)" stroke="#f85149" stroke-width="1"/>
+  <text x="200" y="164" text-anchor="middle" fill="#f85149" font-size="11" font-weight="700">OLD: Full Serialization</text>
+  <text x="50" y="184" fill="#8b949e" font-size="10">1. Serialize all 5 documents to JSON</text>
+  <text x="50" y="202" fill="#8b949e" font-size="10">2. Write entire state to server.json</text>
+  <text x="50" y="220" fill="#f85149" font-size="10" font-weight="600">I/O proportional to total data size</text>
+
+  <!-- New way -->
+  <rect x="400" y="140" width="340" height="100" rx="8" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="570" y="164" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700">NEW: Incremental Checkpoint</text>
+  <text x="420" y="184" fill="#8b949e" font-size="10">1. Chunk doc 3's new edition (N chunks)</text>
+  <text x="420" y="202" fill="#8b949e" font-size="10">2. Update manifest ref for doc 3</text>
+  <text x="420" y="220" fill="#3fb950" font-size="10" font-weight="600">I/O proportional to changed data only</text>
+
+  <!-- Result on disk -->
+  <rect x="60" y="280" width="660" height="60" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="80" y="304" fill="#e6edf3" font-size="11" font-weight="600">On disk after checkpoint:</text>
+  <text x="80" y="324" fill="#3fb950" font-size="10">New chunks written: only doc 3's changed entries. Old chunks for doc 3 (if shared with other docs) remain. Docs 1, 2, 4, 5: zero I/O.</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 7: With 10,000 documents and 1 edit, the old system writes all 10K. The new system writes the changed edition's chunks plus the manifest.</p>
+
+<p>
+The checkpoint path in <code>server.rs</code> serializes each work to its chunk tree, then writes the manifest. Because <code>ChunkStore::write_chunk</code> is idempotent (same data = same hash = no disk write if chunk exists), unchanged works produce no I/O even if the checkpoint code iterates over them.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 9 -->
+<!-- ============================================================ -->
+<h2 id="s9">9. Data Integrity and Verification</h2>
+
+<p>
+Xudanu provides a built-in verification tool: <code>xudanu-server verify &lt;data-dir&gt;</code>. This command performs a comprehensive integrity check across all stored data.
+</p>
+
+<h3>Verification Pipeline</h3>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 340" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrDown2" markerWidth="8" markerHeight="6" refX="4" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#484f58"/></marker>
+  </defs>
+
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">xudanu-server verify Pipeline</text>
+
+  <!-- Step 1 -->
+  <rect x="60" y="50" width="660" height="50" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="80" y="72" fill="#58a6ff" font-size="11" font-weight="700">1. MANIFEST CHECKSUM</text>
+  <text x="300" y="72" fill="#8b949e" font-size="11">Verify SHA-256 of manifest content matches stored checksum</text>
+  <text x="80" y="90" fill="#8b949e" font-size="10">Reject if version != current (format migration guard)</text>
+
+  <!-- Step 2 -->
+  <rect x="60" y="110" width="660" height="50" rx="6" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1"/>
+  <text x="80" y="132" fill="#a371f7" font-size="11" font-weight="700">2. REFERENCE COLLECTION</text>
+  <text x="340" y="132" fill="#8b949e" font-size="11">Walk manifest &rarr; work refs &rarr; edition refs &rarr; entry chunk hashes</text>
+  <text x="80" y="150" fill="#8b949e" font-size="10">Build set of all hashes that should exist on disk</text>
+
+  <!-- Step 3 -->
+  <rect x="60" y="170" width="660" height="50" rx="6" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1"/>
+  <text x="80" y="192" fill="#3fb950" font-size="11" font-weight="700">3. CHUNK INTEGRITY</text>
+  <text x="300" y="192" fill="#8b949e" font-size="11">For every chunk on disk: read, BLAKE3 hash, compare to filename</text>
+  <text x="80" y="210" fill="#8b949e" font-size="10">Detect: bit rot, truncation, wrong data, tampering</text>
+
+  <!-- Step 4 -->
+  <rect x="60" y="230" width="660" height="50" rx="6" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1"/>
+  <text x="80" y="252" fill="#d29922" font-size="11" font-weight="700">4. DESERIALIZATION</text>
+  <text x="300" y="252" fill="#8b949e" font-size="11">Attempt to deserialize each work, club, standalone edition</text>
+  <text x="80" y="270" fill="#8b949e" font-size="10">Catches schema corruption that passes hash check but has invalid structure</text>
+
+  <!-- Step 5 -->
+  <rect x="60" y="290" width="660" height="40" rx="6" fill="rgba(57,210,192,0.06)" stroke="#39d2c0" stroke-width="1"/>
+  <text x="80" y="314" fill="#39d2c0" font-size="11" font-weight="700">5. ORPHAN DETECTION</text>
+  <text x="300" y="314" fill="#8b949e" font-size="11">Flag chunks on disk not referenced by manifest (leak detection)</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 8: Five-stage verification catches corruption, missing data, and storage leaks.</p>
+
+<h3>Report Output</h3>
+
+<pre>
+$ xudanu-server verify /tmp/xudanu-data
+
+Verification report:
+  Chunks: 1,247 total, 1,247 verified
+  Works: 50 ok, 0 failed
+  Clubs: 3 ok, 0 failed
+  Standalone editions: 12 ok, 0 failed
+  Status: OK
+</pre>
+
+<p>
+The <code>VerifyReport</code> tracks: chunks verified, chunks corrupt (hash mismatch), chunks missing (referenced but not on disk), chunks orphaned (on disk but not referenced), deserialization errors, and per-type (work/club/edition) success/failure counts. A single failure in any category makes the overall status <code>ISSUES FOUND</code>.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 10 -->
+<!-- ============================================================ -->
+<h2 id="s10">10. Federation: Chunk Replication</h2>
+
+<p>
+Content-addressed storage is a natural fit for federation. When two Xudanu servers synchronize, they exchange content at the chunk level. Because chunk identity is determined by content (BLAKE3 hash), peers can:
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Federated Chunk Sync</text>
+
+  <!-- Server A -->
+  <rect x="30" y="60" width="300" height="240" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="180" y="84" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="700">SERVER A</text>
+
+  <rect x="50" y="96" width="260" height="30" rx="4" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="60" y="116" fill="#8b949e" font-size="10">Manifest: works [42, 99, 105]</text>
+
+  <rect x="50" y="136" width="120" height="60" rx="4" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="110" y="156" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">chunks/</text>
+  <text x="60" y="174" fill="#8b949e" font-size="9">a3f7... (doc 42)</text>
+  <text x="60" y="188" fill="#8b949e" font-size="9">b2c1... (doc 42)</text>
+
+  <rect x="180" y="136" width="120" height="60" rx="4" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="240" y="156" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">chunks/</text>
+  <text x="190" y="174" fill="#8b949e" font-size="9">d4e8... (doc 99)</text>
+  <text x="190" y="188" fill="#8b949e" font-size="9">f1a0... (shared)</text>
+
+  <rect x="50" y="210" width="260" height="30" rx="4" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="60" y="230" fill="#d29922" font-size="10" font-weight="600">Want: hash e7b3... (new from B)</text>
+
+  <!-- Server B -->
+  <rect x="450" y="60" width="300" height="240" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="600" y="84" text-anchor="middle" fill="#a371f7" font-size="12" font-weight="700">SERVER B</text>
+
+  <rect x="470" y="96" width="260" height="30" rx="4" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="480" y="116" fill="#8b949e" font-size="10">Manifest: works [55, 200, 42]</text>
+
+  <rect x="470" y="136" width="120" height="60" rx="4" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="530" y="156" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">chunks/</text>
+  <text x="480" y="174" fill="#8b949e" font-size="9">c5d9... (doc 55)</text>
+  <text x="480" y="188" fill="#8b949e" font-size="9">a3f7... (doc 42)</text>
+
+  <rect x="600" y="136" width="120" height="60" rx="4" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="660" y="156" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">chunks/</text>
+  <text x="610" y="174" fill="#8b949e" font-size="9">e7b3... (doc 200)</text>
+  <text x="610" y="188" fill="#8b949e" font-size="9">f1a0... (shared)</text>
+
+  <rect x="470" y="210" width="260" height="30" rx="4" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="480" y="230" fill="#58a6ff" font-size="10" font-weight="600">Want: hash b2c1... (new from A)</text>
+
+  <!-- Sync arrows -->
+  <line x1="310" y1="260" x2="450" y2="260" stroke="#39d2c0" stroke-width="2"/>
+  <line x1="450" y1="270" x2="310" y2="270" stroke="#39d2c0" stroke-width="2"/>
+  <text x="380" y="254" text-anchor="middle" fill="#39d2c0" font-size="9">send b2c1...</text>
+  <text x="380" y="284" text-anchor="middle" fill="#39d2c0" font-size="9">send e7b3...</text>
+
+  <text x="380" y="310" text-anchor="middle" fill="#8b949e" font-size="10">a3f7 and f1a0 already on both &rarr; skip (no transfer)</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 9: Federation sync exchanges only missing chunks. Shared content (same hash) is never sent twice.</p>
+
+<p>
+The chunk-based federation protocol works in three steps:
+</p>
+
+<table>
+  <tr><th>Step</th><th>Action</th><th>Data Transferred</th></tr>
+  <tr><td>1. Manifest exchange</td><td>Peers share their manifests</td><td>Small JSON (KB)</td></tr>
+  <tr><td>2. Want/have negotiation</td><td>Compare chunk hash sets</td><td>Just 32-byte hashes</td></tr>
+  <tr><td>3. Chunk transfer</td><td>Send only missing chunks</td><td>Binary chunk data</td></tr>
+</table>
+
+<div class="note">
+<strong>Bandwidth scales with novelty, not size.</strong> If two servers share 90% of their content (common in a collaborative editing scenario), only the 10% that differs is transferred. The BLAKE3 hash comparison makes this negotiation cheap.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 11 -->
+<!-- ============================================================ -->
+<h2 id="s11">11. Performance Characteristics</h2>
+
+<p>
+The storage system was designed for the access patterns that Xudanu actually exhibits: frequent writes to a small number of active documents, infrequent reads of historical revisions, and periodic full checkpoints.
+</p>
+
+<table>
+  <tr><th>Operation</th><th>Complexity</th><th>Notes</th></tr>
+  <tr>
+    <td>Write chunk</td>
+    <td class="fast">O(1)</td>
+    <td>Hash data, check exists, atomic write. Same data = no-op.</td>
+  </tr>
+  <tr>
+    <td>Read chunk (cached)</td>
+    <td class="fast">O(1)</td>
+    <td>LRU lookup, no disk I/O. Cache holds 1,024 entries.</td>
+  </tr>
+  <tr>
+    <td>Read chunk (cold)</td>
+    <td class="fast">O(chunk_size)</td>
+    <td>Disk read + BLAKE3 verify. One file read per chunk.</td>
+  </tr>
+  <tr>
+    <td>Checkpoint (incremental)</td>
+    <td class="fast">O(changed)</td>
+    <td>Only modified chunks written. Unchanged works: zero I/O.</td>
+  </tr>
+  <tr>
+    <td>Checkpoint (full)</td>
+    <td>O(total)</td>
+    <td>All chunks serialized. But idempotent writes skip existing chunks.</td>
+  </tr>
+  <tr>
+    <td>Verify single chunk</td>
+    <td class="fast">O(chunk_size)</td>
+    <td>Read + re-hash + compare to filename.</td>
+  </tr>
+  <tr>
+    <td>Verify entire store</td>
+    <td>O(total)</td>
+    <td>Walk all chunks. Manifest + all chunk files.</td>
+  </tr>
+  <tr>
+    <td>Load work (current)</td>
+    <td class="fast">O(1 edition)</td>
+    <td>Only current_root chunk tree is read. History stays on disk.</td>
+  </tr>
+  <tr>
+    <td>Load revision N</td>
+    <td class="fast">O(1 edition)</td>
+    <td>BTreeMap lookup &rarr; one edition chunk tree. No scanning.</td>
+  </tr>
+  <tr>
+    <td>Deduplication</td>
+    <td class="fast">O(1)</td>
+    <td>Automatic: same bytes &rarr; same hash &rarr; same file. No dedup pass needed.</td>
+  </tr>
+</table>
+
+<h3>LRU Cache Behavior</h3>
+
+<p>
+The 1,024-entry LRU cache is particularly effective for Xudanu's workload. A user typically edits a handful of documents at a time. Each edit re-reads the same edition chunks and writes new ones for changed entries. The hot set (current editions of active documents) fits comfortably in 1,024 entries.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 220" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">LRU Cache: 1024 Entries, O(1) Eviction</text>
+
+  <!-- Cache visualization -->
+  <rect x="30" y="50" width="720" height="60" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="50" y="70" fill="#484f58" font-size="9">oldest</text>
+  <text x="700" y="70" fill="#484f58" font-size="9">newest</text>
+
+  <rect x="50" y="78" width="60" height="22" rx="3" fill="rgba(248,81,73,0.15)" stroke="#f85149" stroke-width="1"/>
+  <text x="55" y="94" fill="#f85149" font-size="8">evict</text>
+
+  <rect x="120" y="78" width="40" height="22" rx="3" fill="rgba(210,153,34,0.15)" stroke="#d29922" stroke-width="1"/>
+  <rect x="170" y="78" width="40" height="22" rx="3" fill="rgba(210,153,34,0.15)" stroke="#d29922" stroke-width="1"/>
+  <rect x="220" y="78" width="40" height="22" rx="3" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1"/>
+  <rect x="270" y="78" width="40" height="22" rx="3" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1"/>
+  <rect x="320" y="78" width="40" height="22" rx="3" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1"/>
+
+  <text x="400" y="94" fill="#484f58" font-size="11">&hellip; 1018 more &hellip;</text>
+
+  <rect x="530" y="78" width="40" height="22" rx="3" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="1"/>
+  <rect x="580" y="78" width="40" height="22" rx="3" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="1"/>
+  <rect x="630" y="78" width="40" height="22" rx="3" fill="rgba(63,185,80,0.25)" stroke="#3fb950" stroke-width="1.5"/>
+  <rect x="680" y="78" width="40" height="22" rx="3" fill="rgba(63,185,80,0.25)" stroke="#3fb950" stroke-width="1.5"/>
+
+  <!-- Labels -->
+  <rect x="50" y="140" width="720" height="60" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="70" y="162" fill="#8b949e" font-size="10">Cache hit rate in stress tests: &gt;95% for active working set</text>
+  <text x="70" y="182" fill="#8b949e" font-size="10">Stats tracked: cache_hits, cache_misses (atomic u64). Exposed via cache_stats().</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 10: LRU cache with 1,024 entries covers the active working set of most sessions.</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 12 -->
+<!-- ============================================================ -->
+<h2 id="s12">12. File Layout and Operations Guide</h2>
+
+<h3>Directory Structure</h3>
+
+<pre>
+data-dir/
+  manifest.json                  <span class="accent-green"># Lightweight index (SHA-256 checksummed)</span>
+  server.key                     <span class="accent-green"># Server identity key (encrypted or plaintext)</span>
+  blobs/                         <span class="accent-green"># Binary blobs (images, attachments)</span>
+    {blake3-hex}                 <span class="accent-green"># Content-addressed binary data</span>
+  chunks/                        <span class="accent-green"># Edition and work data</span>
+    00/                          <span class="accent-green"># Shard 00</span>
+      {64-char-blake3-hex}       <span class="accent-green"># One file per unique chunk</span>
+    01/                          <span class="accent-green"># Shard 01</span>
+      ...
+    ff/                          <span class="accent-green"># Shard ff</span>
+      ...
+  security.log                   <span class="accent-green"># Chained security audit log</span>
+  security.log.seed              <span class="accent-green"># Chain verification seed</span>
+</pre>
+
+<h3>Operational Commands</h3>
+
+<table>
+  <tr><th>Command</th><th>Purpose</th></tr>
+  <tr>
+    <td><code>xudanu-server init &lt;dir&gt;</code></td>
+    <td>Create data directory, generate server key, write empty manifest</td>
+  </tr>
+  <tr>
+    <td><code>xudanu-server run [addr] [dir]</code></td>
+    <td>Start server. Restores from manifest + chunks. Checkpoints on Ctrl-C.</td>
+  </tr>
+  <tr>
+    <td><code>xudanu-server verify &lt;dir&gt;</code></td>
+    <td>Full integrity check: manifest checksum, chunk hashes, deserialization, orphan detection</td>
+  </tr>
+  <tr>
+    <td><code>xudanu-server rebuild-manifest &lt;dir&gt;</code></td>
+    <td>Reconstruct manifest from chunk files (disaster recovery)</td>
+  </tr>
+  <tr>
+    <td><code>xudanu-server verify-security-log &lt;dir&gt;</code></td>
+    <td>Verify security log chain integrity (hash chain from seed)</td>
+  </tr>
+</table>
+
+<h3>Recovery Scenarios</h3>
+
+<div class="two-col">
+<div class="example-block">
+  <div class="example-label">Crash During Checkpoint</div>
+  <p style="font-size:13px;color:#8b949e;margin:0">
+    Chunk writes are atomic (tmp + rename). Manifest write is atomic. At worst, the previous checkpoint's data is intact. Individual chunks are either fully written or not present. The verify command identifies any gaps.
+  </p>
+</div>
+<div class="example-block">
+  <div class="example-label">Disk Corruption</div>
+  <p style="font-size:13px;color:#8b949e;margin:0">
+    Each chunk is verified by filename = BLAKE3(contents). A corrupted chunk produces a <code>HashMismatch</code> error. The verify report lists all corrupt chunks by hash. Because chunks are small and independent, recovery can target individual files.
+  </p>
+</div>
+</div>
+
+<div class="two-col">
+<div class="example-block">
+  <div class="example-label">Lost Manifest</div>
+  <p style="font-size:13px;color:#8b949e;margin:0">
+    <code>rebuild-manifest</code> reconstructs the manifest from the chunk files on disk. Works and editions are rebuilt from their chunk trees. Not all metadata survives (admin grants, federation state), but document content is preserved.
+  </p>
+</div>
+<div class="example-block">
+  <div class="example-label">Migration Between Servers</div>
+  <p style="font-size:13px;color:#8b949e;margin:0">
+    Copy the entire <code>data-dir/</code> to the new server. Because chunks are content-addressed, the new server can verify them independently. The server key (<code>server.key</code>) controls identity &mdash; copy it to preserve server ID, or generate a new one for a fresh identity.
+  </p>
+</div>
+</div>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Storage Layer Guarantees</text>
+
+  <rect x="30" y="50" width="230" height="120" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="145" y="74" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700">ATOMICITY</text>
+  <text x="50" y="96" fill="#8b949e" font-size="10">Each chunk: tmp + rename</text>
+  <text x="50" y="114" fill="#8b949e" font-size="10">Manifest: tmp + rename</text>
+  <text x="50" y="132" fill="#8b949e" font-size="10">Never see partial data</text>
+  <text x="50" y="154" fill="#3fb950" font-size="10" font-weight="600">POSIX rename guarantee</text>
+
+  <rect x="280" y="50" width="230" height="120" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="395" y="74" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">INTEGRITY</text>
+  <text x="300" y="96" fill="#8b949e" font-size="10">Every read verifies BLAKE3</text>
+  <text x="300" y="114" fill="#8b949e" font-size="10">Filename = hash(contents)</text>
+  <text x="300" y="132" fill="#8b949e" font-size="10">Manifest SHA-256 checksummed</text>
+  <text x="300" y="154" fill="#58a6ff" font-size="10" font-weight="600">Detect bit rot, truncation</text>
+
+  <rect x="530" y="50" width="230" height="120" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="645" y="74" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="700">DEDUPLICATION</text>
+  <text x="550" y="96" fill="#8b949e" font-size="10">Same content = same file</text>
+  <text x="550" y="114" fill="#8b949e" font-size="10">Shared editions stored once</text>
+  <text x="550" y="132" fill="#8b949e" font-size="10">Transcluded text = shared chunk</text>
+  <text x="550" y="154" fill="#a371f7" font-size="10" font-weight="600">Implicit, zero-cost</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 11: Three guarantees provided by the storage architecture.</p>
+
+<div class="note" style="margin-top:40px">
+<strong>Source files:</strong>
+<code>src/persist/chunk_store.rs</code> (580 lines) &mdash; ChunkStore with LRU cache.
+<code>src/persist/edition_chunks.rs</code> (432 lines) &mdash; Edition/Work serialization.
+<code>src/persist/manifest.rs</code> (394 lines) &mdash; Manifest with checksums.
+<code>src/persist/verify.rs</code> (406 lines) &mdash; Full-store verification.
+<code>src/persist/stress.rs</code> (1,259 lines) &mdash; Performance stress tests at Fast/Medium/Heavy scales.
+</div>
+
+<div class="footer">
+  Xudanu Storage System &mdash; v0.2 &mdash; <a href="https://dgjones.info/xudanu/">dgjones.info/xudanu</a>
+</div>
+
+</div>
+</body>
+</html>

@@ -416,10 +416,20 @@ impl Server {
         let server_id_bytes = self.federation_server_id_bytes();
         let timestamp = Self::current_timestamp_secs();
 
+        let author_sessions = self.crdt_manager.get_author_sessions(work_be_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+        let mut author_signing_keys: std::collections::HashMap<BeId, ed25519_dalek::SigningKey> = std::collections::HashMap::new();
+        for (sid, author_id) in &author_sessions {
+            if let Some(sk) = self.sessions.get(sid).and_then(|s| s.club_signing_key().cloned()) {
+                author_signing_keys.insert(author_id.club_be_id, sk);
+            }
+        }
+
         match signing_key {
             Some(sk) => {
                 self.crdt_manager
-                    .materialize_edition_with_provenance(work_be_id, &sk, &server_id_bytes, timestamp)
+                    .materialize_edition_with_provenance(work_be_id, &sk, &server_id_bytes, timestamp, &author_signing_keys)
                     .map_err(|e| ServerError::Internal(e.to_string()))
             }
             None => {
@@ -1575,6 +1585,7 @@ impl Server {
                 let author = super::crdt_manager::AuthorIdentity {
                     public_key,
                     display_name,
+                    club_be_id: login_club,
                 };
                 if let Err(e) = self.crdt_manager.register_author(work_be_id, session_id, author) {
                     tracing::warn!(target: "xudanu::security", work_id = work_be_id, session_id = session_id.as_u64(), error = %e, event = "SECURITY:author_register_failed", "failed to register CRDT author");
@@ -1628,9 +1639,7 @@ impl Server {
         let revision = if self.crdt_manager.needs_materialization(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?
         {
-            let ed = self.crdt_manager
-                .materialize_edition(work_be_id)
-                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            let ed = self.materialize_with_provenance(work_be_id, session_id)?;
 
             let author_club = self.sessions
                 .get(&session_id)
@@ -1740,6 +1749,35 @@ impl Server {
         Ok(revision)
     }
 
+    pub fn crdt_materialize_any_session(
+        &mut self,
+        work_be_id: BeId,
+    ) -> Result<u64, ServerError> {
+        if !self.crdt_manager.is_active(work_be_id) {
+            return Ok(0);
+        }
+
+        let sessions = self.crdt_manager.get_subscribed_sessions(work_be_id)
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+        let session_id = sessions.into_iter().find(|sid| {
+            self.sessions.get(sid)
+                .and_then(|s| s.club_signing_key())
+                .is_some()
+        }).or_else(|| {
+            self.crdt_manager.get_subscribed_sessions(work_be_id).ok()?.into_iter().next()
+        }).ok_or(ServerError::Internal("no subscribed session".into()))?;
+
+        let edition = self.materialize_with_provenance(work_be_id, session_id)?;
+
+        let author_club = self.sessions
+            .get(&session_id)
+            .and_then(|s| s.initial_login());
+
+        let revision = self.revise_work(work_be_id, session_id, edition, author_club)?;
+        Ok(revision)
+    }
+
     pub fn crdt_update_awareness(
         &mut self,
         session_id: SessionId,
@@ -1779,6 +1817,46 @@ impl Server {
         author: super::crdt_manager::AuthorIdentity,
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
+        self.crdt_manager
+            .register_author(work_be_id, session_id, author)
+            .map_err(|e| ServerError::Internal(e.to_string()))
+    }
+
+    pub fn crdt_update_author(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        let session = self.sessions.get(&session_id)
+            .ok_or(ServerError::SessionNotFound(session_id))?;
+
+        let author_club = session.authority_clubs().iter().find_map(|id| {
+            self.clubs.get(&id).filter(|c| c.is_personal()).map(|c| c.be_id())
+        }).or_else(|| session.initial_login());
+
+        let Some(login_club) = author_club else {
+            return Err(ServerError::Unauthorized("no identity to register".into()));
+        };
+
+        let display_name = self.clubs.get(&login_club)
+            .and_then(|c| c.display_name().map(|s| s.to_string()))
+            .unwrap_or_else(|| format!("club-{}", login_club));
+
+        let public_key = session.club_verifying_key()
+            .map(|vk| vk.to_bytes())
+            .unwrap_or_else(|| {
+                let mut pk = [0u8; 32];
+                pk[..8].copy_from_slice(&login_club.to_le_bytes());
+                pk
+            });
+
+        let author = super::crdt_manager::AuthorIdentity {
+            public_key,
+            display_name,
+            club_be_id: login_club,
+        };
+
         self.crdt_manager
             .register_author(work_be_id, session_id, author)
             .map_err(|e| ServerError::Internal(e.to_string()))

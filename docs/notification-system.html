@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xudanu Notification System</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.warning{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#d29922}
+.enhanced{background:rgba(63,185,80,0.06);border-left:3px solid #3fb950;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.enhanced strong{color:#3fb950}
+.example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
+.example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.fast{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
+.naive{color:#f85149;font-family:'JetBrains Mono',monospace}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0;font-size:12px;color:#8b949e}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}.fast{color:#16a34a}.naive{color:#dc2626}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}.two-col{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Notification System</h1>
+<p class="subtitle">How Xudanu delivers real-time events to clients: detector subscriptions, content watch, and CRDT collaborative relay.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. Overview: Three Notification Channels</a>
+  <a class="toc-section" href="#s2">2. Detector Events: Status, Revision, Fill</a>
+  <a class="toc-section" href="#s3">3. The ChannelDetector Bridge</a>
+  <a class="toc-section" href="#s4">4. Content Watch: Cross-Document Transclusion Alerts</a>
+  <a class="toc-section" href="#s5">5. The Fingerprint Reverse Index</a>
+  <a class="toc-section" href="#s6">6. Per-Session Notification Drain</a>
+  <a class="toc-section" href="#s7">7. Subscription Lifecycle and Cleanup</a>
+  <a class="toc-section" href="#s8">8. CRDT Collaborative Relay</a>
+  <a class="toc-section" href="#s9">9. Wire Protocol: Event Frames</a>
+  <a class="toc-section" href="#s10">10. Enhancements and Fixes</a>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 1 -->
+<!-- ============================================================ -->
+<h2 id="s1">1. Overview: Three Notification Channels</h2>
+
+<p>
+Xudanu implements three distinct notification mechanisms, each designed for a different use case. They share a common WebSocket transport but differ in delivery model, scope, and complexity.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 420" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrG" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#58a6ff"/></marker>
+    <marker id="arrP" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#a371f7"/></marker>
+    <marker id="arrA" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#d29922"/></marker>
+  </defs>
+
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Three Notification Channels</text>
+
+  <!-- Client -->
+  <rect x="280" y="40" width="220" height="40" rx="8" fill="#1c2128" stroke="#30363d" stroke-width="1.5"/>
+  <text x="390" y="58" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">Client (WebSocket)</text>
+  <text x="390" y="72" text-anchor="middle" fill="#8b949e" font-size="10">JSON or Binary codec</text>
+
+  <!-- Three arrows down -->
+  <line x1="190" y1="80" x2="190" y2="120" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrG)"/>
+  <line x1="390" y1="80" x2="390" y2="120" stroke="#a371f7" stroke-width="1.5" marker-end="url(#arrP)"/>
+  <line x1="590" y1="80" x2="590" y2="120" stroke="#d29922" stroke-width="1.5" marker-end="url(#arrA)"/>
+
+  <!-- Channel 1: Detector -->
+  <rect x="60" y="120" width="260" height="130" rx="8" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="80" y="142" fill="#3fb950" font-size="12" font-weight="700" letter-spacing="1">DETECTOR EVENTS</text>
+  <text x="80" y="162" fill="#8b949e" font-size="11">Status (grab/release)</text>
+  <text x="80" y="178" fill="#8b949e" font-size="11">Revision (edit saved)</text>
+  <text x="80" y="194" fill="#8b949e" font-size="11">Fill (region populated)</text>
+  <rect x="80" y="208" width="100" height="20" rx="3" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1"/>
+  <text x="90" y="222" fill="#3fb950" font-size="9" font-weight="600">Push via mpsc</text>
+  <rect x="190" y="208" width="110" height="20" rx="3" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1"/>
+  <text x="200" y="222" fill="#3fb950" font-size="9" font-weight="600">Per-work scope</text>
+
+  <!-- Channel 2: Content Watch -->
+  <rect x="260" y="120" width="260" height="130" rx="8" fill="rgba(163,113,247,0.05)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="280" y="142" fill="#a371f7" font-size="12" font-weight="700" letter-spacing="1">CONTENT WATCH</text>
+  <text x="280" y="162" fill="#8b949e" font-size="11">ContentTranscluders</text>
+  <text x="280" y="178" fill="#8b949e" font-size="11">ContentWorks</text>
+  <text x="280" y="194" fill="#8b949e" font-size="11">Fingerprint-based matching</text>
+  <rect x="280" y="208" width="100" height="20" rx="3" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="1"/>
+  <text x="290" y="222" fill="#a371f7" font-size="9" font-weight="600">Drain on request</text>
+  <rect x="390" y="208" width="110" height="20" rx="3" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="1"/>
+  <text x="400" y="222" fill="#a371f7" font-size="9" font-weight="600">Cross-work scope</text>
+
+  <!-- Channel 3: CRDT Relay -->
+  <rect x="460" y="120" width="260" height="130" rx="8" fill="rgba(210,153,34,0.05)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="480" y="142" fill="#d29922" font-size="12" font-weight="700" letter-spacing="1">CRDT RELAY</text>
+  <text x="480" y="162" fill="#8b949e" font-size="11">Real-time co-editing</text>
+  <text x="480" y="178" fill="#8b949e" font-size="11">Cursor / awareness state</text>
+  <text x="480" y="194" fill="#8b949e" font-size="11">Yjs CRDT engine</text>
+  <rect x="480" y="208" width="100" height="20" rx="3" fill="rgba(210,153,34,0.15)" stroke="#d29922" stroke-width="1"/>
+  <text x="490" y="222" fill="#d29922" font-size="9" font-weight="600">Pull via diff</text>
+  <rect x="590" y="208" width="110" height="20" rx="3" fill="rgba(210,153,34,0.15)" stroke="#d29922" stroke-width="1"/>
+  <text x="600" y="222" fill="#d29922" font-size="9" font-weight="600">Same-doc scope</text>
+
+  <!-- Server box -->
+  <rect x="60" y="280" width="660" height="50" rx="8" fill="#1c2128" stroke="#58a6ff" stroke-width="1"/>
+  <text x="390" y="300" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700" letter-spacing="1.5">SERVER</text>
+  <text x="390" y="318" text-anchor="middle" fill="#8b949e" font-size="10">DetectorList &middot; RecorderSystem &middot; CrdtManager &middot; BackfollowEngine</text>
+
+  <!-- Arrows from channels to server -->
+  <line x1="190" y1="250" x2="190" y2="280" stroke="#3fb950" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="390" y1="250" x2="390" y2="280" stroke="#a371f7" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="590" y1="250" x2="590" y2="280" stroke="#d29922" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- Comparison table area -->
+  <rect x="60" y="350" width="660" height="50" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="80" y="372" fill="#8b949e" font-size="11"><span class="accent-green">Detector</span> = fire &amp; forget via channel</text>
+  <text x="80" y="390" fill="#8b949e" font-size="11"><span class="accent-purple">Content Watch</span> = fingerprint index + drain per session</text>
+  <text x="500" y="372" fill="#8b949e" font-size="11"><span class="accent-amber">CRDT Relay</span> = poll-based</text>
+  <text x="500" y="390" fill="#8b949e" font-size="11">client calls CrdtSyncDiff</text>
+
+  <text x="390" y="415" text-anchor="middle" fill="#484f58" font-size="11">D1 &mdash; Three Notification Channels</text>
+</svg>
+</div>
+
+<table>
+  <tr><th>Channel</th><th>Delivery</th><th>Scope</th><th>Trigger</th></tr>
+  <tr><td><span class="accent-green">Detector Events</span></td><td>Push (mpsc channel)</td><td>Per-work or per-edition</td><td>Mutation (grab, revise, fill)</td></tr>
+  <tr><td><span class="accent-purple">Content Watch</span></td><td>Drain on request</td><td>Cross-work content match</td><td>Fingerprint lookup on revise</td></tr>
+  <tr><td><span class="accent-amber">CRDT Relay</span></td><td>Client polls via CrdtSyncDiff</td><td>Same-document subscribers</td><td>Any subscriber edits</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<!-- SECTION 2 -->
+<!-- ============================================================ -->
+<h2 id="s2">2. Detector Events: Status, Revision, Fill</h2>
+
+<p>
+Detector events are the original notification mechanism, modelled after the Udanax Gold observer pattern. A client subscribes to a specific work or edition and receives push events whenever that target changes.
+</p>
+
+<h3>Event Types</h3>
+
+<table>
+  <tr><th>Detector Type</th><th>Events</th><th>Event Code</th><th>When Fired</th></tr>
+  <tr>
+    <td><code class="accent-green">Status</code></td>
+    <td><code>WorkGrabbed</code>, <code>WorkReleased</code></td>
+    <td><code>0x01</code>, <code>0x02</code></td>
+    <td><code>work_grab()</code>, <code>work_release()</code>, <code>disconnect()</code></td>
+  </tr>
+  <tr>
+    <td><code class="accent-green">Revision</code></td>
+    <td><code>WorkRevised</code></td>
+    <td><code>0x03</code></td>
+    <td><code>revise_work()</code> after edition update</td>
+  </tr>
+  <tr>
+    <td><code class="accent-green">Fill</code></td>
+    <td><code>RangeFilled</code>, <code>ElementFilled</code></td>
+    <td><code>0x04</code>, <code>0x05</code></td>
+    <td>Region or element populated</td>
+  </tr>
+</table>
+
+<h3>Subscription Flow</h3>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 340" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrG2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrB2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#58a6ff"/></marker>
+  </defs>
+
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Detector Subscription and Event Delivery</text>
+
+  <!-- Client -->
+  <rect x="20" y="60" width="160" height="50" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="100" y="82" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">Client</text>
+  <text x="100" y="100" text-anchor="middle" fill="#8b949e" font-size="10">WebSocket</text>
+
+  <!-- Handler -->
+  <rect x="240" y="60" width="160" height="50" rx="8" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="320" y="82" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="700">WS Handler</text>
+  <text x="320" y="100" text-anchor="middle" fill="#8b949e" font-size="10">per-connection</text>
+
+  <!-- Server -->
+  <rect x="460" y="60" width="160" height="50" rx="8" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="540" y="82" text-anchor="middle" fill="#d29922" font-size="12" font-weight="700">Server</text>
+  <text x="540" y="100" text-anchor="middle" fill="#8b949e" font-size="10">DetectorList</text>
+
+  <!-- Other client -->
+  <rect x="620" y="60" width="140" height="50" rx="8" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1.5"/>
+  <text x="690" y="82" text-anchor="middle" fill="#f85149" font-size="12" font-weight="700">Other Client</text>
+  <text x="690" y="100" text-anchor="middle" fill="#8b949e" font-size="10">triggers event</text>
+
+  <!-- Step 1: Subscribe -->
+  <line x1="180" y1="75" x2="240" y2="75" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrG2)"/>
+  <text x="210" y="70" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="600">1. Subscribe</text>
+
+  <line x1="400" y1="75" x2="460" y2="75" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrG2)"/>
+  <text x="430" y="70" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="600">2. add_detector</text>
+
+  <!-- Step 3: Other client triggers -->
+  <line x1="620" y1="95" x2="460" y2="95" stroke="#f85149" stroke-width="1.5"/>
+  <text x="540" y="108" text-anchor="middle" fill="#f85149" font-size="9" font-weight="600">3. work_grab() or work_revise()</text>
+
+  <!-- Step 4: Fire -->
+  <rect x="460" y="140" width="280" height="36" rx="6" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1"/>
+  <text x="600" y="158" text-anchor="middle" fill="#d29922" font-size="11" font-weight="600">4. status_detectors.fire(&amp;Event)</text>
+  <text x="600" y="172" text-anchor="middle" fill="#8b949e" font-size="9">or revision_detectors.fire()</text>
+
+  <!-- Step 5: Channel -->
+  <line x1="540" y1="176" x2="540" y2="200" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrB2)"/>
+  <rect x="460" y="200" width="280" height="36" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="600" y="218" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">5. ChannelDetector.on_event()</text>
+  <text x="600" y="232" text-anchor="middle" fill="#8b949e" font-size="9">mpsc::UnboundedSender::send(EventMessage)</text>
+
+  <!-- Step 6: Writer -->
+  <line x1="460" y1="236" x2="460" y2="262" stroke="#58a6ff" stroke-width="1.5"/>
+  <rect x="300" y="262" width="280" height="36" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="440" y="280" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">6. Writer Task (tokio::spawn)</text>
+  <text x="440" y="294" text-anchor="middle" fill="#8b949e" font-size="9">recv() from channel &rarr; encode_event() &rarr; ws.send()</text>
+
+  <!-- Step 7: Client receives -->
+  <line x1="300" y1="280" x2="180" y2="280" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrG2)"/>
+  <text x="240" y="274" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="600">7. Event delivered</text>
+
+  <text x="390" y="330" text-anchor="middle" fill="#484f58" font-size="11">D2 &mdash; Detector Event Delivery: synchronous fire &rarr; async mpsc channel &rarr; writer task &rarr; WebSocket</text>
+</svg>
+</div>
+
+<p>
+The key architectural insight: the server core is synchronous (Mutex-protected). The <code>ChannelDetector</code> bridges sync to async by pushing into an <code>mpsc</code> channel. A dedicated writer task on the async side drains the channel and writes to the WebSocket.
+</p>
+
+<h3>Code: Subscribing to Status Changes</h3>
+
+<div class="example-block">
+  <div class="example-label">JavaScript: Subscribe and handle events</div>
+<pre>
+// Subscribe to work status changes (grab/release)
+ws.send(JSON.stringify({
+  v: 2, type: 'subscribe', id: nextId(),
+  payload: { detector_type: 'status', target_id: workId }
+}));
+// Response contains subscription_id
+
+// Handle incoming events
+ws.onmessage = function(msg) {
+  var data = JSON.parse(msg.data);
+  if (data.type === 'event') {
+    var event = data.event;
+    if (event.type === 'work_grabbed') {
+      console.log('Work grabbed by session', event.payload.session_id);
+    } else if (event.type === 'work_released') {
+      console.log('Work released');
+    }
+  }
+};
+
+// Unsubscribe when done
+ws.send(JSON.stringify({ v: 2, type: 'unsubscribe', id: subId }));
+</pre>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 3 -->
+<!-- ============================================================ -->
+<h2 id="s3">3. The ChannelDetector Bridge</h2>
+
+<p>
+The <code>ChannelDetector</code> is the sync-to-async bridge that makes detector events work. It implements the <code>Detector</code> trait but instead of processing the event itself, it wraps it in an <code>EventMessage</code> and sends it through a Tokio unbounded channel.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 280" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">ChannelDetector: Sync &rarr; Async Bridge</text>
+
+  <!-- Sync side -->
+  <rect x="30" y="50" width="320" height="200" rx="8" fill="rgba(210,153,34,0.04)" stroke="#d29922" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="50" y="72" fill="#d29922" font-size="11" font-weight="700" letter-spacing="1">SYNC SIDE (Mutex-protected)</text>
+
+  <rect x="50" y="84" width="280" height="32" rx="4" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="190" y="104" text-anchor="middle" fill="#d29922" font-size="10" font-family="'JetBrains Mono',monospace">work_grab() / work_release() / revise_work()</text>
+
+  <line x1="190" y1="116" x2="190" y2="140" stroke="#d29922" stroke-width="1.5"/>
+
+  <rect x="50" y="140" width="280" height="32" rx="4" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="190" y="160" text-anchor="middle" fill="#d29922" font-size="10" font-family="'JetBrains Mono',monospace">DetectorList::fire(&amp;Event)</text>
+
+  <line x1="190" y1="172" x2="190" y2="196" stroke="#d29922" stroke-width="1.5"/>
+
+  <rect x="50" y="196" width="280" height="32" rx="4" fill="rgba(88,166,255,0.12)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="190" y="216" text-anchor="middle" fill="#58a6ff" font-size="10" font-family="'JetBrains Mono',monospace">ChannelDetector::on_event()</text>
+
+  <!-- Async side -->
+  <rect x="430" y="50" width="320" height="200" rx="8" fill="rgba(88,166,255,0.04)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="450" y="72" fill="#58a6ff" font-size="11" font-weight="700" letter-spacing="1">ASYNC SIDE (Tokio runtime)</text>
+
+  <rect x="450" y="84" width="280" height="32" rx="4" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="590" y="104" text-anchor="middle" fill="#58a6ff" font-size="10" font-family="'JetBrains Mono',monospace">mpsc::UnboundedSender::send()</text>
+
+  <!-- Channel arrow -->
+  <path d="M330,212 L450,100" fill="none" stroke="#a371f7" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="400" y="148" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="700" transform="rotate(-30,400,148)">mpsc channel</text>
+
+  <line x1="590" y1="116" x2="590" y2="140" stroke="#58a6ff" stroke-width="1.5"/>
+
+  <rect x="450" y="140" width="280" height="32" rx="4" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="590" y="160" text-anchor="middle" fill="#58a6ff" font-size="10" font-family="'JetBrains Mono',monospace">Writer Task: recv()</text>
+
+  <line x1="590" y1="172" x2="590" y2="196" stroke="#58a6ff" stroke-width="1.5"/>
+
+  <rect x="450" y="196" width="280" height="32" rx="4" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="590" y="216" text-anchor="middle" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">ws.send(Message::Binary/Text)</text>
+
+  <text x="390" y="270" text-anchor="middle" fill="#484f58" font-size="11">D3 &mdash; ChannelDetector bridges the Mutex-protected server core to the async WebSocket writer</text>
+</svg>
+</div>
+
+<div class="note">
+  <strong>Source:</strong> <code>ChannelDetector</code> is in <code>src/server/transport/channel.rs</code>. The <code>Detector</code> trait and <code>DetectorList</code> are in <code>src/server/detector.rs</code>. The writer task is spawned in <code>src/server/transport/handler.rs:347</code>.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 4 -->
+<!-- ============================================================ -->
+<h2 id="s4">4. Content Watch: Cross-Document Transclusion Alerts</h2>
+
+<p>
+Content Watch is the newest notification channel. When a user clicks <strong>Watch</strong> on a document, the server monitors for any other documents that share content with it &mdash; both past matches that already exist and future matches that appear as documents are edited.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 520" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrP2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#a371f7"/></marker>
+    <marker id="arrG3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+  </defs>
+
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Content Watch: Subscription and Triggering</text>
+
+  <!-- Phase 1: Subscribe -->
+  <rect x="40" y="44" width="700" height="120" rx="8" fill="rgba(163,113,247,0.04)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="60" y="66" fill="#a371f7" font-size="12" font-weight="700" letter-spacing="1">PHASE 1: SUBSCRIBE</text>
+
+  <rect x="60" y="78" width="200" height="32" rx="4" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="160" y="98" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="600">1. Extract content elements</text>
+
+  <rect x="280" y="78" width="200" height="32" rx="4" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="380" y="98" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="600">2. Create Fossil (RecorderQuery)</text>
+
+  <rect x="500" y="78" width="220" height="32" rx="4" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="610" y="98" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="600">3. Plant in fossil_by_fingerprint</text>
+
+  <line x1="260" y1="94" x2="280" y2="94" stroke="#a371f7" stroke-width="1" marker-end="url(#arrP2)"/>
+  <line x1="480" y1="94" x2="500" y2="94" stroke="#a371f7" stroke-width="1" marker-end="url(#arrP2)"/>
+
+  <rect x="60" y="120" width="660" height="32" rx="4" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1"/>
+  <text x="390" y="140" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">4. Search for past matches &rarr; immediate ContentMatch events sent to subscriber</text>
+
+  <!-- Phase 2: Future matches -->
+  <rect x="40" y="184" width="700" height="160" rx="8" fill="rgba(210,153,34,0.04)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="60" y="206" fill="#d29922" font-size="12" font-weight="700" letter-spacing="1">PHASE 2: FUTURE MATCH (any client edits)</text>
+
+  <rect x="60" y="218" width="180" height="32" rx="4" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="150" y="238" text-anchor="middle" fill="#d29922" font-size="10" font-weight="600">5. Client B: revise_work()</text>
+
+  <rect x="260" y="218" width="240" height="32" rx="4" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="380" y="238" text-anchor="middle" fill="#d29922" font-size="10" font-weight="600">6. trigger_planted_recorders(work_id)</text>
+
+  <rect x="520" y="218" width="200" height="32" rx="4" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="620" y="238" text-anchor="middle" fill="#d29922" font-size="10" font-weight="600">7. check_recorders_by_content(fps)</text>
+
+  <line x1="240" y1="234" x2="260" y2="234" stroke="#d29922" stroke-width="1"/>
+  <line x1="500" y1="234" x2="520" y2="234" stroke="#d29922" stroke-width="1"/>
+
+  <rect x="60" y="262" width="200" height="32" rx="4" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="160" y="282" text-anchor="middle" fill="#d29922" font-size="10" font-weight="600">8. Find matching fossils</text>
+
+  <rect x="280" y="262" width="200" height="32" rx="4" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="380" y="282" text-anchor="middle" fill="#d29922" font-size="10" font-weight="600">9. record_result() + dedup</text>
+
+  <rect x="500" y="262" width="220" height="32" rx="4" fill="rgba(163,113,247,0.12)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="610" y="282" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="700">10. ContentNotification queued</text>
+
+  <!-- Phase 3: Delivery -->
+  <rect x="40" y="364" width="700" height="110" rx="8" fill="rgba(63,185,80,0.04)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="60" y="386" fill="#3fb950" font-size="12" font-weight="700" letter-spacing="1">PHASE 3: DELIVERY</text>
+
+  <rect x="60" y="398" width="300" height="32" rx="4" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="1"/>
+  <text x="210" y="418" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">11. Client A sends any Request</text>
+
+  <rect x="380" y="398" width="340" height="32" rx="4" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="1"/>
+  <text x="550" y="418" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">12. drain_content_notifications_for(A's fossils)</text>
+
+  <rect x="60" y="442" width="660" height="26" rx="4" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="390" y="460" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="700">13. ContentMatch event pushed to Client A via WebSocket</text>
+
+  <text x="390" y="505" text-anchor="middle" fill="#484f58" font-size="11">D4 &mdash; Content Watch: subscribe &rarr; fingerprint index &rarr; trigger on edit &rarr; drain per session</text>
+</svg>
+</div>
+
+<h3>Why Content Watch Exists</h3>
+
+<p>
+Traditional hypertext systems require users to actively search for shared content. Content Watch inverts this: the server <em>proactively notifies you</em> when your content appears elsewhere. This is the Xanadu vision of automatic attribution and connection between documents.
+</p>
+
+<h3>Code: Setting Up Content Watch</h3>
+
+<div class="example-block">
+  <div class="example-label">JavaScript: Watch button handler</div>
+<pre>
+var watchSubId = null;
+var watchResults = [];
+
+function startWatch(workId) {
+  var id = nextId();
+  ws.send(JSON.stringify({
+    v: 2, type: 'subscribe', id: id,
+    payload: {
+      detector_type: 'content_transcluders',
+      target_id: workId
+    }
+  }));
+}
+
+// Handle content_match events
+if (msg.event &amp;&amp; msg.event.type === 'content_match') {
+  var p = msg.event.payload;
+  watchResults.push({
+    edition_be_id: p.edition_be_id,
+    is_direct: p.is_direct
+  });
+  toast('Transclusion found in edition ' + p.edition_be_id.toString(16));
+}
+
+function stopWatch() {
+  if (watchSubId) {
+    ws.send(JSON.stringify({
+      v: 2, type: 'unsubscribe', id: watchSubId
+    }));
+    watchSubId = null;
+  }
+}
+</pre>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 5 -->
+<!-- ============================================================ -->
+<h2 id="s5">5. The Fingerprint Reverse Index</h2>
+
+<p>
+The key data structure enabling Content Watch is <code>fossil_by_fingerprint</code>, a reverse index in the <code>BackfollowEngine</code> that maps content fingerprints to the fossil IDs watching for them.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 380" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">fossil_by_fingerprint: O(1) Content Lookup</text>
+
+  <!-- Document being watched -->
+  <rect x="30" y="50" width="240" height="120" rx="6" fill="rgba(163,113,247,0.05)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="50" y="70" fill="#a371f7" font-size="12" font-weight="700">Watched Document</text>
+  <rect x="40" y="80" width="220" height="24" rx="3" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="50" y="96" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">"hello"     fp=<span class="accent-green">0x3a2f</span></text>
+  <rect x="40" y="108" width="220" height="24" rx="3" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="50" y="124" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">"world"     fp=<span class="accent-green">0x7b1c</span></text>
+  <rect x="40" y="136" width="220" height="24" rx="3" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="50" y="152" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">"xanadu"    fp=<span class="accent-green">0xe5d8</span></text>
+
+  <!-- Index -->
+  <rect x="330" y="40" width="420" height="210" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="540" y="62" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="700">fossil_by_fingerprint</text>
+  <text x="540" y="78" text-anchor="middle" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">HashMap&lt;[u8;32], HashSet&lt;RecorderId&gt;&gt;</text>
+
+  <line x1="350" y1="86" x2="730" y2="86" stroke="#30363d" stroke-width="1"/>
+
+  <text x="360" y="106" fill="#8b949e" font-size="10" font-weight="600">BLAKE3 Fingerprint</text>
+  <text x="570" y="106" fill="#8b949e" font-size="10" font-weight="600">Watching Fossils</text>
+
+  <!-- Row 1 -->
+  <rect x="350" y="112" width="380" height="24" rx="3" fill="rgba(63,185,80,0.06)"/>
+  <text x="360" y="128" fill="#79c0ff" font-size="10" font-family="'JetBrains Mono',monospace">0x3a2f...</text>
+  <text x="570" y="128" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">{fossil_1, fossil_3}</text>
+  <line x1="270" y1="92" x2="350" y2="124" stroke="#a371f7" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- Row 2 -->
+  <text x="360" y="156" fill="#79c0ff" font-size="10" font-family="'JetBrains Mono',monospace">0x7b1c...</text>
+  <text x="570" y="156" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">{fossil_1}</text>
+  <line x1="270" y1="120" x2="350" y2="150" stroke="#a371f7" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- Row 3 -->
+  <rect x="350" y="162" width="380" height="24" rx="3" fill="rgba(63,185,80,0.06)"/>
+  <text x="360" y="178" fill="#79c0ff" font-size="10" font-family="'JetBrains Mono',monospace">0xe5d8...</text>
+  <text x="570" y="178" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">{fossil_2, fossil_3}</text>
+  <line x1="270" y1="148" x2="350" y2="174" stroke="#a371f7" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- Query box -->
+  <rect x="330" y="270" width="420" height="70" rx="6" fill="rgba(210,153,34,0.04)" stroke="#d29922" stroke-width="1"/>
+  <text x="350" y="290" fill="#d29922" font-size="11" font-weight="700">Trigger: any revise_work()</text>
+  <text x="350" y="308" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">check_recorders_by_content([0x3a2f, 0xab12])</text>
+  <text x="350" y="326" fill="#3fb950" font-size="10" font-family="'JetBrains Mono',monospace">→ found fossil_1 via 0x3a2f  <span class="accent-green">O(1) per fingerprint</span></text>
+
+  <text x="390" y="368" text-anchor="middle" fill="#484f58" font-size="11">D5 &mdash; Fingerprint Reverse Index: content fingerprint &rarr; set of watching fossil IDs</text>
+</svg>
+</div>
+
+<p>
+When a recorder is planted during subscription, each content element's BLAKE3 fingerprint is mapped to the fossil ID. When <em>any</em> edition is revised, the new fingerprints are looked up in this index to find affected fossils in <span class="fast">O(1)</span> per element &mdash; no tree walk needed.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 6 -->
+<!-- ============================================================ -->
+<h2 id="s6">6. Per-Session Notification Drain</h2>
+
+<p>
+A critical design decision: content notifications are queued globally on the server, but drained <strong>per-session</strong>. Each client only receives notifications for its own fossils.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 400" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Per-Session Drain: Each Client Gets Only Its Own Notifications</text>
+
+  <!-- Notification queue -->
+  <rect x="40" y="50" width="700" height="60" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="60" y="70" fill="#e6edf3" font-size="11" font-weight="700">Global Notification Queue</text>
+  <rect x="60" y="80" width="80" height="20" rx="3" fill="rgba(163,113,247,0.2)" stroke="#a371f7" stroke-width="1"/>
+  <text x="100" y="94" text-anchor="middle" fill="#a371f7" font-size="9" font-weight="600">for A</text>
+  <rect x="150" y="80" width="80" height="20" rx="3" fill="rgba(63,185,80,0.2)" stroke="#3fb950" stroke-width="1"/>
+  <text x="190" y="94" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="600">for B</text>
+  <rect x="240" y="80" width="80" height="20" rx="3" fill="rgba(163,113,247,0.2)" stroke="#a371f7" stroke-width="1"/>
+  <text x="280" y="94" text-anchor="middle" fill="#a371f7" font-size="9" font-weight="600">for A</text>
+  <rect x="330" y="80" width="80" height="20" rx="3" fill="rgba(63,185,80,0.2)" stroke="#3fb950" stroke-width="1"/>
+  <text x="370" y="94" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="600">for B</text>
+  <rect x="420" y="80" width="80" height="20" rx="3" fill="rgba(163,113,247,0.2)" stroke="#a371f7" stroke-width="1"/>
+  <text x="460" y="94" text-anchor="middle" fill="#a371f7" font-size="9" font-weight="600">for A</text>
+  <rect x="510" y="80" width="80" height="20" rx="3" fill="rgba(210,153,34,0.2)" stroke="#d29922" stroke-width="1"/>
+  <text x="550" y="94" text-anchor="middle" fill="#d29922" font-size="9" font-weight="600">for C</text>
+
+  <!-- Client A drain -->
+  <rect x="40" y="150" width="340" height="100" rx="8" fill="rgba(163,113,247,0.05)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="60" y="172" fill="#a371f7" font-size="12" font-weight="700">Client A sends a Request</text>
+  <text x="60" y="192" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">drain_content_notifications_for(A's fossils)</text>
+  <rect x="60" y="204" width="80" height="20" rx="3" fill="rgba(163,113,247,0.2)" stroke="#a371f7" stroke-width="1"/>
+  <text x="100" y="218" text-anchor="middle" fill="#a371f7" font-size="9" font-weight="600">for A</text>
+  <rect x="150" y="204" width="80" height="20" rx="3" fill="rgba(163,113,247,0.2)" stroke="#a371f7" stroke-width="1"/>
+  <text x="190" y="218" text-anchor="middle" fill="#a371f7" font-size="9" font-weight="600">for A</text>
+  <rect x="240" y="204" width="80" height="20" rx="3" fill="rgba(163,113,247,0.2)" stroke="#a371f7" stroke-width="1"/>
+  <text x="280" y="218" text-anchor="middle" fill="#a371f7" font-size="9" font-weight="600">for A</text>
+  <text x="60" y="240" fill="#3fb950" font-size="10" font-weight="600">A receives 3 notifications. Others remain in queue.</text>
+
+  <!-- Client B drain -->
+  <rect x="400" y="150" width="340" height="100" rx="8" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="420" y="172" fill="#3fb950" font-size="12" font-weight="700">Client B sends a Request</text>
+  <text x="420" y="192" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">drain_content_notifications_for(B's fossils)</text>
+  <rect x="420" y="204" width="80" height="20" rx="3" fill="rgba(63,185,80,0.2)" stroke="#3fb950" stroke-width="1"/>
+  <text x="460" y="218" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="600">for B</text>
+  <rect x="510" y="204" width="80" height="20" rx="3" fill="rgba(63,185,80,0.2)" stroke="#3fb950" stroke-width="1"/>
+  <text x="550" y="218" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="600">for B</text>
+  <text x="420" y="240" fill="#3fb950" font-size="10" font-weight="600">B receives 2 notifications.</text>
+
+  <!-- Remaining queue -->
+  <rect x="40" y="280" width="700" height="36" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="60" y="302" fill="#8b949e" font-size="10">Remaining in queue:</text>
+  <rect x="210" y="288" width="80" height="20" rx="3" fill="rgba(210,153,34,0.2)" stroke="#d29922" stroke-width="1"/>
+  <text x="250" y="302" text-anchor="middle" fill="#d29922" font-size="9" font-weight="600">for C</text>
+  <text x="310" y="302" fill="#8b949e" font-size="10">&mdash; waiting for Client C's next request</text>
+
+  <!-- Comparison -->
+  <rect x="40" y="340" width="340" height="40" rx="6" fill="rgba(248,81,73,0.06)" stroke="#f85149" stroke-width="1"/>
+  <text x="210" y="358" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">Before fix: drain_all() &rarr; A steals B's notifications</text>
+  <text x="210" y="374" text-anchor="middle" fill="#8b949e" font-size="9">Global std::mem::take</text>
+
+  <rect x="400" y="340" width="340" height="40" rx="6" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="570" y="358" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">After fix: drain_for(fossils) &rarr; partition</text>
+  <text x="570" y="374" text-anchor="middle" fill="#8b949e" font-size="9">Each client only consumes its own</text>
+
+  <text x="390" y="396" text-anchor="middle" fill="#484f58" font-size="11">D6 &mdash; Per-Session Drain: notifications are partitioned, not globally consumed</text>
+</svg>
+</div>
+
+<div class="enhanced">
+  <strong>Enhancement:</strong> The original <code>drain_content_notifications()</code> used <code>std::mem::take</code> to drain ALL notifications. In a multi-client scenario, the first client to send a request would consume everyone's notifications. The fix partitions the queue by fossil ownership.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 7 -->
+<!-- ============================================================ -->
+<h2 id="s7">7. Subscription Lifecycle and Cleanup</h2>
+
+<p>
+The WS handler maintains three maps to track subscriptions across all notification types. Proper cleanup on both explicit unsubscribe and WebSocket disconnect is essential to avoid resource leaks.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 380" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Handler State: Three Subscription Maps</text>
+
+  <!-- subscriptions map -->
+  <rect x="30" y="50" width="230" height="100" rx="8" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="50" y="70" fill="#3fb950" font-size="11" font-weight="700">subscriptions</text>
+  <text x="50" y="86" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">HashMap&lt;u16, (DetType, BeId)&gt;</text>
+  <text x="50" y="106" fill="#8b949e" font-size="10">Status / Revision / Fill</text>
+  <text x="50" y="122" fill="#8b949e" font-size="10">detector subscriptions</text>
+  <text x="50" y="140" fill="#8b949e" font-size="10">Keyed by subscription_id</text>
+
+  <!-- content_subscriptions map -->
+  <rect x="280" y="50" width="230" height="100" rx="8" fill="rgba(163,113,247,0.05)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="300" y="70" fill="#a371f7" font-size="11" font-weight="700">content_subscriptions</text>
+  <text x="300" y="86" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">HashMap&lt;u16, RecorderId&gt;</text>
+  <text x="300" y="106" fill="#8b949e" font-size="10">ContentTranscluders</text>
+  <text x="300" y="122" fill="#8b949e" font-size="10">ContentWorks</text>
+  <text x="300" y="140" fill="#8b949e" font-size="10">sub_id &rarr; fossil_id</text>
+
+  <!-- fossil_to_sub map -->
+  <rect x="530" y="50" width="220" height="100" rx="8" fill="rgba(210,153,34,0.05)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="550" y="70" fill="#d29922" font-size="11" font-weight="700">fossil_to_sub</text>
+  <text x="550" y="86" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">HashMap&lt;RecorderId, u16&gt;</text>
+  <text x="550" y="106" fill="#8b949e" font-size="10">Reverse lookup for</text>
+  <text x="550" y="122" fill="#8b949e" font-size="10">notification delivery:</text>
+  <text x="550" y="140" fill="#8b949e" font-size="10">fossil_id &rarr; sub_id</text>
+
+  <!-- Unsubscribe flow -->
+  <rect x="30" y="180" width="720" height="80" rx="8" fill="rgba(248,81,73,0.04)" stroke="#f85149" stroke-width="1.5"/>
+  <text x="50" y="200" fill="#f85149" font-size="12" font-weight="700">Unsubscribe(sub_id) &mdash; Enhanced Cleanup</text>
+
+  <text x="50" y="222" fill="#3fb950" font-size="10" font-weight="600">1. subscriptions.remove(sub_id) &rarr; remove_detector()</text>
+  <text x="50" y="238" fill="#a371f7" font-size="10" font-weight="600">2. content_subscriptions.remove(sub_id) &rarr; fossil_to_sub.remove(fossil_id)</text>
+  <text x="50" y="254" fill="#d29922" font-size="10" font-weight="600">3. recorder_extinguish(fossil_id) &rarr; remove_planted_recorder() &rarr; clean fingerprint index</text>
+
+  <!-- Disconnect flow -->
+  <rect x="30" y="280" width="720" height="70" rx="8" fill="rgba(88,166,255,0.04)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="50" y="300" fill="#58a6ff" font-size="12" font-weight="700">WebSocket Disconnect &mdash; Complete Teardown</text>
+  <text x="50" y="320" fill="#8b949e" font-size="10">Drain subscriptions &rarr; remove all detectors</text>
+  <text x="50" y="336" fill="#8b949e" font-size="10">Drain content_subscriptions &rarr; extinguish all fossils</text>
+  <text x="400" y="320" fill="#8b949e" font-size="10">disconnect(session_id) &rarr; release grabbed works</text>
+  <text x="400" y="336" fill="#8b949e" font-size="10">Security audit log entry</text>
+
+  <text x="390" y="375" text-anchor="middle" fill="#484f58" font-size="11">D7 &mdash; Subscription Maps and Cleanup: both explicit unsubscribe and disconnect are handled</text>
+</svg>
+</div>
+
+<div class="enhanced">
+  <strong>Enhancement:</strong> The original <code>Unsubscribe</code> handler only cleaned up <code>subscriptions</code>. Content subscriptions in <code>content_subscriptions</code> and <code>fossil_to_sub</code> were never cleaned up on explicit unsubscribe. Fossils remained planted, consuming CPU on every <code>revise_work()</code>. The fix adds complete cleanup for both unsubscribe and disconnect.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 8 -->
+<!-- ============================================================ -->
+<h2 id="s8">8. CRDT Collaborative Relay</h2>
+
+<p>
+The CRDT system uses a fundamentally different notification model: <strong>relay</strong>. When one client edits a shared document, the server applies the change and returns a list of other subscribers who need to be notified. The receiving client then polls for the update.
+</p>
+
+<h3>How It Differs from Detectors</h3>
+
+<div class="two-col">
+  <div class="example-block">
+    <div class="example-label"><span class="accent-green">Detector Events</span></div>
+    <p><strong>Channel:</strong> mpsc event channel (push)</p>
+    <p><strong>Encoding:</strong> EventPayload enum (typed)</p>
+    <p><strong>Scope:</strong> Any subscriber to a work</p>
+    <p><strong>Delivery:</strong> Async writer task pushes immediately</p>
+  </div>
+  <div class="example-block">
+    <div class="example-label"><span class="accent-amber">CRDT Relay</span></div>
+    <p><strong>Channel:</strong> Returned in response (pull)</p>
+    <p><strong>Encoding:</strong> Raw Yjs update bytes</p>
+    <p><strong>Scope:</strong> Same-document subscribers only</p>
+    <p><strong>Delivery:</strong> Client calls CrdtSyncDiff to fetch</p>
+  </div>
+</div>
+
+<h3>Relay Flow</h3>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 350" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">CRDT Collaborative Relay</text>
+
+  <!-- Alice -->
+  <rect x="40" y="50" width="200" height="50" rx="8" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="140" y="72" text-anchor="middle" fill="#d29922" font-size="12" font-weight="700">Alice (Editor)</text>
+  <text x="140" y="90" text-anchor="middle" fill="#8b949e" font-size="10">CrdtSyncUpdate</text>
+
+  <!-- Server -->
+  <rect x="290" y="50" width="200" height="50" rx="8" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="390" y="72" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="700">CrdtManager</text>
+  <text x="390" y="90" text-anchor="middle" fill="#8b949e" font-size="10">Yrs Doc + subscribers</text>
+
+  <!-- Bob -->
+  <rect x="540" y="50" width="200" height="50" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="640" y="72" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">Bob (Editor)</text>
+  <text x="640" y="90" text-anchor="middle" fill="#8b949e" font-size="10">CrdtSyncDiff (poll)</text>
+
+  <!-- Step 1 -->
+  <line x1="240" y1="65" x2="290" y2="65" stroke="#d29922" stroke-width="1.5"/>
+  <text x="265" y="58" text-anchor="middle" fill="#d29922" font-size="9" font-weight="600">1</text>
+
+  <!-- Step 2: Apply -->
+  <rect x="290" y="120" width="200" height="60" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="390" y="140" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">2. Apply Yjs update to Doc</text>
+  <text x="390" y="158" text-anchor="middle" fill="#8b949e" font-size="10" font-family="'JetBrains Mono',monospace">relay_to = [Bob]</text>
+
+  <!-- Step 3 -->
+  <line x1="290" y1="75" x2="240" y2="180" stroke="#d29922" stroke-width="1.5"/>
+  <text x="245" y="175" fill="#d29922" font-size="9" font-weight="600">3. Response: relay_count: 1</text>
+
+  <!-- Step 4 -->
+  <rect x="290" y="200" width="200" height="50" rx="6" fill="rgba(88,166,255,0.04)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="390" y="222" text-anchor="middle" fill="#8b949e" font-size="11">Bob's state_vector is now stale</text>
+  <text x="390" y="240" text-anchor="middle" fill="#8b949e" font-size="10">Server has pending update for Bob</text>
+
+  <!-- Step 5 -->
+  <line x1="540" y1="260" x2="490" y2="260" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="515" y="253" text-anchor="middle" fill="#3fb950" font-size="9" font-weight="600">5. CrdtSyncDiff</text>
+
+  <!-- Step 6 -->
+  <rect x="290" y="270" width="200" height="40" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="390" y="294" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">6. Compute diff &amp; return</text>
+
+  <!-- Step 7 -->
+  <line x1="490" y1="290" x2="540" y2="290" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="515" y="283" fill="#3fb950" font-size="9" font-weight="600">7. update_bytes</text>
+
+  <text x="390" y="340" text-anchor="middle" fill="#484f58" font-size="11">D8 &mdash; CRDT Relay: push to server, pull by other subscribers</text>
+</svg>
+</div>
+
+<h3>CRDT Awareness</h3>
+
+<p>
+Beyond document content, the CRDT system also relays <strong>awareness state</strong>: cursor positions, text selections, and typing indicators. Each subscriber's awareness is stored in the <code>WorkDoc</code> and relayed to all other subscribers.
+</p>
+
+<div class="example-block">
+  <div class="example-label">JavaScript: Collaborative editing session</div>
+<pre>
+// Open CRDT sync
+ws.send(JSON.stringify({
+  v:2, type:'request', id:nextId(), op:'crdt_sync_open',
+  payload: { work_id: workId }
+}));
+// Response: { state_vector: [...], current_text: "hello world" }
+
+// Send edits
+ws.send(JSON.stringify({
+  v:2, type:'request', id:nextId(), op:'crdt_sync_update',
+  payload: { work_id: workId, update: Array.from(updateBytes) }
+}));
+// Response: { relay_count: 2 }
+
+// Poll for changes (every 50-100ms during active editing)
+ws.send(JSON.stringify({
+  v:2, type:'request', id:nextId(), op:'crdt_sync_diff',
+  payload: { work_id: workId, state_vector: Array.from(mySV) }
+}));
+// Response: { update: [...] }
+
+// Send awareness (cursor)
+ws.send(JSON.stringify({
+  v:2, type:'request', id:nextId(), op:'crdt_awareness_update',
+  payload: {
+    work_id: workId,
+    state: { session_id: sid, user_name: "Alice",
+             cursor: { index: 5 }, selection: null, is_typing: true }
+  }
+}));
+</pre>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 9 -->
+<!-- ============================================================ -->
+<h2 id="s9">9. Wire Protocol: Event Frames</h2>
+
+<p>
+All notification types share a common wire format. Events are delivered as WebSocket messages with the <code>Event</code> message type (<code>0x04</code>).
+</p>
+
+<h3>Binary Frame Layout</h3>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" font-family="'JetBrains Mono',monospace">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700" font-family="'Inter',sans-serif">Binary Event Frame</text>
+
+  <rect x="40" y="44" width="80" height="60" rx="4" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="80" y="68" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">0x02</text>
+  <text x="80" y="96" text-anchor="middle" fill="#8b949e" font-size="9">version</text>
+
+  <rect x="130" y="44" width="80" height="60" rx="4" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="170" y="68" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">0x04</text>
+  <text x="170" y="96" text-anchor="middle" fill="#8b949e" font-size="9">Event type</text>
+
+  <rect x="220" y="44" width="120" height="60" rx="4" fill="rgba(163,113,247,0.15)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="280" y="68" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="600">sub_id</text>
+  <text x="280" y="96" text-anchor="middle" fill="#8b949e" font-size="9">2 bytes BE</text>
+
+  <rect x="350" y="44" width="390" height="60" rx="4" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="1"/>
+  <text x="545" y="68" text-anchor="middle" fill="#d29922" font-size="11" font-weight="600">postcard-encoded EventPayload</text>
+  <text x="545" y="96" text-anchor="middle" fill="#8b949e" font-size="9">variable length</text>
+
+  <text x="390" y="140" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="600" font-family="'Inter',sans-serif">Event Codes</text>
+
+  <text x="60" y="168" fill="#79c0ff" font-size="10">0x01</text><text x="120" y="168" fill="#8b949e" font-size="10">WorkGrabbed</text>
+  <text x="280" y="168" fill="#79c0ff" font-size="10">0x02</text><text x="340" y="168" fill="#8b949e" font-size="10">WorkReleased</text>
+  <text x="520" y="168" fill="#79c0ff" font-size="10">0x03</text><text x="580" y="168" fill="#8b949e" font-size="10">WorkRevised</text>
+
+  <text x="60" y="188" fill="#79c0ff" font-size="10">0x04</text><text x="120" y="188" fill="#8b949e" font-size="10">RangeFilled</text>
+  <text x="280" y="188" fill="#79c0ff" font-size="10">0x05</text><text x="340" y="188" fill="#8b949e" font-size="10">ElementFilled</text>
+  <text x="520" y="188" fill="#79c0ff" font-size="10">0x06</text><text x="580" y="188" fill="#8b949e" font-size="10">Done</text>
+  <text x="60" y="200" fill="#a371f7" font-size="10" font-weight="700">0x07</text><text x="120" y="200" fill="#a371f7" font-size="10" font-weight="700">ContentMatch (new)</text>
+</svg>
+</div>
+
+<h3>JSON Format</h3>
+
+<div class="example-block">
+  <div class="example-label">JSON event frame (content_match)</div>
+<pre>
+{
+  "v": 2,
+  "type": "event",
+  "id": 42,
+  "event": {
+    "type": "content_match",
+    "payload": {
+      "fossil_id": 7,
+      "edition_be_id": "0000000000abc123",
+      "is_direct": true
+    }
+  }
+}
+</pre>
+</div>
+
+<h3>Detector Type Codes</h3>
+
+<table>
+  <tr><th>DetectorType</th><th>Subscribe Code</th><th>JSON String</th></tr>
+  <tr><td>Status</td><td><code>0x01</code></td><td><code>"status"</code></td></tr>
+  <tr><td>Revision</td><td><code>0x02</code></td><td><code>"revision"</code></td></tr>
+  <tr><td>Fill</td><td><code>0x03</code></td><td><code>"fill"</code></td></tr>
+  <tr><td><span class="accent-purple">ContentTranscluders</span></td><td><code>0x04</code></td><td><code>"content_transcluders"</code></td></tr>
+  <tr><td><span class="accent-purple">ContentWorks</span></td><td><code>0x05</code></td><td><code>"content_works"</code></td></tr>
+</table>
+
+<!-- ============================================================ -->
+<!-- SECTION 10 -->
+<!-- ============================================================ -->
+<h2 id="s10">10. Enhancements and Fixes</h2>
+
+<p>
+The notification system was significantly improved during development. Here is a summary of all enhancements over the original design:
+</p>
+
+<h3>1. Per-Session Notification Drain</h3>
+
+<div class="two-col">
+  <div class="example-block">
+    <div class="example-label"><span class="accent-red">Before (Bug)</span></div>
+    <p><code>drain_content_notifications()</code> used <code>std::mem::take</code> to drain ALL notifications from the global queue.</p>
+    <p>Client A sends request &rarr; gets ALL notifications (including B's and C's). Clients B and C get nothing.</p>
+  </div>
+  <div class="example-block">
+    <div class="example-label"><span class="accent-green">After (Fixed)</span></div>
+    <p><code>drain_content_notifications_for(fossil_set)</code> partitions the queue. Matching notifications returned; non-matching left for their owners.</p>
+    <p>Each client only consumes its own notifications.</p>
+  </div>
+</div>
+
+<h3>2. Complete Unsubscribe Cleanup</h3>
+
+<div class="two-col">
+  <div class="example-block">
+    <div class="example-label"><span class="accent-red">Before (Bug)</span></div>
+    <p><code>Unsubscribe</code> only removed from <code>subscriptions</code> map. Content subscriptions in <code>content_subscriptions</code> and <code>fossil_to_sub</code> were never cleaned up.</p>
+    <p>Fossils stayed planted, consuming CPU on every <code>revise_work()</code>.</p>
+  </div>
+  <div class="example-block">
+    <div class="example-label"><span class="accent-green">After (Fixed)</span></div>
+    <p>Unsubscribe now checks both maps. Calls <code>recorder_extinguish()</code> to kill the fossil and <code>remove_planted_recorder()</code> to clean the fingerprint index.</p>
+    <p>Resources fully released on explicit unsubscribe.</p>
+  </div>
+</div>
+
+<h3>3. Fingerprint-Based Triggering</h3>
+
+<div class="two-col">
+  <div class="example-block">
+    <div class="example-label"><span class="accent-red">Before (Slow)</span></div>
+    <p>Used canopy walking to find affected recorders &mdash; traversing the edition hierarchy for every edit.</p>
+  </div>
+  <div class="example-block">
+    <div class="example-label"><span class="accent-green">After (Fast)</span></div>
+    <p><code>check_recorders_by_content()</code> uses the <code>fossil_by_fingerprint</code> reverse index for <span class="fast">O(1)</span> lookup per content element.</p>
+  </div>
+</div>
+
+<h3>4. Content-Aware Past Match Search</h3>
+
+<div class="two-col">
+  <div class="example-block">
+    <div class="example-label"><span class="accent-red">Before (Incomplete)</span></div>
+    <p>Past matches only searched by edition ID reference (<code>RangeElement::edition(eid)</code>), missing transcluders that share content but not the same edition reference.</p>
+  </div>
+  <div class="example-block">
+    <div class="example-label"><span class="accent-green">After (Complete)</span></div>
+    <p><code>process_agenda_with_engine()</code> iterates over each <code>watched_content</code> element independently, finding all transcluders based on shared content.</p>
+  </div>
+</div>
+
+<h3>Known Limitations</h3>
+
+<div class="warning">
+  <strong>Content notifications are piggyback-only.</strong> Notifications are only drained when a client sends a regular Request. An idle client that never sends requests will not receive notifications. This is tracked in <code>TODO.md</code>.
+</div>
+
+<div class="warning">
+  <strong>CRDT updates are pull-based.</strong> There is no server-push for CRDT changes. Clients must poll via <code>CrdtSyncDiff</code> (typically every 50-100ms during active editing).
+</div>
+
+<div class="warning">
+  <strong>No notification persistence.</strong> If a client disconnects, pending content notifications are lost. There is no replay mechanism on reconnect.
+</div>
+
+<h3>Key Source Files</h3>
+
+<table>
+  <tr><th>File</th><th>Purpose</th></tr>
+  <tr><td><code>src/server/detector.rs</code></td><td>Event enum, Detector trait, DetectorList</td></tr>
+  <tr><td><code>src/server/transport/channel.rs</code></td><td>ChannelDetector (sync &rarr; async bridge)</td></tr>
+  <tr><td><code>src/server/transport/handler.rs</code></td><td>WS handler: subscribe/unsubscribe/drain</td></tr>
+  <tr><td><code>src/server/transport/protocol.rs</code></td><td>DetectorType, EventPayload, EventCode</td></tr>
+  <tr><td><code>src/server/server.rs</code></td><td>Server: fire events, trigger recorders, drain notifications</td></tr>
+  <tr><td><code>src/edition/recorder.rs</code></td><td>RecorderSystem, Fossil, RecorderQuery</td></tr>
+  <tr><td><code>src/edition/backfollow.rs</code></td><td>BackfollowEngine, fingerprint index, plant/check recorders</td></tr>
+  <tr><td><code>src/server/crdt_manager.rs</code></td><td>CRDT: relay, awareness, materialization</td></tr>
+</table>
+
+<div class="footer">
+  Xudanu Notification System &mdash; Technical Documentation &mdash; Generated 2026-05-17
+</div>
+
+</div>
+</body>
+</html>

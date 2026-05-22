@@ -303,6 +303,18 @@ body {
   color: #aaa;
 }
 
+.author-highlight {
+  border-radius: 2px;
+  transition: background-color 0.15s;
+}
+
+.attribution-mode-label {
+  font-size: 11px;
+  color: #9b59b6;
+  margin-left: 8px;
+  font-weight: 500;
+}
+
 .editor-status {
   padding: 6px 20px;
   border-top: 1px solid #f0f0f0;

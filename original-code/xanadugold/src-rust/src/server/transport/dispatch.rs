@@ -1278,14 +1278,19 @@ fn dispatch_inner(
             Ok(ResponseValue::CrdtAwarenessGetResult { states })
         }
 
-        WireRequest::CrdtRegisterAuthor { work_id: _, public_key: _, display_name: _ } => {
-            Err(crate::server::ServerError::InvalidArgument(
-                "CrdtRegisterAuthor is deprecated; author identity is auto-assigned from session".into(),
-            ))
+        WireRequest::CrdtRegisterAuthor { work_id, public_key: _, display_name: _ } => {
+            srv.crdt_update_author(session_id, work_id)?;
+            Ok(ResponseValue::CrdtRegisterAuthorResult { registered: true })
         }
 
         WireRequest::AttributionQuery { work_id, start, end } => {
             srv.ensure_can_read(session_id, work_id)?;
+            let active = srv.crdt_is_active(work_id);
+            tracing::info!("attribution_query: work={work_id} active={active}");
+            match srv.crdt_materialize_any_session(work_id) {
+                Ok(rev) => tracing::info!("attribution_query: materialized rev={rev}"),
+                Err(e) => tracing::warn!("attribution_query: materialize failed: {e}"),
+            }
             let spans = srv.attribution_query(work_id, start, end)?;
             Ok(ResponseValue::AttributionQueryResult { spans })
         }

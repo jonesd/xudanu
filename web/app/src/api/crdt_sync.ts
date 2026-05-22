@@ -182,6 +182,7 @@ export class CrdtSyncClient {
       password: pwBytes,
     });
     const clubId = extractValue(resp) as number;
+    await this.loginByName(displayName, password);
     const identity: WhoAmIEntry = { club_id: clubId, display_name: displayName };
     this.currentIdentity = identity;
     this.identityListeners.forEach((cb) => cb(identity));
@@ -189,19 +190,43 @@ export class CrdtSyncClient {
   }
 
   async loginByName(clubName: string, password: string): Promise<void> {
-    await this.sendRequest("session_login_by_name", { club_name: clubName });
+    console.log("[loginByName] step 1: session_login_by_name", clubName);
+    const loginResp = await this.sendRequest("session_login_by_name", { club_name: clubName });
+    console.log("[loginByName] step 1 response:", JSON.stringify(loginResp));
     const pwBytes = Array.from(new TextEncoder().encode(password));
-    await this.sendRequest("session_authenticate", {
-      credential: { password: Array.from(pwBytes) },
-    });
+    console.log("[loginByName] step 2: session_authenticate (pw len:", pwBytes.length, ")");
+    try {
+      const authResp = await Promise.race([
+        this.sendRequest("session_authenticate", {
+          credential: { password: Array.from(pwBytes) },
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("session_authenticate timed out after 10s")), 10000)),
+      ]);
+      console.log("[loginByName] step 2 response:", JSON.stringify(authResp));
+    } catch (e) {
+      console.error("[loginByName] step 2 FAILED:", e);
+      throw e;
+    }
+    console.log("[loginByName] step 3: club_who_am_i");
     const whoResp = await this.sendRequest("club_who_am_i");
+    console.log("[loginByName] step 3 response:", JSON.stringify(whoResp));
     const val = extractValue(whoResp) as { clubs: [number, string][] };
     const clubs = val.clubs || [];
+    console.log("[loginByName] clubs:", clubs);
     if (clubs.length > 0) {
       const [clubId, name] = clubs[0];
       this.currentIdentity = { club_id: clubId, display_name: name };
     }
     this.identityListeners.forEach((cb) => cb(this.currentIdentity));
+
+    if (this.crdtReady && this.workBeId) {
+      try {
+        await this.sendRequest("crdt_register_author", { work_id: this.workBeId });
+        console.log("[loginByName] crdt_register_author succeeded");
+      } catch (e) {
+        console.error("[loginByName] crdt_register_author failed:", e);
+      }
+    }
   }
 
   async checkWhoAmI(): Promise<WhoAmIEntry | null> {
@@ -237,7 +262,7 @@ export class CrdtSyncClient {
       work_id: this.workBeId,
       state: {
         session_id: this.sessionId ?? 0,
-        user_name: "User",
+        user_name: this.currentIdentity?.display_name || `user-${(this.sessionId ?? 0).toString(16).slice(-4)}`,
         cursor: cursor !== null ? { index: cursor } : null,
         selection,
         is_typing: isTyping,
@@ -306,6 +331,12 @@ export class CrdtSyncClient {
       this.checkWhoAmI();
     } catch (e) {
       console.error("CRDT session setup failed:", e);
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("work")) {
+        url.searchParams.delete("work");
+        window.history.replaceState({}, "", url.toString());
+        window.location.reload();
+      }
     }
   }
 

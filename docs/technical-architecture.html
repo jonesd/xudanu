@@ -2104,9 +2104,9 @@ Xudanu's design draws on ideas from several systems. Here's how it compares:
     <td>Ready to ship</td>
   </tr>
   <tr>
-    <td>Atomic chunked checkpoints</td>
-    <td>Split <code>server.json</code> into per-work chunks. Checkpoint only changed works, not the entire state.</td>
-    <td>Designed, not implemented</td>
+    <td>Atomic chunked checkpoints <span style="color:#8b949e;font-size:11px">implemented May 2026</span></td>
+    <td>Content-addressed <code>ChunkStore</code> using BLAKE3 hashes, sharded into <code>chunks/xx/</code> directories with LRU cache. Manifest references chunks by hash; works and editions stored as separate chunk files. Checkpoint only writes changed chunks, not the entire state.</td>
+    <td>Implemented</td>
   </tr>
   <tr>
     <td>WASM build</td>
@@ -2120,12 +2120,20 @@ Xudanu's design draws on ideas from several systems. Here's how it compares:
 <table>
   <tr><th>Feature</th><th>Description</th></tr>
   <tr>
+    <td>Multi-user real-time editing <span style="color:#8b949e;font-size:11px">implemented May 2026</span></td>
+    <td>CRDT-based character-level collaboration via Yrs (Yjs in Rust). <code>CrdtManager</code> handles multi-author sessions, awareness state relay, signed updates, and federation sync. Supports concurrent edits to the same document by multiple users with automatic conflict-free merging.</td>
+  </tr>
+  <tr>
+    <td>Reactive recorders <span style="color:#8b949e;font-size:11px">implemented May 2026</span></td>
+    <td>Live transclusion notifications using SensorCanopy. Content subscriptions via <code>ContentTranscluders</code> and <code>ContentWorks</code> detector types. Fingerprint-indexed <code>fossil_by_fingerprint</code> reverse index provides O(1) match triggering. Push notifications delivered after every client message.</td>
+  </tr>
+  <tr>
     <td>Access control</td>
     <td>Per-document read/write permissions via Club-based ACLs. Already implemented server-side; needs client integration.</td>
   </tr>
   <tr>
-    <td>Scalable storage backend</td>
-    <td>Replace single-file JSON with a chunked backend (SQLite or custom). Target: millions of documents without multi-GB snapshots.</td>
+    <td>Scalable storage backend <span style="color:#8b949e;font-size:11px">implemented May 2026</span></td>
+    <td>Replaced single-file JSON with <code>ChunkStore</code> — content-addressed BLAKE3-hashed chunk files in sharded directories. Manifest tracks only references; individual works/editions are separate chunk files with integrity verification. Supports incremental checkpoints (write-only-changed) and <code>xudanu-server verify</code> for full data integrity checks.</td>
   </tr>
   <tr>
     <td>Structured editing</td>
@@ -2134,10 +2142,6 @@ Xudanu's design draws on ideas from several systems. Here's how it compares:
   <tr>
     <td>Age heatmap view</td>
     <td>Walk revision history, diff consecutive versions, color characters by when they were added. Uses H-tree ancestry + shared region detection.</td>
-  </tr>
-  <tr>
-    <td>Reactive recorders</td>
-    <td>Live transclusion notifications using SensorCanopy. When new content matches your registered queries, push a notification to the client.</td>
   </tr>
   <tr>
     <td>Federation transport</td>
@@ -2151,7 +2155,6 @@ Xudanu's design draws on ideas from several systems. Here's how it compares:
   <li><strong>Micropayment integration</strong> &mdash; Lightning Network (LDK) behind a feature flag. The accounting engine (<code>StorageCost</code>, <code>CostMethod</code>) already exists.</li>
   <li><strong>Rust SDK</strong> &mdash; wrap the WebSocket protocol for programmatic access. Embed the engine directly for single-user tools.</li>
   <li><strong>Content marketplace</strong> &mdash; publisher dashboards, reader paywalls, royalty reports per transclusion event.</li>
-  <li><strong>Multi-user real-time editing</strong> &mdash; extend DagWood with operational transforms or CRDT-based merge for character-level collaboration.</li>
 </ul>
 
 <!-- ============================================================ -->
@@ -2187,12 +2190,12 @@ Xudanu's design draws on ideas from several systems. Here's how it compares:
   <li><code>docs/manual.md</code> &mdash; Full user manual</li>
   <li><code>docs/protocol-and-audit.md</code> &mdash; WebSocket protocol specification</li>
   <li><code>TODO.md</code> &mdash; Development roadmap</li>
-  <li><code>tests/integration.rs</code> &mdash; 192 integration tests covering all documented behaviors</li>
+  <li><code>tests/integration.rs</code> &mdash; 199 integration tests covering all documented behaviors</li>
   <li><code>tests/tls.rs</code> &mdash; 7 TLS integration tests</li>
 </ul>
 
 <div class="note" style="margin-top:40px">
-  <strong>Test coverage:</strong> 1,664 tests passing (1,467 unit + 190 integration + 7 TLS). Property-based tests (proptest) cover BLAKE3 fingerprinting, O-tree operations, CRDT merge semantics, and snapshot roundtrips. Every data structure described in this document has corresponding test coverage.
+  <strong>Test coverage:</strong> 1,787 tests passing (1,569 unit + 199 integration + 12 proptest + 7 TLS). Property-based tests (proptest) cover BLAKE3 fingerprinting, O-tree operations, CRDT merge semantics, and snapshot roundtrips. Every data structure described in this document has corresponding test coverage.
 </div>
 
 <div class="footer">

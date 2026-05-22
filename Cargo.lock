@@ -3031,11 +3031,12 @@ dependencies = [
 
 [[package]]
 name = "xudanu"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "argon2",
  "axum",
  "axum-server",
+ "base64",
  "bitflags",
  "blake3",
  "chacha20poly1305",

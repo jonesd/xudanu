@@ -60,8 +60,11 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
 
   if (!visible) return null;
 
+  const effectiveLength = spans.length > 0
+    ? Math.max(documentLength, spans.reduce((max, s) => Math.max(max, s.end), 0))
+    : documentLength;
   const totalAttributed = spans.reduce((sum, s) => sum + (s.end - s.start), 0);
-  const coverage = documentLength > 0 ? Math.round((totalAttributed / documentLength) * 100) : 0;
+  const coverage = effectiveLength > 0 ? Math.round((totalAttributed / effectiveLength) * 100) : 0;
 
   return (
     <div className="attribution-panel">
@@ -83,11 +86,11 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
         </div>
       )}
 
-      {documentLength > 0 && (
+      {effectiveLength > 0 && (
         <div className="attribution-bar">
           {spans.map((span, i) => {
-            const leftPct = (span.start / documentLength) * 100;
-            const widthPct = ((span.end - span.start) / documentLength) * 100;
+            const leftPct = (span.start / effectiveLength) * 100;
+            const widthPct = ((span.end - span.start) / effectiveLength) * 100;
             const key = bytesToHex(span.author_public_key);
             const author = authors.find((a) => a.key === key);
             return (

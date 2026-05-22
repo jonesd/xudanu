@@ -22,7 +22,7 @@ macro_rules! security_warn {
 }
 
 const MAX_PASSWORD_LEN: usize = 256;
-const MIN_PASSWORD_LEN: usize = 1;
+const MIN_PASSWORD_LEN: usize = 8;
 const MAX_CLUB_LOGIN_ATTEMPTS: u32 = 10;
 const CLUB_LOGIN_ATTEMPT_WINDOW: Duration = Duration::from_secs(300);
 
@@ -672,16 +672,16 @@ mod tests {
     fn login_rate_limited_after_max_attempts() {
         let (mut server, sid) = setup_logged_in();
         let club_id = server.create_personal_club(sid, "alice".to_string(), None, None).unwrap();
-        server.club_set_password(sid, club_id, b"secret").unwrap();
+        server.club_set_password(sid, club_id, b"secret12").unwrap();
 
         let sid2 = server.connect();
         for _ in 0..10 {
             let _lock = server.login(sid2, club_id).unwrap();
-            let _ = server.authenticate_with_pending(sid2, &LockCredential::Password(b"wrong".to_vec()));
+            let _ = server.authenticate_with_pending(sid2, &LockCredential::Password(b"wrongxxx".to_vec()));
         }
 
         let _lock = server.login(sid2, club_id).unwrap();
-        let result = server.authenticate_with_pending(sid2, &LockCredential::Password(b"secret".to_vec()));
+        let result = server.authenticate_with_pending(sid2, &LockCredential::Password(b"secret12".to_vec()));
         assert!(result.is_err(), "11th attempt should be rate limited");
     }
 
@@ -689,12 +689,12 @@ mod tests {
     fn login_rate_limit_persists_across_sessions() {
         let (mut server, sid) = setup_logged_in();
         let club_id = server.create_personal_club(sid, "alice".to_string(), None, None).unwrap();
-        server.club_set_password(sid, club_id, b"secret").unwrap();
+        server.club_set_password(sid, club_id, b"secret12").unwrap();
 
         for i in 0..10 {
             let fresh_sid = server.connect();
             let _lock = server.login(fresh_sid, club_id).unwrap();
-            let _ = server.authenticate_with_pending(fresh_sid, &LockCredential::Password(b"wrong".to_vec()));
+            let _ = server.authenticate_with_pending(fresh_sid, &LockCredential::Password(b"wrongxxx".to_vec()));
             if i < 9 {
                 assert!(server.login_attempts.get(&club_id).unwrap().count == (i + 1) as u32);
             }
@@ -702,7 +702,7 @@ mod tests {
 
         let fresh_sid = server.connect();
         let _lock = server.login(fresh_sid, club_id).unwrap();
-        let result = server.authenticate_with_pending(fresh_sid, &LockCredential::Password(b"secret".to_vec()));
+        let result = server.authenticate_with_pending(fresh_sid, &LockCredential::Password(b"secret12".to_vec()));
         assert!(result.is_err(), "rate limit should persist across new sessions");
     }
 
@@ -710,16 +710,16 @@ mod tests {
     fn login_rate_limit_resets_on_success() {
         let (mut server, sid) = setup_logged_in();
         let club_id = server.create_personal_club(sid, "alice".to_string(), None, None).unwrap();
-        server.club_set_password(sid, club_id, b"secret").unwrap();
+        server.club_set_password(sid, club_id, b"secret12").unwrap();
 
         let sid2 = server.connect();
         for _ in 0..9 {
             let _lock = server.login(sid2, club_id).unwrap();
-            let _ = server.authenticate_with_pending(sid2, &LockCredential::Password(b"wrong".to_vec()));
+            let _ = server.authenticate_with_pending(sid2, &LockCredential::Password(b"wrongxxx".to_vec()));
         }
 
         let _lock = server.login(sid2, club_id).unwrap();
-        let result = server.authenticate_with_pending(sid2, &LockCredential::Password(b"secret".to_vec()));
+        let result = server.authenticate_with_pending(sid2, &LockCredential::Password(b"secret12".to_vec()));
         assert!(result.is_ok(), "10th attempt with correct password should succeed and reset");
         assert!(server.login_attempts.get(&club_id).is_none(), "success clears tracker");
     }
@@ -786,9 +786,140 @@ mod tests {
         let club = server.club(club_id).unwrap();
         assert!(club.encrypted_signing_key().is_none(), "no key before password");
 
-        server.club_set_password(sid, club_id, b"newpass").unwrap();
+        server.club_set_password(sid, club_id, b"newpass12").unwrap();
 
         let club = server.club(club_id).unwrap();
         assert!(club.encrypted_signing_key().is_some(), "key generated after setting password");
+    }
+
+    #[test]
+    fn set_password_rejects_short_password() {
+        let (mut server, sid) = setup_logged_in();
+        let club_id = server.create_personal_club(sid, "short-pw-test".to_string(), None, None).unwrap();
+        let result = server.club_set_password(sid, club_id, b"short");
+        assert!(result.is_err(), "password under 8 bytes should be rejected");
+    }
+
+    #[test]
+    fn set_password_accepts_min_length_password() {
+        let (mut server, sid) = setup_logged_in();
+        let club_id = server.create_personal_club(sid, "tiny-pw-test".to_string(), None, None).unwrap();
+        server.club_set_password(sid, club_id, b"12345678").unwrap();
+
+        let sid2 = server.connect();
+        let _lock = server.login(sid2, club_id).unwrap();
+        let result = server.authenticate_with_pending(sid2, &LockCredential::Password(b"12345678".to_vec()));
+        assert!(result.is_ok(), "8-byte password should authenticate");
+    }
+
+    #[test]
+    fn set_password_rejects_7_byte_password() {
+        let (mut server, sid) = setup_logged_in();
+        let club_id = server.create_personal_club(sid, "seven-pw-test".to_string(), None, None).unwrap();
+        let result = server.club_set_password(sid, club_id, b"1234567");
+        assert!(result.is_err(), "7-byte password should be rejected");
+    }
+
+    #[test]
+    fn set_password_rejects_oversized_password() {
+        let (mut server, sid) = setup_logged_in();
+        let club_id = server.create_personal_club(sid, "big-pw-test".to_string(), None, None).unwrap();
+        let long_pw = vec![b'a'; 257];
+        let result = server.club_set_password(sid, club_id, &long_pw);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn set_password_accepts_max_length_password() {
+        let (mut server, sid) = setup_logged_in();
+        let club_id = server.create_personal_club(sid, "maxlen-pw-test".to_string(), None, None).unwrap();
+        let max_pw = vec![b'a'; 256];
+        server.club_set_password(sid, club_id, &max_pw).unwrap();
+
+        let sid2 = server.connect();
+        let _lock = server.login(sid2, club_id).unwrap();
+        let result = server.authenticate_with_pending(sid2, &LockCredential::Password(max_pw));
+        assert!(result.is_ok(), "256-byte password should authenticate");
+    }
+
+    #[test]
+    fn password_change_invalidates_old_password() {
+        let (mut server, sid) = setup_logged_in();
+        let club_id = server.create_personal_club(sid, "pw-change-invalid".to_string(), None, None).unwrap();
+        server.club_set_password(sid, club_id, b"oldpass12").unwrap();
+
+        server.club_set_password(sid, club_id, b"newpass12").unwrap();
+
+        let sid2 = server.connect();
+        let _lock = server.login(sid2, club_id).unwrap();
+        let old_result = server.authenticate_with_pending(sid2, &LockCredential::Password(b"oldpass12".to_vec()));
+        assert!(old_result.is_err(), "old password should not work after change");
+    }
+
+    #[test]
+    fn password_change_allows_new_password() {
+        let (mut server, sid) = setup_logged_in();
+        let club_id = server.create_personal_club(sid, "pw-change-valid".to_string(), None, None).unwrap();
+        server.club_set_password(sid, club_id, b"oldpass12").unwrap();
+
+        server.club_set_password(sid, club_id, b"newpass12").unwrap();
+
+        let sid2 = server.connect();
+        let _lock = server.login(sid2, club_id).unwrap();
+        let new_result = server.authenticate_with_pending(sid2, &LockCredential::Password(b"newpass12".to_vec()));
+        assert!(new_result.is_ok(), "new password should work after change");
+    }
+
+    #[test]
+    fn password_with_special_chars_roundtrip() {
+        let (mut server, sid) = setup_logged_in();
+        let club_id = server.create_personal_club(sid, "special-pw".to_string(), None, None).unwrap();
+        let pw = b"p@$$w0rd!\xc3\xa9";
+        server.club_set_password(sid, club_id, pw).unwrap();
+
+        let sid2 = server.connect();
+        let _lock = server.login(sid2, club_id).unwrap();
+        let result = server.authenticate_with_pending(sid2, &LockCredential::Password(pw.to_vec()));
+        assert!(result.is_ok());
+        let wrong = server.authenticate_with_pending(sid2, &LockCredential::Password(b"p@$$w0rd!".to_vec()));
+        assert!(wrong.is_err());
+    }
+
+    #[test]
+    fn login_by_name_with_password() {
+        let (mut server, sid) = setup_logged_in();
+        let phc_hash = crate::crypto::password::hash_password(b"testpass").unwrap();
+        let _club_id = server.create_personal_club(
+            sid,
+            "loginby-name".to_string(),
+            Some(Credential::Password { phc_hash }),
+            Some(b"testpass".to_vec()),
+        ).unwrap();
+
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        let _lock = server.login_by_name(sid2, "loginby-name").unwrap();
+        let _km = server.authenticate_with_pending(sid2, &LockCredential::Password(b"testpass".to_vec())).unwrap();
+
+        let who = server.who_am_i(sid2).unwrap();
+        assert!(who.iter().any(|(_, name)| name == "loginby-name"), "who_am_i should include loginby-name club");
+    }
+
+    #[test]
+    fn login_by_name_wrong_password_fails() {
+        let (mut server, sid) = setup_logged_in();
+        let phc_hash = crate::crypto::password::hash_password(b"rightpass").unwrap();
+        let _club_id = server.create_personal_club(
+            sid,
+            "wrongpw-name".to_string(),
+            Some(Credential::Password { phc_hash }),
+            Some(b"rightpass".to_vec()),
+        ).unwrap();
+
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        let _lock = server.login_by_name(sid2, "wrongpw-name").unwrap();
+        let result = server.authenticate_with_pending(sid2, &LockCredential::Password(b"wrongpass".to_vec()));
+        assert!(result.is_err());
     }
 }
