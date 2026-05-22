@@ -1,10 +1,6 @@
 import { useRef, useEffect, useCallback, useMemo } from "react";
 import type { AttributionSpan } from "../api/crdt_sync";
-
-const AUTHOR_COLORS = [
-  "#e06c75", "#61afef", "#98c379", "#c678dd", "#e5c07b",
-  "#56b6c2", "#d19a66", "#be5046", "#7ec8e3", "#c3e88d",
-];
+import { authorColor } from "../author-color";
 
 function bytesToHex(bytes: number[]): string {
   return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -27,6 +23,7 @@ interface CollaborativeEditorProps {
   onSelectionChange: (start: number | null, end: number | null) => void;
   connected: boolean;
   attributionSpans: AttributionSpan[];
+  editable: boolean;
 }
 
 export function CollaborativeEditor({
@@ -36,6 +33,7 @@ export function CollaborativeEditor({
   onSelectionChange,
   connected,
   attributionSpans,
+  editable,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const isComposing = useRef(false);
@@ -43,15 +41,14 @@ export function CollaborativeEditor({
 
   const authorColorMap = useMemo(() => {
     const map = new Map<string, AuthorStyle>();
-    let idx = 0;
     for (const span of attributionSpans) {
       const key = bytesToHex(span.author_public_key);
       if (!map.has(key)) {
+        const name = span.author_display_name || "unknown";
         map.set(key, {
-          color: AUTHOR_COLORS[idx % AUTHOR_COLORS.length],
-          name: span.author_display_name || "unknown",
+          color: authorColor(name),
+          name,
         });
-        idx++;
       }
     }
     return map;
@@ -157,7 +154,7 @@ export function CollaborativeEditor({
   }, [text, segments]);
 
   const handleInput = useCallback(() => {
-    if (isComposing.current) return;
+    if (isComposing.current || !editable) return;
     const el = editorRef.current;
     if (!el) return;
     const newText = getEditorText(el);
@@ -165,9 +162,10 @@ export function CollaborativeEditor({
       lastText.current = newText;
       onTextChange(newText);
     }
-  }, [onTextChange]);
+  }, [onTextChange, editable]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (!editable) { e.preventDefault(); return; }
     if (e.key === "Enter") {
       e.preventDefault();
       const sel = window.getSelection();
@@ -198,6 +196,7 @@ export function CollaborativeEditor({
   }, [handleInput]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    if (!editable) { e.preventDefault(); return; }
     e.preventDefault();
     const pasteText = e.clipboardData.getData("text/plain");
     if (!pasteText) return;
@@ -251,8 +250,8 @@ export function CollaborativeEditor({
     <div className="collaborative-editor">
       <div
         ref={editorRef}
-        className="editor-content"
-        contentEditable
+        className={`editor-content${!editable ? " editor-readonly" : ""}`}
+        contentEditable={editable}
         suppressContentEditableWarning
         onInput={handleInput}
         onKeyDown={handleKeyDown}

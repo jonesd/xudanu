@@ -1285,7 +1285,7 @@ fn dispatch_inner(
 
         WireRequest::AttributionQuery { work_id, start, end } => {
             srv.ensure_can_read(session_id, work_id)?;
-            if srv.is_work_dirty(work_id).unwrap_or(false) {
+            if srv.crdt_needs_materialization(work_id) {
                 srv.crdt_materialize_any_session(work_id)
                     .map_err(|e| {
                         tracing::warn!("attribution_query: materialize failed: {e}");

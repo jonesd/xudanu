@@ -170,6 +170,14 @@ export class CrdtSyncClient {
     return (val.spans as AttributionSpan[]) || [];
   }
 
+  async refreshAwareness(): Promise<AwarenessState[]> {
+    const resp = await this.sendRequest("crdt_awareness_get", {
+      work_id: this.workBeId,
+    });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.states as AwarenessState[]) || [];
+  }
+
   async attributionLogStatus(): Promise<AttributionLogStatus> {
     const resp = await this.sendRequest("attribution_log_status");
     return extractValue(resp) as AttributionLogStatus;
@@ -182,10 +190,15 @@ export class CrdtSyncClient {
       password: pwBytes,
     });
     const clubId = extractValue(resp) as number;
-    await this.loginByName(displayName, password);
-    const identity: WhoAmIEntry = { club_id: clubId, display_name: displayName };
+    const identity = { club_id: clubId, display_name: displayName };
     this.currentIdentity = identity;
     this.identityListeners.forEach((cb) => cb(identity));
+    try {
+      await this.loginByName(displayName, password);
+    } catch (e) {
+      console.error("[createIdentity] loginByName failed after account creation:", e);
+      throw e;
+    }
     return identity;
   }
 
@@ -217,7 +230,6 @@ export class CrdtSyncClient {
       const [clubId, name] = clubs[0];
       this.currentIdentity = { club_id: clubId, display_name: name };
     }
-    this.identityListeners.forEach((cb) => cb(this.currentIdentity));
 
     if (this.crdtReady && this.workBeId) {
       try {
@@ -227,6 +239,8 @@ export class CrdtSyncClient {
       }
       this.sendAwareness(null, null, false);
     }
+
+    this.identityListeners.forEach((cb) => cb(this.currentIdentity));
   }
 
   async checkWhoAmI(): Promise<WhoAmIEntry | null> {

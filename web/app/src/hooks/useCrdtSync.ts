@@ -15,6 +15,7 @@ export interface CrdtSyncState {
   attributionSpans: AttributionSpan[];
   attributionLogStatus: AttributionLogStatus | null;
   refreshAttribution: () => void;
+  refreshAwareness: () => void;
   identity: WhoAmIEntry | null;
   createIdentity: (displayName: string, password: string) => Promise<void>;
   login: (clubName: string, password: string) => Promise<void>;
@@ -116,6 +117,12 @@ export function useCrdtSync(
     client.attributionLogStatus().then(setAttributionLogStatus).catch(() => {});
   }, [workBeId]);
 
+  const refreshAwareness = useCallback(() => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected() || workBeId === null) return;
+    client.refreshAwareness().then(setAwareness).catch(() => {});
+  }, [workBeId]);
+
   const createIdentity = useCallback(async (displayName: string, password: string) => {
     const client = clientRef.current;
     if (!client || !client.isConnected()) return;
@@ -132,6 +139,7 @@ export function useCrdtSync(
     text, connected, awareness, setText, sendCursor, sendSelection,
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,
+    refreshAwareness,
     identity, createIdentity, login,
   };
 }
