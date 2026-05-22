@@ -108,11 +108,11 @@ export function WorkspacePage() {
   }, [workBeId, connected, text]);
 
   useEffect(() => {
-    if (showAttribution && connected && workBeId !== null && text.length > 0) {
+    if (connected && workBeId !== null && text.length > 0) {
       const timer = setTimeout(() => { refreshAttribution(); }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [showAttribution, connected, workBeId, text.length, refreshAttribution]);
+  }, [connected, workBeId, text.length, refreshAttribution]);
 
   const workIdDisplay = useMemo(() => {
     if (workBeId === null) return null;
@@ -123,7 +123,7 @@ export function WorkspacePage() {
     <div className="workspace-page">
       <header className="workspace-header">
         <h1>
-          {workIdDisplay ? `Work ${workIdDisplay}` : "Xanadu Gold"}
+          {workIdDisplay ? `Work ${workIdDisplay}` : "xudanu"}
         </h1>
         <div className="header-actions">
           <span className={`sync-status ${connected ? "sync-connected" : "sync-disconnected"}`}>
@@ -189,6 +189,7 @@ export function WorkspacePage() {
                 onCursorChange={sendCursor}
                 onSelectionChange={(s, e) => sendSelection(s, e)}
                 connected={connected}
+                attributionSpans={attributionSpans}
               />
               {watchEnabled && contentMatches.length > 0 && (
                 <div className="watch-notifications">

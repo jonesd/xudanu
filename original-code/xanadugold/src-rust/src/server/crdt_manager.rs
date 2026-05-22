@@ -54,6 +54,30 @@ pub struct AwarenessRelayResult {
 pub struct AuthorIdentity {
     pub public_key: [u8; 32],
     pub display_name: String,
+    #[serde(default)]
+    pub club_be_id: BeId,
+}
+
+fn encode_be_id_as_attr(be_id: BeId) -> String {
+    let mut buf = Vec::new();
+    super::transport::varint::encode_varint(be_id, &mut buf);
+    crate::server::crdt_manager::bytes_to_hex(&buf)
+}
+
+fn decode_be_id_from_attr(s: &str) -> Option<BeId> {
+    let buf = hex_to_bytes(s)?;
+    let (val, _) = super::transport::varint::decode_varint(&buf).ok()?;
+    Some(val)
+}
+
+fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
+    if hex.len() % 2 != 0 {
+        return None;
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -216,8 +240,8 @@ impl CrdtManager {
             return Err(CrdtError::NotSubscribed(work_id, sender_session));
         }
 
-        let author_hex = wd.author_keys.get(&sender_session)
-            .map(|a| bytes_to_hex(&a.public_key));
+        let author_attr = wd.author_keys.get(&sender_session)
+            .map(|a| encode_be_id_as_attr(a.club_be_id));
 
         {
             let mut txn = wd.doc.transact_mut();
@@ -228,10 +252,10 @@ impl CrdtManager {
                         pos += *count as u32;
                     }
                     crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
-                        if let Some(ref hex) = author_hex {
+                        if let Some(ref attr) = author_attr {
                             let attrs = yrs::types::Attrs::from([(
                                 Arc::from("__author"),
-                                Any::String(Arc::from(hex.as_str())),
+                                Any::String(Arc::from(attr.as_str())),
                             )]);
                             wd.text.insert_with_attributes(&mut txn, pos, text, attrs);
                         } else {
@@ -363,6 +387,7 @@ impl CrdtManager {
         signing_key: &SigningKey,
         server_id_bytes: &[u8; 32],
         timestamp: u64,
+        author_signing_keys: &std::collections::HashMap<BeId, SigningKey>,
     ) -> Result<Edition, CrdtError> {
         let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
 
@@ -394,7 +419,7 @@ impl CrdtManager {
             federated_prov
         } else {
             Self::build_span_provenance_from_authors(
-                &edition, &author_spans, signing_key, server_id_bytes, timestamp,
+                &edition, &author_spans, signing_key, server_id_bytes, timestamp, author_signing_keys,
             )
         };
 
@@ -403,8 +428,8 @@ impl CrdtManager {
         Ok(edition)
     }
 
-    fn extract_author_spans(diffs: &[yrs::types::text::Diff<yrs::types::text::YChange>]) -> Vec<(Option<String>, usize, usize)> {
-        let mut spans: Vec<(Option<String>, usize, usize)> = Vec::new();
+    fn extract_author_spans(diffs: &[yrs::types::text::Diff<yrs::types::text::YChange>]) -> Vec<(Option<BeId>, usize, usize)> {
+        let mut spans: Vec<(Option<BeId>, usize, usize)> = Vec::new();
         let mut pos = 0usize;
 
         for d in diffs {
@@ -416,9 +441,9 @@ impl CrdtManager {
                 continue;
             }
 
-            let author_hex = d.attributes.as_ref().and_then(|attrs| {
+            let author_be_id = d.attributes.as_ref().and_then(|attrs| {
                 attrs.get(&Arc::from("__author")).and_then(|v| {
-                    if let Any::String(s) = v { Some(s.as_ref().to_string()) } else { None }
+                    if let Any::String(s) = v { decode_be_id_from_attr(s.as_ref()) } else { None }
                 })
             });
 
@@ -426,13 +451,13 @@ impl CrdtManager {
             pos += chunk_text.chars().count();
             let end = pos;
 
-            let last_author = spans.last().and_then(|(a, _, _)| a.clone());
-            if last_author == author_hex {
+            let last_author = spans.last().and_then(|(a, _, _)| *a);
+            if last_author == author_be_id {
                 if let Some((_, _, ref mut span_end)) = spans.last_mut() {
                     *span_end = end;
                 }
             } else {
-                spans.push((author_hex, start, end));
+                spans.push((author_be_id, start, end));
             }
         }
 
@@ -441,10 +466,11 @@ impl CrdtManager {
 
     fn build_span_provenance_from_authors(
         edition: &Edition,
-        author_spans: &[(Option<String>, usize, usize)],
-        signing_key: &SigningKey,
+        author_spans: &[(Option<BeId>, usize, usize)],
+        fallback_signing_key: &SigningKey,
         server_id_bytes: &[u8; 32],
         timestamp: u64,
+        author_signing_keys: &std::collections::HashMap<BeId, SigningKey>,
     ) -> Vec<SpanProvenance> {
         let entries = edition.all_entries();
         if entries.is_empty() {
@@ -464,12 +490,12 @@ impl CrdtManager {
             return vec![SpanProvenance {
                 start: first_pos,
                 end: last_pos + 1,
-                provenance: sign_span(signing_key, &fingerprints, timestamp, server_id_bytes),
+                provenance: sign_span(fallback_signing_key, &fingerprints, timestamp, server_id_bytes),
             }];
         }
 
         let mut results = Vec::new();
-        for (_author, text_start, text_end) in author_spans {
+        for (author_be_id, text_start, text_end) in author_spans {
             let start_pos = first_pos + *text_start as i64;
             let end_pos = first_pos + *text_end as i64;
 
@@ -484,10 +510,14 @@ impl CrdtManager {
                 continue;
             }
 
+            let key = author_be_id
+                .and_then(|id| author_signing_keys.get(&id))
+                .unwrap_or(fallback_signing_key);
+
             results.push(SpanProvenance {
                 start: start_pos,
                 end: end_pos,
-                provenance: sign_span(signing_key, &fingerprints, timestamp, server_id_bytes),
+                provenance: sign_span(key, &fingerprints, timestamp, server_id_bytes),
             });
         }
 
@@ -501,7 +531,7 @@ impl CrdtManager {
             return vec![SpanProvenance {
                 start: first_pos,
                 end: last_pos + 1,
-                provenance: sign_span(signing_key, &fingerprints, timestamp, server_id_bytes),
+                provenance: sign_span(fallback_signing_key, &fingerprints, timestamp, server_id_bytes),
             }];
         }
 
@@ -681,6 +711,16 @@ impl CrdtManager {
     pub fn get_author(&self, work_id: BeId, session_id: SessionId) -> Result<Option<AuthorIdentity>, CrdtError> {
         let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
         Ok(wd.author_keys.get(&session_id).cloned())
+    }
+
+    pub fn get_author_sessions(&self, work_id: BeId) -> Result<Vec<(SessionId, AuthorIdentity)>, CrdtError> {
+        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        Ok(wd.author_keys.iter().map(|(sid, ai)| (*sid, ai.clone())).collect())
+    }
+
+    pub fn get_subscribed_sessions(&self, work_id: BeId) -> Result<Vec<SessionId>, CrdtError> {
+        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        Ok(wd.subscribers.keys().copied().collect())
     }
 
     pub fn sign_update(&self, update_bytes: &[u8], signing_key: &SigningKey) -> SignedUpdate {
@@ -986,12 +1026,14 @@ mod tests {
         let author = AuthorIdentity {
             public_key: [1u8; 32],
             display_name: "Alice".to_string(),
+            club_be_id: 42,
         };
         mgr.register_author(work_id, sid, author.clone()).unwrap();
 
         let retrieved = mgr.get_author(work_id, sid).unwrap().unwrap();
         assert_eq!(retrieved.public_key, [1u8; 32]);
         assert_eq!(retrieved.display_name, "Alice");
+        assert_eq!(retrieved.club_be_id, 42);
     }
 
     #[test]
@@ -1006,6 +1048,7 @@ mod tests {
         let author = AuthorIdentity {
             public_key: [1u8; 32],
             display_name: "Eve".to_string(),
+            club_be_id: 99,
         };
         let result = mgr.register_author(work_id, other_sid, author);
         assert!(result.is_err());
@@ -1021,6 +1064,7 @@ mod tests {
         mgr.register_author(work_id, sid, AuthorIdentity {
             public_key: [1u8; 32],
             display_name: "Alice".to_string(),
+            club_be_id: 10,
         }).unwrap();
 
         mgr.close_sync_session(work_id, sid).unwrap();
@@ -1040,6 +1084,7 @@ mod tests {
         mgr.register_author(work_id, s1, AuthorIdentity {
             public_key: alice_key,
             display_name: "Alice".to_string(),
+            club_be_id: 100,
         }).unwrap();
 
         let ops = vec![TextDeltaOp::Insert { text: "hello".to_string() }];
@@ -1053,6 +1098,7 @@ mod tests {
         mgr.register_author(work_id, s2, AuthorIdentity {
             public_key: bob_key,
             display_name: "Bob".to_string(),
+            club_be_id: 200,
         }).unwrap();
 
         let ops2 = vec![

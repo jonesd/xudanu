@@ -1517,15 +1517,13 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     work_id: BeId,
-                    public_key: [u8; 32],
-                    display_name: String,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::CrdtRegisterAuthor {
                     work_id: args.work_id,
-                    public_key: args.public_key,
-                    display_name: args.display_name,
+                    public_key: [0u8; 32],
+                    display_name: String::new(),
                 })
             }
             OperationCode::AttributionQuery => {
