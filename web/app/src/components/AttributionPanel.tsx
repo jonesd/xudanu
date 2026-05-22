@@ -1,10 +1,6 @@
 import { useMemo } from "react";
 import type { AttributionSpan, AttributionLogStatus } from "../api/crdt_sync";
-
-const AUTHOR_COLORS = [
-  "#e06c75", "#61afef", "#98c379", "#c678dd", "#e5c07b",
-  "#56b6c2", "#d19a66", "#be5046", "#7ec8e3", "#c3e88d",
-];
+import { authorColor } from "../author-color";
 
 function bytesToHex(bytes: number[]): string {
   return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -13,10 +9,6 @@ function bytesToHex(bytes: number[]): string {
 function shortKey(bytes: number[]): string {
   const hex = bytesToHex(bytes);
   return hex.length > 16 ? `${hex.slice(0, 8)}..${hex.slice(-8)}` : hex;
-}
-
-function fingerprintColor(index: number): string {
-  return AUTHOR_COLORS[index % AUTHOR_COLORS.length];
 }
 
 interface AuthorGroup {
@@ -37,15 +29,15 @@ interface AttributionPanelProps {
 export function AttributionPanel({ spans, logStatus, documentLength, visible }: AttributionPanelProps) {
   const authors = useMemo(() => {
     const groups = new Map<string, AuthorGroup>();
-    let colorIdx = 0;
 
     for (const span of spans) {
       const key = bytesToHex(span.author_public_key);
       if (!groups.has(key)) {
+        const displayName = span.author_display_name || shortKey(span.author_public_key);
         groups.set(key, {
           key,
-          displayName: span.author_display_name || shortKey(span.author_public_key),
-          color: fingerprintColor(colorIdx++),
+          displayName,
+          color: authorColor(displayName),
           spans: [],
           allValid: true,
         });

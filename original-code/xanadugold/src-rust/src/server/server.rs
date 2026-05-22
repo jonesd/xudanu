@@ -426,6 +426,14 @@ impl Server {
             }
         }
 
+        for (_, author_id) in &author_sessions {
+            if !author_signing_keys.contains_key(&author_id.club_be_id) {
+                if let Some(sk) = self.crdt_manager.get_club_signing_key(work_be_id, author_id.club_be_id) {
+                    author_signing_keys.insert(author_id.club_be_id, sk);
+                }
+            }
+        }
+
         match signing_key {
             Some(sk) => {
                 self.crdt_manager
@@ -1699,6 +1707,10 @@ impl Server {
         self.crdt_manager.is_active(work_be_id)
     }
 
+    pub fn crdt_needs_materialization(&self, work_be_id: BeId) -> bool {
+        self.crdt_manager.needs_materialization(work_be_id).unwrap_or(false)
+    }
+
     pub fn crdt_current_text(&self, work_be_id: BeId) -> Result<String, ServerError> {
         self.crdt_manager
             .current_text(work_be_id)
@@ -1859,7 +1871,13 @@ impl Server {
 
         self.crdt_manager
             .register_author(work_be_id, session_id, author)
-            .map_err(|e| ServerError::Internal(e.to_string()))
+            .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+        if let Some(sk) = self.sessions.get(&session_id).and_then(|s| s.club_signing_key().cloned()) {
+            self.crdt_manager.store_club_signing_key(work_be_id, login_club, sk);
+        }
+
+        Ok(())
     }
 
     pub fn crdt_sign_update(

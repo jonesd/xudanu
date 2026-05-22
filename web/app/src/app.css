@@ -303,6 +303,17 @@ body {
   color: #aaa;
 }
 
+.editor-readonly:empty::before {
+  content: "Create an identity or log in to edit";
+  color: #aaa;
+  font-style: italic;
+}
+
+.editor-readonly {
+  background: #fafafa;
+  cursor: not-allowed;
+}
+
 .author-highlight {
   border-radius: 2px;
   transition: background-color 0.15s;

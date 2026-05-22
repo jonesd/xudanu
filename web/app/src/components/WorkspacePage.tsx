@@ -86,6 +86,7 @@ export function WorkspacePage() {
     attributionSpans,
     attributionLogStatus,
     refreshAttribution,
+    refreshAwareness,
     identity,
     createIdentity,
     login,
@@ -113,6 +114,13 @@ export function WorkspacePage() {
       return () => clearTimeout(timer);
     }
   }, [showAttribution, connected, workBeId, text.length, refreshAttribution]);
+
+  useEffect(() => {
+    if (connected && workBeId !== null) {
+      const timer = setTimeout(() => { refreshAwareness(); }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [connected, workBeId, awareness.length, refreshAwareness]);
 
   const workIdDisplay = useMemo(() => {
     if (workBeId === null) return null;
@@ -190,6 +198,7 @@ export function WorkspacePage() {
                 onSelectionChange={(s, e) => sendSelection(s, e)}
                 connected={connected}
                 attributionSpans={attributionSpans}
+                editable={identity !== null}
               />
               {watchEnabled && contentMatches.length > 0 && (
                 <div className="watch-notifications">

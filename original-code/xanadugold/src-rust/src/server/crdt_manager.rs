@@ -109,6 +109,7 @@ struct WorkDoc {
     text: yrs::TextRef,
     subscribers: HashMap<SessionId, SyncSessionId>,
     author_keys: HashMap<SessionId, AuthorIdentity>,
+    club_signing_keys: HashMap<BeId, SigningKey>,
     last_materialized_sv: Option<StateVector>,
     pending_update: Option<Vec<u8>>,
     last_change_timestamp: u64,
@@ -189,6 +190,7 @@ impl CrdtManager {
                 text,
                 subscribers: HashMap::new(),
                 author_keys: HashMap::new(),
+                club_signing_keys: HashMap::new(),
                 last_materialized_sv: None,
                 pending_update: None,
                 last_change_timestamp: 0,
@@ -619,6 +621,7 @@ impl CrdtManager {
             text: text_ref,
             subscribers: HashMap::new(),
             author_keys: HashMap::new(),
+            club_signing_keys: HashMap::new(),
             last_materialized_sv: Some(sv),
             pending_update: None,
             last_change_timestamp: 0,
@@ -706,6 +709,21 @@ impl CrdtManager {
         }
         wd.author_keys.insert(session_id, author);
         Ok(())
+    }
+
+    pub fn store_club_signing_key(
+        &mut self,
+        work_id: BeId,
+        club_be_id: BeId,
+        signing_key: SigningKey,
+    ) {
+        if let Some(wd) = self.docs.get_mut(&work_id) {
+            wd.club_signing_keys.insert(club_be_id, signing_key);
+        }
+    }
+
+    pub fn get_club_signing_key(&self, work_id: BeId, club_be_id: BeId) -> Option<SigningKey> {
+        self.docs.get(&work_id)?.club_signing_keys.get(&club_be_id).cloned()
     }
 
     pub fn get_author(&self, work_id: BeId, session_id: SessionId) -> Result<Option<AuthorIdentity>, CrdtError> {
