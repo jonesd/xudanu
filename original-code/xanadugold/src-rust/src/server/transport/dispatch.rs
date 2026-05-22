@@ -1285,11 +1285,12 @@ fn dispatch_inner(
 
         WireRequest::AttributionQuery { work_id, start, end } => {
             srv.ensure_can_read(session_id, work_id)?;
-            let active = srv.crdt_is_active(work_id);
-            tracing::info!("attribution_query: work={work_id} active={active}");
-            match srv.crdt_materialize_any_session(work_id) {
-                Ok(rev) => tracing::info!("attribution_query: materialized rev={rev}"),
-                Err(e) => tracing::warn!("attribution_query: materialize failed: {e}"),
+            if srv.is_work_dirty(work_id).unwrap_or(false) {
+                srv.crdt_materialize_any_session(work_id)
+                    .map_err(|e| {
+                        tracing::warn!("attribution_query: materialize failed: {e}");
+                        crate::server::ServerError::Internal(e.to_string())
+                    })?;
             }
             let spans = srv.attribution_query(work_id, start, end)?;
             Ok(ResponseValue::AttributionQueryResult { spans })

@@ -108,11 +108,11 @@ export function WorkspacePage() {
   }, [workBeId, connected, text]);
 
   useEffect(() => {
-    if (connected && workBeId !== null && text.length > 0) {
+    if (showAttribution && connected && workBeId !== null && text.length > 0) {
       const timer = setTimeout(() => { refreshAttribution(); }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [connected, workBeId, text.length, refreshAttribution]);
+  }, [showAttribution, connected, workBeId, text.length, refreshAttribution]);
 
   const workIdDisplay = useMemo(() => {
     if (workBeId === null) return null;
