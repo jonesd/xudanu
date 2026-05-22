@@ -82,7 +82,7 @@ This project is an ongoing evolution, not a static port.
 
 ## Status
 
-**Developer Preview** — the system is functional and tested (1,657 tests passing) but APIs and data formats may evolve. Snapshot migration ensures your data survives upgrades. Versioned wire protocol supports backward-compatible API changes.
+**Developer Preview** — the system is functional and tested (1,845 tests passing) but APIs and data formats may evolve. Snapshot migration ensures your data survives upgrades. Versioned wire protocol supports backward-compatible API changes.
 
 ## Quick Start
 
@@ -137,8 +137,13 @@ Go to **http://127.0.0.1:8090** — you'll see the document editor.
 
 ### Next steps
 
-- **[Technical Architecture](docs/technical-architecture.html)** — a detailed walkthrough of the core data structures, algorithms, and performance characteristics (O-trees, GrandMap, Canopy pruning, H-trees, transclusion queries, DagWood concurrent edits). Recommended for all developers and architects working with the codebase.
-- [src-rust/README.md](original-code/xanadugold/src-rust/README.md) — full walkthrough, CLI reference, web UI guide, TLS setup, federation, and architecture details.
+- **[Technical Architecture](http://dgjones.info/xudanu/technical-architecture.html)** — a detailed walkthrough of the core data structures, algorithms, and performance characteristics (O-trees, GrandMap, Canopy pruning, H-trees, transclusion queries, DagWood concurrent edits). Recommended for all developers and architects.
+- [Xudanu in One Page](http://dgjones.info/xudanu/xudanu-in-one-page.html) — a concise overview of the entire system.
+- [30 Years of Hypertext Innovation](http://dgjones.info/xudanu/30-years-of-hypertext-innovation.html) — historical context connecting Xanadu to modern hypertext.
+- [Storage System](http://dgjones.info/xudanu/storage-system.html) — content-addressed chunk store and manifest design.
+- [Notification System](http://dgjones.info/xudanu/notification-system.html) — content watch, similarity matching, and micropayments.
+- [All documentation](http://dgjones.info/xudanu/) — index of all available docs.
+- [Server README](original-code/xanadugold/src-rust/README.md) — CLI reference, web UI guide, TLS setup, federation, and architecture details.
 
 ---
 
