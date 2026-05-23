@@ -77,14 +77,26 @@ impl XnRegion {
             if self.transitions.len() % 2 == 1 {
                 return false;
             }
-            return self.transitions.last().map(|&l| l != i64::MAX).unwrap_or(false);
+            return self
+                .transitions
+                .last()
+                .map(|&l| l != i64::MAX)
+                .unwrap_or(false);
         }
         if self.transitions.len() < 2 {
             return false;
         }
         self.transitions.len() % 2 == 0
-            && self.transitions.first().map(|&f| f != i64::MIN).unwrap_or(true)
-            && self.transitions.last().map(|&l| l != i64::MAX).unwrap_or(true)
+            && self
+                .transitions
+                .first()
+                .map(|&f| f != i64::MIN)
+                .unwrap_or(true)
+            && self
+                .transitions
+                .last()
+                .map(|&l| l != i64::MAX)
+                .unwrap_or(true)
     }
 
     pub fn contains(&self, v: i64) -> bool {
@@ -158,8 +170,7 @@ impl XnRegion {
     }
 
     pub fn intersect(&self, other: &XnRegion) -> XnRegion {
-        let (starts_inside, transitions) =
-            merge_transitions(self, other, |a, b| a && b);
+        let (starts_inside, transitions) = merge_transitions(self, other, |a, b| a && b);
         XnRegion {
             starts_inside,
             transitions,
@@ -167,8 +178,7 @@ impl XnRegion {
     }
 
     pub fn union(&self, other: &XnRegion) -> XnRegion {
-        let (starts_inside, transitions) =
-            merge_transitions(self, other, |a, b| a || b);
+        let (starts_inside, transitions) = merge_transitions(self, other, |a, b| a || b);
         XnRegion {
             starts_inside,
             transitions,
@@ -176,8 +186,7 @@ impl XnRegion {
     }
 
     pub fn minus(&self, other: &XnRegion) -> XnRegion {
-        let (starts_inside, transitions) =
-            merge_transitions(self, other, |a, b| a && !b);
+        let (starts_inside, transitions) = merge_transitions(self, other, |a, b| a && !b);
         XnRegion {
             starts_inside,
             transitions,
@@ -235,7 +244,11 @@ impl XnRegion {
     pub fn shift(&self, offset: i64) -> Self {
         XnRegion {
             starts_inside: self.starts_inside,
-            transitions: self.transitions.iter().map(|t| t.wrapping_add(offset)).collect(),
+            transitions: self
+                .transitions
+                .iter()
+                .map(|t| t.wrapping_add(offset))
+                .collect(),
         }
     }
 
@@ -584,7 +597,10 @@ mod tests {
             ("empty", XnRegion::empty()),
             ("full", XnRegion::full()),
             ("interval(3,7)", XnRegion::interval(3, 7)),
-            ("complement_of_interval(3,7)", XnRegion::interval(3, 7).complement()),
+            (
+                "complement_of_interval(3,7)",
+                XnRegion::interval(3, 7).complement(),
+            ),
             ("above(5)", XnRegion::above(5)),
             ("below(5)", XnRegion::below(5)),
         ]
@@ -594,15 +610,33 @@ mod tests {
     fn gold_unary_checks_all_example_regions() {
         for (name, a) in example_regions() {
             assert_eq!(a, a, "identity failed for {name}");
-            assert_eq!(a.intersects(&a), !a.is_empty(), "self-intersects for {name}");
+            assert_eq!(
+                a.intersects(&a),
+                !a.is_empty(),
+                "self-intersects for {name}"
+            );
             assert!(a.minus(&a).is_empty(), "self-minus for {name}");
             assert!(a.is_subset_of(&a), "self-subset for {name}");
             assert_eq!(a.intersect(&a), a, "self-intersect identity for {name}");
-            assert_eq!(a.is_full(), a.complement().is_empty(), "full/complement for {name}");
-            assert!(a.intersect(&a.complement()).is_empty(), "intersect complement for {name}");
+            assert_eq!(
+                a.is_full(),
+                a.complement().is_empty(),
+                "full/complement for {name}"
+            );
+            assert!(
+                a.intersect(&a.complement()).is_empty(),
+                "intersect complement for {name}"
+            );
             assert_eq!(a.minus(&a.complement()), a, "minus complement for {name}");
-            assert_eq!(a.complement().complement(), a, "double complement for {name}");
-            assert!(a.union(&a.complement()).is_full(), "union complement for {name}");
+            assert_eq!(
+                a.complement().complement(),
+                a,
+                "double complement for {name}"
+            );
+            assert!(
+                a.union(&a.complement()).is_full(),
+                "union complement for {name}"
+            );
         }
     }
 
@@ -611,16 +645,50 @@ mod tests {
         let examples = example_regions();
         for (i, (name_a, a)) in examples.iter().enumerate() {
             for (name_b, b) in examples.iter().skip(i) {
-                assert_eq!(a.intersect(b), b.intersect(a), "intersect commutativity {name_a} vs {name_b}");
-                assert!(a.intersect(b).is_subset_of(a), "intersect subset a {name_a} vs {name_b}");
-                assert!(a.intersect(b).is_subset_of(b), "intersect subset b {name_a} vs {name_b}");
-                assert_eq!(a.intersects(b), !a.intersect(b).is_empty(), "intersects consistency {name_a} vs {name_b}");
-                assert!(!a.minus(b).intersects(b), "minus disjoint {name_a} vs {name_b}");
-                assert!(a.minus(b).is_subset_of(a), "minus subset {name_a} vs {name_b}");
-                assert_eq!(a.union(b), b.union(a), "union commutativity {name_a} vs {name_b}");
-                assert!(a.is_subset_of(&a.union(b)), "union superset a {name_a} vs {name_b}");
-                assert!(b.is_subset_of(&a.union(b)), "union superset b {name_a} vs {name_b}");
-                assert_eq!(a.is_subset_of(b) && b.is_subset_of(a), *a == *b, "subset=equality {name_a} vs {name_b}");
+                assert_eq!(
+                    a.intersect(b),
+                    b.intersect(a),
+                    "intersect commutativity {name_a} vs {name_b}"
+                );
+                assert!(
+                    a.intersect(b).is_subset_of(a),
+                    "intersect subset a {name_a} vs {name_b}"
+                );
+                assert!(
+                    a.intersect(b).is_subset_of(b),
+                    "intersect subset b {name_a} vs {name_b}"
+                );
+                assert_eq!(
+                    a.intersects(b),
+                    !a.intersect(b).is_empty(),
+                    "intersects consistency {name_a} vs {name_b}"
+                );
+                assert!(
+                    !a.minus(b).intersects(b),
+                    "minus disjoint {name_a} vs {name_b}"
+                );
+                assert!(
+                    a.minus(b).is_subset_of(a),
+                    "minus subset {name_a} vs {name_b}"
+                );
+                assert_eq!(
+                    a.union(b),
+                    b.union(a),
+                    "union commutativity {name_a} vs {name_b}"
+                );
+                assert!(
+                    a.is_subset_of(&a.union(b)),
+                    "union superset a {name_a} vs {name_b}"
+                );
+                assert!(
+                    b.is_subset_of(&a.union(b)),
+                    "union superset b {name_a} vs {name_b}"
+                );
+                assert_eq!(
+                    a.is_subset_of(b) && b.is_subset_of(a),
+                    *a == *b,
+                    "subset=equality {name_a} vs {name_b}"
+                );
             }
         }
     }

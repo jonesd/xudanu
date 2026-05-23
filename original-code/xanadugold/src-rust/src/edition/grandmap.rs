@@ -123,7 +123,10 @@ impl GrandMap {
     pub fn assign_id(&mut self, id: &Id, element: Box<dyn BeRangeElement>) -> bool {
         let be_id = element.be_id();
         self.id_holders.insert(id.clone(), be_id);
-        self.element_to_ids.entry(be_id).or_default().push(id.clone());
+        self.element_to_ids
+            .entry(be_id)
+            .or_default()
+            .push(id.clone());
         if self.id_to_element.contains_key(&be_id) {
             return false;
         }
@@ -155,10 +158,7 @@ impl GrandMap {
     }
 
     pub fn get_by_id(&self, id: &Id) -> &Box<dyn BeRangeElement> {
-        let be_id = self
-            .id_holders
-            .get(id)
-            .expect("no element at given id");
+        let be_id = self.id_holders.get(id).expect("no element at given id");
         self.id_to_element
             .get(be_id)
             .expect("be_id referenced by id not found")
@@ -208,10 +208,7 @@ impl GrandMap {
 
     pub fn new_work_element(&mut self, owner: Option<BeId>) -> (BeId, Box<dyn BeRangeElement>) {
         let be_id = self.next_be_id();
-        let work = Box::new(super::backend::BeWork {
-            id: be_id,
-            owner,
-        });
+        let work = Box::new(super::backend::BeWork { id: be_id, owner });
         (be_id, work)
     }
 

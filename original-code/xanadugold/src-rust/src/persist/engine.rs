@@ -39,7 +39,10 @@ pub trait StorageEngine: fmt::Debug + Send + Sync {
     fn dismantle(&mut self, flock_id: &FlockId) -> StorageResult<()>;
 
     fn fetch(&self, flock_id: &FlockId) -> StorageResult<Option<Box<dyn Persistent>>>;
-    fn fetch_by_location(&self, location: &FlockLocation) -> StorageResult<Option<Box<dyn Persistent>>>;
+    fn fetch_by_location(
+        &self,
+        location: &FlockLocation,
+    ) -> StorageResult<Option<Box<dyn Persistent>>>;
     fn contains(&self, flock_id: &FlockId) -> bool;
     fn flock_info(&self, flock_id: &FlockId) -> Option<&FlockInfo>;
 

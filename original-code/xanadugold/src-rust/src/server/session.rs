@@ -73,9 +73,7 @@ impl Session {
     }
 
     pub fn is_expired(&self) -> bool {
-        self.expires_at
-            .map(|t| Instant::now() > t)
-            .unwrap_or(false)
+        self.expires_at.map(|t| Instant::now() > t).unwrap_or(false)
     }
 
     pub fn is_valid(&self) -> bool {

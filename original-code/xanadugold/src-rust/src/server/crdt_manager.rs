@@ -7,10 +7,10 @@ use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
 use yrs::{Any, Doc, GetString, ReadTxn, StateVector, Text, Transact, Update};
 
-use crate::crypto::sign::{sign_bytes, verify_signature};
-use crate::edition::{BeId, Edition};
-use crate::edition::provenance::{sign_span, SpanProvenance};
 use super::session::SessionId;
+use crate::crypto::sign::{sign_bytes, verify_signature};
+use crate::edition::provenance::{sign_span, SpanProvenance};
+use crate::edition::{BeId, Edition};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SyncSessionId(u64);
@@ -97,9 +97,13 @@ pub enum SigningError {
 impl std::fmt::Display for SigningError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SigningError::VerificationFailed(msg) => write!(f, "signature verification failed: {}", msg),
+            SigningError::VerificationFailed(msg) => {
+                write!(f, "signature verification failed: {}", msg)
+            }
             SigningError::UnknownSigner(key) => write!(f, "unknown signer: {:02x?}", &key[..8]),
-            SigningError::InvalidSignatureBytes => write!(f, "invalid signature bytes (expected 64)"),
+            SigningError::InvalidSignatureBytes => {
+                write!(f, "invalid signature bytes (expected 64)")
+            }
         }
     }
 }
@@ -136,9 +140,13 @@ impl std::fmt::Display for CrdtError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CrdtError::WorkNotFound(id) => write!(f, "CRDT work not found: {:016x}", id),
-            CrdtError::NotSubscribed(work, sess) => write!(f, "session not subscribed to work {:016x}", work),
+            CrdtError::NotSubscribed(work, sess) => {
+                write!(f, "session not subscribed to work {:016x}", work)
+            }
             CrdtError::InvalidUpdate(msg) => write!(f, "invalid yrs update: {}", msg),
-            CrdtError::AuthorNotRegistered(work, sess) => write!(f, "author not registered for work {:016x}", work),
+            CrdtError::AuthorNotRegistered(work, sess) => {
+                write!(f, "author not registered for work {:016x}", work)
+            }
             CrdtError::SigningFailed(err) => write!(f, "signing error: {}", err),
         }
     }
@@ -185,21 +193,26 @@ impl CrdtManager {
                     text.insert(&mut txn, 0, t);
                 }
             }
-            self.docs.insert(work_id, WorkDoc {
-                doc,
-                text,
-                subscribers: HashMap::new(),
-                author_keys: HashMap::new(),
-                club_signing_keys: HashMap::new(),
-                last_materialized_sv: None,
-                pending_update: None,
-                last_change_timestamp: 0,
-                awareness: HashMap::new(),
-                federated_provenance: Vec::new(),
-            });
+            self.docs.insert(
+                work_id,
+                WorkDoc {
+                    doc,
+                    text,
+                    subscribers: HashMap::new(),
+                    author_keys: HashMap::new(),
+                    club_signing_keys: HashMap::new(),
+                    last_materialized_sv: None,
+                    pending_update: None,
+                    last_change_timestamp: 0,
+                    awareness: HashMap::new(),
+                    federated_provenance: Vec::new(),
+                },
+            );
         }
 
-        let wd = self.docs.get_mut(&work_id)
+        let wd = self
+            .docs
+            .get_mut(&work_id)
             .expect("work doc must exist after insert");
         wd.subscribers.insert(session_id, sync_id);
 
@@ -220,8 +233,15 @@ impl CrdtManager {
         }
     }
 
-    pub fn close_sync_session(&mut self, work_id: BeId, session_id: SessionId) -> Result<(), CrdtError> {
-        let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+    pub fn close_sync_session(
+        &mut self,
+        work_id: BeId,
+        session_id: SessionId,
+    ) -> Result<(), CrdtError> {
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         wd.subscribers.remove(&session_id);
         wd.author_keys.remove(&session_id);
         wd.awareness.remove(&session_id);
@@ -237,12 +257,17 @@ impl CrdtManager {
         sender_session: SessionId,
         ops: &[crate::server::transport::protocol::TextDeltaOp],
     ) -> Result<ApplyUpdateResult, CrdtError> {
-        let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         if !wd.subscribers.contains_key(&sender_session) {
             return Err(CrdtError::NotSubscribed(work_id, sender_session));
         }
 
-        let author_attr = wd.author_keys.get(&sender_session)
+        let author_attr = wd
+            .author_keys
+            .get(&sender_session)
             .map(|a| encode_be_id_as_attr(a.club_be_id));
 
         {
@@ -277,7 +302,9 @@ impl CrdtManager {
 
         let pending = {
             let txn = wd.doc.transact();
-            let sv = wd.last_materialized_sv.as_ref()
+            let sv = wd
+                .last_materialized_sv
+                .as_ref()
                 .cloned()
                 .unwrap_or_else(|| StateVector::default());
             let diff = txn.encode_diff_v1(&sv);
@@ -289,7 +316,8 @@ impl CrdtManager {
         };
         wd.pending_update = pending;
 
-        let relay_to: Vec<(SessionId, SyncSessionId)> = wd.subscribers
+        let relay_to: Vec<(SessionId, SyncSessionId)> = wd
+            .subscribers
             .iter()
             .filter(|(sid, _)| **sid != sender_session)
             .map(|(sid, sync_id)| (*sid, *sync_id))
@@ -304,25 +332,31 @@ impl CrdtManager {
         sender_session: SessionId,
         update_bytes: &[u8],
     ) -> Result<ApplyUpdateResult, CrdtError> {
-        let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         if !wd.subscribers.contains_key(&sender_session) {
             return Err(CrdtError::NotSubscribed(work_id, sender_session));
         }
 
-        let update = Update::decode_v1(update_bytes)
-            .map_err(|e| CrdtError::InvalidUpdate(e.to_string()))?;
+        let update =
+            Update::decode_v1(update_bytes).map_err(|e| CrdtError::InvalidUpdate(e.to_string()))?;
 
         {
             let mut txn = wd.doc.transact_mut();
-            txn.apply_update(update)
-                .map_err(|e| CrdtError::InvalidUpdate(format!("update integration failed: {}", e)))?;
+            txn.apply_update(update).map_err(|e| {
+                CrdtError::InvalidUpdate(format!("update integration failed: {}", e))
+            })?;
         }
 
         wd.last_change_timestamp = current_timestamp_secs();
 
         let pending = {
             let txn = wd.doc.transact();
-            let sv = wd.last_materialized_sv.as_ref()
+            let sv = wd
+                .last_materialized_sv
+                .as_ref()
                 .cloned()
                 .unwrap_or_else(|| StateVector::default());
             let diff = txn.encode_diff_v1(&sv);
@@ -334,7 +368,8 @@ impl CrdtManager {
         };
         wd.pending_update = pending;
 
-        let relay_to: Vec<(SessionId, SyncSessionId)> = wd.subscribers
+        let relay_to: Vec<(SessionId, SyncSessionId)> = wd
+            .subscribers
             .iter()
             .filter(|(sid, _)| **sid != sender_session)
             .map(|(sid, sync_id)| (*sid, *sync_id))
@@ -344,27 +379,39 @@ impl CrdtManager {
     }
 
     pub fn get_diff_since(&self, work_id: BeId, sv: &[u8]) -> Result<Vec<u8>, CrdtError> {
-        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
-        let remote_sv = StateVector::decode_v1(sv)
-            .map_err(|e| CrdtError::InvalidUpdate(e.to_string()))?;
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
+        let remote_sv =
+            StateVector::decode_v1(sv).map_err(|e| CrdtError::InvalidUpdate(e.to_string()))?;
         let txn = wd.doc.transact();
         Ok(txn.encode_diff_v1(&remote_sv))
     }
 
     pub fn current_text(&self, work_id: BeId) -> Result<String, CrdtError> {
-        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         let txn = wd.doc.transact();
         Ok(wd.text.get_string(&txn))
     }
 
     pub fn get_full_state(&self, work_id: BeId) -> Result<Vec<u8>, CrdtError> {
-        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         let txn = wd.doc.transact();
         Ok(txn.encode_state_as_update_v1(&StateVector::default()))
     }
 
     pub fn materialize_edition(&mut self, work_id: BeId) -> Result<Edition, CrdtError> {
-        let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
 
         let text: String = {
             let txn = wd.doc.transact();
@@ -391,7 +438,10 @@ impl CrdtManager {
         timestamp: u64,
         author_signing_keys: &std::collections::HashMap<BeId, SigningKey>,
     ) -> Result<Edition, CrdtError> {
-        let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
 
         let federated_prov: Vec<crate::edition::SpanProvenance> = wd.federated_provenance.clone();
 
@@ -421,7 +471,12 @@ impl CrdtManager {
             federated_prov
         } else {
             Self::build_span_provenance_from_authors(
-                &edition, &author_spans, signing_key, server_id_bytes, timestamp, author_signing_keys,
+                &edition,
+                &author_spans,
+                signing_key,
+                server_id_bytes,
+                timestamp,
+                author_signing_keys,
             )
         };
 
@@ -430,7 +485,9 @@ impl CrdtManager {
         Ok(edition)
     }
 
-    fn extract_author_spans(diffs: &[yrs::types::text::Diff<yrs::types::text::YChange>]) -> Vec<(Option<BeId>, usize, usize)> {
+    fn extract_author_spans(
+        diffs: &[yrs::types::text::Diff<yrs::types::text::YChange>],
+    ) -> Vec<(Option<BeId>, usize, usize)> {
         let mut spans: Vec<(Option<BeId>, usize, usize)> = Vec::new();
         let mut pos = 0usize;
 
@@ -445,7 +502,11 @@ impl CrdtManager {
 
             let author_be_id = d.attributes.as_ref().and_then(|attrs| {
                 attrs.get(&Arc::from("__author")).and_then(|v| {
-                    if let Any::String(s) = v { decode_be_id_from_attr(s.as_ref()) } else { None }
+                    if let Any::String(s) = v {
+                        decode_be_id_from_attr(s.as_ref())
+                    } else {
+                        None
+                    }
                 })
             });
 
@@ -483,7 +544,8 @@ impl CrdtManager {
         let last_pos = entries.last().map(|(p, _)| *p).unwrap_or(0);
 
         if author_spans.is_empty() || author_spans.len() == 1 && author_spans[0].0.is_none() {
-            let fingerprints: Vec<[u8; 32]> = entries.iter()
+            let fingerprints: Vec<[u8; 32]> = entries
+                .iter()
                 .map(|(_, c)| c.element.content_fingerprint())
                 .collect();
             if fingerprints.is_empty() {
@@ -492,7 +554,12 @@ impl CrdtManager {
             return vec![SpanProvenance {
                 start: first_pos,
                 end: last_pos + 1,
-                provenance: sign_span(fallback_signing_key, &fingerprints, timestamp, server_id_bytes),
+                provenance: sign_span(
+                    fallback_signing_key,
+                    &fingerprints,
+                    timestamp,
+                    server_id_bytes,
+                ),
             }];
         }
 
@@ -524,7 +591,8 @@ impl CrdtManager {
         }
 
         if results.is_empty() {
-            let fingerprints: Vec<[u8; 32]> = entries.iter()
+            let fingerprints: Vec<[u8; 32]> = entries
+                .iter()
                 .map(|(_, c)| c.element.content_fingerprint())
                 .collect();
             if fingerprints.is_empty() {
@@ -533,7 +601,12 @@ impl CrdtManager {
             return vec![SpanProvenance {
                 start: first_pos,
                 end: last_pos + 1,
-                provenance: sign_span(fallback_signing_key, &fingerprints, timestamp, server_id_bytes),
+                provenance: sign_span(
+                    fallback_signing_key,
+                    &fingerprints,
+                    timestamp,
+                    server_id_bytes,
+                ),
             }];
         }
 
@@ -541,12 +614,18 @@ impl CrdtManager {
     }
 
     pub fn needs_materialization(&self, work_id: BeId) -> Result<bool, CrdtError> {
-        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         Ok(wd.pending_update.is_some())
     }
 
     pub fn debounce_elapsed(&self, work_id: BeId) -> Result<bool, CrdtError> {
-        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         if wd.last_change_timestamp == 0 {
             return Ok(false);
         }
@@ -555,7 +634,10 @@ impl CrdtManager {
     }
 
     pub fn subscriber_count(&self, work_id: BeId) -> usize {
-        self.docs.get(&work_id).map(|wd| wd.subscribers.len()).unwrap_or(0)
+        self.docs
+            .get(&work_id)
+            .map(|wd| wd.subscribers.len())
+            .unwrap_or(0)
     }
 
     pub fn is_active(&self, work_id: BeId) -> bool {
@@ -563,7 +645,8 @@ impl CrdtManager {
     }
 
     pub fn is_subscriber(&self, work_id: BeId, session_id: SessionId) -> bool {
-        self.docs.get(&work_id)
+        self.docs
+            .get(&work_id)
             .map(|wd| wd.subscribers.contains_key(&session_id))
             .unwrap_or(false)
     }
@@ -582,12 +665,18 @@ impl CrdtManager {
         }
     }
 
-    pub fn get_federated_provenance(&self, work_id: BeId) -> Option<&[crate::edition::SpanProvenance]> {
-        self.docs.get(&work_id).map(|wd| wd.federated_provenance.as_slice())
+    pub fn get_federated_provenance(
+        &self,
+        work_id: BeId,
+    ) -> Option<&[crate::edition::SpanProvenance]> {
+        self.docs
+            .get(&work_id)
+            .map(|wd| wd.federated_provenance.as_slice())
     }
 
     pub fn works_needing_materialization(&self) -> Vec<BeId> {
-        self.docs.iter()
+        self.docs
+            .iter()
             .filter(|(_, wd)| wd.pending_update.is_some())
             .map(|(id, _)| *id)
             .collect()
@@ -616,22 +705,28 @@ impl CrdtManager {
             txn.state_vector()
         };
 
-        self.docs.insert(work_id, WorkDoc {
-            doc,
-            text: text_ref,
-            subscribers: HashMap::new(),
-            author_keys: HashMap::new(),
-            club_signing_keys: HashMap::new(),
-            last_materialized_sv: Some(sv),
-            pending_update: None,
-            last_change_timestamp: 0,
-            awareness: HashMap::new(),
-            federated_provenance: Vec::new(),
-        });
+        self.docs.insert(
+            work_id,
+            WorkDoc {
+                doc,
+                text: text_ref,
+                subscribers: HashMap::new(),
+                author_keys: HashMap::new(),
+                club_signing_keys: HashMap::new(),
+                last_materialized_sv: Some(sv),
+                pending_update: None,
+                last_change_timestamp: 0,
+                awareness: HashMap::new(),
+                federated_provenance: Vec::new(),
+            },
+        );
     }
 
     pub fn extract_update_for_federation(&mut self, work_id: BeId) -> Result<Vec<u8>, CrdtError> {
-        let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         let sv = wd.last_materialized_sv.clone().unwrap_or_default();
         let diff = {
             let txn = wd.doc.transact();
@@ -664,12 +759,16 @@ impl CrdtManager {
         session_id: SessionId,
         state: AwarenessState,
     ) -> Result<AwarenessRelayResult, CrdtError> {
-        let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         if !wd.subscribers.contains_key(&session_id) {
             return Err(CrdtError::NotSubscribed(work_id, session_id));
         }
         wd.awareness.insert(session_id, state);
-        let relay_to: Vec<(SessionId, SyncSessionId)> = wd.subscribers
+        let relay_to: Vec<(SessionId, SyncSessionId)> = wd
+            .subscribers
             .iter()
             .filter(|(sid, _)| **sid != session_id)
             .map(|(sid, sync_id)| (*sid, *sync_id))
@@ -682,9 +781,13 @@ impl CrdtManager {
         work_id: BeId,
         session_id: SessionId,
     ) -> Result<AwarenessRelayResult, CrdtError> {
-        let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         wd.awareness.remove(&session_id);
-        let relay_to: Vec<(SessionId, SyncSessionId)> = wd.subscribers
+        let relay_to: Vec<(SessionId, SyncSessionId)> = wd
+            .subscribers
             .iter()
             .filter(|(sid, _)| **sid != session_id)
             .map(|(sid, sync_id)| (*sid, *sync_id))
@@ -693,7 +796,10 @@ impl CrdtManager {
     }
 
     pub fn get_awareness(&self, work_id: BeId) -> Result<Vec<&AwarenessState>, CrdtError> {
-        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         Ok(wd.awareness.values().collect())
     }
 
@@ -703,7 +809,10 @@ impl CrdtManager {
         session_id: SessionId,
         author: AuthorIdentity,
     ) -> Result<(), CrdtError> {
-        let wd = self.docs.get_mut(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         if !wd.subscribers.contains_key(&session_id) {
             return Err(CrdtError::NotSubscribed(work_id, session_id));
         }
@@ -723,21 +832,45 @@ impl CrdtManager {
     }
 
     pub fn get_club_signing_key(&self, work_id: BeId, club_be_id: BeId) -> Option<SigningKey> {
-        self.docs.get(&work_id)?.club_signing_keys.get(&club_be_id).cloned()
+        self.docs
+            .get(&work_id)?
+            .club_signing_keys
+            .get(&club_be_id)
+            .cloned()
     }
 
-    pub fn get_author(&self, work_id: BeId, session_id: SessionId) -> Result<Option<AuthorIdentity>, CrdtError> {
-        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+    pub fn get_author(
+        &self,
+        work_id: BeId,
+        session_id: SessionId,
+    ) -> Result<Option<AuthorIdentity>, CrdtError> {
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         Ok(wd.author_keys.get(&session_id).cloned())
     }
 
-    pub fn get_author_sessions(&self, work_id: BeId) -> Result<Vec<(SessionId, AuthorIdentity)>, CrdtError> {
-        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
-        Ok(wd.author_keys.iter().map(|(sid, ai)| (*sid, ai.clone())).collect())
+    pub fn get_author_sessions(
+        &self,
+        work_id: BeId,
+    ) -> Result<Vec<(SessionId, AuthorIdentity)>, CrdtError> {
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
+        Ok(wd
+            .author_keys
+            .iter()
+            .map(|(sid, ai)| (*sid, ai.clone()))
+            .collect())
     }
 
     pub fn get_subscribed_sessions(&self, work_id: BeId) -> Result<Vec<SessionId>, CrdtError> {
-        let wd = self.docs.get(&work_id).ok_or(CrdtError::WorkNotFound(work_id))?;
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
         Ok(wd.subscribers.keys().copied().collect())
     }
 
@@ -760,7 +893,10 @@ impl CrdtManager {
             .get(&signed.signer_public_key)
             .ok_or_else(|| SigningError::UnknownSigner(signed.signer_public_key))?;
 
-        let sig_bytes: [u8; 64] = signed.signature.clone().try_into()
+        let sig_bytes: [u8; 64] = signed
+            .signature
+            .clone()
+            .try_into()
             .map_err(|_| SigningError::InvalidSignatureBytes)?;
         let signature = Signature::from_bytes(&sig_bytes);
 
@@ -950,7 +1086,9 @@ mod tests {
         let ops = vec![
             TextDeltaOp::Retain { count: 6 },
             TextDeltaOp::Delete { count: 5 },
-            TextDeltaOp::Insert { text: "xudanu".to_string() },
+            TextDeltaOp::Insert {
+                text: "xudanu".to_string(),
+            },
         ];
 
         let result = mgr.apply_text_delta(work_id, s1, &ops).unwrap();
@@ -970,7 +1108,9 @@ mod tests {
 
         let ops = vec![
             TextDeltaOp::Retain { count: 3 },
-            TextDeltaOp::Insert { text: "there ".to_string() },
+            TextDeltaOp::Insert {
+                text: "there ".to_string(),
+            },
         ];
 
         mgr.apply_text_delta(work_id, s1, &ops).unwrap();
@@ -999,7 +1139,9 @@ mod tests {
         let ops = vec![
             TextDeltaOp::Retain { count: 6 },
             TextDeltaOp::Delete { count: 5 },
-            TextDeltaOp::Insert { text: "🌍 world".to_string() },
+            TextDeltaOp::Insert {
+                text: "🌍 world".to_string(),
+            },
         ];
         mgr.apply_text_delta(work_id, s1, &ops).unwrap();
         assert_eq!(mgr.current_text(work_id).unwrap(), "hello 🌍 world");
@@ -1009,7 +1151,9 @@ mod tests {
         let ops2 = vec![
             TextDeltaOp::Retain { count: 1 },
             TextDeltaOp::Delete { count: 2 },
-            TextDeltaOp::Insert { text: "XX".to_string() },
+            TextDeltaOp::Insert {
+                text: "XX".to_string(),
+            },
             TextDeltaOp::Retain { count: 1 },
         ];
         mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
@@ -1027,10 +1171,15 @@ mod tests {
         let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}";
         let ops = vec![
             TextDeltaOp::Retain { count: 5 },
-            TextDeltaOp::Insert { text: family.to_string() },
+            TextDeltaOp::Insert {
+                text: family.to_string(),
+            },
         ];
         mgr.apply_text_delta(work_id, s1, &ops).unwrap();
-        assert_eq!(mgr.current_text(work_id).unwrap(), format!("hello{}", family));
+        assert_eq!(
+            mgr.current_text(work_id).unwrap(),
+            format!("hello{}", family)
+        );
     }
 
     #[test]
@@ -1079,11 +1228,16 @@ mod tests {
         let sid = make_session(1);
 
         mgr.open_sync_session(work_id, sid, Some("hello"));
-        mgr.register_author(work_id, sid, AuthorIdentity {
-            public_key: [1u8; 32],
-            display_name: "Alice".to_string(),
-            club_be_id: 10,
-        }).unwrap();
+        mgr.register_author(
+            work_id,
+            sid,
+            AuthorIdentity {
+                public_key: [1u8; 32],
+                display_name: "Alice".to_string(),
+                club_be_id: 10,
+            },
+        )
+        .unwrap();
 
         mgr.close_sync_session(work_id, sid).unwrap();
         assert!(!mgr.is_active(work_id));
@@ -1099,13 +1253,20 @@ mod tests {
         mgr.open_sync_session(work_id, s1, Some(""));
 
         let alice_key = [0xABu8; 32];
-        mgr.register_author(work_id, s1, AuthorIdentity {
-            public_key: alice_key,
-            display_name: "Alice".to_string(),
-            club_be_id: 100,
-        }).unwrap();
+        mgr.register_author(
+            work_id,
+            s1,
+            AuthorIdentity {
+                public_key: alice_key,
+                display_name: "Alice".to_string(),
+                club_be_id: 100,
+            },
+        )
+        .unwrap();
 
-        let ops = vec![TextDeltaOp::Insert { text: "hello".to_string() }];
+        let ops = vec![TextDeltaOp::Insert {
+            text: "hello".to_string(),
+        }];
         mgr.apply_text_delta(work_id, s1, &ops).unwrap();
 
         assert_eq!(mgr.current_text(work_id).unwrap(), "hello");
@@ -1113,15 +1274,22 @@ mod tests {
         mgr.open_sync_session(work_id, s2, None);
 
         let bob_key = [0xCDu8; 32];
-        mgr.register_author(work_id, s2, AuthorIdentity {
-            public_key: bob_key,
-            display_name: "Bob".to_string(),
-            club_be_id: 200,
-        }).unwrap();
+        mgr.register_author(
+            work_id,
+            s2,
+            AuthorIdentity {
+                public_key: bob_key,
+                display_name: "Bob".to_string(),
+                club_be_id: 200,
+            },
+        )
+        .unwrap();
 
         let ops2 = vec![
             TextDeltaOp::Retain { count: 5 },
-            TextDeltaOp::Insert { text: " world".to_string() },
+            TextDeltaOp::Insert {
+                text: " world".to_string(),
+            },
         ];
         mgr.apply_text_delta(work_id, s2, &ops2).unwrap();
 
@@ -1136,7 +1304,9 @@ mod tests {
 
         mgr.open_sync_session(work_id, sid, Some(""));
 
-        let ops = vec![TextDeltaOp::Insert { text: "no author".to_string() }];
+        let ops = vec![TextDeltaOp::Insert {
+            text: "no author".to_string(),
+        }];
         mgr.apply_text_delta(work_id, sid, &ops).unwrap();
 
         assert_eq!(mgr.current_text(work_id).unwrap(), "no author");
@@ -1240,14 +1410,18 @@ mod tests {
         let s1 = make_session(1);
 
         mgr.open_sync_session(work_id, s1, Some(""));
-        let ops = vec![TextDeltaOp::Insert { text: "hello world".to_string() }];
+        let ops = vec![TextDeltaOp::Insert {
+            text: "hello world".to_string(),
+        }];
         mgr.apply_text_delta(work_id, s1, &ops).unwrap();
         mgr.materialize_edition(work_id).unwrap();
 
         let ops2 = vec![
             TextDeltaOp::Retain { count: 6 },
             TextDeltaOp::Delete { count: 5 },
-            TextDeltaOp::Insert { text: "xudanu".to_string() },
+            TextDeltaOp::Insert {
+                text: "xudanu".to_string(),
+            },
         ];
         mgr.apply_text_delta(work_id, s1, &ops2).unwrap();
 
@@ -1261,9 +1435,7 @@ mod tests {
         known_keys.insert(verifying_key.to_bytes(), verifying_key);
 
         let mut mgr2 = CrdtManager::new(3);
-        let result = mgr2.apply_signed_federation_update(
-            work_id, &signed, &known_keys, None,
-        );
+        let result = mgr2.apply_signed_federation_update(work_id, &signed, &known_keys, None);
         assert!(result.is_ok());
         assert_eq!(mgr2.current_text(work_id).unwrap(), "hello xudanu");
     }
@@ -1282,16 +1454,17 @@ mod tests {
         let signing_key = generate_signing_key();
         let verifying_key = signing_key.verifying_key();
 
-        let mut signed = mgr.extract_signed_update_for_federation(work_id, &signing_key).unwrap();
+        let mut signed = mgr
+            .extract_signed_update_for_federation(work_id, &signing_key)
+            .unwrap();
         signed.update_bytes.push(0xFF);
 
         let mut known_keys = HashMap::new();
         known_keys.insert(verifying_key.to_bytes(), verifying_key);
 
         let mut mgr2 = CrdtManager::new(3);
-        let result = mgr2.apply_signed_federation_update(
-            work_id, &signed, &known_keys, Some("fallback"),
-        );
+        let result =
+            mgr2.apply_signed_federation_update(work_id, &signed, &known_keys, Some("fallback"));
         assert!(result.is_err());
     }
 }

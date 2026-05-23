@@ -1,20 +1,22 @@
-use std::sync::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::Mutex;
 
-use super::canopy::{BertCanopy, CanopyCrumData, SensorCanopy, compute_join, propagate_flags};
+use super::canopy::{compute_join, propagate_flags, BertCanopy, CanopyCrumData, SensorCanopy};
 use super::edition::Edition;
 use super::grandmap::GrandMap;
 use super::links::{HyperLink, HyperRef};
 use super::props::{BertProp, PropFinder};
 use super::range_element::RangeElement;
-use super::transclusion::{TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery};
 use super::recorder::RecorderId;
+use super::transclusion::{
+    TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery,
+};
 use super::work::Work;
-use super::wrapper::{WRAPPER_CLUB_ID, TEXT_TOKEN};
-use crate::ent::htree::{HUpperCrumData, HPart};
-use crate::ent::trace::TracePosition;
+use super::wrapper::{TEXT_TOKEN, WRAPPER_CLUB_ID};
 use crate::ent::dagwood::DagWood;
+use crate::ent::htree::{HPart, HUpperCrumData};
+use crate::ent::trace::TracePosition;
 
 #[derive(Debug, Clone)]
 pub struct EditionMeta {
@@ -80,7 +82,10 @@ impl EditionMeta {
     pub fn update_prop(&mut self, new_prop: BertProp) {
         self.prop = new_prop;
         let flags = self.prop.flags();
-        self.bert_crum.lock().unwrap_or_else(|e| e.into_inner()).set_own_flags(flags);
+        self.bert_crum
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_own_flags(flags);
         propagate_flags(&self.bert_crum);
     }
 
@@ -99,12 +104,19 @@ impl EditionMeta {
     }
 
     pub fn any_passes(&self, finder: &PropFinder) -> bool {
-        let flags = self.bert_crum.lock().unwrap_or_else(|e| e.into_inner()).flags();
+        let flags = self
+            .bert_crum
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .flags();
         if !finder.does_pass(flags) {
             return false;
         }
         if let Some(ref hc) = self.h_crum {
-            return hc.lock().unwrap_or_else(|e| e.into_inner()).any_passes(finder);
+            return hc
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .any_passes(finder);
         }
         true
     }
@@ -127,7 +139,8 @@ pub struct BackfollowEngine {
     work_storage: std::collections::HashMap<u64, Work>,
     link_storage: std::collections::HashMap<u64, HyperLink>,
     fingerprint_to_works: std::collections::HashMap<[u8; 32], std::collections::HashSet<u64>>,
-    fossil_by_fingerprint: std::collections::HashMap<[u8; 32], std::collections::HashSet<RecorderId>>,
+    fossil_by_fingerprint:
+        std::collections::HashMap<[u8; 32], std::collections::HashSet<RecorderId>>,
     dagwood: DagWood,
     parent_of: std::collections::HashMap<u64, Vec<u64>>,
     next_edition_id: u64,
@@ -168,18 +181,14 @@ impl BackfollowEngine {
         id
     }
 
-    pub fn register_edition(
-        &mut self,
-        edition: Edition,
-        edition_id: u64,
-        prop: BertProp,
-    ) {
+    pub fn register_edition(&mut self, edition: Edition, edition_id: u64, prop: BertProp) {
         let flags = prop.flags();
         let bert_crum = self.bert_canopy.make_crum(flags);
         let sensor_crum = self.sensor_canopy.make_crum(0);
         let meta = EditionMeta::new(edition_id, bert_crum, sensor_crum, prop);
         let edition_elem = RangeElement::edition(edition_id);
-        self.transclusion_index.register_edition(&edition, &edition_elem, None);
+        self.transclusion_index
+            .register_edition(&edition, &edition_elem, None);
         self.edition_storage.insert(edition_id, edition);
         self.edition_metas.insert(edition_id, meta);
     }
@@ -197,12 +206,17 @@ impl BackfollowEngine {
         let meta = EditionMeta::new(edition_id, bert_crum, sensor_crum, prop);
         if let Some(parent_meta) = self.edition_metas.get(&parent_id) {
             if let Some(ref parent_hc) = parent_meta.h_crum {
-                let parent_bert = parent_hc.lock().unwrap_or_else(|e| e.into_inner()).bert_crum().clone();
+                let parent_bert = parent_hc
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .bert_crum()
+                    .clone();
                 let _joined = compute_join(&meta.bert_crum, &parent_bert);
             }
         }
         let edition_elem = RangeElement::edition(edition_id);
-        self.transclusion_index.register_edition(&edition, &edition_elem, None);
+        self.transclusion_index
+            .register_edition(&edition, &edition_elem, None);
         self.edition_storage.insert(edition_id, edition);
         self.edition_metas.insert(edition_id, meta);
     }
@@ -213,7 +227,10 @@ impl BackfollowEngine {
         self.transclusion_index.register_work(&edition, &work_elem);
         for (_, carrier) in edition.all_entries() {
             let fp = carrier.element.content_fingerprint();
-            self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
+            self.fingerprint_to_works
+                .entry(fp)
+                .or_default()
+                .insert(work_id);
         }
         if let Some(eid) = edition_id {
             if let Some(meta) = self.edition_metas.get_mut(&eid) {
@@ -223,13 +240,22 @@ impl BackfollowEngine {
         self.work_storage.insert(work_id, work);
     }
 
-    pub fn register_work_with_prop(&mut self, work: Work, work_id: u64, edition_id: Option<u64>, prop: BertProp) {
+    pub fn register_work_with_prop(
+        &mut self,
+        work: Work,
+        work_id: u64,
+        edition_id: Option<u64>,
+        prop: BertProp,
+    ) {
         let edition = work.current_edition().clone();
         let work_elem = RangeElement::work(work_id);
         self.transclusion_index.register_work(&edition, &work_elem);
         for (_, carrier) in edition.all_entries() {
             let fp = carrier.element.content_fingerprint();
-            self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
+            self.fingerprint_to_works
+                .entry(fp)
+                .or_default()
+                .insert(work_id);
         }
         if let Some(eid) = edition_id {
             if let Some(meta) = self.edition_metas.get_mut(&eid) {
@@ -250,7 +276,9 @@ impl BackfollowEngine {
     }
 
     pub fn update_work_with_parent(&mut self, work_id: u64, parent_work_id: u64, new_work: Work) {
-        let old_edition = self.work_storage.get(&work_id)
+        let old_edition = self
+            .work_storage
+            .get(&work_id)
             .map(|w| w.current_edition().clone());
         if let Some(old_ed) = old_edition {
             let old_elem = RangeElement::work(work_id);
@@ -267,33 +295,48 @@ impl BackfollowEngine {
         }
         let new_edition = new_work.current_edition().clone();
         let work_elem = RangeElement::work(work_id);
-        self.transclusion_index.register_work(&new_edition, &work_elem);
+        self.transclusion_index
+            .register_work(&new_edition, &work_elem);
         for (_, carrier) in new_edition.all_entries() {
             let fp = carrier.element.content_fingerprint();
-            self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
+            self.fingerprint_to_works
+                .entry(fp)
+                .or_default()
+                .insert(work_id);
         }
 
-        let parent_tp = self.edition_metas.get(&parent_work_id)
+        let parent_tp = self
+            .edition_metas
+            .get(&parent_work_id)
             .and_then(|m| m.trace_position().copied());
         let tp = if let Some(parent_pos) = parent_tp {
             self.dagwood.new_position_after(parent_pos)
         } else {
             self.dagwood.new_position()
         };
-        let old_prop = self.edition_metas.get(&work_id)
+        let old_prop = self
+            .edition_metas
+            .get(&work_id)
             .map(|m| m.prop().clone())
             .unwrap_or_else(BertProp::make);
         let flags = old_prop.flags();
         let bert_crum = self.bert_canopy.make_crum(flags);
         let sensor_crum = self.sensor_canopy.make_crum(0);
 
-        let parent_arc: Option<Arc<Mutex<EditionMeta>>> = self.edition_metas.get(&parent_work_id)
+        let parent_arc: Option<Arc<Mutex<EditionMeta>>> = self
+            .edition_metas
+            .get(&parent_work_id)
             .map(|m| Arc::new(Mutex::new(m.clone())));
 
         let h_crum = if let Some(parent_meta) = parent_arc {
             let h = HUpperCrumData::from_two(
                 parent_meta.clone() as Arc<Mutex<dyn HPart>>,
-                Arc::new(Mutex::new(EditionMeta::new(work_id, bert_crum.clone(), sensor_crum.clone(), old_prop.clone()))) as Arc<Mutex<dyn HPart>>,
+                Arc::new(Mutex::new(EditionMeta::new(
+                    work_id,
+                    bert_crum.clone(),
+                    sensor_crum.clone(),
+                    old_prop.clone(),
+                ))) as Arc<Mutex<dyn HPart>>,
                 tp,
                 self.bert_canopy.clone(),
             );
@@ -312,7 +355,9 @@ impl BackfollowEngine {
     }
 
     pub fn update_work(&mut self, work_id: u64, new_work: Work) {
-        let old_edition = self.work_storage.get(&work_id)
+        let old_edition = self
+            .work_storage
+            .get(&work_id)
             .map(|w| w.current_edition().clone());
         if let Some(old_ed) = old_edition {
             let old_elem = RangeElement::work(work_id);
@@ -329,10 +374,14 @@ impl BackfollowEngine {
         }
         let new_edition = new_work.current_edition().clone();
         let work_elem = RangeElement::work(work_id);
-        self.transclusion_index.register_work(&new_edition, &work_elem);
+        self.transclusion_index
+            .register_work(&new_edition, &work_elem);
         for (_, carrier) in new_edition.all_entries() {
             let fp = carrier.element.content_fingerprint();
-            self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
+            self.fingerprint_to_works
+                .entry(fp)
+                .or_default()
+                .insert(work_id);
         }
         self.work_storage.insert(work_id, new_work);
     }
@@ -348,7 +397,10 @@ impl BackfollowEngine {
         }
         let mut endorsements = Vec::new();
         if has_text {
-            endorsements.push(Id::in_space(super::grandmap::IdSpaceId(WRAPPER_CLUB_ID), TEXT_TOKEN as i64));
+            endorsements.push(Id::in_space(
+                super::grandmap::IdSpaceId(WRAPPER_CLUB_ID),
+                TEXT_TOKEN as i64,
+            ));
         }
         endorsements
     }
@@ -369,7 +421,8 @@ impl BackfollowEngine {
         if let Some(meta) = self.edition_metas.remove(&edition_id) {
             if let Some(edition) = self.edition_storage.remove(&edition_id) {
                 let elem = RangeElement::edition(edition_id);
-                self.transclusion_index.unregister_edition(&edition, &elem, None);
+                self.transclusion_index
+                    .unregister_edition(&edition, &elem, None);
             }
             let _ = meta;
         }
@@ -387,14 +440,19 @@ impl BackfollowEngine {
         self.fingerprint_to_works.clear();
         for (id, stored) in &self.edition_storage {
             let elem = RangeElement::edition(*id);
-            self.transclusion_index.register_edition(stored, &elem, None);
+            self.transclusion_index
+                .register_edition(stored, &elem, None);
         }
         for (wid, work) in &self.work_storage {
             let elem = RangeElement::work(*wid);
-            self.transclusion_index.register_work(work.current_edition(), &elem);
+            self.transclusion_index
+                .register_work(work.current_edition(), &elem);
             for (_, carrier) in work.current_edition().all_entries() {
                 let fp = carrier.element.content_fingerprint();
-                self.fingerprint_to_works.entry(fp).or_default().insert(*wid);
+                self.fingerprint_to_works
+                    .entry(fp)
+                    .or_default()
+                    .insert(*wid);
             }
         }
     }
@@ -409,7 +467,10 @@ impl BackfollowEngine {
         let edition = work.current_edition().clone();
         for (_, carrier) in edition.all_entries() {
             let fp = carrier.element.content_fingerprint();
-            self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
+            self.fingerprint_to_works
+                .entry(fp)
+                .or_default()
+                .insert(work_id);
         }
     }
 
@@ -459,7 +520,13 @@ impl BackfollowEngine {
                             &finder,
                             &mut hcrum_cache,
                             &mut |visited_hc| {
-                                let visited_flags = visited_hc.lock().unwrap_or_else(|e| e.into_inner()).bert_crum().lock().unwrap_or_else(|e| e.into_inner()).flags();
+                                let visited_flags = visited_hc
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .bert_crum()
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .flags();
                                 if finder.does_pass(visited_flags) {
                                     for (eid, em) in &self.edition_metas {
                                         if let Some(ref em_hc) = em.h_crum() {
@@ -490,11 +557,7 @@ impl BackfollowEngine {
         final_results
     }
 
-    pub fn find_works_for_content(
-        &self,
-        content: &RangeElement,
-        query: &WorkQuery,
-    ) -> Vec<u64> {
+    pub fn find_works_for_content(&self, content: &RangeElement, query: &WorkQuery) -> Vec<u64> {
         let work_elements = self.transclusion_index.find_works(content, query);
         let mut work_ids = Vec::new();
         for elem in work_elements {
@@ -514,8 +577,14 @@ impl BackfollowEngine {
     }
 
     pub fn version_is_le(&mut self, a: u64, b: u64) -> Option<bool> {
-        let tp_a = self.edition_metas.get(&a).and_then(|m| m.trace_position().copied());
-        let tp_b = self.edition_metas.get(&b).and_then(|m| m.trace_position().copied());
+        let tp_a = self
+            .edition_metas
+            .get(&a)
+            .and_then(|m| m.trace_position().copied());
+        let tp_b = self
+            .edition_metas
+            .get(&b)
+            .and_then(|m| m.trace_position().copied());
         match (tp_a, tp_b) {
             (Some(a_pos), Some(b_pos)) => Some(self.dagwood.is_le(a_pos, b_pos)),
             _ => None,
@@ -527,7 +596,9 @@ impl BackfollowEngine {
     }
 
     pub fn trace_position_of(&self, work_id: u64) -> Option<TracePosition> {
-        self.edition_metas.get(&work_id).and_then(|m| m.trace_position().copied())
+        self.edition_metas
+            .get(&work_id)
+            .and_then(|m| m.trace_position().copied())
     }
 
     pub fn get_work(&self, id: u64) -> Option<&Work> {
@@ -542,18 +613,24 @@ impl BackfollowEngine {
         &mut self.transclusion_index
     }
 
-    pub fn fingerprint_to_works(&self) -> &std::collections::HashMap<[u8; 32], std::collections::HashSet<u64>> {
+    pub fn fingerprint_to_works(
+        &self,
+    ) -> &std::collections::HashMap<[u8; 32], std::collections::HashSet<u64>> {
         &self.fingerprint_to_works
     }
 
     pub fn find_works_by_fingerprint(&self, fp: &[u8; 32]) -> Vec<u64> {
-        self.fingerprint_to_works.get(fp)
+        self.fingerprint_to_works
+            .get(fp)
             .map(|set| set.iter().copied().collect())
             .unwrap_or_default()
     }
 
     pub fn register_fingerprint_for_work(&mut self, fp: [u8; 32], work_id: u64) {
-        self.fingerprint_to_works.entry(fp).or_default().insert(work_id);
+        self.fingerprint_to_works
+            .entry(fp)
+            .or_default()
+            .insert(work_id);
     }
 
     pub fn register_federated_entry(
@@ -564,7 +641,13 @@ impl BackfollowEngine {
         element_type: String,
         is_direct: bool,
     ) {
-        self.transclusion_index.register_federated(content, origin_server_id, local_id, element_type, is_direct);
+        self.transclusion_index.register_federated(
+            content,
+            origin_server_id,
+            local_id,
+            element_type,
+            is_direct,
+        );
     }
 
     pub fn has_federated_entries(&self) -> bool {
@@ -579,13 +662,21 @@ impl BackfollowEngine {
         &self.sensor_canopy
     }
 
-    pub fn plant_recorder(&mut self, edition_id: u64, fossil_id: RecorderId, content: &[RangeElement]) {
+    pub fn plant_recorder(
+        &mut self,
+        edition_id: u64,
+        fossil_id: RecorderId,
+        content: &[RangeElement],
+    ) {
         tracing::debug!(target: "xudanu::content_watch",
             edition_id, fossil_id, content_count = content.len(),
             "plant_recorder: installing fossil");
         if let Some(meta) = self.edition_metas.get(&edition_id) {
             let scrum = meta.sensor_crum();
-            scrum.lock().unwrap_or_else(|e| e.into_inner()).install_recorders(&[fossil_id]);
+            scrum
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .install_recorders(&[fossil_id]);
             propagate_flags(scrum);
         } else {
             tracing::debug!(target: "xudanu::content_watch",
@@ -594,17 +685,28 @@ impl BackfollowEngine {
         }
         for elem in content {
             let fp = elem.content_fingerprint();
-            self.fossil_by_fingerprint.entry(fp).or_default().insert(fossil_id);
+            self.fossil_by_fingerprint
+                .entry(fp)
+                .or_default()
+                .insert(fossil_id);
         }
         tracing::debug!(target: "xudanu::content_watch",
             fossil_id, total_fp_entries = self.fossil_by_fingerprint.len(),
             "plant_recorder: fossil_by_fingerprint updated");
     }
 
-    pub fn remove_planted_recorder(&mut self, edition_id: u64, fossil_id: RecorderId, content: &[RangeElement]) {
+    pub fn remove_planted_recorder(
+        &mut self,
+        edition_id: u64,
+        fossil_id: RecorderId,
+        content: &[RangeElement],
+    ) {
         if let Some(meta) = self.edition_metas.get(&edition_id) {
             let scrum = meta.sensor_crum();
-            scrum.lock().unwrap_or_else(|e| e.into_inner()).remove_recorders(&[fossil_id]);
+            scrum
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove_recorders(&[fossil_id]);
             propagate_flags(scrum);
         }
         for elem in content {
@@ -619,7 +721,13 @@ impl BackfollowEngine {
     pub fn recorders_on_edition(&self, edition_id: u64) -> Vec<RecorderId> {
         self.edition_metas
             .get(&edition_id)
-            .map(|meta| meta.sensor_crum().lock().unwrap_or_else(|e| e.into_inner()).recorders().to_vec())
+            .map(|meta| {
+                meta.sensor_crum()
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .recorders()
+                    .to_vec()
+            })
             .unwrap_or_default()
     }
 
@@ -636,7 +744,11 @@ impl BackfollowEngine {
                 results.push((fossil_id, edition_id));
             }
         }
-        let mut current = scrum.lock().unwrap_or_else(|e| e.into_inner()).parent().cloned();
+        let mut current = scrum
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .parent()
+            .cloned();
         while let Some(p) = current {
             let guard = p.lock().unwrap_or_else(|e| e.into_inner());
             for &fossil_id in guard.recorders() {
@@ -791,7 +903,13 @@ impl BackfollowEngine {
                     finder,
                     hcrum_cache,
                     &mut |visited_hc| {
-                        let flags = visited_hc.lock().unwrap_or_else(|e| e.into_inner()).bert_crum().lock().unwrap_or_else(|e| e.into_inner()).flags();
+                        let flags = visited_hc
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .bert_crum()
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .flags();
                         if finder.does_pass(flags) {
                             for (eid, em) in &self.edition_metas {
                                 if let Some(ref em_hc) = em.h_crum() {
@@ -808,19 +926,10 @@ impl BackfollowEngine {
         }
     }
 
-    pub fn delayed_find_matching(
-        &self,
-        edition_id: u64,
-        finder: &PropFinder,
-    ) -> Vec<u64> {
+    pub fn delayed_find_matching(&self, edition_id: u64, finder: &PropFinder) -> Vec<u64> {
         let mut trail = TrailBlazer::new();
         let mut hcrum_cache = HashSet::new();
-        self.delayed_store_backfollow_for_edition(
-            edition_id,
-            finder,
-            &mut hcrum_cache,
-            &mut trail,
-        );
+        self.delayed_store_backfollow_for_edition(edition_id, finder, &mut hcrum_cache, &mut trail);
         let trail_edition = trail.into_trail();
         let mut result = Vec::new();
         for (_pos, carrier) in trail_edition.all_entries() {
@@ -1033,13 +1142,25 @@ mod tests {
         engine.register_edition(edition, id, BertProp::make());
 
         let meta = engine.get_edition_meta(id).unwrap();
-        assert_eq!(meta.bert_crum().lock().unwrap_or_else(|e| e.into_inner()).flags(), 0);
+        assert_eq!(
+            meta.bert_crum()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .flags(),
+            0
+        );
 
         let new_prop = BertProp::permissions_prop(vec![Id::global(0)]);
         engine.update_edition_prop(id, new_prop);
 
         let meta = engine.get_edition_meta(id).unwrap();
-        assert_eq!(meta.bert_crum().lock().unwrap_or_else(|e| e.into_inner()).own_flags(), PUBLIC_CLUB_FLAG);
+        assert_eq!(
+            meta.bert_crum()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .own_flags(),
+            PUBLIC_CLUB_FLAG
+        );
     }
 
     #[test]
@@ -1081,7 +1202,10 @@ mod tests {
 
         assert_eq!(bert.lock().unwrap_or_else(|e| e.into_inner()).flags(), 0);
         meta.update_prop(BertProp::permissions_prop(vec![Id::global(0)]));
-        assert_eq!(bert.lock().unwrap_or_else(|e| e.into_inner()).own_flags(), PUBLIC_CLUB_FLAG);
+        assert_eq!(
+            bert.lock().unwrap_or_else(|e| e.into_inner()).own_flags(),
+            PUBLIC_CLUB_FLAG
+        );
     }
 
     #[test]
@@ -1121,10 +1245,8 @@ mod tests {
         engine.register_edition(edition, id, BertProp::make());
 
         let query = TransclusionQuery::all();
-        let results = engine.find_transcluders_with_backfollow(
-            &RangeElement::text("hello"),
-            &query,
-        );
+        let results =
+            engine.find_transcluders_with_backfollow(&RangeElement::text("hello"), &query);
         assert_eq!(results.len(), 1);
     }
 
@@ -1182,7 +1304,8 @@ mod tests {
         let results = engine.find_transcluders(&RangeElement::text("a"), &query);
         assert!(results.len() >= 2);
 
-        let found_ids: Vec<u64> = results.iter()
+        let found_ids: Vec<u64> = results
+            .iter()
             .filter_map(|r| r.element.as_edition_id())
             .collect();
         assert!(found_ids.contains(&id1));
@@ -1201,10 +1324,7 @@ mod tests {
         engine.register_work(work, wid, Some(eid));
 
         let query = WorkQuery::all();
-        let works = engine.find_works_for_content(
-            &RangeElement::text("document"),
-            &query,
-        );
+        let works = engine.find_works_for_content(&RangeElement::text("document"), &query);
         assert_eq!(works.len(), 1);
         assert_eq!(works[0], wid);
 
@@ -1220,7 +1340,12 @@ mod tests {
         engine.register_edition(edition, id, BertProp::make());
 
         let query = TransclusionQuery::all();
-        assert_eq!(engine.find_transcluders(&RangeElement::text("temp"), &query).len(), 1);
+        assert_eq!(
+            engine
+                .find_transcluders(&RangeElement::text("temp"), &query)
+                .len(),
+            1
+        );
 
         engine.unregister_edition(id);
         assert_eq!(engine.edition_count(), 0);
@@ -1261,8 +1386,18 @@ mod tests {
     #[test]
     fn backfollow_engine_register_link() {
         let mut engine = BackfollowEngine::new();
-        let left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("source"))), None, None, None);
-        let right = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("target"))), None, None, None);
+        let left = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("source"))),
+            None,
+            None,
+            None,
+        );
+        let right = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("target"))),
+            None,
+            None,
+            None,
+        );
         let link = HyperLink::make(vec![], left, right);
         let lid = engine.alloc_link_id();
         engine.register_link(link, lid);
@@ -1272,8 +1407,18 @@ mod tests {
     #[test]
     fn backfollow_engine_find_links_to_content() {
         let mut engine = BackfollowEngine::new();
-        let left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("source"))), None, None, None);
-        let right = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("target"))), None, None, None);
+        let left = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("source"))),
+            None,
+            None,
+            None,
+        );
+        let right = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("target"))),
+            None,
+            None,
+            None,
+        );
         let link = HyperLink::make(vec![], left, right);
         let lid = engine.alloc_link_id();
         engine.register_link(link, lid);
@@ -1291,7 +1436,11 @@ mod tests {
         let mut engine = BackfollowEngine::new();
         let eid = engine.alloc_edition_id();
         let edition = Edition::from_one(0, RangeElement::edition(eid));
-        engine.register_edition(Edition::from_one(0, RangeElement::text("data")), eid, BertProp::make());
+        engine.register_edition(
+            Edition::from_one(0, RangeElement::text("data")),
+            eid,
+            BertProp::make(),
+        );
 
         let left = HyperRef::single(Some(edition), None, None, None);
         let right = HyperRef::single(Some(Edition::from_text("target")), None, None, None);
@@ -1337,14 +1486,32 @@ mod tests {
     #[test]
     fn backfollow_engine_update_link() {
         let mut engine = BackfollowEngine::new();
-        let left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("source"))), None, None, None);
-        let right = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("target"))), None, None, None);
+        let left = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("source"))),
+            None,
+            None,
+            None,
+        );
+        let right = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("target"))),
+            None,
+            None,
+            None,
+        );
         let link = HyperLink::make(vec![], left, right);
         let lid = engine.alloc_link_id();
         engine.register_link(link, lid);
 
-        let updated_left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("new_source"))), None, None, None);
-        let new_link = engine.get_link(lid).unwrap().with_end("LeftEnd", updated_left);
+        let updated_left = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("new_source"))),
+            None,
+            None,
+            None,
+        );
+        let new_link = engine
+            .get_link(lid)
+            .unwrap()
+            .with_end("LeftEnd", updated_left);
         engine.update_link(lid, new_link);
 
         let found = engine.find_links_to_content(&RangeElement::text("new_source"));
@@ -1356,11 +1523,29 @@ mod tests {
         let mut engine = BackfollowEngine::new();
         let e1 = engine.alloc_edition_id();
         let e2 = engine.alloc_edition_id();
-        engine.register_edition(Edition::from_one(0, RangeElement::text("docA")), e1, BertProp::make());
-        engine.register_edition(Edition::from_one(0, RangeElement::text("docB")), e2, BertProp::make());
+        engine.register_edition(
+            Edition::from_one(0, RangeElement::text("docA")),
+            e1,
+            BertProp::make(),
+        );
+        engine.register_edition(
+            Edition::from_one(0, RangeElement::text("docB")),
+            e2,
+            BertProp::make(),
+        );
 
-        let left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("docA"))), None, None, None);
-        let right = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("docB"))), None, None, None);
+        let left = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("docA"))),
+            None,
+            None,
+            None,
+        );
+        let right = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("docB"))),
+            None,
+            None,
+            None,
+        );
         let link = HyperLink::make(vec![], left, right);
         let lid = engine.alloc_link_id();
         engine.register_link(link, lid);
@@ -1370,23 +1555,48 @@ mod tests {
         assert_eq!(links_to_a.len(), 1);
         assert_eq!(links_to_b.len(), 1);
 
-        let transcluders = engine.find_transcluders(&RangeElement::text("docA"), &TransclusionQuery::all());
+        let transcluders =
+            engine.find_transcluders(&RangeElement::text("docA"), &TransclusionQuery::all());
         assert!(transcluders.len() >= 1);
     }
 
     #[test]
     fn gold_multi_ended_link_find() {
         let mut engine = BackfollowEngine::new();
-        let left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("A"))), None, None, None);
-        let right = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("B"))), None, None, None);
-        let note = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("C"))), None, None, None);
+        let left = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("A"))),
+            None,
+            None,
+            None,
+        );
+        let right = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("B"))),
+            None,
+            None,
+            None,
+        );
+        let note = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("C"))),
+            None,
+            None,
+            None,
+        );
         let link = HyperLink::make(vec![], left, right).with_end("Note", note);
         let lid = engine.alloc_link_id();
         engine.register_link(link, lid);
 
-        assert_eq!(engine.find_links_to_content(&RangeElement::text("A")).len(), 1);
-        assert_eq!(engine.find_links_to_content(&RangeElement::text("B")).len(), 1);
-        assert_eq!(engine.find_links_to_content(&RangeElement::text("C")).len(), 1);
+        assert_eq!(
+            engine.find_links_to_content(&RangeElement::text("A")).len(),
+            1
+        );
+        assert_eq!(
+            engine.find_links_to_content(&RangeElement::text("B")).len(),
+            1
+        );
+        assert_eq!(
+            engine.find_links_to_content(&RangeElement::text("C")).len(),
+            1
+        );
     }
 
     #[test]
@@ -1405,7 +1615,10 @@ mod tests {
         engine.update_work(1, updated_work);
 
         let old_results = engine.find_transcluders(&RangeElement::text("hello"), &q);
-        assert!(old_results.is_empty(), "old content should be removed from index");
+        assert!(
+            old_results.is_empty(),
+            "old content should be removed from index"
+        );
 
         let new_results = engine.find_transcluders(&RangeElement::text("goodbye"), &q);
         assert!(!new_results.is_empty(), "new content should be in index");
@@ -1424,7 +1637,11 @@ mod tests {
 
         let fp = shared_text.content_fingerprint();
         let works = engine.find_works_by_fingerprint(&fp);
-        assert_eq!(works.len(), 2, "both works should be found for shared content");
+        assert_eq!(
+            works.len(),
+            2,
+            "both works should be found for shared content"
+        );
         assert!(works.contains(&10));
         assert!(works.contains(&20));
     }
@@ -1445,8 +1662,10 @@ mod tests {
         let updated_work = Work::new(1, new_edition);
         engine.update_work(1, updated_work);
 
-        assert!(engine.find_works_by_fingerprint(&fp).is_empty(),
-            "old fingerprint should be removed");
+        assert!(
+            engine.find_works_by_fingerprint(&fp).is_empty(),
+            "old fingerprint should be removed"
+        );
     }
 
     #[test]
@@ -1461,8 +1680,10 @@ mod tests {
         assert!(!engine.find_transcluders(&elem, &q).is_empty());
 
         engine.unregister_edition(1);
-        assert!(engine.find_transcluders(&elem, &q).is_empty(),
-            "unregistered edition should be removed from index");
+        assert!(
+            engine.find_transcluders(&elem, &q).is_empty(),
+            "unregistered edition should be removed from index"
+        );
     }
 
     #[test]
@@ -1474,32 +1695,52 @@ mod tests {
         engine.register_work_with_prop(work, 1, None, prop);
 
         let meta = engine.get_edition_meta(1).unwrap();
-        assert!(meta.h_crum().is_some(), "register_work_with_prop should set h_crum");
-        assert!(meta.trace_position().is_some(), "register_work_with_prop should set trace_position");
+        assert!(
+            meta.h_crum().is_some(),
+            "register_work_with_prop should set h_crum"
+        );
+        assert!(
+            meta.trace_position().is_some(),
+            "register_work_with_prop should set trace_position"
+        );
     }
 
     #[test]
     fn compute_work_endorsements_detects_text() {
         let work = Work::new(1, Edition::from_text("hello"));
         let endorsements = BackfollowEngine::compute_work_endorsements(&work);
-        assert!(!endorsements.is_empty(), "text work should have endorsements");
-        assert!(endorsements.iter().any(|id| id.number == TEXT_TOKEN as i64),
-            "text work should have TEXT_TOKEN endorsement");
+        assert!(
+            !endorsements.is_empty(),
+            "text work should have endorsements"
+        );
+        assert!(
+            endorsements.iter().any(|id| id.number == TEXT_TOKEN as i64),
+            "text work should have TEXT_TOKEN endorsement"
+        );
     }
 
     #[test]
     fn compute_work_endorsements_empty_work() {
         let work = Work::new(1, Edition::empty());
         let endorsements = BackfollowEngine::compute_work_endorsements(&work);
-        assert!(endorsements.is_empty(), "empty work should have no endorsements");
+        assert!(
+            endorsements.is_empty(),
+            "empty work should have no endorsements"
+        );
     }
 
     #[test]
     fn make_work_prop_includes_permissions_and_endorsements() {
         let work = Work::new(1, Edition::from_text("hello"));
         let prop = BackfollowEngine::make_work_prop(&work, Some(42), Some(43));
-        assert!(!prop.permissions().is_empty(), "prop should have permissions");
-        assert!(!prop.endorsements().is_empty(), "prop should have endorsements");
+        assert!(
+            !prop.permissions().is_empty(),
+            "prop should have permissions"
+        );
+        assert!(
+            !prop.endorsements().is_empty(),
+            "prop should have endorsements"
+        );
         let flags = prop.flags();
         assert_ne!(flags, 0, "prop should have non-zero flags");
     }
@@ -1517,8 +1758,15 @@ mod tests {
 
         let meta = engine.get_edition_meta(1).unwrap();
         assert!(meta.h_crum().is_some(), "updated work should have h_crum");
-        let hc = meta.h_crum().unwrap().lock().unwrap_or_else(|e| e.into_inner());
-        assert!(!hc.o_parents().is_empty(), "updated work should have o_parents linking to previous version");
+        let hc = meta
+            .h_crum()
+            .unwrap()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        assert!(
+            !hc.o_parents().is_empty(),
+            "updated work should have o_parents linking to previous version"
+        );
     }
 
     #[test]
@@ -1536,7 +1784,10 @@ mod tests {
 
         let q = TransclusionQuery::all();
         let results = engine.find_transcluders_with_backfollow(&shared, &q);
-        assert!(!results.is_empty(), "should find transcluders via backfollow");
+        assert!(
+            !results.is_empty(),
+            "should find transcluders via backfollow"
+        );
     }
 
     #[test]
@@ -1553,8 +1804,15 @@ mod tests {
         engine.update_work_with_parent(1, 1, v2);
         let tp2 = engine.trace_position_of(1).unwrap();
 
-        assert_eq!(engine.version_is_le(1, 1), Some(true), "a version should be <= itself");
-        assert_ne!(tp1, tp2, "different versions should have different trace positions");
+        assert_eq!(
+            engine.version_is_le(1, 1),
+            Some(true),
+            "a version should be <= itself"
+        );
+        assert_ne!(
+            tp1, tp2,
+            "different versions should have different trace positions"
+        );
     }
 
     #[test]
@@ -1566,17 +1824,31 @@ mod tests {
         engine.register_work_with_prop(work_a, 1, None, prop_a);
 
         let ancestors_a = engine.version_ancestors(1);
-        assert!(ancestors_a.is_empty(), "work with no parent has no ancestors");
+        assert!(
+            ancestors_a.is_empty(),
+            "work with no parent has no ancestors"
+        );
 
         let work_b = Work::new(2, Edition::from_one(0, RangeElement::text("B")));
         let prop_b = BackfollowEngine::make_work_prop(&work_b, None, None);
         engine.register_work_with_prop(work_b, 2, None, prop_b);
 
         let ancestors_b = engine.version_ancestors(2);
-        assert!(ancestors_b.is_empty(), "work with no parent has no ancestors");
+        assert!(
+            ancestors_b.is_empty(),
+            "work with no parent has no ancestors"
+        );
 
-        assert_eq!(engine.version_is_le(1, 2), Some(false), "unrelated works should not be ordered");
-        assert_eq!(engine.version_is_le(2, 1), Some(false), "unrelated works should not be ordered");
+        assert_eq!(
+            engine.version_is_le(1, 2),
+            Some(false),
+            "unrelated works should not be ordered"
+        );
+        assert_eq!(
+            engine.version_is_le(2, 1),
+            Some(false),
+            "unrelated works should not be ordered"
+        );
     }
 
     #[test]
@@ -1606,9 +1878,13 @@ mod tests {
         let tp = dagwood.new_position();
         let assertions = edition_to_assertions(1, &edition, tp);
         assert!(!assertions.is_empty());
-        let has_create_node = assertions.iter().any(|a| matches!(a.payload, AssertionPayload::CreateNode { .. }));
+        let has_create_node = assertions
+            .iter()
+            .any(|a| matches!(a.payload, AssertionPayload::CreateNode { .. }));
         assert!(has_create_node, "should have CreateNode assertion");
-        let has_set_span = assertions.iter().any(|a| matches!(a.payload, AssertionPayload::SetSpanText { .. }));
+        let has_set_span = assertions
+            .iter()
+            .any(|a| matches!(a.payload, AssertionPayload::SetSpanText { .. }));
         assert!(has_set_span, "should have SetSpanText assertion");
     }
 }

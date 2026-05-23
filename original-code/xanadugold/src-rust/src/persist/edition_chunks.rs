@@ -92,7 +92,9 @@ fn serialize_to_bytes<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, ChunkSe
     postcard::to_allocvec(value).map_err(|e| ChunkSerError::Serialization(e.to_string()))
 }
 
-fn deserialize_from_bytes<'a, T: serde::Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, ChunkSerError> {
+fn deserialize_from_bytes<'a, T: serde::Deserialize<'a>>(
+    bytes: &'a [u8],
+) -> Result<T, ChunkSerError> {
     postcard::from_bytes(bytes).map_err(|e| ChunkSerError::Serialization(e.to_string()))
 }
 
@@ -115,7 +117,9 @@ pub fn edition_to_chunks(
     let provenance_hash = if snapshot.span_provenance.is_empty() {
         None
     } else {
-        let prov_chunk = ProvenanceChunk { spans: snapshot.span_provenance };
+        let prov_chunk = ProvenanceChunk {
+            spans: snapshot.span_provenance,
+        };
         let prov_data = serialize_to_bytes(&prov_chunk)?;
         Some(store.write_chunk(&prov_data)?)
     };
@@ -152,24 +156,22 @@ pub fn edition_from_chunks(
     }
 
     let span_provenance = match root.provenance_hash {
-        Some(hash) => {
-            match store.read_chunk(&hash) {
-                Ok(data) => {
-                    let prov_chunk: Result<ProvenanceChunk, _> = deserialize_from_bytes(&data);
-                    match prov_chunk {
-                        Ok(c) => c.spans,
-                        Err(e) => {
-                            tracing::warn!("provenance chunk deserialization failed: {}", e);
-                            Vec::new()
-                        }
+        Some(hash) => match store.read_chunk(&hash) {
+            Ok(data) => {
+                let prov_chunk: Result<ProvenanceChunk, _> = deserialize_from_bytes(&data);
+                match prov_chunk {
+                    Ok(c) => c.spans,
+                    Err(e) => {
+                        tracing::warn!("provenance chunk deserialization failed: {}", e);
+                        Vec::new()
                     }
                 }
-                Err(e) => {
-                    tracing::warn!("provenance chunk read failed: {}", e);
-                    Vec::new()
-                }
             }
-        }
+            Err(e) => {
+                tracing::warn!("provenance chunk read failed: {}", e);
+                Vec::new()
+            }
+        },
         None => Vec::new(),
     };
 
@@ -183,10 +185,7 @@ pub fn edition_from_chunks(
     Ok(snapshot.to_edition())
 }
 
-pub fn work_to_chunks(
-    work: &Work,
-    store: &ChunkStore,
-) -> Result<WorkChunkRef, ChunkSerError> {
+pub fn work_to_chunks(work: &Work, store: &ChunkStore) -> Result<WorkChunkRef, ChunkSerError> {
     let current_root = edition_to_chunks(work.edition(), store)?;
 
     let mut history = BTreeMap::new();
@@ -231,11 +230,14 @@ pub fn work_load_revision(
     if revision == work_chunk_ref.revision_count {
         return edition_from_chunks(&work_chunk_ref.current_root, store);
     }
-    let chunk_ref = work_chunk_ref.history.get(&revision)
-        .ok_or_else(|| ChunkSerError::InvalidRevision {
-            requested: revision,
-            latest: work_chunk_ref.revision_count,
-        })?;
+    let chunk_ref =
+        work_chunk_ref
+            .history
+            .get(&revision)
+            .ok_or_else(|| ChunkSerError::InvalidRevision {
+                requested: revision,
+                latest: work_chunk_ref.revision_count,
+            })?;
     edition_from_chunks(chunk_ref, store)
 }
 
@@ -348,7 +350,11 @@ mod tests {
 
         let hashes = store.all_chunk_hashes().unwrap();
         let entry_chunks = hashes.len() - 1; // -1 for root chunk
-        assert!(entry_chunks >= 2, "expected at least 2 entry chunks, got {}", entry_chunks);
+        assert!(
+            entry_chunks >= 2,
+            "expected at least 2 entry chunks, got {}",
+            entry_chunks
+        );
 
         let restored = edition_from_chunks(&chunk_ref, &store).unwrap();
         assert_eq!(restored.count(), 300);

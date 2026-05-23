@@ -93,7 +93,10 @@ impl Snarf {
 
     pub fn from_bytes(snarf_size: usize, data: Vec<u8>) -> io::Result<Self> {
         if data.len() < HEADER_SIZE {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "snarf too small"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "snarf too small",
+            ));
         }
         let mut cursor = Cursor::new(&data);
         let mut header = [0u8; 8];
@@ -173,16 +176,25 @@ impl Snarf {
     pub fn write_flock(&mut self, index: usize, data: &[u8]) -> io::Result<()> {
         self.dirty = true;
         if index >= self.map_cells.len() {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "index out of range"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "index out of range",
+            ));
         }
         let cell = &self.map_cells[index];
         if cell.is_forwarded() {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "cell is forwarded"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cell is forwarded",
+            ));
         }
         let offset = cell.raw_offset() as usize;
         let size = cell.raw_size() as usize;
         if data.len() > size {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "data too large for cell"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "data too large for cell",
+            ));
         }
         self.data[offset..offset + data.len()].copy_from_slice(data);
         Ok(())
@@ -190,14 +202,23 @@ impl Snarf {
 
     pub fn read_flock(&self, index: usize) -> io::Result<Vec<u8>> {
         if index >= self.map_cells.len() {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "index out of range"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "index out of range",
+            ));
         }
         let cell = &self.map_cells[index];
         if cell.is_forwarded() {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "cell is forwarded"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cell is forwarded",
+            ));
         }
         if !cell.is_allocated() {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "cell not allocated"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cell not allocated",
+            ));
         }
         let offset = cell.raw_offset() as usize;
         let size = cell.raw_size() as usize;
@@ -273,7 +294,9 @@ impl Snarf {
 
     pub fn compact(&mut self) {
         self.dirty = true;
-        let mut allocated: Vec<(usize, u32, u32, bool)> = self.map_cells.iter()
+        let mut allocated: Vec<(usize, u32, u32, bool)> = self
+            .map_cells
+            .iter()
             .enumerate()
             .filter(|(_, c)| c.is_allocated() && !c.is_forwarded())
             .map(|(i, c)| (i, c.raw_offset(), c.raw_size(), c.is_forgotten()))
@@ -343,7 +366,8 @@ impl Snarf {
             return;
         }
         self.data[offset..offset + 4].copy_from_slice(&self.map_cells[index].offset.to_le_bytes());
-        self.data[offset + 4..offset + 8].copy_from_slice(&self.map_cells[index].size.to_le_bytes());
+        self.data[offset + 4..offset + 8]
+            .copy_from_slice(&self.map_cells[index].size.to_le_bytes());
     }
 }
 
@@ -408,17 +432,24 @@ impl SnarfStore {
     }
 
     pub fn write_flock(&mut self, location: &FlockLocation, data: &[u8]) -> io::Result<()> {
-        let snarf = self.snarfs.get_mut(location.snarf_id as usize)
+        let snarf = self
+            .snarfs
+            .get_mut(location.snarf_id as usize)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "bad snarf id"))?;
         snarf.write_flock(location.index as usize, data)
     }
 
     pub fn read_flock(&self, location: &FlockLocation) -> io::Result<Vec<u8>> {
-        let snarf = self.snarfs.get(location.snarf_id as usize)
+        let snarf = self
+            .snarfs
+            .get(location.snarf_id as usize)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "bad snarf id"))?;
         if let Some(forward) = snarf.fetch_forward(location.index as usize) {
             if forward.snarf_id == location.snarf_id && forward.index == location.index {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "forward cycle detected"));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "forward cycle detected",
+                ));
             }
             return self.read_flock(&forward);
         }
@@ -447,7 +478,8 @@ impl SnarfStore {
     }
 
     pub fn dirty_snarf_ids(&self) -> Vec<u32> {
-        self.snarfs.iter()
+        self.snarfs
+            .iter()
             .enumerate()
             .filter(|(_, s)| s.is_dirty())
             .map(|(i, _)| i as u32)
@@ -458,7 +490,11 @@ impl SnarfStore {
         self.flush_to_urdi_with_offset(urdi, 0)
     }
 
-    pub fn flush_to_urdi_with_offset(&mut self, urdi: &mut UrdiFile, offset: u32) -> io::Result<()> {
+    pub fn flush_to_urdi_with_offset(
+        &mut self,
+        urdi: &mut UrdiFile,
+        offset: u32,
+    ) -> io::Result<()> {
         for (id, snarf) in self.snarfs.iter_mut().enumerate() {
             if snarf.is_dirty() {
                 urdi.write_snarf(offset + id as u32, snarf.to_bytes())?;
@@ -681,7 +717,9 @@ mod tests {
     impl TempDir {
         fn new(name: &str) -> Self {
             let dir = std::env::temp_dir().join(format!(
-                "xudanu_snarf_test_{}_{}", name, std::process::id()
+                "xudanu_snarf_test_{}_{}",
+                name,
+                std::process::id()
             ));
             let _ = std::fs::create_dir_all(&dir);
             TempDir(dir)
@@ -711,8 +749,13 @@ mod tests {
             loc2 = store.allocate_and_write(&vec![0xBBu8; 30]).unwrap();
 
             let mut urdi = UrdiFile::create(
-                &path, snarf_size as u32, store.snarf_count(), 0, SNARF_INFO_COUNT,
-            ).unwrap();
+                &path,
+                snarf_size as u32,
+                store.snarf_count(),
+                0,
+                SNARF_INFO_COUNT,
+            )
+            .unwrap();
             store.flush_to_urdi(&mut urdi).unwrap();
             urdi.sync_all().unwrap();
         }
@@ -734,9 +777,8 @@ mod tests {
         let loc2;
         {
             let mut store = SnarfStore::new(snarf_size);
-            let mut urdi = UrdiFile::create(
-                &path, snarf_size as u32, 8, 0, SNARF_INFO_COUNT,
-            ).unwrap();
+            let mut urdi =
+                UrdiFile::create(&path, snarf_size as u32, 8, 0, SNARF_INFO_COUNT).unwrap();
 
             loc1 = store.allocate_and_write(&vec![1u8; 10]).unwrap();
             store.flush_to_urdi(&mut urdi).unwrap();
@@ -766,8 +808,13 @@ mod tests {
         {
             let mut store = SnarfStore::new(snarf_size);
             let mut urdi = UrdiFile::create(
-                &path, snarf_size as u32, store.snarf_count(), 0, SNARF_INFO_COUNT,
-            ).unwrap();
+                &path,
+                snarf_size as u32,
+                store.snarf_count(),
+                0,
+                SNARF_INFO_COUNT,
+            )
+            .unwrap();
             store.flush_to_urdi(&mut urdi).unwrap();
             urdi.sync_all().unwrap();
         }

@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 const SEED_FILE: &str = "security.log.seed";
 
@@ -14,7 +14,10 @@ impl<W: Write> ChainedLogWriter<W> {
         let prev_hash = if seed_path.exists() {
             std::fs::read_to_string(seed_path)?.trim().to_string()
         } else {
-            let seed = format!("xudanu-security-log-seed-{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0));
+            let seed = format!(
+                "xudanu-security-log-seed-{}",
+                chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+            );
             let hash = sha256_hex(seed.as_bytes());
             std::fs::write(seed_path, &hash)?;
             hash
@@ -32,7 +35,8 @@ impl<W: Write> ChainedLogWriter<W> {
             line_count += 1;
             if let Some(chain_pos) = line.rfind(" chain=") {
                 let chain_value = &line[chain_pos + 7..];
-                let expected = sha256_hex(format!("{}{}", prev_hash, &line[..chain_pos]).as_bytes());
+                let expected =
+                    sha256_hex(format!("{}{}", prev_hash, &line[..chain_pos]).as_bytes());
                 if chain_value != expected {
                     return Err(ChainVerifyError {
                         line_number: line_count,
@@ -127,7 +131,8 @@ mod tests {
         let seed = std::fs::read_to_string(&seed_path).unwrap();
         let content = std::fs::read_to_string(&log_path).unwrap();
 
-        let (count, _final_hash) = ChainedLogWriter::<std::fs::File>::verify_log(&content, &seed).unwrap();
+        let (count, _final_hash) =
+            ChainedLogWriter::<std::fs::File>::verify_log(&content, &seed).unwrap();
         assert_eq!(count, 3);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -207,9 +212,13 @@ mod tests {
         writeln!(writer, "day1 line two").unwrap();
         drop(writer);
 
-        let seed = std::fs::read_to_string(&seed_path).unwrap().trim().to_string();
+        let seed = std::fs::read_to_string(&seed_path)
+            .unwrap()
+            .trim()
+            .to_string();
         let content1 = std::fs::read_to_string(&log1).unwrap();
-        let (count1, final_hash1) = ChainedLogWriter::<std::fs::File>::verify_log(&content1, &seed).unwrap();
+        let (count1, final_hash1) =
+            ChainedLogWriter::<std::fs::File>::verify_log(&content1, &seed).unwrap();
         assert_eq!(count1, 2);
 
         let file2 = std::fs::File::create(&log2).unwrap();
@@ -222,7 +231,8 @@ mod tests {
         drop(writer2);
 
         let content2 = std::fs::read_to_string(&log2).unwrap();
-        let (count2, _final_hash2) = ChainedLogWriter::<std::fs::File>::verify_log(&content2, &final_hash1).unwrap();
+        let (count2, _final_hash2) =
+            ChainedLogWriter::<std::fs::File>::verify_log(&content2, &final_hash1).unwrap();
         assert_eq!(count2, 2);
 
         let _ = std::fs::remove_dir_all(&dir);

@@ -1,4 +1,3 @@
-
 use crate::edition::{BeId, XnRegion};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +84,10 @@ impl AdminState {
     }
 
     pub fn grants_for_club(&self, club_id: BeId) -> Vec<&IdGrant> {
-        self.id_grants.iter().filter(|g| g.club_id == club_id).collect()
+        self.id_grants
+            .iter()
+            .filter(|g| g.club_id == club_id)
+            .collect()
     }
 
     pub fn has_grant_for(&self, club_id: BeId, id: i64) -> bool {

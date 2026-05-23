@@ -107,7 +107,19 @@ mod tests {
 
     #[test]
     fn round_trip_values() {
-        let values: Vec<u64> = vec![0, 1, 127, 128, 255, 256, 16383, 16384, 1_000_000, u32::MAX as u64, u64::MAX];
+        let values: Vec<u64> = vec![
+            0,
+            1,
+            127,
+            128,
+            255,
+            256,
+            16383,
+            16384,
+            1_000_000,
+            u32::MAX as u64,
+            u64::MAX,
+        ];
         for val in values {
             let mut buf = Vec::new();
             encode_varint(val, &mut buf);

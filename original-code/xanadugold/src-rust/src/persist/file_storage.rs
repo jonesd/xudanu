@@ -5,8 +5,11 @@ use super::engine::{StorageEngine, StorageError, StorageResult};
 use super::packer::SnarfStorage;
 use super::persistent::{FlockFlags, FlockId, FlockInfo, FlockLocation};
 use super::snarf::SnarfStore;
-use super::traits::{Persistent, PersistentRegistry, DeserializerFn};
-use super::urdi::{UrdiFile, DEFAULT_DATA_START, DEFAULT_INITIAL_COUNT, DEFAULT_SNARF_SIZE_FILE, DEFAULT_STAGE_COUNT};
+use super::traits::{DeserializerFn, Persistent, PersistentRegistry};
+use super::urdi::{
+    UrdiFile, DEFAULT_DATA_START, DEFAULT_INITIAL_COUNT, DEFAULT_SNARF_SIZE_FILE,
+    DEFAULT_STAGE_COUNT,
+};
 
 const META_SNARF_ID: u32 = 0;
 const DATA_SNARF_OFFSET: u32 = DEFAULT_DATA_START;
@@ -114,9 +117,9 @@ impl FileBackedStorage {
             DATA_SNARF_OFFSET,
         )?;
         let mut storage = SnarfStorage::with_snarf_size(snarf_size);
-        storage.snarf_store_mut().ensure_capacity(
-            initial_count.saturating_sub(DATA_SNARF_OFFSET),
-        );
+        storage
+            .snarf_store_mut()
+            .ensure_capacity(initial_count.saturating_sub(DATA_SNARF_OFFSET));
         let mut fbs = FileBackedStorage { storage, urdi };
         fbs.write_meta()?;
         fbs.flush()?;
@@ -133,9 +136,11 @@ impl FileBackedStorage {
         let mut fbs = FileBackedStorage { storage, urdi };
         if let Some(meta_data) = fbs.urdi.read_snarf(META_SNARF_ID)? {
             let meta = MetaRecord::from_bytes(&meta_data)?;
-            fbs.storage.restore_counters(meta.hash_counter, meta.token_counter);
+            fbs.storage
+                .restore_counters(meta.hash_counter, meta.token_counter);
             for (flock_id, loc, flags, old_size) in meta.flocks {
-                fbs.storage.restore_flock_info(flock_id, loc, flags, old_size);
+                fbs.storage
+                    .restore_flock_info(flock_id, loc, flags, old_size);
             }
         }
         Ok(fbs)
@@ -146,7 +151,9 @@ impl FileBackedStorage {
     }
 
     pub fn checkpoint(&mut self) -> io::Result<()> {
-        self.storage.snarf_store_mut().flush_to_urdi_with_offset(&mut self.urdi, DATA_SNARF_OFFSET)?;
+        self.storage
+            .snarf_store_mut()
+            .flush_to_urdi_with_offset(&mut self.urdi, DATA_SNARF_OFFSET)?;
         self.write_meta()?;
         self.flush()
     }
@@ -158,7 +165,11 @@ impl FileBackedStorage {
         if data.len() > snarf_size {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("meta record {}B exceeds snarf_size {}B", data.len(), snarf_size),
+                format!(
+                    "meta record {}B exceeds snarf_size {}B",
+                    data.len(),
+                    snarf_size
+                ),
             ));
         }
         self.urdi.write_snarf(META_SNARF_ID, &data)
@@ -212,7 +223,10 @@ impl StorageEngine for FileBackedStorage {
         Ok(None)
     }
 
-    fn fetch_by_location(&self, location: &FlockLocation) -> StorageResult<Option<Box<dyn Persistent>>> {
+    fn fetch_by_location(
+        &self,
+        location: &FlockLocation,
+    ) -> StorageResult<Option<Box<dyn Persistent>>> {
         self.storage.fetch_by_location(location)
     }
 
@@ -274,15 +288,21 @@ mod tests {
     impl TempDir {
         fn new(name: &str) -> Self {
             let dir = std::env::temp_dir().join(format!(
-                "xudanu_fbs_test_{}_{}", name, std::process::id()
+                "xudanu_fbs_test_{}_{}",
+                name,
+                std::process::id()
             ));
             let _ = std::fs::create_dir_all(&dir);
             TempDir(dir)
         }
-        fn join(&self, name: &str) -> std::path::PathBuf { self.0.join(name) }
+        fn join(&self, name: &str) -> std::path::PathBuf {
+            self.0.join(name)
+        }
     }
     impl Drop for TempDir {
-        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     #[derive(Debug, Clone)]
@@ -293,15 +313,33 @@ mod tests {
     }
 
     impl Persistent for TestObj {
-        fn flock_id(&self) -> FlockId { self.flock_id }
-        fn set_flock_id(&mut self, id: FlockId) { self.flock_id = id; }
-        fn flock_info(&self) -> Option<&FlockInfo> { self.info.as_ref() }
-        fn set_flock_info(&mut self, info: Option<FlockInfo>) { self.info = info; }
-        fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> { self.info.as_mut() }
-        fn as_any(&self) -> &dyn Any { self }
-        fn as_any_mut(&mut self) -> &mut dyn Any { self }
-        fn clone_boxed(&self) -> Box<dyn Persistent> { Box::new(self.clone()) }
-        fn type_tag(&self) -> &'static str { "TestObj" }
+        fn flock_id(&self) -> FlockId {
+            self.flock_id
+        }
+        fn set_flock_id(&mut self, id: FlockId) {
+            self.flock_id = id;
+        }
+        fn flock_info(&self) -> Option<&FlockInfo> {
+            self.info.as_ref()
+        }
+        fn set_flock_info(&mut self, info: Option<FlockInfo>) {
+            self.info = info;
+        }
+        fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> {
+            self.info.as_mut()
+        }
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+        fn clone_boxed(&self) -> Box<dyn Persistent> {
+            Box::new(self.clone())
+        }
+        fn type_tag(&self) -> &'static str {
+            "TestObj"
+        }
         fn to_bytes(&self) -> Result<Vec<u8>, StorageError> {
             Ok(self.value.to_le_bytes().to_vec())
         }
@@ -309,14 +347,25 @@ mod tests {
 
     fn register_types(fbs: &mut FileBackedStorage) {
         fbs.register_type("TestObj", |data, flock_id| {
-            let value = i64::from_le_bytes(data.try_into().map_err(|_| StorageError::CorruptData("bad i64".into()))?);
-            Ok(Box::new(TestObj { flock_id, info: None, value }))
+            let value = i64::from_le_bytes(
+                data.try_into()
+                    .map_err(|_| StorageError::CorruptData("bad i64".into()))?,
+            );
+            Ok(Box::new(TestObj {
+                flock_id,
+                info: None,
+                value,
+            }))
         });
     }
 
     fn make_obj(engine: &mut dyn StorageEngine, value: i64) -> FlockId {
         let id = engine.allocate_flock_id();
-        let obj = Box::new(TestObj { flock_id: id, info: None, value });
+        let obj = Box::new(TestObj {
+            flock_id: id,
+            info: None,
+            value,
+        });
         engine.store_new(obj).unwrap();
         id
     }
@@ -387,8 +436,22 @@ mod tests {
             let mut fbs = FileBackedStorage::open(&path).unwrap();
             register_types(&mut fbs);
             assert_eq!(fbs.object_count(), 2);
-            let v1 = fbs.fetch(&id1).unwrap().unwrap().as_any().downcast_ref::<TestObj>().unwrap().value;
-            let v2 = fbs.fetch(&id2).unwrap().unwrap().as_any().downcast_ref::<TestObj>().unwrap().value;
+            let v1 = fbs
+                .fetch(&id1)
+                .unwrap()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<TestObj>()
+                .unwrap()
+                .value;
+            let v2 = fbs
+                .fetch(&id2)
+                .unwrap()
+                .unwrap()
+                .as_any()
+                .downcast_ref::<TestObj>()
+                .unwrap()
+                .value;
             assert_eq!(v1, 10);
             assert_eq!(v2, 20);
         }
@@ -525,7 +588,10 @@ mod tests {
             assert_eq!(fbs.object_count(), count);
             for (i, id) in ids.iter().enumerate() {
                 let obj = fbs.fetch(id).unwrap().unwrap();
-                assert_eq!(obj.as_any().downcast_ref::<TestObj>().unwrap().value, i as i64);
+                assert_eq!(
+                    obj.as_any().downcast_ref::<TestObj>().unwrap().value,
+                    i as i64
+                );
             }
         }
     }

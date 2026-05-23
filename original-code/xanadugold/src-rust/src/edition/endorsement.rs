@@ -67,7 +67,8 @@ impl EndorsementSet {
     }
 
     pub fn contains_pair(&self, club_id: u64, token_id: u64) -> bool {
-        self.endorsements.contains(&Endorsement::new(club_id, token_id))
+        self.endorsements
+            .contains(&Endorsement::new(club_id, token_id))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Endorsement> {
@@ -120,19 +121,31 @@ impl EndorsementSet {
 
     pub fn union(&self, other: &EndorsementSet) -> EndorsementSet {
         EndorsementSet {
-            endorsements: self.endorsements.union(&other.endorsements).cloned().collect(),
+            endorsements: self
+                .endorsements
+                .union(&other.endorsements)
+                .cloned()
+                .collect(),
         }
     }
 
     pub fn intersect(&self, other: &EndorsementSet) -> EndorsementSet {
         EndorsementSet {
-            endorsements: self.endorsements.intersection(&other.endorsements).cloned().collect(),
+            endorsements: self
+                .endorsements
+                .intersection(&other.endorsements)
+                .cloned()
+                .collect(),
         }
     }
 
     pub fn difference(&self, other: &EndorsementSet) -> EndorsementSet {
         EndorsementSet {
-            endorsements: self.endorsements.difference(&other.endorsements).cloned().collect(),
+            endorsements: self
+                .endorsements
+                .difference(&other.endorsements)
+                .cloned()
+                .collect(),
         }
     }
 
@@ -255,9 +268,7 @@ impl Endorseable {
     }
 
     pub fn endorse_one(&mut self, club_id: u64, token_id: u64) {
-        self.endorsements = self
-            .endorsements
-            .with(Endorsement::new(club_id, token_id));
+        self.endorsements = self.endorsements.with(Endorsement::new(club_id, token_id));
     }
 
     pub fn retract(&mut self, to_remove: &EndorsementSet) {
@@ -275,9 +286,7 @@ impl Endorseable {
     }
 
     pub fn has_club_endorsement(&self, club_id: u64) -> bool {
-        self.endorsements
-            .iter()
-            .any(|e| e.club_id == club_id)
+        self.endorsements.iter().any(|e| e.club_id == club_id)
     }
 
     pub fn matches_filter(&self, filter: &EndorsementFilter) -> bool {
@@ -292,18 +301,18 @@ impl Default for Endorseable {
 }
 
 pub fn endorsements_from_ids(pairs: &[(u64, u64)]) -> EndorsementSet {
-    EndorsementSet::from_endorsements(
-        pairs
-            .iter()
-            .map(|&(c, t)| Endorsement::new(c, t))
-            .collect(),
-    )
+    EndorsementSet::from_endorsements(pairs.iter().map(|&(c, t)| Endorsement::new(c, t)).collect())
 }
 
 pub fn endorsement_ids_to_grandmap(endorsements: &EndorsementSet) -> Vec<Id> {
     endorsements
         .iter()
-        .map(|e| Id::in_space(super::grandmap::IdSpaceId::new(e.club_id), e.token_id as i64))
+        .map(|e| {
+            Id::in_space(
+                super::grandmap::IdSpaceId::new(e.club_id),
+                e.token_id as i64,
+            )
+        })
         .collect()
 }
 
@@ -380,8 +389,7 @@ mod tests {
 
     #[test]
     fn endorsement_set_with_deduplicates() {
-        let set = EndorsementSet::single(1, 10)
-            .with(Endorsement::new(1, 10));
+        let set = EndorsementSet::single(1, 10).with(Endorsement::new(1, 10));
         assert_eq!(set.len(), 1);
     }
 
@@ -578,40 +586,32 @@ mod tests {
             Endorsement::new(1, 10),
             Endorsement::new(2, 20),
         ]);
-        let filter = EndorsementFilter::and(vec![
-            EndorsementFilter::club(1),
-            EndorsementFilter::club(2),
-        ]);
+        let filter =
+            EndorsementFilter::and(vec![EndorsementFilter::club(1), EndorsementFilter::club(2)]);
         assert!(set.matches_filter(&filter));
     }
 
     #[test]
     fn filter_and_fail() {
         let set = EndorsementSet::single(1, 10);
-        let filter = EndorsementFilter::and(vec![
-            EndorsementFilter::club(1),
-            EndorsementFilter::club(2),
-        ]);
+        let filter =
+            EndorsementFilter::and(vec![EndorsementFilter::club(1), EndorsementFilter::club(2)]);
         assert!(!set.matches_filter(&filter));
     }
 
     #[test]
     fn filter_or() {
         let set = EndorsementSet::single(1, 10);
-        let filter = EndorsementFilter::or(vec![
-            EndorsementFilter::club(1),
-            EndorsementFilter::club(2),
-        ]);
+        let filter =
+            EndorsementFilter::or(vec![EndorsementFilter::club(1), EndorsementFilter::club(2)]);
         assert!(set.matches_filter(&filter));
     }
 
     #[test]
     fn filter_or_fail() {
         let set = EndorsementSet::single(3, 10);
-        let filter = EndorsementFilter::or(vec![
-            EndorsementFilter::club(1),
-            EndorsementFilter::club(2),
-        ]);
+        let filter =
+            EndorsementFilter::or(vec![EndorsementFilter::club(1), EndorsementFilter::club(2)]);
         assert!(!set.matches_filter(&filter));
     }
 
@@ -643,12 +643,10 @@ mod tests {
 
     #[test]
     fn endorseable_retract() {
-        let mut e = Endorseable::with_endorsements(
-            EndorsementSet::from_endorsements(vec![
-                Endorsement::new(1, 10),
-                Endorsement::new(2, 20),
-            ]),
-        );
+        let mut e = Endorseable::with_endorsements(EndorsementSet::from_endorsements(vec![
+            Endorsement::new(1, 10),
+            Endorsement::new(2, 20),
+        ]));
         e.retract_one(1, 10);
         assert!(!e.is_endorsed_by(1, 10));
         assert!(e.is_endorsed_by(2, 20));
@@ -656,13 +654,11 @@ mod tests {
 
     #[test]
     fn endorseable_retract_set() {
-        let mut e = Endorseable::with_endorsements(
-            EndorsementSet::from_endorsements(vec![
-                Endorsement::new(1, 10),
-                Endorsement::new(2, 20),
-                Endorsement::new(3, 30),
-            ]),
-        );
+        let mut e = Endorseable::with_endorsements(EndorsementSet::from_endorsements(vec![
+            Endorsement::new(1, 10),
+            Endorsement::new(2, 20),
+            Endorsement::new(3, 30),
+        ]));
         let to_remove = EndorsementSet::from_endorsements(vec![
             Endorsement::new(1, 10),
             Endorsement::new(3, 30),
@@ -747,10 +743,7 @@ mod tests {
 
         let filter = EndorsementFilter::and(vec![
             EndorsementFilter::not(EndorsementFilter::club(4)),
-            EndorsementFilter::or(vec![
-                EndorsementFilter::club(1),
-                EndorsementFilter::club(4),
-            ]),
+            EndorsementFilter::or(vec![EndorsementFilter::club(1), EndorsementFilter::club(4)]),
         ]);
         assert!(e.matches_filter(&filter));
     }

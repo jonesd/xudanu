@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::range_element::RangeElement;
 use super::grandmap::Id;
+use super::range_element::RangeElement;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ContentHash(pub [u8; 32]);
@@ -64,7 +64,10 @@ impl ContentPool {
         let hash = content_hash(&element);
         self.by_hash.insert(hash.clone(), Arc::new(element));
         self.id_to_hash.insert(id.clone(), hash.clone());
-        self.hash_to_ids.entry(hash.clone()).or_default().push(id.clone());
+        self.hash_to_ids
+            .entry(hash.clone())
+            .or_default()
+            .push(id.clone());
         hash
     }
 
@@ -74,10 +77,7 @@ impl ContentPool {
 
     pub fn find_by_content(&self, element: &RangeElement) -> Vec<Id> {
         let hash = content_hash(element);
-        self.hash_to_ids
-            .get(&hash)
-            .cloned()
-            .unwrap_or_default()
+        self.hash_to_ids.get(&hash).cloned().unwrap_or_default()
     }
 
     pub fn hash_of(&self, id: &Id) -> Option<&ContentHash> {

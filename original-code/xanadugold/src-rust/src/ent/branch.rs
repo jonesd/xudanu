@@ -553,14 +553,25 @@ mod tests {
             store.install_branch(root_id, cid).unwrap();
             child_ids.push(cid);
             if i > 0 && i % 25_000 == 0 {
-                eprintln!("  P6 inserted {} children in {:.3}s", i, t.elapsed().as_secs_f64());
+                eprintln!(
+                    "  P6 inserted {} children in {:.3}s",
+                    i,
+                    t.elapsed().as_secs_f64()
+                );
             }
         }
-        eprintln!("  P6 insert 100K children: {:.3}s", t.elapsed().as_secs_f64());
+        eprintln!(
+            "  P6 insert 100K children: {:.3}s",
+            t.elapsed().as_secs_f64()
+        );
 
         let t2 = Instant::now();
         let mut found = std::collections::HashSet::new();
-        fn collect(store: &BranchStore, id: BranchId, found: &mut std::collections::HashSet<BranchId>) {
+        fn collect(
+            store: &BranchStore,
+            id: BranchId,
+            found: &mut std::collections::HashSet<BranchId>,
+        ) {
             if found.insert(id) {
                 let branch = store.get(id).unwrap();
                 if let Some(l) = branch.left {
@@ -572,10 +583,18 @@ mod tests {
             }
         }
         collect(&store, root_id, &mut found);
-        eprintln!("  P6 traverse tree ({} nodes): {:.3}s", found.len(), t2.elapsed().as_secs_f64());
+        eprintln!(
+            "  P6 traverse tree ({} nodes): {:.3}s",
+            found.len(),
+            t2.elapsed().as_secs_f64()
+        );
 
         for &cid in &child_ids {
-            assert!(found.contains(&cid), "child {} not reachable from root", cid.raw_for_hash());
+            assert!(
+                found.contains(&cid),
+                "child {} not reachable from root",
+                cid.raw_for_hash()
+            );
         }
         eprintln!("  P6 total: {:.3}s", t.elapsed().as_secs_f64());
     }

@@ -164,7 +164,10 @@ impl PersistentRegistry {
     }
 
     pub fn get_mut<T: Persistent>(&mut self, flock_id: &FlockId) -> Option<&mut T> {
-        self.objects.get_mut(flock_id)?.as_any_mut().downcast_mut::<T>()
+        self.objects
+            .get_mut(flock_id)?
+            .as_any_mut()
+            .downcast_mut::<T>()
     }
 
     pub fn contains(&self, flock_id: &FlockId) -> bool {
@@ -207,8 +210,15 @@ impl TypeRegistry {
         self.deserializers.insert(type_tag, deserializer);
     }
 
-    pub fn deserialize(&self, type_tag: &str, data: &[u8], flock_id: FlockId) -> Result<Box<dyn Persistent>, StorageError> {
-        let deserializer = self.deserializers.get(type_tag)
+    pub fn deserialize(
+        &self,
+        type_tag: &str,
+        data: &[u8],
+        flock_id: FlockId,
+    ) -> Result<Box<dyn Persistent>, StorageError> {
+        let deserializer = self
+            .deserializers
+            .get(type_tag)
             .ok_or_else(|| StorageError::CorruptData(format!("unknown type tag: {}", type_tag)))?;
         deserializer(data, flock_id)
     }
@@ -271,20 +281,36 @@ mod tests {
     }
 
     impl Persistent for StubPersistent {
-        fn flock_id(&self) -> FlockId { self.flock_id }
-        fn set_flock_id(&mut self, id: FlockId) { self.flock_id = id; }
-        fn flock_info(&self) -> Option<&FlockInfo> { self.info.as_ref() }
-        fn set_flock_info(&mut self, info: Option<FlockInfo>) { self.info = info; }
-        fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> { self.info.as_mut() }
-        fn as_any(&self) -> &dyn Any { self }
-        fn as_any_mut(&mut self) -> &mut dyn Any { self }
+        fn flock_id(&self) -> FlockId {
+            self.flock_id
+        }
+        fn set_flock_id(&mut self, id: FlockId) {
+            self.flock_id = id;
+        }
+        fn flock_info(&self) -> Option<&FlockInfo> {
+            self.info.as_ref()
+        }
+        fn set_flock_info(&mut self, info: Option<FlockInfo>) {
+            self.info = info;
+        }
+        fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> {
+            self.info.as_mut()
+        }
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
         fn clone_boxed(&self) -> Box<dyn Persistent> {
             Box::new(StubPersistent {
                 flock_id: self.flock_id,
                 info: self.info.clone(),
             })
         }
-        fn type_tag(&self) -> &'static str { "StubPersistent" }
+        fn type_tag(&self) -> &'static str {
+            "StubPersistent"
+        }
         fn to_bytes(&self) -> Result<Vec<u8>, StorageError> {
             Ok(vec![])
         }
@@ -319,7 +345,10 @@ mod tests {
     fn registry_register_get() {
         let mut reg = PersistentRegistry::new();
         let id = make_flock_id(1, 0);
-        reg.register(Box::new(StubPersistent { flock_id: id, info: None }));
+        reg.register(Box::new(StubPersistent {
+            flock_id: id,
+            info: None,
+        }));
         assert!(reg.contains(&id));
         assert_eq!(reg.len(), 1);
     }
@@ -328,7 +357,10 @@ mod tests {
     fn registry_unregister() {
         let mut reg = PersistentRegistry::new();
         let id = make_flock_id(1, 0);
-        reg.register(Box::new(StubPersistent { flock_id: id, info: None }));
+        reg.register(Box::new(StubPersistent {
+            flock_id: id,
+            info: None,
+        }));
         reg.unregister(&id);
         assert!(!reg.contains(&id));
         assert!(reg.is_empty());
@@ -338,7 +370,10 @@ mod tests {
     fn registry_get_typed() {
         let mut reg = PersistentRegistry::new();
         let id = make_flock_id(1, 0);
-        reg.register(Box::new(StubPersistent { flock_id: id, info: None }));
+        reg.register(Box::new(StubPersistent {
+            flock_id: id,
+            info: None,
+        }));
         let got: Option<&StubPersistent> = reg.get(&id);
         assert!(got.is_some());
         assert_eq!(got.unwrap().flock_id, id);
@@ -348,7 +383,10 @@ mod tests {
     fn registry_get_mut_typed() {
         let mut reg = PersistentRegistry::new();
         let id = make_flock_id(1, 0);
-        reg.register(Box::new(StubPersistent { flock_id: id, info: None }));
+        reg.register(Box::new(StubPersistent {
+            flock_id: id,
+            info: None,
+        }));
         let got: Option<&mut StubPersistent> = reg.get_mut(&id);
         assert!(got.is_some());
     }
@@ -358,8 +396,14 @@ mod tests {
         let mut reg = PersistentRegistry::new();
         let id1 = make_flock_id(1, 0);
         let id2 = make_flock_id(2, 1);
-        reg.register(Box::new(StubPersistent { flock_id: id1, info: None }));
-        reg.register(Box::new(StubPersistent { flock_id: id2, info: None }));
+        reg.register(Box::new(StubPersistent {
+            flock_id: id1,
+            info: None,
+        }));
+        reg.register(Box::new(StubPersistent {
+            flock_id: id2,
+            info: None,
+        }));
         let mut ids = reg.flock_ids();
         ids.sort();
         assert_eq!(ids, vec![id1, id2]);
@@ -382,7 +426,10 @@ mod tests {
     fn type_registry_register_deserialize() {
         let mut reg = TypeRegistry::new();
         reg.register("StubPersistent", |_data, flock_id| {
-            Ok(Box::new(StubPersistent { flock_id, info: None }))
+            Ok(Box::new(StubPersistent {
+                flock_id,
+                info: None,
+            }))
         });
         assert!(reg.contains("StubPersistent"));
         let id = make_flock_id(42, 7);
@@ -393,6 +440,8 @@ mod tests {
     #[test]
     fn type_registry_unknown_tag() {
         let reg = TypeRegistry::new();
-        assert!(reg.deserialize("Unknown", &[], make_flock_id(1, 0)).is_err());
+        assert!(reg
+            .deserialize("Unknown", &[], make_flock_id(1, 0))
+            .is_err());
     }
 }

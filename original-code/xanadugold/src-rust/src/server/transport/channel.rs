@@ -1,6 +1,6 @@
-use crate::server::SessionId;
-use crate::server::detector::Detector;
 use super::protocol::EventPayload;
+use crate::server::detector::Detector;
+use crate::server::SessionId;
 
 #[derive(Debug, Clone)]
 pub struct EventMessage {

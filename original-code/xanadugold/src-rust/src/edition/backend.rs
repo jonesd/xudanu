@@ -26,11 +26,21 @@ pub struct BeDataHolder {
 }
 
 impl BeRangeElement for BeDataHolder {
-    fn be_id(&self) -> BeId { self.id }
-    fn owner(&self) -> Option<BeId> { self.owner }
-    fn set_owner(&mut self, owner: Option<BeId>) { self.owner = owner; }
-    fn as_range_element(&self) -> RangeElement { RangeElement::data(self.data.clone()) }
-    fn clone_boxed(&self) -> Box<dyn BeRangeElement> { Box::new(self.clone()) }
+    fn be_id(&self) -> BeId {
+        self.id
+    }
+    fn owner(&self) -> Option<BeId> {
+        self.owner
+    }
+    fn set_owner(&mut self, owner: Option<BeId>) {
+        self.owner = owner;
+    }
+    fn as_range_element(&self) -> RangeElement {
+        RangeElement::data(self.data.clone())
+    }
+    fn clone_boxed(&self) -> Box<dyn BeRangeElement> {
+        Box::new(self.clone())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -40,11 +50,21 @@ pub struct BeEdition {
 }
 
 impl BeRangeElement for BeEdition {
-    fn be_id(&self) -> BeId { self.id }
-    fn owner(&self) -> Option<BeId> { self.owner }
-    fn set_owner(&mut self, owner: Option<BeId>) { self.owner = owner; }
-    fn as_range_element(&self) -> RangeElement { RangeElement::edition(self.id) }
-    fn clone_boxed(&self) -> Box<dyn BeRangeElement> { Box::new(self.clone()) }
+    fn be_id(&self) -> BeId {
+        self.id
+    }
+    fn owner(&self) -> Option<BeId> {
+        self.owner
+    }
+    fn set_owner(&mut self, owner: Option<BeId>) {
+        self.owner = owner;
+    }
+    fn as_range_element(&self) -> RangeElement {
+        RangeElement::edition(self.id)
+    }
+    fn clone_boxed(&self) -> Box<dyn BeRangeElement> {
+        Box::new(self.clone())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -54,11 +74,21 @@ pub struct BeWork {
 }
 
 impl BeRangeElement for BeWork {
-    fn be_id(&self) -> BeId { self.id }
-    fn owner(&self) -> Option<BeId> { self.owner }
-    fn set_owner(&mut self, owner: Option<BeId>) { self.owner = owner; }
-    fn as_range_element(&self) -> RangeElement { RangeElement::work(self.id) }
-    fn clone_boxed(&self) -> Box<dyn BeRangeElement> { Box::new(self.clone()) }
+    fn be_id(&self) -> BeId {
+        self.id
+    }
+    fn owner(&self) -> Option<BeId> {
+        self.owner
+    }
+    fn set_owner(&mut self, owner: Option<BeId>) {
+        self.owner = owner;
+    }
+    fn as_range_element(&self) -> RangeElement {
+        RangeElement::work(self.id)
+    }
+    fn clone_boxed(&self) -> Box<dyn BeRangeElement> {
+        Box::new(self.clone())
+    }
 }
 
 pub trait BeStorage: std::fmt::Debug + Send + Sync {
@@ -85,7 +115,9 @@ impl InMemoryBeStorage {
 }
 
 impl Default for InMemoryBeStorage {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BeStorage for InMemoryBeStorage {
@@ -122,7 +154,11 @@ mod tests {
     fn storage_put_get() {
         let mut storage = InMemoryBeStorage::new();
         let id = storage.next_id();
-        storage.put(Box::new(BeDataHolder { id, owner: None, data: vec![1, 2, 3] }));
+        storage.put(Box::new(BeDataHolder {
+            id,
+            owner: None,
+            data: vec![1, 2, 3],
+        }));
         let elem = storage.get(id).unwrap();
         assert_eq!(elem.be_id(), id);
         assert!(matches!(elem.as_range_element(), RangeElement::Data { .. }));
@@ -132,7 +168,11 @@ mod tests {
     fn storage_remove() {
         let mut storage = InMemoryBeStorage::new();
         let id = storage.next_id();
-        storage.put(Box::new(BeDataHolder { id, owner: None, data: vec![] }));
+        storage.put(Box::new(BeDataHolder {
+            id,
+            owner: None,
+            data: vec![],
+        }));
         assert!(storage.contains(id));
         storage.remove(id);
         assert!(!storage.contains(id));
@@ -148,7 +188,11 @@ mod tests {
 
     #[test]
     fn be_data_holder_owner() {
-        let mut elem = BeDataHolder { id: 1, owner: None, data: vec![42] };
+        let mut elem = BeDataHolder {
+            id: 1,
+            owner: None,
+            data: vec![42],
+        };
         assert!(elem.owner().is_none());
         elem.set_owner(Some(10));
         assert_eq!(elem.owner(), Some(10));
@@ -158,6 +202,11 @@ mod tests {
     fn be_edition_as_range_element() {
         let elem = BeEdition { id: 5, owner: None };
         let re = elem.as_range_element();
-        assert!(matches!(re, RangeElement::Edition { edition_id: RangeElementId(5) }));
+        assert!(matches!(
+            re,
+            RangeElement::Edition {
+                edition_id: RangeElementId(5)
+            }
+        ));
     }
 }

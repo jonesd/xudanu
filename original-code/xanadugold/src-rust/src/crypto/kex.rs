@@ -1,10 +1,10 @@
-use x25519_dalek::{PublicKey, StaticSecret};
 use rand::rngs::OsRng;
 use rand::RngCore;
+use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
 use super::sign::{sign_bytes, verify_signature};
-use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
+use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 
 #[derive(Debug)]
 pub struct SharedSecret([u8; 32]);
@@ -183,7 +183,8 @@ mod tests {
             my_eph.public_key(),
             peer_eph.public_key(),
             &sig,
-        ).is_ok());
+        )
+        .is_ok());
     }
 
     #[test]
@@ -198,7 +199,8 @@ mod tests {
             my_eph.public_key(),
             other_eph.public_key(),
             &sig,
-        ).is_err());
+        )
+        .is_err());
     }
 
     #[test]
@@ -235,12 +237,8 @@ mod tests {
         let a_eph = EphemeralKeyPair::generate();
         let b_eph = EphemeralKeyPair::generate();
 
-        let secret_a = peer_key_exchange(
-            &a_static, b_pub.as_bytes(), &a_eph, b_eph.public_key(),
-        );
-        let secret_b = peer_key_exchange(
-            &b_static, a_pub.as_bytes(), &b_eph, a_eph.public_key(),
-        );
+        let secret_a = peer_key_exchange(&a_static, b_pub.as_bytes(), &a_eph, b_eph.public_key());
+        let secret_b = peer_key_exchange(&b_static, a_pub.as_bytes(), &b_eph, a_eph.public_key());
         assert_eq!(secret_a.as_bytes(), secret_b.as_bytes());
     }
 
@@ -255,12 +253,8 @@ mod tests {
         let b_eph = EphemeralKeyPair::generate();
         let c_eph = EphemeralKeyPair::generate();
 
-        let secret_ab = peer_key_exchange(
-            &a_static, b_pub.as_bytes(), &a_eph, b_eph.public_key(),
-        );
-        let secret_ac = peer_key_exchange(
-            &a_static, c_pub.as_bytes(), &a_eph, c_eph.public_key(),
-        );
+        let secret_ab = peer_key_exchange(&a_static, b_pub.as_bytes(), &a_eph, b_eph.public_key());
+        let secret_ac = peer_key_exchange(&a_static, c_pub.as_bytes(), &a_eph, c_eph.public_key());
         assert_ne!(secret_ab.as_bytes(), secret_ac.as_bytes());
     }
 }

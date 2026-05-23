@@ -127,7 +127,11 @@ pub fn retrieve_bundles(
     _flags: RetrieveFlags,
 ) -> Vec<Bundle> {
     let filtered: Vec<(i64, Arc<Carrier>)> = match region {
-        Some(r) => entries.iter().filter(|(p, _)| r.contains(*p)).cloned().collect(),
+        Some(r) => entries
+            .iter()
+            .filter(|(p, _)| r.contains(*p))
+            .cloned()
+            .collect(),
         None => entries.to_vec(),
     };
 
@@ -145,7 +149,10 @@ pub fn retrieve_bundles(
         if is_placeholder {
             let mut run_end = run_start + 1;
             while run_end < filtered.len() {
-                if !matches!(filtered[run_end].1.element, RangeElement::PlaceHolder { .. }) {
+                if !matches!(
+                    filtered[run_end].1.element,
+                    RangeElement::PlaceHolder { .. }
+                ) {
                     break;
                 }
                 run_end += 1;
@@ -189,7 +196,10 @@ pub fn retrieve_bundles(
             } else {
                 let mut array_end = run_start + 1;
                 while array_end < filtered.len() {
-                    if matches!(filtered[array_end].1.element, RangeElement::PlaceHolder { .. }) {
+                    if matches!(
+                        filtered[array_end].1.element,
+                        RangeElement::PlaceHolder { .. }
+                    ) {
                         break;
                     }
                     if array_end - run_start >= 1024 {
@@ -279,9 +289,7 @@ pub fn element_byte_size(element: &RangeElement) -> u64 {
             let base = std::mem::size_of::<RangeElement>() as u64;
             base + overlay.operations.len() as u64 * 64
         }
-        RangeElement::Edition { .. } => {
-            std::mem::size_of::<RangeElement>() as u64 + 16
-        }
+        RangeElement::Edition { .. } => std::mem::size_of::<RangeElement>() as u64 + 16,
         RangeElement::Label { inner, .. } => {
             std::mem::size_of::<RangeElement>() as u64 + element_byte_size(inner)
         }
@@ -365,11 +373,14 @@ mod tests {
         ];
         let bundles = retrieve_bundles(&entries, None, RetrieveFlags::empty());
         assert!(bundles.len() >= 2);
-        let types: Vec<&str> = bundles.iter().map(|b| match b {
-            Bundle::Element { .. } => "element",
-            Bundle::Array { .. } => "array",
-            Bundle::PlaceHolder { .. } => "placeholder",
-        }).collect();
+        let types: Vec<&str> = bundles
+            .iter()
+            .map(|b| match b {
+                Bundle::Element { .. } => "element",
+                Bundle::Array { .. } => "array",
+                Bundle::PlaceHolder { .. } => "placeholder",
+            })
+            .collect();
         assert!(types.contains(&"element") || types.contains(&"array"));
         assert!(types.contains(&"placeholder"));
     }
@@ -404,10 +415,12 @@ mod tests {
 
     #[test]
     fn storage_cost_text() {
-        let entries = vec![
-            (0, Arc::new(Carrier::new(RangeElement::text("hello")))),
-        ];
-        let cost = compute_storage_cost(&entries, &std::collections::HashMap::new(), CostMethod::TotalShared);
+        let entries = vec![(0, Arc::new(Carrier::new(RangeElement::text("hello"))))];
+        let cost = compute_storage_cost(
+            &entries,
+            &std::collections::HashMap::new(),
+            CostMethod::TotalShared,
+        );
         assert!(cost.total_bytes > 0);
         assert_eq!(cost.total_bytes, cost.billed_bytes());
     }
@@ -434,9 +447,7 @@ mod tests {
         let fp = fingerprint_u64(&RangeElement::text("shared"));
         share_counts.insert(fp, 4);
 
-        let entries = vec![
-            (0, Arc::new(Carrier::new(RangeElement::text("shared")))),
-        ];
+        let entries = vec![(0, Arc::new(Carrier::new(RangeElement::text("shared"))))];
         let cost = compute_storage_cost(&entries, &share_counts, CostMethod::ProrateShared);
         assert!(cost.shared_bytes > 0);
         assert!(cost.billed_bytes() < cost.total_bytes);
@@ -478,9 +489,7 @@ mod tests {
 
     #[test]
     fn retrieve_with_empty_region() {
-        let entries = vec![
-            (0, Arc::new(Carrier::new(RangeElement::text("a")))),
-        ];
+        let entries = vec![(0, Arc::new(Carrier::new(RangeElement::text("a"))))];
         let region = XnRegion::empty();
         let bundles = retrieve_bundles(&entries, Some(&region), RetrieveFlags::empty());
         assert!(bundles.is_empty());
@@ -521,14 +530,20 @@ mod tests {
     #[test]
     fn retrieve_labelled_elements() {
         let entries = vec![
-            (0, Arc::new(Carrier::labelled(
-                super::super::range_element::RangeElementId::new(1),
-                RangeElement::text("a"),
-            ))),
-            (1, Arc::new(Carrier::labelled(
-                super::super::range_element::RangeElementId::new(1),
-                RangeElement::text("a"),
-            ))),
+            (
+                0,
+                Arc::new(Carrier::labelled(
+                    super::super::range_element::RangeElementId::new(1),
+                    RangeElement::text("a"),
+                )),
+            ),
+            (
+                1,
+                Arc::new(Carrier::labelled(
+                    super::super::range_element::RangeElementId::new(1),
+                    RangeElement::text("a"),
+                )),
+            ),
         ];
         let bundles = retrieve_bundles(&entries, None, RetrieveFlags::empty());
         assert!(bundles.len() >= 1);

@@ -3,15 +3,17 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 
 use super::bundle::{
-    Bundle, CostMethod, RetrieveFlags, StorageCost,
-    retrieve_bundles, compute_storage_cost, element_byte_size, fingerprint_u64,
+    compute_storage_cost, element_byte_size, fingerprint_u64, retrieve_bundles, Bundle, CostMethod,
+    RetrieveFlags, StorageCost,
 };
-use super::orgl::OrglRoot;
-use super::range_element::{Carrier, RangeElement};
-use super::provenance::SpanProvenance;
-use super::shared_mapping::{SharedMapping, content_shared_region, content_map_shared_to, content_map_shared_onto};
-use super::xn_region::XnRegion;
 use super::endorsement::EndorsementSet;
+use super::orgl::OrglRoot;
+use super::provenance::SpanProvenance;
+use super::range_element::{Carrier, RangeElement};
+use super::shared_mapping::{
+    content_map_shared_onto, content_map_shared_to, content_shared_region, SharedMapping,
+};
+use super::xn_region::XnRegion;
 
 #[derive(Debug, Clone)]
 pub struct Edition {
@@ -24,11 +26,25 @@ pub struct Edition {
 
 impl Edition {
     pub(crate) fn new_inner(orgl: OrglRoot, endorsements: EndorsementSet) -> Self {
-        Edition { orgl, endorsements, entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() }
+        Edition {
+            orgl,
+            endorsements,
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        }
     }
 
-    pub(crate) fn new_inner_with_provenance(orgl: OrglRoot, endorsements: EndorsementSet, span_provenance: Vec<SpanProvenance>) -> Self {
-        Edition { orgl, endorsements, entries_cache: Arc::new(OnceLock::new()), span_provenance }
+    pub(crate) fn new_inner_with_provenance(
+        orgl: OrglRoot,
+        endorsements: EndorsementSet,
+        span_provenance: Vec<SpanProvenance>,
+    ) -> Self {
+        Edition {
+            orgl,
+            endorsements,
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance,
+        }
     }
 }
 
@@ -51,7 +67,6 @@ impl PartialEq for Edition {
     }
 }
 impl Edition {
-
     pub fn cached_entries(&self) -> &Vec<(i64, Arc<Carrier>)> {
         self.entries_cache.get_or_init(|| self.orgl.all_entries())
     }
@@ -67,13 +82,23 @@ impl Edition {
 
     pub fn from_one(position: i64, value: RangeElement) -> Self {
         let orgl = OrglRoot::empty().with(position, Arc::new(Carrier::new(value)));
-        Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() }
+        Edition {
+            orgl,
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        }
     }
 
     pub fn from_all(region: &XnRegion, value: RangeElement) -> Self {
         if !region.is_finite() {
             let orgl = OrglRoot::with_default(region.clone(), Arc::new(Carrier::new(value)));
-            return Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() };
+            return Edition {
+                orgl,
+                endorsements: EndorsementSet::new(),
+                entries_cache: Arc::new(OnceLock::new()),
+                span_provenance: Vec::new(),
+            };
         }
         let mut orgl = OrglRoot::empty();
         for (start, stop) in region.intervals() {
@@ -81,29 +106,59 @@ impl Edition {
                 orgl = orgl.with(pos, Arc::new(Carrier::new(value.clone())));
             }
         }
-        Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() }
+        Edition {
+            orgl,
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        }
     }
 
     pub fn from_text(text: &str) -> Self {
-        let entries: Vec<(i64, Arc<Carrier>)> = text.chars().enumerate()
+        let entries: Vec<(i64, Arc<Carrier>)> = text
+            .chars()
+            .enumerate()
             .map(|(i, ch)| {
                 let mut buf = [0u8; 4];
                 let s = ch.encode_utf8(&mut buf);
-                (i as i64, Arc::new(Carrier::new(RangeElement::text(s.to_string()))))
+                (
+                    i as i64,
+                    Arc::new(Carrier::new(RangeElement::text(s.to_string()))),
+                )
             })
             .collect();
         let n = entries.len();
-        let region = if n > 0 { XnRegion::interval(0, n as i64) } else { XnRegion::empty() };
-        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region), endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() }
+        let region = if n > 0 {
+            XnRegion::interval(0, n as i64)
+        } else {
+            XnRegion::empty()
+        };
+        Edition {
+            orgl: OrglRoot::from_bulk_entries(entries, None, region),
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        }
     }
 
     pub fn from_text_elements(elements: &[RangeElement]) -> Self {
-        let entries: Vec<(i64, Arc<Carrier>)> = elements.iter().enumerate()
+        let entries: Vec<(i64, Arc<Carrier>)> = elements
+            .iter()
+            .enumerate()
             .map(|(i, e)| (i as i64, Arc::new(Carrier::new(e.clone()))))
             .collect();
         let n = entries.len();
-        let region = if n > 0 { XnRegion::interval(0, n as i64) } else { XnRegion::empty() };
-        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region), endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() }
+        let region = if n > 0 {
+            XnRegion::interval(0, n as i64)
+        } else {
+            XnRegion::empty()
+        };
+        Edition {
+            orgl: OrglRoot::from_bulk_entries(entries, None, region),
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        }
     }
 
     pub fn place_holders(region: &XnRegion) -> Self {
@@ -111,16 +166,29 @@ impl Edition {
         let mut entries = Vec::new();
         for (start, stop) in region.intervals() {
             for pos in start..stop {
-                entries.push((pos, Arc::new(Carrier::new(RangeElement::placeholder(next_id)))));
+                entries.push((
+                    pos,
+                    Arc::new(Carrier::new(RangeElement::placeholder(next_id))),
+                ));
                 next_id += 1;
             }
         }
-        Edition { orgl: OrglRoot::from_bulk_entries(entries, None, region.clone()), endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() }
+        Edition {
+            orgl: OrglRoot::from_bulk_entries(entries, None, region.clone()),
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        }
     }
 
     pub fn with_default(region: XnRegion, value: RangeElement) -> Self {
         let orgl = OrglRoot::with_default(region, Arc::new(Carrier::new(value)));
-        Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() }
+        Edition {
+            orgl,
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -156,7 +224,11 @@ impl Edition {
     }
 
     pub fn get(&self, position: i64) -> RangeElement {
-        self.orgl.fetch(position).expect("position not in edition").element.clone()
+        self.orgl
+            .fetch(position)
+            .expect("position not in edition")
+            .element
+            .clone()
     }
 
     pub fn get_owned(&self, position: i64) -> Arc<Carrier> {
@@ -220,7 +292,12 @@ impl Edition {
                 orgl = orgl.with(pos, Arc::new(Carrier::new(value.clone())));
             }
         }
-        Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() }
+        Edition {
+            orgl,
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        }
     }
 
     pub fn without(&self, position: i64) -> Self {
@@ -257,7 +334,12 @@ impl Edition {
             }
         }
         match self.orgl.combine(&other.orgl) {
-            Ok(combined) => Ok(Edition { orgl: combined, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() }),
+            Ok(combined) => Ok(Edition {
+                orgl: combined,
+                endorsements: EndorsementSet::new(),
+                entries_cache: Arc::new(OnceLock::new()),
+                span_provenance: Vec::new(),
+            }),
             Err(_) => {
                 let mut orgl = self.orgl.clone();
                 for (pos, carrier) in other_entries {
@@ -265,7 +347,12 @@ impl Edition {
                         orgl = orgl.with(pos, carrier);
                     }
                 }
-                Ok(Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() })
+                Ok(Edition {
+                    orgl,
+                    endorsements: EndorsementSet::new(),
+                    entries_cache: Arc::new(OnceLock::new()),
+                    span_provenance: Vec::new(),
+                })
             }
         }
     }
@@ -389,7 +476,12 @@ impl Edition {
                 }
             }
         }
-        Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() }
+        Edition {
+            orgl,
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        }
     }
 
     pub fn not_shared_with(&self, other: &Edition) -> Edition {
@@ -405,7 +497,12 @@ impl Edition {
                 orgl = orgl.with(*pos, carrier.clone());
             }
         }
-        Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() }
+        Edition {
+            orgl,
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        }
     }
 
     pub fn map_shared_to(&self, other: &Edition) -> BTreeMap<i64, i64> {
@@ -500,14 +597,12 @@ impl Edition {
 
     pub fn ordered_bundles(&self, region: Option<&XnRegion>) -> Vec<Bundle> {
         let search_region = region.cloned().unwrap_or_else(|| self.domain());
-        super::bundle_stepper::loaf_bundle_stepper(self.orgl.loaf(), &search_region)
-            .collect_all()
+        super::bundle_stepper::loaf_bundle_stepper(self.orgl.loaf(), &search_region).collect_all()
     }
 
     pub fn ordered_merge_bundles(&self, region: Option<&XnRegion>) -> Vec<Bundle> {
         let search_region = region.cloned().unwrap_or_else(|| self.domain());
-        super::bundle_stepper::loaf_merge_stepper(self.orgl.loaf(), &search_region)
-            .collect_all()
+        super::bundle_stepper::loaf_merge_stepper(self.orgl.loaf(), &search_region).collect_all()
     }
 
     pub fn range_transcluders(
@@ -516,8 +611,8 @@ impl Edition {
         direct_only: bool,
         index: &super::transclusion::TransclusionIndex,
     ) -> Vec<u64> {
-        let query = super::range_transclusion::RangeTransclusionQuery::new()
-            .direct_only(direct_only);
+        let query =
+            super::range_transclusion::RangeTransclusionQuery::new().direct_only(direct_only);
         let query = match region {
             Some(r) => query.with_region(r.clone()),
             None => query,
@@ -549,9 +644,9 @@ impl Edition {
         max_depth: usize,
     ) -> usize {
         match self.fetch(position) {
-            Some(element) => super::range_transclusion::count_transclusion_depth(
-                &element, index, max_depth,
-            ),
+            Some(element) => {
+                super::range_transclusion::count_transclusion_depth(&element, index, max_depth)
+            }
             None => 0,
         }
     }
@@ -577,20 +672,29 @@ impl Edition {
 
     pub fn total_byte_size(&self) -> u64 {
         let entries = self.orgl.all_entries();
-        entries.iter().map(|(_, c)| element_byte_size(&c.element)).sum()
+        entries
+            .iter()
+            .map(|(_, c)| element_byte_size(&c.element))
+            .sum()
     }
 
-    pub fn find_content_shared_regions(&self, other: &Edition, min_run: usize) -> Vec<(i64, i64, i64, i64, String)> {
+    pub fn find_content_shared_regions(
+        &self,
+        other: &Edition,
+        min_run: usize,
+    ) -> Vec<(i64, i64, i64, i64, String)> {
         let entries_a = self.cached_entries();
         let entries_b = other.cached_entries();
         if entries_a.is_empty() || entries_b.is_empty() || min_run == 0 {
             return Vec::new();
         }
 
-        let fps_a: Vec<[u8; 32]> = entries_a.iter()
+        let fps_a: Vec<[u8; 32]> = entries_a
+            .iter()
             .map(|(_, c)| c.element.content_fingerprint())
             .collect();
-        let fps_b: Vec<[u8; 32]> = entries_b.iter()
+        let fps_b: Vec<[u8; 32]> = entries_b
+            .iter()
             .map(|(_, c)| c.element.content_fingerprint())
             .collect();
 
@@ -612,7 +716,8 @@ impl Edition {
             };
             for &j in b_cands {
                 let mut len = 1usize;
-                while i + len < fps_a.len() && j + len < fps_b.len()
+                while i + len < fps_a.len()
+                    && j + len < fps_b.len()
                     && fps_a[i + len] == fps_b[j + len]
                 {
                     len += 1;
@@ -656,7 +761,8 @@ impl Edition {
             let pos_a_end = entries_a[*i + *len - 1].0 + 1;
             let pos_b_start = entries_b[*j].0;
             let pos_b_end = entries_b[*j + *len - 1].0 + 1;
-            let text: String = entries_a[*i..*i + *len].iter()
+            let text: String = entries_a[*i..*i + *len]
+                .iter()
                 .filter_map(|(_, c)| c.element.as_text())
                 .collect();
             results.push((pos_a_start, pos_a_end, pos_b_start, pos_b_end, text));
@@ -667,27 +773,187 @@ impl Edition {
 }
 
 pub fn is_stop_word(word: &str) -> bool {
-    matches!(word,
-        "a" | "about" | "above" | "after" | "again" | "against" | "ain" | "all" | "am" | "an"
-        | "and" | "any" | "are" | "aren" | "aren't" | "as" | "at" | "be" | "because" | "been"
-        | "before" | "being" | "below" | "between" | "both" | "but" | "by" | "can" | "couldn"
-        | "couldn't" | "d" | "did" | "didn" | "didn't" | "do" | "does" | "doesn" | "doesn't"
-        | "doing" | "don" | "don't" | "down" | "during" | "each" | "few" | "for" | "from"
-        | "further" | "had" | "hadn" | "hadn't" | "has" | "hasn" | "hasn't" | "have" | "haven"
-        | "haven't" | "having" | "he" | "her" | "here" | "hers" | "herself" | "him" | "himself"
-        | "his" | "how" | "i" | "if" | "in" | "into" | "is" | "isn" | "isn't" | "it" | "it's"
-        | "its" | "itself" | "just" | "ll" | "m" | "ma" | "me" | "mightn" | "mightn't"
-        | "more" | "most" | "mustn" | "mustn't" | "my" | "myself" | "needn" | "needn't"
-        | "no" | "nor" | "not" | "now" | "o" | "of" | "off" | "on" | "once" | "only" | "or"
-        | "other" | "our" | "ours" | "ourselves" | "out" | "over" | "own" | "re" | "s" | "same"
-        | "shan" | "shan't" | "she" | "she's" | "should" | "should've" | "shouldn" | "shouldn't"
-        | "so" | "some" | "such" | "t" | "than" | "that" | "that'll" | "the" | "their" | "theirs"
-        | "them" | "themselves" | "then" | "there" | "these" | "they" | "this" | "those"
-        | "through" | "to" | "too" | "under" | "until" | "up" | "ve" | "very" | "was" | "wasn"
-        | "wasn't" | "we" | "were" | "weren" | "weren't" | "what" | "when" | "where" | "which"
-        | "while" | "who" | "whom" | "why" | "will" | "with" | "won" | "won't" | "would" | "wouldn"
-        | "wouldn't" | "y" | "you" | "you'd" | "you'll" | "you're" | "you've" | "your" | "yours"
-        | "yourself" | "yourselves"
+    matches!(
+        word,
+        "a" | "about"
+            | "above"
+            | "after"
+            | "again"
+            | "against"
+            | "ain"
+            | "all"
+            | "am"
+            | "an"
+            | "and"
+            | "any"
+            | "are"
+            | "aren"
+            | "aren't"
+            | "as"
+            | "at"
+            | "be"
+            | "because"
+            | "been"
+            | "before"
+            | "being"
+            | "below"
+            | "between"
+            | "both"
+            | "but"
+            | "by"
+            | "can"
+            | "couldn"
+            | "couldn't"
+            | "d"
+            | "did"
+            | "didn"
+            | "didn't"
+            | "do"
+            | "does"
+            | "doesn"
+            | "doesn't"
+            | "doing"
+            | "don"
+            | "don't"
+            | "down"
+            | "during"
+            | "each"
+            | "few"
+            | "for"
+            | "from"
+            | "further"
+            | "had"
+            | "hadn"
+            | "hadn't"
+            | "has"
+            | "hasn"
+            | "hasn't"
+            | "have"
+            | "haven"
+            | "haven't"
+            | "having"
+            | "he"
+            | "her"
+            | "here"
+            | "hers"
+            | "herself"
+            | "him"
+            | "himself"
+            | "his"
+            | "how"
+            | "i"
+            | "if"
+            | "in"
+            | "into"
+            | "is"
+            | "isn"
+            | "isn't"
+            | "it"
+            | "it's"
+            | "its"
+            | "itself"
+            | "just"
+            | "ll"
+            | "m"
+            | "ma"
+            | "me"
+            | "mightn"
+            | "mightn't"
+            | "more"
+            | "most"
+            | "mustn"
+            | "mustn't"
+            | "my"
+            | "myself"
+            | "needn"
+            | "needn't"
+            | "no"
+            | "nor"
+            | "not"
+            | "now"
+            | "o"
+            | "of"
+            | "off"
+            | "on"
+            | "once"
+            | "only"
+            | "or"
+            | "other"
+            | "our"
+            | "ours"
+            | "ourselves"
+            | "out"
+            | "over"
+            | "own"
+            | "re"
+            | "s"
+            | "same"
+            | "shan"
+            | "shan't"
+            | "she"
+            | "she's"
+            | "should"
+            | "should've"
+            | "shouldn"
+            | "shouldn't"
+            | "so"
+            | "some"
+            | "such"
+            | "t"
+            | "than"
+            | "that"
+            | "that'll"
+            | "the"
+            | "their"
+            | "theirs"
+            | "them"
+            | "themselves"
+            | "then"
+            | "there"
+            | "these"
+            | "they"
+            | "this"
+            | "those"
+            | "through"
+            | "to"
+            | "too"
+            | "under"
+            | "until"
+            | "up"
+            | "ve"
+            | "very"
+            | "was"
+            | "wasn"
+            | "wasn't"
+            | "we"
+            | "were"
+            | "weren"
+            | "weren't"
+            | "what"
+            | "when"
+            | "where"
+            | "which"
+            | "while"
+            | "who"
+            | "whom"
+            | "why"
+            | "will"
+            | "with"
+            | "won"
+            | "won't"
+            | "would"
+            | "wouldn"
+            | "wouldn't"
+            | "y"
+            | "you"
+            | "you'd"
+            | "you'll"
+            | "you're"
+            | "you've"
+            | "your"
+            | "yours"
+            | "yourself"
+            | "yourselves"
     )
 }
 
@@ -723,7 +989,9 @@ mod tests {
     use super::*;
 
     fn fetch_text(edition: &Edition, pos: i64) -> Option<String> {
-        edition.fetch(pos).and_then(|e| e.as_text().map(|s| s.to_string()))
+        edition
+            .fetch(pos)
+            .and_then(|e| e.as_text().map(|s| s.to_string()))
     }
 
     #[test]
@@ -766,7 +1034,9 @@ mod tests {
 
     #[test]
     fn with_adds_position() {
-        let e = Edition::empty().with(0, RangeElement::text("a")).with(1, RangeElement::text("b"));
+        let e = Edition::empty()
+            .with(0, RangeElement::text("a"))
+            .with(1, RangeElement::text("b"));
         assert_eq!(e.count(), 2);
         assert_eq!(fetch_text(&e, 0), Some("a".to_string()));
         assert_eq!(fetch_text(&e, 1), Some("b".to_string()));
@@ -946,8 +1216,13 @@ mod tests {
         let regions = a.find_content_shared_regions(&b, 4);
         assert!(regions.len() >= 1);
         let texts: Vec<&str> = regions.iter().map(|r| r.4.as_str()).collect();
-        assert!(texts.iter().any(|t| t.contains("quick") || t.contains("fox")),
-            "expected 'quick' or 'fox' in {:?}, find_content_shared_regions_partial):", texts);
+        assert!(
+            texts
+                .iter()
+                .any(|t| t.contains("quick") || t.contains("fox")),
+            "expected 'quick' or 'fox' in {:?}, find_content_shared_regions_partial):",
+            texts
+        );
     }
 
     #[test]
@@ -955,7 +1230,10 @@ mod tests {
         let a = Edition::from_text("abcdef");
         let b = Edition::from_text("abcxyz");
         let regions3 = a.find_content_shared_regions(&b, 4);
-        assert!(regions3.is_empty(), "3-char match should not meet min_run=4");
+        assert!(
+            regions3.is_empty(),
+            "3-char match should not meet min_run=4"
+        );
         let regions2 = a.find_content_shared_regions(&b, 2);
         assert!(!regions2.is_empty());
         assert!(regions2[0].4.contains("abc"));
@@ -1000,7 +1278,12 @@ mod tests {
         let a = Edition::from_text("cat dog bird cat dog");
         let b = Edition::from_text("cat dog fish cat dog");
         let regions = a.find_content_shared_regions(&b, 3);
-        assert!(regions.len() >= 2, "expected at least 2 shared runs, got {}: {:?}", regions.len(), regions);
+        assert!(
+            regions.len() >= 2,
+            "expected at least 2 shared runs, got {}: {:?}",
+            regions.len(),
+            regions
+        );
     }
 
     #[test]
@@ -1008,13 +1291,25 @@ mod tests {
         let a = Edition::from_text_elements(&[
             RangeElement::text("a"),
             RangeElement::text("b"),
-            RangeElement::Blob { content_hash: 42, mime_type: "image/png".into(), byte_size: 100, width: Some(10), height: Some(10) },
+            RangeElement::Blob {
+                content_hash: 42,
+                mime_type: "image/png".into(),
+                byte_size: 100,
+                width: Some(10),
+                height: Some(10),
+            },
             RangeElement::text("c"),
         ]);
         let b = Edition::from_text_elements(&[
             RangeElement::text("x"),
             RangeElement::text("b"),
-            RangeElement::Blob { content_hash: 42, mime_type: "image/png".into(), byte_size: 100, width: Some(10), height: Some(10) },
+            RangeElement::Blob {
+                content_hash: 42,
+                mime_type: "image/png".into(),
+                byte_size: 100,
+                width: Some(10),
+                height: Some(10),
+            },
             RangeElement::text("c"),
         ]);
         let regions = a.find_content_shared_regions(&b, 2);
@@ -1213,8 +1508,7 @@ mod tests {
 
     #[test]
     fn infinite_edition_without() {
-        let e = Edition::from_all(&XnRegion::above(0), RangeElement::text("."))
-            .without(5);
+        let e = Edition::from_all(&XnRegion::above(0), RangeElement::text(".")).without(5);
         assert!(!e.has_position(5));
         assert!(e.has_position(4));
         assert!(e.has_position(6));
@@ -1230,8 +1524,7 @@ mod tests {
 
     #[test]
     fn infinite_edition_transformed() {
-        let e = Edition::from_all(&XnRegion::above(0), RangeElement::text("."))
-            .transformed_by(100);
+        let e = Edition::from_all(&XnRegion::above(0), RangeElement::text(".")).transformed_by(100);
         assert!(e.has_position(100));
         assert!(!e.has_position(0));
         assert_eq!(fetch_text(&e, 150), Some(".".to_string()));
@@ -1354,24 +1647,29 @@ mod tests {
     #[test]
     #[ignore]
     fn bench_old_vs_bulk_construction() {
-        use std::time::Instant;
-        use std::sync::Arc;
         use crate::edition::orgl::OrglRoot;
         use crate::edition::range_element::Carrier;
+        use std::sync::Arc;
+        use std::time::Instant;
 
         let sizes = [1_000, 10_000, 50_000, 100_000];
 
-        println!("\n{:>10} | {:>12} | {:>12} | {:>8} | {}",
-            "Size", "Old (ms)", "Bulk (ms)", "Speedup", "Count OK");
-        println!("{:-<10}-+-{:-<12}-+-{:-<12}-+-{:-<8}-+-{:-<10}",
-            "", "", "", "", "");
+        println!(
+            "\n{:>10} | {:>12} | {:>12} | {:>8} | {}",
+            "Size", "Old (ms)", "Bulk (ms)", "Speedup", "Count OK"
+        );
+        println!(
+            "{:-<10}-+-{:-<12}-+-{:-<12}-+-{:-<8}-+-{:-<10}",
+            "", "", "", "", ""
+        );
 
         for &n in &sizes {
             let entries: Vec<(i64, RangeElement)> = (0..n)
                 .map(|i| (i as i64, RangeElement::text(format!("v{}", i))))
                 .collect();
 
-            let carriers: Vec<(i64, Arc<Carrier>)> = entries.iter()
+            let carriers: Vec<(i64, Arc<Carrier>)> = entries
+                .iter()
                 .map(|(pos, elem)| (*pos, Arc::new(Carrier::new(elem.clone()))))
                 .collect();
 
@@ -1386,7 +1684,12 @@ mod tests {
             let start = Instant::now();
             let region = XnRegion::interval(0, n as i64);
             let orgl = OrglRoot::from_bulk_entries(carriers.clone(), None, region);
-            let bulk_edition = Edition { orgl, endorsements: EndorsementSet::new(), entries_cache: Arc::new(OnceLock::new()), span_provenance: Vec::new() };
+            let bulk_edition = Edition {
+                orgl,
+                endorsements: EndorsementSet::new(),
+                entries_cache: Arc::new(OnceLock::new()),
+                span_provenance: Vec::new(),
+            };
             let bulk_dur = start.elapsed();
             let bulk_count = bulk_edition.count();
 
@@ -1397,8 +1700,10 @@ mod tests {
             assert_eq!(old_count, bulk_count);
             assert_eq!(old_count, n as u64);
 
-            println!("{:>10} | {:>12.2} | {:>12.2} | {:>7.1}x | old={} bulk={}",
-                n, old_ms, bulk_ms, speedup, old_count, bulk_count);
+            println!(
+                "{:>10} | {:>12.2} | {:>12.2} | {:>7.1}x | old={} bulk={}",
+                n, old_ms, bulk_ms, speedup, old_count, bulk_count
+            );
 
             for i in (0..n).step_by(n / 10.max(1)) {
                 let old_val = old_edition.fetch(i as i64);

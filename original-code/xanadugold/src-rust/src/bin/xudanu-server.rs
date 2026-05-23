@@ -1,6 +1,6 @@
 use std::path::PathBuf;
+use xudanu::server::transport::{build_router, AppState};
 use xudanu::server::Server;
-use xudanu::server::transport::{AppState, build_router};
 
 fn init_tracing(data_dir: Option<&str>) {
     use tracing_subscriber::prelude::*;
@@ -16,10 +16,12 @@ fn init_tracing(data_dir: Option<&str>) {
     if let Some(dir) = data_dir {
         let log_dir = PathBuf::from(dir);
         if let Err(e) = std::fs::create_dir_all(&log_dir) {
-            eprintln!("warning: cannot create log directory {}: {}", log_dir.display(), e);
-            tracing_subscriber::registry()
-                .with(console)
-                .init();
+            eprintln!(
+                "warning: cannot create log directory {}: {}",
+                log_dir.display(),
+                e
+            );
+            tracing_subscriber::registry().with(console).init();
             return;
         }
         let file_appender = tracing_appender::rolling::daily(&log_dir, "security.log");
@@ -28,9 +30,7 @@ fn init_tracing(data_dir: Option<&str>) {
             Ok(w) => w,
             Err(e) => {
                 eprintln!("warning: cannot create chained log writer: {}", e);
-                tracing_subscriber::registry()
-                    .with(console)
-                    .init();
+                tracing_subscriber::registry().with(console).init();
                 return;
             }
         };
@@ -45,14 +45,15 @@ fn init_tracing(data_dir: Option<&str>) {
             .with(security_file)
             .init();
     } else {
-        tracing_subscriber::registry()
-            .with(console)
-            .init();
+        tracing_subscriber::registry().with(console).init();
     }
 }
 
 fn usage() {
-    eprintln!("xudanu {} — conflict-preserving hypertext document store", env!("CARGO_PKG_VERSION"));
+    eprintln!(
+        "xudanu {} — conflict-preserving hypertext document store",
+        env!("CARGO_PKG_VERSION")
+    );
     eprintln!();
     eprintln!("Usage: xudanu-server <command> [options]");
     eprintln!();
@@ -70,10 +71,10 @@ fn usage() {
     eprintln!("  --peer <addr>            Federation peer address (repeatable, e.g. ws://host:port/federation)");
     eprintln!("  --federation-mode <mode> Federation mode: closed (default) or open");
     eprintln!("  --allowed-origin <url>   Allowed WebSocket origin (repeatable, e.g. https://example.com)");
-  eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
-  eprintln!("  --key-passphrase <pw>   Passphrase for encrypted server key file");
-  eprintln!("                         (can also set XUDANU_KEY_PASSPHRASE env var)");
-  eprintln!();
+    eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
+    eprintln!("  --key-passphrase <pw>   Passphrase for encrypted server key file");
+    eprintln!("                         (can also set XUDANU_KEY_PASSPHRASE env var)");
+    eprintln!();
     eprintln!("Flags:");
     eprintln!("  --version, -V            Print version");
     eprintln!("  --help, -h               Print this help message");
@@ -86,19 +87,27 @@ fn cmd_init(data_dir: &str, passphrase: Option<&[u8]>) {
         std::process::exit(1);
     }
     let mut server = Server::new();
-    server.init_data_dir(&path, passphrase).expect("failed to initialize data directory");
+    server
+        .init_data_dir(&path, passphrase)
+        .expect("failed to initialize data directory");
 }
 
 fn cmd_verify(data_dir: &str) {
     let path = PathBuf::from(data_dir);
     if !path.join("manifest.json").exists() {
-        eprintln!("Error: no manifest.json found at {}", path.join("manifest.json").display());
+        eprintln!(
+            "Error: no manifest.json found at {}",
+            path.join("manifest.json").display()
+        );
         std::process::exit(1);
     }
     match xudanu::persist::verify::verify_store(&path) {
         Ok(report) => {
             println!("Verification report:");
-            println!("  Chunks: {} total, {} verified", report.chunks_total, report.chunks_verified);
+            println!(
+                "  Chunks: {} total, {} verified",
+                report.chunks_total, report.chunks_verified
+            );
             if !report.chunks_missing.is_empty() {
                 println!("  MISSING chunks: {}", report.chunks_missing.len());
                 for h in &report.chunks_missing {
@@ -115,14 +124,26 @@ fn cmd_verify(data_dir: &str) {
                 println!("  Orphaned chunks: {}", report.chunks_orphaned.len());
             }
             if !report.deserialization_errors.is_empty() {
-                println!("  Deserialization errors: {}", report.deserialization_errors.len());
+                println!(
+                    "  Deserialization errors: {}",
+                    report.deserialization_errors.len()
+                );
                 for e in &report.deserialization_errors {
                     println!("    {}", e);
                 }
             }
-            println!("  Works: {} ok, {} failed", report.works_ok, report.works_failed);
-            println!("  Clubs: {} ok, {} failed", report.clubs_ok, report.clubs_failed);
-            println!("  Standalone editions: {} ok, {} failed", report.standalone_ok, report.standalone_failed);
+            println!(
+                "  Works: {} ok, {} failed",
+                report.works_ok, report.works_failed
+            );
+            println!(
+                "  Clubs: {} ok, {} failed",
+                report.clubs_ok, report.clubs_failed
+            );
+            println!(
+                "  Standalone editions: {} ok, {} failed",
+                report.standalone_ok, report.standalone_failed
+            );
 
             if report.is_ok() {
                 println!("  Status: OK");
@@ -143,7 +164,10 @@ fn cmd_rebuild_manifest(data_dir: &str) {
     match xudanu::persist::verify::rebuild_manifest(&path) {
         Ok(report) => {
             println!("Rebuild complete:");
-            println!("  Chunks: {} total, {} verified", report.chunks_total, report.chunks_verified);
+            println!(
+                "  Chunks: {} total, {} verified",
+                report.chunks_total, report.chunks_verified
+            );
             if report.is_ok() {
                 println!("  Status: OK");
             } else {
@@ -196,19 +220,26 @@ fn cmd_verify_security_log(data_dir: &str) {
     let mut errors = 0;
     let mut chain_seed = seed;
     for log_file in &log_files {
-        let content = std::fs::read_to_string(log_file)
-            .unwrap_or_else(|e| {
-                eprintln!("Error: cannot read {}: {}", log_file.display(), e);
-                std::process::exit(1);
-            });
+        let content = std::fs::read_to_string(log_file).unwrap_or_else(|e| {
+            eprintln!("Error: cannot read {}: {}", log_file.display(), e);
+            std::process::exit(1);
+        });
         match ChainedLogWriter::<std::fs::File>::verify_log(&content, &chain_seed) {
             Ok((count, final_hash)) => {
-                println!("  {}  {} lines  OK", log_file.file_name().unwrap_or_default().to_string_lossy(), count);
+                println!(
+                    "  {}  {} lines  OK",
+                    log_file.file_name().unwrap_or_default().to_string_lossy(),
+                    count
+                );
                 total_lines += count;
                 chain_seed = final_hash;
             }
             Err(e) => {
-                println!("  {}  FAIL at line {}", log_file.file_name().unwrap_or_default().to_string_lossy(), e.line_number);
+                println!(
+                    "  {}  FAIL at line {}",
+                    log_file.file_name().unwrap_or_default().to_string_lossy(),
+                    e.line_number
+                );
                 println!("    {}", e);
                 errors += 1;
             }
@@ -217,9 +248,17 @@ fn cmd_verify_security_log(data_dir: &str) {
 
     println!();
     if errors == 0 {
-        println!("Verification passed: {} log lines, {} files, chain intact", total_lines, log_files.len());
+        println!(
+            "Verification passed: {} log lines, {} files, chain intact",
+            total_lines,
+            log_files.len()
+        );
     } else {
-        println!("Verification FAILED: {} error(s) in {} files", errors, log_files.len());
+        println!(
+            "Verification FAILED: {} error(s) in {} files",
+            errors,
+            log_files.len()
+        );
         std::process::exit(1);
     }
 }
@@ -233,13 +272,19 @@ async fn main() {
     }
 
     let data_dir_for_tracing = match args[1].as_str() {
-        "run" => {
-            args.iter().position(|a| !a.starts_with('-') && !a.contains(':'))
-                .and_then(|p| args.get(p + 1).cloned())
-                .or_else(|| args.get(2).and_then(|a| {
-                    if !a.starts_with('-') && !a.contains(':') { Some(a.clone()) } else { None }
-                }))
-        }
+        "run" => args
+            .iter()
+            .position(|a| !a.starts_with('-') && !a.contains(':'))
+            .and_then(|p| args.get(p + 1).cloned())
+            .or_else(|| {
+                args.get(2).and_then(|a| {
+                    if !a.starts_with('-') && !a.contains(':') {
+                        Some(a.clone())
+                    } else {
+                        None
+                    }
+                })
+            }),
         "init" | "verify" | "rebuild-manifest" | "verify-security-log" => args.get(2).cloned(),
         _ => None,
     };
@@ -277,7 +322,8 @@ async fn main() {
             let mut tls_key: Option<PathBuf> = None;
             let mut federation_peers: Vec<String> = Vec::new();
             let mut federation_mode = "closed".to_string();
-            let mut allowed_origins: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut allowed_origins: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
             let mut csrf_enabled = false;
             let mut key_passphrase: Option<String> = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
             let mut i = 2;
@@ -285,24 +331,30 @@ async fn main() {
                 match args[i].as_str() {
                     "--static-dir" => {
                         i += 1;
-                        static_dir = Some(PathBuf::from(args.get(i).map(|s| s.as_str()).unwrap_or_else(|| {
-                            eprintln!("Error: --static-dir requires a path");
-                            std::process::exit(1);
-                        })));
+                        static_dir = Some(PathBuf::from(
+                            args.get(i).map(|s| s.as_str()).unwrap_or_else(|| {
+                                eprintln!("Error: --static-dir requires a path");
+                                std::process::exit(1);
+                            }),
+                        ));
                     }
                     "--tls-cert" => {
                         i += 1;
-                        tls_cert = Some(PathBuf::from(args.get(i).map(|s| s.as_str()).unwrap_or_else(|| {
-                            eprintln!("Error: --tls-cert requires a path");
-                            std::process::exit(1);
-                        })));
+                        tls_cert = Some(PathBuf::from(
+                            args.get(i).map(|s| s.as_str()).unwrap_or_else(|| {
+                                eprintln!("Error: --tls-cert requires a path");
+                                std::process::exit(1);
+                            }),
+                        ));
                     }
                     "--tls-key" => {
                         i += 1;
-                        tls_key = Some(PathBuf::from(args.get(i).map(|s| s.as_str()).unwrap_or_else(|| {
-                            eprintln!("Error: --tls-key requires a path");
-                            std::process::exit(1);
-                        })));
+                        tls_key = Some(PathBuf::from(
+                            args.get(i).map(|s| s.as_str()).unwrap_or_else(|| {
+                                eprintln!("Error: --tls-key requires a path");
+                                std::process::exit(1);
+                            }),
+                        ));
                     }
                     "--peer" => {
                         i += 1;
@@ -332,10 +384,11 @@ async fn main() {
                     }
                     "--key-passphrase" => {
                         i += 1;
-                        key_passphrase = Some(args.get(i).map(|s| s.to_string()).unwrap_or_else(|| {
-                            eprintln!("Error: --key-passphrase requires a value");
-                            std::process::exit(1);
-                        }));
+                        key_passphrase =
+                            Some(args.get(i).map(|s| s.to_string()).unwrap_or_else(|| {
+                                eprintln!("Error: --key-passphrase requires a value");
+                                std::process::exit(1);
+                            }));
                     }
                     s if s.contains(':') => {
                         addr = s.to_string();
@@ -375,7 +428,8 @@ async fn main() {
                 } else {
                     tracing::info!("Initializing new data directory: {}", dir);
                     let mut s = Server::new();
-                    s.init_data_dir(&path, pass_bytes).expect("failed to initialize data directory");
+                    s.init_data_dir(&path, pass_bytes)
+                        .expect("failed to initialize data directory");
                     s
                 }
             } else {
@@ -414,7 +468,11 @@ async fn main() {
                     mode,
                     min_endorsements: 2,
                 };
-                tracing::info!("Federation enabled with {} peer(s), mode={}", config.peers.len(), federation_mode);
+                tracing::info!(
+                    "Federation enabled with {} peer(s), mode={}",
+                    config.peers.len(),
+                    federation_mode
+                );
                 server.set_federation_config(config);
             }
 
@@ -428,7 +486,10 @@ async fn main() {
                     None => app,
                 };
                 let app = if !allowed_origins.is_empty() {
-                    tracing::info!("WebSocket origin check: {} allowed origin(s)", allowed_origins.len());
+                    tracing::info!(
+                        "WebSocket origin check: {} allowed origin(s)",
+                        allowed_origins.len()
+                    );
                     app.with_allowed_origins(allowed_origins)
                 } else {
                     app
@@ -442,15 +503,27 @@ async fn main() {
                 app.shared()
             };
             let client_router = build_router(state.clone());
-            let federation_router = xudanu::server::transport::federation_handler::build_federation_router(state.clone());
-            let app = xudanu::server::transport::federation_handler::merge_routers(client_router, federation_router);
+            let federation_router =
+                xudanu::server::transport::federation_handler::build_federation_router(
+                    state.clone(),
+                );
+            let app = xudanu::server::transport::federation_handler::merge_routers(
+                client_router,
+                federation_router,
+            );
 
-            tracing::info!("xudanu server listening on {}{}", addr, if tls_cert.is_some() { " (TLS)" } else { "" });
+            tracing::info!(
+                "xudanu server listening on {}{}",
+                addr,
+                if tls_cert.is_some() { " (TLS)" } else { "" }
+            );
 
             let shutdown_state = state.clone();
             let shutdown_data_dir = data_dir.clone();
             let shutdown_handler = tokio::spawn(async move {
-                tokio::signal::ctrl_c().await.expect("failed to listen for ctrl-c");
+                tokio::signal::ctrl_c()
+                    .await
+                    .expect("failed to listen for ctrl-c");
                 tracing::info!("Shutting down...");
                 if let Some(ref dir) = shutdown_data_dir {
                     shutdown_state.server.with_server(|server| {
@@ -516,7 +589,9 @@ async fn main() {
                         std::process::exit(1);
                     });
                 server_config.alpn_protocols = vec![b"http/1.1".to_vec()];
-                let config = axum_server::tls_rustls::RustlsConfig::from_config(std::sync::Arc::new(server_config));
+                let config = axum_server::tls_rustls::RustlsConfig::from_config(
+                    std::sync::Arc::new(server_config),
+                );
                 tracing::info!("TLS enabled");
                 let handle = axum_server::Handle::new();
                 let shutdown_handle = handle.clone();
@@ -531,12 +606,15 @@ async fn main() {
                     .unwrap();
             } else {
                 let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-                axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-                    .with_graceful_shutdown(async {
-                        shutdown_handler.await.ok();
-                    })
-                    .await
-                    .unwrap();
+                axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                )
+                .with_graceful_shutdown(async {
+                    shutdown_handler.await.ok();
+                })
+                .await
+                .unwrap();
             }
         }
         _ => {

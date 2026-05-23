@@ -1,14 +1,14 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
-use x25519_dalek::{StaticSecret, PublicKey};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use rand::rngs::OsRng;
 use rand::RngCore;
+use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
 use super::aead::{self, SealedEnvelope};
-use super::sign::{sign_bytes, verify_signature, generate_signing_key};
+use super::sign::{generate_signing_key, sign_bytes, verify_signature};
 
 pub type KeyId = u64;
 
@@ -220,7 +220,11 @@ impl KeyHistory {
         }
     }
 
-    pub fn rotate(&mut self, old_keypair: &ServerKeyPair, new_keypair: &ServerKeyPair) -> Result<KeyId, String> {
+    pub fn rotate(
+        &mut self,
+        old_keypair: &ServerKeyPair,
+        new_keypair: &ServerKeyPair,
+    ) -> Result<KeyId, String> {
         if old_keypair.key_id != self.current_key_id {
             return Err("old keypair is not the current key".to_string());
         }
@@ -240,7 +244,9 @@ impl KeyHistory {
     }
 
     pub fn current(&self) -> Option<&KeyHistoryEntry> {
-        self.entries.iter().find(|e| e.key_id == self.current_key_id)
+        self.entries
+            .iter()
+            .find(|e| e.key_id == self.current_key_id)
     }
 
     pub fn get(&self, key_id: KeyId) -> Option<&KeyHistoryEntry> {
@@ -253,7 +259,8 @@ impl KeyHistory {
         }
         for (i, proof) in self.rotation_proofs.iter().enumerate() {
             let prev_vk = if i == 0 {
-                self.entries.first()
+                self.entries
+                    .first()
                     .ok_or("no entries in history")?
                     .verifying_key
             } else {
@@ -326,7 +333,9 @@ impl std::fmt::Display for KeypairFileError {
             KeypairFileError::Encryption(e) => write!(f, "encryption failed: {}", e),
             KeypairFileError::Decryption(e) => write!(f, "decryption failed: {}", e),
             KeypairFileError::WrongPassphrase => write!(f, "wrong passphrase or corrupt key file"),
-            KeypairFileError::CorruptIntegrity => write!(f, "key file integrity check failed (corrupt or tampered)"),
+            KeypairFileError::CorruptIntegrity => {
+                write!(f, "key file integrity check failed (corrupt or tampered)")
+            }
             KeypairFileError::InvalidFormat => write!(f, "invalid key file format"),
         }
     }
@@ -335,21 +344,25 @@ impl std::fmt::Display for KeypairFileError {
 impl std::error::Error for KeypairFileError {}
 
 impl From<std::io::Error> for KeypairFileError {
-    fn from(e: std::io::Error) -> Self { KeypairFileError::Io(e) }
+    fn from(e: std::io::Error) -> Self {
+        KeypairFileError::Io(e)
+    }
 }
 
 impl From<serde_json::Error> for KeypairFileError {
-    fn from(e: serde_json::Error) -> Self { KeypairFileError::Json(e) }
+    fn from(e: serde_json::Error) -> Self {
+        KeypairFileError::Json(e)
+    }
 }
 
 const KEYFILE_V2: u8 = 2;
 
 fn derive_keyfile_key(passphrase: &[u8], salt: &[u8; 32]) -> [u8; 32] {
-    let params = argon2::Params::new(19456, 2, 1, Some(32))
-        .expect("valid argon2 params");
+    let params = argon2::Params::new(19456, 2, 1, Some(32)).expect("valid argon2 params");
     let argon2 = argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
     let mut key = [0u8; 32];
-    argon2.hash_password_into(passphrase, salt, &mut key)
+    argon2
+        .hash_password_into(passphrase, salt, &mut key)
         .expect("argon2 derivation should not fail with valid params");
     key
 }
@@ -376,7 +389,11 @@ impl ServerKeyPair {
         std::fs::rename(&tmp_path, path)
     }
 
-    pub fn save_to_file_encrypted(&self, path: &std::path::Path, passphrase: &[u8]) -> Result<(), KeypairFileError> {
+    pub fn save_to_file_encrypted(
+        &self,
+        path: &std::path::Path,
+        passphrase: &[u8],
+    ) -> Result<(), KeypairFileError> {
         let mut plaintext = Vec::with_capacity(32 + 32 + 8 + 8 + 8 + 1);
         plaintext.extend_from_slice(&self.signing_key.to_bytes());
         plaintext.extend_from_slice(&self.kex_secret.to_bytes());
@@ -440,7 +457,10 @@ impl ServerKeyPair {
         })
     }
 
-    pub fn load_from_file_with_passphrase(path: &std::path::Path, passphrase: &[u8]) -> Result<Self, KeypairFileError> {
+    pub fn load_from_file_with_passphrase(
+        path: &std::path::Path,
+        passphrase: &[u8],
+    ) -> Result<Self, KeypairFileError> {
         let json = std::fs::read_to_string(path)?;
 
         if let Ok(v2) = serde_json::from_str::<KeypairFileV2>(&json) {
@@ -448,12 +468,14 @@ impl ServerKeyPair {
                 return Err(KeypairFileError::InvalidFormat);
             }
 
-            let salt: [u8; 32] = BASE64.decode(&v2.salt)
+            let salt: [u8; 32] = BASE64
+                .decode(&v2.salt)
                 .map_err(|_| KeypairFileError::InvalidFormat)?
                 .try_into()
                 .map_err(|_| KeypairFileError::InvalidFormat)?;
 
-            let envelope_bytes = BASE64.decode(&v2.envelope)
+            let envelope_bytes = BASE64
+                .decode(&v2.envelope)
                 .map_err(|_| KeypairFileError::InvalidFormat)?;
 
             let mut integrity_input = Vec::with_capacity(32 + envelope_bytes.len());
@@ -464,8 +486,8 @@ impl ServerKeyPair {
                 return Err(KeypairFileError::CorruptIntegrity);
             }
 
-            let envelope = SealedEnvelope::decode(&envelope_bytes)
-                .map_err(KeypairFileError::Decryption)?;
+            let envelope =
+                SealedEnvelope::decode(&envelope_bytes).map_err(KeypairFileError::Decryption)?;
             let key = derive_keyfile_key(passphrase, &salt);
             let plaintext = aead::open_standalone(&key, &envelope, b"xudanu-server-key")
                 .map_err(|_| KeypairFileError::WrongPassphrase)?;
@@ -473,23 +495,37 @@ impl ServerKeyPair {
             if plaintext.len() < 32 + 32 + 8 + 8 + 8 + 1 {
                 return Err(KeypairFileError::InvalidFormat);
             }
-            let signing_key_bytes: [u8; 32] = plaintext[0..32].try_into()
+            let signing_key_bytes: [u8; 32] = plaintext[0..32]
+                .try_into()
                 .map_err(|_| KeypairFileError::InvalidFormat)?;
-            let kex_secret_bytes: [u8; 32] = plaintext[32..64].try_into()
+            let kex_secret_bytes: [u8; 32] = plaintext[32..64]
+                .try_into()
                 .map_err(|_| KeypairFileError::InvalidFormat)?;
-            let key_id = KeyId::from_be_bytes(plaintext[64..72].try_into()
-                .map_err(|_| KeypairFileError::InvalidFormat)?);
-            let created_at = u64::from_be_bytes(plaintext[72..80].try_into()
-                .map_err(|_| KeypairFileError::InvalidFormat)?);
-            let not_before = u64::from_be_bytes(plaintext[80..88].try_into()
-                .map_err(|_| KeypairFileError::InvalidFormat)?);
+            let key_id = KeyId::from_be_bytes(
+                plaintext[64..72]
+                    .try_into()
+                    .map_err(|_| KeypairFileError::InvalidFormat)?,
+            );
+            let created_at = u64::from_be_bytes(
+                plaintext[72..80]
+                    .try_into()
+                    .map_err(|_| KeypairFileError::InvalidFormat)?,
+            );
+            let not_before = u64::from_be_bytes(
+                plaintext[80..88]
+                    .try_into()
+                    .map_err(|_| KeypairFileError::InvalidFormat)?,
+            );
             let has_not_after = plaintext[88];
             let not_after = if has_not_after == 1 {
                 if plaintext.len() < 89 + 8 {
                     return Err(KeypairFileError::InvalidFormat);
                 }
-                Some(u64::from_be_bytes(plaintext[89..97].try_into()
-                    .map_err(|_| KeypairFileError::InvalidFormat)?))
+                Some(u64::from_be_bytes(
+                    plaintext[89..97]
+                        .try_into()
+                        .map_err(|_| KeypairFileError::InvalidFormat)?,
+                ))
             } else {
                 None
             };
@@ -525,15 +561,19 @@ impl ServerKeyPair {
         Err(KeypairFileError::InvalidFormat)
     }
 
-    pub fn load_from_file_auto(path: &std::path::Path, passphrase: Option<&[u8]>) -> Result<Self, KeypairFileError> {
+    pub fn load_from_file_auto(
+        path: &std::path::Path,
+        passphrase: Option<&[u8]>,
+    ) -> Result<Self, KeypairFileError> {
         let json = std::fs::read_to_string(path)?;
         if let Ok(v2) = serde_json::from_str::<KeypairFileV2>(&json) {
             let pass = passphrase.ok_or(KeypairFileError::WrongPassphrase)?;
             return Self::load_from_file_with_passphrase(path, pass);
         }
-        tracing::warn!("Server key file is unencrypted (v1 format). Consider migrating with --key-passphrase.");
-        Self::load_from_file(path)
-            .map_err(KeypairFileError::Io)
+        tracing::warn!(
+            "Server key file is unencrypted (v1 format). Consider migrating with --key-passphrase."
+        );
+        Self::load_from_file(path).map_err(KeypairFileError::Io)
     }
 }
 
@@ -577,42 +617,61 @@ impl KeyHistory {
     pub fn to_file_repr(&self) -> KeyHistoryFile {
         KeyHistoryFile {
             server_id: self.server_id.clone(),
-            entries: self.entries.iter().map(|e| KeyHistoryEntryFile {
-                key_id: e.key_id,
-                verifying_key_bytes: e.verifying_key.to_bytes(),
-                kex_public_bytes: *e.kex_public.as_bytes(),
-                not_before: e.not_before,
-                not_after: e.not_after,
-            }).collect(),
-            rotation_proofs: self.rotation_proofs.iter().map(|r| SignedKeyRotationFile {
-                payload_bytes: r.payload.encode(),
-                signature_bytes: r.signature.to_bytes().to_vec(),
-            }).collect(),
+            entries: self
+                .entries
+                .iter()
+                .map(|e| KeyHistoryEntryFile {
+                    key_id: e.key_id,
+                    verifying_key_bytes: e.verifying_key.to_bytes(),
+                    kex_public_bytes: *e.kex_public.as_bytes(),
+                    not_before: e.not_before,
+                    not_after: e.not_after,
+                })
+                .collect(),
+            rotation_proofs: self
+                .rotation_proofs
+                .iter()
+                .map(|r| SignedKeyRotationFile {
+                    payload_bytes: r.payload.encode(),
+                    signature_bytes: r.signature.to_bytes().to_vec(),
+                })
+                .collect(),
             current_key_id: self.current_key_id,
         }
     }
 
     pub fn from_file_repr(file: &KeyHistoryFile) -> Result<Self, String> {
-        let entries: Result<Vec<_>, String> = file.entries.iter().map(|e| {
-            let verifying_key = VerifyingKey::from_bytes(&e.verifying_key_bytes)
-                .map_err(|_| "invalid verifying key bytes in key history".to_string())?;
-            let kex_public = PublicKey::from(e.kex_public_bytes);
-            Ok(KeyHistoryEntry {
-                key_id: e.key_id,
-                verifying_key,
-                kex_public,
-                not_before: e.not_before,
-                not_after: e.not_after,
+        let entries: Result<Vec<_>, String> = file
+            .entries
+            .iter()
+            .map(|e| {
+                let verifying_key = VerifyingKey::from_bytes(&e.verifying_key_bytes)
+                    .map_err(|_| "invalid verifying key bytes in key history".to_string())?;
+                let kex_public = PublicKey::from(e.kex_public_bytes);
+                Ok(KeyHistoryEntry {
+                    key_id: e.key_id,
+                    verifying_key,
+                    kex_public,
+                    not_before: e.not_before,
+                    not_after: e.not_after,
+                })
             })
-        }).collect();
-        let rotation_proofs: Result<Vec<_>, String> = file.rotation_proofs.iter().map(|r| {
-            let payload = KeyRotationPayload::decode(&r.payload_bytes)
-                .ok_or("invalid key rotation payload in key history".to_string())?;
-            let sig_bytes: [u8; 64] = r.signature_bytes.clone().try_into()
-                .map_err(|_| "invalid signature length in key history".to_string())?;
-            let signature = Signature::from_bytes(&sig_bytes);
-            Ok(SignedKeyRotation { payload, signature })
-        }).collect();
+            .collect();
+        let rotation_proofs: Result<Vec<_>, String> = file
+            .rotation_proofs
+            .iter()
+            .map(|r| {
+                let payload = KeyRotationPayload::decode(&r.payload_bytes)
+                    .ok_or("invalid key rotation payload in key history".to_string())?;
+                let sig_bytes: [u8; 64] = r
+                    .signature_bytes
+                    .clone()
+                    .try_into()
+                    .map_err(|_| "invalid signature length in key history".to_string())?;
+                let signature = Signature::from_bytes(&sig_bytes);
+                Ok(SignedKeyRotation { payload, signature })
+            })
+            .collect();
         Ok(KeyHistory {
             server_id: file.server_id.clone(),
             entries: entries?,
@@ -778,9 +837,11 @@ mod tests {
         let original_id = kp.identity_id();
         let original_key_id = kp.key_id;
 
-        kp.save_to_file_encrypted(&path, b"correct-password").unwrap();
+        kp.save_to_file_encrypted(&path, b"correct-password")
+            .unwrap();
 
-        let loaded = ServerKeyPair::load_from_file_with_passphrase(&path, b"correct-password").unwrap();
+        let loaded =
+            ServerKeyPair::load_from_file_with_passphrase(&path, b"correct-password").unwrap();
         assert_eq!(loaded.identity_id(), original_id);
         assert_eq!(loaded.key_id, original_key_id);
         assert_eq!(loaded.created_at, kp.created_at);

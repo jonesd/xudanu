@@ -42,12 +42,12 @@ pub use federation::{
 #[cfg(feature = "server")]
 pub use keymaster::KeyMaster;
 #[cfg(feature = "server")]
-pub use lock::{
-    BooLock, BooLockSmith, ChallengeLock, ChallengeLockSmith, Lock, LockCredential,
-    MatchLock, MatchLockSmith, MultiLock, WallLock, WallLockSmith,
-};
-#[cfg(feature = "server")]
 pub use lock::LockSmith;
+#[cfg(feature = "server")]
+pub use lock::{
+    BooLock, BooLockSmith, ChallengeLock, ChallengeLockSmith, Lock, LockCredential, MatchLock,
+    MatchLockSmith, MultiLock, WallLock, WallLockSmith,
+};
 #[cfg(feature = "server")]
 pub use server::{Server, SystemClubs};
 #[cfg(feature = "server")]

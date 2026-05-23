@@ -1,8 +1,8 @@
-use crate::edition::{BeId, Edition};
-use crate::server::Server;
-use crate::server::lock::LockCredential;
 use super::protocol::*;
 use super::shared::ServerHandle;
+use crate::edition::{BeId, Edition};
+use crate::server::lock::LockCredential;
+use crate::server::Server;
 
 pub fn dispatch(
     handle: &ServerHandle,
@@ -25,16 +25,15 @@ fn dispatch_inner(
     request: WireRequest,
 ) -> Result<ResponseValue, crate::server::ServerError> {
     match request {
-        WireRequest::SessionConnect => {
-            Ok(ResponseValue::Id(session_id.as_u64()))
-        }
+        WireRequest::SessionConnect => Ok(ResponseValue::Id(session_id.as_u64())),
         WireRequest::SessionDisconnect => {
             srv.disconnect(session_id)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::SessionLogin { club_id } => {
             let lock = srv.login(session_id, club_id)?;
-            let challenge = lock.as_ref()
+            let challenge = lock
+                .as_ref()
                 .as_any()
                 .downcast_ref::<crate::server::ChallengeLock>()
                 .map(|cl| cl.challenge().to_vec());
@@ -45,7 +44,8 @@ fn dispatch_inner(
         }
         WireRequest::SessionLoginByName { club_name } => {
             let lock = srv.login_by_name(session_id, &club_name)?;
-            let challenge = lock.as_ref()
+            let challenge = lock
+                .as_ref()
                 .as_any()
                 .downcast_ref::<crate::server::ChallengeLock>()
                 .map(|cl| cl.challenge().to_vec());
@@ -61,7 +61,9 @@ fn dispatch_inner(
         }
         WireRequest::SessionLoginPublic => {
             let km = srv.login_public(session_id)?;
-            Ok(ResponseValue::Id(km.login_authority().iter().next().copied().unwrap_or(0)))
+            Ok(ResponseValue::Id(
+                km.login_authority().iter().next().copied().unwrap_or(0),
+            ))
         }
 
         WireRequest::ServerGetById { id } => {
@@ -93,19 +95,24 @@ fn dispatch_inner(
             srv.ensure_session(session_id)?;
             match srv.club_id_by_name(&name) {
                 Some(id) => Ok(ResponseValue::Id(id)),
-                None => Err(crate::server::ServerError::NotFound(format!("club '{}'", name))),
+                None => Err(crate::server::ServerError::NotFound(format!(
+                    "club '{}'",
+                    name
+                ))),
             }
         }
         WireRequest::ClubNameById { club_id } => {
             srv.ensure_session(session_id)?;
-            let name = srv.club_name_by_id(club_id)
+            let name = srv
+                .club_name_by_id(club_id)
                 .map(|s| s.to_string())
                 .ok_or_else(|| crate::server::ServerError::ClubNotFound(club_id))?;
             Ok(ResponseValue::String(name))
         }
         WireRequest::ClubNames => {
             srv.ensure_session(session_id)?;
-            let names = srv.club_names_list()
+            let names = srv
+                .club_names_list()
                 .into_iter()
                 .map(|(n, id)| (n.to_string(), id))
                 .collect();
@@ -127,7 +134,11 @@ fn dispatch_inner(
             let rev = srv.work_revise(session_id, work_id, ed)?;
             Ok(ResponseValue::Humber(rev))
         }
-        WireRequest::WorkReviseDelta { work_id, base_revision, ops } => {
+        WireRequest::WorkReviseDelta {
+            work_id,
+            base_revision,
+            ops,
+        } => {
             if srv.crdt_is_active(work_id) {
                 let (_relay, revision) = srv.crdt_apply_text_delta(session_id, work_id, &ops)?;
                 let rev = revision.unwrap_or_else(|| srv.work_revision_count(work_id).unwrap_or(0));
@@ -137,7 +148,9 @@ fn dispatch_inner(
                 let current_ed = srv.work_edition(work_id)?;
                 let current_rev = srv.work_revision_count(work_id)?;
                 if current_rev != base_revision {
-                    return Ok(ResponseValue::Edition(EditionPayload::from_edition(&current_ed)));
+                    return Ok(ResponseValue::Edition(EditionPayload::from_edition(
+                        &current_ed,
+                    )));
                 }
                 let current_text = edition_to_text(&current_ed);
                 let new_text = apply_text_delta(&current_text, &ops);
@@ -178,7 +191,9 @@ fn dispatch_inner(
         }
         WireRequest::WorkGrabber { work_id } => {
             let grabber = srv.work_grabber(work_id)?;
-            Ok(ResponseValue::Humber(grabber.map(|s| s.as_u64()).unwrap_or(0)))
+            Ok(ResponseValue::Humber(
+                grabber.map(|s| s.as_u64()).unwrap_or(0),
+            ))
         }
         WireRequest::WorkRequestGrab { work_id } => {
             let granted = srv.work_request_grab(session_id, work_id)?;
@@ -274,11 +289,17 @@ fn dispatch_inner(
             Ok(ResponseValue::Boolean(published))
         }
 
-        WireRequest::ClubSetDefaultReadClub { club_id, default_read_club } => {
+        WireRequest::ClubSetDefaultReadClub {
+            club_id,
+            default_read_club,
+        } => {
             srv.club_set_default_read_club(session_id, club_id, default_read_club)?;
             Ok(ResponseValue::Void)
         }
-        WireRequest::ClubSetDefaultEditClub { club_id, default_edit_club } => {
+        WireRequest::ClubSetDefaultEditClub {
+            club_id,
+            default_edit_club,
+        } => {
             srv.club_set_default_edit_club(session_id, club_id, default_edit_club)?;
             Ok(ResponseValue::Void)
         }
@@ -290,17 +311,22 @@ fn dispatch_inner(
             srv.club_clear_credential(session_id, club_id)?;
             Ok(ResponseValue::ClubClearCredentialResult { cleared: true })
         }
-        WireRequest::ClubCreatePersonal { display_name, password } => {
+        WireRequest::ClubCreatePersonal {
+            display_name,
+            password,
+        } => {
             use crate::server::club::Credential;
             let (credential, raw_password) = match password {
                 Some(pw) => {
-                    let phc_hash = crate::crypto::password::hash_password(&pw)
-                        .map_err(|e| crate::server::ServerError::Internal(format!("password hash failed: {}", e)))?;
+                    let phc_hash = crate::crypto::password::hash_password(&pw).map_err(|e| {
+                        crate::server::ServerError::Internal(format!("password hash failed: {}", e))
+                    })?;
                     (Some(Credential::Password { phc_hash }), Some(pw))
                 }
                 None => (None, None),
             };
-            let id = srv.create_personal_club(session_id, display_name, credential, raw_password)?;
+            let id =
+                srv.create_personal_club(session_id, display_name, credential, raw_password)?;
             Ok(ResponseValue::Id(id))
         }
         WireRequest::ClubWhoAmI => {
@@ -343,22 +369,27 @@ fn dispatch_inner(
         }
         WireRequest::AdminActiveSessions => {
             let infos = srv.admin_active_sessions(session_id)?;
-            let payloads = infos.into_iter().map(|si| {
-                super::protocol::SessionInfoPayload {
+            let payloads = infos
+                .into_iter()
+                .map(|si| super::protocol::SessionInfoPayload {
                     session_id: si.session_id,
                     is_logged_in: si.is_logged_in,
                     authority_clubs: si.authority_clubs,
                     initial_login: si.initial_login,
                     grabbed_work_count: if si.has_grabbed_works { 1 } else { 0 },
-                }
-            }).collect();
+                })
+                .collect();
             Ok(ResponseValue::SessionInfos(payloads))
         }
         WireRequest::AdminShutdown => {
             srv.admin_shutdown(session_id)?;
             Ok(ResponseValue::Void)
         }
-        WireRequest::AdminGrant { club_id, region_start, region_end } => {
+        WireRequest::AdminGrant {
+            club_id,
+            region_start,
+            region_end,
+        } => {
             let region = crate::edition::XnRegion::interval(region_start, region_end);
             srv.admin_grant(session_id, club_id, region)?;
             Ok(ResponseValue::Void)
@@ -369,73 +400,117 @@ fn dispatch_inner(
         }
         WireRequest::AdminGrants => {
             let grants = srv.admin_grants(session_id)?;
-            let payloads = grants.iter().map(|g| {
-                let (start, end) = g.region.as_interval().unwrap_or((0, 0));
-                super::protocol::GrantPayload {
-                    club_id: g.club_id,
-                    region_start: start,
-                    region_end: end,
-                }
-            }).collect();
+            let payloads = grants
+                .iter()
+                .map(|g| {
+                    let (start, end) = g.region.as_interval().unwrap_or((0, 0));
+                    super::protocol::GrantPayload {
+                        club_id: g.club_id,
+                        region_start: start,
+                        region_end: end,
+                    }
+                })
+                .collect();
             Ok(ResponseValue::Grants(payloads))
         }
         WireRequest::AdminServerInfo => {
             srv.ensure_admin(session_id)?;
-            Ok(ResponseValue::ServerInfo(super::protocol::ServerInfoPayload {
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                session_count: srv.session_count(),
-                work_count: srv.work_count(),
-                club_count: srv.club_count(),
-                edition_count: srv.edition_count(),
-                is_accepting_connections: srv.admin_is_accepting_connections(),
-            }))
+            Ok(ResponseValue::ServerInfo(
+                super::protocol::ServerInfoPayload {
+                    version: env!("CARGO_PKG_VERSION").to_string(),
+                    session_count: srv.session_count(),
+                    work_count: srv.work_count(),
+                    club_count: srv.club_count(),
+                    edition_count: srv.edition_count(),
+                    is_accepting_connections: srv.admin_is_accepting_connections(),
+                },
+            ))
         }
 
         WireRequest::ServerStats => {
             srv.ensure_logged_in(session_id)?;
-            Ok(ResponseValue::ServerInfo(super::protocol::ServerInfoPayload {
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                session_count: srv.session_count(),
-                work_count: srv.work_count(),
-                club_count: srv.club_count(),
-                edition_count: srv.edition_count(),
-                is_accepting_connections: srv.admin_is_accepting_connections(),
-            }))
+            Ok(ResponseValue::ServerInfo(
+                super::protocol::ServerInfoPayload {
+                    version: env!("CARGO_PKG_VERSION").to_string(),
+                    session_count: srv.session_count(),
+                    work_count: srv.work_count(),
+                    club_count: srv.club_count(),
+                    edition_count: srv.edition_count(),
+                    is_accepting_connections: srv.admin_is_accepting_connections(),
+                },
+            ))
         }
 
         WireRequest::WorkList => {
-            let entries = srv.list_works_with_titles().into_iter()
+            let entries = srv
+                .list_works_with_titles()
+                .into_iter()
                 .filter(|(work_id, _, _, _, _, _)| {
                     srv.work(*work_id)
                         .map(|w| srv.work_is_readable(session_id, w))
                         .unwrap_or(false)
                 })
-                .map(|(work_id, owner, revision_count, is_grabbed, title, read_club)| {
-                    super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed, title, read_club }
-                }).collect();
+                .map(
+                    |(work_id, owner, revision_count, is_grabbed, title, read_club)| {
+                        super::protocol::WorkListEntry {
+                            work_id,
+                            owner,
+                            revision_count,
+                            is_grabbed,
+                            title,
+                            read_club,
+                        }
+                    },
+                )
+                .collect();
             Ok(ResponseValue::WorkList(entries))
         }
         WireRequest::WorkListByOwner { owner } => {
-            let entries = srv.list_works_by_owner(owner).into_iter()
+            let entries = srv
+                .list_works_by_owner(owner)
+                .into_iter()
                 .filter(|(work_id, _, _, _, _)| {
                     srv.work(*work_id)
                         .map(|w| srv.work_is_readable(session_id, w))
                         .unwrap_or(false)
                 })
                 .map(|(work_id, owner, revision_count, is_grabbed, read_club)| {
-                    super::protocol::WorkListEntry { work_id, owner, revision_count, is_grabbed, title: String::new(), read_club }
-                }).collect();
+                    super::protocol::WorkListEntry {
+                        work_id,
+                        owner,
+                        revision_count,
+                        is_grabbed,
+                        title: String::new(),
+                        read_club,
+                    }
+                })
+                .collect();
             Ok(ResponseValue::WorkList(entries))
         }
 
-        WireRequest::LinkCreate { origin, destination, origin_ref, destination_ref } => {
+        WireRequest::LinkCreate {
+            origin,
+            destination,
+            origin_ref,
+            destination_ref,
+        } => {
             srv.ensure_can_read(session_id, origin)?;
             srv.ensure_can_read(session_id, destination)?;
             let o_ref = origin_ref.map(|hr| {
-                crate::edition::links::HyperRef::single(None, hr.work_context, hr.original_context, None)
+                crate::edition::links::HyperRef::single(
+                    None,
+                    hr.work_context,
+                    hr.original_context,
+                    None,
+                )
             });
             let d_ref = destination_ref.map(|hr| {
-                crate::edition::links::HyperRef::single(None, hr.work_context, hr.original_context, None)
+                crate::edition::links::HyperRef::single(
+                    None,
+                    hr.work_context,
+                    hr.original_context,
+                    None,
+                )
             });
             let link_id = srv.create_link(session_id, origin, destination, o_ref, d_ref)?;
             Ok(ResponseValue::Id(link_id))
@@ -444,19 +519,33 @@ fn dispatch_inner(
             let (origin, destination, link) = srv.get_link(link_id)?;
             srv.ensure_can_read(session_id, origin)?;
             srv.ensure_can_read(session_id, destination)?;
-            let o_ref = link.end_at("LeftEnd").map(super::protocol::HyperRefPayload::from_hyper_ref);
-            let d_ref = link.end_at("RightEnd").map(super::protocol::HyperRefPayload::from_hyper_ref);
+            let o_ref = link
+                .end_at("LeftEnd")
+                .map(super::protocol::HyperRefPayload::from_hyper_ref);
+            let d_ref = link
+                .end_at("RightEnd")
+                .map(super::protocol::HyperRefPayload::from_hyper_ref);
             Ok(ResponseValue::LinkInfo(super::protocol::LinkPayload {
-                link_id, origin, destination, origin_ref: o_ref, destination_ref: d_ref,
+                link_id,
+                origin,
+                destination,
+                origin_ref: o_ref,
+                destination_ref: d_ref,
             }))
         }
-        WireRequest::LinkUpdate { link_id, origin_ref, destination_ref } => {
+        WireRequest::LinkUpdate {
+            link_id,
+            origin_ref,
+            destination_ref,
+        } => {
             {
                 let (origin, destination, _) = srv.get_link(link_id)?;
-                let can_edit_origin = srv.work(origin)
+                let can_edit_origin = srv
+                    .work(origin)
                     .map(|w| srv.check_edit_permission(session_id, w))
                     .unwrap_or(false);
-                let can_edit_destination = srv.work(destination)
+                let can_edit_destination = srv
+                    .work(destination)
                     .map(|w| srv.check_edit_permission(session_id, w))
                     .unwrap_or(false);
                 if !can_edit_origin && !can_edit_destination {
@@ -464,10 +553,20 @@ fn dispatch_inner(
                 }
             }
             let o_ref = origin_ref.map(|hr| {
-                crate::edition::links::HyperRef::single(None, hr.work_context, hr.original_context, None)
+                crate::edition::links::HyperRef::single(
+                    None,
+                    hr.work_context,
+                    hr.original_context,
+                    None,
+                )
             });
             let d_ref = destination_ref.map(|hr| {
-                crate::edition::links::HyperRef::single(None, hr.work_context, hr.original_context, None)
+                crate::edition::links::HyperRef::single(
+                    None,
+                    hr.work_context,
+                    hr.original_context,
+                    None,
+                )
             });
             srv.update_link(session_id, link_id, o_ref, d_ref)?;
             Ok(ResponseValue::Void)
@@ -475,10 +574,12 @@ fn dispatch_inner(
         WireRequest::LinkDelete { link_id } => {
             {
                 let (origin, destination, _) = srv.get_link(link_id)?;
-                let can_edit_origin = srv.work(origin)
+                let can_edit_origin = srv
+                    .work(origin)
                     .map(|w| srv.check_edit_permission(session_id, w))
                     .unwrap_or(false);
-                let can_edit_destination = srv.work(destination)
+                let can_edit_destination = srv
+                    .work(destination)
                     .map(|w| srv.check_edit_permission(session_id, w))
                     .unwrap_or(false);
                 if !can_edit_origin && !can_edit_destination {
@@ -490,18 +591,26 @@ fn dispatch_inner(
         }
         WireRequest::LinkListForWork { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
-            let links = srv.list_links_for_work(work_id).into_iter().map(|(link_id, origin, destination)| {
-                super::protocol::LinkPayload {
-                    link_id, origin, destination,
-                    origin_ref: None,
-                    destination_ref: None,
-                }
-            }).collect();
+            let links = srv
+                .list_links_for_work(work_id)
+                .into_iter()
+                .map(
+                    |(link_id, origin, destination)| super::protocol::LinkPayload {
+                        link_id,
+                        origin,
+                        destination,
+                        origin_ref: None,
+                        destination_ref: None,
+                    },
+                )
+                .collect();
             Ok(ResponseValue::LinkList(links))
         }
 
         WireRequest::FindTranscluders { content_be_id } => {
-            let results = srv.find_transcluders(content_be_id).into_iter()
+            let results = srv
+                .find_transcluders(content_be_id)
+                .into_iter()
                 .filter(|(element_type, element_id, _)| {
                     if element_type == "work" {
                         srv.work(*element_id)
@@ -512,12 +621,18 @@ fn dispatch_inner(
                     }
                 })
                 .map(|(element_type, element_id, is_direct)| {
-                    super::protocol::TransclusionResultPayload { element_type, element_id, is_direct }
-                }).collect();
+                    super::protocol::TransclusionResultPayload {
+                        element_type,
+                        element_id,
+                        is_direct,
+                    }
+                })
+                .collect();
             Ok(ResponseValue::TransclusionResults(results))
         }
         WireRequest::FindWorksForContent { content_be_id } => {
-            let work_ids = srv.find_works_for_content(content_be_id)
+            let work_ids = srv
+                .find_works_for_content(content_be_id)
                 .into_iter()
                 .filter(|wid| {
                     srv.work(*wid)
@@ -529,21 +644,32 @@ fn dispatch_inner(
         }
         WireRequest::FindTextTranscluders { text } => {
             let results = srv.find_text_transcluders(&text);
-            let payloads = results.into_iter().filter(|(work_id, _, _, _)| {
-                srv.work(*work_id).map(|w| srv.work_is_readable(session_id, w)).unwrap_or(false)
-            }).map(|(work_id, owner, revision_count, matches)| {
-                super::protocol::TextTransclusionResultPayload {
-                    work_id,
-                    owner,
-                    revision_count,
-                    matches: matches.into_iter().map(|(start, end)| {
-                        super::protocol::TextMatchPayload { start, end }
-                    }).collect(),
-                }
-            }).collect();
+            let payloads = results
+                .into_iter()
+                .filter(|(work_id, _, _, _)| {
+                    srv.work(*work_id)
+                        .map(|w| srv.work_is_readable(session_id, w))
+                        .unwrap_or(false)
+                })
+                .map(|(work_id, owner, revision_count, matches)| {
+                    super::protocol::TextTransclusionResultPayload {
+                        work_id,
+                        owner,
+                        revision_count,
+                        matches: matches
+                            .into_iter()
+                            .map(|(start, end)| super::protocol::TextMatchPayload { start, end })
+                            .collect(),
+                    }
+                })
+                .collect();
             Ok(ResponseValue::TextTransclusionResults(payloads))
         }
-        WireRequest::FindSharedRegions { work_a, work_b, filter_text } => {
+        WireRequest::FindSharedRegions {
+            work_a,
+            work_b,
+            filter_text,
+        } => {
             srv.ensure_can_read(session_id, work_a)?;
             srv.ensure_can_read(session_id, work_b)?;
 
@@ -553,55 +679,78 @@ fn dispatch_inner(
                 srv.find_shared_regions(work_a, work_b)
             };
 
-            let payloads = results.into_iter().map(|(start_a, end_a, start_b, end_b, text)| {
-                super::protocol::SharedRegionPayload { work_id: work_b, start_a, end_a, start_b, end_b, text }
-            }).collect();
+            let payloads = results
+                .into_iter()
+                .map(|(start_a, end_a, start_b, end_b, text)| {
+                    super::protocol::SharedRegionPayload {
+                        work_id: work_b,
+                        start_a,
+                        end_a,
+                        start_b,
+                        end_b,
+                        text,
+                    }
+                })
+                .collect();
             Ok(ResponseValue::SharedRegions(payloads))
         }
 
         WireRequest::BlobUpload { data, mime_type } => {
-            let raw_data = crate::edition::base64_decode(&data)
-                .ok_or_else(|| crate::server::ServerError::InvalidArgument("invalid base64 data".to_string()))?;
+            let raw_data = crate::edition::base64_decode(&data).ok_or_else(|| {
+                crate::server::ServerError::InvalidArgument("invalid base64 data".to_string())
+            })?;
             let meta = srv.blob_upload(session_id, raw_data, mime_type)?;
-            Ok(ResponseValue::BlobMeta(super::protocol::BlobMetaPayload::from_blob_meta(&meta)))
+            Ok(ResponseValue::BlobMeta(
+                super::protocol::BlobMetaPayload::from_blob_meta(&meta),
+            ))
         }
         WireRequest::BlobGet { content_hash } => {
             let data = srv.blob_get(content_hash)?;
             Ok(ResponseValue::BlobData(data))
         }
-        WireRequest::BlobGetPreview { content_hash } => {
-            match srv.blob_preview(content_hash)? {
-                Some(data) => Ok(ResponseValue::BlobData(data)),
-                None => Ok(ResponseValue::Void),
-            }
-        }
+        WireRequest::BlobGetPreview { content_hash } => match srv.blob_preview(content_hash)? {
+            Some(data) => Ok(ResponseValue::BlobData(data)),
+            None => Ok(ResponseValue::Void),
+        },
         WireRequest::BlobExists { content_hash } => {
             Ok(ResponseValue::Boolean(srv.blob_exists(content_hash)))
         }
         WireRequest::BlobInfo { content_hash } => {
             let meta = srv.blob_info(content_hash)?;
-            Ok(ResponseValue::BlobMeta(super::protocol::BlobMetaPayload::from_blob_meta(&meta)))
+            Ok(ResponseValue::BlobMeta(
+                super::protocol::BlobMetaPayload::from_blob_meta(&meta),
+            ))
         }
         WireRequest::BlobStats => {
             let (total_blobs, total_bytes) = srv.blob_stats();
-            Ok(ResponseValue::BlobStatsInfo(super::protocol::BlobStatsPayload {
-                total_blobs,
-                total_bytes,
-            }))
+            Ok(ResponseValue::BlobStatsInfo(
+                super::protocol::BlobStatsPayload {
+                    total_blobs,
+                    total_bytes,
+                },
+            ))
         }
 
-        WireRequest::OverlayApply { base_hash, ops, mime_type } => {
+        WireRequest::OverlayApply {
+            base_hash,
+            ops,
+            mime_type,
+        } => {
             let meta = srv.blob_apply_overlay(session_id, base_hash, ops, mime_type)?;
-            Ok(ResponseValue::BlobMeta(super::protocol::BlobMetaPayload::from_blob_meta(&meta)))
+            Ok(ResponseValue::BlobMeta(
+                super::protocol::BlobMetaPayload::from_blob_meta(&meta),
+            ))
         }
         WireRequest::OverlayGet { overlay_hash } => {
             let overlay = srv.blob_get_overlay(overlay_hash)?;
-            Ok(ResponseValue::OverlayInfo(super::protocol::OverlayPayload {
-                overlay_hash,
-                base_hash: overlay.base_hash,
-                operations: overlay.operations,
-                mime_type: overlay.mime_type,
-            }))
+            Ok(ResponseValue::OverlayInfo(
+                super::protocol::OverlayPayload {
+                    overlay_hash,
+                    base_hash: overlay.base_hash,
+                    operations: overlay.operations,
+                    mime_type: overlay.mime_type,
+                },
+            ))
         }
 
         WireRequest::LabelCreate => {
@@ -610,49 +759,88 @@ fn dispatch_inner(
         }
         WireRequest::LabelGetPositions { work_id, label_id } => {
             let positions = srv.label_get_positions(work_id, label_id)?;
-            Ok(ResponseValue::LabelPositions { label_id, positions })
+            Ok(ResponseValue::LabelPositions {
+                label_id,
+                positions,
+            })
         }
         WireRequest::EditionRelabel { work_id, label_id } => {
             let _ed = srv.edition_relabel(work_id, label_id)?;
             Ok(ResponseValue::LabelInfo { label_id })
         }
-        WireRequest::EditionRebind { work_id, position, new_edition } => {
+        WireRequest::EditionRebind {
+            work_id,
+            position,
+            new_edition,
+        } => {
             let ed = new_edition.to_edition();
             let updated = srv.edition_rebind(session_id, work_id, position, ed)?;
-            Ok(ResponseValue::Edition(EditionPayload::from_edition(&updated)))
+            Ok(ResponseValue::Edition(EditionPayload::from_edition(
+                &updated,
+            )))
         }
-        WireRequest::CanMakeIdentical { source_work_id, target_work_id, position } => {
-            let results = srv.can_make_identical_elements(source_work_id, target_work_id, position)?;
+        WireRequest::CanMakeIdentical {
+            source_work_id,
+            target_work_id,
+            position,
+        } => {
+            let results =
+                srv.can_make_identical_elements(source_work_id, target_work_id, position)?;
             let all_yes = !results.is_empty() && results.iter().all(|(_, r)| r == "yes");
             let any_yes = results.iter().any(|(_, r)| r == "yes");
             Ok(ResponseValue::CanMakeIdenticalResult {
-                result: if results.is_empty() { "no_positions".to_string() }
-                        else if all_yes { "yes".to_string() }
-                        else if any_yes { "partial".to_string() }
-                        else { "no".to_string() },
+                result: if results.is_empty() {
+                    "no_positions".to_string()
+                } else if all_yes {
+                    "yes".to_string()
+                } else if any_yes {
+                    "partial".to_string()
+                } else {
+                    "no".to_string()
+                },
             })
         }
-        WireRequest::MakeRangeIdentical { source_work_id, target_work_id, region } => {
-            let (outcome, failed_count, failed_ed) = srv.make_range_identical_editions(session_id, source_work_id, target_work_id, region)?;
+        WireRequest::MakeRangeIdentical {
+            source_work_id,
+            target_work_id,
+            region,
+        } => {
+            let (outcome, failed_count, failed_ed) = srv.make_range_identical_editions(
+                session_id,
+                source_work_id,
+                target_work_id,
+                region,
+            )?;
             Ok(ResponseValue::MakeRangeIdenticalResult {
                 outcome,
                 failed_count,
                 failed: EditionPayload::from_edition(&failed_ed),
             })
         }
-        WireRequest::IdentityUnify { source_id, target_id } => {
+        WireRequest::IdentityUnify {
+            source_id,
+            target_id,
+        } => {
             srv.ensure_admin(session_id)?;
             srv.identity_unify(source_id, target_id);
-            Ok(ResponseValue::IdentityResolveResult { resolved_id: target_id })
+            Ok(ResponseValue::IdentityResolveResult {
+                resolved_id: target_id,
+            })
         }
         WireRequest::IdentityResolve { id } => {
             let resolved = srv.identity_resolve(id);
-            Ok(ResponseValue::IdentityResolveResult { resolved_id: resolved })
+            Ok(ResponseValue::IdentityResolveResult {
+                resolved_id: resolved,
+            })
         }
-        WireRequest::EditionRetrieve { work_id, region, flags } => {
+        WireRequest::EditionRetrieve {
+            work_id,
+            region,
+            flags,
+        } => {
             srv.ensure_can_read(session_id, work_id)?;
-            use crate::edition::{RetrieveFlags, Bundle};
             use super::protocol::{BundlePayload, RetrieveFlagsPayload};
+            use crate::edition::{Bundle, RetrieveFlags};
             let rf = match flags {
                 Some(f) => RetrieveFlags {
                     ignore_total_ordering: f.ignore_total_ordering.unwrap_or(false),
@@ -662,9 +850,8 @@ fn dispatch_inner(
                 None => RetrieveFlags::default(),
             };
             let bundles = srv.edition_retrieve(work_id, region.as_ref(), rf)?;
-            let payloads: Vec<BundlePayload> = bundles.iter()
-                .map(BundlePayload::from_bundle)
-                .collect();
+            let payloads: Vec<BundlePayload> =
+                bundles.iter().map(BundlePayload::from_bundle).collect();
             Ok(ResponseValue::BundleResults { bundles: payloads })
         }
         WireRequest::EditionCost { work_id, method } => {
@@ -694,30 +881,43 @@ fn dispatch_inner(
             srv.ensure_can_read(session_id, work_a)?;
             srv.ensure_can_read(session_id, work_b)?;
             let mapping = srv.content_map_shared_to(work_a, work_b)?;
-            Ok(ResponseValue::SharedMappingResult { pairs: mapping.pairs().to_vec() })
+            Ok(ResponseValue::SharedMappingResult {
+                pairs: mapping.pairs().to_vec(),
+            })
         }
         WireRequest::ContentMapSharedOnto { work_a, work_b } => {
             srv.ensure_can_read(session_id, work_a)?;
             srv.ensure_can_read(session_id, work_b)?;
             let mapping = srv.content_map_shared_onto(work_a, work_b)?;
-            Ok(ResponseValue::SharedMappingResult { pairs: mapping.pairs().to_vec() })
+            Ok(ResponseValue::SharedMappingResult {
+                pairs: mapping.pairs().to_vec(),
+            })
         }
         WireRequest::PositionsOf { work_id, element } => {
             srv.ensure_can_read(session_id, work_id)?;
             let region = srv.positions_of(work_id, &element)?;
             Ok(ResponseValue::PositionsOfResult { region })
         }
-        WireRequest::RangeTranscluders { work_id, region, direct_only } => {
+        WireRequest::RangeTranscluders {
+            work_id,
+            region,
+            direct_only,
+        } => {
             srv.ensure_can_read(session_id, work_id)?;
-            let result = srv.range_transcluders(work_id, region.as_ref(), direct_only.unwrap_or(false))?;
-            let readable_work_ids: Vec<BeId> = result.work_ids.into_iter()
+            let result =
+                srv.range_transcluders(work_id, region.as_ref(), direct_only.unwrap_or(false))?;
+            let readable_work_ids: Vec<BeId> = result
+                .work_ids
+                .into_iter()
                 .filter(|wid| {
                     srv.work(*wid)
                         .map(|w| srv.work_is_readable(session_id, w))
                         .unwrap_or(false)
                 })
                 .collect();
-            let readable_edition_ids: Vec<BeId> = result.edition_ids.into_iter()
+            let readable_edition_ids: Vec<BeId> = result
+                .edition_ids
+                .into_iter()
                 .filter(|eid| srv.get_edition(*eid).ok().flatten().is_some())
                 .collect();
             Ok(ResponseValue::RangeTranscludersResult {
@@ -729,7 +929,9 @@ fn dispatch_inner(
         WireRequest::RangeWorks { work_id, region } => {
             srv.ensure_can_read(session_id, work_id)?;
             let result = srv.range_works(work_id, region.as_ref())?;
-            let readable_work_ids: Vec<BeId> = result.work_ids.into_iter()
+            let readable_work_ids: Vec<BeId> = result
+                .work_ids
+                .into_iter()
                 .filter(|wid| {
                     srv.work(*wid)
                         .map(|w| srv.work_is_readable(session_id, w))
@@ -744,17 +946,24 @@ fn dispatch_inner(
         WireRequest::OrderedBundles { work_id, region } => {
             srv.ensure_can_read(session_id, work_id)?;
             let bundles = srv.ordered_bundles(work_id, region.as_ref())?;
-            let payloads: Vec<BundlePayload> = bundles.iter()
-                .map(BundlePayload::from_bundle)
-                .collect();
+            let payloads: Vec<BundlePayload> =
+                bundles.iter().map(BundlePayload::from_bundle).collect();
             Ok(ResponseValue::OrderedBundlesResult { bundles: payloads })
         }
-        WireRequest::TransclusionDepth { work_id, position, max_depth } => {
+        WireRequest::TransclusionDepth {
+            work_id,
+            position,
+            max_depth,
+        } => {
             srv.ensure_can_read(session_id, work_id)?;
             let depth = srv.transclusion_depth(work_id, position, max_depth.unwrap_or(10))?;
             Ok(ResponseValue::TransclusionDepthResult { depth })
         }
-        WireRequest::AdminRecorderCreate { kind, direct_only, region } => {
+        WireRequest::AdminRecorderCreate {
+            kind,
+            direct_only,
+            region,
+        } => {
             srv.ensure_admin(session_id)?;
             let recorder_kind = match kind.as_str() {
                 "works" => crate::edition::RecorderKind::Works,
@@ -771,15 +980,20 @@ fn dispatch_inner(
             let id = srv.recorder_create(query)?;
             Ok(ResponseValue::RecorderCreateResult { recorder_id: id })
         }
-        WireRequest::AdminRecorderRecord { recorder_id, element } => {
+        WireRequest::AdminRecorderRecord {
+            recorder_id,
+            element,
+        } => {
             srv.ensure_admin(session_id)?;
             let recorded = srv.recorder_record(recorder_id, &element)?;
             Ok(ResponseValue::RecorderRecordResult { recorded })
         }
         WireRequest::AdminRecorderList => {
             srv.ensure_admin(session_id)?;
-            let recorders = srv.recorder_list().into_iter().map(|f| {
-                super::protocol::RecorderInfoPayload {
+            let recorders = srv
+                .recorder_list()
+                .into_iter()
+                .map(|f| super::protocol::RecorderInfoPayload {
                     id: f.id,
                     kind: match f.query.kind {
                         crate::edition::RecorderKind::Transcluders => "transcluders".to_string(),
@@ -790,26 +1004,28 @@ fn dispatch_inner(
                     is_extinct: f.is_extinct,
                     reference_count: f.reference_count,
                     created_at: f.created_at,
-                }
-            }).collect();
+                })
+                .collect();
             Ok(ResponseValue::RecorderListResult { recorders })
         }
         WireRequest::AdminRecorderGet { recorder_id } => {
             srv.ensure_admin(session_id)?;
-            let info = srv.recorder_get(recorder_id).map(|f| {
-                super::protocol::RecorderInfoPayload {
-                    id: f.id,
-                    kind: match f.query.kind {
-                        crate::edition::RecorderKind::Transcluders => "transcluders".to_string(),
-                        crate::edition::RecorderKind::Works => "works".to_string(),
-                    },
-                    direct_only: f.query.direct_only,
-                    result_count: f.result_count(),
-                    is_extinct: f.is_extinct,
-                    reference_count: f.reference_count,
-                    created_at: f.created_at,
-                }
-            });
+            let info =
+                srv.recorder_get(recorder_id)
+                    .map(|f| super::protocol::RecorderInfoPayload {
+                        id: f.id,
+                        kind: match f.query.kind {
+                            crate::edition::RecorderKind::Transcluders => {
+                                "transcluders".to_string()
+                            }
+                            crate::edition::RecorderKind::Works => "works".to_string(),
+                        },
+                        direct_only: f.query.direct_only,
+                        result_count: f.result_count(),
+                        is_extinct: f.is_extinct,
+                        reference_count: f.reference_count,
+                        created_at: f.created_at,
+                    });
             Ok(ResponseValue::RecorderGetResult { recorder: info })
         }
         WireRequest::AdminServerHealth => {
@@ -851,13 +1067,15 @@ fn dispatch_inner(
         }
         WireRequest::CryptoKeyHistory => {
             let history = srv.server_key_history();
-            let entries = history.entries.iter().map(|e| {
-                super::protocol::KeyHistoryEntryPayload {
+            let entries = history
+                .entries
+                .iter()
+                .map(|e| super::protocol::KeyHistoryEntryPayload {
                     key_id: e.key_id,
                     not_before: e.not_before,
                     not_after: e.not_after,
-                }
-            }).collect();
+                })
+                .collect();
             Ok(ResponseValue::CryptoKeyHistoryResult {
                 server_id: history.server_id.clone(),
                 current_key_id: history.current_key_id,
@@ -865,16 +1083,28 @@ fn dispatch_inner(
                 entries,
             })
         }
-        WireRequest::WorkEndorse { work_id, endorsements } => {
+        WireRequest::WorkEndorse {
+            work_id,
+            endorsements,
+        } => {
             let es = crate::edition::EndorsementSet::from_endorsements(
-                endorsements.iter().map(|&(c, t)| crate::edition::Endorsement::new(c, t)).collect()
+                endorsements
+                    .iter()
+                    .map(|&(c, t)| crate::edition::Endorsement::new(c, t))
+                    .collect(),
             );
             srv.work_endorse(session_id, work_id, es)?;
             Ok(ResponseValue::Void)
         }
-        WireRequest::WorkRetract { work_id, endorsements } => {
+        WireRequest::WorkRetract {
+            work_id,
+            endorsements,
+        } => {
             let es = crate::edition::EndorsementSet::from_endorsements(
-                endorsements.iter().map(|&(c, t)| crate::edition::Endorsement::new(c, t)).collect()
+                endorsements
+                    .iter()
+                    .map(|&(c, t)| crate::edition::Endorsement::new(c, t))
+                    .collect(),
             );
             srv.work_retract(session_id, work_id, es)?;
             Ok(ResponseValue::Void)
@@ -886,16 +1116,28 @@ fn dispatch_inner(
                 endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
             })
         }
-        WireRequest::EditionEndorse { edition_id, endorsements } => {
+        WireRequest::EditionEndorse {
+            edition_id,
+            endorsements,
+        } => {
             let es = crate::edition::EndorsementSet::from_endorsements(
-                endorsements.iter().map(|&(c, t)| crate::edition::Endorsement::new(c, t)).collect()
+                endorsements
+                    .iter()
+                    .map(|&(c, t)| crate::edition::Endorsement::new(c, t))
+                    .collect(),
             );
             srv.edition_endorse(session_id, edition_id, es)?;
             Ok(ResponseValue::Void)
         }
-        WireRequest::EditionRetract { edition_id, endorsements } => {
+        WireRequest::EditionRetract {
+            edition_id,
+            endorsements,
+        } => {
             let es = crate::edition::EndorsementSet::from_endorsements(
-                endorsements.iter().map(|&(c, t)| crate::edition::Endorsement::new(c, t)).collect()
+                endorsements
+                    .iter()
+                    .map(|&(c, t)| crate::edition::Endorsement::new(c, t))
+                    .collect(),
             );
             srv.edition_retract(session_id, edition_id, es)?;
             Ok(ResponseValue::Void)
@@ -933,13 +1175,15 @@ fn dispatch_inner(
                 verifying_key: info.verifying_key,
                 kex_key: info.kex_key,
                 mode: mode_str,
-                peers: info.peers.into_iter().map(|p| {
-                    super::protocol::FederationPeerPayload {
+                peers: info
+                    .peers
+                    .into_iter()
+                    .map(|p| super::protocol::FederationPeerPayload {
                         server_id: p.server_id,
                         address: p.address.to_string(),
                         connected: p.connected,
-                    }
-                }).collect(),
+                    })
+                    .collect(),
                 work_count: info.work_count,
                 edition_count: info.edition_count,
             })
@@ -950,18 +1194,26 @@ fn dispatch_inner(
                 peers: peers.iter().map(|p| p.to_string()).collect(),
             })
         }
-        WireRequest::FederatedTransclusionQuery { content_fingerprint_hex, direct_only } => {
+        WireRequest::FederatedTransclusionQuery {
+            content_fingerprint_hex,
+            direct_only,
+        } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
-            let results = srv.federation_query_local_transclusion(&content_fingerprint_hex, direct_only);
-            Ok(ResponseValue::FederatedTransclusionResult {
-                results,
-            })
+            let results =
+                srv.federation_query_local_transclusion(&content_fingerprint_hex, direct_only);
+            Ok(ResponseValue::FederatedTransclusionResult { results })
         }
-        WireRequest::FederatedContentFetch { content_fingerprint_hex } => {
+        WireRequest::FederatedContentFetch {
+            content_fingerprint_hex,
+        } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             let response = srv.federation_fetch_by_fingerprint(&content_fingerprint_hex);
             match response {
@@ -993,7 +1245,9 @@ fn dispatch_inner(
         }
         WireRequest::EndorsementSync { work_fingerprint } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             let entries = srv.reconcile_export_endorsements();
@@ -1001,38 +1255,65 @@ fn dispatch_inner(
                 .into_iter()
                 .filter(|(fp, _)| fp == &work_fingerprint)
                 .flat_map(|(_, orset)| {
-                    let vals: Vec<(u64, u64, String)> = orset.values()
+                    let vals: Vec<(u64, u64, String)> = orset
+                        .values()
                         .into_iter()
                         .map(|e| (e.club_id, e.token_id, e.origin_server_id.clone()))
                         .collect();
                     vals
                 })
                 .collect();
-            let tombstones: Vec<(u64, u64, String)> = srv.reconcile_get(&work_fingerprint)
+            let tombstones: Vec<(u64, u64, String)> = srv
+                .reconcile_get(&work_fingerprint)
                 .map(|state| {
                     let (adds, tombs) = state.endorsements.to_entries();
                     let _ = adds;
-                    tombs.iter()
-                        .map(|e| (e.value.club_id, e.value.token_id, e.value.origin_server_id.clone()))
+                    tombs
+                        .iter()
+                        .map(|e| {
+                            (
+                                e.value.club_id,
+                                e.value.token_id,
+                                e.value.origin_server_id.clone(),
+                            )
+                        })
                         .collect()
                 })
                 .unwrap_or_default();
-            Ok(ResponseValue::EndorsementSyncResult { endorsements: matches, tombstones })
+            Ok(ResponseValue::EndorsementSyncResult {
+                endorsements: matches,
+                tombstones,
+            })
         }
-        WireRequest::EndorsementAdd { work_fingerprint, club_id, token_id } => {
+        WireRequest::EndorsementAdd {
+            work_fingerprint,
+            club_id,
+            token_id,
+        } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             let tag = srv.reconcile_next_tag();
             let tag_server_id = tag.server_id.clone();
             let tag_counter = tag.counter;
             srv.reconcile_endorse(&work_fingerprint, club_id, token_id, tag);
-            Ok(ResponseValue::EndorsementAddResult { tag_server_id, tag_counter })
+            Ok(ResponseValue::EndorsementAddResult {
+                tag_server_id,
+                tag_counter,
+            })
         }
-        WireRequest::EndorsementRetract { work_fingerprint, club_id, token_id } => {
+        WireRequest::EndorsementRetract {
+            work_fingerprint,
+            club_id,
+            token_id,
+        } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             srv.reconcile_retract(&work_fingerprint, club_id, token_id);
@@ -1040,51 +1321,78 @@ fn dispatch_inner(
         }
         WireRequest::EndorsementQuery { work_fingerprint } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             let (matches, tombstones) = match srv.reconcile_get(&work_fingerprint) {
                 Some(state) => {
-                    let active: Vec<(u64, u64, String)> = state.endorsements.values()
+                    let active: Vec<(u64, u64, String)> = state
+                        .endorsements
+                        .values()
                         .into_iter()
                         .map(|e| (e.club_id, e.token_id, e.origin_server_id.clone()))
                         .collect();
                     let (_, tombs) = state.endorsements.to_entries();
-                    let tomb_vals: Vec<(u64, u64, String)> = tombs.iter()
-                        .map(|e| (e.value.club_id, e.value.token_id, e.value.origin_server_id.clone()))
+                    let tomb_vals: Vec<(u64, u64, String)> = tombs
+                        .iter()
+                        .map(|e| {
+                            (
+                                e.value.club_id,
+                                e.value.token_id,
+                                e.value.origin_server_id.clone(),
+                            )
+                        })
                         .collect();
                     (active, tomb_vals)
                 }
                 None => (Vec::new(), Vec::new()),
             };
-            Ok(ResponseValue::EndorsementQueryResult { endorsements: matches, tombstones })
+            Ok(ResponseValue::EndorsementQueryResult {
+                endorsements: matches,
+                tombstones,
+            })
         }
         WireRequest::StateSync { work_fingerprints } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
-            let states: Vec<crate::server::federation::ReconcileState> = srv.reconcile_export_all()
+            let states: Vec<crate::server::federation::ReconcileState> = srv
+                .reconcile_export_all()
                 .into_iter()
-                .filter(|s| work_fingerprints.is_empty() || work_fingerprints.contains(&s.work_fingerprint))
+                .filter(|s| {
+                    work_fingerprints.is_empty() || work_fingerprints.contains(&s.work_fingerprint)
+                })
                 .collect();
             Ok(ResponseValue::StateSyncResult { states })
         }
         WireRequest::StateAlternatives { work_fingerprint } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             let alternatives = srv.reconcile_alternatives(&work_fingerprint);
-            let current_key = srv.reconcile_get(&work_fingerprint)
+            let current_key = srv
+                .reconcile_get(&work_fingerprint)
                 .map(|s| s.current.value().clone())
                 .unwrap_or_default();
-            Ok(ResponseValue::StateAlternativesResult { alternatives, current_key })
+            Ok(ResponseValue::StateAlternativesResult {
+                alternatives,
+                current_key,
+            })
         }
 
         WireRequest::MembershipJoinRequest { entry } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             let result = srv.membership_process_join(entry);
@@ -1093,7 +1401,9 @@ fn dispatch_inner(
 
         WireRequest::MembershipEndorseOffer { server_id, proof } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             let accepted = srv.membership_endorse(&server_id, proof);
@@ -1102,7 +1412,9 @@ fn dispatch_inner(
 
         WireRequest::MembershipEndorseAccept { server_id } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             if let Some(vk_hex) = srv.membership_get_verifying_key_hex(&server_id) {
@@ -1115,7 +1427,9 @@ fn dispatch_inner(
 
         WireRequest::MembershipSync => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             let members = srv.membership_list();
@@ -1124,7 +1438,9 @@ fn dispatch_inner(
 
         WireRequest::MembershipLeave => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_admin(session_id)?;
             srv.membership_leave();
@@ -1133,7 +1449,9 @@ fn dispatch_inner(
 
         WireRequest::MembershipList => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             let members = srv.membership_list();
@@ -1142,7 +1460,9 @@ fn dispatch_inner(
 
         WireRequest::MembershipVerify { server_id } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             let verify = srv.membership_verify(&server_id);
@@ -1151,7 +1471,9 @@ fn dispatch_inner(
 
         WireRequest::GovernancePropose { transactions } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_admin(session_id)?;
             let proposal = srv.governance_propose(transactions);
@@ -1160,25 +1482,35 @@ fn dispatch_inner(
 
         WireRequest::GovernancePrepare { vote } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             let phase = srv.governance_receive_prepare(vote);
-            Ok(ResponseValue::GovernancePrepareResult { phase: format!("{:?}", phase) })
+            Ok(ResponseValue::GovernancePrepareResult {
+                phase: format!("{:?}", phase),
+            })
         }
 
         WireRequest::GovernanceCommit { vote } => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             let phase = srv.governance_receive_commit(vote);
-            Ok(ResponseValue::GovernanceCommitResult { phase: format!("{:?}", phase) })
+            Ok(ResponseValue::GovernanceCommitResult {
+                phase: format!("{:?}", phase),
+            })
         }
 
         WireRequest::GovernanceSeal => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_admin(session_id)?;
             let batch = srv.governance_seal_round();
@@ -1187,7 +1519,9 @@ fn dispatch_inner(
 
         WireRequest::GovernanceLog => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             let log = srv.governance_log().to_vec();
@@ -1196,7 +1530,9 @@ fn dispatch_inner(
 
         WireRequest::GovernanceStatus => {
             if !srv.federation_is_enabled() {
-                return Err(crate::server::ServerError::InvalidArgument("federation not enabled".into()));
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
             }
             srv.ensure_logged_in(session_id)?;
             Ok(ResponseValue::GovernanceStatusResult {
@@ -1233,7 +1569,10 @@ fn dispatch_inner(
             })
         }
 
-        WireRequest::CrdtSyncDiff { work_id, state_vector } => {
+        WireRequest::CrdtSyncDiff {
+            work_id,
+            state_vector,
+        } => {
             srv.ensure_logged_in(session_id)?;
             let update = srv.crdt_get_diff(work_id, state_vector)?;
             Ok(ResponseValue::CrdtSyncDiffResult { update })
@@ -1278,38 +1617,55 @@ fn dispatch_inner(
             Ok(ResponseValue::CrdtAwarenessGetResult { states })
         }
 
-        WireRequest::CrdtRegisterAuthor { work_id, public_key: _, display_name: _ } => {
+        WireRequest::CrdtRegisterAuthor {
+            work_id,
+            public_key: _,
+            display_name: _,
+        } => {
             srv.crdt_update_author(session_id, work_id)?;
             Ok(ResponseValue::CrdtRegisterAuthorResult { registered: true })
         }
 
-        WireRequest::AttributionQuery { work_id, start, end } => {
+        WireRequest::AttributionQuery {
+            work_id,
+            start,
+            end,
+        } => {
             srv.ensure_can_read(session_id, work_id)?;
             if srv.crdt_needs_materialization(work_id) {
-                srv.crdt_materialize_any_session(work_id)
-                    .map_err(|e| {
-                        tracing::warn!("attribution_query: materialize failed: {e}");
-                        crate::server::ServerError::Internal(e.to_string())
-                    })?;
+                srv.crdt_materialize_any_session(work_id).map_err(|e| {
+                    tracing::warn!("attribution_query: materialize failed: {e}");
+                    crate::server::ServerError::Internal(e.to_string())
+                })?;
             }
             let spans = srv.attribution_query(work_id, start, end)?;
             Ok(ResponseValue::AttributionQueryResult { spans })
         }
 
-        WireRequest::AttributionVerify { author_public_key, signature, timestamp, server_id, span_fingerprint_hex } => {
-            let author_pk: [u8; 32] = author_public_key.try_into()
-                .map_err(|_| crate::server::ServerError::InvalidArgument("author_public_key must be 32 bytes".into()))?;
-            let sig: [u8; 64] = signature.try_into()
-                .map_err(|_| crate::server::ServerError::InvalidArgument("signature must be 64 bytes".into()))?;
-            let sid: [u8; 32] = server_id.try_into()
-                .map_err(|_| crate::server::ServerError::InvalidArgument("server_id must be 32 bytes".into()))?;
-            let valid = srv.attribution_verify(author_pk, sig, timestamp, sid, &span_fingerprint_hex);
+        WireRequest::AttributionVerify {
+            author_public_key,
+            signature,
+            timestamp,
+            server_id,
+            span_fingerprint_hex,
+        } => {
+            let author_pk: [u8; 32] = author_public_key.try_into().map_err(|_| {
+                crate::server::ServerError::InvalidArgument(
+                    "author_public_key must be 32 bytes".into(),
+                )
+            })?;
+            let sig: [u8; 64] = signature.try_into().map_err(|_| {
+                crate::server::ServerError::InvalidArgument("signature must be 64 bytes".into())
+            })?;
+            let sid: [u8; 32] = server_id.try_into().map_err(|_| {
+                crate::server::ServerError::InvalidArgument("server_id must be 32 bytes".into())
+            })?;
+            let valid =
+                srv.attribution_verify(author_pk, sig, timestamp, sid, &span_fingerprint_hex);
             Ok(ResponseValue::AttributionVerifyResult { valid })
         }
 
-        WireRequest::AttributionLogStatus => {
-            Ok(srv.attribution_log_status())
-        }
+        WireRequest::AttributionLogStatus => Ok(srv.attribution_log_status()),
     }
 }
 

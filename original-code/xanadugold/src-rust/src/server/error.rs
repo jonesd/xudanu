@@ -7,10 +7,16 @@ pub enum ServerError {
     NotFound(String),
     AlreadyExists(String),
     NotGrabbed(BeId),
-    AlreadyGrabbed { work: BeId, by: Option<super::session::SessionId> },
+    AlreadyGrabbed {
+        work: BeId,
+        by: Option<super::session::SessionId>,
+    },
     SessionRequired,
     InvalidArgument(String),
-    TypeMismatch { expected: String, found: String },
+    TypeMismatch {
+        expected: String,
+        found: String,
+    },
     LockFailed(String),
     SessionNotFound(super::session::SessionId),
     WorkNotFound(BeId),

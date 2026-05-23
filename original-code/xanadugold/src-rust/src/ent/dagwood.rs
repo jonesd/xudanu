@@ -85,11 +85,7 @@ impl DagWood {
     //
     // "Return a new tracePosition that is after both the receiver and tracePos."
     // Creates a DagBranch (merge point) with two parents.
-    pub fn new_successor_after(
-        &mut self,
-        a: TracePosition,
-        b: TracePosition,
-    ) -> TracePosition {
+    pub fn new_successor_after(&mut self, a: TracePosition, b: TracePosition) -> TracePosition {
         let (dag_branch_id, _) = self.branches.create_dag(a, b);
         self.install_branch_after(dag_branch_id, a);
         self.install_branch_after(dag_branch_id, b);
@@ -728,15 +724,25 @@ mod tests {
 
         let cache = dw.nav_cache();
         let trunk = x3.branch();
-        assert_eq!(cache.get(&trunk), Some(&4), "cache[trunk] must be max(3,4)=4");
+        assert_eq!(
+            cache.get(&trunk),
+            Some(&4),
+            "cache[trunk] must be max(3,4)=4"
+        );
         assert_eq!(cache.get(&y3.branch()), Some(&3));
         assert_eq!(cache.get(&z3.branch()), Some(&3));
         assert!(cache.get(&w3.branch()).is_some());
 
         let tp4 = TracePosition::new(trunk, 4);
         let tp5 = TracePosition::new(trunk, 5);
-        assert!(dw.is_le(tp4, w3), "position 4 must be included (4 <= cache=4)");
-        assert!(!dw.is_le(tp5, w3), "position 5 must NOT be included (5 > cache=4)");
+        assert!(
+            dw.is_le(tp4, w3),
+            "position 4 must be included (4 <= cache=4)"
+        );
+        assert!(
+            !dw.is_le(tp5, w3),
+            "position 5 must NOT be included (5 > cache=4)"
+        );
     }
 
     // D23: deep_dag_multi_merge — ancestry through multiple merge layers.
@@ -808,11 +814,7 @@ mod tests {
             for y in &positions {
                 let cached = dw.is_le(*x, *y);
                 let uncached = is_le_no_cache(&dw, *x, *y);
-                assert_eq!(
-                    cached, uncached,
-                    "cache mismatch: is_le({:?}, {:?})",
-                    x, y
-                );
+                assert_eq!(cached, uncached, "cache mismatch: is_le({:?}, {:?})", x, y);
             }
         }
     }
@@ -840,11 +842,7 @@ mod tests {
             for y in &positions {
                 let cached = dw.is_le(*x, *y);
                 let uncached = is_le_no_cache(&dw, *x, *y);
-                assert_eq!(
-                    cached, uncached,
-                    "cache mismatch: is_le({:?}, {:?})",
-                    x, y
-                );
+                assert_eq!(cached, uncached, "cache mismatch: is_le({:?}, {:?})", x, y);
             }
         }
     }
@@ -934,11 +932,7 @@ mod tests {
                     let a = dag.positions[i];
                     let b = dag.positions[j];
                     if dag.dw.is_le(a, b) && dag.dw.is_le(b, a) {
-                        assert_eq!(
-                            a, b,
-                            "antisymmetry failed (seed={}): [{},{}]",
-                            seed, i, j
-                        );
+                        assert_eq!(a, b, "antisymmetry failed (seed={}): [{},{}]", seed, i, j);
                     }
                 }
             }
@@ -961,7 +955,10 @@ mod tests {
                             assert!(
                                 dag.dw.is_le(a, c),
                                 "transitivity failed (seed={}): [{},{},{}]",
-                                seed, i, j, k
+                                seed,
+                                i,
+                                j,
+                                k
                             );
                         }
                     }
@@ -1400,8 +1397,16 @@ mod tests {
 
         let t3 = Instant::now();
         let view = dw.trace_view(root_merge);
-        assert!(view.branch_count() > 30000, "should see ~32K branches, got {}", view.branch_count());
-        eprintln!("  P2 TraceView ({} branches): {}", view.branch_count(), elapsed(t3));
+        assert!(
+            view.branch_count() > 30000,
+            "should see ~32K branches, got {}",
+            view.branch_count()
+        );
+        eprintln!(
+            "  P2 TraceView ({} branches): {}",
+            view.branch_count(),
+            elapsed(t3)
+        );
 
         let t4 = Instant::now();
         for _ in 0..1000 {
@@ -1419,7 +1424,11 @@ mod tests {
         let t = Instant::now();
         let mut dag = generate_dag(42, 2000);
         let n = dag.positions.len();
-        eprintln!("  P7 generate 2000-op DAG ({} positions): {}", n, elapsed(t));
+        eprintln!(
+            "  P7 generate 2000-op DAG ({} positions): {}",
+            n,
+            elapsed(t)
+        );
 
         let ref_indices: Vec<usize> = (0..20).map(|i| (i * n / 20).min(n - 1)).collect();
 
@@ -1432,7 +1441,11 @@ mod tests {
 
                 let cached = dag.dw.is_le(query, reference);
                 let brute = is_le_no_cache(&dag.dw, query, reference);
-                assert_eq!(cached, brute, "cache mismatch at round {} ref={} query={}", round, ref_idx, query_idx);
+                assert_eq!(
+                    cached, brute,
+                    "cache mismatch at round {} ref={} query={}",
+                    round, ref_idx, query_idx
+                );
             }
         }
         eprintln!("  P7 20K is_le+brute pairs: {}", elapsed(t2));
@@ -1459,7 +1472,11 @@ mod tests {
             for (i, &pos) in dag.positions.iter().enumerate() {
                 let from_view = view.is_visible(pos);
                 let from_is_le = dag.dw.is_le(pos, reference);
-                assert_eq!(from_view, from_is_le, "mismatch at pos[{}] ref[{}]", i, seed_ref);
+                assert_eq!(
+                    from_view, from_is_le,
+                    "mismatch at pos[{}] ref[{}]",
+                    i, seed_ref
+                );
             }
         }
         eprintln!("  P8 total: {}", elapsed(t));
@@ -1479,8 +1496,12 @@ mod tests {
             eprint!("  P10 seed={} ({} positions) ", seed, n);
 
             for i in 0..n {
-                assert!(dag.dw.is_le(dag.positions[i], dag.positions[i]),
-                    "reflexivity failed seed={} i={}", seed, i);
+                assert!(
+                    dag.dw.is_le(dag.positions[i], dag.positions[i]),
+                    "reflexivity failed seed={} i={}",
+                    seed,
+                    i
+                );
             }
 
             for i in 0..n {
@@ -1500,8 +1521,7 @@ mod tests {
                         let b = dag.positions[j];
                         let c = dag.positions[k];
                         if dag.dw.is_le(a, b) && dag.dw.is_le(b, c) {
-                            assert!(dag.dw.is_le(a, c),
-                                "transitivity failed seed={}", seed);
+                            assert!(dag.dw.is_le(a, c), "transitivity failed seed={}", seed);
                         }
                     }
                 }

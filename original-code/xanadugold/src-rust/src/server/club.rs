@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::edition::{BeId, Edition, EndorsementSet, Endorsement, Work};
 use crate::edition::RangeElement;
+use crate::edition::{BeId, Edition, Endorsement, EndorsementSet, Work};
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -172,7 +172,10 @@ impl Club {
         self.encrypted_signing_key.as_ref()
     }
 
-    pub fn set_encrypted_signing_key(&mut self, key: Option<crate::crypto::club_keys::EncryptedSigningKey>) {
+    pub fn set_encrypted_signing_key(
+        &mut self,
+        key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
+    ) {
         self.encrypted_signing_key = key;
     }
 
@@ -232,10 +235,7 @@ impl Club {
         self.work.retract(removed);
     }
 
-    pub fn transitive_super_club_ids(
-        &self,
-        all_clubs: &HashMap<BeId, Club>,
-    ) -> HashSet<BeId> {
+    pub fn transitive_super_club_ids(&self, all_clubs: &HashMap<BeId, Club>) -> HashSet<BeId> {
         let mut result = HashSet::new();
         result.insert(self.be_id);
         let mut queue = vec![self.be_id];
@@ -249,10 +249,7 @@ impl Club {
         result
     }
 
-    pub fn transitive_member_ids(
-        &self,
-        all_clubs: &HashMap<BeId, Club>,
-    ) -> HashSet<BeId> {
+    pub fn transitive_member_ids(&self, all_clubs: &HashMap<BeId, Club>) -> HashSet<BeId> {
         let mut result = HashSet::new();
         result.insert(self.be_id);
         let mut queue: Vec<BeId> = self.members.iter().copied().collect();
@@ -270,10 +267,7 @@ impl Club {
         result
     }
 
-    pub fn can_be_read_by(
-        &self,
-        keymaster: &KeyMaster,
-    ) -> bool {
+    pub fn can_be_read_by(&self, keymaster: &KeyMaster) -> bool {
         if let Some(read_club) = self.read_club() {
             if keymaster.has_authority(read_club) {
                 return true;
@@ -282,10 +276,7 @@ impl Club {
         self.can_be_edited_by(keymaster)
     }
 
-    pub fn can_be_edited_by(
-        &self,
-        keymaster: &KeyMaster,
-    ) -> bool {
+    pub fn can_be_edited_by(&self, keymaster: &KeyMaster) -> bool {
         if let Some(edit_club) = self.edit_club() {
             if keymaster.has_authority(edit_club) {
                 return true;
@@ -355,11 +346,7 @@ impl KeyMaster {
         self.actual_authority = self.login_authority.clone();
     }
 
-    pub fn has_signature_authority(
-        &self,
-        club_id: BeId,
-        all_clubs: &HashMap<BeId, Club>,
-    ) -> bool {
+    pub fn has_signature_authority(&self, club_id: BeId, all_clubs: &HashMap<BeId, Club>) -> bool {
         if let Some(club) = all_clubs.get(&club_id) {
             if let Some(sig_club) = club.signature_club() {
                 return self.has_authority(sig_club);
@@ -368,10 +355,7 @@ impl KeyMaster {
         false
     }
 
-    pub fn update_authority(
-        &mut self,
-        all_clubs: &HashMap<BeId, Club>,
-    ) {
+    pub fn update_authority(&mut self, all_clubs: &HashMap<BeId, Club>) {
         self.actual_authority = HashSet::new();
         for login_id in &self.login_authority {
             if let Some(club) = all_clubs.get(login_id) {

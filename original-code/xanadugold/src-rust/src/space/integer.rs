@@ -511,10 +511,7 @@ mod tests {
         let r = IntegerRegion::interval(0, 5).union_with(&IntegerRegion::interval(10, 15));
         let d = IntegerDsp(100);
         let shifted = d.of_all(&r);
-        assert_eq!(
-            shifted.intervals(),
-            vec![(100, 105), (110, 115)]
-        );
+        assert_eq!(shifted.intervals(), vec![(100, 105), (110, 115)]);
     }
 
     #[test]
@@ -554,9 +551,18 @@ mod tests {
     #[test]
     fn ascending_compare() {
         let asc = IntegerAscending;
-        assert_eq!(asc.compare(&IntegerPos(5), &IntegerPos(3)), Some(std::cmp::Ordering::Greater));
-        assert_eq!(asc.compare(&IntegerPos(3), &IntegerPos(5)), Some(std::cmp::Ordering::Less));
-        assert_eq!(asc.compare(&IntegerPos(3), &IntegerPos(3)), Some(std::cmp::Ordering::Equal));
+        assert_eq!(
+            asc.compare(&IntegerPos(5), &IntegerPos(3)),
+            Some(std::cmp::Ordering::Greater)
+        );
+        assert_eq!(
+            asc.compare(&IntegerPos(3), &IntegerPos(5)),
+            Some(std::cmp::Ordering::Less)
+        );
+        assert_eq!(
+            asc.compare(&IntegerPos(3), &IntegerPos(3)),
+            Some(std::cmp::Ordering::Equal)
+        );
     }
 
     #[test]
@@ -642,11 +648,7 @@ mod tests {
                 a.intersect(&a.complement()).is_empty(),
                 "intersect complement for {name}"
             );
-            assert_eq!(
-                a.minus(&a.complement()),
-                a,
-                "minus complement for {name}"
-            );
+            assert_eq!(a.minus(&a.complement()), a, "minus complement for {name}");
             assert_eq!(
                 a.complement().complement(),
                 a,

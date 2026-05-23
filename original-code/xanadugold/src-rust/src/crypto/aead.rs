@@ -1,6 +1,6 @@
 use chacha20poly1305::{
-    ChaCha20Poly1305, Key, Nonce,
     aead::{Aead, KeyInit},
+    ChaCha20Poly1305, Key, Nonce,
 };
 use zeroize::Zeroize;
 
@@ -24,9 +24,13 @@ impl std::fmt::Display for AeadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AeadError::EncryptionFailed => write!(f, "AEAD encryption failed"),
-            AeadError::DecryptionFailed => write!(f, "AEAD decryption failed (tampered or wrong key)"),
+            AeadError::DecryptionFailed => {
+                write!(f, "AEAD decryption failed (tampered or wrong key)")
+            }
             AeadError::InvalidKeyLength => write!(f, "invalid key length (expected 32 bytes)"),
-            AeadError::NonceOverflow => write!(f, "nonce counter overflow — session must be re-keyed"),
+            AeadError::NonceOverflow => {
+                write!(f, "nonce counter overflow — session must be re-keyed")
+            }
             AeadError::InvalidCiphertext => write!(f, "ciphertext too short to be valid"),
         }
     }
@@ -101,7 +105,10 @@ impl SessionCipher {
             counter: self.counter,
             ciphertext,
         };
-        self.counter = self.counter.checked_add(1).ok_or(AeadError::NonceOverflow)?;
+        self.counter = self
+            .counter
+            .checked_add(1)
+            .ok_or(AeadError::NonceOverflow)?;
         Ok(envelope)
     }
 
@@ -151,12 +158,21 @@ fn counter_to_nonce(counter: u64) -> Result<[u8; NONCE_SIZE], AeadError> {
     Ok(nonce)
 }
 
-pub fn seal_standalone(key: &[u8; KEY_SIZE], plaintext: &[u8], aad: &[u8], key_id: u64) -> Result<SealedEnvelope, AeadError> {
+pub fn seal_standalone(
+    key: &[u8; KEY_SIZE],
+    plaintext: &[u8],
+    aad: &[u8],
+    key_id: u64,
+) -> Result<SealedEnvelope, AeadError> {
     let mut cipher = SessionCipher::new(*key, key_id, DomainLabel::DOCUMENT_KEY);
     cipher.seal(plaintext, aad)
 }
 
-pub fn open_standalone(key: &[u8; KEY_SIZE], envelope: &SealedEnvelope, aad: &[u8]) -> Result<Vec<u8>, AeadError> {
+pub fn open_standalone(
+    key: &[u8; KEY_SIZE],
+    envelope: &SealedEnvelope,
+    aad: &[u8],
+) -> Result<Vec<u8>, AeadError> {
     let mut cipher = SessionCipher::new(*key, envelope.key_id, DomainLabel::DOCUMENT_KEY);
     cipher.open(envelope, aad)
 }

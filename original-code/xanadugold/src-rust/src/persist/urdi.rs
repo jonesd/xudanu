@@ -40,7 +40,10 @@ impl UrdiHeader {
 
     fn from_bytes(data: &[u8]) -> io::Result<Self> {
         if data.len() < FILE_HEADER_SIZE {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "header too short"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "header too short",
+            ));
         }
         if data[0..4] != FILE_MAGIC {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "bad magic"));
@@ -48,11 +51,17 @@ impl UrdiHeader {
         let stored_crc = u32::from_le_bytes(data[24..28].try_into().unwrap());
         let computed_crc = fnv1a_32(&data[0..24]);
         if stored_crc != computed_crc {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "header checksum mismatch"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "header checksum mismatch",
+            ));
         }
         let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
         if version != 1 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, format!("unsupported version {}", version)));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unsupported version {}", version),
+            ));
         }
         Ok(UrdiHeader {
             snarf_size: u32::from_le_bytes(data[8..12].try_into().unwrap()),
@@ -98,15 +107,24 @@ impl Guard {
 
     fn from_bytes(data: &[u8]) -> io::Result<Self> {
         if data.len() < GUARD_SIZE {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "guard too short"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "guard too short",
+            ));
         }
         if data[0..4] != GUARD_MAGIC {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "bad guard magic"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "bad guard magic",
+            ));
         }
         let stored_crc = u32::from_le_bytes(data[24..28].try_into().unwrap());
         let computed_crc = fnv1a_32(&data[0..24]);
         if stored_crc != computed_crc {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "guard checksum mismatch"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "guard checksum mismatch",
+            ));
         }
         Ok(Guard {
             snarf_id: u32::from_le_bytes(data[4..8].try_into().unwrap()),
@@ -156,7 +174,11 @@ impl UrdiFile {
         file.flush()?;
 
         let cycles = vec![0u32; initial_count as usize];
-        Ok(UrdiFile { file, header, cycles })
+        Ok(UrdiFile {
+            file,
+            header,
+            cycles,
+        })
     }
 
     pub fn open(path: &Path) -> io::Result<Self> {
@@ -175,7 +197,11 @@ impl UrdiFile {
             }
         }
 
-        Ok(UrdiFile { file, header, cycles })
+        Ok(UrdiFile {
+            file,
+            header,
+            cycles,
+        })
     }
 
     pub fn header(&self) -> &UrdiHeader {
@@ -209,7 +235,10 @@ impl UrdiFile {
         if guard.snarf_id != snarf_id {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("guard snarf_id mismatch: expected {} got {}", snarf_id, guard.snarf_id),
+                format!(
+                    "guard snarf_id mismatch: expected {} got {}",
+                    snarf_id, guard.snarf_id
+                ),
             ));
         }
         let data_offset = Self::slot_offset(snarf_id, self.header.snarf_size) + GUARD_SIZE as u64;
@@ -232,7 +261,11 @@ impl UrdiFile {
         if data.len() > self.header.snarf_size as usize {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("data {}B exceeds snarf_size {}B", data.len(), self.header.snarf_size),
+                format!(
+                    "data {}B exceeds snarf_size {}B",
+                    data.len(),
+                    self.header.snarf_size
+                ),
             ));
         }
         if snarf_id >= self.header.snarf_count {
@@ -284,7 +317,11 @@ impl UrdiFile {
         FILE_HEADER_SIZE as u64 + snarf_id as u64 * (GUARD_SIZE + snarf_size as usize) as u64
     }
 
-    fn read_guard_at(file: &mut std::fs::File, snarf_id: u32, snarf_size: u32) -> io::Result<Guard> {
+    fn read_guard_at(
+        file: &mut std::fs::File,
+        snarf_id: u32,
+        snarf_size: u32,
+    ) -> io::Result<Guard> {
         let offset = Self::slot_offset(snarf_id, snarf_size);
         file.seek(SeekFrom::Start(offset))?;
         let mut buf = [0u8; GUARD_SIZE];
@@ -301,15 +338,13 @@ impl UrdiFile {
                 }
                 Guard::from_bytes(&buf)
             }
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                Ok(Guard {
-                    snarf_id,
-                    cycle: 0,
-                    data_len: 0,
-                    data_hash: 0,
-                    flags: 0,
-                })
-            }
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => Ok(Guard {
+                snarf_id,
+                cycle: 0,
+                data_len: 0,
+                data_hash: 0,
+                flags: 0,
+            }),
             Err(e) => Err(e),
         }
     }
@@ -505,10 +540,7 @@ mod tests {
             urdi.sync_all().unwrap();
         }
         {
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .open(&path)
-                .unwrap();
+            let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
             let data_offset = UrdiFile::slot_offset(0, 256) + GUARD_SIZE as u64 + 10;
             file.seek(SeekFrom::Start(data_offset)).unwrap();
             file.write_all(&[0xDE, 0xAD]).unwrap();
@@ -531,10 +563,7 @@ mod tests {
             urdi.sync_all().unwrap();
         }
         {
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .open(&path)
-                .unwrap();
+            let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
             let guard_offset = UrdiFile::slot_offset(0, 256) + 5;
             file.seek(SeekFrom::Start(guard_offset)).unwrap();
             file.write_all(&[0xFF, 0xFF, 0xFF, 0xFF]).unwrap();
@@ -555,10 +584,7 @@ mod tests {
             let _urdi = UrdiFile::create(&path, 256, 4, 1, 2).unwrap();
         }
         {
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .open(&path)
-                .unwrap();
+            let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
             file.seek(SeekFrom::Start(10)).unwrap();
             file.write_all(&[0xFF, 0xFF, 0xFF, 0xFF]).unwrap();
         }
@@ -586,7 +612,8 @@ mod tests {
         {
             let mut urdi = UrdiFile::create(&path, 256, 8, 1, 2).unwrap();
             for i in 0u32..6 {
-                urdi.write_snarf(i, &vec![i as u8; (i as usize + 1) * 10]).unwrap();
+                urdi.write_snarf(i, &vec![i as u8; (i as usize + 1) * 10])
+                    .unwrap();
             }
             urdi.sync_all().unwrap();
         }

@@ -1,6 +1,6 @@
-use serde::Deserialize;
-use crate::edition::{BeId, XnRegion, RangeElement};
+use crate::edition::{BeId, RangeElement, XnRegion};
 use crate::server::lock::LockCredential;
+use serde::Deserialize;
 
 use super::protocol::*;
 use super::varint;
@@ -105,8 +105,17 @@ impl From<varint::VarintError> for ProtocolError {
 /// ```
 pub trait WireCodec: Send + Sync + std::fmt::Debug {
     fn decode_request(&self, data: &[u8]) -> Result<IncomingMessage, ProtocolError>;
-    fn encode_response(&self, request_id: u16, value: &ResponseValue) -> Result<Vec<u8>, ProtocolError>;
-    fn encode_error(&self, request_id: u16, code: ErrorCode, message: &str) -> Result<Vec<u8>, ProtocolError>;
+    fn encode_response(
+        &self,
+        request_id: u16,
+        value: &ResponseValue,
+    ) -> Result<Vec<u8>, ProtocolError>;
+    fn encode_error(
+        &self,
+        request_id: u16,
+        code: ErrorCode,
+        message: &str,
+    ) -> Result<Vec<u8>, ProtocolError>;
     fn encode_event(&self, event: &WireEvent) -> Result<Vec<u8>, ProtocolError>;
     fn encode_heartbeat(&self) -> Result<Vec<u8>, ProtocolError>;
     fn is_text(&self) -> bool;
@@ -124,8 +133,8 @@ impl WireCodec for BinaryCodec {
         if version != PROTOCOL_VERSION {
             return Err(FrameParseError::UnsupportedVersion(version).into());
         }
-        let msg_type = MessageType::from_byte(data[1])
-            .ok_or(FrameParseError::InvalidMessageType(data[1]))?;
+        let msg_type =
+            MessageType::from_byte(data[1]).ok_or(FrameParseError::InvalidMessageType(data[1]))?;
         let request_id = u16::from_be_bytes([data[2], data[3]]);
         let payload = &data[4..];
 
@@ -151,14 +160,18 @@ impl WireCodec for BinaryCodec {
                     subscribe: sub,
                 }))
             }
-            MessageType::Unsubscribe => {
-                Ok(IncomingMessage::Unsubscribe(ParsedUnsubscribe { request_id }))
-            }
+            MessageType::Unsubscribe => Ok(IncomingMessage::Unsubscribe(ParsedUnsubscribe {
+                request_id,
+            })),
             _ => Err(FrameParseError::InvalidMessageType(data[1]).into()),
         }
     }
 
-    fn encode_response(&self, request_id: u16, value: &ResponseValue) -> Result<Vec<u8>, ProtocolError> {
+    fn encode_response(
+        &self,
+        request_id: u16,
+        value: &ResponseValue,
+    ) -> Result<Vec<u8>, ProtocolError> {
         if let ResponseValue::BlobData(data) = value {
             let mut buf = vec![PROTOCOL_VERSION, MessageType::Response.as_byte()];
             buf.extend_from_slice(&request_id.to_be_bytes());
@@ -174,7 +187,12 @@ impl WireCodec for BinaryCodec {
         Ok(buf)
     }
 
-    fn encode_error(&self, request_id: u16, code: ErrorCode, message: &str) -> Result<Vec<u8>, ProtocolError> {
+    fn encode_error(
+        &self,
+        request_id: u16,
+        code: ErrorCode,
+        message: &str,
+    ) -> Result<Vec<u8>, ProtocolError> {
         let mut buf = vec![PROTOCOL_VERSION, MessageType::Error.as_byte()];
         buf.extend_from_slice(&request_id.to_be_bytes());
         buf.push(code as u8);
@@ -194,7 +212,12 @@ impl WireCodec for BinaryCodec {
     }
 
     fn encode_heartbeat(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(vec![PROTOCOL_VERSION, MessageType::Heartbeat.as_byte(), 0x00, 0x00])
+        Ok(vec![
+            PROTOCOL_VERSION,
+            MessageType::Heartbeat.as_byte(),
+            0x00,
+            0x00,
+        ])
     }
 
     fn is_text(&self) -> bool {
@@ -203,14 +226,22 @@ impl WireCodec for BinaryCodec {
 }
 
 impl BinaryCodec {
-    fn decode_wire_request(&self, op: OperationCode, data: &[u8]) -> Result<WireRequest, ProtocolError> {
+    fn decode_wire_request(
+        &self,
+        op: OperationCode,
+        data: &[u8],
+    ) -> Result<WireRequest, ProtocolError> {
         if data.is_empty() {
             return self.request_without_payload(op);
         }
         let (len, n) = varint::decode_varint(data)?;
-        let end = n.checked_add(len as usize).ok_or_else(|| FrameParseError::PayloadDecode("payload length overflow".into()))?;
+        let end = n
+            .checked_add(len as usize)
+            .ok_or_else(|| FrameParseError::PayloadDecode("payload length overflow".into()))?;
         if end > data.len() {
-            return Err(FrameParseError::PayloadDecode("payload extends beyond frame".into()).into());
+            return Err(
+                FrameParseError::PayloadDecode("payload extends beyond frame".into()).into(),
+            );
         }
         let payload_data = &data[n..end];
         match op {
@@ -241,7 +272,7 @@ impl BinaryCodec {
             | OperationCode::WorkIrrevocablyUnpublish
             | OperationCode::WorkIsPublished
             | OperationCode::CrdtSyncClose
-            |             OperationCode::CrdtSyncFullState
+            | OperationCode::CrdtSyncFullState
             | OperationCode::CrdtSyncMaterialize
             | OperationCode::CrdtSyncSubscriberCount
             | OperationCode::CrdtSyncOpen
@@ -260,17 +291,29 @@ impl BinaryCodec {
             }
             OperationCode::CrdtSyncUpdate => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, update: Vec<u8> }
+                struct Args {
+                    work_id: BeId,
+                    update: Vec<u8>,
+                }
                 let args: Args = serde_json::from_slice(payload_data)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::CrdtSyncUpdate { work_id: args.work_id, update: args.update })
+                Ok(WireRequest::CrdtSyncUpdate {
+                    work_id: args.work_id,
+                    update: args.update,
+                })
             }
             OperationCode::CrdtSyncDiff => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, state_vector: Vec<u8> }
+                struct Args {
+                    work_id: BeId,
+                    state_vector: Vec<u8>,
+                }
                 let args: Args = serde_json::from_slice(payload_data)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::CrdtSyncDiff { work_id: args.work_id, state_vector: args.state_vector })
+                Ok(WireRequest::CrdtSyncDiff {
+                    work_id: args.work_id,
+                    state_vector: args.state_vector,
+                })
             }
             OperationCode::CrdtAwarenessUpdate => {
                 let req: serde_json::Value = serde_json::from_slice(payload_data)
@@ -306,26 +349,28 @@ impl BinaryCodec {
             OperationCode::AdminServerHealth => Ok(WireRequest::AdminServerHealth),
             OperationCode::CryptoGetPublicKey => Ok(WireRequest::CryptoGetPublicKey),
             OperationCode::CryptoKeyRotation => Ok(WireRequest::CryptoKeyRotation),
-             OperationCode::CryptoKeyHistory => Ok(WireRequest::CryptoKeyHistory),
-             OperationCode::FederationInfo => Ok(WireRequest::FederationInfo),
-             OperationCode::FederationPeers => Ok(WireRequest::FederationPeers),
-             OperationCode::MembershipSync => Ok(WireRequest::MembershipSync),
-             OperationCode::MembershipLeave => Ok(WireRequest::MembershipLeave),
-             OperationCode::MembershipList => Ok(WireRequest::MembershipList),
-             OperationCode::GovernanceSeal => Ok(WireRequest::GovernanceSeal),
-             OperationCode::GovernanceLog => Ok(WireRequest::GovernanceLog),
-             OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
-             OperationCode::AdminIsAcceptingConnections => Ok(WireRequest::AdminIsAcceptingConnections),
-             OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
-             OperationCode::AdminActiveSessions => Ok(WireRequest::AdminActiveSessions),
-             OperationCode::AdminShutdown => Ok(WireRequest::AdminShutdown),
-             OperationCode::AdminGrants => Ok(WireRequest::AdminGrants),
-             OperationCode::AdminServerInfo => Ok(WireRequest::AdminServerInfo),
-             OperationCode::ServerStats => Ok(WireRequest::ServerStats),
-             OperationCode::WorkList => Ok(WireRequest::WorkList),
-             OperationCode::BlobStats => Ok(WireRequest::BlobStats),
-             OperationCode::LabelCreate => Ok(WireRequest::LabelCreate),
-             _ => Err(FrameParseError::MissingPayload.into()),
+            OperationCode::CryptoKeyHistory => Ok(WireRequest::CryptoKeyHistory),
+            OperationCode::FederationInfo => Ok(WireRequest::FederationInfo),
+            OperationCode::FederationPeers => Ok(WireRequest::FederationPeers),
+            OperationCode::MembershipSync => Ok(WireRequest::MembershipSync),
+            OperationCode::MembershipLeave => Ok(WireRequest::MembershipLeave),
+            OperationCode::MembershipList => Ok(WireRequest::MembershipList),
+            OperationCode::GovernanceSeal => Ok(WireRequest::GovernanceSeal),
+            OperationCode::GovernanceLog => Ok(WireRequest::GovernanceLog),
+            OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
+            OperationCode::AdminIsAcceptingConnections => {
+                Ok(WireRequest::AdminIsAcceptingConnections)
+            }
+            OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
+            OperationCode::AdminActiveSessions => Ok(WireRequest::AdminActiveSessions),
+            OperationCode::AdminShutdown => Ok(WireRequest::AdminShutdown),
+            OperationCode::AdminGrants => Ok(WireRequest::AdminGrants),
+            OperationCode::AdminServerInfo => Ok(WireRequest::AdminServerInfo),
+            OperationCode::ServerStats => Ok(WireRequest::ServerStats),
+            OperationCode::WorkList => Ok(WireRequest::WorkList),
+            OperationCode::BlobStats => Ok(WireRequest::BlobStats),
+            OperationCode::LabelCreate => Ok(WireRequest::LabelCreate),
+            _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
 
@@ -337,7 +382,9 @@ impl BinaryCodec {
             OperationCode::WorkIsGrabbed => Ok(WireRequest::WorkIsGrabbed { work_id: id }),
             OperationCode::WorkGrabber => Ok(WireRequest::WorkGrabber { work_id: id }),
             OperationCode::WorkRequestGrab => Ok(WireRequest::WorkRequestGrab { work_id: id }),
-            OperationCode::WorkCancelGrabRequest => Ok(WireRequest::WorkCancelGrabRequest { work_id: id }),
+            OperationCode::WorkCancelGrabRequest => {
+                Ok(WireRequest::WorkCancelGrabRequest { work_id: id })
+            }
             OperationCode::WorkGrabWaiters => Ok(WireRequest::WorkGrabWaiters { work_id: id }),
             OperationCode::WorkCanRead => Ok(WireRequest::WorkCanRead { work_id: id }),
             OperationCode::WorkCanRevise => Ok(WireRequest::WorkCanRevise { work_id: id }),
@@ -348,13 +395,19 @@ impl BinaryCodec {
             OperationCode::WorkOwner => Ok(WireRequest::WorkOwner { work_id: id }),
             OperationCode::WorkPublish => Ok(WireRequest::WorkPublish { work_id: id }),
             OperationCode::WorkUnpublish => Ok(WireRequest::WorkUnpublish { work_id: id }),
-            OperationCode::WorkIrrevocablyUnpublish => Ok(WireRequest::WorkIrrevocablyUnpublish { work_id: id }),
+            OperationCode::WorkIrrevocablyUnpublish => {
+                Ok(WireRequest::WorkIrrevocablyUnpublish { work_id: id })
+            }
             OperationCode::WorkIsPublished => Ok(WireRequest::WorkIsPublished { work_id: id }),
             OperationCode::CrdtSyncOpen => Ok(WireRequest::CrdtSyncOpen { work_id: id }),
             OperationCode::CrdtSyncClose => Ok(WireRequest::CrdtSyncClose { work_id: id }),
             OperationCode::CrdtSyncFullState => Ok(WireRequest::CrdtSyncFullState { work_id: id }),
-            OperationCode::CrdtSyncMaterialize => Ok(WireRequest::CrdtSyncMaterialize { work_id: id }),
-            OperationCode::CrdtSyncSubscriberCount => Ok(WireRequest::CrdtSyncSubscriberCount { work_id: id }),
+            OperationCode::CrdtSyncMaterialize => {
+                Ok(WireRequest::CrdtSyncMaterialize { work_id: id })
+            }
+            OperationCode::CrdtSyncSubscriberCount => {
+                Ok(WireRequest::CrdtSyncSubscriberCount { work_id: id })
+            }
             OperationCode::CrdtSyncText => Ok(WireRequest::CrdtSyncText { work_id: id }),
             OperationCode::CrdtAwarenessGet => Ok(WireRequest::CrdtAwarenessGet { work_id: id }),
             _ => Err(FrameParseError::MissingPayload.into()),
@@ -365,7 +418,9 @@ impl BinaryCodec {
         match op {
             OperationCode::ClubGet => Ok(WireRequest::ClubGet { club_id: id }),
             OperationCode::ClubNameById => Ok(WireRequest::ClubNameById { club_id: id }),
-            OperationCode::ClubClearCredential => Ok(WireRequest::ClubClearCredential { club_id: id }),
+            OperationCode::ClubClearCredential => {
+                Ok(WireRequest::ClubClearCredential { club_id: id })
+            }
             OperationCode::ClubMembers => Ok(WireRequest::ClubMembers { club_id: id }),
             _ => Err(FrameParseError::MissingPayload.into()),
         }
@@ -407,14 +462,18 @@ impl WireCodec for JsonCodec {
                     subscribe: sub,
                 }))
             }
-            "unsubscribe" => {
-                Ok(IncomingMessage::Unsubscribe(ParsedUnsubscribe { request_id }))
-            }
+            "unsubscribe" => Ok(IncomingMessage::Unsubscribe(ParsedUnsubscribe {
+                request_id,
+            })),
             _ => Err(FrameParseError::InvalidMessageType(0).into()),
         }
     }
 
-    fn encode_response(&self, request_id: u16, value: &ResponseValue) -> Result<Vec<u8>, ProtocolError> {
+    fn encode_response(
+        &self,
+        request_id: u16,
+        value: &ResponseValue,
+    ) -> Result<Vec<u8>, ProtocolError> {
         if let ResponseValue::BlobData(data) = value {
             let b64 = crate::edition::base64_encode(&data);
             let frame = WireFrame {
@@ -442,11 +501,15 @@ impl WireCodec for JsonCodec {
             message: None,
             event: None,
         };
-        serde_json::to_vec(&frame)
-            .map_err(|e| ProtocolError::Serialization(e.to_string()))
+        serde_json::to_vec(&frame).map_err(|e| ProtocolError::Serialization(e.to_string()))
     }
 
-    fn encode_error(&self, request_id: u16, code: ErrorCode, message: &str) -> Result<Vec<u8>, ProtocolError> {
+    fn encode_error(
+        &self,
+        request_id: u16,
+        code: ErrorCode,
+        message: &str,
+    ) -> Result<Vec<u8>, ProtocolError> {
         let frame = WireFrame {
             v: PROTOCOL_VERSION,
             msg_type: "error".to_string(),
@@ -458,8 +521,7 @@ impl WireCodec for JsonCodec {
             message: Some(message.to_string()),
             event: None,
         };
-        serde_json::to_vec(&frame)
-            .map_err(|e| ProtocolError::Serialization(e.to_string()))
+        serde_json::to_vec(&frame).map_err(|e| ProtocolError::Serialization(e.to_string()))
     }
 
     fn encode_event(&self, event: &WireEvent) -> Result<Vec<u8>, ProtocolError> {
@@ -474,8 +536,7 @@ impl WireCodec for JsonCodec {
             message: None,
             event: Some(event.event.clone()),
         };
-        serde_json::to_vec(&frame)
-            .map_err(|e| ProtocolError::Serialization(e.to_string()))
+        serde_json::to_vec(&frame).map_err(|e| ProtocolError::Serialization(e.to_string()))
     }
 
     fn encode_heartbeat(&self) -> Result<Vec<u8>, ProtocolError> {
@@ -490,8 +551,7 @@ impl WireCodec for JsonCodec {
             message: None,
             event: None,
         };
-        serde_json::to_vec(&frame)
-            .map_err(|e| ProtocolError::Serialization(e.to_string()))
+        serde_json::to_vec(&frame).map_err(|e| ProtocolError::Serialization(e.to_string()))
     }
 
     fn is_text(&self) -> bool {
@@ -541,7 +601,9 @@ impl JsonCodec {
                 OperationCode::SessionDisconnect => Ok(WireRequest::SessionDisconnect),
                 OperationCode::SessionLoginPublic => Ok(WireRequest::SessionLoginPublic),
                 OperationCode::ClubNames => Ok(WireRequest::ClubNames),
-                OperationCode::AdminIsAcceptingConnections => Ok(WireRequest::AdminIsAcceptingConnections),
+                OperationCode::AdminIsAcceptingConnections => {
+                    Ok(WireRequest::AdminIsAcceptingConnections)
+                }
                 OperationCode::AdminActiveSessions => Ok(WireRequest::AdminActiveSessions),
                 OperationCode::AdminShutdown => Ok(WireRequest::AdminShutdown),
                 OperationCode::AdminGrants => Ok(WireRequest::AdminGrants),
@@ -562,10 +624,10 @@ impl JsonCodec {
                 OperationCode::MembershipList => Ok(WireRequest::MembershipList),
                 OperationCode::GovernanceSeal => Ok(WireRequest::GovernanceSeal),
                 OperationCode::GovernanceLog => Ok(WireRequest::GovernanceLog),
-            OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
-             OperationCode::ClubWhoAmI => Ok(WireRequest::ClubWhoAmI),
-             OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
-                 _ => unreachable!(),
+                OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
+                OperationCode::ClubWhoAmI => Ok(WireRequest::ClubWhoAmI),
+                OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
+                _ => unreachable!(),
             };
         }
 
@@ -574,562 +636,928 @@ impl JsonCodec {
         match op {
             OperationCode::SessionLogin => {
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId }
+                struct Args {
+                    club_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::SessionLogin { club_id: args.club_id })
+                Ok(WireRequest::SessionLogin {
+                    club_id: args.club_id,
+                })
             }
             OperationCode::SessionLoginByName => {
                 #[derive(Deserialize)]
-                struct Args { club_name: String }
+                struct Args {
+                    club_name: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::SessionLoginByName { club_name: args.club_name })
+                Ok(WireRequest::SessionLoginByName {
+                    club_name: args.club_name,
+                })
             }
             OperationCode::SessionAuthenticate => {
                 let args: serde_json::Value = p;
                 #[derive(Deserialize)]
-                struct Args { credential: LockCredential }
+                struct Args {
+                    credential: LockCredential,
+                }
                 let a: Args = serde_json::from_value(args)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::SessionAuthenticate { credential: a.credential })
+                Ok(WireRequest::SessionAuthenticate {
+                    credential: a.credential,
+                })
             }
             OperationCode::ServerGetById => {
                 #[derive(Deserialize)]
-                struct Args { id: u64 }
+                struct Args {
+                    id: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::ServerGetById { id: args.id })
             }
             OperationCode::ServerGetByBeId => {
                 #[derive(Deserialize)]
-                struct Args { be_id: BeId }
+                struct Args {
+                    be_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::ServerGetByBeId { be_id: args.be_id })
             }
             OperationCode::ClubCreate => {
                 #[derive(Deserialize)]
-                struct Args { description: EditionPayload }
+                struct Args {
+                    description: EditionPayload,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ClubCreate { description: args.description })
+                Ok(WireRequest::ClubCreate {
+                    description: args.description,
+                })
             }
             OperationCode::ClubCreateNamed => {
                 #[derive(Deserialize)]
-                struct Args { name: String, description: EditionPayload }
+                struct Args {
+                    name: String,
+                    description: EditionPayload,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ClubCreateNamed { name: args.name, description: args.description })
+                Ok(WireRequest::ClubCreateNamed {
+                    name: args.name,
+                    description: args.description,
+                })
             }
             OperationCode::ClubGet => {
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId }
+                struct Args {
+                    club_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ClubGet { club_id: args.club_id })
+                Ok(WireRequest::ClubGet {
+                    club_id: args.club_id,
+                })
             }
             OperationCode::ClubByName | OperationCode::ClubIdByName => {
                 #[derive(Deserialize)]
-                struct Args { name: String }
+                struct Args {
+                    name: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::ClubIdByName { name: args.name })
             }
             OperationCode::ClubNameById => {
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId }
+                struct Args {
+                    club_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ClubNameById { club_id: args.club_id })
+                Ok(WireRequest::ClubNameById {
+                    club_id: args.club_id,
+                })
             }
             OperationCode::WorkCreate => {
                 #[derive(Deserialize)]
-                struct Args { edition: EditionPayload }
+                struct Args {
+                    edition: EditionPayload,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkCreate { edition: args.edition })
+                Ok(WireRequest::WorkCreate {
+                    edition: args.edition,
+                })
             }
             OperationCode::WorkGetEdition => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkGetEdition { work_id: args.work_id })
+                Ok(WireRequest::WorkGetEdition {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkRevise => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, edition: EditionPayload }
+                struct Args {
+                    work_id: BeId,
+                    edition: EditionPayload,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkRevise { work_id: args.work_id, edition: args.edition })
+                Ok(WireRequest::WorkRevise {
+                    work_id: args.work_id,
+                    edition: args.edition,
+                })
             }
             OperationCode::WorkReviseDelta => {
                 use super::protocol::TextDeltaOp;
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, base_revision: u64, ops: Vec<TextDeltaOp> }
+                struct Args {
+                    work_id: BeId,
+                    base_revision: u64,
+                    ops: Vec<TextDeltaOp>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkReviseDelta { work_id: args.work_id, base_revision: args.base_revision, ops: args.ops })
+                Ok(WireRequest::WorkReviseDelta {
+                    work_id: args.work_id,
+                    base_revision: args.base_revision,
+                    ops: args.ops,
+                })
             }
             OperationCode::WorkGrab => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkGrab { work_id: args.work_id })
+                Ok(WireRequest::WorkGrab {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkRelease => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkRelease { work_id: args.work_id })
+                Ok(WireRequest::WorkRelease {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkSaveAndRelease => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, edition: EditionPayload }
+                struct Args {
+                    work_id: BeId,
+                    edition: EditionPayload,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkSaveAndRelease { work_id: args.work_id, edition: args.edition })
+                Ok(WireRequest::WorkSaveAndRelease {
+                    work_id: args.work_id,
+                    edition: args.edition,
+                })
             }
             OperationCode::WorkForceRelease => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkForceRelease { work_id: args.work_id })
+                Ok(WireRequest::WorkForceRelease {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkIsGrabbed => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkIsGrabbed { work_id: args.work_id })
+                Ok(WireRequest::WorkIsGrabbed {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkGrabber => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkGrabber { work_id: args.work_id })
+                Ok(WireRequest::WorkGrabber {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkRequestGrab => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkRequestGrab { work_id: args.work_id })
+                Ok(WireRequest::WorkRequestGrab {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkCancelGrabRequest => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkCancelGrabRequest { work_id: args.work_id })
+                Ok(WireRequest::WorkCancelGrabRequest {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkGrabWaiters => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkGrabWaiters { work_id: args.work_id })
+                Ok(WireRequest::WorkGrabWaiters {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkCanRead => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkCanRead { work_id: args.work_id })
+                Ok(WireRequest::WorkCanRead {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkCanRevise => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkCanRevise { work_id: args.work_id })
+                Ok(WireRequest::WorkCanRevise {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkSetReadClub => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, club_id: Option<BeId> }
+                struct Args {
+                    work_id: BeId,
+                    club_id: Option<BeId>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkSetReadClub { work_id: args.work_id, club_id: args.club_id })
+                Ok(WireRequest::WorkSetReadClub {
+                    work_id: args.work_id,
+                    club_id: args.club_id,
+                })
             }
             OperationCode::WorkSetEditClub => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, club_id: Option<BeId> }
+                struct Args {
+                    work_id: BeId,
+                    club_id: Option<BeId>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkSetEditClub { work_id: args.work_id, club_id: args.club_id })
+                Ok(WireRequest::WorkSetEditClub {
+                    work_id: args.work_id,
+                    club_id: args.club_id,
+                })
             }
             OperationCode::WorkPublish => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkPublish { work_id: args.work_id })
+                Ok(WireRequest::WorkPublish {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkUnpublish => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkUnpublish { work_id: args.work_id })
+                Ok(WireRequest::WorkUnpublish {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkIrrevocablyUnpublish => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkIrrevocablyUnpublish { work_id: args.work_id })
+                Ok(WireRequest::WorkIrrevocablyUnpublish {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkIsPublished => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkIsPublished { work_id: args.work_id })
+                Ok(WireRequest::WorkIsPublished {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::ClubSetDefaultReadClub => {
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId, default_read_club: Option<BeId> }
+                struct Args {
+                    club_id: BeId,
+                    default_read_club: Option<BeId>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ClubSetDefaultReadClub { club_id: args.club_id, default_read_club: args.default_read_club })
+                Ok(WireRequest::ClubSetDefaultReadClub {
+                    club_id: args.club_id,
+                    default_read_club: args.default_read_club,
+                })
             }
             OperationCode::ClubSetDefaultEditClub => {
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId, default_edit_club: Option<BeId> }
+                struct Args {
+                    club_id: BeId,
+                    default_edit_club: Option<BeId>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ClubSetDefaultEditClub { club_id: args.club_id, default_edit_club: args.default_edit_club })
+                Ok(WireRequest::ClubSetDefaultEditClub {
+                    club_id: args.club_id,
+                    default_edit_club: args.default_edit_club,
+                })
             }
             OperationCode::ClubSetPassword => {
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId, password: Vec<u8> }
+                struct Args {
+                    club_id: BeId,
+                    password: Vec<u8>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ClubSetPassword { club_id: args.club_id, password: args.password })
+                Ok(WireRequest::ClubSetPassword {
+                    club_id: args.club_id,
+                    password: args.password,
+                })
             }
             OperationCode::ClubClearCredential => {
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId }
+                struct Args {
+                    club_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ClubClearCredential { club_id: args.club_id })
+                Ok(WireRequest::ClubClearCredential {
+                    club_id: args.club_id,
+                })
             }
             OperationCode::ClubCreatePersonal => {
                 #[derive(Deserialize)]
-                struct Args { display_name: String, password: Option<Vec<u8>> }
+                struct Args {
+                    display_name: String,
+                    password: Option<Vec<u8>>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ClubCreatePersonal { display_name: args.display_name, password: args.password })
+                Ok(WireRequest::ClubCreatePersonal {
+                    display_name: args.display_name,
+                    password: args.password,
+                })
             }
             OperationCode::ClubAddMember => {
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId, member_id: BeId }
+                struct Args {
+                    club_id: BeId,
+                    member_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ClubAddMember { club_id: args.club_id, member_id: args.member_id })
+                Ok(WireRequest::ClubAddMember {
+                    club_id: args.club_id,
+                    member_id: args.member_id,
+                })
             }
             OperationCode::ClubRemoveMember => {
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId, member_id: BeId }
+                struct Args {
+                    club_id: BeId,
+                    member_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ClubRemoveMember { club_id: args.club_id, member_id: args.member_id })
+                Ok(WireRequest::ClubRemoveMember {
+                    club_id: args.club_id,
+                    member_id: args.member_id,
+                })
             }
             OperationCode::ClubMembers => {
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId }
+                struct Args {
+                    club_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ClubMembers { club_id: args.club_id })
+                Ok(WireRequest::ClubMembers {
+                    club_id: args.club_id,
+                })
             }
             OperationCode::WorkReadClub => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkReadClub { work_id: args.work_id })
+                Ok(WireRequest::WorkReadClub {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkEditClub => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkEditClub { work_id: args.work_id })
+                Ok(WireRequest::WorkEditClub {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkRevisionCount => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkRevisionCount { work_id: args.work_id })
+                Ok(WireRequest::WorkRevisionCount {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkFetchRevision => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, number: u64 }
+                struct Args {
+                    work_id: BeId,
+                    number: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkFetchRevision { work_id: args.work_id, number: args.number })
+                Ok(WireRequest::WorkFetchRevision {
+                    work_id: args.work_id,
+                    number: args.number,
+                })
             }
             OperationCode::WorkFetchRevisionRange => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, from: u64, to: u64 }
+                struct Args {
+                    work_id: BeId,
+                    from: u64,
+                    to: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkFetchRevisionRange { work_id: args.work_id, from: args.from, to: args.to })
+                Ok(WireRequest::WorkFetchRevisionRange {
+                    work_id: args.work_id,
+                    from: args.from,
+                    to: args.to,
+                })
             }
             OperationCode::WorkSponsor => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, club_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                    club_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkSponsor { work_id: args.work_id, club_id: args.club_id })
+                Ok(WireRequest::WorkSponsor {
+                    work_id: args.work_id,
+                    club_id: args.club_id,
+                })
             }
             OperationCode::WorkUnsponsor => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, club_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                    club_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkUnsponsor { work_id: args.work_id, club_id: args.club_id })
+                Ok(WireRequest::WorkUnsponsor {
+                    work_id: args.work_id,
+                    club_id: args.club_id,
+                })
             }
             OperationCode::WorkSponsors => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkSponsors { work_id: args.work_id })
+                Ok(WireRequest::WorkSponsors {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkOwner => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkOwner { work_id: args.work_id })
+                Ok(WireRequest::WorkOwner {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::EditionStore => {
                 #[derive(Deserialize)]
-                struct Args { edition: EditionPayload }
+                struct Args {
+                    edition: EditionPayload,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::EditionStore { edition: args.edition })
+                Ok(WireRequest::EditionStore {
+                    edition: args.edition,
+                })
             }
             OperationCode::EditionGet => {
                 #[derive(Deserialize)]
-                struct Args { be_id: BeId }
+                struct Args {
+                    be_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::EditionGet { be_id: args.be_id })
             }
             OperationCode::AdminAcceptConnections => {
                 #[derive(Deserialize)]
-                struct Args { accept: bool }
+                struct Args {
+                    accept: bool,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::AdminAcceptConnections { accept: args.accept })
+                Ok(WireRequest::AdminAcceptConnections {
+                    accept: args.accept,
+                })
             }
             OperationCode::AdminIsAcceptingConnections => {
                 Ok(WireRequest::AdminIsAcceptingConnections)
             }
-            OperationCode::AdminActiveSessions => {
-                Ok(WireRequest::AdminActiveSessions)
-            }
-            OperationCode::AdminShutdown => {
-                Ok(WireRequest::AdminShutdown)
-            }
+            OperationCode::AdminActiveSessions => Ok(WireRequest::AdminActiveSessions),
+            OperationCode::AdminShutdown => Ok(WireRequest::AdminShutdown),
             OperationCode::AdminGrant => {
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId, region_start: i64, region_end: i64 }
+                struct Args {
+                    club_id: BeId,
+                    region_start: i64,
+                    region_end: i64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::AdminGrant { club_id: args.club_id, region_start: args.region_start, region_end: args.region_end })
+                Ok(WireRequest::AdminGrant {
+                    club_id: args.club_id,
+                    region_start: args.region_start,
+                    region_end: args.region_end,
+                })
             }
             OperationCode::AdminRevokeGrant => {
                 #[derive(Deserialize)]
-                struct Args { club_id: BeId }
+                struct Args {
+                    club_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::AdminRevokeGrant { club_id: args.club_id })
+                Ok(WireRequest::AdminRevokeGrant {
+                    club_id: args.club_id,
+                })
             }
-            OperationCode::AdminGrants => {
-                Ok(WireRequest::AdminGrants)
-            }
-            OperationCode::AdminServerInfo => {
-                Ok(WireRequest::AdminServerInfo)
-            }
-            OperationCode::ServerStats => {
-                Ok(WireRequest::ServerStats)
-            }
+            OperationCode::AdminGrants => Ok(WireRequest::AdminGrants),
+            OperationCode::AdminServerInfo => Ok(WireRequest::AdminServerInfo),
+            OperationCode::ServerStats => Ok(WireRequest::ServerStats),
             OperationCode::WorkListByOwner => {
                 #[derive(Deserialize)]
-                struct Args { owner: BeId }
+                struct Args {
+                    owner: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::WorkListByOwner { owner: args.owner })
             }
             OperationCode::LinkCreate => {
                 #[derive(Deserialize)]
-                struct Args { origin: BeId, destination: BeId, origin_ref: Option<HyperRefPayload>, destination_ref: Option<HyperRefPayload> }
+                struct Args {
+                    origin: BeId,
+                    destination: BeId,
+                    origin_ref: Option<HyperRefPayload>,
+                    destination_ref: Option<HyperRefPayload>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::LinkCreate { origin: args.origin, destination: args.destination, origin_ref: args.origin_ref, destination_ref: args.destination_ref })
+                Ok(WireRequest::LinkCreate {
+                    origin: args.origin,
+                    destination: args.destination,
+                    origin_ref: args.origin_ref,
+                    destination_ref: args.destination_ref,
+                })
             }
             OperationCode::LinkGet => {
                 #[derive(Deserialize)]
-                struct Args { link_id: BeId }
+                struct Args {
+                    link_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::LinkGet { link_id: args.link_id })
+                Ok(WireRequest::LinkGet {
+                    link_id: args.link_id,
+                })
             }
             OperationCode::LinkUpdate => {
                 #[derive(Deserialize)]
-                struct Args { link_id: BeId, origin_ref: Option<HyperRefPayload>, destination_ref: Option<HyperRefPayload> }
+                struct Args {
+                    link_id: BeId,
+                    origin_ref: Option<HyperRefPayload>,
+                    destination_ref: Option<HyperRefPayload>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::LinkUpdate { link_id: args.link_id, origin_ref: args.origin_ref, destination_ref: args.destination_ref })
+                Ok(WireRequest::LinkUpdate {
+                    link_id: args.link_id,
+                    origin_ref: args.origin_ref,
+                    destination_ref: args.destination_ref,
+                })
             }
             OperationCode::LinkDelete => {
                 #[derive(Deserialize)]
-                struct Args { link_id: BeId }
+                struct Args {
+                    link_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::LinkDelete { link_id: args.link_id })
+                Ok(WireRequest::LinkDelete {
+                    link_id: args.link_id,
+                })
             }
             OperationCode::LinkListForWork => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::LinkListForWork { work_id: args.work_id })
+                Ok(WireRequest::LinkListForWork {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::FindTranscluders => {
                 #[derive(Deserialize)]
-                struct Args { content_be_id: BeId }
+                struct Args {
+                    content_be_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::FindTranscluders { content_be_id: args.content_be_id })
+                Ok(WireRequest::FindTranscluders {
+                    content_be_id: args.content_be_id,
+                })
             }
             OperationCode::FindWorksForContent => {
                 #[derive(Deserialize)]
-                struct Args { content_be_id: BeId }
+                struct Args {
+                    content_be_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::FindWorksForContent { content_be_id: args.content_be_id })
+                Ok(WireRequest::FindWorksForContent {
+                    content_be_id: args.content_be_id,
+                })
             }
             OperationCode::FindTextTranscluders => {
                 #[derive(Deserialize)]
-                struct Args { text: String }
+                struct Args {
+                    text: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::FindTextTranscluders { text: args.text })
             }
             OperationCode::FindSharedRegions => {
                 #[derive(Deserialize)]
-                struct Args { work_a: BeId, work_b: BeId, filter_text: Option<String> }
+                struct Args {
+                    work_a: BeId,
+                    work_b: BeId,
+                    filter_text: Option<String>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::FindSharedRegions { work_a: args.work_a, work_b: args.work_b, filter_text: args.filter_text })
+                Ok(WireRequest::FindSharedRegions {
+                    work_a: args.work_a,
+                    work_b: args.work_b,
+                    filter_text: args.filter_text,
+                })
             }
             OperationCode::BlobUpload => {
                 #[derive(Deserialize)]
-                struct Args { data: String, mime_type: String }
+                struct Args {
+                    data: String,
+                    mime_type: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::BlobUpload { data: args.data, mime_type: args.mime_type })
+                Ok(WireRequest::BlobUpload {
+                    data: args.data,
+                    mime_type: args.mime_type,
+                })
             }
             OperationCode::BlobGet => {
                 #[derive(Deserialize)]
-                struct Args { #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")] content_hash: u64 }
+                struct Args {
+                    #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")]
+                    content_hash: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::BlobGet { content_hash: args.content_hash })
+                Ok(WireRequest::BlobGet {
+                    content_hash: args.content_hash,
+                })
             }
             OperationCode::BlobGetPreview => {
                 #[derive(Deserialize)]
-                struct Args { #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")] content_hash: u64 }
+                struct Args {
+                    #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")]
+                    content_hash: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::BlobGetPreview { content_hash: args.content_hash })
+                Ok(WireRequest::BlobGetPreview {
+                    content_hash: args.content_hash,
+                })
             }
             OperationCode::BlobExists => {
                 #[derive(Deserialize)]
-                struct Args { #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")] content_hash: u64 }
+                struct Args {
+                    #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")]
+                    content_hash: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::BlobExists { content_hash: args.content_hash })
+                Ok(WireRequest::BlobExists {
+                    content_hash: args.content_hash,
+                })
             }
             OperationCode::BlobInfo => {
                 #[derive(Deserialize)]
-                struct Args { #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")] content_hash: u64 }
+                struct Args {
+                    #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")]
+                    content_hash: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::BlobInfo { content_hash: args.content_hash })
+                Ok(WireRequest::BlobInfo {
+                    content_hash: args.content_hash,
+                })
             }
             OperationCode::OverlayApply => {
                 #[derive(Deserialize)]
-                struct Args { #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")] base_hash: u64, ops: Vec<crate::edition::ImageOp>, mime_type: String }
+                struct Args {
+                    #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")]
+                    base_hash: u64,
+                    ops: Vec<crate::edition::ImageOp>,
+                    mime_type: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::OverlayApply { base_hash: args.base_hash, ops: args.ops, mime_type: args.mime_type })
+                Ok(WireRequest::OverlayApply {
+                    base_hash: args.base_hash,
+                    ops: args.ops,
+                    mime_type: args.mime_type,
+                })
             }
             OperationCode::OverlayGet => {
                 #[derive(Deserialize)]
-                struct Args { #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")] overlay_hash: u64 }
+                struct Args {
+                    #[serde(deserialize_with = "super::protocol::u64_hex::deserialize")]
+                    overlay_hash: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::OverlayGet { overlay_hash: args.overlay_hash })
+                Ok(WireRequest::OverlayGet {
+                    overlay_hash: args.overlay_hash,
+                })
             }
-            OperationCode::LabelCreate => {
-                Ok(WireRequest::LabelCreate)
-            }
+            OperationCode::LabelCreate => Ok(WireRequest::LabelCreate),
             OperationCode::LabelGetPositions => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, label_id: u64 }
+                struct Args {
+                    work_id: BeId,
+                    label_id: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::LabelGetPositions { work_id: args.work_id, label_id: args.label_id })
+                Ok(WireRequest::LabelGetPositions {
+                    work_id: args.work_id,
+                    label_id: args.label_id,
+                })
             }
             OperationCode::EditionRelabel => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, label_id: u64 }
+                struct Args {
+                    work_id: BeId,
+                    label_id: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::EditionRelabel { work_id: args.work_id, label_id: args.label_id })
+                Ok(WireRequest::EditionRelabel {
+                    work_id: args.work_id,
+                    label_id: args.label_id,
+                })
             }
             OperationCode::EditionRebind => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, position: i64, new_edition: EditionPayload }
+                struct Args {
+                    work_id: BeId,
+                    position: i64,
+                    new_edition: EditionPayload,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::EditionRebind { work_id: args.work_id, position: args.position, new_edition: args.new_edition })
+                Ok(WireRequest::EditionRebind {
+                    work_id: args.work_id,
+                    position: args.position,
+                    new_edition: args.new_edition,
+                })
             }
             OperationCode::CanMakeIdentical => {
                 #[derive(Deserialize)]
-                struct Args { source_work_id: BeId, target_work_id: BeId, position: Option<i64> }
+                struct Args {
+                    source_work_id: BeId,
+                    target_work_id: BeId,
+                    position: Option<i64>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::CanMakeIdentical { source_work_id: args.source_work_id, target_work_id: args.target_work_id, position: args.position })
+                Ok(WireRequest::CanMakeIdentical {
+                    source_work_id: args.source_work_id,
+                    target_work_id: args.target_work_id,
+                    position: args.position,
+                })
             }
             OperationCode::MakeRangeIdentical => {
                 #[derive(Deserialize)]
-                struct Args { source_work_id: BeId, target_work_id: BeId, region: Option<XnRegion> }
+                struct Args {
+                    source_work_id: BeId,
+                    target_work_id: BeId,
+                    region: Option<XnRegion>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::MakeRangeIdentical { source_work_id: args.source_work_id, target_work_id: args.target_work_id, region: args.region })
+                Ok(WireRequest::MakeRangeIdentical {
+                    source_work_id: args.source_work_id,
+                    target_work_id: args.target_work_id,
+                    region: args.region,
+                })
             }
             OperationCode::IdentityUnify => {
                 #[derive(Deserialize)]
-                struct Args { source_id: u64, target_id: u64 }
+                struct Args {
+                    source_id: u64,
+                    target_id: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::IdentityUnify { source_id: args.source_id, target_id: args.target_id })
+                Ok(WireRequest::IdentityUnify {
+                    source_id: args.source_id,
+                    target_id: args.target_id,
+                })
             }
             OperationCode::IdentityResolve => {
                 #[derive(Deserialize)]
-                struct Args { id: u64 }
+                struct Args {
+                    id: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::IdentityResolve { id: args.id })
@@ -1137,189 +1565,311 @@ impl JsonCodec {
             OperationCode::EditionRetrieve => {
                 use super::protocol::RetrieveFlagsPayload;
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, region: Option<XnRegion>, flags: Option<RetrieveFlagsPayload> }
+                struct Args {
+                    work_id: BeId,
+                    region: Option<XnRegion>,
+                    flags: Option<RetrieveFlagsPayload>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::EditionRetrieve { work_id: args.work_id, region: args.region, flags: args.flags })
+                Ok(WireRequest::EditionRetrieve {
+                    work_id: args.work_id,
+                    region: args.region,
+                    flags: args.flags,
+                })
             }
             OperationCode::EditionCost => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, method: Option<String> }
+                struct Args {
+                    work_id: BeId,
+                    method: Option<String>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::EditionCost { work_id: args.work_id, method: args.method })
+                Ok(WireRequest::EditionCost {
+                    work_id: args.work_id,
+                    method: args.method,
+                })
             }
             OperationCode::ContentSharedRegion => {
                 #[derive(Deserialize)]
-                struct Args { work_a: BeId, work_b: BeId }
+                struct Args {
+                    work_a: BeId,
+                    work_b: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ContentSharedRegion { work_a: args.work_a, work_b: args.work_b })
+                Ok(WireRequest::ContentSharedRegion {
+                    work_a: args.work_a,
+                    work_b: args.work_b,
+                })
             }
             OperationCode::ContentMapSharedTo => {
                 #[derive(Deserialize)]
-                struct Args { work_a: BeId, work_b: BeId }
+                struct Args {
+                    work_a: BeId,
+                    work_b: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ContentMapSharedTo { work_a: args.work_a, work_b: args.work_b })
+                Ok(WireRequest::ContentMapSharedTo {
+                    work_a: args.work_a,
+                    work_b: args.work_b,
+                })
             }
             OperationCode::ContentMapSharedOnto => {
                 #[derive(Deserialize)]
-                struct Args { work_a: BeId, work_b: BeId }
+                struct Args {
+                    work_a: BeId,
+                    work_b: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::ContentMapSharedOnto { work_a: args.work_a, work_b: args.work_b })
+                Ok(WireRequest::ContentMapSharedOnto {
+                    work_a: args.work_a,
+                    work_b: args.work_b,
+                })
             }
             OperationCode::PositionsOf => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, element: RangeElement }
+                struct Args {
+                    work_id: BeId,
+                    element: RangeElement,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::PositionsOf { work_id: args.work_id, element: args.element })
+                Ok(WireRequest::PositionsOf {
+                    work_id: args.work_id,
+                    element: args.element,
+                })
             }
             OperationCode::RangeTranscluders => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, region: Option<XnRegion>, direct_only: Option<bool> }
+                struct Args {
+                    work_id: BeId,
+                    region: Option<XnRegion>,
+                    direct_only: Option<bool>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::RangeTranscluders { work_id: args.work_id, region: args.region, direct_only: args.direct_only })
+                Ok(WireRequest::RangeTranscluders {
+                    work_id: args.work_id,
+                    region: args.region,
+                    direct_only: args.direct_only,
+                })
             }
             OperationCode::RangeWorks => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, region: Option<XnRegion> }
+                struct Args {
+                    work_id: BeId,
+                    region: Option<XnRegion>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::RangeWorks { work_id: args.work_id, region: args.region })
+                Ok(WireRequest::RangeWorks {
+                    work_id: args.work_id,
+                    region: args.region,
+                })
             }
             OperationCode::OrderedBundles => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, region: Option<XnRegion> }
+                struct Args {
+                    work_id: BeId,
+                    region: Option<XnRegion>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::OrderedBundles { work_id: args.work_id, region: args.region })
+                Ok(WireRequest::OrderedBundles {
+                    work_id: args.work_id,
+                    region: args.region,
+                })
             }
             OperationCode::TransclusionDepth => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, position: i64, max_depth: Option<usize> }
+                struct Args {
+                    work_id: BeId,
+                    position: i64,
+                    max_depth: Option<usize>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::TransclusionDepth { work_id: args.work_id, position: args.position, max_depth: args.max_depth })
+                Ok(WireRequest::TransclusionDepth {
+                    work_id: args.work_id,
+                    position: args.position,
+                    max_depth: args.max_depth,
+                })
             }
             OperationCode::AdminRecorderCreate => {
                 #[derive(Deserialize)]
-                struct Args { kind: String, direct_only: Option<bool>, region: Option<XnRegion> }
+                struct Args {
+                    kind: String,
+                    direct_only: Option<bool>,
+                    region: Option<XnRegion>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::AdminRecorderCreate { kind: args.kind, direct_only: args.direct_only, region: args.region })
+                Ok(WireRequest::AdminRecorderCreate {
+                    kind: args.kind,
+                    direct_only: args.direct_only,
+                    region: args.region,
+                })
             }
             OperationCode::AdminRecorderRecord => {
                 #[derive(Deserialize)]
-                struct Args { recorder_id: u64, element: RangeElement }
+                struct Args {
+                    recorder_id: u64,
+                    element: RangeElement,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::AdminRecorderRecord { recorder_id: args.recorder_id, element: args.element })
+                Ok(WireRequest::AdminRecorderRecord {
+                    recorder_id: args.recorder_id,
+                    element: args.element,
+                })
             }
-            OperationCode::AdminRecorderList => {
-                Ok(WireRequest::AdminRecorderList)
-            }
+            OperationCode::AdminRecorderList => Ok(WireRequest::AdminRecorderList),
             OperationCode::AdminRecorderGet => {
                 #[derive(Deserialize)]
-                struct Args { recorder_id: u64 }
+                struct Args {
+                    recorder_id: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::AdminRecorderGet { recorder_id: args.recorder_id })
+                Ok(WireRequest::AdminRecorderGet {
+                    recorder_id: args.recorder_id,
+                })
             }
-            OperationCode::AdminServerHealth => {
-                Ok(WireRequest::AdminServerHealth)
-            }
-            OperationCode::CryptoGetPublicKey => {
-                Ok(WireRequest::CryptoGetPublicKey)
-            }
+            OperationCode::AdminServerHealth => Ok(WireRequest::AdminServerHealth),
+            OperationCode::CryptoGetPublicKey => Ok(WireRequest::CryptoGetPublicKey),
             OperationCode::CryptoSignData => {
                 #[derive(Deserialize)]
-                struct Args { data: Vec<u8> }
+                struct Args {
+                    data: Vec<u8>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::CryptoSignData { data: args.data })
             }
             OperationCode::CryptoVerifySignature => {
                 #[derive(Deserialize)]
-                struct Args { data: Vec<u8>, signature: Vec<u8> }
+                struct Args {
+                    data: Vec<u8>,
+                    signature: Vec<u8>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::CryptoVerifySignature { data: args.data, signature: args.signature })
+                Ok(WireRequest::CryptoVerifySignature {
+                    data: args.data,
+                    signature: args.signature,
+                })
             }
-            OperationCode::CryptoKeyRotation => {
-                Ok(WireRequest::CryptoKeyRotation)
-            }
-            OperationCode::CryptoKeyHistory => {
-                Ok(WireRequest::CryptoKeyHistory)
-            }
+            OperationCode::CryptoKeyRotation => Ok(WireRequest::CryptoKeyRotation),
+            OperationCode::CryptoKeyHistory => Ok(WireRequest::CryptoKeyHistory),
             OperationCode::WorkEndorse => {
                 #[derive(Deserialize)]
-                struct Args { work_id: u64, endorsements: Vec<(u64, u64)> }
+                struct Args {
+                    work_id: u64,
+                    endorsements: Vec<(u64, u64)>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkEndorse { work_id: args.work_id, endorsements: args.endorsements })
+                Ok(WireRequest::WorkEndorse {
+                    work_id: args.work_id,
+                    endorsements: args.endorsements,
+                })
             }
             OperationCode::WorkRetract => {
                 #[derive(Deserialize)]
-                struct Args { work_id: u64, endorsements: Vec<(u64, u64)> }
+                struct Args {
+                    work_id: u64,
+                    endorsements: Vec<(u64, u64)>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkRetract { work_id: args.work_id, endorsements: args.endorsements })
+                Ok(WireRequest::WorkRetract {
+                    work_id: args.work_id,
+                    endorsements: args.endorsements,
+                })
             }
             OperationCode::WorkEndorsements => {
                 #[derive(Deserialize)]
-                struct Args { work_id: u64 }
+                struct Args {
+                    work_id: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkEndorsements { work_id: args.work_id })
+                Ok(WireRequest::WorkEndorsements {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::EditionEndorse => {
                 #[derive(Deserialize)]
-                struct Args { edition_id: u64, endorsements: Vec<(u64, u64)> }
+                struct Args {
+                    edition_id: u64,
+                    endorsements: Vec<(u64, u64)>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::EditionEndorse { edition_id: args.edition_id, endorsements: args.endorsements })
+                Ok(WireRequest::EditionEndorse {
+                    edition_id: args.edition_id,
+                    endorsements: args.endorsements,
+                })
             }
             OperationCode::EditionRetract => {
                 #[derive(Deserialize)]
-                struct Args { edition_id: u64, endorsements: Vec<(u64, u64)> }
+                struct Args {
+                    edition_id: u64,
+                    endorsements: Vec<(u64, u64)>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::EditionRetract { edition_id: args.edition_id, endorsements: args.endorsements })
+                Ok(WireRequest::EditionRetract {
+                    edition_id: args.edition_id,
+                    endorsements: args.endorsements,
+                })
             }
             OperationCode::EditionEndorsements => {
                 #[derive(Deserialize)]
-                struct Args { edition_id: u64 }
+                struct Args {
+                    edition_id: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::EditionEndorsements { edition_id: args.edition_id })
+                Ok(WireRequest::EditionEndorsements {
+                    edition_id: args.edition_id,
+                })
             }
             OperationCode::EditionVisibleEndorsements => {
                 #[derive(Deserialize)]
-                struct Args { edition_id: u64 }
+                struct Args {
+                    edition_id: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::EditionVisibleEndorsements { edition_id: args.edition_id })
+                Ok(WireRequest::EditionVisibleEndorsements {
+                    edition_id: args.edition_id,
+                })
             }
             OperationCode::EditionTotalEndorsements => {
                 #[derive(Deserialize)]
-                struct Args { edition_id: u64 }
+                struct Args {
+                    edition_id: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::EditionTotalEndorsements { edition_id: args.edition_id })
+                Ok(WireRequest::EditionTotalEndorsements {
+                    edition_id: args.edition_id,
+                })
             }
-            OperationCode::FederationInfo => {
-                Ok(WireRequest::FederationInfo)
-            }
-            OperationCode::FederationPeers => {
-                Ok(WireRequest::FederationPeers)
-            }
+            OperationCode::FederationInfo => Ok(WireRequest::FederationInfo),
+            OperationCode::FederationPeers => Ok(WireRequest::FederationPeers),
             OperationCode::FederatedTransclusionQuery => {
                 #[derive(Deserialize)]
-                struct Args { content_fingerprint_hex: String, #[serde(default)] direct_only: bool }
+                struct Args {
+                    content_fingerprint_hex: String,
+                    #[serde(default)]
+                    direct_only: bool,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::FederatedTransclusionQuery {
@@ -1329,7 +1879,9 @@ impl JsonCodec {
             }
             OperationCode::FederatedContentFetch => {
                 #[derive(Deserialize)]
-                struct Args { content_fingerprint_hex: String }
+                struct Args {
+                    content_fingerprint_hex: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::FederatedContentFetch {
@@ -1338,7 +1890,9 @@ impl JsonCodec {
             }
             OperationCode::EndorsementSync => {
                 #[derive(Deserialize)]
-                struct Args { work_fingerprint: String }
+                struct Args {
+                    work_fingerprint: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::EndorsementSync {
@@ -1347,7 +1901,11 @@ impl JsonCodec {
             }
             OperationCode::EndorsementAdd => {
                 #[derive(Deserialize)]
-                struct Args { work_fingerprint: String, club_id: u64, token_id: u64 }
+                struct Args {
+                    work_fingerprint: String,
+                    club_id: u64,
+                    token_id: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::EndorsementAdd {
@@ -1358,7 +1916,11 @@ impl JsonCodec {
             }
             OperationCode::EndorsementRetract => {
                 #[derive(Deserialize)]
-                struct Args { work_fingerprint: String, club_id: u64, token_id: u64 }
+                struct Args {
+                    work_fingerprint: String,
+                    club_id: u64,
+                    token_id: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::EndorsementRetract {
@@ -1369,7 +1931,9 @@ impl JsonCodec {
             }
             OperationCode::EndorsementQuery => {
                 #[derive(Deserialize)]
-                struct Args { work_fingerprint: String }
+                struct Args {
+                    work_fingerprint: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::EndorsementQuery {
@@ -1378,7 +1942,10 @@ impl JsonCodec {
             }
             OperationCode::StateSync => {
                 #[derive(Deserialize)]
-                struct Args { #[serde(default)] work_fingerprints: Vec<String> }
+                struct Args {
+                    #[serde(default)]
+                    work_fingerprints: Vec<String>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::StateSync {
@@ -1387,7 +1954,9 @@ impl JsonCodec {
             }
             OperationCode::StateAlternatives => {
                 #[derive(Deserialize)]
-                struct Args { work_fingerprint: String }
+                struct Args {
+                    work_fingerprint: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::StateAlternatives {
@@ -1401,12 +1970,9 @@ impl JsonCodec {
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::MembershipJoinRequest {
-                    entry: args.entry,
-                })
+                Ok(WireRequest::MembershipJoinRequest { entry: args.entry })
             }
-            OperationCode::MembershipJoinResponse
-            | OperationCode::MembershipSyncResult => {
+            OperationCode::MembershipJoinResponse | OperationCode::MembershipSyncResult => {
                 Err(FrameParseError::PayloadDecode("server-only response op".into()).into())
             }
             OperationCode::MembershipEndorseOffer => {
@@ -1424,7 +1990,9 @@ impl JsonCodec {
             }
             OperationCode::MembershipEndorseAccept => {
                 #[derive(Deserialize)]
-                struct Args { server_id: String }
+                struct Args {
+                    server_id: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::MembershipEndorseAccept {
@@ -1433,7 +2001,9 @@ impl JsonCodec {
             }
             OperationCode::MembershipVerify => {
                 #[derive(Deserialize)]
-                struct Args { server_id: String }
+                struct Args {
+                    server_id: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::MembershipVerify {
@@ -1442,7 +2012,9 @@ impl JsonCodec {
             }
             OperationCode::GovernancePropose => {
                 #[derive(Deserialize)]
-                struct Args { transactions: Vec<crate::server::federation::GovernanceTx> }
+                struct Args {
+                    transactions: Vec<crate::server::federation::GovernanceTx>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::GovernancePropose {
@@ -1451,21 +2023,21 @@ impl JsonCodec {
             }
             OperationCode::GovernancePrepare => {
                 #[derive(Deserialize)]
-                struct Args { vote: crate::server::federation::PbftVote }
+                struct Args {
+                    vote: crate::server::federation::PbftVote,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::GovernancePrepare {
-                    vote: args.vote,
-                })
+                Ok(WireRequest::GovernancePrepare { vote: args.vote })
             }
             OperationCode::GovernanceCommit => {
                 #[derive(Deserialize)]
-                struct Args { vote: crate::server::federation::PbftVote }
+                struct Args {
+                    vote: crate::server::federation::PbftVote,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::GovernanceCommit {
-                    vote: args.vote,
-                })
+                Ok(WireRequest::GovernanceCommit { vote: args.vote })
             }
             OperationCode::CrdtSyncOpen
             | OperationCode::CrdtSyncClose
@@ -1475,33 +2047,63 @@ impl JsonCodec {
             | OperationCode::CrdtSyncText
             | OperationCode::CrdtAwarenessGet => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 match op {
-                    OperationCode::CrdtSyncOpen => Ok(WireRequest::CrdtSyncOpen { work_id: args.work_id }),
-                    OperationCode::CrdtSyncClose => Ok(WireRequest::CrdtSyncClose { work_id: args.work_id }),
-                    OperationCode::CrdtSyncFullState => Ok(WireRequest::CrdtSyncFullState { work_id: args.work_id }),
-                    OperationCode::CrdtSyncMaterialize => Ok(WireRequest::CrdtSyncMaterialize { work_id: args.work_id }),
-                    OperationCode::CrdtSyncSubscriberCount => Ok(WireRequest::CrdtSyncSubscriberCount { work_id: args.work_id }),
-                    OperationCode::CrdtSyncText => Ok(WireRequest::CrdtSyncText { work_id: args.work_id }),
-                    OperationCode::CrdtAwarenessGet => Ok(WireRequest::CrdtAwarenessGet { work_id: args.work_id }),
+                    OperationCode::CrdtSyncOpen => Ok(WireRequest::CrdtSyncOpen {
+                        work_id: args.work_id,
+                    }),
+                    OperationCode::CrdtSyncClose => Ok(WireRequest::CrdtSyncClose {
+                        work_id: args.work_id,
+                    }),
+                    OperationCode::CrdtSyncFullState => Ok(WireRequest::CrdtSyncFullState {
+                        work_id: args.work_id,
+                    }),
+                    OperationCode::CrdtSyncMaterialize => Ok(WireRequest::CrdtSyncMaterialize {
+                        work_id: args.work_id,
+                    }),
+                    OperationCode::CrdtSyncSubscriberCount => {
+                        Ok(WireRequest::CrdtSyncSubscriberCount {
+                            work_id: args.work_id,
+                        })
+                    }
+                    OperationCode::CrdtSyncText => Ok(WireRequest::CrdtSyncText {
+                        work_id: args.work_id,
+                    }),
+                    OperationCode::CrdtAwarenessGet => Ok(WireRequest::CrdtAwarenessGet {
+                        work_id: args.work_id,
+                    }),
                     _ => unreachable!(),
                 }
             }
             OperationCode::CrdtSyncUpdate => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, update: Vec<u8> }
+                struct Args {
+                    work_id: BeId,
+                    update: Vec<u8>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::CrdtSyncUpdate { work_id: args.work_id, update: args.update })
+                Ok(WireRequest::CrdtSyncUpdate {
+                    work_id: args.work_id,
+                    update: args.update,
+                })
             }
             OperationCode::CrdtSyncDiff => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, state_vector: Vec<u8> }
+                struct Args {
+                    work_id: BeId,
+                    state_vector: Vec<u8>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::CrdtSyncDiff { work_id: args.work_id, state_vector: args.state_vector })
+                Ok(WireRequest::CrdtSyncDiff {
+                    work_id: args.work_id,
+                    state_vector: args.state_vector,
+                })
             }
             OperationCode::CrdtAwarenessUpdate => {
                 #[derive(Deserialize)]
@@ -1511,7 +2113,10 @@ impl JsonCodec {
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::CrdtAwarenessUpdate { work_id: args.work_id, state: args.state })
+                Ok(WireRequest::CrdtAwarenessUpdate {
+                    work_id: args.work_id,
+                    state: args.state,
+                })
             }
             OperationCode::CrdtRegisterAuthor => {
                 #[derive(Deserialize)]
@@ -1528,14 +2133,28 @@ impl JsonCodec {
             }
             OperationCode::AttributionQuery => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId, start: Option<i64>, end: Option<i64> }
+                struct Args {
+                    work_id: BeId,
+                    start: Option<i64>,
+                    end: Option<i64>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::AttributionQuery { work_id: args.work_id, start: args.start, end: args.end })
+                Ok(WireRequest::AttributionQuery {
+                    work_id: args.work_id,
+                    start: args.start,
+                    end: args.end,
+                })
             }
             OperationCode::AttributionVerify => {
                 #[derive(Deserialize)]
-                struct Args { author_public_key: Vec<u8>, signature: Vec<u8>, timestamp: u64, server_id: Vec<u8>, span_fingerprint_hex: String }
+                struct Args {
+                    author_public_key: Vec<u8>,
+                    signature: Vec<u8>,
+                    timestamp: u64,
+                    server_id: Vec<u8>,
+                    span_fingerprint_hex: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::AttributionVerify {
@@ -1568,7 +2187,9 @@ mod tests {
     #[test]
     fn json_codec_response_roundtrip() {
         let codec = JsonCodec;
-        let encoded = codec.encode_response(42, &ResponseValue::Humber(7)).unwrap();
+        let encoded = codec
+            .encode_response(42, &ResponseValue::Humber(7))
+            .unwrap();
         let s = String::from_utf8(encoded).unwrap();
         assert!(s.contains("\"id\":42"));
     }
@@ -1576,7 +2197,9 @@ mod tests {
     #[test]
     fn json_codec_error_roundtrip() {
         let codec = JsonCodec;
-        let encoded = codec.encode_error(10, ErrorCode::NotAuthorized, "denied").unwrap();
+        let encoded = codec
+            .encode_error(10, ErrorCode::NotAuthorized, "denied")
+            .unwrap();
         let s = String::from_utf8(encoded).unwrap();
         assert!(s.contains("not_authorized"));
     }

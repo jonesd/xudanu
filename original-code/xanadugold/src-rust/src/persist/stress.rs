@@ -91,7 +91,9 @@ mod tests {
 
     impl TimingStats {
         fn new() -> Self {
-            TimingStats { samples: Vec::new() }
+            TimingStats {
+                samples: Vec::new(),
+            }
         }
 
         fn record(&mut self, micros: f64) {
@@ -140,10 +142,7 @@ mod tests {
             let divider = "=".repeat(60);
             eprintln!();
             eprintln!("{}", divider);
-            eprintln!(
-                "Scenario: {} ({})",
-                self.scenario, self.scale.label()
-            );
+            eprintln!("Scenario: {} ({})", self.scenario, self.scale.label());
             eprintln!("{}", divider);
             eprintln!("Total duration:    {:.1}ms", self.total_duration_ms as f64);
 
@@ -251,7 +250,11 @@ mod tests {
 
         let start = Instant::now();
         for i in 0..n {
-            let data = format!("warmup-chunk-{:08}-data-{:016x}", i, (i as u64).wrapping_mul(2654435761));
+            let data = format!(
+                "warmup-chunk-{:08}-data-{:016x}",
+                i,
+                (i as u64).wrapping_mul(2654435761)
+            );
             let t0 = Instant::now();
             let hash = store.write_chunk(data.as_bytes()).unwrap();
             write_stats.record(t0.elapsed().as_micros() as f64);
@@ -277,8 +280,18 @@ mod tests {
             chunks_on_disk,
             disk_bytes,
             extras: vec![
-                ("Logical bytes", format!("{} bytes ({:.2} MB)", bytes_written, bytes_written as f64 / (1024.0 * 1024.0))),
-                ("Writes/sec", format!("{:.0}", n as f64 / total.as_secs_f64())),
+                (
+                    "Logical bytes",
+                    format!(
+                        "{} bytes ({:.2} MB)",
+                        bytes_written,
+                        bytes_written as f64 / (1024.0 * 1024.0)
+                    ),
+                ),
+                (
+                    "Writes/sec",
+                    format!("{:.0}", n as f64 / total.as_secs_f64()),
+                ),
                 ("Cache capacity", format!("{}", store.cache_capacity())),
             ],
         };
@@ -337,7 +350,11 @@ mod tests {
                 all_refs.push(chunk_ref);
             }
             if text_idx % (unique_texts.max(1) / 10).max(1) == 0 {
-                eprintln!("  dedup: {}/{} unique texts written", text_idx + 1, unique_texts);
+                eprintln!(
+                    "  dedup: {}/{} unique texts written",
+                    text_idx + 1,
+                    unique_texts
+                );
             }
         }
         let total = start.elapsed();
@@ -370,7 +387,10 @@ mod tests {
                 ("Total editions", format!("{}", all_refs.len())),
                 ("Unique texts", format!("{}", unique_texts)),
                 ("Unique root hashes", format!("{}", unique_roots)),
-                ("Dedup ratio", format!("{:.2}x", all_refs.len() as f64 / unique_roots as f64)),
+                (
+                    "Dedup ratio",
+                    format!("{:.2}x", all_refs.len() as f64 / unique_roots as f64),
+                ),
             ],
         };
         report.print();
@@ -416,7 +436,11 @@ mod tests {
 
         let write_start = Instant::now();
         for i in 0..n {
-            let data = format!("thrash-{}-{:032x}", i, (i as u64).wrapping_mul(11400714819323198549));
+            let data = format!(
+                "thrash-{}-{:032x}",
+                i,
+                (i as u64).wrapping_mul(11400714819323198549)
+            );
             let t0 = Instant::now();
             let hash = store.write_chunk(data.as_bytes()).unwrap();
             write_stats.record(t0.elapsed().as_micros() as f64);
@@ -459,9 +483,15 @@ mod tests {
             extras: vec![
                 ("Chunks written", format!("{}", n)),
                 ("Cache capacity", format!("{}", store.cache_capacity())),
-                ("Oversubscription", format!("{:.1}x", n as f64 / store.cache_capacity() as f64)),
+                (
+                    "Oversubscription",
+                    format!("{:.1}x", n as f64 / store.cache_capacity() as f64),
+                ),
                 ("Random reads", format!("{}", read_count)),
-                ("Reads/sec", format!("{:.0}", read_count as f64 / read_dur.as_secs_f64())),
+                (
+                    "Reads/sec",
+                    format!("{:.0}", read_count as f64 / read_dur.as_secs_f64()),
+                ),
                 ("All reads ok", "YES".to_string()),
             ],
         };
@@ -556,10 +586,31 @@ mod tests {
             chunks_on_disk,
             disk_bytes: store.disk_bytes().unwrap(),
             extras: vec![
-                ("Hot set size", format!("{} ({:.0}%)", hot_count, hot_count as f64 / total_chunks as f64 * 100.0)),
+                (
+                    "Hot set size",
+                    format!(
+                        "{} ({:.0}%)",
+                        hot_count,
+                        hot_count as f64 / total_chunks as f64 * 100.0
+                    ),
+                ),
                 ("Cold set size", format!("{}", total_chunks - hot_count)),
-                ("Hot reads", format!("{} ({:.0}%)", hot_reads, hot_reads as f64 / read_count as f64 * 100.0)),
-                ("Cold reads", format!("{} ({:.0}%)", cold_reads, cold_reads as f64 / read_count as f64 * 100.0)),
+                (
+                    "Hot reads",
+                    format!(
+                        "{} ({:.0}%)",
+                        hot_reads,
+                        hot_reads as f64 / read_count as f64 * 100.0
+                    ),
+                ),
+                (
+                    "Cold reads",
+                    format!(
+                        "{} ({:.0}%)",
+                        cold_reads,
+                        cold_reads as f64 / read_count as f64 * 100.0
+                    ),
+                ),
                 ("Ideal hit rate", format!("{:.1}%", 80.0)),
                 ("Actual hit rate", format!("{:.1}%", hit_rate * 100.0)),
             ],
@@ -747,9 +798,19 @@ mod tests {
             extras: vec![
                 ("Editions", format!("{}", n_editions)),
                 ("Entries/edition", format!("{}", entries_per)),
-                ("Expected chunks/ed", format!("~{:.1} (1 root + {:.1} entry)", 1.0 + entries_per as f64 / chunks_per_entry as f64, entries_per as f64 / chunks_per_entry as f64)),
+                (
+                    "Expected chunks/ed",
+                    format!(
+                        "~{:.1} (1 root + {:.1} entry)",
+                        1.0 + entries_per as f64 / chunks_per_entry as f64,
+                        entries_per as f64 / chunks_per_entry as f64
+                    ),
+                ),
                 ("Actual avg chunks/ed", format!("{:.1}", avg_chunks)),
-                ("Total entries stored", format!("{}", n_editions * entries_per)),
+                (
+                    "Total entries stored",
+                    format!("{}", n_editions * entries_per),
+                ),
                 ("Deserialize all ok", "YES".to_string()),
             ],
         };
@@ -870,9 +931,18 @@ mod tests {
                 ("Works", format!("{}", n_works)),
                 ("Revisions/work", format!("{}", n_revisions)),
                 ("Chunks after write", format!("{}", chunks_after_write)),
-                ("Current read avg", format!("{:.1}µs", current_read_ns.mean())),
-                ("History read avg", format!("{:.1}µs", history_read_ns.mean())),
-                ("History read p95", format!("{:.1}µs", history_read_ns.percentile(95.0))),
+                (
+                    "Current read avg",
+                    format!("{:.1}µs", current_read_ns.mean()),
+                ),
+                (
+                    "History read avg",
+                    format!("{:.1}µs", history_read_ns.mean()),
+                ),
+                (
+                    "History read p95",
+                    format!("{:.1}µs", history_read_ns.percentile(95.0)),
+                ),
             ],
         };
         report.print();
@@ -973,8 +1043,14 @@ mod tests {
                 ("Ops executed", format!("{}", operations)),
                 ("New writes", format!("{}", writes_during)),
                 ("Reads", format!("{}", reads_during)),
-                ("Ratio (r:w)", format!("{:.1}:1", reads_during as f64 / writes_during.max(1) as f64)),
-                ("Ops/sec", format!("{:.0}", operations as f64 / total.as_secs_f64())),
+                (
+                    "Ratio (r:w)",
+                    format!("{:.1}:1", reads_during as f64 / writes_during.max(1) as f64),
+                ),
+                (
+                    "Ops/sec",
+                    format!("{:.0}", operations as f64 / total.as_secs_f64()),
+                ),
             ],
         };
         report.print();
@@ -1034,8 +1110,7 @@ mod tests {
             }
 
             let delete_count = alive.len() / 2;
-            let to_delete: Vec<[u8; 32]> =
-                alive.drain(0..delete_count).collect();
+            let to_delete: Vec<[u8; 32]> = alive.drain(0..delete_count).collect();
 
             for hash in &to_delete {
                 let path = {
@@ -1094,8 +1169,14 @@ mod tests {
                 ("Churn cycles", format!("{}", cycles)),
                 ("Objects/cycle", format!("{}", per_cycle)),
                 ("Surviving chunks", format!("{}", alive.len())),
-                ("First cycle disk", format!("{:.2}MB", first_disk as f64 / (1024.0 * 1024.0))),
-                ("Last cycle disk", format!("{:.2}MB", last_disk as f64 / (1024.0 * 1024.0))),
+                (
+                    "First cycle disk",
+                    format!("{:.2}MB", first_disk as f64 / (1024.0 * 1024.0)),
+                ),
+                (
+                    "Last cycle disk",
+                    format!("{:.2}MB", last_disk as f64 / (1024.0 * 1024.0)),
+                ),
                 ("Disk growth", format!("{:+.1}%", growth_pct)),
             ],
         };
@@ -1144,10 +1225,8 @@ mod tests {
                 let mut work = Work::new(w as u64, v0);
 
                 for rev in 1..n_revisions {
-                    let edition = make_edition_with_entries(
-                        entries_per,
-                        w as u64 * 10000 + rev as u64 * 100,
-                    );
+                    let edition =
+                        make_edition_with_entries(entries_per, w as u64 * 10000 + rev as u64 * 100);
                     work.revise(edition);
                 }
 
@@ -1229,7 +1308,10 @@ mod tests {
                 ("Revisions/work", format!("{}", n_revisions)),
                 ("Build time", format!("{:.0}ms", build_dur.as_millis())),
                 ("Open time", format!("{:.1}ms", open_dur.as_millis())),
-                ("Warmup (first read all)", format!("{:.0}ms", warmup_dur.as_millis())),
+                (
+                    "Warmup (first read all)",
+                    format!("{:.0}ms", warmup_dur.as_millis()),
+                ),
                 ("Current read avg", format!("{:.1}µs", current_times.mean())),
                 ("History read avg", format!("{:.1}µs", history_times.mean())),
                 ("All data intact", "YES".to_string()),
@@ -1275,14 +1357,19 @@ mod tests {
 
         let mut seed_hashes: Vec<[u8; 32]> = Vec::with_capacity(seed_count);
         for i in 0..seed_count {
-            let data = format!("concurrent-seed-{}-{:016x}", i, (i as u64).wrapping_mul(987654321));
+            let data = format!(
+                "concurrent-seed-{}-{:016x}",
+                i,
+                (i as u64).wrapping_mul(987654321)
+            );
             seed_hashes.push(store.write_chunk(data.as_bytes()).unwrap());
         }
 
         store.reset_stats();
 
-        let new_hashes: Vec<Arc<std::sync::Mutex<Vec<[u8; 32]>>>> =
-            (0..n_threads).map(|_| Arc::new(std::sync::Mutex::new(Vec::new()))).collect();
+        let new_hashes: Vec<Arc<std::sync::Mutex<Vec<[u8; 32]>>>> = (0..n_threads)
+            .map(|_| Arc::new(std::sync::Mutex::new(Vec::new())))
+            .collect();
 
         let start = Instant::now();
         let mut handles = Vec::new();
@@ -1305,28 +1392,43 @@ mod tests {
                     if op < 15 {
                         let data = format!(
                             "t{}-new-{}-{:032x}",
-                            t, local_writes,
+                            t,
+                            local_writes,
                             local_writes.wrapping_mul(0x9e3779b97f4a7c15)
                         );
                         match store.write_chunk(data.as_bytes()) {
                             Ok(hash) => {
-                                new_hashes_t.lock().unwrap_or_else(|e| e.into_inner()).push(hash);
+                                new_hashes_t
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .push(hash);
                             }
-                            Err(_) => { local_errors += 1; }
+                            Err(_) => {
+                                local_errors += 1;
+                            }
                         }
                         local_writes += 1;
                     } else {
                         let all_hashes = {
                             let mut combined = seed_hashes.clone();
-                            let extra = new_hashes_t.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                            let extra = new_hashes_t
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .clone();
                             combined.extend(extra);
                             combined
                         };
-                        if all_hashes.is_empty() { continue; }
+                        if all_hashes.is_empty() {
+                            continue;
+                        }
                         let idx = ((rng_state >> 16) as usize) % all_hashes.len();
                         match store.read_chunk(&all_hashes[idx]) {
-                            Ok(_) => { local_reads += 1; }
-                            Err(_) => { local_errors += 1; }
+                            Ok(_) => {
+                                local_reads += 1;
+                            }
+                            Err(_) => {
+                                local_errors += 1;
+                            }
                         }
                     }
                 }
@@ -1335,14 +1437,18 @@ mod tests {
             }));
         }
 
-        let (total_writes, total_reads, total_errors): (u64, u64, u64) =
-            handles.into_iter().map(|h| h.join().unwrap())
-                .fold((0, 0, 0), |(w, r, e), (dw, dr, de)| (w + dw, r + dr, e + de));
+        let (total_writes, total_reads, total_errors): (u64, u64, u64) = handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .fold((0, 0, 0), |(w, r, e), (dw, dr, de)| {
+                (w + dw, r + dr, e + de)
+            });
 
         let total = start.elapsed();
         let (hits, misses, hit_rate, cache_len) = store.cache_stats();
 
-        let all_new: Vec<[u8; 32]> = new_hashes.iter()
+        let all_new: Vec<[u8; 32]> = new_hashes
+            .iter()
             .flat_map(|m| m.lock().unwrap_or_else(|e| e.into_inner()).clone())
             .collect();
 
@@ -1376,18 +1482,39 @@ mod tests {
                 ("Total writes", format!("{}", total_writes)),
                 ("Total reads", format!("{}", total_reads)),
                 ("Errors during run", format!("{}", total_errors)),
-                ("Ops/sec", format!("{:.0}", (total_writes + total_reads) as f64 / total.as_secs_f64())),
+                (
+                    "Ops/sec",
+                    format!(
+                        "{:.0}",
+                        (total_writes + total_reads) as f64 / total.as_secs_f64()
+                    ),
+                ),
                 ("New chunks written", format!("{}", all_new.len())),
-                ("Verified readable", format!("{}/{}", verified, all_new.len())),
+                (
+                    "Verified readable",
+                    format!("{}/{}", verified, all_new.len()),
+                ),
                 ("Verify errors", format!("{}", verify_errors)),
                 ("Verify time", format!("{:.1}ms", verify_dur.as_millis())),
-                ("Cache contention", format!("{:.1} ops/µs", (total_writes + total_reads) as f64 / total.as_micros() as f64)),
+                (
+                    "Cache contention",
+                    format!(
+                        "{:.1} ops/µs",
+                        (total_writes + total_reads) as f64 / total.as_micros() as f64
+                    ),
+                ),
             ],
         };
         report.print();
 
-        assert_eq!(total_errors, 0, "no errors expected during concurrent operations");
-        assert_eq!(verify_errors, 0, "all written chunks must be readable after concurrent ops");
+        assert_eq!(
+            total_errors, 0,
+            "no errors expected during concurrent operations"
+        );
+        assert_eq!(
+            verify_errors, 0,
+            "all written chunks must be readable after concurrent ops"
+        );
 
         cleanup(&dir);
     }
@@ -1424,18 +1551,18 @@ mod tests {
 
         let mut work_refs: Vec<WorkChunkRef> = Vec::new();
 
-        eprintln!("  Building {} works x {} revisions x {} entries...",
-            n_works, n_revisions, entries_per);
+        eprintln!(
+            "  Building {} works x {} revisions x {} entries...",
+            n_works, n_revisions, entries_per
+        );
 
         for w in 0..n_works {
             let v0 = make_edition_with_entries(entries_per, w as u64 * 10000);
             let mut work = Work::new(w as u64, v0);
 
             for rev in 1..n_revisions {
-                let edition = make_edition_with_entries(
-                    entries_per,
-                    w as u64 * 10000 + rev as u64 * 100,
-                );
+                let edition =
+                    make_edition_with_entries(entries_per, w as u64 * 10000 + rev as u64 * 100);
                 work.revise(edition);
             }
 
@@ -1523,16 +1650,31 @@ mod tests {
                 ("--- COLD READS (cache empty) ---", String::new()),
                 ("Cold reads", format!("{}", cold_read_ns.count())),
                 ("Cold avg", format!("{:.1}µs", cold_read_ns.mean())),
-                ("Cold p50", format!("{:.1}µs", cold_read_ns.percentile(50.0))),
-                ("Cold p95", format!("{:.1}µs", cold_read_ns.percentile(95.0))),
-                ("Cold p99", format!("{:.1}µs", cold_read_ns.percentile(99.0))),
+                (
+                    "Cold p50",
+                    format!("{:.1}µs", cold_read_ns.percentile(50.0)),
+                ),
+                (
+                    "Cold p95",
+                    format!("{:.1}µs", cold_read_ns.percentile(95.0)),
+                ),
+                (
+                    "Cold p99",
+                    format!("{:.1}µs", cold_read_ns.percentile(99.0)),
+                ),
                 ("Cold hit rate", format!("{:.1}%", cold_rate * 100.0)),
                 ("", String::new()),
                 ("--- WARM READS (cache populated) ---", String::new()),
                 ("Warm reads", format!("{}", warm_read_ns.count())),
                 ("Warm avg", format!("{:.1}µs", warm_read_ns.mean())),
-                ("Warm p50", format!("{:.1}µs", warm_read_ns.percentile(50.0))),
-                ("Warm p95", format!("{:.1}µs", warm_read_ns.percentile(95.0))),
+                (
+                    "Warm p50",
+                    format!("{:.1}µs", warm_read_ns.percentile(50.0)),
+                ),
+                (
+                    "Warm p95",
+                    format!("{:.1}µs", warm_read_ns.percentile(95.0)),
+                ),
                 ("Warm hit rate", format!("{:.1}%", warm_rate * 100.0)),
                 ("", String::new()),
                 ("--- SEQUENTIAL + PREFETCH ---", String::new()),
@@ -1541,10 +1683,18 @@ mod tests {
                 ("Seq hit rate", format!("{:.1}%", seq_rate * 100.0)),
                 ("", String::new()),
                 ("--- FULL HISTORY LOAD COST ---", String::new()),
-                ("Full history cost", format!("{:.0}µs (est {} × cold avg)",
-                    total_revisions as f64 * cold_read_ns.mean(),
-                    total_revisions)),
-                ("Lazy first-access", format!("{:.0}µs (1 × cold avg)", cold_read_ns.mean())),
+                (
+                    "Full history cost",
+                    format!(
+                        "{:.0}µs (est {} × cold avg)",
+                        total_revisions as f64 * cold_read_ns.mean(),
+                        total_revisions
+                    ),
+                ),
+                (
+                    "Lazy first-access",
+                    format!("{:.0}µs (1 × cold avg)", cold_read_ns.mean()),
+                ),
                 ("Speedup", format!("{:.0}x", total_revisions as f64)),
             ],
         };

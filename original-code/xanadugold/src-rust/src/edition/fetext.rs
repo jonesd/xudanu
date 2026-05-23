@@ -1,7 +1,7 @@
 use super::edition::Edition;
 use super::mapping::Mapping;
-use super::xn_region::XnRegion;
 use super::range_element::RangeElement;
+use super::xn_region::XnRegion;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeText {
@@ -87,7 +87,10 @@ impl FeText {
     }
 
     pub fn insert(&self, position: i64, text: &FeText) -> FeText {
-        assert!(position >= 0 && position <= self.count(), "insert position out of range");
+        assert!(
+            position >= 0 && position <= self.count(),
+            "insert position out of range"
+        );
 
         if text.is_empty() {
             return self.clone();
@@ -98,10 +101,9 @@ impl FeText {
             };
         }
 
-        let inserted = text.edition.transformed_by_mapping(&Mapping::restricted(
-            position,
-            XnRegion::above(0),
-        ));
+        let inserted = text
+            .edition
+            .transformed_by_mapping(&Mapping::restricted(position, XnRegion::above(0)));
 
         let before_mapping = Mapping::restricted(0, XnRegion::below(position));
         let after_mapping = Mapping::restricted(text.count(), XnRegion::above(position));
@@ -130,7 +132,10 @@ impl FeText {
     }
 
     pub fn move_range(&self, pos: i64, region: &XnRegion) -> FeText {
-        assert!(pos >= 0 && pos <= self.count(), "move position out of range");
+        assert!(
+            pos >= 0 && pos <= self.count(),
+            "move position out of range"
+        );
 
         let moved = self.edition.domain().intersect(region);
         if moved.is_empty() {
@@ -145,9 +150,7 @@ impl FeText {
         let to = if XnRegion::below(0).intersects(dest) {
             0
         } else if dest.intersects(&self.edition.domain()) {
-            dest.intersect(&self.edition.domain())
-                .start()
-                .unwrap_or(0)
+            dest.intersect(&self.edition.domain()).start().unwrap_or(0)
         } else if XnRegion::above(self.count()).intersects(dest) {
             self.count()
         } else {
@@ -182,7 +185,10 @@ mod tests {
         assert!(FeText::new(edition).is_ok());
 
         let shifted = Edition::from_text("abc").transformed_by(5);
-        assert!(matches!(FeText::new(shifted), Err(FeTextError::NotZeroBased)));
+        assert!(matches!(
+            FeText::new(shifted),
+            Err(FeTextError::NotZeroBased)
+        ));
     }
 
     #[test]

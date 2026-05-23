@@ -112,10 +112,18 @@ impl std::fmt::Display for ManifestError {
             ManifestError::Io(e) => write!(f, "io error: {}", e),
             ManifestError::Json(e) => write!(f, "json error: {}", e),
             ManifestError::ChecksumMismatch { expected, actual } => {
-                write!(f, "checksum mismatch: expected {}, got {}", expected, actual)
+                write!(
+                    f,
+                    "checksum mismatch: expected {}, got {}",
+                    expected, actual
+                )
             }
             ManifestError::InvalidVersion { found, expected } => {
-                write!(f, "unsupported manifest version {} (expected {})", found, expected)
+                write!(
+                    f,
+                    "unsupported manifest version {} (expected {})",
+                    found, expected
+                )
             }
         }
     }
@@ -124,11 +132,15 @@ impl std::fmt::Display for ManifestError {
 impl std::error::Error for ManifestError {}
 
 impl From<std::io::Error> for ManifestError {
-    fn from(e: std::io::Error) -> Self { ManifestError::Io(e) }
+    fn from(e: std::io::Error) -> Self {
+        ManifestError::Io(e)
+    }
 }
 
 impl From<serde_json::Error> for ManifestError {
-    fn from(e: serde_json::Error) -> Self { ManifestError::Json(e) }
+    fn from(e: serde_json::Error) -> Self {
+        ManifestError::Json(e)
+    }
 }
 
 fn sort_json_value(value: &mut serde_json::Value) {
@@ -152,7 +164,7 @@ fn sort_json_value(value: &mut serde_json::Value) {
 }
 
 fn compute_manifest_checksum(manifest: &Manifest) -> String {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut copy = manifest.clone();
     copy.checksum = String::new();
     copy.created_at = String::new();
@@ -216,7 +228,10 @@ pub fn manifest_path(data_dir: &Path) -> std::path::PathBuf {
     data_dir.join("manifest.json")
 }
 
-pub fn create_empty_manifest(system_clubs: crate::server::SystemClubs, grand_map_id_counter: BeId) -> Manifest {
+pub fn create_empty_manifest(
+    system_clubs: crate::server::SystemClubs,
+    grand_map_id_counter: BeId,
+) -> Manifest {
     Manifest {
         format_version: CURRENT_MANIFEST_VERSION,
         created_at: iso_now(),
@@ -304,7 +319,10 @@ mod tests {
         write_manifest(&mut manifest, &path).unwrap();
 
         let content = std::fs::read_to_string(&path).unwrap();
-        let corrupted = content.replace("\"grand_map_id_counter\": 100", "\"grand_map_id_counter\": 999");
+        let corrupted = content.replace(
+            "\"grand_map_id_counter\": 100",
+            "\"grand_map_id_counter\": 999",
+        );
         std::fs::write(&path, corrupted).unwrap();
 
         let result = read_manifest(&path);
@@ -334,7 +352,10 @@ mod tests {
         let result = read_manifest(&path);
         assert!(result.is_err());
         match result.unwrap_err() {
-            ManifestError::InvalidVersion { found: 99, expected: CURRENT_MANIFEST_VERSION } => {}
+            ManifestError::InvalidVersion {
+                found: 99,
+                expected: CURRENT_MANIFEST_VERSION,
+            } => {}
             other => panic!("expected InvalidVersion, got: {}", other),
         }
 
@@ -378,7 +399,10 @@ mod tests {
     #[test]
     fn manifest_path_is_data_dir_manifest_json() {
         let path = manifest_path(Path::new("/tmp/xudanu-data"));
-        assert_eq!(path, std::path::PathBuf::from("/tmp/xudanu-data/manifest.json"));
+        assert_eq!(
+            path,
+            std::path::PathBuf::from("/tmp/xudanu-data/manifest.json")
+        );
     }
 
     #[test]

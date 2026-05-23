@@ -91,7 +91,11 @@ impl std::fmt::Display for SnapshotError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SnapshotError::NotFrozen { work_id } => {
-                write!(f, "work {} is not frozen; original context must be frozen", work_id)
+                write!(
+                    f,
+                    "work {} is not frozen; original context must be frozen",
+                    work_id
+                )
             }
             SnapshotError::CannotEditFrozen { work_id } => {
                 write!(f, "cannot edit frozen work {}", work_id)

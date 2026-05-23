@@ -71,7 +71,10 @@ impl RecorderQuery {
     }
 
     pub fn content_fingerprints(&self) -> Vec<[u8; 32]> {
-        self.watched_content.iter().map(|e| e.content_fingerprint()).collect()
+        self.watched_content
+            .iter()
+            .map(|e| e.content_fingerprint())
+            .collect()
     }
 }
 
@@ -113,7 +116,13 @@ impl Fossil {
         }
     }
 
-    pub fn record(&mut self, element: RangeElement, source_edition_id: Option<u64>, source_work_id: Option<u64>, is_direct: bool) -> bool {
+    pub fn record(
+        &mut self,
+        element: RangeElement,
+        source_edition_id: Option<u64>,
+        source_work_id: Option<u64>,
+        is_direct: bool,
+    ) -> bool {
         if self.is_extinct {
             return false;
         }
@@ -204,7 +213,11 @@ pub struct Matcher {
 }
 
 impl Matcher {
-    pub fn new(fossil_id: RecorderId, query: RecorderQuery, target_edition_id: Option<u64>) -> Self {
+    pub fn new(
+        fossil_id: RecorderId,
+        query: RecorderQuery,
+        target_edition_id: Option<u64>,
+    ) -> Self {
         Matcher {
             target_edition_id,
             fossil_id,
@@ -224,14 +237,24 @@ impl AgendaItem for Matcher {
         self.completed
     }
 
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 impl Matcher {
-    pub fn execute<F>(&mut self, mut find_matching: F) -> Vec<(RangeElement, Option<u64>, Option<u64>, bool)>
+    pub fn execute<F>(
+        &mut self,
+        mut find_matching: F,
+    ) -> Vec<(RangeElement, Option<u64>, Option<u64>, bool)>
     where
-        F: FnMut(&RecorderQuery, Option<u64>) -> Vec<(RangeElement, Option<u64>, Option<u64>, bool)>,
+        F: FnMut(
+            &RecorderQuery,
+            Option<u64>,
+        ) -> Vec<(RangeElement, Option<u64>, Option<u64>, bool)>,
     {
         self.completed = true;
         find_matching(&self.query, self.target_edition_id)
@@ -277,13 +300,23 @@ impl AgendaItem for RecorderTrigger {
         self.completed
     }
 
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 impl RecorderTrigger {
     pub fn execute(self) -> (RecorderId, RangeElement, Option<u64>, Option<u64>, bool) {
-        (self.fossil_id, self.element, self.source_edition_id, self.source_work_id, self.is_direct)
+        (
+            self.fossil_id,
+            self.element,
+            self.source_edition_id,
+            self.source_work_id,
+            self.is_direct,
+        )
     }
 }
 
@@ -400,7 +433,13 @@ impl RecorderSystem {
         source_work_id: Option<u64>,
         is_direct: bool,
     ) {
-        self.record_result(fossil_id, element, source_edition_id, source_work_id, is_direct);
+        self.record_result(
+            fossil_id,
+            element,
+            source_edition_id,
+            source_work_id,
+            is_direct,
+        );
     }
 
     pub fn schedule_matcher(
@@ -409,7 +448,8 @@ impl RecorderSystem {
         query: RecorderQuery,
         target_edition_id: Option<u64>,
     ) {
-        self.agenda.add(Box::new(Matcher::new(fossil_id, query, target_edition_id)));
+        self.agenda
+            .add(Box::new(Matcher::new(fossil_id, query, target_edition_id)));
     }
 
     pub fn process_agenda(&mut self) -> usize {
@@ -421,13 +461,20 @@ impl RecorderSystem {
         processed
     }
 
-    pub fn process_agenda_with_engine(&mut self, engine: &mut super::backfollow::BackfollowEngine) -> usize {
+    pub fn process_agenda_with_engine(
+        &mut self,
+        engine: &mut super::backfollow::BackfollowEngine,
+    ) -> usize {
         use super::transclusion::{TransclusionQuery, WorkQuery};
         let mut matchers: Vec<(RecorderId, RecorderQuery, Option<u64>)> = Vec::new();
         for item in &mut self.agenda.items {
             if let Some(matcher) = item.as_any_mut().downcast_mut::<Matcher>() {
                 if !matcher.is_complete() {
-                    matchers.push((matcher.fossil_id, matcher.query.clone(), matcher.target_edition_id));
+                    matchers.push((
+                        matcher.fossil_id,
+                        matcher.query.clone(),
+                        matcher.target_edition_id,
+                    ));
                     matcher.step();
                 }
             }
@@ -450,7 +497,8 @@ impl RecorderSystem {
                         }
                         super::recorder::RecorderKind::Works => {
                             let wq = WorkQuery::all();
-                            engine.find_works_for_content(content, &wq)
+                            engine
+                                .find_works_for_content(content, &wq)
                                 .into_iter()
                                 .map(|wid| super::transclusion::TransclusionResult {
                                     element: super::range_element::RangeElement::work(wid),
@@ -463,7 +511,11 @@ impl RecorderSystem {
                 }
             }
             for result in all_results {
-                let source_id = result.element.as_work_id().or(result.element.as_edition_id()).or(target_edition_id);
+                let source_id = result
+                    .element
+                    .as_work_id()
+                    .or(result.element.as_edition_id())
+                    .or(target_edition_id);
                 self.record_result(fossil_id, result.element, source_id, None, result.is_direct);
             }
         }
@@ -638,7 +690,11 @@ mod tests {
     #[test]
     fn agenda_step_completes_items() {
         let mut agenda = Agenda::new();
-        agenda.add(Box::new(Matcher::new(1, RecorderQuery::transcluders(), None)));
+        agenda.add(Box::new(Matcher::new(
+            1,
+            RecorderQuery::transcluders(),
+            None,
+        )));
         assert_eq!(agenda.len(), 1);
         let count = agenda.step_all();
         assert_eq!(count, 1);
@@ -663,7 +719,8 @@ mod tests {
         crate::edition::init_endorsement_flags();
         let mut engine = crate::edition::backfollow::BackfollowEngine::new();
         let shared = RangeElement::text("hello");
-        let work = crate::edition::Work::new(1, crate::edition::Edition::from_one(0, shared.clone()));
+        let work =
+            crate::edition::Work::new(1, crate::edition::Edition::from_one(0, shared.clone()));
         let prop = crate::edition::backfollow::BackfollowEngine::make_work_prop(&work, None, None);
         engine.register_work_with_prop(work, 1, None, prop);
 
@@ -671,10 +728,16 @@ mod tests {
         let results = matcher.execute(|query, target| {
             let tq = crate::edition::TransclusionQuery::all();
             let found = engine.find_transcluders(&shared, &tq);
-            found.into_iter().map(|r| (r.element, target, None, r.is_direct)).collect()
+            found
+                .into_iter()
+                .map(|r| (r.element, target, None, r.is_direct))
+                .collect()
         });
         assert!(matcher.is_complete());
-        assert!(!results.is_empty(), "matcher should find results from engine");
+        assert!(
+            !results.is_empty(),
+            "matcher should find results from engine"
+        );
     }
 
     #[test]
@@ -682,12 +745,16 @@ mod tests {
         crate::edition::init_endorsement_flags();
         let mut engine = crate::edition::backfollow::BackfollowEngine::new();
         let shared = RangeElement::text("X");
-        let work_a = crate::edition::Work::new(1, crate::edition::Edition::from_one(0, shared.clone()));
-        let prop_a = crate::edition::backfollow::BackfollowEngine::make_work_prop(&work_a, None, None);
+        let work_a =
+            crate::edition::Work::new(1, crate::edition::Edition::from_one(0, shared.clone()));
+        let prop_a =
+            crate::edition::backfollow::BackfollowEngine::make_work_prop(&work_a, None, None);
         engine.register_work_with_prop(work_a, 1, None, prop_a);
 
-        let work_b = crate::edition::Work::new(2, crate::edition::Edition::from_one(0, shared.clone()));
-        let prop_b = crate::edition::backfollow::BackfollowEngine::make_work_prop(&work_b, None, None);
+        let work_b =
+            crate::edition::Work::new(2, crate::edition::Edition::from_one(0, shared.clone()));
+        let prop_b =
+            crate::edition::backfollow::BackfollowEngine::make_work_prop(&work_b, None, None);
         engine.register_work_with_prop(work_b, 2, None, prop_b);
 
         let mut sys = RecorderSystem::new();
@@ -696,7 +763,11 @@ mod tests {
         sys.schedule_trigger(fossil_id, RangeElement::work(2), Some(2), Some(2), true);
 
         let fossil = sys.get_fossil(fossil_id).unwrap();
-        assert_eq!(fossil.result_count(), 2, "fossil should have recorded both works as transcluders");
+        assert_eq!(
+            fossil.result_count(),
+            2,
+            "fossil should have recorded both works as transcluders"
+        );
     }
 
     #[test]
@@ -707,6 +778,10 @@ mod tests {
         assert_eq!(sys.get_fossil(id).unwrap().result_count(), 1);
         sys.extinguish_fossil(id);
         sys.schedule_trigger(id, RangeElement::edition(2), None, None, true);
-        assert_eq!(sys.get_fossil(id).unwrap().result_count(), 1, "extinguished fossil should not record new results");
+        assert_eq!(
+            sys.get_fossil(id).unwrap().result_count(),
+            1,
+            "extinguished fossil should not record new results"
+        );
     }
 }

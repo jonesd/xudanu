@@ -18,9 +18,16 @@ struct ContentAddressFile {
 
 impl serde::Serialize for ContentAddressIndex {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let mut entries: Vec<(String, BeId)> = self.fingerprint_to_be_id.iter().map(|(k, v)| {
-            (k.iter().map(|b| format!("{:02x}", b)).collect::<String>(), *v)
-        }).collect();
+        let mut entries: Vec<(String, BeId)> = self
+            .fingerprint_to_be_id
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                    *v,
+                )
+            })
+            .collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
         let file = ContentAddressFile {
             entries,
@@ -37,11 +44,13 @@ impl<'de> serde::Deserialize<'de> for ContentAddressIndex {
         let mut be_id_to_fingerprint = HashMap::new();
         for (hex_str, be_id) in &file.entries {
             if hex_str.len() != 64 {
-                return Err(serde::de::Error::custom("content address hash must be 64 hex chars"));
+                return Err(serde::de::Error::custom(
+                    "content address hash must be 64 hex chars",
+                ));
             }
             let mut hash = [0u8; 32];
             for i in 0..32 {
-                hash[i] = u8::from_str_radix(&hex_str[i*2..i*2+2], 16)
+                hash[i] = u8::from_str_radix(&hex_str[i * 2..i * 2 + 2], 16)
                     .map_err(|_| serde::de::Error::custom("invalid hex in content address"))?;
             }
             fingerprint_to_be_id.insert(hash, *be_id);
@@ -210,6 +219,9 @@ mod tests {
         assert_eq!(idx.fingerprint_count(), 4);
         let id_b_ed1 = idx.lookup(&RangeElement::text("b")).unwrap();
         let id_b_ed2 = bindings2.iter().find(|(p, _)| *p == 1).unwrap().1;
-        assert_eq!(id_b_ed1, id_b_ed2, "'b' should share the same canonical BeId across editions");
+        assert_eq!(
+            id_b_ed1, id_b_ed2,
+            "'b' should share the same canonical BeId across editions"
+        );
     }
 }

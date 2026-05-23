@@ -1,5 +1,5 @@
 use blake3::Hasher;
-use ed25519_dalek::{SigningKey, VerifyingKey, Signature};
+use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 
 const PROVENANCE_DOMAIN: &[u8] = b"xudanu/v1/provenance";
 
@@ -31,20 +31,32 @@ mod serde_impl {
                 signature: self.signature.to_vec(),
                 timestamp: self.timestamp,
                 server_id: self.server_id.to_vec(),
-            }.serialize(s)
+            }
+            .serialize(s)
         }
     }
 
     impl<'de> Deserialize<'de> for Provenance {
         fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
             let data = ProvenanceData::deserialize(d)?;
-            let author_public_key: [u8; 32] = data.author_public_key.try_into()
+            let author_public_key: [u8; 32] = data
+                .author_public_key
+                .try_into()
                 .map_err(|_| serde::de::Error::custom("author_public_key must be 32 bytes"))?;
-            let signature: [u8; 64] = data.signature.try_into()
+            let signature: [u8; 64] = data
+                .signature
+                .try_into()
                 .map_err(|_| serde::de::Error::custom("signature must be 64 bytes"))?;
-            let server_id: [u8; 32] = data.server_id.try_into()
+            let server_id: [u8; 32] = data
+                .server_id
+                .try_into()
                 .map_err(|_| serde::de::Error::custom("server_id must be 32 bytes"))?;
-            Ok(Provenance { author_public_key, signature, timestamp: data.timestamp, server_id })
+            Ok(Provenance {
+                author_public_key,
+                signature,
+                timestamp: data.timestamp,
+                server_id,
+            })
         }
     }
 }
@@ -78,7 +90,11 @@ impl<'de> serde::Deserialize<'de> for SpanProvenance {
             provenance: Provenance,
         }
         let data = SpanProvenanceData::deserialize(d)?;
-        Ok(SpanProvenance { start: data.start, end: data.end, provenance: data.provenance })
+        Ok(SpanProvenance {
+            start: data.start,
+            end: data.end,
+            provenance: data.provenance,
+        })
     }
 }
 
@@ -118,7 +134,12 @@ pub fn sign_span(
     server_id: &[u8; 32],
 ) -> Provenance {
     let span_fp = compute_span_fingerprint(element_fingerprints);
-    let payload = compute_signing_payload(&span_fp, &signing_key.verifying_key().to_bytes(), timestamp, server_id);
+    let payload = compute_signing_payload(
+        &span_fp,
+        &signing_key.verifying_key().to_bytes(),
+        timestamp,
+        server_id,
+    );
     let signature = crate::crypto::sign::sign_bytes(signing_key, &payload);
     Provenance {
         author_public_key: signing_key.verifying_key().to_bytes(),
@@ -128,10 +149,7 @@ pub fn sign_span(
     }
 }
 
-pub fn verify_span_provenance(
-    provenance: &Provenance,
-    element_fingerprints: &[[u8; 32]],
-) -> bool {
+pub fn verify_span_provenance(provenance: &Provenance, element_fingerprints: &[[u8; 32]]) -> bool {
     let span_fp = compute_span_fingerprint(element_fingerprints);
     verify_span_provenance_with_span_fp(provenance, &span_fp)
 }
@@ -144,7 +162,12 @@ pub fn verify_span_provenance_with_span_fp(
         Ok(vk) => vk,
         Err(_) => return false,
     };
-    let payload = compute_signing_payload(span_fingerprint, &provenance.author_public_key, provenance.timestamp, &provenance.server_id);
+    let payload = compute_signing_payload(
+        span_fingerprint,
+        &provenance.author_public_key,
+        provenance.timestamp,
+        &provenance.server_id,
+    );
     let signature = Signature::from_bytes(&provenance.signature);
     crate::crypto::sign::verify_signature(&verifying_key, &payload, &signature).is_ok()
 }
@@ -218,14 +241,20 @@ mod tests {
     fn same_content_same_fingerprint() {
         let fps1 = vec![RangeElement::text("abc").content_fingerprint()];
         let fps2 = vec![RangeElement::text("abc").content_fingerprint()];
-        assert_eq!(compute_span_fingerprint(&fps1), compute_span_fingerprint(&fps2));
+        assert_eq!(
+            compute_span_fingerprint(&fps1),
+            compute_span_fingerprint(&fps2)
+        );
     }
 
     #[test]
     fn different_content_different_fingerprint() {
         let fps1 = vec![RangeElement::text("abc").content_fingerprint()];
         let fps2 = vec![RangeElement::text("xyz").content_fingerprint()];
-        assert_ne!(compute_span_fingerprint(&fps1), compute_span_fingerprint(&fps2));
+        assert_ne!(
+            compute_span_fingerprint(&fps1),
+            compute_span_fingerprint(&fps2)
+        );
     }
 
     #[test]
@@ -249,7 +278,11 @@ mod tests {
         let fps = make_fingerprints();
         let mut server_id = [0u8; 32];
         let prov = sign_span(&key, &fps, 99999, &server_id);
-        let sp = SpanProvenance { start: 0, end: 3, provenance: prov };
+        let sp = SpanProvenance {
+            start: 0,
+            end: 3,
+            provenance: prov,
+        };
 
         let json = serde_json::to_string(&sp).unwrap();
         let restored: SpanProvenance = serde_json::from_str(&json).unwrap();

@@ -124,8 +124,7 @@ pub struct ChunkStore {
 impl ChunkStore {
     pub fn open(base_dir: &Path) -> Result<Self, ChunkError> {
         let chunks_dir = base_dir.join("chunks");
-        std::fs::create_dir_all(&chunks_dir)
-            .map_err(|e| ChunkError::Io(e.to_string()))?;
+        std::fs::create_dir_all(&chunks_dir).map_err(|e| ChunkError::Io(e.to_string()))?;
         Self::cleanup_tmp_files(&chunks_dir);
         Ok(ChunkStore {
             base_dir: base_dir.to_path_buf(),
@@ -168,13 +167,10 @@ impl ChunkStore {
                 return Ok(hash);
             }
             let dir = chunk_dir(&self.base_dir, &hash);
-            std::fs::create_dir_all(&dir)
-                .map_err(|e| ChunkError::Io(e.to_string()))?;
+            std::fs::create_dir_all(&dir).map_err(|e| ChunkError::Io(e.to_string()))?;
             let tmp_path = path.with_extension("tmp");
-            std::fs::write(&tmp_path, data)
-                .map_err(|e| ChunkError::Io(e.to_string()))?;
-            std::fs::rename(&tmp_path, &path)
-                .map_err(|e| ChunkError::Io(e.to_string()))?;
+            std::fs::write(&tmp_path, data).map_err(|e| ChunkError::Io(e.to_string()))?;
+            std::fs::rename(&tmp_path, &path).map_err(|e| ChunkError::Io(e.to_string()))?;
             cache.insert(hash, data.to_vec());
         }
         Ok(hash)
@@ -192,11 +188,11 @@ impl ChunkStore {
         let path = chunk_path(&self.base_dir, hash);
         if !path.exists() {
             return Err(ChunkError::CorruptData(format!(
-                "chunk not found: {}", hash_to_hex(hash)
+                "chunk not found: {}",
+                hash_to_hex(hash)
             )));
         }
-        let data = std::fs::read(&path)
-            .map_err(|e| ChunkError::Io(e.to_string()))?;
+        let data = std::fs::read(&path).map_err(|e| ChunkError::Io(e.to_string()))?;
         let actual = compute_hash(&data);
         if &actual != hash {
             return Err(ChunkError::HashMismatch {
@@ -204,7 +200,10 @@ impl ChunkStore {
                 actual: hash_to_hex(&actual),
             });
         }
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).insert(*hash, data.clone());
+        self.cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(*hash, data.clone());
         Ok(data)
     }
 
@@ -215,8 +214,7 @@ impl ChunkStore {
     pub fn delete_chunk(&self, hash: &[u8; 32]) -> Result<(), ChunkError> {
         let path = chunk_path(&self.base_dir, hash);
         if path.exists() {
-            std::fs::remove_file(&path)
-                .map_err(|e| ChunkError::Io(e.to_string()))?;
+            std::fs::remove_file(&path).map_err(|e| ChunkError::Io(e.to_string()))?;
         }
         {
             let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
@@ -245,15 +243,13 @@ impl ChunkStore {
             return Ok(Vec::new());
         }
         let mut hashes = Vec::new();
-        for entry in std::fs::read_dir(&chunks_dir)
-            .map_err(|e| ChunkError::Io(e.to_string()))?
-        {
+        for entry in std::fs::read_dir(&chunks_dir).map_err(|e| ChunkError::Io(e.to_string()))? {
             let entry = entry.map_err(|e| ChunkError::Io(e.to_string()))?;
             if !entry.path().is_dir() {
                 continue;
             }
-            for file_entry in std::fs::read_dir(entry.path())
-                .map_err(|e| ChunkError::Io(e.to_string()))?
+            for file_entry in
+                std::fs::read_dir(entry.path()).map_err(|e| ChunkError::Io(e.to_string()))?
             {
                 let file_entry = file_entry.map_err(|e| ChunkError::Io(e.to_string()))?;
                 let name = file_entry.file_name();
@@ -285,7 +281,11 @@ impl ChunkStore {
         let hits = self.cache_hits.load(AtomicOrdering::Relaxed);
         let misses = self.cache_misses.load(AtomicOrdering::Relaxed);
         let total = hits + misses;
-        let rate = if total > 0 { hits as f64 / total as f64 } else { 0.0 };
+        let rate = if total > 0 {
+            hits as f64 / total as f64
+        } else {
+            0.0
+        };
         let len = self.cache_len();
         (hits, misses, rate, len)
     }
@@ -309,15 +309,13 @@ impl ChunkStore {
             return Ok(0);
         }
         let mut total: u64 = 0;
-        for entry in std::fs::read_dir(&chunks_dir)
-            .map_err(|e| ChunkError::Io(e.to_string()))?
-        {
+        for entry in std::fs::read_dir(&chunks_dir).map_err(|e| ChunkError::Io(e.to_string()))? {
             let entry = entry.map_err(|e| ChunkError::Io(e.to_string()))?;
             if !entry.path().is_dir() {
                 continue;
             }
-            for file_entry in std::fs::read_dir(entry.path())
-                .map_err(|e| ChunkError::Io(e.to_string()))?
+            for file_entry in
+                std::fs::read_dir(entry.path()).map_err(|e| ChunkError::Io(e.to_string()))?
             {
                 let file_entry = file_entry.map_err(|e| ChunkError::Io(e.to_string()))?;
                 let name = file_entry.file_name();
@@ -344,11 +342,7 @@ mod tests {
     fn temp_dir() -> PathBuf {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "xudanu_chunk_test_{}_{}",
-            std::process::id(),
-            id
-        ))
+        std::env::temp_dir().join(format!("xudanu_chunk_test_{}_{}", std::process::id(), id))
     }
 
     #[test]
@@ -723,7 +717,9 @@ mod tests {
     #[test]
     fn open_nonexistent_nested_directory() {
         let dir = std::env::temp_dir().join(format!(
-            "xudanu_chunk_nested_test_{}_{}", std::process::id(), 9999
+            "xudanu_chunk_nested_test_{}_{}",
+            std::process::id(),
+            9999
         ));
         let nested = dir.join("a").join("b").join("c");
         let _ = std::fs::remove_dir_all(&dir);
@@ -828,9 +824,7 @@ mod tests {
         for _ in 0..4 {
             let store = Arc::clone(&store);
             let data = data.to_vec();
-            handles.push(thread::spawn(move || {
-                store.write_chunk(&data)
-            }));
+            handles.push(thread::spawn(move || store.write_chunk(&data)));
         }
 
         let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
@@ -883,8 +877,10 @@ mod tests {
             }));
         }
 
-        let (total_writes, total_reads): (u64, u64) =
-            handles.into_iter().map(|h| h.join().unwrap()).fold((0, 0), |(w, r), (dw, dr)| (w + dw, r + dr));
+        let (total_writes, total_reads): (u64, u64) = handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .fold((0, 0), |(w, r), (dw, dr)| (w + dw, r + dr));
         assert!(total_writes > 0);
         assert!(total_reads > 0);
 
@@ -904,19 +900,27 @@ mod tests {
         store.reset_stats();
 
         for i in 0..(CACHE_CAPACITY - 1) {
-            store.write_chunk(format!("filler-{}", i).as_bytes()).unwrap();
+            store
+                .write_chunk(format!("filler-{}", i).as_bytes())
+                .unwrap();
         }
 
         let read_a = store.read_chunk(&h_a);
         let (hits_after_a, _, _, _) = store.cache_stats();
         assert!(read_a.is_ok());
-        assert!(hits_after_a >= 1, "a should be a cache hit (recently accessed)");
+        assert!(
+            hits_after_a >= 1,
+            "a should be a cache hit (recently accessed)"
+        );
 
         store.reset_stats();
         let read_b = store.read_chunk(&h_b);
         let (hits_after_b, misses_after_b, _, _) = store.cache_stats();
         assert!(read_b.is_ok());
-        assert!(misses_after_b >= 1, "b should be a cache miss (evicted, served from disk)");
+        assert!(
+            misses_after_b >= 1,
+            "b should be a cache miss (evicted, served from disk)"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

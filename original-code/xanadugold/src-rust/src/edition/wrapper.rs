@@ -485,14 +485,8 @@ mod tests {
 
     #[test]
     fn feset_union() {
-        let a = FeSet::from_elements(&[
-            RangeElement::text("a"),
-            RangeElement::text("b"),
-        ]);
-        let b = FeSet::from_elements(&[
-            RangeElement::text("b"),
-            RangeElement::text("c"),
-        ]);
+        let a = FeSet::from_elements(&[RangeElement::text("a"), RangeElement::text("b")]);
+        let b = FeSet::from_elements(&[RangeElement::text("b"), RangeElement::text("c")]);
         let result = a.union_with(&b);
         assert_eq!(result.count(), 3);
         assert!(result.includes(&RangeElement::text("a")));
@@ -502,10 +496,7 @@ mod tests {
 
     #[test]
     fn feset_elements() {
-        let set = FeSet::from_elements(&[
-            RangeElement::text("x"),
-            RangeElement::text("y"),
-        ]);
+        let set = FeSet::from_elements(&[RangeElement::text("x"), RangeElement::text("y")]);
         let elems = set.elements();
         assert_eq!(elems.len(), 2);
     }
@@ -528,8 +519,9 @@ mod tests {
 
     #[test]
     fn path_check_shifted_fails() {
-        let edition = Edition::from_text_elements(&[RangeElement::label(1, RangeElement::text("a"))])
-            .transformed_by(5);
+        let edition =
+            Edition::from_text_elements(&[RangeElement::label(1, RangeElement::text("a"))])
+                .transformed_by(5);
         assert!(!check_path(&edition));
     }
 

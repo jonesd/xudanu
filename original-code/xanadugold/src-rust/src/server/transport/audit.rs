@@ -97,7 +97,10 @@ impl CollectorAuditLog {
     }
 
     pub fn events(&self) -> Vec<AuditEvent> {
-        self.events.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn events_of_kind(&self, kind: AuditEventKind) -> Vec<AuditEvent> {
@@ -111,13 +114,19 @@ impl CollectorAuditLog {
     }
 
     pub fn clear(&self) {
-        self.events.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 }
 
 impl AuditLog for CollectorAuditLog {
     fn record(&self, event: AuditEvent) {
-        self.events.lock().unwrap_or_else(|e| e.into_inner()).push(event);
+        self.events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(event);
     }
 }
 
@@ -948,7 +957,9 @@ mod tests {
 
         assert!(monitor.should_disconnect(SessionId::new(3), addr));
         let limits = collector.events_of_kind(AuditEventKind::RateLimit);
-        assert!(limits.iter().any(|e| e.detail.contains("session limit per ip")));
+        assert!(limits
+            .iter()
+            .any(|e| e.detail.contains("session limit per ip")));
     }
 
     #[test]

@@ -1,24 +1,22 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::edition::{
-    BeId, BeRangeElement, BeStorage, Edition, GrandMap, InMemoryBeStorage,
-    Work, XnRegion, ContentAddressIndex,
-    RangeElement, hash_content, u64_from_hash,
-};
-use crate::edition::backfollow::BackfollowEngine;
-use crate::ent::trace::TracePosition;
-use crate::edition::blob_store::{BlobMeta, BlobStore, MemoryBackend};
-use crate::edition::links::{HyperLink, HyperRef};
-use crate::edition::transclusion::{TransclusionQuery, WorkQuery};
 use super::admin::{AdminState, IdGrant, SessionInfo};
 use super::club::Club;
 use super::crdt_manager::CrdtManager;
 use super::detector::{Detector, DetectorList, Event};
 use super::error::ServerError;
 use super::keymaster::KeyMaster;
-use super::lock::{Lock, LockCredential, BooLockSmith, LockSmith};
+use super::lock::{BooLockSmith, Lock, LockCredential, LockSmith};
 use super::session::{Session, SessionId};
-
+use crate::edition::backfollow::BackfollowEngine;
+use crate::edition::blob_store::{BlobMeta, BlobStore, MemoryBackend};
+use crate::edition::links::{HyperLink, HyperRef};
+use crate::edition::transclusion::{TransclusionQuery, WorkQuery};
+use crate::edition::{
+    hash_content, u64_from_hash, BeId, BeRangeElement, BeStorage, ContentAddressIndex, Edition,
+    GrandMap, InMemoryBeStorage, RangeElement, Work, XnRegion,
+};
+use crate::ent::trace::TracePosition;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -78,7 +76,8 @@ pub struct Server {
     pub(crate) club_names: HashMap<String, BeId>,
     works: HashMap<BeId, WorkState>,
     standalone_editions: HashMap<BeId, Edition>,
-    pub(crate) standalone_edition_refs: HashMap<BeId, crate::persist::edition_chunks::EditionChunkRef>,
+    pub(crate) standalone_edition_refs:
+        HashMap<BeId, crate::persist::edition_chunks::EditionChunkRef>,
     pub(crate) dirty_clubs: HashSet<BeId>,
     pub(crate) club_refs: HashMap<BeId, crate::persist::manifest::ClubChunkRef>,
     edition_detectors: HashMap<BeId, DetectorList>,
@@ -139,7 +138,12 @@ impl Server {
             .iter()
             .map(|(_, c)| c.element.as_text().unwrap_or(""))
             .collect();
-        text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(80).collect()
+        text.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(80)
+            .collect()
     }
 
     pub fn new() -> Self {
@@ -149,33 +153,21 @@ impl Server {
         let public_club = {
             let (be_id, elem) = grand_map.new_work_element(None);
             grand_map.assign_new_id(elem);
-            let _club = Club::new_with_owner(
-                be_id,
-                Some(be_id),
-                Edition::from_text("public"),
-            );
+            let _club = Club::new_with_owner(be_id, Some(be_id), Edition::from_text("public"));
             be_id
         };
 
         let admin_club = {
             let (be_id, elem) = grand_map.new_work_element(Some(public_club));
             grand_map.assign_new_id(elem);
-            let _club = Club::new_with_owner(
-                be_id,
-                Some(be_id),
-                Edition::from_text("admin"),
-            );
+            let _club = Club::new_with_owner(be_id, Some(be_id), Edition::from_text("admin"));
             be_id
         };
 
         let access_club = {
             let (be_id, elem) = grand_map.new_work_element(Some(admin_club));
             grand_map.assign_new_id(elem);
-            let _club = Club::new_with_owner(
-                be_id,
-                Some(admin_club),
-                Edition::from_text("access"),
-            );
+            let _club = Club::new_with_owner(be_id, Some(admin_club), Edition::from_text("access"));
             be_id
         };
 
@@ -241,22 +233,16 @@ impl Server {
             attribution_log: None,
         };
 
-        let pub_club = Club::new_with_owner(
-            public_club,
-            Some(public_club),
-            Edition::from_text("public"),
-        );
+        let pub_club =
+            Club::new_with_owner(public_club, Some(public_club), Edition::from_text("public"));
         server.clubs.insert(public_club, pub_club);
         server.club_names.insert("public".to_string(), public_club);
         if let Some(c) = server.clubs.get_mut(&public_club) {
             c.set_name("public".to_string());
         }
 
-        let adm_club = Club::new_with_owner(
-            admin_club,
-            Some(admin_club),
-            Edition::from_text("admin"),
-        );
+        let adm_club =
+            Club::new_with_owner(admin_club, Some(admin_club), Edition::from_text("admin"));
         server.clubs.insert(admin_club, adm_club);
         server.club_names.insert("admin".to_string(), admin_club);
         if let Some(c) = server.clubs.get_mut(&admin_club) {
@@ -264,11 +250,8 @@ impl Server {
             c.set_read_club(Some(public_club));
         }
 
-        let acc_club = Club::new_with_owner(
-            access_club,
-            Some(admin_club),
-            Edition::from_text("access"),
-        );
+        let acc_club =
+            Club::new_with_owner(access_club, Some(admin_club), Edition::from_text("access"));
         server.clubs.insert(access_club, acc_club);
         server.club_names.insert("access".to_string(), access_club);
         if let Some(c) = server.clubs.get_mut(&access_club) {
@@ -388,18 +371,24 @@ impl Server {
             Some(s) => s,
             None => return "anonymous".to_string(),
         };
-        let author_club = session.initial_login()
+        let author_club = session
+            .initial_login()
             .and_then(|id| self.clubs.get(&id))
             .filter(|c| c.is_personal())
             .map(|c| c.be_id())
             .or_else(|| {
                 session.authority_clubs().iter().find_map(|id| {
-                    self.clubs.get(id).filter(|c| c.is_personal()).map(|c| c.be_id())
+                    self.clubs
+                        .get(id)
+                        .filter(|c| c.is_personal())
+                        .map(|c| c.be_id())
                 })
             })
             .or(session.initial_login());
         match author_club {
-            Some(club_id) => self.clubs.get(&club_id)
+            Some(club_id) => self
+                .clubs
+                .get(&club_id)
                 .and_then(|c| c.display_name().map(|s| s.to_string()))
                 .unwrap_or_else(|| format!("club-{}", club_id)),
             None => "anonymous".to_string(),
@@ -411,40 +400,56 @@ impl Server {
         work_be_id: BeId,
         session_id: SessionId,
     ) -> Result<Edition, ServerError> {
-        let signing_key = self.sessions.get(&session_id)
+        let signing_key = self
+            .sessions
+            .get(&session_id)
             .and_then(|s| s.club_signing_key().cloned());
         let server_id_bytes = self.federation_server_id_bytes();
         let timestamp = Self::current_timestamp_secs();
 
-        let author_sessions = self.crdt_manager.get_author_sessions(work_be_id)
+        let author_sessions = self
+            .crdt_manager
+            .get_author_sessions(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-        let mut author_signing_keys: std::collections::HashMap<BeId, ed25519_dalek::SigningKey> = std::collections::HashMap::new();
+        let mut author_signing_keys: std::collections::HashMap<BeId, ed25519_dalek::SigningKey> =
+            std::collections::HashMap::new();
         for (sid, author_id) in &author_sessions {
-            if let Some(sk) = self.sessions.get(sid).and_then(|s| s.club_signing_key().cloned()) {
+            if let Some(sk) = self
+                .sessions
+                .get(sid)
+                .and_then(|s| s.club_signing_key().cloned())
+            {
                 author_signing_keys.insert(author_id.club_be_id, sk);
             }
         }
 
         for (_, author_id) in &author_sessions {
             if !author_signing_keys.contains_key(&author_id.club_be_id) {
-                if let Some(sk) = self.crdt_manager.get_club_signing_key(work_be_id, author_id.club_be_id) {
+                if let Some(sk) = self
+                    .crdt_manager
+                    .get_club_signing_key(work_be_id, author_id.club_be_id)
+                {
                     author_signing_keys.insert(author_id.club_be_id, sk);
                 }
             }
         }
 
         match signing_key {
-            Some(sk) => {
-                self.crdt_manager
-                    .materialize_edition_with_provenance(work_be_id, &sk, &server_id_bytes, timestamp, &author_signing_keys)
-                    .map_err(|e| ServerError::Internal(e.to_string()))
-            }
-            None => {
-                self.crdt_manager
-                    .materialize_edition(work_be_id)
-                    .map_err(|e| ServerError::Internal(e.to_string()))
-            }
+            Some(sk) => self
+                .crdt_manager
+                .materialize_edition_with_provenance(
+                    work_be_id,
+                    &sk,
+                    &server_id_bytes,
+                    timestamp,
+                    &author_signing_keys,
+                )
+                .map_err(|e| ServerError::Internal(e.to_string())),
+            None => self
+                .crdt_manager
+                .materialize_edition(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string())),
         }
     }
 
@@ -459,7 +464,8 @@ impl Server {
         if entries.is_empty() {
             return None;
         }
-        let fingerprints: Vec<[u8; 32]> = entries.iter()
+        let fingerprints: Vec<[u8; 32]> = entries
+            .iter()
             .map(|(_, c)| c.element.content_fingerprint())
             .collect();
         let first_pos = entries.first()?.0;
@@ -467,7 +473,10 @@ impl Server {
         let server_id_bytes = self.federation_server_id_bytes();
         let timestamp = Self::current_timestamp_secs();
         let provenance = crate::edition::provenance::sign_span(
-            signing_key, &fingerprints, timestamp, &server_id_bytes,
+            signing_key,
+            &fingerprints,
+            timestamp,
+            &server_id_bytes,
         );
         Some(vec![crate::edition::SpanProvenance {
             start: first_pos,
@@ -488,7 +497,12 @@ impl Server {
         let (be_id, elem) = self.grand_map.new_work_element(None);
         self.grand_map.assign_new_id(elem);
 
-        let owner = self.session(session_id)?.authority_clubs().iter().next().copied();
+        let owner = self
+            .session(session_id)?
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied();
         let mut club = Club::new_with_owner(be_id, owner, description);
         club.set_read_club(Some(self.system_clubs.public_club));
         club.set_edit_club(Some(be_id));
@@ -537,9 +551,7 @@ impl Server {
     }
 
     pub fn club_name_by_id(&self, club_id: BeId) -> Option<&str> {
-        self.clubs
-            .get(&club_id)
-            .and_then(|c| c.name())
+        self.clubs.get(&club_id).and_then(|c| c.name())
     }
 
     pub fn club_count(&self) -> usize {
@@ -563,15 +575,21 @@ impl Server {
         self.ensure_logged_in(session_id)?;
         const MAX_WORK_COUNT: usize = 100_000;
         if self.work_count() >= MAX_WORK_COUNT {
-            return Err(ServerError::InvalidArgument(
-                format!("work limit reached (max {})", MAX_WORK_COUNT)
-            ));
+            return Err(ServerError::InvalidArgument(format!(
+                "work limit reached (max {})",
+                MAX_WORK_COUNT
+            )));
         }
 
         let (be_id, elem) = self.grand_map.new_work_element(None);
         self.grand_map.assign_new_id(elem);
 
-        let owner = self.session(session_id)?.authority_clubs().iter().next().copied();
+        let owner = self
+            .session(session_id)?
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied();
         let title = Self::extract_title(&edition);
         let mut work = Work::new_with_owner(be_id, owner, edition);
 
@@ -611,7 +629,8 @@ impl Server {
             self.works[&be_id].work.read_club(),
             self.works[&be_id].work.edit_club(),
         );
-        self.backfollow.register_work_with_prop(bf_work, be_id, None, prop);
+        self.backfollow
+            .register_work_with_prop(bf_work, be_id, None, prop);
         // Newly created works may share content with already-watched documents,
         // so planted recorders must be checked here just as they are in revise_work.
         self.trigger_planted_recorders(be_id);
@@ -649,31 +668,44 @@ impl Server {
         }
 
         if let Some(ref mut log) = self.attribution_log {
-            let revision = self.works.get(&work_be_id)
+            let revision = self
+                .works
+                .get(&work_be_id)
                 .map(|ws| ws.work.revision_count() + 1)
                 .unwrap_or(1);
             let all_entries = edition.all_entries();
             for sp in &edition.span_provenance {
-                let fps: Vec<[u8; 32]> = all_entries.iter()
+                let fps: Vec<[u8; 32]> = all_entries
+                    .iter()
                     .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
                     .map(|(_, c)| c.element.content_fingerprint())
                     .collect();
-                if let Err(e) = log.append(&crate::server::transport::attribution_log::AttributionEntry {
-                    sequence: log.sequence(),
-                    timestamp: sp.provenance.timestamp,
-                    author_pk_hex: crate::server::crdt_manager::bytes_to_hex(&sp.provenance.author_public_key),
-                    span_fp_hex: crate::edition::provenance::compute_span_fingerprint_hex(&fps),
-                    signature_hex: crate::server::crdt_manager::bytes_to_hex(&sp.provenance.signature),
-                    server_id_hex: crate::server::crdt_manager::bytes_to_hex(&sp.provenance.server_id),
-                    work_id: work_be_id,
-                    revision,
-                }) {
+                if let Err(e) = log.append(
+                    &crate::server::transport::attribution_log::AttributionEntry {
+                        sequence: log.sequence(),
+                        timestamp: sp.provenance.timestamp,
+                        author_pk_hex: crate::server::crdt_manager::bytes_to_hex(
+                            &sp.provenance.author_public_key,
+                        ),
+                        span_fp_hex: crate::edition::provenance::compute_span_fingerprint_hex(&fps),
+                        signature_hex: crate::server::crdt_manager::bytes_to_hex(
+                            &sp.provenance.signature,
+                        ),
+                        server_id_hex: crate::server::crdt_manager::bytes_to_hex(
+                            &sp.provenance.server_id,
+                        ),
+                        work_id: work_be_id,
+                        revision,
+                    },
+                ) {
                     tracing::error!("attribution log write failed: {}", e);
                 }
             }
         }
 
-        let ws = self.works.get_mut(&work_be_id)
+        let ws = self
+            .works
+            .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
 
         ws.last_revision_author = author_club;
@@ -690,10 +722,16 @@ impl Server {
 
         let updated_edition = ws.work.edition().clone();
         let bf_work = ws.work.clone();
-        self.content_address.intern_edition_elements(&updated_edition);
-        self.backfollow.update_work_with_parent(work_be_id, work_be_id, bf_work);
+        self.content_address
+            .intern_edition_elements(&updated_edition);
+        self.backfollow
+            .update_work_with_parent(work_be_id, work_be_id, bf_work);
         self.trigger_planted_recorders(work_be_id);
-        self.reconcile_record_local_revision(work_be_id, &updated_edition, Self::current_timestamp_secs());
+        self.reconcile_record_local_revision(
+            work_be_id,
+            &updated_edition,
+            Self::current_timestamp_secs(),
+        );
         self.auto_checkpoint();
 
         Ok(revision)
@@ -906,7 +944,10 @@ impl Server {
             if ws.grabber.is_some() {
                 return;
             }
-            ws.grab_waiters.iter().map(|w| w.session_id).collect::<Vec<_>>()
+            ws.grab_waiters
+                .iter()
+                .map(|w| w.session_id)
+                .collect::<Vec<_>>()
         };
 
         for candidate in candidates {
@@ -1113,13 +1154,17 @@ impl Server {
         };
 
         let edition = match crate::persist::edition_chunks::work_load_revision(
-            &chunk_ref, number, chunk_store,
+            &chunk_ref,
+            number,
+            chunk_store,
         ) {
             Ok(ed) => ed,
             Err(_) => return Ok(None),
         };
 
-        let ws = self.works.get_mut(&work_be_id)
+        let ws = self
+            .works
+            .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.load_revision(number, edition.clone());
         Ok(Some(edition))
@@ -1139,11 +1184,16 @@ impl Server {
 
         let span = to.checked_sub(from).and_then(|d| d.checked_add(1));
         match span {
-            None => return Err(ServerError::InvalidArgument("revision range overflow".into())),
-            Some(s) if s > MAX_RANGE => {
+            None => {
                 return Err(ServerError::InvalidArgument(
-                    format!("revision range too large: requested {} but max is {}", s, MAX_RANGE),
-                ));
+                    "revision range overflow".into(),
+                ))
+            }
+            Some(s) if s > MAX_RANGE => {
+                return Err(ServerError::InvalidArgument(format!(
+                    "revision range too large: requested {} but max is {}",
+                    s, MAX_RANGE
+                )));
             }
             _ => {}
         }
@@ -1177,7 +1227,9 @@ impl Server {
         }
 
         if all_in_memory && memory_results.len() as u64 == span.unwrap() {
-            return Ok(memory_results.into_iter().enumerate()
+            return Ok(memory_results
+                .into_iter()
+                .enumerate()
                 .map(|(i, opt)| (from + i as u64, opt.unwrap()))
                 .collect());
         }
@@ -1185,7 +1237,9 @@ impl Server {
         let chunk_ref = match chunk_ref {
             Some(cr) => cr,
             None => {
-                return Ok(memory_results.into_iter().enumerate()
+                return Ok(memory_results
+                    .into_iter()
+                    .enumerate()
                     .filter_map(|(i, opt)| opt.map(|ed| (from + i as u64, ed)))
                     .collect());
             }
@@ -1196,7 +1250,9 @@ impl Server {
             let chunk_store = match self.chunk_store {
                 Some(ref cs) => cs,
                 None => {
-                    return Ok(memory_results.into_iter().enumerate()
+                    return Ok(memory_results
+                        .into_iter()
+                        .enumerate()
                         .filter_map(|(i, opt)| opt.map(|ed| (from + i as u64, ed)))
                         .collect());
                 }
@@ -1210,7 +1266,9 @@ impl Server {
                     break;
                 }
                 if let Ok(edition) = crate::persist::edition_chunks::work_load_revision(
-                    &chunk_ref, number, chunk_store,
+                    &chunk_ref,
+                    number,
+                    chunk_store,
                 ) {
                     disk_loaded.push((i, edition));
                 }
@@ -1218,7 +1276,9 @@ impl Server {
         }
 
         if !disk_loaded.is_empty() {
-            let ws = self.works.get_mut(&work_be_id)
+            let ws = self
+                .works
+                .get_mut(&work_be_id)
                 .ok_or(ServerError::WorkNotFound(work_be_id))?;
             for (i, edition) in &disk_loaded {
                 let number = from + *i as u64;
@@ -1230,7 +1290,9 @@ impl Server {
             memory_results[i] = Some(edition);
         }
 
-        Ok(memory_results.into_iter().enumerate()
+        Ok(memory_results
+            .into_iter()
+            .enumerate()
             .filter_map(|(i, opt)| opt.map(|ed| (from + i as u64, ed)))
             .collect())
     }
@@ -1241,7 +1303,9 @@ impl Server {
         start: Option<i64>,
         end: Option<i64>,
     ) -> Result<Vec<super::transport::protocol::AttributionSpanPayload>, ServerError> {
-        let ws = self.works.get(&work_be_id)
+        let ws = self
+            .works
+            .get(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         let edition = ws.work.current_edition();
         let all_entries = edition.all_entries();
@@ -1259,22 +1323,21 @@ impl Server {
                 }
             }
 
-            let fps: Vec<[u8; 32]> = all_entries.iter()
+            let fps: Vec<[u8; 32]> = all_entries
+                .iter()
                 .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
                 .map(|(_, c)| c.element.content_fingerprint())
                 .collect();
 
-            let signature_valid = crate::edition::provenance::verify_span_provenance(
-                &sp.provenance, &fps,
-            );
+            let signature_valid =
+                crate::edition::provenance::verify_span_provenance(&sp.provenance, &fps);
 
             let (author_display_name, author_club_id) = self
-                .clubs.iter()
-                .find(|(_, club)| {
-                    match club.encrypted_signing_key() {
-                        Some(ek) => ek.verifying_key == sp.provenance.author_public_key,
-                        None => false,
-                    }
+                .clubs
+                .iter()
+                .find(|(_, club)| match club.encrypted_signing_key() {
+                    Some(ek) => ek.verifying_key == sp.provenance.author_public_key,
+                    None => false,
                 })
                 .map(|(id, club)| (club.display_name().map(|s| s.to_string()), Some(*id)))
                 .unwrap_or((None, None));
@@ -1358,10 +1421,7 @@ impl Server {
         crate::server::transport::attribution_log::verify_attribution_log(&content, &seed).is_ok()
     }
 
-    pub fn work_last_revision_author(
-        &self,
-        work_be_id: BeId,
-    ) -> Result<Option<BeId>, ServerError> {
+    pub fn work_last_revision_author(&self, work_be_id: BeId) -> Result<Option<BeId>, ServerError> {
         let ws = self
             .works
             .get(&work_be_id)
@@ -1448,7 +1508,11 @@ impl Server {
         Ok(())
     }
 
-    pub fn work_is_published(&self, session_id: SessionId, work_be_id: BeId) -> Result<bool, ServerError> {
+    pub fn work_is_published(
+        &self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<bool, ServerError> {
         self.ensure_session(session_id)?;
         let ws = self
             .works
@@ -1464,14 +1528,17 @@ impl Server {
         default_read_club: Option<BeId>,
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
-        if !self.sessions
+        if !self
+            .sessions
             .get(&session_id)
             .map(|s| s.has_authority(club_id))
             .unwrap_or(false)
         {
             return Err(ServerError::NotAuthorized);
         }
-        let club = self.clubs.get_mut(&club_id)
+        let club = self
+            .clubs
+            .get_mut(&club_id)
             .ok_or(ServerError::ClubNotFound(club_id))?;
         club.set_default_read_club(default_read_club);
         self.dirty_clubs.insert(club_id);
@@ -1486,14 +1553,17 @@ impl Server {
         default_edit_club: Option<BeId>,
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
-        if !self.sessions
+        if !self
+            .sessions
             .get(&session_id)
             .map(|s| s.has_authority(club_id))
             .unwrap_or(false)
         {
             return Err(ServerError::NotAuthorized);
         }
-        let club = self.clubs.get_mut(&club_id)
+        let club = self
+            .clubs
+            .get_mut(&club_id)
             .ok_or(ServerError::ClubNotFound(club_id))?;
         club.set_default_edit_club(default_edit_club);
         self.dirty_clubs.insert(club_id);
@@ -1531,22 +1601,23 @@ impl Server {
         self.ensure_can_edit(session_id, work_be_id)?;
 
         if self.crdt_manager.is_active(work_be_id) {
-            let needs = self.crdt_manager.needs_materialization(work_be_id)
+            let needs = self
+                .crdt_manager
+                .needs_materialization(work_be_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
             if needs {
-                let edition = self.crdt_manager
+                let edition = self
+                    .crdt_manager
                     .materialize_edition(work_be_id)
                     .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-                let author_club = self.sessions
-                    .iter()
-                    .find_map(|(sid, s)| {
-                        if self.crdt_manager.is_subscriber(work_be_id, *sid) {
-                            s.initial_login()
-                        } else {
-                            None
-                        }
-                    });
+                let author_club = self.sessions.iter().find_map(|(sid, s)| {
+                    if self.crdt_manager.is_subscriber(work_be_id, *sid) {
+                        s.initial_login()
+                    } else {
+                        None
+                    }
+                });
 
                 self.revise_work(work_be_id, session_id, edition, author_club)?;
             }
@@ -1565,25 +1636,34 @@ impl Server {
             None
         };
 
-        let result = self.crdt_manager.open_sync_session(work_be_id, session_id, initial_text.as_deref());
+        let result =
+            self.crdt_manager
+                .open_sync_session(work_be_id, session_id, initial_text.as_deref());
 
         if let Some(session) = self.sessions.get(&session_id) {
-            let author_club = session.initial_login()
+            let author_club = session
+                .initial_login()
                 .and_then(|id| self.clubs.get(&id))
                 .filter(|c| c.is_personal())
                 .map(|c| c.be_id())
                 .or_else(|| {
                     session.authority_clubs().iter().find_map(|id| {
-                        self.clubs.get(id).filter(|c| c.is_personal()).map(|c| c.be_id())
+                        self.clubs
+                            .get(id)
+                            .filter(|c| c.is_personal())
+                            .map(|c| c.be_id())
                     })
                 })
                 .or(session.initial_login());
 
             if let Some(login_club) = author_club {
-                let display_name = self.clubs.get(&login_club)
+                let display_name = self
+                    .clubs
+                    .get(&login_club)
                     .and_then(|c| c.display_name().map(|s| s.to_string()))
                     .unwrap_or_else(|| format!("club-{}", login_club));
-                let public_key = session.club_verifying_key()
+                let public_key = session
+                    .club_verifying_key()
                     .map(|vk| vk.to_bytes())
                     .unwrap_or_else(|| {
                         let mut pk = [0u8; 32];
@@ -1595,7 +1675,10 @@ impl Server {
                     display_name,
                     club_be_id: login_club,
                 };
-                if let Err(e) = self.crdt_manager.register_author(work_be_id, session_id, author) {
+                if let Err(e) = self
+                    .crdt_manager
+                    .register_author(work_be_id, session_id, author)
+                {
                     tracing::warn!(target: "xudanu::security", work_id = work_be_id, session_id = session_id.as_u64(), error = %e, event = "SECURITY:author_register_failed", "failed to register CRDT author");
                 }
             }
@@ -1611,15 +1694,19 @@ impl Server {
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
 
-        let needs = self.crdt_manager.needs_materialization(work_be_id)
+        let needs = self
+            .crdt_manager
+            .needs_materialization(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
 
         if needs {
-            let edition = self.crdt_manager
+            let edition = self
+                .crdt_manager
                 .materialize_edition(work_be_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-            let author_club = self.sessions
+            let author_club = self
+                .sessions
                 .get(&session_id)
                 .and_then(|s| s.initial_login());
 
@@ -1640,16 +1727,20 @@ impl Server {
         self.ensure_session(session_id)?;
         self.ensure_can_edit(session_id, work_be_id)?;
 
-        let result = self.crdt_manager
+        let result = self
+            .crdt_manager
             .apply_text_delta(work_be_id, session_id, ops)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-        let revision = if self.crdt_manager.needs_materialization(work_be_id)
+        let revision = if self
+            .crdt_manager
+            .needs_materialization(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?
         {
             let ed = self.materialize_with_provenance(work_be_id, session_id)?;
 
-            let author_club = self.sessions
+            let author_club = self
+                .sessions
                 .get(&session_id)
                 .and_then(|s| s.initial_login());
 
@@ -1671,7 +1762,8 @@ impl Server {
         self.ensure_session(session_id)?;
         self.ensure_can_edit(session_id, work_be_id)?;
 
-        let result = self.crdt_manager
+        let result = self
+            .crdt_manager
             .apply_update(work_be_id, session_id, &update_bytes)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
 
@@ -1690,10 +1782,7 @@ impl Server {
             .map_err(|e| ServerError::Internal(e.to_string()))
     }
 
-    pub fn crdt_get_full_state(
-        &self,
-        work_be_id: BeId,
-    ) -> Result<Vec<u8>, ServerError> {
+    pub fn crdt_get_full_state(&self, work_be_id: BeId) -> Result<Vec<u8>, ServerError> {
         self.crdt_manager
             .get_full_state(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))
@@ -1708,7 +1797,9 @@ impl Server {
     }
 
     pub fn crdt_needs_materialization(&self, work_be_id: BeId) -> bool {
-        self.crdt_manager.needs_materialization(work_be_id).unwrap_or(false)
+        self.crdt_manager
+            .needs_materialization(work_be_id)
+            .unwrap_or(false)
     }
 
     pub fn crdt_current_text(&self, work_be_id: BeId) -> Result<String, ServerError> {
@@ -1722,15 +1813,20 @@ impl Server {
         work_be_id: BeId,
         session_id: SessionId,
     ) -> Result<(), ServerError> {
-        let should = self.crdt_manager.needs_materialization(work_be_id)
+        let should = self
+            .crdt_manager
+            .needs_materialization(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
-        let elapsed = self.crdt_manager.debounce_elapsed(work_be_id)
+        let elapsed = self
+            .crdt_manager
+            .debounce_elapsed(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
 
         if should && elapsed {
             let edition = self.materialize_with_provenance(work_be_id, session_id)?;
 
-            let author_club = self.sessions
+            let author_club = self
+                .sessions
                 .get(&session_id)
                 .and_then(|s| s.initial_login());
 
@@ -1748,12 +1844,15 @@ impl Server {
         self.ensure_session(session_id)?;
 
         if !self.crdt_manager.is_active(work_be_id) {
-            return Err(ServerError::Internal("no active CRDT session for this work".into()));
+            return Err(ServerError::Internal(
+                "no active CRDT session for this work".into(),
+            ));
         }
 
         let edition = self.materialize_with_provenance(work_be_id, session_id)?;
 
-        let author_club = self.sessions
+        let author_club = self
+            .sessions
             .get(&session_id)
             .and_then(|s| s.initial_login());
 
@@ -1761,28 +1860,37 @@ impl Server {
         Ok(revision)
     }
 
-    pub fn crdt_materialize_any_session(
-        &mut self,
-        work_be_id: BeId,
-    ) -> Result<u64, ServerError> {
+    pub fn crdt_materialize_any_session(&mut self, work_be_id: BeId) -> Result<u64, ServerError> {
         if !self.crdt_manager.is_active(work_be_id) {
             return Ok(0);
         }
 
-        let sessions = self.crdt_manager.get_subscribed_sessions(work_be_id)
+        let sessions = self
+            .crdt_manager
+            .get_subscribed_sessions(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-        let session_id = sessions.into_iter().find(|sid| {
-            self.sessions.get(sid)
-                .and_then(|s| s.club_signing_key())
-                .is_some()
-        }).or_else(|| {
-            self.crdt_manager.get_subscribed_sessions(work_be_id).ok()?.into_iter().next()
-        }).ok_or(ServerError::Internal("no subscribed session".into()))?;
+        let session_id = sessions
+            .into_iter()
+            .find(|sid| {
+                self.sessions
+                    .get(sid)
+                    .and_then(|s| s.club_signing_key())
+                    .is_some()
+            })
+            .or_else(|| {
+                self.crdt_manager
+                    .get_subscribed_sessions(work_be_id)
+                    .ok()?
+                    .into_iter()
+                    .next()
+            })
+            .ok_or(ServerError::Internal("no subscribed session".into()))?;
 
         let edition = self.materialize_with_provenance(work_be_id, session_id)?;
 
-        let author_club = self.sessions
+        let author_club = self
+            .sessions
             .get(&session_id)
             .and_then(|s| s.initial_login());
 
@@ -1816,7 +1924,8 @@ impl Server {
         &self,
         work_be_id: BeId,
     ) -> Result<Vec<super::crdt_manager::AwarenessState>, ServerError> {
-        let states = self.crdt_manager
+        let states = self
+            .crdt_manager
             .get_awareness(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
         Ok(states.into_iter().cloned().collect())
@@ -1840,22 +1949,34 @@ impl Server {
         work_be_id: BeId,
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
-        let session = self.sessions.get(&session_id)
+        let session = self
+            .sessions
+            .get(&session_id)
             .ok_or(ServerError::SessionNotFound(session_id))?;
 
-        let author_club = session.authority_clubs().iter().find_map(|id| {
-            self.clubs.get(&id).filter(|c| c.is_personal()).map(|c| c.be_id())
-        }).or_else(|| session.initial_login());
+        let author_club = session
+            .authority_clubs()
+            .iter()
+            .find_map(|id| {
+                self.clubs
+                    .get(&id)
+                    .filter(|c| c.is_personal())
+                    .map(|c| c.be_id())
+            })
+            .or_else(|| session.initial_login());
 
         let Some(login_club) = author_club else {
             return Err(ServerError::Unauthorized("no identity to register".into()));
         };
 
-        let display_name = self.clubs.get(&login_club)
+        let display_name = self
+            .clubs
+            .get(&login_club)
             .and_then(|c| c.display_name().map(|s| s.to_string()))
             .unwrap_or_else(|| format!("club-{}", login_club));
 
-        let public_key = session.club_verifying_key()
+        let public_key = session
+            .club_verifying_key()
             .map(|vk| vk.to_bytes())
             .unwrap_or_else(|| {
                 let mut pk = [0u8; 32];
@@ -1873,18 +1994,21 @@ impl Server {
             .register_author(work_be_id, session_id, author)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-        if let Some(sk) = self.sessions.get(&session_id).and_then(|s| s.club_signing_key().cloned()) {
-            self.crdt_manager.store_club_signing_key(work_be_id, login_club, sk);
+        if let Some(sk) = self
+            .sessions
+            .get(&session_id)
+            .and_then(|s| s.club_signing_key().cloned())
+        {
+            self.crdt_manager
+                .store_club_signing_key(work_be_id, login_club, sk);
         }
 
         Ok(())
     }
 
-    pub fn crdt_sign_update(
-        &self,
-        update_bytes: &[u8],
-    ) -> super::crdt_manager::SignedUpdate {
-        self.crdt_manager.sign_update(update_bytes, &self.server_keypair.signing_key)
+    pub fn crdt_sign_update(&self, update_bytes: &[u8]) -> super::crdt_manager::SignedUpdate {
+        self.crdt_manager
+            .sign_update(update_bytes, &self.server_keypair.signing_key)
     }
 
     pub fn crdt_extract_signed_update_for_federation(
@@ -1923,7 +2047,9 @@ impl Server {
             .collect()
     }
 
-    pub fn list_works_with_titles(&self) -> Vec<(BeId, Option<BeId>, u64, bool, String, Option<BeId>)> {
+    pub fn list_works_with_titles(
+        &self,
+    ) -> Vec<(BeId, Option<BeId>, u64, bool, String, Option<BeId>)> {
         self.works
             .iter()
             .map(|(id, ws)| {
@@ -1931,12 +2057,22 @@ impl Server {
                 let rev_count = ws.work.revision_count();
                 let grabbed = ws.grabber.is_some();
                 let read_club = ws.work.read_club();
-                (*id, owner, rev_count, grabbed, ws.cached_title.clone(), read_club)
+                (
+                    *id,
+                    owner,
+                    rev_count,
+                    grabbed,
+                    ws.cached_title.clone(),
+                    read_club,
+                )
             })
             .collect()
     }
 
-    pub fn list_works_by_owner(&self, owner: BeId) -> Vec<(BeId, Option<BeId>, u64, bool, Option<BeId>)> {
+    pub fn list_works_by_owner(
+        &self,
+        owner: BeId,
+    ) -> Vec<(BeId, Option<BeId>, u64, bool, Option<BeId>)> {
         self.works
             .iter()
             .filter(|(_, ws)| ws.work.owner() == Some(owner))
@@ -1961,11 +2097,17 @@ impl Server {
         let (be_id, elem) = self.grand_map.new_edition_element();
         self.grand_map.assign_new_id(elem);
         self.standalone_editions.insert(be_id, edition);
-        let edition = self.standalone_editions.get(&be_id)
-            .ok_or_else(|| ServerError::Internal("standalone edition not found after insert".to_string()))?
+        let edition = self
+            .standalone_editions
+            .get(&be_id)
+            .ok_or_else(|| {
+                ServerError::Internal("standalone edition not found after insert".to_string())
+            })?
             .clone();
         let edition_elem = RangeElement::edition(be_id);
-        self.backfollow.transclusion_index_mut().register_edition(&edition, &edition_elem, None);
+        self.backfollow
+            .transclusion_index_mut()
+            .register_edition(&edition, &edition_elem, None);
         Ok(be_id)
     }
 
@@ -2005,7 +2147,9 @@ impl Server {
 
     pub fn ensure_admin(&self, session_id: SessionId) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
-        let session = self.sessions.get(&session_id)
+        let session = self
+            .sessions
+            .get(&session_id)
             .ok_or(ServerError::SessionNotFound(session_id))?;
         if session.has_authority(self.system_clubs.admin_club)
             || session.has_authority(self.system_clubs.access_club)
@@ -2040,7 +2184,10 @@ impl Server {
         self.admin.is_accepting_connections()
     }
 
-    pub fn admin_active_sessions(&self, session_id: SessionId) -> Result<Vec<SessionInfo>, ServerError> {
+    pub fn admin_active_sessions(
+        &self,
+        session_id: SessionId,
+    ) -> Result<Vec<SessionInfo>, ServerError> {
         self.ensure_admin(session_id)?;
         let infos: Vec<SessionInfo> = self
             .sessions
@@ -2112,7 +2259,11 @@ impl Server {
         self.checkpoint_path = Some(path);
     }
 
-    pub fn init_data_dir(&mut self, data_dir: &std::path::Path, passphrase: Option<&[u8]>) -> std::io::Result<()> {
+    pub fn init_data_dir(
+        &mut self,
+        data_dir: &std::path::Path,
+        passphrase: Option<&[u8]>,
+    ) -> std::io::Result<()> {
         let manifest_path = data_dir.join("manifest.json");
         if manifest_path.exists() {
             return Err(std::io::Error::new(
@@ -2133,14 +2284,19 @@ impl Server {
         self.restore_blob_store_from_dir(data_dir)?;
 
         self.checkpoint_path = Some(manifest_path);
-        self.attribution_log = crate::server::transport::attribution_log::AttributionLog::open(data_dir).ok();
+        self.attribution_log =
+            crate::server::transport::attribution_log::AttributionLog::open(data_dir).ok();
         self.checkpoint_to_store()?;
 
         tracing::info!("Initialized xudanu data directory: {}", data_dir.display());
         Ok(())
     }
 
-    pub fn restore_from_data_dir(&mut self, data_dir: &std::path::Path, passphrase: Option<&[u8]>) -> std::io::Result<()> {
+    pub fn restore_from_data_dir(
+        &mut self,
+        data_dir: &std::path::Path,
+        passphrase: Option<&[u8]>,
+    ) -> std::io::Result<()> {
         for name in &["manifest.json.tmp", "key_history.json.tmp"] {
             let p = data_dir.join(name);
             if p.exists() {
@@ -2174,7 +2330,9 @@ impl Server {
         self.link_counter = manifest.link_counter;
         self.reconcile_store = manifest.reconcile_store;
         self.reconcile_counter = manifest.reconcile_counter;
-        self.content_address = manifest.content_address.unwrap_or_else(|| ContentAddressIndex::new(1_000_000));
+        self.content_address = manifest
+            .content_address
+            .unwrap_or_else(|| ContentAddressIndex::new(1_000_000));
 
         if let Some(ref kh) = manifest.key_history {
             let kh_file = crate::crypto::keys::KeyHistoryFile {
@@ -2189,23 +2347,24 @@ impl Server {
             }
         }
 
-        self.admin.set_accepting_connections(manifest.admin.accepting_connections);
+        self.admin
+            .set_accepting_connections(manifest.admin.accepting_connections);
         if manifest.admin.shutdown_requested {
             self.admin.request_shutdown();
         }
         for (club_id, start, end) in &manifest.admin.grants {
-            self.admin.grant(*club_id, crate::edition::XnRegion::interval(*start, *end));
+            self.admin
+                .grant(*club_id, crate::edition::XnRegion::interval(*start, *end));
         }
 
         for club_ref in &manifest.clubs {
             let work = crate::persist::edition_chunks::work_from_chunks_current(
-                &club_ref.work_root, &chunk_store,
-            ).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            let mut club = Club::new_with_owner(
-                club_ref.be_id,
-                work.owner(),
-                work.edition().clone(),
-            );
+                &club_ref.work_root,
+                &chunk_store,
+            )
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let mut club =
+                Club::new_with_owner(club_ref.be_id, work.owner(), work.edition().clone());
             club.set_signature_club(club_ref.signature_club);
             club.set_default_read_club(club_ref.default_read_club);
             club.set_default_edit_club(club_ref.default_edit_club);
@@ -2230,9 +2389,9 @@ impl Server {
         self.personal_club_count = self.clubs.values().filter(|c| c.is_personal()).count();
 
         for (id, work_ref) in &manifest.works {
-            let work = crate::persist::edition_chunks::work_from_chunks_current(
-                work_ref, &chunk_store,
-            ).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let work =
+                crate::persist::edition_chunks::work_from_chunks_current(work_ref, &chunk_store)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
             let ws = WorkState {
                 work: work.clone(),
                 chunk_ref: Some(work_ref.clone()),
@@ -2249,37 +2408,57 @@ impl Server {
 
         for se_ref in &manifest.standalone_editions {
             let edition = crate::persist::edition_chunks::edition_from_chunks(
-                &se_ref.edition_ref, &chunk_store,
-            ).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                &se_ref.edition_ref,
+                &chunk_store,
+            )
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
             self.standalone_editions.insert(se_ref.be_id, edition);
-            self.standalone_edition_refs.insert(se_ref.be_id, se_ref.edition_ref.clone());
+            self.standalone_edition_refs
+                .insert(se_ref.be_id, se_ref.edition_ref.clone());
         }
 
         for link in &manifest.links {
-            let o_ref = crate::edition::links::HyperRef::single(None, Some(link.origin), None, None);
-            let d_ref = crate::edition::links::HyperRef::single(None, Some(link.destination), None, None);
+            let o_ref =
+                crate::edition::links::HyperRef::single(None, Some(link.origin), None, None);
+            let d_ref =
+                crate::edition::links::HyperRef::single(None, Some(link.destination), None, None);
             let hyperlink = crate::edition::links::HyperLink::make(vec![], o_ref, d_ref);
-            self.links.insert(link.link_id, LinkState {
-                link: hyperlink,
-                origin: link.origin,
-                destination: link.destination,
-            });
-            self.work_to_links.entry(link.origin).or_default().push(link.link_id);
-            self.work_to_links.entry(link.destination).or_default().push(link.link_id);
+            self.links.insert(
+                link.link_id,
+                LinkState {
+                    link: hyperlink,
+                    origin: link.origin,
+                    destination: link.destination,
+                },
+            );
+            self.work_to_links
+                .entry(link.origin)
+                .or_default()
+                .push(link.link_id);
+            self.work_to_links
+                .entry(link.destination)
+                .or_default()
+                .push(link.link_id);
         }
 
-        self.federation = manifest.federation.as_ref()
+        self.federation = manifest
+            .federation
+            .as_ref()
             .map(|fs| crate::server::federation::FederationState::from_snapshot(fs))
             .unwrap_or_else(crate::server::federation::FederationState::disabled);
 
         self.chunk_store = Some(chunk_store);
         self.data_dir = Some(data_dir.to_path_buf());
         self.checkpoint_path = Some(manifest_path);
-        self.attribution_log = crate::server::transport::attribution_log::AttributionLog::open(data_dir).ok();
+        self.attribution_log =
+            crate::server::transport::attribution_log::AttributionLog::open(data_dir).ok();
 
         self.restore_blob_metas(manifest.blob_metas);
 
-        let max_id = self.works.keys().copied()
+        let max_id = self
+            .works
+            .keys()
+            .copied()
             .chain(self.clubs.keys().copied())
             .chain(self.links.keys().copied())
             .chain(self.standalone_editions.keys().copied())
@@ -2292,7 +2471,9 @@ impl Server {
         for (wid, ws) in &self.works {
             let edition = ws.work.edition().clone();
             let elem = crate::edition::range_element::RangeElement::work(*wid);
-            self.backfollow.transclusion_index_mut().register_work(&edition, &elem);
+            self.backfollow
+                .transclusion_index_mut()
+                .register_work(&edition, &elem);
             for (_, carrier) in edition.all_entries() {
                 let fp = carrier.element.content_fingerprint();
                 self.backfollow.register_fingerprint_for_work(fp, *wid);
@@ -2302,7 +2483,11 @@ impl Server {
         Ok(())
     }
 
-    pub fn restore_keypair_from_dir(&mut self, data_dir: &std::path::Path, passphrase: Option<&[u8]>) -> std::io::Result<()> {
+    pub fn restore_keypair_from_dir(
+        &mut self,
+        data_dir: &std::path::Path,
+        passphrase: Option<&[u8]>,
+    ) -> std::io::Result<()> {
         let key_path = data_dir.join("server.key");
         if key_path.exists() {
             let kp = if let Some(pass) = passphrase {
@@ -2339,7 +2524,11 @@ impl Server {
         }
     }
 
-    pub fn load_keypair_from_dir(&mut self, data_dir: &std::path::Path, passphrase: Option<&[u8]>) -> std::io::Result<()> {
+    pub fn load_keypair_from_dir(
+        &mut self,
+        data_dir: &std::path::Path,
+        passphrase: Option<&[u8]>,
+    ) -> std::io::Result<()> {
         let key_path = data_dir.join("server.key");
         let kp = if key_path.exists() {
             let kp = if let Some(pass) = passphrase {
@@ -2374,14 +2563,22 @@ impl Server {
             let kh_path = data_dir.join("key_history.json");
             if kh_path.exists() {
                 if let Ok(json) = std::fs::read_to_string(&kh_path) {
-                    if let Ok(file) = serde_json::from_str::<crate::crypto::keys::KeyHistoryFile>(&json) {
+                    if let Ok(file) =
+                        serde_json::from_str::<crate::crypto::keys::KeyHistoryFile>(&json)
+                    {
                         match crate::crypto::keys::KeyHistory::from_file_repr(&file) {
                             Ok(kh) => {
-                                tracing::info!("Restored key history with {} entries", kh.entry_count());
+                                tracing::info!(
+                                    "Restored key history with {} entries",
+                                    kh.entry_count()
+                                );
                                 self.key_history = kh;
                             }
                             Err(e) => {
-                                tracing::warn!("Corrupt key history file, using fresh history: {}", e);
+                                tracing::warn!(
+                                    "Corrupt key history file, using fresh history: {}",
+                                    e
+                                );
                             }
                         }
                     }
@@ -2421,44 +2618,67 @@ impl Server {
         self.restore_blob_store(data_dir, vec![])
     }
 
-    pub fn restore_blob_store(&mut self, data_dir: &std::path::Path, metas: Vec<persist_snapshot::BlobMetaSnapshot>) -> std::io::Result<()> {        let blobs_dir = data_dir.join("blobs");
-        if !blobs_dir.exists() {
-            std::fs::create_dir_all(&blobs_dir)?;
-        }
-        let store = BlobStore::filesystem(&blobs_dir).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("failed to init filesystem blobs: {}", e))
-        })?;
-        tracing::info!("Using filesystem blob storage at {}", blobs_dir.display());
-        self.blob_store = store;
-        let restored_metas: Vec<_> = metas.into_iter().filter_map(|ms| {
-            let mut hash = [0u8; 32];
-            if ms.content_hash.len() != 32 { return None; }
-            hash.copy_from_slice(&ms.content_hash);
-            let mut meta = crate::edition::blob_store::BlobMeta::new(hash, ms.byte_size, ms.mime_type);
-            if let Some(ph) = ms.preview_hash {
-                if ph.len() == 32 {
-                    let mut ph_arr: [u8; 32] = [0u8; 32];
-                    ph_arr.copy_from_slice(&ph);
-                    meta = meta.with_preview(ph_arr);
-                }
-            }
-            for (k, v) in ms.metadata {
-                meta = meta.with_metadata(k, v);
-            }
-            Some(meta)
-        }).collect();
-        self.blob_store.restore_metas(restored_metas);
-        tracing::info!("Restored {} blob metadata entries", self.blob_store.stats().total_blobs);
-        Ok(())
-    }
-
-    pub fn restore_blob_store_from_dir(&mut self, data_dir: &std::path::Path) -> std::io::Result<()> {
+    pub fn restore_blob_store(
+        &mut self,
+        data_dir: &std::path::Path,
+        metas: Vec<persist_snapshot::BlobMetaSnapshot>,
+    ) -> std::io::Result<()> {
         let blobs_dir = data_dir.join("blobs");
         if !blobs_dir.exists() {
             std::fs::create_dir_all(&blobs_dir)?;
         }
         let store = BlobStore::filesystem(&blobs_dir).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("failed to init filesystem blobs: {}", e))
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("failed to init filesystem blobs: {}", e),
+            )
+        })?;
+        tracing::info!("Using filesystem blob storage at {}", blobs_dir.display());
+        self.blob_store = store;
+        let restored_metas: Vec<_> = metas
+            .into_iter()
+            .filter_map(|ms| {
+                let mut hash = [0u8; 32];
+                if ms.content_hash.len() != 32 {
+                    return None;
+                }
+                hash.copy_from_slice(&ms.content_hash);
+                let mut meta =
+                    crate::edition::blob_store::BlobMeta::new(hash, ms.byte_size, ms.mime_type);
+                if let Some(ph) = ms.preview_hash {
+                    if ph.len() == 32 {
+                        let mut ph_arr: [u8; 32] = [0u8; 32];
+                        ph_arr.copy_from_slice(&ph);
+                        meta = meta.with_preview(ph_arr);
+                    }
+                }
+                for (k, v) in ms.metadata {
+                    meta = meta.with_metadata(k, v);
+                }
+                Some(meta)
+            })
+            .collect();
+        self.blob_store.restore_metas(restored_metas);
+        tracing::info!(
+            "Restored {} blob metadata entries",
+            self.blob_store.stats().total_blobs
+        );
+        Ok(())
+    }
+
+    pub fn restore_blob_store_from_dir(
+        &mut self,
+        data_dir: &std::path::Path,
+    ) -> std::io::Result<()> {
+        let blobs_dir = data_dir.join("blobs");
+        if !blobs_dir.exists() {
+            std::fs::create_dir_all(&blobs_dir)?;
+        }
+        let store = BlobStore::filesystem(&blobs_dir).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("failed to init filesystem blobs: {}", e),
+            )
         })?;
         tracing::info!("Using filesystem blob storage at {}", blobs_dir.display());
         self.blob_store = store;
@@ -2466,25 +2686,34 @@ impl Server {
     }
 
     pub fn restore_blob_metas(&mut self, metas: Vec<crate::persist::manifest::BlobMetaEntry>) {
-        let restored: Vec<_> = metas.into_iter().filter_map(|ms| {
-            let mut hash = [0u8; 32];
-            if ms.content_hash.len() != 32 { return None; }
-            hash.copy_from_slice(&ms.content_hash);
-            let mut meta = crate::edition::blob_store::BlobMeta::new(hash, ms.byte_size, ms.mime_type);
-            if let Some(ph) = ms.preview_hash {
-                if ph.len() == 32 {
-                    let mut ph_arr = [0u8; 32];
-                    ph_arr.copy_from_slice(&ph);
-                    meta = meta.with_preview(ph_arr);
+        let restored: Vec<_> = metas
+            .into_iter()
+            .filter_map(|ms| {
+                let mut hash = [0u8; 32];
+                if ms.content_hash.len() != 32 {
+                    return None;
                 }
-            }
-            for (k, v) in ms.metadata {
-                meta = meta.with_metadata(k, v);
-            }
-            Some(meta)
-        }).collect();
+                hash.copy_from_slice(&ms.content_hash);
+                let mut meta =
+                    crate::edition::blob_store::BlobMeta::new(hash, ms.byte_size, ms.mime_type);
+                if let Some(ph) = ms.preview_hash {
+                    if ph.len() == 32 {
+                        let mut ph_arr = [0u8; 32];
+                        ph_arr.copy_from_slice(&ph);
+                        meta = meta.with_preview(ph_arr);
+                    }
+                }
+                for (k, v) in ms.metadata {
+                    meta = meta.with_metadata(k, v);
+                }
+                Some(meta)
+            })
+            .collect();
         self.blob_store.restore_metas(restored);
-        tracing::info!("Restored {} blob metadata entries", self.blob_store.stats().total_blobs);
+        tracing::info!(
+            "Restored {} blob metadata entries",
+            self.blob_store.stats().total_blobs
+        );
     }
 
     fn auto_checkpoint(&mut self) {
@@ -2535,7 +2764,9 @@ impl Server {
         for (work_be_id, session_id) in &timed_out {
             tracing::warn!(
                 "Releasing expired grab on work {:?} by session {:?} ({}s timeout)",
-                work_be_id, session_id, GRAB_TIMEOUT_SECS
+                work_be_id,
+                session_id,
+                GRAB_TIMEOUT_SECS
             );
             if let Some(ws) = self.works.get_mut(work_be_id) {
                 ws.grabber = None;
@@ -2550,12 +2781,17 @@ impl Server {
 
         const WAIT_TIMEOUT_SECS: u64 = 3600;
         for (_, ws) in self.works.iter_mut() {
-            ws.grab_waiters.retain(|w| now.saturating_sub(w.grabbed_at) <= WAIT_TIMEOUT_SECS);
+            ws.grab_waiters
+                .retain(|w| now.saturating_sub(w.grabbed_at) <= WAIT_TIMEOUT_SECS);
         }
     }
 
     pub fn recovery_stats(&self) -> String {
-        let grabbed = self.works.values().filter(|ws| ws.grabber.is_some()).count();
+        let grabbed = self
+            .works
+            .values()
+            .filter(|ws| ws.grabber.is_some())
+            .count();
         format!(
             "works={} clubs={} links={} editions={} sessions={} blobs={} grabbed={}",
             self.works.len(),
@@ -2609,10 +2845,17 @@ impl Server {
             HyperLink::make(vec![], o_ref, d_ref)
         };
 
-        let ls = LinkState { link, origin, destination };
+        let ls = LinkState {
+            link,
+            origin,
+            destination,
+        };
         self.links.insert(link_id, ls);
         self.work_to_links.entry(origin).or_default().push(link_id);
-        self.work_to_links.entry(destination).or_default().push(link_id);
+        self.work_to_links
+            .entry(destination)
+            .or_default()
+            .push(link_id);
         let link_elem = RangeElement::work(link_id);
         let origin_elem = RangeElement::work(origin);
         let dest_elem = RangeElement::work(destination);
@@ -2628,7 +2871,9 @@ impl Server {
     }
 
     pub fn get_link(&self, link_id: BeId) -> Result<(BeId, BeId, &HyperLink), ServerError> {
-        let ls = self.links.get(&link_id)
+        let ls = self
+            .links
+            .get(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
         Ok((ls.origin, ls.destination, &ls.link))
     }
@@ -2641,7 +2886,9 @@ impl Server {
         destination_ref: Option<HyperRef>,
     ) -> Result<(), ServerError> {
         self.ensure_session(_session_id)?;
-        let ls = self.links.get_mut(&link_id)
+        let ls = self
+            .links
+            .get_mut(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
         if let Some(o_ref) = origin_ref {
             ls.link = ls.link.with_end("LeftEnd", o_ref);
@@ -2652,9 +2899,15 @@ impl Server {
         Ok(())
     }
 
-    pub fn delete_link(&mut self, _session_id: SessionId, link_id: BeId) -> Result<(), ServerError> {
+    pub fn delete_link(
+        &mut self,
+        _session_id: SessionId,
+        link_id: BeId,
+    ) -> Result<(), ServerError> {
         self.ensure_session(_session_id)?;
-        let ls = self.links.remove(&link_id)
+        let ls = self
+            .links
+            .remove(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
         if let Some(ids) = self.work_to_links.get_mut(&ls.origin) {
             ids.retain(|id| *id != link_id);
@@ -2671,7 +2924,9 @@ impl Server {
             .map(|ids| {
                 ids.iter()
                     .filter_map(|&lid| {
-                        self.links.get(&lid).map(|ls| (lid, ls.origin, ls.destination))
+                        self.links
+                            .get(&lid)
+                            .map(|ls| (lid, ls.origin, ls.destination))
                     })
                     .collect()
             })
@@ -2687,7 +2942,11 @@ impl Server {
     }
 
     pub fn health_json(&self) -> String {
-        let grabbed = self.works.values().filter(|ws| ws.grabber.is_some()).count();
+        let grabbed = self
+            .works
+            .values()
+            .filter(|ws| ws.grabber.is_some())
+            .count();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -2705,7 +2964,8 @@ impl Server {
             "operations": self.operation_counter,
             "last_checkpoint_ago_secs": since_checkpoint,
             "server_id": self.server_keypair.identity_id().to_string(),
-        }).to_string()
+        })
+        .to_string()
     }
 
     // === Transclusion queries ===
@@ -2713,17 +2973,22 @@ impl Server {
     pub fn find_transcluders(&self, content_be_id: BeId) -> Vec<(String, BeId, bool)> {
         let content = RangeElement::edition(content_be_id);
         let query = TransclusionQuery::all();
-        let results = self.backfollow.find_transcluders_with_backfollow(&content, &query);
-        results.into_iter().map(|r| {
-            let elem = &r.element;
-            if let Some(wid) = elem.as_work_id() {
-                ("work".to_string(), wid, r.is_direct)
-            } else if let Some(eid) = elem.as_edition_id() {
-                ("edition".to_string(), eid, r.is_direct)
-            } else {
-                ("unknown".to_string(), 0u64, r.is_direct)
-            }
-        }).collect()
+        let results = self
+            .backfollow
+            .find_transcluders_with_backfollow(&content, &query);
+        results
+            .into_iter()
+            .map(|r| {
+                let elem = &r.element;
+                if let Some(wid) = elem.as_work_id() {
+                    ("work".to_string(), wid, r.is_direct)
+                } else if let Some(eid) = elem.as_edition_id() {
+                    ("edition".to_string(), eid, r.is_direct)
+                } else {
+                    ("unknown".to_string(), 0u64, r.is_direct)
+                }
+            })
+            .collect()
     }
 
     pub fn find_works_for_content(&self, content_be_id: BeId) -> Vec<BeId> {
@@ -2753,8 +3018,11 @@ impl Server {
 
         let mut candidate_set: Option<std::collections::HashSet<BeId>> = None;
         for fp in &char_fps {
-            let works: std::collections::HashSet<BeId> =
-                self.backfollow.find_works_by_fingerprint(fp).into_iter().collect();
+            let works: std::collections::HashSet<BeId> = self
+                .backfollow
+                .find_works_by_fingerprint(fp)
+                .into_iter()
+                .collect();
             candidate_set = Some(match candidate_set {
                 None => works,
                 Some(prev) => prev.intersection(&works).copied().collect(),
@@ -2800,15 +3068,12 @@ impl Server {
                 let char_end = char_start + search_text.chars().count() as i64;
                 matches.push((char_start, char_end));
                 byte_start = abs_byte + 1;
-                if byte_start >= text.len() { break; }
+                if byte_start >= text.len() {
+                    break;
+                }
             }
             if !matches.is_empty() {
-                results.push((
-                    *work_id,
-                    ws.work.owner(),
-                    ws.work.revision_count(),
-                    matches,
-                ));
+                results.push((*work_id, ws.work.owner(), ws.work.revision_count(), matches));
             }
         }
         results
@@ -2848,9 +3113,10 @@ impl Server {
         if filter_text.is_empty() {
             return shared;
         }
-        shared.into_iter().filter(|(_, _, _, _, text)| {
-            text.contains(filter_text)
-        }).collect()
+        shared
+            .into_iter()
+            .filter(|(_, _, _, _, text)| text.contains(filter_text))
+            .collect()
     }
 
     pub fn content_address_lookup(&self, element: &RangeElement) -> Option<BeId> {
@@ -2858,9 +3124,16 @@ impl Server {
     }
 
     pub fn find_work_for_edition(&self, edition_be_id: BeId) -> Option<(BeId, String)> {
-        self.works.iter().find(|(_, ws)| {
-            ws.work.current_edition().all_entries().iter().any(|(_, c)| c.element.as_edition_id() == Some(edition_be_id))
-        }).map(|(id, ws)| (*id, ws.title().to_string()))
+        self.works
+            .iter()
+            .find(|(_, ws)| {
+                ws.work
+                    .current_edition()
+                    .all_entries()
+                    .iter()
+                    .any(|(_, c)| c.element.as_edition_id() == Some(edition_be_id))
+            })
+            .map(|(id, ws)| (*id, ws.title().to_string()))
     }
 
     pub fn content_address_count(&self) -> usize {
@@ -2879,33 +3152,45 @@ impl Server {
         const MAX_BLOB_SIZE: usize = 64 * 1024 * 1024;
         const MAX_BLOB_COUNT: usize = 10_000;
         if data.len() > MAX_BLOB_SIZE {
-            return Err(ServerError::InvalidArgument(
-                format!("blob too large: {} bytes (max {})", data.len(), MAX_BLOB_SIZE)
-            ));
+            return Err(ServerError::InvalidArgument(format!(
+                "blob too large: {} bytes (max {})",
+                data.len(),
+                MAX_BLOB_SIZE
+            )));
         }
         if self.blob_store.stats().total_blobs >= MAX_BLOB_COUNT as u64 {
-            return Err(ServerError::InvalidArgument(
-                format!("blob limit reached (max {})", MAX_BLOB_COUNT)
-            ));
+            return Err(ServerError::InvalidArgument(format!(
+                "blob limit reached (max {})",
+                MAX_BLOB_COUNT
+            )));
         }
-        self.blob_store.store(&data, mime_type)
+        self.blob_store
+            .store(&data, mime_type)
             .map_err(|e| ServerError::Internal(e.to_string()))
     }
 
     pub fn blob_get(&self, hash_u64: u64) -> Result<Vec<u8>, ServerError> {
-        let meta = self.blob_store.get_meta_by_u64(hash_u64)
+        let meta = self
+            .blob_store
+            .get_meta_by_u64(hash_u64)
             .ok_or_else(|| ServerError::NotFound(format!("blob {:016x}", hash_u64)))?;
-        self.blob_store.retrieve(&meta.content_hash)
+        self.blob_store
+            .retrieve(&meta.content_hash)
             .map_err(|e| ServerError::Internal(e.to_string()))
     }
 
-    pub fn recorder_create_for_content(&mut self, query: crate::edition::RecorderQuery, edition_id: u64) -> crate::edition::RecorderId {
+    pub fn recorder_create_for_content(
+        &mut self,
+        query: crate::edition::RecorderQuery,
+        edition_id: u64,
+    ) -> crate::edition::RecorderId {
         let matcher_query = query.clone();
         let fossil_id = self.recorder_system.create_fossil(query);
         if let Some(fossil) = self.recorder_system.get_fossil_mut(fossil_id) {
             fossil.source_edition_id = Some(edition_id);
         }
-        self.recorder_system.schedule_matcher(fossil_id, matcher_query, Some(edition_id));
+        self.recorder_system
+            .schedule_matcher(fossil_id, matcher_query, Some(edition_id));
         fossil_id
     }
 
@@ -2914,30 +3199,50 @@ impl Server {
     }
 
     pub fn recorder_process(&mut self) -> usize {
-        self.recorder_system.process_agenda_with_engine(&mut self.backfollow)
+        self.recorder_system
+            .process_agenda_with_engine(&mut self.backfollow)
     }
 
-    pub fn recorder_plant(&mut self, edition_id: u64, fossil_id: crate::edition::RecorderId, content: &[crate::edition::RangeElement]) {
-        self.backfollow.plant_recorder(edition_id, fossil_id, content);
+    pub fn recorder_plant(
+        &mut self,
+        edition_id: u64,
+        fossil_id: crate::edition::RecorderId,
+        content: &[crate::edition::RangeElement],
+    ) {
+        self.backfollow
+            .plant_recorder(edition_id, fossil_id, content);
         self.recorder_process();
     }
 
-    pub fn recorder_unplant(&mut self, edition_id: u64, fossil_id: crate::edition::RecorderId, content: &[crate::edition::RangeElement]) {
-        self.backfollow.remove_planted_recorder(edition_id, fossil_id, content);
+    pub fn recorder_unplant(
+        &mut self,
+        edition_id: u64,
+        fossil_id: crate::edition::RecorderId,
+        content: &[crate::edition::RangeElement],
+    ) {
+        self.backfollow
+            .remove_planted_recorder(edition_id, fossil_id, content);
     }
 
     pub fn trigger_planted_recorders(&mut self, edition_id: u64) {
-        let edition_fps: Vec<[u8; 32]> = self.get_edition(edition_id)
+        let edition_fps: Vec<[u8; 32]> = self
+            .get_edition(edition_id)
             .ok()
             .flatten()
-            .map(|ed| ed.all_entries().iter().map(|(_, c)| c.element.content_fingerprint()).collect())
+            .map(|ed| {
+                ed.all_entries()
+                    .iter()
+                    .map(|(_, c)| c.element.content_fingerprint())
+                    .collect()
+            })
             .unwrap_or_default();
         if edition_fps.is_empty() {
             tracing::debug!(target: "xudanu::content_watch",
                 edition_id, "trigger_planted_recorders: no edition fingerprints");
             return;
         }
-        let trigger_words: std::collections::HashSet<String> = self.get_edition(edition_id)
+        let trigger_words: std::collections::HashSet<String> = self
+            .get_edition(edition_id)
             .ok()
             .flatten()
             .map(|ed| ed.word_set())
@@ -2977,11 +3282,13 @@ impl Server {
                 let results = match query.kind {
                     crate::edition::RecorderKind::Transcluders => {
                         let tq = crate::edition::TransclusionQuery::all();
-                        self.backfollow.find_transcluders_with_backfollow(content, &tq)
+                        self.backfollow
+                            .find_transcluders_with_backfollow(content, &tq)
                     }
                     crate::edition::RecorderKind::Works => {
                         let wq = crate::edition::WorkQuery::all();
-                        self.backfollow.find_works_for_content(content, &wq)
+                        self.backfollow
+                            .find_works_for_content(content, &wq)
                             .into_iter()
                             .map(|wid| crate::edition::TransclusionResult {
                                 element: crate::edition::RangeElement::work(wid),
@@ -2998,13 +3305,20 @@ impl Server {
                 fossil_id, total_results = all_results.len(),
                 source_edition_id = ?source_edition_id,
                 "trigger_planted_recorders: total results after dedup");
-            let mut notified_ids: std::collections::HashSet<BeId> = std::collections::HashSet::new();
+            let mut notified_ids: std::collections::HashSet<BeId> =
+                std::collections::HashSet::new();
             for result in all_results {
-                let result_edition_id = result.element.as_edition_id().or(result.element.as_work_id());
+                let result_edition_id = result
+                    .element
+                    .as_edition_id()
+                    .or(result.element.as_work_id());
                 if result_edition_id == source_edition_id {
                     continue;
                 }
-                let result_be_id = result.element.as_work_id().or(result.element.as_edition_id());
+                let result_be_id = result
+                    .element
+                    .as_work_id()
+                    .or(result.element.as_edition_id());
                 let result_work_id = result.element.as_work_id();
                 let _recorded = self.recorder_system.record_result(
                     fossil_id,
@@ -3017,19 +3331,23 @@ impl Server {
                     if !notified_ids.contains(&be_id) {
                         notified_ids.insert(be_id);
                         let (work_be_id, title) = if let Some(wid) = result_work_id {
-                            (Some(wid), self.works.get(&wid).map(|ws| ws.title().to_string()))
+                            (
+                                Some(wid),
+                                self.works.get(&wid).map(|ws| ws.title().to_string()),
+                            )
                         } else {
                             self.find_work_for_edition(be_id)
                                 .map(|(wid, t)| (Some(wid), Some(t)))
                                 .unwrap_or((None, None))
                         };
-                        self.pending_content_notifications.push(ContentNotification {
-                            fossil_id,
-                            edition_be_id: be_id,
-                            is_direct: result.is_direct,
-                            work_be_id,
-                            title,
-                        });
+                        self.pending_content_notifications
+                            .push(ContentNotification {
+                                fossil_id,
+                                edition_be_id: be_id,
+                                is_direct: result.is_direct,
+                                work_be_id,
+                                title,
+                            });
                     }
                 }
             }
@@ -3049,9 +3367,12 @@ impl Server {
     }
 
     pub fn blob_preview(&self, hash_u64: u64) -> Result<Option<Vec<u8>>, ServerError> {
-        let meta = self.blob_store.get_meta_by_u64(hash_u64)
+        let meta = self
+            .blob_store
+            .get_meta_by_u64(hash_u64)
             .ok_or_else(|| ServerError::NotFound(format!("blob {:016x}", hash_u64)))?;
-        self.blob_store.retrieve_preview(&meta)
+        self.blob_store
+            .retrieve_preview(&meta)
             .map_err(|e| ServerError::Internal(e.to_string()))
     }
 
@@ -3060,7 +3381,8 @@ impl Server {
     }
 
     pub fn blob_info(&self, hash_u64: u64) -> Result<BlobMeta, ServerError> {
-        self.blob_store.get_meta_by_u64(hash_u64)
+        self.blob_store
+            .get_meta_by_u64(hash_u64)
             .ok_or_else(|| ServerError::NotFound(format!("blob {:016x}", hash_u64)))
     }
 
@@ -3078,14 +3400,22 @@ impl Server {
     ) -> Result<BlobMeta, ServerError> {
         self.ensure_logged_in(session_id)?;
         if !self.blob_exists(base_hash) {
-            return Err(ServerError::NotFound(format!("base blob {:016x}", base_hash)));
+            return Err(ServerError::NotFound(format!(
+                "base blob {:016x}",
+                base_hash
+            )));
         }
-        self.blob_store.store_overlay(base_hash, ops, mime_type)
+        self.blob_store
+            .store_overlay(base_hash, ops, mime_type)
             .map_err(|e| ServerError::Internal(e.to_string()))
     }
 
-    pub fn blob_get_overlay(&self, hash_u64: u64) -> Result<crate::edition::ImageOverlay, ServerError> {
-        self.blob_store.retrieve_overlay_by_u64(hash_u64)
+    pub fn blob_get_overlay(
+        &self,
+        hash_u64: u64,
+    ) -> Result<crate::edition::ImageOverlay, ServerError> {
+        self.blob_store
+            .retrieve_overlay_by_u64(hash_u64)
             .map_err(|e| ServerError::Internal(e.to_string()))
     }
 
@@ -3129,11 +3459,7 @@ impl Server {
         Ok(())
     }
 
-    pub fn fire_fill_event(
-        &mut self,
-        edition_be_id: BeId,
-        region: crate::edition::XnRegion,
-    ) {
+    pub fn fire_fill_event(&mut self, edition_be_id: BeId, region: crate::edition::XnRegion) {
         if let Some(detectors) = self.edition_detectors.get_mut(&edition_be_id) {
             detectors.fire(&Event::RangeFilled {
                 edition_be_id,
@@ -3201,7 +3527,9 @@ impl Server {
 
     pub(crate) fn ensure_logged_in(&self, session_id: SessionId) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
-        let session = self.sessions.get(&session_id)
+        let session = self
+            .sessions
+            .get(&session_id)
             .ok_or(ServerError::SessionNotFound(session_id))?;
         if !session.is_logged_in() {
             return Err(ServerError::NotAuthorized);
@@ -3228,11 +3556,7 @@ impl Server {
         }
     }
 
-    fn ensure_can_edit(
-        &self,
-        session_id: SessionId,
-        work_be_id: BeId,
-    ) -> Result<(), ServerError> {
+    fn ensure_can_edit(&self, session_id: SessionId, work_be_id: BeId) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
         let ws = self
             .works
@@ -3245,11 +3569,7 @@ impl Server {
         }
     }
 
-    fn ensure_owner(
-        &self,
-        session_id: SessionId,
-        work_be_id: BeId,
-    ) -> Result<(), ServerError> {
+    fn ensure_owner(&self, session_id: SessionId, work_be_id: BeId) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
         let ws = self
             .works
@@ -3258,7 +3578,8 @@ impl Server {
         let owner = ws.work.owner();
         match owner {
             Some(owner_id) => {
-                if self.sessions
+                if self
+                    .sessions
                     .get(&session_id)
                     .map(|s| s.has_authority(owner_id))
                     .unwrap_or(false)
@@ -3282,7 +3603,8 @@ impl Server {
             if read_club == self.system_clubs.public_club {
                 return true;
             }
-            if self.sessions
+            if self
+                .sessions
                 .get(&session_id)
                 .map(|s| s.has_authority(read_club))
                 .unwrap_or(false)
@@ -3334,14 +3656,15 @@ impl Server {
             Some(ws) => ws,
             None => return false,
         };
-        self.sessions.contains_key(&session_id)
-            && self.check_edit_permission(session_id, &ws.work)
+        self.sessions.contains_key(&session_id) && self.check_edit_permission(session_id, &ws.work)
     }
 
     pub(crate) fn refresh_all_session_authority(&mut self) {
         let session_ids: Vec<SessionId> = self.sessions.keys().copied().collect();
         for sid in session_ids {
-            let km = self.sessions.get(&sid)
+            let km = self
+                .sessions
+                .get(&sid)
                 .and_then(|s| s._key_master().cloned());
             if let Some(mut km) = km {
                 km.update_authority(&self.clubs);
@@ -3374,41 +3697,76 @@ impl Server {
         id.as_u64()
     }
 
-    pub fn label_get_positions(&self, work_id: BeId, label_id: u64) -> Result<XnRegion, ServerError> {
-        let ws = self.works.get(&work_id).ok_or(ServerError::WorkNotFound(work_id))?;
+    pub fn label_get_positions(
+        &self,
+        work_id: BeId,
+        label_id: u64,
+    ) -> Result<XnRegion, ServerError> {
+        let ws = self
+            .works
+            .get(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
         let ed = ws.work.current_edition();
         Ok(ed.positions_labelled(label_id))
     }
 
-    pub fn edition_relabel(&mut self, work_id: BeId, label_id: u64) -> Result<Edition, ServerError> {
-        let ws = self.works.get(&work_id).ok_or(ServerError::WorkNotFound(work_id))?;
+    pub fn edition_relabel(
+        &mut self,
+        work_id: BeId,
+        label_id: u64,
+    ) -> Result<Edition, ServerError> {
+        let ws = self
+            .works
+            .get(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
         let _ed = ws.work.current_edition();
         Ok(Edition::empty())
     }
 
-    pub fn edition_rebind(&mut self, session_id: SessionId, work_id: BeId, position: i64, new_edition: Edition) -> Result<Edition, ServerError> {
+    pub fn edition_rebind(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        position: i64,
+        new_edition: Edition,
+    ) -> Result<Edition, ServerError> {
         self.ensure_grabbed_by(session_id, work_id)?;
-        let ws = self.works.get_mut(&work_id).ok_or(ServerError::WorkNotFound(work_id))?;
+        let ws = self
+            .works
+            .get_mut(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
         let current = ws.work.current_edition();
         if !current.has_position(position) {
-            return Err(ServerError::InvalidArgument(format!("position {} not found in work {}", position, work_id)));
+            return Err(ServerError::InvalidArgument(format!(
+                "position {} not found in work {}",
+                position, work_id
+            )));
         }
-        let old_carrier = current.carrier_at(position)
-            .ok_or(ServerError::InvalidArgument("no carrier at position".into()))?;
-        let new_elem = new_edition.fetch(position)
-            .ok_or(ServerError::InvalidArgument("no element at position in new edition".into()))?;
+        let old_carrier = current
+            .carrier_at(position)
+            .ok_or(ServerError::InvalidArgument(
+                "no carrier at position".into(),
+            ))?;
+        let new_elem = new_edition
+            .fetch(position)
+            .ok_or(ServerError::InvalidArgument(
+                "no element at position in new edition".into(),
+            ))?;
         let new_carrier = match old_carrier.label.as_ref() {
             Some(lid) => crate::edition::range_element::Carrier::labelled(lid.clone(), new_elem),
             None => crate::edition::range_element::Carrier::new(new_elem),
         };
         let updated = Edition::new_inner(
-            current.orgl.with(position, std::sync::Arc::new(new_carrier)),
+            current
+                .orgl
+                .with(position, std::sync::Arc::new(new_carrier)),
             current.endorsements.clone(),
         );
         ws.work.revise(updated.clone());
         ws.chunk_ref = None;
         let bf_work = ws.work.clone();
-        self.backfollow.update_work_with_parent(work_id, work_id, bf_work);
+        self.backfollow
+            .update_work_with_parent(work_id, work_id, bf_work);
         self.reconcile_record_local_revision(work_id, &updated, Self::current_timestamp_secs());
         Ok(updated)
     }
@@ -3419,8 +3777,14 @@ impl Server {
         target_work_id: BeId,
         position: Option<i64>,
     ) -> Result<Vec<(i64, String)>, ServerError> {
-        let source_ws = self.works.get(&source_work_id).ok_or(ServerError::WorkNotFound(source_work_id))?;
-        let target_ws = self.works.get(&target_work_id).ok_or(ServerError::WorkNotFound(target_work_id))?;
+        let source_ws = self
+            .works
+            .get(&source_work_id)
+            .ok_or(ServerError::WorkNotFound(source_work_id))?;
+        let target_ws = self
+            .works
+            .get(&target_work_id)
+            .ok_or(ServerError::WorkNotFound(target_work_id))?;
         let source_ed = source_ws.work.current_edition();
         let target_ed = target_ws.work.current_edition();
         let positions: Vec<i64> = match position {
@@ -3437,7 +3801,9 @@ impl Server {
                     let label = match result {
                         crate::edition::CanMakeIdenticalResult::Yes => "yes",
                         crate::edition::CanMakeIdenticalResult::DifferentType => "different_type",
-                        crate::edition::CanMakeIdenticalResult::DifferentContent => "different_content",
+                        crate::edition::CanMakeIdenticalResult::DifferentContent => {
+                            "different_content"
+                        }
                         crate::edition::CanMakeIdenticalResult::NotOwned => "not_owned",
                     };
                     results.push((pos, label.to_string()));
@@ -3457,14 +3823,22 @@ impl Server {
         region: Option<XnRegion>,
     ) -> Result<(String, u64, Edition), ServerError> {
         self.ensure_can_edit(session_id, source_work_id)?;
-        let source_ws = self.works.get(&source_work_id).ok_or(ServerError::WorkNotFound(source_work_id))?;
-        let target_ws = self.works.get(&target_work_id).ok_or(ServerError::WorkNotFound(target_work_id))?;
+        let source_ws = self
+            .works
+            .get(&source_work_id)
+            .ok_or(ServerError::WorkNotFound(source_work_id))?;
+        let target_ws = self
+            .works
+            .get(&target_work_id)
+            .ok_or(ServerError::WorkNotFound(target_work_id))?;
         let source_ed = source_ws.work.current_edition();
         let target_ed = target_ws.work.current_edition();
         let result = crate::edition::make_range_identical(&source_ed, &target_ed, region.as_ref());
         let outcome = match result.outcome {
             crate::edition::MakeRangeIdenticalOutcome::AllUnified => "all_unified",
-            crate::edition::MakeRangeIdenticalOutcome::PartiallyUnified { .. } => "partially_unified",
+            crate::edition::MakeRangeIdenticalOutcome::PartiallyUnified { .. } => {
+                "partially_unified"
+            }
         };
         let failed_count = result.failed.count();
         Ok((outcome.to_string(), failed_count, result.failed))
@@ -3484,7 +3858,9 @@ impl Server {
         region: Option<&XnRegion>,
         flags: crate::edition::RetrieveFlags,
     ) -> Result<Vec<crate::edition::Bundle>, ServerError> {
-        let ws = self.works.get(&work_id)
+        let ws = self
+            .works
+            .get(&work_id)
             .ok_or_else(|| ServerError::WorkNotFound(work_id))?;
         let edition = ws.work.current_edition();
         Ok(edition.retrieve(region, flags))
@@ -3495,73 +3871,147 @@ impl Server {
         work_id: BeId,
         method: crate::edition::CostMethod,
     ) -> Result<crate::edition::StorageCost, ServerError> {
-        let ws = self.works.get(&work_id)
+        let ws = self
+            .works
+            .get(&work_id)
             .ok_or_else(|| ServerError::WorkNotFound(work_id))?;
         let edition = ws.work.current_edition();
         Ok(edition.cost(method))
     }
 
-    pub fn content_shared_region(&self, work_a: BeId, work_b: BeId) -> Result<XnRegion, ServerError> {
-        let ed_a = self.get_edition(work_a)?.ok_or(ServerError::WorkNotFound(work_a))?;
-        let ed_b = self.get_edition(work_b)?.ok_or(ServerError::WorkNotFound(work_b))?;
+    pub fn content_shared_region(
+        &self,
+        work_a: BeId,
+        work_b: BeId,
+    ) -> Result<XnRegion, ServerError> {
+        let ed_a = self
+            .get_edition(work_a)?
+            .ok_or(ServerError::WorkNotFound(work_a))?;
+        let ed_b = self
+            .get_edition(work_b)?
+            .ok_or(ServerError::WorkNotFound(work_b))?;
         Ok(ed_a.content_shared_region(&ed_b))
     }
 
-    pub fn content_map_shared_to(&self, work_a: BeId, work_b: BeId) -> Result<crate::edition::SharedMapping, ServerError> {
-        let ed_a = self.get_edition(work_a)?.ok_or(ServerError::WorkNotFound(work_a))?;
-        let ed_b = self.get_edition(work_b)?.ok_or(ServerError::WorkNotFound(work_b))?;
+    pub fn content_map_shared_to(
+        &self,
+        work_a: BeId,
+        work_b: BeId,
+    ) -> Result<crate::edition::SharedMapping, ServerError> {
+        let ed_a = self
+            .get_edition(work_a)?
+            .ok_or(ServerError::WorkNotFound(work_a))?;
+        let ed_b = self
+            .get_edition(work_b)?
+            .ok_or(ServerError::WorkNotFound(work_b))?;
         Ok(ed_a.content_map_shared_to(&ed_b))
     }
 
-    pub fn content_map_shared_onto(&self, work_a: BeId, work_b: BeId) -> Result<crate::edition::SharedMapping, ServerError> {
-        let ed_a = self.get_edition(work_a)?.ok_or(ServerError::WorkNotFound(work_a))?;
-        let ed_b = self.get_edition(work_b)?.ok_or(ServerError::WorkNotFound(work_b))?;
+    pub fn content_map_shared_onto(
+        &self,
+        work_a: BeId,
+        work_b: BeId,
+    ) -> Result<crate::edition::SharedMapping, ServerError> {
+        let ed_a = self
+            .get_edition(work_a)?
+            .ok_or(ServerError::WorkNotFound(work_a))?;
+        let ed_b = self
+            .get_edition(work_b)?
+            .ok_or(ServerError::WorkNotFound(work_b))?;
         Ok(ed_a.content_map_shared_onto(&ed_b))
     }
 
-    pub fn positions_of(&self, work_id: BeId, element: &RangeElement) -> Result<XnRegion, ServerError> {
-        let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
+    pub fn positions_of(
+        &self,
+        work_id: BeId,
+        element: &RangeElement,
+    ) -> Result<XnRegion, ServerError> {
+        let edition = self
+            .get_edition(work_id)?
+            .ok_or(ServerError::WorkNotFound(work_id))?;
         Ok(edition.positions_of(element))
     }
 
-    pub fn range_transcluders(&self, work_id: BeId, region: Option<&XnRegion>, direct_only: bool) -> Result<crate::edition::RangeTransclusionResult, ServerError> {
-        let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
-        let query = crate::edition::RangeTransclusionQuery::new()
-            .direct_only(direct_only);
+    pub fn range_transcluders(
+        &self,
+        work_id: BeId,
+        region: Option<&XnRegion>,
+        direct_only: bool,
+    ) -> Result<crate::edition::RangeTransclusionResult, ServerError> {
+        let edition = self
+            .get_edition(work_id)?
+            .ok_or(ServerError::WorkNotFound(work_id))?;
+        let query = crate::edition::RangeTransclusionQuery::new().direct_only(direct_only);
         let query = match region {
             Some(r) => query.with_region(r.clone()),
             None => query,
         };
         let tq = crate::edition::TransclusionQuery::all();
-        Ok(crate::edition::range_transcluders(&edition, &query, self.backfollow.transclusion_index(), &tq))
+        Ok(crate::edition::range_transcluders(
+            &edition,
+            &query,
+            self.backfollow.transclusion_index(),
+            &tq,
+        ))
     }
 
-    pub fn range_works(&self, work_id: BeId, region: Option<&XnRegion>) -> Result<crate::edition::RangeWorkResult, ServerError> {
-        let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
+    pub fn range_works(
+        &self,
+        work_id: BeId,
+        region: Option<&XnRegion>,
+    ) -> Result<crate::edition::RangeWorkResult, ServerError> {
+        let edition = self
+            .get_edition(work_id)?
+            .ok_or(ServerError::WorkNotFound(work_id))?;
         let query = crate::edition::RangeTransclusionQuery::new();
         let query = match region {
             Some(r) => query.with_region(r.clone()),
             None => query,
         };
         let wq = crate::edition::WorkQuery::all();
-        Ok(crate::edition::range_works(&edition, &query, self.backfollow.transclusion_index(), &wq))
+        Ok(crate::edition::range_works(
+            &edition,
+            &query,
+            self.backfollow.transclusion_index(),
+            &wq,
+        ))
     }
 
-    pub fn ordered_bundles(&self, work_id: BeId, region: Option<&XnRegion>) -> Result<Vec<crate::edition::Bundle>, ServerError> {
-        let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
+    pub fn ordered_bundles(
+        &self,
+        work_id: BeId,
+        region: Option<&XnRegion>,
+    ) -> Result<Vec<crate::edition::Bundle>, ServerError> {
+        let edition = self
+            .get_edition(work_id)?
+            .ok_or(ServerError::WorkNotFound(work_id))?;
         Ok(edition.ordered_merge_bundles(region))
     }
 
-    pub fn transclusion_depth(&self, work_id: BeId, position: i64, max_depth: usize) -> Result<usize, ServerError> {
-        let edition = self.get_edition(work_id)?.ok_or(ServerError::WorkNotFound(work_id))?;
+    pub fn transclusion_depth(
+        &self,
+        work_id: BeId,
+        position: i64,
+        max_depth: usize,
+    ) -> Result<usize, ServerError> {
+        let edition = self
+            .get_edition(work_id)?
+            .ok_or(ServerError::WorkNotFound(work_id))?;
         Ok(edition.transclusion_depth(position, self.backfollow.transclusion_index(), max_depth))
     }
 
-    pub fn recorder_create(&mut self, query: crate::edition::RecorderQuery) -> Result<crate::edition::RecorderId, ServerError> {
+    pub fn recorder_create(
+        &mut self,
+        query: crate::edition::RecorderQuery,
+    ) -> Result<crate::edition::RecorderId, ServerError> {
         Ok(self.recorder_system.create_fossil(query))
     }
 
-    pub fn recorder_record(&mut self, recorder_id: crate::edition::RecorderId, element: &crate::edition::RangeElement) -> Result<bool, ServerError> {
+    pub fn recorder_record(
+        &mut self,
+        recorder_id: crate::edition::RecorderId,
+        element: &crate::edition::RangeElement,
+    ) -> Result<bool, ServerError> {
         let is_direct = true;
         let source_edition_id = element.as_edition_id();
         let source_work_id = element.as_work_id();
@@ -3575,7 +4025,8 @@ impl Server {
     }
 
     pub fn recorder_list(&self) -> Vec<&crate::edition::Fossil> {
-        self.recorder_system.fossil_ids()
+        self.recorder_system
+            .fossil_ids()
             .into_iter()
             .filter_map(|id| self.recorder_system.get_fossil(id))
             .collect()
@@ -3623,7 +4074,9 @@ impl Server {
     pub fn rotate_server_keys(&mut self) -> Result<crate::crypto::keys::KeyId, ServerError> {
         let old_kp = self.server_keypair.clone();
         let new_kp = crate::crypto::keys::ServerKeyPair::generate("xudanu-server");
-        let new_id = self.key_history.rotate(&old_kp, &new_kp)
+        let new_id = self
+            .key_history
+            .rotate(&old_kp, &new_kp)
             .map_err(|e| ServerError::Internal(format!("key rotation failed: {}", e)))?;
         self.server_keypair = new_kp;
         Ok(new_id)
@@ -3634,17 +4087,27 @@ impl Server {
         sig.to_bytes().to_vec()
     }
 
-    pub fn verify_server_signature(&self, data: &[u8], signature: &[u8]) -> Result<(), ServerError> {
+    pub fn verify_server_signature(
+        &self,
+        data: &[u8],
+        signature: &[u8],
+    ) -> Result<(), ServerError> {
         self.verify_server_signature_with_key(None, data, signature)
     }
 
-    pub fn verify_server_signature_with_key(&self, key_id: Option<u64>, data: &[u8], signature: &[u8]) -> Result<(), ServerError> {
+    pub fn verify_server_signature_with_key(
+        &self,
+        key_id: Option<u64>,
+        data: &[u8],
+        signature: &[u8],
+    ) -> Result<(), ServerError> {
         let sig = ed25519_dalek::Signature::from_slice(signature)
             .map_err(|_| ServerError::InvalidArgument("invalid signature bytes".into()))?;
         let verifying_key = match key_id {
             Some(kid) => {
-                let entry = self.key_history.get(kid)
-                    .ok_or_else(|| ServerError::InvalidArgument(format!("unknown key_id: {}", kid)))?;
+                let entry = self.key_history.get(kid).ok_or_else(|| {
+                    ServerError::InvalidArgument(format!("unknown key_id: {}", kid))
+                })?;
                 &entry.verifying_key
             }
             None => &self.server_keypair.signing_verifying_key(),
@@ -3662,15 +4125,17 @@ impl Server {
             return Ok(());
         }
         self.ensure_session(session_id)?;
-        let session = self.sessions.get(&session_id)
+        let session = self
+            .sessions
+            .get(&session_id)
             .ok_or(ServerError::SessionNotFound(session_id))?;
-        let km = session._key_master()
-            .ok_or(ServerError::NotAuthorized)?;
+        let km = session._key_master().ok_or(ServerError::NotAuthorized)?;
         for club_id in endorsements.club_ids() {
             if !km.has_signature_authority(club_id, &self.clubs) {
-                return Err(ServerError::Unauthorized(
-                    format!("no signature authority for club {}", club_id)
-                ));
+                return Err(ServerError::Unauthorized(format!(
+                    "no signature authority for club {}",
+                    club_id
+                )));
             }
         }
         Ok(())
@@ -3683,7 +4148,9 @@ impl Server {
         endorsements: crate::edition::EndorsementSet,
     ) -> Result<(), ServerError> {
         self.validate_endorsement(session_id, &endorsements)?;
-        let ws = self.works.get_mut(&work_id)
+        let ws = self
+            .works
+            .get_mut(&work_id)
             .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
         ws.work.endorse(&endorsements);
         ws.chunk_ref = None;
@@ -3697,15 +4164,22 @@ impl Server {
         endorsements: crate::edition::EndorsementSet,
     ) -> Result<(), ServerError> {
         self.validate_endorsement(session_id, &endorsements)?;
-        let ws = self.works.get_mut(&work_id)
+        let ws = self
+            .works
+            .get_mut(&work_id)
             .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
         ws.work.retract(&endorsements);
         ws.chunk_ref = None;
         Ok(())
     }
 
-    pub fn work_endorsements(&self, work_id: BeId) -> Result<crate::edition::EndorsementSet, ServerError> {
-        let ws = self.works.get(&work_id)
+    pub fn work_endorsements(
+        &self,
+        work_id: BeId,
+    ) -> Result<crate::edition::EndorsementSet, ServerError> {
+        let ws = self
+            .works
+            .get(&work_id)
             .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
         Ok(ws.work.endorsements().clone())
     }
@@ -3717,7 +4191,9 @@ impl Server {
         endorsements: crate::edition::EndorsementSet,
     ) -> Result<(), ServerError> {
         self.validate_endorsement(session_id, &endorsements)?;
-        let edition = self.standalone_editions.get_mut(&edition_id)
+        let edition = self
+            .standalone_editions
+            .get_mut(&edition_id)
             .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
         edition.endorse(&endorsements);
         self.standalone_edition_refs.remove(&edition_id);
@@ -3731,15 +4207,22 @@ impl Server {
         endorsements: crate::edition::EndorsementSet,
     ) -> Result<(), ServerError> {
         self.validate_endorsement(session_id, &endorsements)?;
-        let edition = self.standalone_editions.get_mut(&edition_id)
+        let edition = self
+            .standalone_editions
+            .get_mut(&edition_id)
             .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
         edition.retract(&endorsements);
         self.standalone_edition_refs.remove(&edition_id);
         Ok(())
     }
 
-    pub fn edition_endorsements(&self, edition_id: BeId) -> Result<crate::edition::EndorsementSet, ServerError> {
-        let edition = self.standalone_editions.get(&edition_id)
+    pub fn edition_endorsements(
+        &self,
+        edition_id: BeId,
+    ) -> Result<crate::edition::EndorsementSet, ServerError> {
+        let edition = self
+            .standalone_editions
+            .get(&edition_id)
             .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
         Ok(edition.endorsements().clone())
     }
@@ -3749,9 +4232,13 @@ impl Server {
         session_id: SessionId,
         edition_id: BeId,
     ) -> Result<crate::edition::EndorsementSet, ServerError> {
-        let edition = self.standalone_editions.get(&edition_id)
+        let edition = self
+            .standalone_editions
+            .get(&edition_id)
             .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
-        let _session = self.sessions.get(&session_id)
+        let _session = self
+            .sessions
+            .get(&session_id)
             .ok_or(ServerError::SessionNotFound(session_id))?;
         let mut result = edition.endorsements().clone();
         let candidates = self.works_with_edition_fingerprints(edition);
@@ -3771,7 +4258,9 @@ impl Server {
         &self,
         edition_id: BeId,
     ) -> Result<crate::edition::EndorsementSet, ServerError> {
-        let edition = self.standalone_editions.get(&edition_id)
+        let edition = self
+            .standalone_editions
+            .get(&edition_id)
             .ok_or(ServerError::NotFound(format!("edition {}", edition_id)))?;
         let mut result = edition.endorsements().clone();
         let candidates = self.works_with_edition_fingerprints(edition);
@@ -3785,7 +4274,10 @@ impl Server {
         Ok(result)
     }
 
-    fn works_with_edition_fingerprints(&self, edition: &Edition) -> std::collections::HashSet<BeId> {
+    fn works_with_edition_fingerprints(
+        &self,
+        edition: &Edition,
+    ) -> std::collections::HashSet<BeId> {
         let mut candidates = std::collections::HashSet::new();
         for (_, carrier) in edition.all_entries() {
             let fp = carrier.element.content_fingerprint();
@@ -3818,13 +4310,20 @@ impl Server {
     pub fn federation_info(&self) -> crate::server::federation::FederationInfo {
         let identity = self.server_identity();
         let config = self.federation.config();
-        let peers = config.peers.iter().map(|p| {
-            let addr_str = p.to_string();
-            match self.federation.peer_server_id(&addr_str) {
-                Some(sid) => crate::server::federation::FederationPeerInfo::connected(p.clone(), sid.to_string()),
-                None => crate::server::federation::FederationPeerInfo::unknown(p.clone()),
-            }
-        }).collect();
+        let peers = config
+            .peers
+            .iter()
+            .map(|p| {
+                let addr_str = p.to_string();
+                match self.federation.peer_server_id(&addr_str) {
+                    Some(sid) => crate::server::federation::FederationPeerInfo::connected(
+                        p.clone(),
+                        sid.to_string(),
+                    ),
+                    None => crate::server::federation::FederationPeerInfo::unknown(p.clone()),
+                }
+            })
+            .collect();
         crate::server::federation::FederationInfo {
             server_id: identity.server_id.clone(),
             federation_domain: crate::crypto::FEDERATION_DOMAIN.to_string(),
@@ -3865,7 +4364,10 @@ impl Server {
         self.federation.mark_peer_disconnected(address);
     }
 
-    pub fn get_remote_origin(&self, fingerprint: &[u8; 32]) -> Option<&crate::server::federation::RemoteOrigin> {
+    pub fn get_remote_origin(
+        &self,
+        fingerprint: &[u8; 32],
+    ) -> Option<&crate::server::federation::RemoteOrigin> {
         self.federation.get_remote_origin(fingerprint)
     }
 
@@ -3881,7 +4383,9 @@ impl Server {
         self.federation.is_enabled()
     }
 
-    pub fn federation_handshake_init(&self) -> (String, [u8; 32], crate::crypto::kex::EphemeralKeyPair) {
+    pub fn federation_handshake_init(
+        &self,
+    ) -> (String, [u8; 32], crate::crypto::kex::EphemeralKeyPair) {
         let identity = self.server_identity();
         let eph = crate::crypto::kex::EphemeralKeyPair::generate();
         let eph_bytes = *eph.public_key();
@@ -3893,14 +4397,14 @@ impl Server {
         my_eph: &[u8; 32],
         peer_eph: &[u8; 32],
     ) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
-        let sig = crate::crypto::kex::sign_handshake(
-            &self.server_keypair.signing_key,
-            my_eph,
-            peer_eph,
-        );
+        let sig =
+            crate::crypto::kex::sign_handshake(&self.server_keypair.signing_key, my_eph, peer_eph);
         (
             sig.to_bytes().to_vec(),
-            self.server_keypair.signing_verifying_key().to_bytes().to_vec(),
+            self.server_keypair
+                .signing_verifying_key()
+                .to_bytes()
+                .to_vec(),
             self.server_keypair.kex_public().as_bytes().to_vec(),
         )
     }
@@ -3923,29 +4427,33 @@ impl Server {
 
     pub fn federation_export_works(&self) -> Vec<crate::server::federation::SyncWorkEntry> {
         let server_id = self.federation_server_id();
-        self.works.iter()
+        self.works
+            .iter()
             .filter(|(_, ws)| ws.work.read_club() == Some(self.system_clubs.public_club))
-            .map(|(work_id, ws)| {
-                crate::server::federation::SyncWorkEntry {
-                    origin_server_id: server_id.clone(),
-                    work_id: *work_id,
-                    edition_payload: crate::server::transport::protocol::EditionPayload::from_edition(
-                        ws.work.current_edition()
-                    ),
-                    span_provenance: ws.work.current_edition().span_provenance.clone(),
-                }
-            }).collect()
+            .map(|(work_id, ws)| crate::server::federation::SyncWorkEntry {
+                origin_server_id: server_id.clone(),
+                work_id: *work_id,
+                edition_payload: crate::server::transport::protocol::EditionPayload::from_edition(
+                    ws.work.current_edition(),
+                ),
+                span_provenance: ws.work.current_edition().span_provenance.clone(),
+            })
+            .collect()
     }
 
     pub fn federation_export_editions(&self) -> Vec<crate::server::federation::SyncEditionEntry> {
         let server_id = self.federation_server_id();
-        self.standalone_editions.iter().map(|(edition_id, edition)| {
-            crate::server::federation::SyncEditionEntry {
-                origin_server_id: server_id.clone(),
-                edition_id: *edition_id,
-                edition_payload: crate::server::transport::protocol::EditionPayload::from_edition(edition),
-            }
-        }).collect()
+        self.standalone_editions
+            .iter()
+            .map(
+                |(edition_id, edition)| crate::server::federation::SyncEditionEntry {
+                    origin_server_id: server_id.clone(),
+                    edition_id: *edition_id,
+                    edition_payload:
+                        crate::server::transport::protocol::EditionPayload::from_edition(edition),
+                },
+            )
+            .collect()
     }
 
     pub fn federation_import_works(
@@ -3955,17 +4463,23 @@ impl Server {
     ) -> (usize, usize) {
         let mut imported = 0;
         let mut already_known = 0;
-        let existing_fingerprints: Vec<[u8; 32]> = self.works.iter().filter_map(|(_, ws)| {
-            let ed = ws.work.current_edition();
-            let entries = ed.all_entries();
-            if entries.is_empty() { return None; }
-            let mut hasher = blake3::Hasher::new();
-            for (pos, carrier) in &entries {
-                hasher.update(&pos.to_be_bytes());
-                hasher.update(&carrier.element.content_fingerprint());
-            }
-            Some(*hasher.finalize().as_bytes())
-        }).collect();
+        let existing_fingerprints: Vec<[u8; 32]> = self
+            .works
+            .iter()
+            .filter_map(|(_, ws)| {
+                let ed = ws.work.current_edition();
+                let entries = ed.all_entries();
+                if entries.is_empty() {
+                    return None;
+                }
+                let mut hasher = blake3::Hasher::new();
+                for (pos, carrier) in &entries {
+                    hasher.update(&pos.to_be_bytes());
+                    hasher.update(&carrier.element.content_fingerprint());
+                }
+                Some(*hasher.finalize().as_bytes())
+            })
+            .collect();
 
         for entry in entries {
             if entry.origin_server_id == my_server_id {
@@ -3985,17 +4499,16 @@ impl Server {
                 }
                 *hasher.finalize().as_bytes()
             };
-            if existing_fingerprints.iter().any(|fp| *fp == entry_fingerprint) {
+            if existing_fingerprints
+                .iter()
+                .any(|fp| *fp == entry_fingerprint)
+            {
                 already_known += 1;
             } else {
                 let (be_id, elem) = self.grand_map.new_work_element(None);
                 self.grand_map.assign_new_id(elem);
                 let title = Self::extract_title(&edition);
-                let mut work = crate::edition::Work::new_with_owner(
-                    be_id,
-                    None,
-                    edition,
-                );
+                let mut work = crate::edition::Work::new_with_owner(be_id, None, edition);
                 work.set_read_club(Some(self.system_clubs.public_club));
                 let ws = WorkState {
                     work,
@@ -4017,11 +4530,14 @@ impl Server {
                 };
                 for (_, carrier) in ws.work.current_edition().all_entries() {
                     let fp = carrier.element.content_fingerprint();
-                    self.federation.record_remote_origin(fp, crate::server::federation::RemoteOrigin {
-                        server_id: entry.origin_server_id.clone(),
-                        local_id: entry.work_id,
-                        element_type: crate::server::federation::RemoteElementType::Work,
-                    });
+                    self.federation.record_remote_origin(
+                        fp,
+                        crate::server::federation::RemoteOrigin {
+                            server_id: entry.origin_server_id.clone(),
+                            local_id: entry.work_id,
+                            element_type: crate::server::federation::RemoteElementType::Work,
+                        },
+                    );
                     self.backfollow.register_fingerprint_for_work(fp, be_id);
                     self.backfollow.register_federated_entry(
                         &carrier.element,
@@ -4038,28 +4554,36 @@ impl Server {
 
     pub fn federation_export_blobs(&self) -> Vec<crate::server::federation::SyncBlobEntry> {
         let hashes: Vec<[u8; 32]> = self.blob_store.all_hashes();
-        hashes.into_iter().filter_map(|hash| {
-            let data = match self.blob_store.retrieve(&hash) {
-                Ok(d) => d,
-                Err(_) => return None,
-            };
-            let meta = match self.blob_store.get_meta(&hash) {
-                Some(m) => m,
-                None => return None,
-            };
-            Some(crate::server::federation::SyncBlobEntry {
-                content_hash_hex: crate::edition::blob_store::hash_to_hex(&hash),
-                data: crate::edition::blob_store::base64_encode(&data),
-                mime_type: meta.mime_type.clone(),
+        hashes
+            .into_iter()
+            .filter_map(|hash| {
+                let data = match self.blob_store.retrieve(&hash) {
+                    Ok(d) => d,
+                    Err(_) => return None,
+                };
+                let meta = match self.blob_store.get_meta(&hash) {
+                    Some(m) => m,
+                    None => return None,
+                };
+                Some(crate::server::federation::SyncBlobEntry {
+                    content_hash_hex: crate::edition::blob_store::hash_to_hex(&hash),
+                    data: crate::edition::blob_store::base64_encode(&data),
+                    mime_type: meta.mime_type.clone(),
+                })
             })
-        }).collect()
+            .collect()
     }
 
-    pub fn federation_import_blobs(&mut self, entries: &[crate::server::federation::SyncBlobEntry], origin_server_id: &str) -> (usize, usize) {
+    pub fn federation_import_blobs(
+        &mut self,
+        entries: &[crate::server::federation::SyncBlobEntry],
+        origin_server_id: &str,
+    ) -> (usize, usize) {
         let mut imported = 0;
         let mut already_known = 0;
         for entry in entries {
-            let hash_bytes = match crate::edition::blob_store::hex_to_hash(&entry.content_hash_hex) {
+            let hash_bytes = match crate::edition::blob_store::hex_to_hash(&entry.content_hash_hex)
+            {
                 Some(h) => h,
                 None => continue,
             };
@@ -4080,11 +4604,14 @@ impl Server {
                 continue;
             }
             let _ = self.blob_store.store(&data, entry.mime_type.clone());
-            self.federation.record_remote_origin(hash_bytes, crate::server::federation::RemoteOrigin {
-                server_id: origin_server_id.to_string(),
-                local_id: 0,
-                element_type: crate::server::federation::RemoteElementType::Blob,
-            });
+            self.federation.record_remote_origin(
+                hash_bytes,
+                crate::server::federation::RemoteOrigin {
+                    server_id: origin_server_id.to_string(),
+                    local_id: 0,
+                    element_type: crate::server::federation::RemoteElementType::Blob,
+                },
+            );
             imported += 1;
         }
         (imported, already_known)
@@ -4109,7 +4636,9 @@ impl Server {
                     updates.push(crate::server::federation::CrdtWorkUpdate {
                         work_id,
                         update_bytes: bytes,
-                        span_provenance: self.works.get(&work_id)
+                        span_provenance: self
+                            .works
+                            .get(&work_id)
                             .map(|ws| ws.work.current_edition().span_provenance.clone())
                             .unwrap_or_default(),
                     });
@@ -4143,21 +4672,21 @@ impl Server {
             };
 
             match self.crdt_manager.apply_federation_update(
-                    update.work_id,
-                    &update.update_bytes,
-                    initial_text.as_deref(),
-                ) {
-                    Ok(_) => {
-                        if !update.span_provenance.is_empty() {
-                            self.crdt_manager.store_federated_provenance(
-                                update.work_id,
-                                update.span_provenance.clone(),
-                            );
-                        }
-                        applied += 1
+                update.work_id,
+                &update.update_bytes,
+                initial_text.as_deref(),
+            ) {
+                Ok(_) => {
+                    if !update.span_provenance.is_empty() {
+                        self.crdt_manager.store_federated_provenance(
+                            update.work_id,
+                            update.span_provenance.clone(),
+                        );
                     }
-                    Err(_) => failed += 1,
+                    applied += 1
                 }
+                Err(_) => failed += 1,
+            }
         }
         crate::server::federation::CrdtSyncResult {
             updates_applied: applied,
@@ -4169,10 +4698,13 @@ impl Server {
         self.server_keypair.signing_verifying_key()
     }
 
-    pub fn federation_get_work_edition(&self, work_id: u64) -> Option<crate::server::transport::protocol::EditionPayload> {
+    pub fn federation_get_work_edition(
+        &self,
+        work_id: u64,
+    ) -> Option<crate::server::transport::protocol::EditionPayload> {
         self.works.get(&work_id).map(|ws| {
             crate::server::transport::protocol::EditionPayload::from_edition(
-                ws.work.current_edition()
+                ws.work.current_edition(),
             )
         })
     }
@@ -4194,7 +4726,10 @@ impl Server {
     ) -> Vec<crate::server::federation::FederatedTransclusionEntry> {
         let mut entries = Vec::new();
 
-        let local_results = self.backfollow.transclusion_index().find_by_fingerprint_hex(content_fingerprint_hex);
+        let local_results = self
+            .backfollow
+            .transclusion_index()
+            .find_by_fingerprint_hex(content_fingerprint_hex);
         for (element, is_direct) in &local_results {
             if direct_only && !is_direct {
                 continue;
@@ -4216,7 +4751,10 @@ impl Server {
             });
         }
 
-        let fed_results = self.backfollow.transclusion_index().find_federated_by_hex(content_fingerprint_hex);
+        let fed_results = self
+            .backfollow
+            .transclusion_index()
+            .find_federated_by_hex(content_fingerprint_hex);
         for result in &fed_results {
             if direct_only && !result.is_direct {
                 continue;
@@ -4250,7 +4788,8 @@ impl Server {
                 if let Some(&work_id) = work_ids.iter().next() {
                     if let Some(ws) = self.works.get(&work_id) {
                         let ed = ws.work.current_edition();
-                        let payload = crate::server::transport::protocol::EditionPayload::from_edition(&ed);
+                        let payload =
+                            crate::server::transport::protocol::EditionPayload::from_edition(&ed);
                         return FederationFetchResponse::Edition(payload);
                     }
                 }
@@ -4268,10 +4807,12 @@ impl Server {
     }
 
     fn hex_to_fingerprint(hex: &str) -> Option<Vec<u8>> {
-        if hex.len() != 64 { return None; }
+        if hex.len() != 64 {
+            return None;
+        }
         let mut bytes = Vec::with_capacity(32);
         for i in (0..64).step_by(2) {
-            match u8::from_str_radix(&hex[i..i+2], 16) {
+            match u8::from_str_radix(&hex[i..i + 2], 16) {
                 Ok(b) => bytes.push(b),
                 Err(_) => return None,
             }
@@ -4335,30 +4876,19 @@ impl Server {
             crate::edition::blob_store::hash_to_hex(hash.as_bytes())
         };
 
-        let alt = crate::server::federation::AlternativeEdition::new(
-            &server_id,
-            rev,
-            edition,
-            timestamp,
-        );
+        let alt =
+            crate::server::federation::AlternativeEdition::new(&server_id, rev, edition, timestamp);
         let key = alt.key();
 
-        let state = self.reconcile_store.get_or_create(
-            &fp_hex,
-            key.clone(),
-            alt,
-            &server_id,
-            timestamp,
-        );
+        let state =
+            self.reconcile_store
+                .get_or_create(&fp_hex, key.clone(), alt, &server_id, timestamp);
         state.set_current(key, timestamp, &server_id);
     }
 
     /// Merge a remote ReconcileState into the local store.
     /// Used when receiving state_sync from a federated peer.
-    pub fn reconcile_merge_remote(
-        &mut self,
-        remote: crate::server::federation::ReconcileState,
-    ) {
+    pub fn reconcile_merge_remote(&mut self, remote: crate::server::federation::ReconcileState) {
         self.reconcile_store.merge_remote(&remote);
     }
 
@@ -4372,12 +4902,18 @@ impl Server {
     }
 
     /// Get reconcile state for a specific work fingerprint.
-    pub fn reconcile_get(&self, work_fingerprint: &str) -> Option<&crate::server::federation::ReconcileState> {
+    pub fn reconcile_get(
+        &self,
+        work_fingerprint: &str,
+    ) -> Option<&crate::server::federation::ReconcileState> {
         self.reconcile_store.get(work_fingerprint)
     }
 
     /// Get all alternative editions for a work fingerprint.
-    pub fn reconcile_alternatives(&self, work_fingerprint: &str) -> Vec<crate::server::federation::AlternativeEdition> {
+    pub fn reconcile_alternatives(
+        &self,
+        work_fingerprint: &str,
+    ) -> Vec<crate::server::federation::AlternativeEdition> {
         self.reconcile_store
             .get(work_fingerprint)
             .map(|s| s.all_alternatives().into_iter().cloned().collect())
@@ -4393,11 +4929,8 @@ impl Server {
         tag: crate::server::federation::OrSetTag,
     ) {
         if let Some(state) = self.reconcile_store.get_mut(work_fingerprint) {
-            let entry = crate::server::federation::EndorsementEntry::new(
-                club_id,
-                token_id,
-                &tag.server_id,
-            );
+            let entry =
+                crate::server::federation::EndorsementEntry::new(club_id, token_id, &tag.server_id);
             state.endorsements.add(entry, tag);
         }
     }
@@ -4406,19 +4939,11 @@ impl Server {
     /// Uses remove_value semantics — removes ALL entries matching the
     /// (club_id, token_id) pair, regardless of which tags added them.
     /// This is correct because the client doesn't track individual OR-Set tags.
-    pub fn reconcile_retract(
-        &mut self,
-        work_fingerprint: &str,
-        club_id: u64,
-        token_id: u64,
-    ) {
+    pub fn reconcile_retract(&mut self, work_fingerprint: &str, club_id: u64, token_id: u64) {
         let server_id = self.federation_server_id();
         if let Some(state) = self.reconcile_store.get_mut(work_fingerprint) {
-            let entry = crate::server::federation::EndorsementEntry::new(
-                club_id,
-                token_id,
-                &server_id,
-            );
+            let entry =
+                crate::server::federation::EndorsementEntry::new(club_id, token_id, &server_id);
             state.endorsements.remove_value(&entry);
         }
     }
@@ -4434,14 +4959,19 @@ impl Server {
 
     /// Export all endorsement sync data for a peer.
     /// Returns (work_fingerprint, endorsements) pairs.
-    pub fn reconcile_export_endorsements(&self) -> Vec<(String, crate::server::federation::OrSet<crate::server::federation::EndorsementEntry>)> {
+    pub fn reconcile_export_endorsements(
+        &self,
+    ) -> Vec<(
+        String,
+        crate::server::federation::OrSet<crate::server::federation::EndorsementEntry>,
+    )> {
         self.reconcile_store
             .fingerprints()
             .into_iter()
             .filter_map(|fp| {
-                self.reconcile_store.get(&fp).map(|s| {
-                    (fp, s.endorsements.clone())
-                })
+                self.reconcile_store
+                    .get(&fp)
+                    .map(|s| (fp, s.endorsements.clone()))
             })
             .collect()
     }
@@ -4449,7 +4979,10 @@ impl Server {
     /// Merge remote endorsement OR-Sets into local state.
     pub fn reconcile_merge_endorsements(
         &mut self,
-        entries: &[(String, crate::server::federation::OrSet<crate::server::federation::EndorsementEntry>)],
+        entries: &[(
+            String,
+            crate::server::federation::OrSet<crate::server::federation::EndorsementEntry>,
+        )],
     ) {
         for (fp, remote_endorsements) in entries {
             if let Some(state) = self.reconcile_store.get_mut(fp) {
@@ -4517,31 +5050,37 @@ impl Server {
     }
 
     pub fn membership_get_verifying_key_hex(&self, server_id: &str) -> Option<String> {
-        self.federation.membership().find_member(server_id)
+        self.federation
+            .membership()
+            .find_member(server_id)
             .map(|e| e.verifying_key_hex.clone())
     }
 
-    pub fn membership_verify(&self, server_id: &str) -> crate::server::federation::MembershipVerifyResult {
+    pub fn membership_verify(
+        &self,
+        server_id: &str,
+    ) -> crate::server::federation::MembershipVerifyResult {
         let membership = self.federation.membership();
         match membership.find_member(server_id) {
-            Some(entry) => {
-                crate::server::federation::MembershipVerifyResult {
-                    server_id: server_id.to_string(),
-                    is_member: entry.is_active() && entry.endorsement_count() >= membership.min_endorsements() as usize,
-                    endorsement_count: entry.endorsement_count(),
-                    min_endorsements: membership.min_endorsements(),
-                    endorsed_by: entry.endorsed_by.iter().map(|e| e.endorser_server_id.clone()).collect(),
-                }
-            }
-            None => {
-                crate::server::federation::MembershipVerifyResult {
-                    server_id: server_id.to_string(),
-                    is_member: false,
-                    endorsement_count: 0,
-                    min_endorsements: membership.min_endorsements(),
-                    endorsed_by: vec![],
-                }
-            }
+            Some(entry) => crate::server::federation::MembershipVerifyResult {
+                server_id: server_id.to_string(),
+                is_member: entry.is_active()
+                    && entry.endorsement_count() >= membership.min_endorsements() as usize,
+                endorsement_count: entry.endorsement_count(),
+                min_endorsements: membership.min_endorsements(),
+                endorsed_by: entry
+                    .endorsed_by
+                    .iter()
+                    .map(|e| e.endorser_server_id.clone())
+                    .collect(),
+            },
+            None => crate::server::federation::MembershipVerifyResult {
+                server_id: server_id.to_string(),
+                is_member: false,
+                endorsement_count: 0,
+                min_endorsements: membership.min_endorsements(),
+                endorsed_by: vec![],
+            },
         }
     }
 
@@ -4561,9 +5100,12 @@ impl Server {
 
         let sid = self.federation_server_id();
         let tag = self.federation.membership_mut().next_tag(&sid);
-        self.federation.membership_mut().add_member(entry.clone(), tag);
+        self.federation
+            .membership_mut()
+            .add_member(entry.clone(), tag);
 
-        let offered_endorsement = self.membership_sign_endorsement(&entry.server_id, &entry.verifying_key_hex);
+        let offered_endorsement =
+            self.membership_sign_endorsement(&entry.server_id, &entry.verifying_key_hex);
 
         crate::server::federation::JoinResult::Accepted {
             server_id,
@@ -4591,7 +5133,8 @@ impl Server {
         };
 
         let transcript = proof.canonical_transcript();
-        let signature = crate::crypto::sign::sign_bytes(&self.server_keypair.signing_key, &transcript);
+        let signature =
+            crate::crypto::sign::sign_bytes(&self.server_keypair.signing_key, &transcript);
 
         Some(crate::server::federation::EndorsementProof {
             signature: signature.to_bytes().to_vec(),
@@ -4613,10 +5156,15 @@ impl Server {
             Ok(s) => s,
             Err(_) => return false,
         };
-        crate::crypto::sign::verify_signature(endorser_verifying_key, &transcript, &signature).is_ok()
+        crate::crypto::sign::verify_signature(endorser_verifying_key, &transcript, &signature)
+            .is_ok()
     }
 
-    pub fn membership_endorse(&mut self, server_id: &str, proof: crate::server::federation::EndorsementProof) -> bool {
+    pub fn membership_endorse(
+        &mut self,
+        server_id: &str,
+        proof: crate::server::federation::EndorsementProof,
+    ) -> bool {
         if !self.membership_verify_single_proof(&proof) {
             tracing::warn!(
                 "endorsement proof signature verification failed for endorser={}",
@@ -4624,7 +5172,9 @@ impl Server {
             );
             return false;
         }
-        self.federation.membership_mut().endorse_member(server_id, proof)
+        self.federation
+            .membership_mut()
+            .endorse_member(server_id, proof)
     }
 
     fn membership_verify_entry_endorsements(
@@ -4646,7 +5196,11 @@ impl Server {
         &self,
         proof: &crate::server::federation::EndorsementProof,
     ) -> bool {
-        let endorser_entry = match self.federation.membership().find_member(&proof.endorser_server_id) {
+        let endorser_entry = match self
+            .federation
+            .membership()
+            .find_member(&proof.endorser_server_id)
+        {
             Some(e) => e,
             None => {
                 if self.federation.membership().is_bootstrap() {
@@ -4683,11 +5237,16 @@ impl Server {
         self.federation.membership_mut().merge(other);
     }
 
-    pub fn membership_export_orset(&self) -> &crate::server::federation::OrSet<crate::server::federation::MembershipEntry> {
+    pub fn membership_export_orset(
+        &self,
+    ) -> &crate::server::federation::OrSet<crate::server::federation::MembershipEntry> {
         self.federation.membership().to_orset()
     }
 
-    pub fn membership_merge_orset(&mut self, other: &crate::server::federation::OrSet<crate::server::federation::MembershipEntry>) {
+    pub fn membership_merge_orset(
+        &mut self,
+        other: &crate::server::federation::OrSet<crate::server::federation::MembershipEntry>,
+    ) {
         self.federation.membership_mut().merge_orset(other);
     }
 
@@ -4695,8 +5254,17 @@ impl Server {
     // Phase 19b: Governance & BFT
     // =================================================================
 
-    pub fn governance_propose(&mut self, transactions: Vec<crate::server::federation::GovernanceTx>) -> Option<crate::server::federation::GovernanceProposal> {
-        let members: Vec<String> = self.federation.membership().active_members().iter().map(|m| m.server_id.clone()).collect();
+    pub fn governance_propose(
+        &mut self,
+        transactions: Vec<crate::server::federation::GovernanceTx>,
+    ) -> Option<crate::server::federation::GovernanceProposal> {
+        let members: Vec<String> = self
+            .federation
+            .membership()
+            .active_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
         let my_id = self.federation_server_id();
         let mut gov = self.federation.governance_mut();
         gov.set_cluster_size(members.len().max(1));
@@ -4706,8 +5274,17 @@ impl Server {
         gov.propose(transactions, my_id)
     }
 
-    pub fn governance_receive_prepare(&mut self, vote: crate::server::federation::PbftVote) -> crate::server::federation::RoundPhase {
-        let members: Vec<String> = self.federation.membership().active_members().iter().map(|m| m.server_id.clone()).collect();
+    pub fn governance_receive_prepare(
+        &mut self,
+        vote: crate::server::federation::PbftVote,
+    ) -> crate::server::federation::RoundPhase {
+        let members: Vec<String> = self
+            .federation
+            .membership()
+            .active_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
         let member_ids: Vec<&str> = members.iter().map(|s| s.as_str()).collect();
         if !member_ids.contains(&vote.voter_id.as_str()) {
             return crate::server::federation::RoundPhase::PrePrepare;
@@ -4717,8 +5294,17 @@ impl Server {
         gov.receive_prepare(vote)
     }
 
-    pub fn governance_receive_commit(&mut self, vote: crate::server::federation::PbftVote) -> crate::server::federation::RoundPhase {
-        let members: Vec<String> = self.federation.membership().active_members().iter().map(|m| m.server_id.clone()).collect();
+    pub fn governance_receive_commit(
+        &mut self,
+        vote: crate::server::federation::PbftVote,
+    ) -> crate::server::federation::RoundPhase {
+        let members: Vec<String> = self
+            .federation
+            .membership()
+            .active_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
         let member_ids: Vec<&str> = members.iter().map(|s| s.as_str()).collect();
         if !member_ids.contains(&vote.voter_id.as_str()) {
             return crate::server::federation::RoundPhase::PrePrepare;
@@ -4738,10 +5324,18 @@ impl Server {
 
     pub(crate) fn governance_execute_tx(&mut self, tx: &crate::server::federation::GovernanceTx) {
         match tx {
-            crate::server::federation::GovernanceTx::Admit { server_id, verifying_key_hex, kex_public_hex } => {
+            crate::server::federation::GovernanceTx::Admit {
+                server_id,
+                verifying_key_hex,
+                kex_public_hex,
+            } => {
                 let proofs = vec![];
                 let entry = crate::server::federation::MembershipEntry::new(
-                    server_id, verifying_key_hex, kex_public_hex, proofs, Self::current_timestamp_secs(),
+                    server_id,
+                    verifying_key_hex,
+                    kex_public_hex,
+                    proofs,
+                    Self::current_timestamp_secs(),
                 );
                 let tag = self.federation.membership_mut().next_tag(server_id);
                 self.federation.membership_mut().add_member(entry, tag);
@@ -4749,7 +5343,12 @@ impl Server {
             crate::server::federation::GovernanceTx::Expel { server_id, .. } => {
                 self.federation.membership_mut().remove_member(server_id);
             }
-            crate::server::federation::GovernanceTx::KeyRegister { server_id, verifying_key_hex, kex_public_hex, .. } => {
+            crate::server::federation::GovernanceTx::KeyRegister {
+                server_id,
+                verifying_key_hex,
+                kex_public_hex,
+                ..
+            } => {
                 if let Some(mut entry) = self.federation.membership().find_member(server_id) {
                     entry.verifying_key_hex = verifying_key_hex.clone();
                     entry.kex_public_hex = kex_public_hex.clone();
@@ -4758,7 +5357,13 @@ impl Server {
                     self.federation.membership_mut().add_member(entry, tag);
                 }
             }
-            crate::server::federation::GovernanceTx::RoyaltyRecord { origin_server_id, content_fingerprint_hex, royalty_type, amount, .. } => {
+            crate::server::federation::GovernanceTx::RoyaltyRecord {
+                origin_server_id,
+                content_fingerprint_hex,
+                royalty_type,
+                amount,
+                ..
+            } => {
                 let fp_bytes: [u8; 32] = match Self::hex_decode(content_fingerprint_hex)
                     .ok()
                     .and_then(|v| v.try_into().ok())
@@ -4766,13 +5371,14 @@ impl Server {
                     Some(b) => b,
                     None => return,
                 };
-                self.federation.record_royalty(crate::server::federation::RoyaltyEntry {
-                    origin_server_id: origin_server_id.clone(),
-                    content_fingerprint: fp_bytes,
-                    royalty_type: royalty_type.clone(),
-                    amount: *amount,
-                    timestamp: Self::current_timestamp_secs(),
-                });
+                self.federation
+                    .record_royalty(crate::server::federation::RoyaltyEntry {
+                        origin_server_id: origin_server_id.clone(),
+                        content_fingerprint: fp_bytes,
+                        royalty_type: royalty_type.clone(),
+                        amount: *amount,
+                        timestamp: Self::current_timestamp_secs(),
+                    });
             }
         }
     }
@@ -4794,13 +5400,25 @@ impl Server {
     }
 
     pub fn governance_is_leader(&self) -> bool {
-        let members: Vec<String> = self.federation.membership().active_members().iter().map(|m| m.server_id.clone()).collect();
+        let members: Vec<String> = self
+            .federation
+            .membership()
+            .active_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
         let my_id = self.federation_server_id();
         self.federation.governance().is_leader(&my_id, &members)
     }
 
     pub fn governance_leader_id(&self) -> Option<String> {
-        let members: Vec<String> = self.federation.membership().active_members().iter().map(|m| m.server_id.clone()).collect();
+        let members: Vec<String> = self
+            .federation
+            .membership()
+            .active_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
         self.federation.governance().leader_id(&members)
     }
 
@@ -4817,7 +5435,9 @@ impl Server {
     }
 
     pub fn governance_mark_applied(&mut self, sequence_number: u64) {
-        self.federation.governance_mut().mark_applied(sequence_number);
+        self.federation
+            .governance_mut()
+            .mark_applied(sequence_number);
     }
 
     pub fn federation_royalty_ledger(&self) -> &[crate::server::federation::RoyaltyEntry] {
@@ -4835,8 +5455,8 @@ pub enum FederationFetchResponse {
 #[cfg(feature = "server")]
 pub(crate) mod persist_snapshot {
     use super::*;
-    use std::collections::{HashMap, HashSet};
     use crate::edition::persistent::{EditionSnapshot, WorkSnapshot};
+    use std::collections::{HashMap, HashSet};
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
     struct WorkStateSnapshot {
@@ -4929,16 +5549,25 @@ pub(crate) mod persist_snapshot {
 
     impl Server {
         pub fn to_snapshot(&self) -> ServerSnapshot {
-            let works = self.works.iter().map(|(id, ws)| {
-                (*id, WorkStateSnapshot {
-                    work: WorkSnapshot::from_work(&ws.work),
-                    grabber: ws.grabber.map(|s| s.0),
-                    last_revision_author: ws.last_revision_author,
+            let works = self
+                .works
+                .iter()
+                .map(|(id, ws)| {
+                    (
+                        *id,
+                        WorkStateSnapshot {
+                            work: WorkSnapshot::from_work(&ws.work),
+                            grabber: ws.grabber.map(|s| s.0),
+                            last_revision_author: ws.last_revision_author,
+                        },
+                    )
                 })
-            }).collect();
+                .collect();
 
-            let clubs = self.clubs.iter().map(|(id, club)| {
-                ClubSnapshot {
+            let clubs = self
+                .clubs
+                .iter()
+                .map(|(id, club)| ClubSnapshot {
                     be_id: *id,
                     name: club.name().map(|s| s.to_string()),
                     signature_club: club.signature_club(),
@@ -4951,26 +5580,31 @@ pub(crate) mod persist_snapshot {
                     encrypted_signing_key: club.encrypted_signing_key().cloned(),
                     members: club.members().iter().copied().collect(),
                     sponsored_works: club.sponsored_works().iter().copied().collect(),
-                }
-            }).collect();
+                })
+                .collect();
 
-            let standalone_editions = self.standalone_editions.iter().map(|(id, ed)| {
-                StandaloneEditionSnapshot {
+            let standalone_editions = self
+                .standalone_editions
+                .iter()
+                .map(|(id, ed)| StandaloneEditionSnapshot {
                     be_id: *id,
                     edition: EditionSnapshot::from_edition(ed),
-                }
-            }).collect();
+                })
+                .collect();
 
-            let blob_metas = self.blob_store.all_metas().iter().map(|(hash, meta)| {
-                BlobMetaSnapshot {
+            let blob_metas = self
+                .blob_store
+                .all_metas()
+                .iter()
+                .map(|(hash, meta)| BlobMetaSnapshot {
                     content_hash: hash.to_vec(),
                     hash_u64: meta.hash_u64(),
                     byte_size: meta.byte_size,
                     mime_type: meta.mime_type.clone(),
                     preview_hash: meta.preview_hash.map(|ph| ph.to_vec()),
                     metadata: meta.metadata.clone(),
-                }
-            }).collect();
+                })
+                .collect();
 
             let kh_file = self.key_history.to_file_repr();
             let key_history = Some(KeyHistorySnapshot {
@@ -4988,19 +5622,28 @@ pub(crate) mod persist_snapshot {
                 works,
                 clubs,
                 standalone_editions,
-                links: self.links.iter().map(|(id, ls)| LinkSnapshot {
-                    link_id: *id,
-                    origin: ls.origin,
-                    destination: ls.destination,
-                }).collect(),
+                links: self
+                    .links
+                    .iter()
+                    .map(|(id, ls)| LinkSnapshot {
+                        link_id: *id,
+                        origin: ls.origin,
+                        destination: ls.destination,
+                    })
+                    .collect(),
                 link_counter: self.link_counter,
                 admin: AdminSnapshot {
                     accepting_connections: self.admin.is_accepting_connections(),
                     shutdown_requested: self.admin.is_shutdown_requested(),
-                    grants: self.admin.grants().iter().map(|g| {
-                        let (start, end) = g.region.as_interval().unwrap_or((0, 0));
-                        (g.club_id, start, end)
-                    }).collect(),
+                    grants: self
+                        .admin
+                        .grants()
+                        .iter()
+                        .map(|g| {
+                            let (start, end) = g.region.as_interval().unwrap_or((0, 0));
+                            (g.club_id, start, end)
+                        })
+                        .collect(),
                 },
                 reconcile_store: self.reconcile_store.clone(),
                 reconcile_counter: self.reconcile_counter,
@@ -5017,10 +5660,14 @@ pub(crate) mod persist_snapshot {
             grand_map.set_id_counter(snapshot.grand_map_id_counter);
             let server_kp = crate::crypto::keys::ServerKeyPair::generate("xudanu-server");
 
-            let federation = snapshot.federation.as_ref()
+            let federation = snapshot
+                .federation
+                .as_ref()
                 .map(|fs| crate::server::federation::FederationState::from_snapshot(fs))
                 .unwrap_or_else(crate::server::federation::FederationState::disabled);
-            let content_address = snapshot.content_address.clone()
+            let content_address = snapshot
+                .content_address
+                .clone()
                 .unwrap_or_else(|| ContentAddressIndex::new(1_000_000));
 
             let mut server = Server {
@@ -5062,22 +5709,20 @@ pub(crate) mod persist_snapshot {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
-             crdt_manager: CrdtManager::new(3),
-             personal_club_count: 0,
-             max_personal_clubs: 10_000,
-             login_attempts: HashMap::new(),
-             attribution_log: None,
-              };
+                crdt_manager: CrdtManager::new(3),
+                personal_club_count: 0,
+                max_personal_clubs: 10_000,
+                login_attempts: HashMap::new(),
+                attribution_log: None,
+            };
             for club_snap in &snapshot.clubs {
-                let work = club_snap.work.to_work(
-                    crate::persist::FlockId::new(club_snap.be_id, 0),
-                    None,
-                ).work().clone();
-                let mut club = Club::new_with_owner(
-                    club_snap.be_id,
-                    work.owner(),
-                    work.edition().clone(),
-                );
+                let work = club_snap
+                    .work
+                    .to_work(crate::persist::FlockId::new(club_snap.be_id, 0), None)
+                    .work()
+                    .clone();
+                let mut club =
+                    Club::new_with_owner(club_snap.be_id, work.owner(), work.edition().clone());
                 club.set_signature_club(club_snap.signature_club);
                 club.set_default_read_club(club_snap.default_read_club);
                 club.set_default_edit_club(club_snap.default_edit_club);
@@ -5101,10 +5746,11 @@ pub(crate) mod persist_snapshot {
             server.personal_club_count = server.clubs.values().filter(|c| c.is_personal()).count();
 
             for (id, ws_snap) in &snapshot.works {
-                let work = ws_snap.work.to_work(
-                    crate::persist::FlockId::new(*id, 0),
-                    None,
-                ).work().clone();
+                let work = ws_snap
+                    .work
+                    .to_work(crate::persist::FlockId::new(*id, 0), None)
+                    .work()
+                    .clone();
                 let ws = WorkState {
                     work: work.clone(),
                     chunk_ref: None,
@@ -5124,38 +5770,59 @@ pub(crate) mod persist_snapshot {
                 server.standalone_editions.insert(se_snap.be_id, edition);
             }
 
-            server.admin.set_accepting_connections(snapshot.admin.accepting_connections);
+            server
+                .admin
+                .set_accepting_connections(snapshot.admin.accepting_connections);
             if snapshot.admin.shutdown_requested {
                 server.admin.request_shutdown();
             }
             for (club_id, start, end) in &snapshot.admin.grants {
-                server.admin.grant(*club_id, crate::edition::XnRegion::interval(*start, *end));
+                server
+                    .admin
+                    .grant(*club_id, crate::edition::XnRegion::interval(*start, *end));
             }
 
             for ls in &snapshot.links {
                 let o_ref = HyperRef::single(None, Some(ls.origin), None, None);
                 let d_ref = HyperRef::single(None, Some(ls.destination), None, None);
                 let link = HyperLink::make(vec![], o_ref, d_ref);
-                server.links.insert(ls.link_id, LinkState {
-                    link,
-                    origin: ls.origin,
-                    destination: ls.destination,
-                });
-                server.work_to_links.entry(ls.origin).or_default().push(ls.link_id);
-                server.work_to_links.entry(ls.destination).or_default().push(ls.link_id);
+                server.links.insert(
+                    ls.link_id,
+                    LinkState {
+                        link,
+                        origin: ls.origin,
+                        destination: ls.destination,
+                    },
+                );
+                server
+                    .work_to_links
+                    .entry(ls.origin)
+                    .or_default()
+                    .push(ls.link_id);
+                server
+                    .work_to_links
+                    .entry(ls.destination)
+                    .or_default()
+                    .push(ls.link_id);
             }
 
             for (wid, ws) in &server.works {
                 let edition = ws.work.edition().clone();
                 let elem = RangeElement::work(*wid);
-                server.backfollow.transclusion_index_mut().register_work(&edition, &elem);
+                server
+                    .backfollow
+                    .transclusion_index_mut()
+                    .register_work(&edition, &elem);
                 for (_, carrier) in edition.all_entries() {
                     let fp = carrier.element.content_fingerprint();
                     server.backfollow.register_fingerprint_for_work(fp, *wid);
                 }
             }
 
-            let max_id = server.works.keys().copied()
+            let max_id = server
+                .works
+                .keys()
+                .copied()
                 .chain(server.clubs.keys().copied())
                 .chain(server.links.keys().copied())
                 .chain(server.standalone_editions.keys().copied())
@@ -5193,25 +5860,28 @@ pub(crate) mod persist_snapshot {
             }
             let manifest_path = match self.checkpoint_path {
                 Some(ref p) => p.clone(),
-                None => return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "no checkpoint path configured",
-                )),
+                None => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "no checkpoint path configured",
+                    ))
+                }
             };
             let start = std::time::Instant::now();
 
             let chunk_store = self.chunk_store.as_ref().unwrap();
 
             let mut dirty_work_count = 0u64;
-            let mut work_refs: Vec<(BeId, crate::persist::edition_chunks::WorkChunkRef)> = Vec::new();
+            let mut work_refs: Vec<(BeId, crate::persist::edition_chunks::WorkChunkRef)> =
+                Vec::new();
             for (id, ws) in &self.works {
                 if let Some(ref existing_ref) = ws.chunk_ref {
                     work_refs.push((*id, existing_ref.clone()));
                 } else {
                     dirty_work_count += 1;
-                    let work_ref = crate::persist::edition_chunks::work_to_chunks(
-                        &ws.work, chunk_store,
-                    ).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let work_ref =
+                        crate::persist::edition_chunks::work_to_chunks(&ws.work, chunk_store)
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     work_refs.push((*id, work_ref));
                 }
             }
@@ -5235,9 +5905,8 @@ pub(crate) mod persist_snapshot {
                 }
                 dirty_club_count += 1;
                 let work = club.work();
-                let work_ref = crate::persist::edition_chunks::work_to_chunks(
-                    work, chunk_store,
-                ).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                let work_ref = crate::persist::edition_chunks::work_to_chunks(work, chunk_store)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                 let club_ref = crate::persist::manifest::ClubChunkRef {
                     be_id: *id,
                     name: club.name().map(|s| s.to_string()),
@@ -5271,9 +5940,9 @@ pub(crate) mod persist_snapshot {
                     continue;
                 }
                 dirty_edition_count += 1;
-                let ed_ref = crate::persist::edition_chunks::edition_to_chunks(
-                    edition, chunk_store,
-                ).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                let ed_ref =
+                    crate::persist::edition_chunks::edition_to_chunks(edition, chunk_store)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                 standalone_refs.push(crate::persist::manifest::StandaloneEditionChunkRef {
                     be_id: *id,
                     edition_ref: ed_ref.clone(),
@@ -5281,24 +5950,29 @@ pub(crate) mod persist_snapshot {
                 self.standalone_edition_refs.insert(*id, ed_ref);
             }
 
-            let links: Vec<_> = self.links.iter().map(|(id, ls)| {
-                crate::persist::manifest::LinkEntry {
+            let links: Vec<_> = self
+                .links
+                .iter()
+                .map(|(id, ls)| crate::persist::manifest::LinkEntry {
                     link_id: *id,
                     origin: ls.origin,
                     destination: ls.destination,
-                }
-            }).collect();
+                })
+                .collect();
 
-            let blob_metas: Vec<_> = self.blob_store.all_metas().iter().map(|(hash, meta)| {
-                crate::persist::manifest::BlobMetaEntry {
+            let blob_metas: Vec<_> = self
+                .blob_store
+                .all_metas()
+                .iter()
+                .map(|(hash, meta)| crate::persist::manifest::BlobMetaEntry {
                     content_hash: hash.to_vec(),
                     hash_u64: meta.hash_u64(),
                     byte_size: meta.byte_size,
                     mime_type: meta.mime_type.clone(),
                     preview_hash: meta.preview_hash.map(|ph| ph.to_vec()),
                     metadata: meta.metadata.clone(),
-                }
-            }).collect();
+                })
+                .collect();
 
             let kh_file = self.key_history.to_file_repr();
             let key_history = Some(crate::persist::manifest::KeyHistoryEntry {
@@ -5325,16 +5999,21 @@ pub(crate) mod persist_snapshot {
                 admin: crate::persist::manifest::AdminEntry {
                     accepting_connections: self.admin.is_accepting_connections(),
                     shutdown_requested: self.admin.is_shutdown_requested(),
-                    grants: self.admin.grants().iter().map(|g| {
-                        let (start, end) = g.region.as_interval().unwrap_or_else(|| {
-                            tracing::warn!(
-                                "grant for club {} has non-interval region, saving as (0,0)",
-                                g.club_id
-                            );
-                            (0, 0)
-                        });
-                        (g.club_id, start, end)
-                    }).collect(),
+                    grants: self
+                        .admin
+                        .grants()
+                        .iter()
+                        .map(|g| {
+                            let (start, end) = g.region.as_interval().unwrap_or_else(|| {
+                                tracing::warn!(
+                                    "grant for club {} has non-interval region, saving as (0,0)",
+                                    g.club_id
+                                );
+                                (0, 0)
+                            });
+                            (g.club_id, start, end)
+                        })
+                        .collect(),
                 },
                 reconcile_store: self.reconcile_store.clone(),
                 reconcile_counter: self.reconcile_counter,
@@ -5368,26 +6047,35 @@ pub(crate) mod persist_snapshot {
                 None => return Ok(0),
             };
 
-            let mut referenced: std::collections::HashSet<[u8; 32]> = std::collections::HashSet::new();
+            let mut referenced: std::collections::HashSet<[u8; 32]> =
+                std::collections::HashSet::new();
             for ws in self.works.values() {
                 if let Some(ref work_ref) = ws.chunk_ref {
-                    if let Ok(hashes) = crate::persist::edition_chunks::collect_work_hashes(work_ref, chunk_store) {
+                    if let Ok(hashes) =
+                        crate::persist::edition_chunks::collect_work_hashes(work_ref, chunk_store)
+                    {
                         referenced.extend(hashes);
                     }
                 }
             }
             for club_ref in self.club_refs.values() {
-                if let Ok(hashes) = crate::persist::edition_chunks::collect_work_hashes(&club_ref.work_root, chunk_store) {
+                if let Ok(hashes) = crate::persist::edition_chunks::collect_work_hashes(
+                    &club_ref.work_root,
+                    chunk_store,
+                ) {
                     referenced.extend(hashes);
                 }
             }
             for ed_ref in self.standalone_edition_refs.values() {
-                if let Ok(hashes) = crate::persist::edition_chunks::collect_edition_hashes(ed_ref, chunk_store) {
+                if let Ok(hashes) =
+                    crate::persist::edition_chunks::collect_edition_hashes(ed_ref, chunk_store)
+                {
                     referenced.extend(hashes);
                 }
             }
 
-            let all_chunks = chunk_store.all_chunk_hashes()
+            let all_chunks = chunk_store
+                .all_chunk_hashes()
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
             let mut removed = 0u64;
@@ -5427,7 +6115,10 @@ pub(crate) mod persist_snapshot {
             Ok(Self::from_snapshot_with_persistence(&snapshot, path))
         }
 
-        fn from_snapshot_with_persistence(snapshot: &ServerSnapshot, snapshot_path: &std::path::Path) -> Self {
+        fn from_snapshot_with_persistence(
+            snapshot: &ServerSnapshot,
+            snapshot_path: &std::path::Path,
+        ) -> Self {
             let mut server = Self::from_snapshot(snapshot);
             server.checkpoint_path = Some(snapshot_path.to_path_buf());
             if let Some(data_dir) = snapshot_path.parent() {
@@ -5465,15 +6156,23 @@ fn find_shared_substrings(
                 continue;
             }
             let mut len = 0usize;
-            while i + len < a_len && j + len < b_len
-                && !matched_a[i + len] && !matched_b[j + len]
+            while i + len < a_len
+                && j + len < b_len
+                && !matched_a[i + len]
+                && !matched_b[j + len]
                 && a_bytes[i + len] == b_bytes[j + len]
             {
                 len += 1;
             }
             if len >= min_len {
                 let shared = String::from_utf8_lossy(&a_bytes[i..i + len]).to_string();
-                results.push((i as i64, (i + len) as i64, j as i64, (j + len) as i64, shared));
+                results.push((
+                    i as i64,
+                    (i + len) as i64,
+                    j as i64,
+                    (j + len) as i64,
+                    shared,
+                ));
                 for k in 0..len {
                     matched_a[i + k] = true;
                     matched_b[j + k] = true;
@@ -5500,9 +6199,15 @@ mod tests_find_text {
     #[test]
     fn find_text_transcluders_basic() {
         let (mut server, sid) = setup();
-        let doc1 = server.create_work(sid, Edition::from_text("hello world")).unwrap();
-        let doc2 = server.create_work(sid, Edition::from_text("hello universe")).unwrap();
-        let doc3 = server.create_work(sid, Edition::from_text("goodbye world")).unwrap();
+        let doc1 = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let doc2 = server
+            .create_work(sid, Edition::from_text("hello universe"))
+            .unwrap();
+        let doc3 = server
+            .create_work(sid, Edition::from_text("goodbye world"))
+            .unwrap();
 
         let results = server.find_text_transcluders("hello");
         assert_eq!(results.len(), 2);
@@ -5515,7 +6220,9 @@ mod tests_find_text {
     #[test]
     fn find_text_transcluders_returns_match_positions() {
         let (mut server, sid) = setup();
-        let _doc = server.create_work(sid, Edition::from_text("abc hello def hello ghi")).unwrap();
+        let _doc = server
+            .create_work(sid, Edition::from_text("abc hello def hello ghi"))
+            .unwrap();
 
         let results = server.find_text_transcluders("hello");
         assert_eq!(results.len(), 1);
@@ -5527,7 +6234,9 @@ mod tests_find_text {
     #[test]
     fn find_text_transcluders_no_match() {
         let (mut server, sid) = setup();
-        let _doc = server.create_work(sid, Edition::from_text("hello world")).unwrap();
+        let _doc = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
 
         let results = server.find_text_transcluders("xyz");
         assert!(results.is_empty());
@@ -5536,7 +6245,9 @@ mod tests_find_text {
     #[test]
     fn find_text_transcluders_returns_owner_and_revision_count() {
         let (mut server, sid) = setup();
-        let doc = server.create_work(sid, Edition::from_text("hello")).unwrap();
+        let doc = server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
 
         let results = server.find_text_transcluders("hello");
         assert_eq!(results.len(), 1);
@@ -5548,9 +6259,15 @@ mod tests_find_text {
     #[test]
     fn find_text_transcluders_fingerprint_intersection_filters() {
         let (mut server, sid) = setup();
-        let _doc_a = server.create_work(sid, Edition::from_text("the quick brown fox")).unwrap();
-        let _doc_b = server.create_work(sid, Edition::from_text("aaa bbb ccc")).unwrap();
-        let doc_c = server.create_work(sid, Edition::from_text("the slow brown bear")).unwrap();
+        let _doc_a = server
+            .create_work(sid, Edition::from_text("the quick brown fox"))
+            .unwrap();
+        let _doc_b = server
+            .create_work(sid, Edition::from_text("aaa bbb ccc"))
+            .unwrap();
+        let doc_c = server
+            .create_work(sid, Edition::from_text("the slow brown bear"))
+            .unwrap();
 
         let results = server.find_text_transcluders("brown");
         let found_ids: Vec<BeId> = results.iter().map(|(id, _, _, _)| *id).collect();
@@ -5562,18 +6279,27 @@ mod tests_find_text {
     fn find_text_transcluders_long_text_performance() {
         let (mut server, sid) = setup();
         let long_text: String = "abcdefghijklmnopqrstuvwxyz".repeat(200);
-        let _doc = server.create_work(sid, Edition::from_text(&long_text)).unwrap();
+        let _doc = server
+            .create_work(sid, Edition::from_text(&long_text))
+            .unwrap();
 
         let results = server.find_text_transcluders("xyzabc");
         assert_eq!(results.len(), 1);
-        assert!(!results[0].3.is_empty(), "should find 'xyzabc' at wrap-around boundary");
+        assert!(
+            !results[0].3.is_empty(),
+            "should find 'xyzabc' at wrap-around boundary"
+        );
     }
 
     #[test]
     fn find_shared_regions_basic() {
         let (mut server, sid) = setup();
-        let doc_a = server.create_work(sid, Edition::from_text("the quick brown fox")).unwrap();
-        let doc_b = server.create_work(sid, Edition::from_text("a quick blue fox jumps")).unwrap();
+        let doc_a = server
+            .create_work(sid, Edition::from_text("the quick brown fox"))
+            .unwrap();
+        let doc_b = server
+            .create_work(sid, Edition::from_text("a quick blue fox jumps"))
+            .unwrap();
 
         let regions = server.find_shared_regions(doc_a, doc_b);
         assert!(!regions.is_empty());
@@ -5756,7 +6482,9 @@ mod tests {
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
 
-        let work_id = server.create_work(sid1, Edition::from_text("test")).unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("test"))
+            .unwrap();
 
         server.work_grab(sid1, work_id).unwrap();
         let result = server.work_grab(sid2, work_id);
@@ -5823,7 +6551,9 @@ mod tests {
         server.login_public(sid).unwrap();
 
         let private_club = server.create_club(sid, Edition::empty()).unwrap();
-        let work_id = server.create_work(sid, Edition::from_text("restricted")).unwrap();
+        let work_id = server
+            .create_work(sid, Edition::from_text("restricted"))
+            .unwrap();
 
         server
             .work_set_edit_club(sid, work_id, Some(private_club))
@@ -5880,23 +6610,20 @@ mod tests {
         server.work_grab(sid, work_id).unwrap();
         for i in 1..5u64 {
             server
-                .work_revise(
-                    sid,
-                    work_id,
-                    Edition::from_text(&format!("r{}", i)),
-                )
+                .work_revise(sid, work_id, Edition::from_text(&format!("r{}", i)))
                 .unwrap();
         }
 
         assert_eq!(server.work_revision_count(work_id).unwrap(), 4);
         assert_eq!(
-            server.work_fetch_revision(work_id, 0).unwrap().unwrap().to_text(),
+            server
+                .work_fetch_revision(work_id, 0)
+                .unwrap()
+                .unwrap()
+                .to_text(),
             "r0"
         );
-        assert_eq!(
-            server.work_edition(work_id).unwrap().to_text(),
-            "r4"
-        );
+        assert_eq!(server.work_edition(work_id).unwrap().to_text(), "r4");
     }
 
     #[test]
@@ -5951,7 +6678,10 @@ mod tests {
         let events_clone = events.clone();
         let detector = Box::new(crate::server::detector::FnDetector::new(
             move |event: &Event| {
-                events_clone.lock().unwrap_or_else(|e| e.into_inner()).push(event.clone());
+                events_clone
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(event.clone());
             },
         ));
         server.add_revision_detector(work_id, detector).unwrap();
@@ -5989,7 +6719,10 @@ mod tests {
         let events_clone = events.clone();
         let detector = Box::new(crate::server::detector::FnDetector::new(
             move |event: &Event| {
-                events_clone.lock().unwrap_or_else(|e| e.into_inner()).push(event.clone());
+                events_clone
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(event.clone());
             },
         ));
         server.add_status_detector(work_id, detector).unwrap();
@@ -6012,7 +6745,9 @@ mod tests {
         let bob = server.connect();
         server.login_public(bob).unwrap();
 
-        let doc = server.create_work(alice, Edition::from_text("shared doc")).unwrap();
+        let doc = server
+            .create_work(alice, Edition::from_text("shared doc"))
+            .unwrap();
 
         assert!(server.work_can_read(alice, doc).unwrap());
         assert!(server.work_can_read(bob, doc).unwrap());
@@ -6038,7 +6773,11 @@ mod tests {
         assert_eq!(server.work_revision_count(doc).unwrap(), 2);
         assert_eq!(server.work_edition(doc).unwrap().to_text(), "bob edited");
         assert_eq!(
-            server.work_fetch_revision(doc, 0).unwrap().unwrap().to_text(),
+            server
+                .work_fetch_revision(doc, 0)
+                .unwrap()
+                .unwrap()
+                .to_text(),
             "shared doc"
         );
     }
@@ -6099,12 +6838,12 @@ mod tests {
         let club_id = server
             .create_named_club(sid, "owners", Edition::empty())
             .unwrap();
-        let work_id = server.create_work(sid, Edition::from_text("owned")).unwrap();
+        let work_id = server
+            .create_work(sid, Edition::from_text("owned"))
+            .unwrap();
 
         assert!(server.work_owner(work_id).unwrap().is_some());
-        server
-            .work_set_owner(sid, work_id, Some(club_id))
-            .unwrap();
+        server.work_set_owner(sid, work_id, Some(club_id)).unwrap();
         assert_eq!(server.work_owner(work_id).unwrap(), Some(club_id));
     }
 
@@ -6124,7 +6863,10 @@ mod tests {
         let events_clone = events.clone();
         let detector = Box::new(crate::server::detector::FnDetector::new(
             move |event: &Event| {
-                events_clone.lock().unwrap_or_else(|e| e.into_inner()).push(event.clone());
+                events_clone
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(event.clone());
             },
         ));
         server.add_fill_detector(edition_id, detector).unwrap();
@@ -6158,7 +6900,9 @@ mod tests {
         wrong_msg.extend_from_slice(b"xudanu/v1/");
         wrong_msg.extend_from_slice(&challenge);
         let wrong_sig = crate::crypto::sign::sign_bytes(&wrong_key, &wrong_msg);
-        let result = lock.try_open(&LockCredential::ChallengeResponse(wrong_sig.to_bytes().to_vec()));
+        let result = lock.try_open(&LockCredential::ChallengeResponse(
+            wrong_sig.to_bytes().to_vec(),
+        ));
         assert!(result.is_err());
 
         let mut correct_msg = Vec::new();
@@ -6166,18 +6910,26 @@ mod tests {
         correct_msg.extend_from_slice(&challenge);
         let correct_sig = crate::crypto::sign::sign_bytes(&signing_key, &correct_msg);
         let km = lock
-            .try_open(&LockCredential::ChallengeResponse(correct_sig.to_bytes().to_vec()))
+            .try_open(&LockCredential::ChallengeResponse(
+                correct_sig.to_bytes().to_vec(),
+            ))
             .unwrap();
         assert!(km.has_authority(club_id));
 
         let correct_sig2 = crate::crypto::sign::sign_bytes(&signing_key, &correct_msg);
-        server.authenticate(sid, &lock, &LockCredential::ChallengeResponse(correct_sig2.to_bytes().to_vec())).unwrap();
+        server
+            .authenticate(
+                sid,
+                &lock,
+                &LockCredential::ChallengeResponse(correct_sig2.to_bytes().to_vec()),
+            )
+            .unwrap();
         assert!(server.session(sid).unwrap().has_authority(club_id));
     }
 
     #[test]
     fn server_match_lock_workflow() {
-        use crate::server::lock::{MatchLockSmith, LockSmith};
+        use crate::server::lock::{LockSmith, MatchLockSmith};
 
         let mut server = Server::new();
         let sid = server.connect();
@@ -6198,7 +6950,13 @@ mod tests {
             .unwrap();
         assert!(km.has_authority(club_id));
 
-        server.authenticate(sid, lock.as_ref(), &LockCredential::Password(b"s3cret".to_vec())).unwrap();
+        server
+            .authenticate(
+                sid,
+                lock.as_ref(),
+                &LockCredential::Password(b"s3cret".to_vec()),
+            )
+            .unwrap();
         assert!(server.session(sid).unwrap().has_authority(club_id));
     }
 
@@ -6210,8 +6968,14 @@ mod tests {
         let club_b = 200u64;
 
         let ml = MultiLock::new(None)
-            .with_sub_lock("boo".to_string(), Box::new(crate::server::lock::BooLock::new(club_a)))
-            .with_sub_lock("wall".to_string(), Box::new(crate::server::lock::WallLock::new()));
+            .with_sub_lock(
+                "boo".to_string(),
+                Box::new(crate::server::lock::BooLock::new(club_a)),
+            )
+            .with_sub_lock(
+                "wall".to_string(),
+                Box::new(crate::server::lock::WallLock::new()),
+            );
 
         let km = ml
             .try_open(&LockCredential::Named {
@@ -6261,7 +7025,9 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
 
-        let doc = server.create_work(sid, Edition::from_text("Hello World")).unwrap();
+        let doc = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
         assert_eq!(server.work_edition(doc).unwrap().to_text(), "Hello World");
         assert_eq!(server.work_revision_count(doc).unwrap(), 0);
 
@@ -6273,11 +7039,18 @@ mod tests {
 
         let ed_v3 = Edition::from_text("Completely new content");
         server.work_revise(sid, doc, ed_v3).unwrap();
-        assert_eq!(server.work_edition(doc).unwrap().to_text(), "Completely new content");
+        assert_eq!(
+            server.work_edition(doc).unwrap().to_text(),
+            "Completely new content"
+        );
 
         assert_eq!(server.work_revision_count(doc).unwrap(), 2);
         assert_eq!(
-            server.work_fetch_revision(doc, 0).unwrap().unwrap().to_text(),
+            server
+                .work_fetch_revision(doc, 0)
+                .unwrap()
+                .unwrap()
+                .to_text(),
             "Hello World"
         );
 
@@ -6299,8 +7072,12 @@ mod tests {
         server.work_grab(s1, doc1).unwrap();
         server.work_grab(s2, doc2).unwrap();
 
-        server.work_revise(s1, doc1, Edition::from_text("doc1 v2")).unwrap();
-        server.work_revise(s2, doc2, Edition::from_text("doc2 v2")).unwrap();
+        server
+            .work_revise(s1, doc1, Edition::from_text("doc1 v2"))
+            .unwrap();
+        server
+            .work_revise(s2, doc2, Edition::from_text("doc2 v2"))
+            .unwrap();
 
         assert_eq!(server.work_edition(doc1).unwrap().to_text(), "doc1 v2");
         assert_eq!(server.work_edition(doc2).unwrap().to_text(), "doc2 v2");
@@ -6330,7 +7107,9 @@ mod tests {
     impl TempDir {
         fn new(name: &str) -> Self {
             let dir = std::env::temp_dir().join(format!(
-                "xudanu_server_test_{}_{}", name, std::process::id()
+                "xudanu_server_test_{}_{}",
+                name,
+                std::process::id()
             ));
             let _ = std::fs::create_dir_all(&dir);
             TempDir(dir)
@@ -6368,13 +7147,18 @@ mod tests {
             let mut server = Server::new();
             let sid = server.connect();
             server.login_public(sid).unwrap();
-            doc_id = server.create_work(sid, Edition::from_text("hello world")).unwrap();
+            doc_id = server
+                .create_work(sid, Edition::from_text("hello world"))
+                .unwrap();
             server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
         }
         {
             let mut server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
             assert_eq!(server.work_count(), 1);
-            assert_eq!(server.work_edition(doc_id).unwrap().to_text(), "hello world");
+            assert_eq!(
+                server.work_edition(doc_id).unwrap().to_text(),
+                "hello world"
+            );
         }
     }
 
@@ -6390,7 +7174,9 @@ mod tests {
             server.login_public(sid).unwrap();
             doc_id = server.create_work(sid, Edition::from_text("v1")).unwrap();
             server.work_grab(sid, doc_id).unwrap();
-            server.work_revise(sid, doc_id, Edition::from_text("v2")).unwrap();
+            server
+                .work_revise(sid, doc_id, Edition::from_text("v2"))
+                .unwrap();
             server.work_release(sid, doc_id).unwrap();
             server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
         }
@@ -6501,7 +7287,12 @@ mod tests {
             let sid = server.connect();
             server.login_public(sid).unwrap();
             let new_id = server.create_work(sid, Edition::from_text("y")).unwrap();
-            assert!(new_id > last_id, "new id {} should be > last {}", new_id, last_id);
+            assert!(
+                new_id > last_id,
+                "new id {} should be > last {}",
+                new_id,
+                last_id
+            );
         }
     }
 
@@ -6510,7 +7301,9 @@ mod tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let meta = server.blob_upload(sid, b"hello blob".to_vec(), "text/plain".to_string()).unwrap();
+        let meta = server
+            .blob_upload(sid, b"hello blob".to_vec(), "text/plain".to_string())
+            .unwrap();
         assert_eq!(meta.byte_size, 10);
         assert_eq!(meta.mime_type, "text/plain");
         let data = server.blob_get(meta.hash_u64()).unwrap();
@@ -6530,8 +7323,12 @@ mod tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let m1 = server.blob_upload(sid, b"same".to_vec(), "text/plain".to_string()).unwrap();
-        let m2 = server.blob_upload(sid, b"same".to_vec(), "text/plain".to_string()).unwrap();
+        let m1 = server
+            .blob_upload(sid, b"same".to_vec(), "text/plain".to_string())
+            .unwrap();
+        let m2 = server
+            .blob_upload(sid, b"same".to_vec(), "text/plain".to_string())
+            .unwrap();
         assert_eq!(m1.hash_u64(), m2.hash_u64());
     }
 
@@ -6540,7 +7337,9 @@ mod tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let meta = server.blob_upload(sid, b"data".to_vec(), "text/plain".to_string()).unwrap();
+        let meta = server
+            .blob_upload(sid, b"data".to_vec(), "text/plain".to_string())
+            .unwrap();
         assert!(server.blob_exists(meta.hash_u64()));
         assert!(!server.blob_exists(99999));
     }
@@ -6550,7 +7349,9 @@ mod tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let meta = server.blob_upload(sid, b"info test".to_vec(), "image/png".to_string()).unwrap();
+        let meta = server
+            .blob_upload(sid, b"info test".to_vec(), "image/png".to_string())
+            .unwrap();
         let info = server.blob_info(meta.hash_u64()).unwrap();
         assert_eq!(info.byte_size, 9);
         assert_eq!(info.mime_type, "image/png");
@@ -6571,7 +7372,9 @@ mod tests {
         let (blobs, bytes) = server.blob_stats();
         assert_eq!(blobs, 0);
         assert_eq!(bytes, 0);
-        server.blob_upload(sid, b"aaa".to_vec(), "text/plain".to_string()).unwrap();
+        server
+            .blob_upload(sid, b"aaa".to_vec(), "text/plain".to_string())
+            .unwrap();
         let (blobs, bytes) = server.blob_stats();
         assert_eq!(blobs, 1);
         assert_eq!(bytes, 3);
@@ -6580,19 +7383,33 @@ mod tests {
     #[test]
     fn find_structural_shared_regions_basic() {
         let (mut server, sid) = setup_logged_in_server();
-        let doc1 = server.create_work(sid, Edition::from_text("hello world")).unwrap();
-        let doc2 = server.create_work(sid, Edition::from_text("say hello world now")).unwrap();
+        let doc1 = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let doc2 = server
+            .create_work(sid, Edition::from_text("say hello world now"))
+            .unwrap();
         let regions = server.find_shared_regions(doc1, doc2);
         assert!(!regions.is_empty());
-        let has_hello = regions.iter().any(|(_, _, _, _, t)| t.contains("hello") || t.contains("world"));
-        assert!(has_hello, "expected shared text containing 'hello' or 'world': {:?}", regions);
+        let has_hello = regions
+            .iter()
+            .any(|(_, _, _, _, t)| t.contains("hello") || t.contains("world"));
+        assert!(
+            has_hello,
+            "expected shared text containing 'hello' or 'world': {:?}",
+            regions
+        );
     }
 
     #[test]
     fn find_structural_shared_regions_identical() {
         let (mut server, sid) = setup_logged_in_server();
-        let doc1 = server.create_work(sid, Edition::from_text("same content")).unwrap();
-        let doc2 = server.create_work(sid, Edition::from_text("same content")).unwrap();
+        let doc1 = server
+            .create_work(sid, Edition::from_text("same content"))
+            .unwrap();
+        let doc2 = server
+            .create_work(sid, Edition::from_text("same content"))
+            .unwrap();
         let regions = server.find_shared_regions(doc1, doc2);
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].4, "same content");
@@ -6601,7 +7418,9 @@ mod tests {
     #[test]
     fn find_structural_shared_regions_empty() {
         let (mut server, sid) = setup_logged_in_server();
-        let doc1 = server.create_work(sid, Edition::from_text("hello")).unwrap();
+        let doc1 = server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
         let doc2 = server.create_work(sid, Edition::from_text("")).unwrap();
         assert!(server.find_shared_regions(doc1, doc2).is_empty());
     }
@@ -6617,38 +7436,78 @@ mod tests {
     #[test]
     fn find_structural_shared_regions_with_blob() {
         let (mut server, sid) = setup_logged_in_server();
-        let doc1 = server.create_work(sid, Edition::from_text_elements(&[
-            RangeElement::text("a"),
-            RangeElement::text("b"),
-            RangeElement::Blob { content_hash: 42, mime_type: "image/png".into(), byte_size: 100, width: Some(10), height: Some(10) },
-            RangeElement::text("c"),
-        ])).unwrap();
-        let doc2 = server.create_work(sid, Edition::from_text_elements(&[
-            RangeElement::text("x"),
-            RangeElement::text("b"),
-            RangeElement::Blob { content_hash: 42, mime_type: "image/png".into(), byte_size: 100, width: Some(10), height: Some(10) },
-            RangeElement::text("c"),
-        ])).unwrap();
+        let doc1 = server
+            .create_work(
+                sid,
+                Edition::from_text_elements(&[
+                    RangeElement::text("a"),
+                    RangeElement::text("b"),
+                    RangeElement::Blob {
+                        content_hash: 42,
+                        mime_type: "image/png".into(),
+                        byte_size: 100,
+                        width: Some(10),
+                        height: Some(10),
+                    },
+                    RangeElement::text("c"),
+                ]),
+            )
+            .unwrap();
+        let doc2 = server
+            .create_work(
+                sid,
+                Edition::from_text_elements(&[
+                    RangeElement::text("x"),
+                    RangeElement::text("b"),
+                    RangeElement::Blob {
+                        content_hash: 42,
+                        mime_type: "image/png".into(),
+                        byte_size: 100,
+                        width: Some(10),
+                        height: Some(10),
+                    },
+                    RangeElement::text("c"),
+                ]),
+            )
+            .unwrap();
         let regions = server.find_shared_regions(doc1, doc2);
-        assert!(!regions.is_empty(), "structural comparison should find shared blob+text run");
+        assert!(
+            !regions.is_empty(),
+            "structural comparison should find shared blob+text run"
+        );
     }
 
     #[test]
     fn content_address_same_text_same_be_id() {
         let (mut server, sid) = setup_logged_in_server();
-        server.create_work(sid, Edition::from_text("hello")).unwrap();
-        let id_first = server.content_address_lookup(&RangeElement::text("h")).unwrap();
-        server.create_work(sid, Edition::from_text("hippo")).unwrap();
-        let id_second = server.content_address_lookup(&RangeElement::text("h")).unwrap();
-        assert_eq!(id_first, id_second, "'h' should have the same canonical BeId across documents");
+        server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
+        let id_first = server
+            .content_address_lookup(&RangeElement::text("h"))
+            .unwrap();
+        server
+            .create_work(sid, Edition::from_text("hippo"))
+            .unwrap();
+        let id_second = server
+            .content_address_lookup(&RangeElement::text("h"))
+            .unwrap();
+        assert_eq!(
+            id_first, id_second,
+            "'h' should have the same canonical BeId across documents"
+        );
     }
 
     #[test]
     fn content_address_different_text_different_be_id() {
         let (mut server, sid) = setup_logged_in_server();
         server.create_work(sid, Edition::from_text("abc")).unwrap();
-        let id_a = server.content_address_lookup(&RangeElement::text("a")).unwrap();
-        let id_b = server.content_address_lookup(&RangeElement::text("b")).unwrap();
+        let id_a = server
+            .content_address_lookup(&RangeElement::text("a"))
+            .unwrap();
+        let id_b = server
+            .content_address_lookup(&RangeElement::text("b"))
+            .unwrap();
         assert_ne!(id_a, id_b);
     }
 
@@ -6656,32 +7515,59 @@ mod tests {
     fn content_address_across_revisions() {
         let (mut server, sid) = setup_logged_in_server();
         let doc = server.create_work(sid, Edition::from_text("abc")).unwrap();
-        let id_before = server.content_address_lookup(&RangeElement::text("a")).unwrap();
+        let id_before = server
+            .content_address_lookup(&RangeElement::text("a"))
+            .unwrap();
         server.work_grab(sid, doc).unwrap();
-        server.work_revise(sid, doc, Edition::from_text("axc")).unwrap();
-        let id_after = server.content_address_lookup(&RangeElement::text("a")).unwrap();
-        assert_eq!(id_before, id_after, "'a' identity should be stable across revisions");
+        server
+            .work_revise(sid, doc, Edition::from_text("axc"))
+            .unwrap();
+        let id_after = server
+            .content_address_lookup(&RangeElement::text("a"))
+            .unwrap();
+        assert_eq!(
+            id_before, id_after,
+            "'a' identity should be stable across revisions"
+        );
     }
 
     #[test]
     fn content_address_transclusion_finds_cross_document() {
         let (mut server, sid) = setup_logged_in_server();
-        let _doc1 = server.create_work(sid, Edition::from_text("shared phrase here")).unwrap();
-        let _doc2 = server.create_work(sid, Edition::from_text("shared phrase there")).unwrap();
+        let _doc1 = server
+            .create_work(sid, Edition::from_text("shared phrase here"))
+            .unwrap();
+        let _doc2 = server
+            .create_work(sid, Edition::from_text("shared phrase there"))
+            .unwrap();
         let results = server.find_text_transcluders("shared phrase");
-        assert_eq!(results.len(), 2, "should find 'shared phrase' in both documents");
+        assert_eq!(
+            results.len(),
+            2,
+            "should find 'shared phrase' in both documents"
+        );
     }
 
     #[test]
     fn content_address_count_grows() {
         let (mut server, sid) = setup_logged_in_server();
         assert_eq!(server.content_address_count(), 0);
-        server.create_work(sid, Edition::from_text("hello")).unwrap();
+        server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
         let count1 = server.content_address_count();
         assert!(count1 > 0);
-        server.create_work(sid, Edition::from_text("hello")).unwrap();
-        assert_eq!(server.content_address_count(), count1, "duplicate doc should not increase count");
-        server.create_work(sid, Edition::from_text("world")).unwrap();
+        server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
+        assert_eq!(
+            server.content_address_count(),
+            count1,
+            "duplicate doc should not increase count"
+        );
+        server
+            .create_work(sid, Edition::from_text("world"))
+            .unwrap();
         assert!(server.content_address_count() > count1);
     }
 
@@ -6691,7 +7577,9 @@ mod tests {
         let push = vec![crate::server::federation::SyncWorkEntry {
             origin_server_id: "remote-server".to_string(),
             work_id: 100,
-            edition_payload: crate::server::transport::protocol::EditionPayload::Text("hello world".to_string()),
+            edition_payload: crate::server::transport::protocol::EditionPayload::Text(
+                "hello world".to_string(),
+            ),
             span_provenance: vec![],
         }];
         let my_id = server.federation_server_id();
@@ -6706,14 +7594,19 @@ mod tests {
         let push = vec![crate::server::federation::SyncWorkEntry {
             origin_server_id: "remote-server".to_string(),
             work_id: 200,
-            edition_payload: crate::server::transport::protocol::EditionPayload::Text("hi".to_string()),
+            edition_payload: crate::server::transport::protocol::EditionPayload::Text(
+                "hi".to_string(),
+            ),
             span_provenance: vec![],
         }];
         let my_id = server.federation_server_id();
         server.federation_import_works(&push, &my_id);
 
         let content = RangeElement::text("h".to_string());
-        let fed_results = server.backfollow.transclusion_index().find_federated_transcluders(&content);
+        let fed_results = server
+            .backfollow
+            .transclusion_index()
+            .find_federated_transcluders(&content);
         assert_eq!(fed_results.len(), 1);
         assert_eq!(fed_results[0].origin_server_id, "remote-server");
         assert_eq!(fed_results[0].local_id, 200);
@@ -6722,7 +7615,9 @@ mod tests {
     #[test]
     fn federation_fetch_by_fingerprint_found() {
         let (mut server, sid) = setup_logged_in_server();
-        server.create_work(sid, Edition::from_text("fetchable content")).unwrap();
+        server
+            .create_work(sid, Edition::from_text("fetchable content"))
+            .unwrap();
 
         let first_char = RangeElement::text("f".to_string());
         let fp = first_char.content_fingerprint();
@@ -6730,7 +7625,7 @@ mod tests {
 
         let result = server.federation_fetch_by_fingerprint(&hex);
         match result {
-            FederationFetchResponse::Edition(_) => {},
+            FederationFetchResponse::Edition(_) => {}
             other => panic!("expected Edition response, got {:?}", other),
         }
     }
@@ -6741,7 +7636,7 @@ mod tests {
         let hex = "ff".repeat(32);
         let result = server.federation_fetch_by_fingerprint(&hex);
         match result {
-            FederationFetchResponse::NotFound => {},
+            FederationFetchResponse::NotFound => {}
             other => panic!("expected NotFound, got {:?}", other),
         }
     }
@@ -6751,13 +7646,15 @@ mod tests {
         let mut server = Server::new();
         let text_elem = RangeElement::text("royalty content");
         let fp = text_elem.content_fingerprint();
-        server.federation.record_royalty(crate::server::federation::RoyaltyEntry {
-            origin_server_id: "origin-server".to_string(),
-            content_fingerprint: fp,
-            royalty_type: crate::server::federation::RoyaltyType::Transclusion,
-            amount: 50,
-            timestamp: 1234567890,
-        });
+        server
+            .federation
+            .record_royalty(crate::server::federation::RoyaltyEntry {
+                origin_server_id: "origin-server".to_string(),
+                content_fingerprint: fp,
+                royalty_type: crate::server::federation::RoyaltyType::Transclusion,
+                amount: 50,
+                timestamp: 1234567890,
+            });
         let ledger = server.federation.royalty_ledger();
         assert_eq!(ledger.len(), 1);
         assert_eq!(ledger[0].amount, 50);
@@ -6770,7 +7667,9 @@ mod tests {
         let entry = crate::server::federation::SyncWorkEntry {
             origin_server_id: "remote-server".to_string(),
             work_id: 100,
-            edition_payload: crate::server::transport::protocol::EditionPayload::Text("hello".to_string()),
+            edition_payload: crate::server::transport::protocol::EditionPayload::Text(
+                "hello".to_string(),
+            ),
             span_provenance: vec![],
         };
         let my_id = server.federation_server_id();
@@ -6778,7 +7677,10 @@ mod tests {
         let (imported1, _) = server.federation_import_works(&[entry.clone()], &my_id);
         assert_eq!(imported1, 1);
         let origins_after_first = server.federation.remote_origins().len();
-        let fed_after_first = server.backfollow.transclusion_index().federated_entry_count();
+        let fed_after_first = server
+            .backfollow
+            .transclusion_index()
+            .federated_entry_count();
 
         let (imported2, already2) = server.federation_import_works(&[entry.clone()], &my_id);
         assert_eq!(imported2, 0);
@@ -6789,7 +7691,10 @@ mod tests {
             "re-import should not add more origin entries"
         );
         assert_eq!(
-            server.backfollow.transclusion_index().federated_entry_count(),
+            server
+                .backfollow
+                .transclusion_index()
+                .federated_entry_count(),
             fed_after_first,
             "re-import should not add more federated transclusion entries"
         );
@@ -6798,8 +7703,12 @@ mod tests {
     #[test]
     fn fingerprint_index_resolves_to_correct_work() {
         let (mut server, sid) = setup_logged_in_server();
-        let id_a = server.create_work(sid, Edition::from_text("alpha")).unwrap();
-        let id_b = server.create_work(sid, Edition::from_text("bravo")).unwrap();
+        let id_a = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
+        let id_b = server
+            .create_work(sid, Edition::from_text("bravo"))
+            .unwrap();
 
         let char_a = RangeElement::text("a".to_string());
         let fp_a = char_a.content_fingerprint();
@@ -6809,7 +7718,9 @@ mod tests {
         match &result_a {
             FederationFetchResponse::Edition(payload) => {
                 let ed = payload.to_edition();
-                let text: String = ed.all_entries().iter()
+                let text: String = ed
+                    .all_entries()
+                    .iter()
                     .map(|(_, c)| c.element.as_text().unwrap_or(""))
                     .collect();
                 assert!(text.contains('a'), "should find edition containing 'a'");
@@ -6825,7 +7736,9 @@ mod tests {
         match &result_b {
             FederationFetchResponse::Edition(payload) => {
                 let ed = payload.to_edition();
-                let text: String = ed.all_entries().iter()
+                let text: String = ed
+                    .all_entries()
+                    .iter()
                     .map(|(_, c)| c.element.as_text().unwrap_or(""))
                     .collect();
                 assert!(text.contains('b'), "should find edition containing 'b'");
@@ -6857,7 +7770,10 @@ mod tests {
         assert!(origin.is_some(), "blob origin should be recorded");
         let origin = origin.unwrap();
         assert_eq!(origin.server_id, "origin-server-42");
-        assert_eq!(origin.element_type, crate::server::federation::RemoteElementType::Blob);
+        assert_eq!(
+            origin.element_type,
+            crate::server::federation::RemoteElementType::Blob
+        );
     }
 
     #[test]
@@ -6880,9 +7796,15 @@ mod tests {
 
         let results = server.federation_query_local_transclusion(&fp_hex, false);
         let blob_result = results.iter().find(|r| {
-            matches!(r.element_type, crate::server::federation::RemoteElementType::Blob)
+            matches!(
+                r.element_type,
+                crate::server::federation::RemoteElementType::Blob
+            )
         });
-        assert!(blob_result.is_some(), "should find Blob element_type for blob fingerprint");
+        assert!(
+            blob_result.is_some(),
+            "should find Blob element_type for blob fingerprint"
+        );
     }
 
     // =================================================================
@@ -6892,7 +7814,9 @@ mod tests {
     #[test]
     fn reconcile_records_on_create_work() {
         let (mut server, sid) = setup_logged_in_server();
-        server.create_work(sid, Edition::from_text("reconcile test")).unwrap();
+        server
+            .create_work(sid, Edition::from_text("reconcile test"))
+            .unwrap();
         assert!(
             server.reconcile_store_len() > 0,
             "creating a work should populate the reconcile store"
@@ -6917,17 +7841,26 @@ mod tests {
     #[test]
     fn reconcile_merge_remote_adds_alternatives() {
         let (mut server_a, sid) = setup_logged_in_server();
-        let work_id = server_a.create_work(sid, Edition::from_text("from A")).unwrap();
+        let work_id = server_a
+            .create_work(sid, Edition::from_text("from A"))
+            .unwrap();
         let local_state = server_a.reconcile_export_all();
         let fp = local_state[0].work_fingerprint.clone();
         let a_timestamp = local_state[0].current.timestamp();
 
         let remote_timestamp = a_timestamp + 1000;
         let alt_b = crate::server::federation::AlternativeEdition::new(
-            "server-b", 0, &Edition::from_text("from B"), remote_timestamp,
+            "server-b",
+            0,
+            &Edition::from_text("from B"),
+            remote_timestamp,
         );
         let mut remote = crate::server::federation::ReconcileState::new(
-            &fp, "server-b:0".to_string(), alt_b, "server-b", remote_timestamp,
+            &fp,
+            "server-b:0".to_string(),
+            alt_b,
+            "server-b",
+            remote_timestamp,
         );
 
         server_a.reconcile_merge_remote(remote);
@@ -6940,7 +7873,9 @@ mod tests {
     #[test]
     fn reconcile_endorse_via_orset() {
         let (mut server, sid) = setup_logged_in_server();
-        server.create_work(sid, Edition::from_text("endorsed work")).unwrap();
+        server
+            .create_work(sid, Edition::from_text("endorsed work"))
+            .unwrap();
         let states = server.reconcile_export_all();
         let fp = states[0].work_fingerprint.clone();
 
@@ -6949,13 +7884,21 @@ mod tests {
 
         let state = server.reconcile_get(&fp).unwrap();
         assert_eq!(state.endorsements.len(), 1);
-        assert!(state.endorsements.contains(&crate::server::federation::EndorsementEntry::new(42, 7, &server.federation_server_id())));
+        assert!(state
+            .endorsements
+            .contains(&crate::server::federation::EndorsementEntry::new(
+                42,
+                7,
+                &server.federation_server_id()
+            )));
     }
 
     #[test]
     fn reconcile_retract_via_orset() {
         let (mut server, sid) = setup_logged_in_server();
-        server.create_work(sid, Edition::from_text("retractable")).unwrap();
+        server
+            .create_work(sid, Edition::from_text("retractable"))
+            .unwrap();
         let states = server.reconcile_export_all();
         let fp = states[0].work_fingerprint.clone();
 
@@ -6965,13 +7908,19 @@ mod tests {
         server.reconcile_retract(&fp, 42, 7);
 
         let state = server.reconcile_get(&fp).unwrap();
-        assert_eq!(state.endorsements.len(), 0, "retracted endorsement should be removed");
+        assert_eq!(
+            state.endorsements.len(),
+            0,
+            "retracted endorsement should be removed"
+        );
     }
 
     #[test]
     fn reconcile_export_and_merge_endorsements() {
         let (mut server_a, sid_a) = setup_logged_in_server();
-        server_a.create_work(sid_a, Edition::from_text("shared work")).unwrap();
+        server_a
+            .create_work(sid_a, Edition::from_text("shared work"))
+            .unwrap();
         let states_a = server_a.reconcile_export_all();
         let fp = states_a[0].work_fingerprint.clone();
 
@@ -6985,10 +7934,17 @@ mod tests {
 
         let (mut server_b, sid_b) = setup_logged_in_server();
         let alt_b = crate::server::federation::AlternativeEdition::new(
-            "server-b-id", 0, &Edition::from_text("shared work"), 100,
+            "server-b-id",
+            0,
+            &Edition::from_text("shared work"),
+            100,
         );
         let remote_state = crate::server::federation::ReconcileState::new(
-            &fp, "server-b-id:0".to_string(), alt_b, "server-b-id", 100,
+            &fp,
+            "server-b-id:0".to_string(),
+            alt_b,
+            "server-b-id",
+            100,
         );
         server_b.reconcile_merge_remote(remote_state);
         server_b.reconcile_merge_endorsements(&endorsements_a);
@@ -7014,7 +7970,9 @@ mod tests {
     #[test]
     fn retract_actually_removes_endorsement() {
         let (mut server, sid) = setup_logged_in_server();
-        server.create_work(sid, Edition::from_text("retract fix test")).unwrap();
+        server
+            .create_work(sid, Edition::from_text("retract fix test"))
+            .unwrap();
         let states = server.reconcile_export_all();
         let fp = states[0].work_fingerprint.clone();
 
@@ -7030,16 +7988,34 @@ mod tests {
         server.reconcile_retract(&fp, 10, 20);
 
         let state = server.reconcile_get(&fp).unwrap();
-        assert!(!state.endorsements.contains(&crate::server::federation::EndorsementEntry::new(10, 20, &server.federation_server_id())),
-            "retracted endorsement should be removed");
-        assert!(state.endorsements.contains(&crate::server::federation::EndorsementEntry::new(30, 40, &server.federation_server_id())),
-            "unrelated endorsement should remain");
+        assert!(
+            !state
+                .endorsements
+                .contains(&crate::server::federation::EndorsementEntry::new(
+                    10,
+                    20,
+                    &server.federation_server_id()
+                )),
+            "retracted endorsement should be removed"
+        );
+        assert!(
+            state
+                .endorsements
+                .contains(&crate::server::federation::EndorsementEntry::new(
+                    30,
+                    40,
+                    &server.federation_server_id()
+                )),
+            "unrelated endorsement should remain"
+        );
     }
 
     #[test]
     fn retract_removes_all_tags_for_same_value() {
         let (mut server, sid) = setup_logged_in_server();
-        server.create_work(sid, Edition::from_text("multi tag retract")).unwrap();
+        server
+            .create_work(sid, Edition::from_text("multi tag retract"))
+            .unwrap();
         let states = server.reconcile_export_all();
         let fp = states[0].work_fingerprint.clone();
 
@@ -7049,20 +8025,34 @@ mod tests {
         server.reconcile_endorse(&fp, 5, 5, tag_b);
 
         let state = server.reconcile_get(&fp).unwrap();
-        assert_eq!(state.endorsements.len(), 1, "same value added twice should still be 1 unique value");
+        assert_eq!(
+            state.endorsements.len(),
+            1,
+            "same value added twice should still be 1 unique value"
+        );
         assert_eq!(state.endorsements.add_count(), 2, "but 2 add entries");
 
         server.reconcile_retract(&fp, 5, 5);
 
         let state = server.reconcile_get(&fp).unwrap();
-        assert_eq!(state.endorsements.len(), 0, "retract should remove all tags for the value");
-        assert_eq!(state.endorsements.tombstone_count(), 2, "both tags should be tombstoned");
+        assert_eq!(
+            state.endorsements.len(),
+            0,
+            "retract should remove all tags for the value"
+        );
+        assert_eq!(
+            state.endorsements.tombstone_count(),
+            2,
+            "both tags should be tombstoned"
+        );
     }
 
     #[test]
     fn reconcile_persisted_across_snapshot() {
         let (mut server, sid) = setup_logged_in_server();
-        server.create_work(sid, Edition::from_text("persist me")).unwrap();
+        server
+            .create_work(sid, Edition::from_text("persist me"))
+            .unwrap();
         let tag = server.reconcile_next_tag();
         let states = server.reconcile_export_all();
         let fp = states[0].work_fingerprint.clone();
@@ -7071,8 +8061,15 @@ mod tests {
 
         let snapshot = server.to_snapshot();
         let restored = Server::from_snapshot(&snapshot);
-        assert_eq!(restored.reconcile_counter, 1, "counter should survive snapshot restore");
-        assert_eq!(restored.reconcile_store_len(), 1, "store should survive snapshot restore");
+        assert_eq!(
+            restored.reconcile_counter, 1,
+            "counter should survive snapshot restore"
+        );
+        assert_eq!(
+            restored.reconcile_store_len(),
+            1,
+            "store should survive snapshot restore"
+        );
         let restored_state = restored.reconcile_get(&fp).unwrap();
         assert_eq!(restored_state.endorsements.len(), 1);
         assert_eq!(restored_state.endorsements.values()[0].club_id, 99);
@@ -7089,7 +8086,10 @@ mod tests {
         let snapshot = server.to_snapshot();
         let mut restored = Server::from_snapshot(&snapshot);
         let tag = restored.reconcile_next_tag();
-        assert_eq!(tag.counter, 4, "next tag after restore should continue from saved counter, not restart at 1");
+        assert_eq!(
+            tag.counter, 4,
+            "next tag after restore should continue from saved counter, not restart at 1"
+        );
     }
 
     #[test]
@@ -7102,14 +8102,19 @@ mod tests {
         let state = AppState::new(server).shared();
         let session_id = crate::server::SessionId::new(1);
 
-        let result = dispatch(&state.server, session_id, crate::server::transport::protocol::WireRequest::EndorsementAdd {
-            work_fingerprint: "test".to_string(),
-            club_id: 1,
-            token_id: 1,
-        });
+        let result = dispatch(
+            &state.server,
+            session_id,
+            crate::server::transport::protocol::WireRequest::EndorsementAdd {
+                work_fingerprint: "test".to_string(),
+                club_id: 1,
+                token_id: 1,
+            },
+        );
         assert!(result.is_err(), "endorsement add without login should fail");
         match result {
-            Err(crate::server::ServerError::SessionRequired) | Err(crate::server::ServerError::SessionNotFound(_)) => {},
+            Err(crate::server::ServerError::SessionRequired)
+            | Err(crate::server::ServerError::SessionNotFound(_)) => {}
             other => panic!("expected session error, got {:?}", other),
         }
     }
@@ -7124,14 +8129,22 @@ mod tests {
         let state = AppState::new(server).shared();
         let session_id = crate::server::SessionId::new(1);
 
-        let result = dispatch(&state.server, session_id, crate::server::transport::protocol::WireRequest::EndorsementRetract {
-            work_fingerprint: "test".to_string(),
-            club_id: 1,
-            token_id: 1,
-        });
-        assert!(result.is_err(), "endorsement retract without login should fail");
+        let result = dispatch(
+            &state.server,
+            session_id,
+            crate::server::transport::protocol::WireRequest::EndorsementRetract {
+                work_fingerprint: "test".to_string(),
+                club_id: 1,
+                token_id: 1,
+            },
+        );
+        assert!(
+            result.is_err(),
+            "endorsement retract without login should fail"
+        );
         match result {
-            Err(crate::server::ServerError::SessionRequired) | Err(crate::server::ServerError::SessionNotFound(_)) => {},
+            Err(crate::server::ServerError::SessionRequired)
+            | Err(crate::server::ServerError::SessionNotFound(_)) => {}
             other => panic!("expected session error, got {:?}", other),
         }
     }
@@ -7146,10 +8159,17 @@ mod tests {
         let state = AppState::new(server).shared();
         let session_id = crate::server::SessionId::new(1);
 
-        let result = dispatch(&state.server, session_id, crate::server::transport::protocol::WireRequest::EndorsementQuery {
-            work_fingerprint: "test".to_string(),
-        });
-        assert!(result.is_err(), "endorsement query without login should fail");
+        let result = dispatch(
+            &state.server,
+            session_id,
+            crate::server::transport::protocol::WireRequest::EndorsementQuery {
+                work_fingerprint: "test".to_string(),
+            },
+        );
+        assert!(
+            result.is_err(),
+            "endorsement query without login should fail"
+        );
     }
 
     // =====================================================================
@@ -7212,7 +8232,9 @@ mod tests {
         let endorsee_id = "new-server-abc";
         let endorsee_vk = "deadbeef";
 
-        let proof = server.membership_sign_endorsement(endorsee_id, endorsee_vk).unwrap();
+        let proof = server
+            .membership_sign_endorsement(endorsee_id, endorsee_vk)
+            .unwrap();
         assert_eq!(proof.endorser_server_id, server.federation_server_id());
         assert_eq!(proof.endorsee_server_id, endorsee_id);
         assert_eq!(proof.endorsee_verifying_key_hex, endorsee_vk);
@@ -7225,7 +8247,9 @@ mod tests {
     #[test]
     fn membership_verify_endorsement_rejects_tampered() {
         let server = setup_federated_server();
-        let mut proof = server.membership_sign_endorsement("target", "vk123").unwrap();
+        let mut proof = server
+            .membership_sign_endorsement("target", "vk123")
+            .unwrap();
         proof.signature[0] ^= 0xff;
 
         let verifying_key = server.server_keypair.signing_verifying_key();
@@ -7235,7 +8259,9 @@ mod tests {
     #[test]
     fn membership_verify_endorsement_rejects_wrong_key() {
         let server = setup_federated_server();
-        let proof = server.membership_sign_endorsement("target", "vk123").unwrap();
+        let proof = server
+            .membership_sign_endorsement("target", "vk123")
+            .unwrap();
 
         let wrong_key = crate::crypto::keys::ServerKeyPair::generate("other");
         let wrong_vk = wrong_key.signing_verifying_key();
@@ -7247,7 +8273,9 @@ mod tests {
         let mut server = setup_federated_server();
         let my_id = server.federation_server_id();
 
-        let proof = server.membership_sign_endorsement("new-server", "vk-new").unwrap();
+        let proof = server
+            .membership_sign_endorsement("new-server", "vk-new")
+            .unwrap();
         let new_entry = crate::server::federation::MembershipEntry::new(
             "new-server",
             "vk-new",
@@ -7258,13 +8286,19 @@ mod tests {
 
         let result = server.membership_process_join(new_entry);
         match result {
-            crate::server::federation::JoinResult::Accepted { server_id, offered_endorsement, .. } => {
+            crate::server::federation::JoinResult::Accepted {
+                server_id,
+                offered_endorsement,
+                ..
+            } => {
                 assert_eq!(server_id, "new-server");
                 assert!(offered_endorsement.is_some());
                 let proof = offered_endorsement.unwrap();
                 assert_eq!(proof.endorser_server_id, my_id);
             }
-            crate::server::federation::JoinResult::Rejected { reason, .. } => panic!("should accept: {}", reason),
+            crate::server::federation::JoinResult::Rejected { reason, .. } => {
+                panic!("should accept: {}", reason)
+            }
         }
         assert_eq!(server.membership_count(), 2);
     }
@@ -7306,7 +8340,9 @@ mod tests {
     fn membership_remove_removes_target() {
         let mut server = setup_federated_server();
 
-        let proof = server.membership_sign_endorsement("target-server", "vk-target").unwrap();
+        let proof = server
+            .membership_sign_endorsement("target-server", "vk-target")
+            .unwrap();
         let new_entry = crate::server::federation::MembershipEntry::new(
             "target-server",
             "vk-target",
@@ -7327,7 +8363,9 @@ mod tests {
         let mut server = setup_federated_server();
         let my_id = server.federation_server_id();
 
-        let join_proof = server.membership_sign_endorsement("new-server", "vk-new").unwrap();
+        let join_proof = server
+            .membership_sign_endorsement("new-server", "vk-new")
+            .unwrap();
         let new_entry = crate::server::federation::MembershipEntry::new(
             "new-server",
             "vk-new",
@@ -7344,10 +8382,16 @@ mod tests {
         }
 
         let offered = match result {
-            crate::server::federation::JoinResult::Accepted { offered_endorsement, .. } => offered_endorsement,
+            crate::server::federation::JoinResult::Accepted {
+                offered_endorsement,
+                ..
+            } => offered_endorsement,
             _ => unreachable!(),
         };
-        assert!(offered.is_some(), "bootstrap server should offer endorsement on accept");
+        assert!(
+            offered.is_some(),
+            "bootstrap server should offer endorsement on accept"
+        );
 
         let verify = server.membership_verify("new-server");
         assert!(verify.is_member);
@@ -7362,9 +8406,8 @@ mod tests {
         let id_a = server_a.federation_server_id();
         let id_b = server_b.federation_server_id();
 
-        let entry_b = crate::server::federation::MembershipEntry::new(
-            &id_b, "vk-b", "kex-b", vec![], 1000,
-        );
+        let entry_b =
+            crate::server::federation::MembershipEntry::new(&id_b, "vk-b", "kex-b", vec![], 1000);
         server_a.membership_process_join(entry_b);
 
         let membership_b = server_b.federation.membership().clone();
@@ -7400,7 +8443,11 @@ mod tests {
         let state = AppState::new(server).shared();
         let session_id = crate::server::SessionId::new(1);
 
-        let result = dispatch(&state.server, session_id, crate::server::transport::protocol::WireRequest::MembershipList);
+        let result = dispatch(
+            &state.server,
+            session_id,
+            crate::server::transport::protocol::WireRequest::MembershipList,
+        );
         assert!(result.is_err(), "membership list without login should fail");
     }
 
@@ -7414,8 +8461,15 @@ mod tests {
         server.login_public(sid).unwrap();
         let state = AppState::new(server).shared();
 
-        let result = dispatch(&state.server, sid, crate::server::transport::protocol::WireRequest::MembershipList);
-        assert!(result.is_err(), "membership list without federation should fail");
+        let result = dispatch(
+            &state.server,
+            sid,
+            crate::server::transport::protocol::WireRequest::MembershipList,
+        );
+        assert!(
+            result.is_err(),
+            "membership list without federation should fail"
+        );
     }
 
     // =====================================================================
@@ -7450,22 +8504,26 @@ mod tests {
         let mut server = setup_federated_server();
         let my_id = server.federation_server_id();
 
-        server.governance_propose(vec![
-            crate::server::federation::GovernanceTx::Expel {
+        server
+            .governance_propose(vec![crate::server::federation::GovernanceTx::Expel {
                 server_id: "srv-bad".to_string(),
                 reason: "test".to_string(),
-            },
-        ]).unwrap();
+            }])
+            .unwrap();
 
         let vote = crate::server::federation::PbftVote {
-            view_number: 0, sequence_number: 1,
-            voter_id: my_id.clone(), phase: crate::server::federation::PbftPhase::Prepare,
+            view_number: 0,
+            sequence_number: 1,
+            voter_id: my_id.clone(),
+            phase: crate::server::federation::PbftPhase::Prepare,
         };
         server.governance_receive_prepare(vote);
 
         let commit = crate::server::federation::PbftVote {
-            view_number: 0, sequence_number: 1,
-            voter_id: my_id.clone(), phase: crate::server::federation::PbftPhase::Commit,
+            view_number: 0,
+            sequence_number: 1,
+            voter_id: my_id.clone(),
+            phase: crate::server::federation::PbftPhase::Commit,
         };
         server.governance_receive_commit(commit);
 
@@ -7545,7 +8603,10 @@ mod tests {
         let (server, _) = setup_logged_in_server();
         let entries = server.list_works_with_titles();
         for (_, _, _, _, _, read_club) in &entries {
-            assert!(read_club.is_some(), "new works should have a read_club (owner club)");
+            assert!(
+                read_club.is_some(),
+                "new works should have a read_club (owner club)"
+            );
         }
     }
 
@@ -7554,11 +8615,19 @@ mod tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
-        server.club_set_password(sid, owner_club, b"testpass").unwrap();
+        let owner_club = server
+            .create_club(sid, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid, owner_club, b"testpass")
+            .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
-        let work_id = server.create_work(sid, Edition::from_text("pub test")).unwrap();
+        server
+            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .unwrap();
+        let work_id = server
+            .create_work(sid, Edition::from_text("pub test"))
+            .unwrap();
 
         assert!(!server.work_is_published(sid, work_id).unwrap());
 
@@ -7574,11 +8643,19 @@ mod tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
-        server.club_set_password(sid, owner_club, b"testpass").unwrap();
+        let owner_club = server
+            .create_club(sid, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid, owner_club, b"testpass")
+            .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
-        let work_id = server.create_work(sid, Edition::from_text("permanent")).unwrap();
+        server
+            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .unwrap();
+        let work_id = server
+            .create_work(sid, Edition::from_text("permanent"))
+            .unwrap();
 
         server.work_irrevocably_unpublish(sid, work_id).unwrap();
 
@@ -7597,11 +8674,19 @@ mod tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
-        server.club_set_password(sid, owner_club, b"testpass").unwrap();
+        let owner_club = server
+            .create_club(sid, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid, owner_club, b"testpass")
+            .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
-        let work_id = server.create_work(sid, Edition::from_text("secret doc")).unwrap();
+        server
+            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .unwrap();
+        let work_id = server
+            .create_work(sid, Edition::from_text("secret doc"))
+            .unwrap();
 
         assert!(server.work_is_readable(sid, server.work(work_id).unwrap()));
     }
@@ -7611,11 +8696,23 @@ mod tests {
         let mut server = Server::new();
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
-        let owner_club = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
-        server.club_set_password(sid1, owner_club, b"testpass").unwrap();
+        let owner_club = server
+            .create_club(sid1, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid1, owner_club, b"testpass")
+            .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
-        server.authenticate(sid1, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
-        let work_id = server.create_work(sid1, Edition::from_text("private")).unwrap();
+        server
+            .authenticate(
+                sid1,
+                &*lock,
+                &LockCredential::Password(b"testpass".to_vec()),
+            )
+            .unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("private"))
+            .unwrap();
 
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
@@ -7628,11 +8725,23 @@ mod tests {
         let mut server = Server::new();
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
-        let owner_club = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
-        server.club_set_password(sid1, owner_club, b"testpass").unwrap();
+        let owner_club = server
+            .create_club(sid1, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid1, owner_club, b"testpass")
+            .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
-        server.authenticate(sid1, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
-        let work_id = server.create_work(sid1, Edition::from_text("public doc")).unwrap();
+        server
+            .authenticate(
+                sid1,
+                &*lock,
+                &LockCredential::Password(b"testpass".to_vec()),
+            )
+            .unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("public doc"))
+            .unwrap();
         server.work_publish(sid1, work_id).unwrap();
 
         let sid2 = server.connect();
@@ -7646,24 +8755,42 @@ mod tests {
         let mut server = Server::new();
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
-        let owner_club = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
-        server.club_set_password(sid1, owner_club, b"testpass").unwrap();
+        let owner_club = server
+            .create_club(sid1, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid1, owner_club, b"testpass")
+            .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
-        server.authenticate(sid1, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
-        let work_id = server.create_work(sid1, Edition::from_text("gone")).unwrap();
+        server
+            .authenticate(
+                sid1,
+                &*lock,
+                &LockCredential::Password(b"testpass".to_vec()),
+            )
+            .unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("gone"))
+            .unwrap();
         server.work_irrevocably_unpublish(sid1, work_id).unwrap();
 
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
 
-        assert!(!server.work_is_readable(sid2, server.work(work_id).unwrap()),
-            "non-owner should not read irrevocably unpublished work");
-        assert!(server.work_is_readable(sid1, server.work(work_id).unwrap()),
-            "owner (editor) can still read after irrevocable unpublish");
+        assert!(
+            !server.work_is_readable(sid2, server.work(work_id).unwrap()),
+            "non-owner should not read irrevocably unpublished work"
+        );
+        assert!(
+            server.work_is_readable(sid1, server.work(work_id).unwrap()),
+            "owner (editor) can still read after irrevocable unpublish"
+        );
 
         server.work_grab(sid1, work_id).unwrap();
-        assert!(server.work_is_readable(sid1, server.work(work_id).unwrap()),
-            "grabber can always read");
+        assert!(
+            server.work_is_readable(sid1, server.work(work_id).unwrap()),
+            "grabber can always read"
+        );
     }
 
     #[test]
@@ -7671,13 +8798,23 @@ mod tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let club_id = server.create_club(sid, Edition::from_text("snap club")).unwrap();
+        let club_id = server
+            .create_club(sid, Edition::from_text("snap club"))
+            .unwrap();
         server.club_set_password(sid, club_id, b"testpass").unwrap();
         let lock = server.login(sid, club_id).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
-        let custom_club = server.create_club(sid, Edition::from_text("custom")).unwrap();
-        server.club_set_default_read_club(sid, club_id, Some(custom_club)).unwrap();
-        server.club_set_default_edit_club(sid, club_id, Some(custom_club)).unwrap();
+        server
+            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .unwrap();
+        let custom_club = server
+            .create_club(sid, Edition::from_text("custom"))
+            .unwrap();
+        server
+            .club_set_default_read_club(sid, club_id, Some(custom_club))
+            .unwrap();
+        server
+            .club_set_default_edit_club(sid, club_id, Some(custom_club))
+            .unwrap();
 
         let snapshot = server.to_snapshot();
         let restored = Server::from_snapshot(&snapshot);
@@ -7690,11 +8827,19 @@ mod tests {
     #[test]
     fn publish_unpublish_snapshot_roundtrip() {
         let (mut server, sid) = setup_logged_in_server();
-        let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
-        server.club_set_password(sid, owner_club, b"testpass").unwrap();
+        let owner_club = server
+            .create_club(sid, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid, owner_club, b"testpass")
+            .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
-        let work_id = server.create_work(sid, Edition::from_text("persist test")).unwrap();
+        server
+            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .unwrap();
+        let work_id = server
+            .create_work(sid, Edition::from_text("persist test"))
+            .unwrap();
         server.work_publish(sid, work_id).unwrap();
 
         let snapshot = server.to_snapshot();
@@ -7710,11 +8855,23 @@ mod tests {
         let mut server = Server::new();
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
-        let owner_club = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
-        server.club_set_password(sid1, owner_club, b"testpass").unwrap();
+        let owner_club = server
+            .create_club(sid1, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid1, owner_club, b"testpass")
+            .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
-        server.authenticate(sid1, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
-        let work_id = server.create_work(sid1, Edition::from_text("hidden")).unwrap();
+        server
+            .authenticate(
+                sid1,
+                &*lock,
+                &LockCredential::Password(b"testpass".to_vec()),
+            )
+            .unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("hidden"))
+            .unwrap();
 
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
@@ -7728,10 +8885,16 @@ mod tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
-        server.club_set_password(sid, owner_club, b"testpass").unwrap();
+        let owner_club = server
+            .create_club(sid, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid, owner_club, b"testpass")
+            .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
+        server
+            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .unwrap();
         let work_id = server.create_work(sid, Edition::from_text("mine")).unwrap();
 
         let result = server.ensure_can_read(sid, work_id);
@@ -7743,11 +8906,23 @@ mod tests {
         let mut server = Server::new();
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
-        let owner_club = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
-        server.club_set_password(sid1, owner_club, b"testpass").unwrap();
+        let owner_club = server
+            .create_club(sid1, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid1, owner_club, b"testpass")
+            .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
-        server.authenticate(sid1, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
-        let work_id = server.create_work(sid1, Edition::from_text("owned")).unwrap();
+        server
+            .authenticate(
+                sid1,
+                &*lock,
+                &LockCredential::Password(b"testpass".to_vec()),
+            )
+            .unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("owned"))
+            .unwrap();
 
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
@@ -7761,26 +8936,50 @@ mod tests {
         let mut server = Server::new();
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
-        let club1 = server.create_club(sid1, Edition::from_text("owner club")).unwrap();
+        let club1 = server
+            .create_club(sid1, Edition::from_text("owner club"))
+            .unwrap();
         server.club_set_password(sid1, club1, b"testpass").unwrap();
         let lock = server.login(sid1, club1).unwrap();
-        server.authenticate(sid1, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
-        let work_id = server.create_work(sid1, Edition::from_text("owned")).unwrap();
+        server
+            .authenticate(
+                sid1,
+                &*lock,
+                &LockCredential::Password(b"testpass".to_vec()),
+            )
+            .unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("owned"))
+            .unwrap();
 
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
-        let club2 = server.create_club(sid2, Edition::from_text("editor club")).unwrap();
+        let club2 = server
+            .create_club(sid2, Edition::from_text("editor club"))
+            .unwrap();
         server.club_set_password(sid2, club2, b"testpass").unwrap();
         let lock2 = server.login(sid2, club2).unwrap();
-        server.authenticate(sid2, &*lock2, &LockCredential::Password(b"testpass".to_vec())).unwrap();
+        server
+            .authenticate(
+                sid2,
+                &*lock2,
+                &LockCredential::Password(b"testpass".to_vec()),
+            )
+            .unwrap();
 
-        assert!(!server.work_is_readable(sid2, server.work(work_id).unwrap()),
-            "non-editor should not read private work");
+        assert!(
+            !server.work_is_readable(sid2, server.work(work_id).unwrap()),
+            "non-editor should not read private work"
+        );
 
-        server.work_set_edit_club(sid1, work_id, Some(club2)).unwrap();
+        server
+            .work_set_edit_club(sid1, work_id, Some(club2))
+            .unwrap();
 
-        assert!(server.work_is_readable(sid2, server.work(work_id).unwrap()),
-            "editor should be able to read private work");
+        assert!(
+            server.work_is_readable(sid2, server.work(work_id).unwrap()),
+            "editor should be able to read private work"
+        );
     }
 
     #[test]
@@ -7788,21 +8987,37 @@ mod tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
-        server.club_set_password(sid, owner_club, b"testpass").unwrap();
+        let owner_club = server
+            .create_club(sid, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid, owner_club, b"testpass")
+            .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
+        server
+            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .unwrap();
 
-        let custom_club = server.create_club(sid, Edition::from_text("custom")).unwrap();
+        let custom_club = server
+            .create_club(sid, Edition::from_text("custom"))
+            .unwrap();
         let work_id = server.create_work(sid, Edition::from_text("test")).unwrap();
-        server.work_set_read_club(sid, work_id, Some(custom_club)).unwrap();
+        server
+            .work_set_read_club(sid, work_id, Some(custom_club))
+            .unwrap();
 
         server.work_publish(sid, work_id).unwrap();
-        assert_eq!(server.work(work_id).unwrap().read_club(), Some(server.system_clubs.public_club));
+        assert_eq!(
+            server.work(work_id).unwrap().read_club(),
+            Some(server.system_clubs.public_club)
+        );
 
         server.work_unpublish(sid, work_id).unwrap();
-        assert_eq!(server.work(work_id).unwrap().read_club(), Some(owner_club),
-            "unpublish sets read_club to owner, not previous custom club");
+        assert_eq!(
+            server.work(work_id).unwrap().read_club(),
+            Some(owner_club),
+            "unpublish sets read_club to owner, not previous custom club"
+        );
     }
 
     #[test]
@@ -7810,23 +9025,42 @@ mod tests {
         let mut server = Server::new();
         let sid1 = server.connect();
         server.login_public(sid1).unwrap();
-        let club1 = server.create_club(sid1, Edition::from_text("club1")).unwrap();
+        let club1 = server
+            .create_club(sid1, Edition::from_text("club1"))
+            .unwrap();
         server.club_set_password(sid1, club1, b"testpass").unwrap();
         let lock1 = server.login(sid1, club1).unwrap();
-        server.authenticate(sid1, &*lock1, &LockCredential::Password(b"testpass".to_vec())).unwrap();
+        server
+            .authenticate(
+                sid1,
+                &*lock1,
+                &LockCredential::Password(b"testpass".to_vec()),
+            )
+            .unwrap();
 
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
-        let club2 = server.create_club(sid2, Edition::from_text("club2")).unwrap();
+        let club2 = server
+            .create_club(sid2, Edition::from_text("club2"))
+            .unwrap();
         server.club_set_password(sid2, club2, b"testpass").unwrap();
         let lock2 = server.login(sid2, club2).unwrap();
-        server.authenticate(sid2, &*lock2, &LockCredential::Password(b"testpass".to_vec())).unwrap();
+        server
+            .authenticate(
+                sid2,
+                &*lock2,
+                &LockCredential::Password(b"testpass".to_vec()),
+            )
+            .unwrap();
 
         let result = server.club_set_default_read_club(sid2, club1, Some(club2));
         assert!(result.is_err(), "non-owner should not set defaults on club");
 
         let result = server.club_set_default_read_club(sid1, club1, Some(club1));
-        assert!(result.is_ok(), "owner should be able to set defaults on club");
+        assert!(
+            result.is_ok(),
+            "owner should be able to set defaults on club"
+        );
     }
 
     #[test]
@@ -7834,17 +9068,25 @@ mod tests {
         let mut server = Server::new();
         let sid = server.connect();
         server.login_public(sid).unwrap();
-        let owner_club = server.create_club(sid, Edition::from_text("owner club")).unwrap();
-        server.club_set_password(sid, owner_club, b"testpass").unwrap();
+        let owner_club = server
+            .create_club(sid, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid, owner_club, b"testpass")
+            .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
-        server.authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec())).unwrap();
+        server
+            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .unwrap();
         let work_id = server.create_work(sid, Edition::from_text("gone")).unwrap();
 
         server.work_grab(sid, work_id).unwrap();
         server.work_irrevocably_unpublish(sid, work_id).unwrap();
 
-        assert!(server.work_is_readable(sid, server.work(work_id).unwrap()),
-            "grabber should still be able to read after irrevocable unpublish");
+        assert!(
+            server.work_is_readable(sid, server.work(work_id).unwrap()),
+            "grabber should still be able to read after irrevocable unpublish"
+        );
     }
 
     #[test]
@@ -7870,9 +9112,15 @@ mod tests {
 
         let regions = server.find_shared_regions(id_a, id_b);
         assert!(!regions.is_empty(), "should find shared regions");
-        let texts: Vec<&str> = regions.iter().map(|r: &(i64, i64, i64, i64, String)| r.4.as_str()).collect();
-        assert!(texts.iter().any(|t| t.contains('X')),
-            "shared regions should contain shared content, got {:?}", texts);
+        let texts: Vec<&str> = regions
+            .iter()
+            .map(|r: &(i64, i64, i64, i64, String)| r.4.as_str())
+            .collect();
+        assert!(
+            texts.iter().any(|t| t.contains('X')),
+            "shared regions should contain shared content, got {:?}",
+            texts
+        );
     }
 
     #[test]
@@ -7893,7 +9141,10 @@ mod tests {
         let id_b = server.create_work(sid, ed_b).unwrap();
 
         let regions = server.find_shared_regions(id_a, id_b);
-        assert!(regions.is_empty(), "works with no shared content should have no regions");
+        assert!(
+            regions.is_empty(),
+            "works with no shared content should have no regions"
+        );
     }
 
     #[test]
@@ -7924,7 +9175,10 @@ mod tests {
         assert!(!filtered.is_empty(), "filter should match 's'");
 
         let no_match = server.find_shared_regions_filtered(id_a, id_b, "nonexistent");
-        assert!(no_match.is_empty(), "filter for nonexistent text should return empty");
+        assert!(
+            no_match.is_empty(),
+            "filter for nonexistent text should return empty"
+        );
     }
 
     #[test]
@@ -7934,22 +9188,32 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
 
-        let work_a = server.create_work(sid, Edition::from_text("hello world")).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
 
         let edition = server.get_edition(work_a).unwrap().unwrap();
-        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
-        assert!(!content_elements.is_empty(), "edition should have content elements");
+        let content_elements: Vec<RangeElement> = edition
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        assert!(
+            !content_elements.is_empty(),
+            "edition should have content elements"
+        );
 
-        let query = crate::edition::RecorderQuery::works()
-            .with_watched_content(content_elements.clone());
+        let query =
+            crate::edition::RecorderQuery::works().with_watched_content(content_elements.clone());
         let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
         server.recorder_plant(work_a, fossil_id, &query.watched_content);
 
-        let work_b = server.create_work(sid, Edition::from_text("hello world")).unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
 
-        let notifications = server.drain_content_notifications_for(
-            &std::collections::HashSet::from([fossil_id])
-        );
+        let notifications =
+            server.drain_content_notifications_for(&std::collections::HashSet::from([fossil_id]));
         assert!(!notifications.is_empty(), "revising work_b with shared content should trigger notifications for the watcher on work_a");
     }
 
@@ -7960,21 +9224,31 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
 
-        let work_a = server.create_work(sid, Edition::from_text("alpha")).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
 
         let edition = server.get_edition(work_a).unwrap().unwrap();
-        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
-        let query = crate::edition::RecorderQuery::works()
-            .with_watched_content(content_elements.clone());
+        let content_elements: Vec<RangeElement> = edition
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query =
+            crate::edition::RecorderQuery::works().with_watched_content(content_elements.clone());
         let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
         server.recorder_plant(work_a, fossil_id, &query.watched_content);
 
-        let work_b = server.create_work(sid, Edition::from_text("zzzzz")).unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("zzzzz"))
+            .unwrap();
 
-        let notifications = server.drain_content_notifications_for(
-            &std::collections::HashSet::from([fossil_id])
+        let notifications =
+            server.drain_content_notifications_for(&std::collections::HashSet::from([fossil_id]));
+        assert!(
+            notifications.is_empty(),
+            "work_b with no shared content should not trigger notifications"
         );
-        assert!(notifications.is_empty(), "work_b with no shared content should not trigger notifications");
     }
 
     #[test]
@@ -7984,29 +9258,40 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
 
-        let work_a = server.create_work(sid, Edition::from_text("monitor this text")).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("monitor this text"))
+            .unwrap();
 
         let edition = server.get_edition(work_a).unwrap().unwrap();
-        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
-        let query = crate::edition::RecorderQuery::works()
-            .with_watched_content(content_elements.clone());
+        let content_elements: Vec<RangeElement> = edition
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query =
+            crate::edition::RecorderQuery::works().with_watched_content(content_elements.clone());
         let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
         server.recorder_plant(work_a, fossil_id, &query.watched_content);
 
-        let work_b = server.create_work(sid, Edition::from_text("ZZZZZ")).unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("ZZZZZ"))
+            .unwrap();
 
-        let before = server.drain_content_notifications_for(
-            &std::collections::HashSet::from([fossil_id])
-        );
+        let before =
+            server.drain_content_notifications_for(&std::collections::HashSet::from([fossil_id]));
         assert!(before.is_empty(), "unrelated content should not trigger");
 
         server.work_grab(sid, work_b).unwrap();
-        server.work_revise(sid, work_b, Edition::from_text("monitor this text")).unwrap();
+        server
+            .work_revise(sid, work_b, Edition::from_text("monitor this text"))
+            .unwrap();
 
-        let after = server.drain_content_notifications_for(
-            &std::collections::HashSet::from([fossil_id])
+        let after =
+            server.drain_content_notifications_for(&std::collections::HashSet::from([fossil_id]));
+        assert!(
+            !after.is_empty(),
+            "revising work_b to match watched content should trigger notification"
         );
-        assert!(!after.is_empty(), "revising work_b to match watched content should trigger notification");
     }
 
     #[test]
@@ -8016,23 +9301,33 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
 
-        let work_a = server.create_work(sid, Edition::from_text("shared content")).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("shared content"))
+            .unwrap();
 
         let edition = server.get_edition(work_a).unwrap().unwrap();
-        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
-        let query = crate::edition::RecorderQuery::works()
-            .with_watched_content(content_elements.clone());
+        let content_elements: Vec<RangeElement> = edition
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query =
+            crate::edition::RecorderQuery::works().with_watched_content(content_elements.clone());
         let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
         server.recorder_plant(work_a, fossil_id, &query.watched_content);
 
         server.recorder_unplant(work_a, fossil_id, &query.watched_content);
 
-        let work_b = server.create_work(sid, Edition::from_text("shared content")).unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("shared content"))
+            .unwrap();
 
-        let notifications = server.drain_content_notifications_for(
-            &std::collections::HashSet::from([fossil_id])
+        let notifications =
+            server.drain_content_notifications_for(&std::collections::HashSet::from([fossil_id]));
+        assert!(
+            notifications.is_empty(),
+            "unplanted watcher should not receive notifications"
         );
-        assert!(notifications.is_empty(), "unplanted watcher should not receive notifications");
     }
 
     #[test]
@@ -8042,23 +9337,33 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
 
-        let work_a = server.create_work(sid, Edition::from_text("track me")).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("track me"))
+            .unwrap();
 
         let edition = server.get_edition(work_a).unwrap().unwrap();
-        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
-        let query = crate::edition::RecorderQuery::works()
-            .with_watched_content(content_elements.clone());
+        let content_elements: Vec<RangeElement> = edition
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query =
+            crate::edition::RecorderQuery::works().with_watched_content(content_elements.clone());
         let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
         server.recorder_plant(work_a, fossil_id, &query.watched_content);
 
         server.recorder_extinguish(fossil_id);
 
-        let work_b = server.create_work(sid, Edition::from_text("track me")).unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("track me"))
+            .unwrap();
 
-        let notifications = server.drain_content_notifications_for(
-            &std::collections::HashSet::from([fossil_id])
+        let notifications =
+            server.drain_content_notifications_for(&std::collections::HashSet::from([fossil_id]));
+        assert!(
+            notifications.is_empty(),
+            "extinguished fossil should not produce notifications"
         );
-        assert!(notifications.is_empty(), "extinguished fossil should not produce notifications");
     }
 
     #[test]
@@ -8068,31 +9373,51 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
 
-        let work_a = server.create_work(sid, Edition::from_text("alpha")).unwrap();
-        let work_b = server.create_work(sid, Edition::from_text("ZZZZZ")).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("ZZZZZ"))
+            .unwrap();
 
         let ed_a = server.get_edition(work_a).unwrap().unwrap();
-        let content_a: Vec<RangeElement> = ed_a.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
-        let query_a = crate::edition::RecorderQuery::works().with_watched_content(content_a.clone());
+        let content_a: Vec<RangeElement> = ed_a
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query_a =
+            crate::edition::RecorderQuery::works().with_watched_content(content_a.clone());
         let fossil_a = server.recorder_create_for_content(query_a.clone(), work_a);
         server.recorder_plant(work_a, fossil_a, &query_a.watched_content);
 
         let ed_b = server.get_edition(work_b).unwrap().unwrap();
-        let content_b: Vec<RangeElement> = ed_b.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
-        let query_b = crate::edition::RecorderQuery::works().with_watched_content(content_b.clone());
+        let content_b: Vec<RangeElement> = ed_b
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query_b =
+            crate::edition::RecorderQuery::works().with_watched_content(content_b.clone());
         let fossil_b = server.recorder_create_for_content(query_b.clone(), work_b);
         server.recorder_plant(work_b, fossil_b, &query_b.watched_content);
 
-        let work_c = server.create_work(sid, Edition::from_text("alpha")).unwrap();
+        let work_c = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
 
-        let notifs_a = server.drain_content_notifications_for(
-            &std::collections::HashSet::from([fossil_a])
+        let notifs_a =
+            server.drain_content_notifications_for(&std::collections::HashSet::from([fossil_a]));
+        let notifs_b =
+            server.drain_content_notifications_for(&std::collections::HashSet::from([fossil_b]));
+        assert!(
+            !notifs_a.is_empty(),
+            "watcher for alpha should trigger on alpha content"
         );
-        let notifs_b = server.drain_content_notifications_for(
-            &std::collections::HashSet::from([fossil_b])
+        assert!(
+            notifs_b.is_empty(),
+            "watcher for ZZZZZ should NOT trigger on alpha content"
         );
-        assert!(!notifs_a.is_empty(), "watcher for alpha should trigger on alpha content");
-        assert!(notifs_b.is_empty(), "watcher for ZZZZZ should NOT trigger on alpha content");
     }
 
     #[test]
@@ -8102,24 +9427,34 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
 
-        let work_a = server.create_work(sid, Edition::from_text("hello")).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
 
         let edition = server.get_edition(work_a).unwrap().unwrap();
-        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
-        let query = crate::edition::RecorderQuery::works()
-            .with_watched_content(content_elements.clone());
+        let content_elements: Vec<RangeElement> = edition
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query =
+            crate::edition::RecorderQuery::works().with_watched_content(content_elements.clone());
         let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
         server.recorder_plant(work_a, fossil_id, &query.watched_content);
 
-        let work_b = server.create_work(sid, Edition::from_text("hello")).unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
 
-        let notifications = server.drain_content_notifications_for(
-            &std::collections::HashSet::from([fossil_id])
-        );
+        let notifications =
+            server.drain_content_notifications_for(&std::collections::HashSet::from([fossil_id]));
         assert!(!notifications.is_empty());
         let notif = &notifications[0];
         assert_eq!(notif.fossil_id, fossil_id);
-        assert_eq!(notif.edition_be_id, work_b, "notification should reference the work that triggered it");
+        assert_eq!(
+            notif.edition_be_id, work_b,
+            "notification should reference the work that triggered it"
+        );
     }
 
     #[test]
@@ -8129,25 +9464,31 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
 
-        let work_a = server.create_work(sid, Edition::from_text("payload")).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("payload"))
+            .unwrap();
 
         let edition = server.get_edition(work_a).unwrap().unwrap();
-        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
-        let query = crate::edition::RecorderQuery::works()
-            .with_watched_content(content_elements.clone());
+        let content_elements: Vec<RangeElement> = edition
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query =
+            crate::edition::RecorderQuery::works().with_watched_content(content_elements.clone());
         let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
         server.recorder_plant(work_a, fossil_id, &query.watched_content);
 
-        let work_b = server.create_work(sid, Edition::from_text("payload")).unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("payload"))
+            .unwrap();
 
-        let first = server.drain_content_notifications_for(
-            &std::collections::HashSet::from([fossil_id])
-        );
+        let first =
+            server.drain_content_notifications_for(&std::collections::HashSet::from([fossil_id]));
         assert!(!first.is_empty());
 
-        let second = server.drain_content_notifications_for(
-            &std::collections::HashSet::from([fossil_id])
-        );
+        let second =
+            server.drain_content_notifications_for(&std::collections::HashSet::from([fossil_id]));
         assert!(second.is_empty(), "drain should consume notifications");
     }
 
@@ -8158,23 +9499,45 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
 
-        let work_a = server.create_work(sid, Edition::from_text("one two three")).unwrap();
-        let work_b = server.create_work(sid, Edition::from_text("two three four")).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("one two three"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("two three four"))
+            .unwrap();
 
         let edition = server.get_edition(work_a).unwrap().unwrap();
-        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
-        let query = crate::edition::RecorderQuery::works()
-            .with_watched_content(content_elements);
+        let content_elements: Vec<RangeElement> = edition
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query = crate::edition::RecorderQuery::works().with_watched_content(content_elements);
         let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
         server.recorder_plant(work_a, fossil_id, &query.watched_content);
 
         let fossil = server.recorder_get(fossil_id).unwrap();
         let results = fossil.results.clone();
-        assert!(!results.is_empty(), "initial matcher should find work_b sharing content with work_a");
-        let found_works: Vec<u64> = results.iter()
-            .filter_map(|r| if let RangeElement::Work { work_id } = &r.element { Some(work_id.0) } else { None })
+        assert!(
+            !results.is_empty(),
+            "initial matcher should find work_b sharing content with work_a"
+        );
+        let found_works: Vec<u64> = results
+            .iter()
+            .filter_map(|r| {
+                if let RangeElement::Work { work_id } = &r.element {
+                    Some(work_id.0)
+                } else {
+                    None
+                }
+            })
             .collect();
-        assert!(found_works.contains(&work_b), "results should include work_b ({:?}), got: {:?}", work_b, found_works);
+        assert!(
+            found_works.contains(&work_b),
+            "results should include work_b ({:?}), got: {:?}",
+            work_b,
+            found_works
+        );
     }
 
     #[test]
@@ -8184,13 +9547,20 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
 
-        let work_a = server.create_work(sid, Edition::from_text("one two three")).unwrap();
-        let work_b = server.create_work(sid, Edition::from_text("two three four")).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("one two three"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("two three four"))
+            .unwrap();
 
         let edition = server.get_edition(work_a).unwrap().unwrap();
-        let content_elements: Vec<RangeElement> = edition.all_entries().iter().map(|(_, c)| c.element.clone()).collect();
-        let query = crate::edition::RecorderQuery::works()
-            .with_watched_content(content_elements);
+        let content_elements: Vec<RangeElement> = edition
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query = crate::edition::RecorderQuery::works().with_watched_content(content_elements);
         let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
         server.recorder_plant(work_a, fossil_id, &query.watched_content);
 
@@ -8215,11 +9585,7 @@ mod tests {
         (server, sid)
     }
 
-    fn ac_create_user(
-        server: &mut Server,
-        name: &str,
-        password: &[u8],
-    ) -> (BeId, SessionId) {
+    fn ac_create_user(server: &mut Server, name: &str, password: &[u8]) -> (BeId, SessionId) {
         let sid = server.connect();
         server.login_public(sid).unwrap();
         let phc = crate::crypto::password::hash_password(password).unwrap();
@@ -8261,9 +9627,15 @@ mod tests {
     fn crdt_open_session_checks_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
-        let edit_club = server.create_named_club(owner_sid, "priv_edit", Edition::empty()).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("secret")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let edit_club = server
+            .create_named_club(owner_sid, "priv_edit", Edition::empty())
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("secret"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(edit_club))
+            .unwrap();
         let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", b"pass2");
         let intruder_sid = ac_login_as(&mut server, user_club, b"pass2");
         let result = server.crdt_open_session(intruder_sid, work_id);
@@ -8274,11 +9646,19 @@ mod tests {
     fn crdt_open_session_allows_member() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
-        let edit_club = server.create_named_club(owner_sid, "priv_edit", Edition::empty()).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("secret")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let edit_club = server
+            .create_named_club(owner_sid, "priv_edit", Edition::empty())
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("secret"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(edit_club))
+            .unwrap();
         let (user_club, _user_sid) = ac_create_user(&mut server, "member", b"pass2");
-        server.club_add_member(owner_sid, edit_club, user_club).unwrap();
+        server
+            .club_add_member(owner_sid, edit_club, user_club)
+            .unwrap();
         let member_sid = ac_login_as(&mut server, user_club, b"pass2");
         let result = server.crdt_open_session(member_sid, work_id);
         assert!(result.is_ok(), "member should open CRDT session");
@@ -8288,15 +9668,25 @@ mod tests {
     fn crdt_apply_text_delta_checks_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
-        let edit_club = server.create_named_club(owner_sid, "priv_edit", Edition::empty()).unwrap();
-        server.club_add_member(owner_sid, edit_club, owner_club).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("secret")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let edit_club = server
+            .create_named_club(owner_sid, "priv_edit", Edition::empty())
+            .unwrap();
+        server
+            .club_add_member(owner_sid, edit_club, owner_club)
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("secret"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(edit_club))
+            .unwrap();
         let owner_sid2 = ac_login_as(&mut server, owner_club, b"pass1");
         let _ = server.crdt_open_session(owner_sid2, work_id).unwrap();
         let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", b"pass2");
         let intruder_sid = ac_login_as(&mut server, user_club, b"pass2");
-        let ops = vec![TextDeltaOp::Insert { text: "hacked".to_string() }];
+        let ops = vec![TextDeltaOp::Insert {
+            text: "hacked".to_string(),
+        }];
         let result = server.crdt_apply_text_delta(intruder_sid, work_id, &ops);
         assert!(result.is_err(), "non-member should not apply text delta");
     }
@@ -8305,10 +9695,18 @@ mod tests {
     fn crdt_apply_update_checks_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
-        let edit_club = server.create_named_club(owner_sid, "priv_edit", Edition::empty()).unwrap();
-        server.club_add_member(owner_sid, edit_club, owner_club).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("secret")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let edit_club = server
+            .create_named_club(owner_sid, "priv_edit", Edition::empty())
+            .unwrap();
+        server
+            .club_add_member(owner_sid, edit_club, owner_club)
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("secret"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(edit_club))
+            .unwrap();
         let owner_sid2 = ac_login_as(&mut server, owner_club, b"pass1");
         let _ = server.crdt_open_session(owner_sid2, work_id).unwrap();
         let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", b"pass2");
@@ -8320,7 +9718,9 @@ mod tests {
     #[test]
     fn crdt_materialize_now_checks_session() {
         let (mut server, owner_sid) = ac_setup();
-        let work_id = server.create_work(owner_sid, Edition::from_text("test")).unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("test"))
+            .unwrap();
         let _ = server.crdt_open_session(owner_sid, work_id).unwrap();
         let fake_sid = SessionId::new(9999999);
         let result = server.crdt_materialize_now(fake_sid, work_id);
@@ -8330,7 +9730,9 @@ mod tests {
     #[test]
     fn crdt_awareness_update_requires_session() {
         let (mut server, owner_sid) = ac_setup();
-        let work_id = server.create_work(owner_sid, Edition::from_text("aware")).unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("aware"))
+            .unwrap();
         let _ = server.crdt_open_session(owner_sid, work_id).unwrap();
         let stranger_sid = server.connect();
         let state = AwarenessState {
@@ -8347,7 +9749,9 @@ mod tests {
     #[test]
     fn crdt_register_author_requires_session() {
         let (mut server, owner_sid) = ac_setup();
-        let work_id = server.create_work(owner_sid, Edition::from_text("auth")).unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("auth"))
+            .unwrap();
         let _ = server.crdt_open_session(owner_sid, work_id).unwrap();
         let stranger_sid = server.connect();
         let result = server.crdt_update_author(stranger_sid, work_id);
@@ -8358,12 +9762,19 @@ mod tests {
     fn work_set_edit_club_requires_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
-        let edit_club = server.create_named_club(owner_sid, "edit_gate", Edition::empty()).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("gated")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let edit_club = server
+            .create_named_club(owner_sid, "edit_gate", Edition::empty())
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("gated"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(edit_club))
+            .unwrap();
         let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
         let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
-        let result = server.work_set_edit_club(stranger_sid, work_id, Some(server.public_club_id()));
+        let result =
+            server.work_set_edit_club(stranger_sid, work_id, Some(server.public_club_id()));
         assert!(result.is_err(), "stranger should not change edit club");
     }
 
@@ -8371,12 +9782,19 @@ mod tests {
     fn work_set_read_club_requires_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
-        let edit_club = server.create_named_club(owner_sid, "read_gate", Edition::empty()).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("gated")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let edit_club = server
+            .create_named_club(owner_sid, "read_gate", Edition::empty())
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("gated"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(edit_club))
+            .unwrap();
         let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
         let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
-        let result = server.work_set_read_club(stranger_sid, work_id, Some(server.public_club_id()));
+        let result =
+            server.work_set_read_club(stranger_sid, work_id, Some(server.public_club_id()));
         assert!(result.is_err(), "stranger should not change read club");
     }
 
@@ -8384,7 +9802,9 @@ mod tests {
     fn work_publish_requires_owner() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
-        let work_id = server.create_work(owner_sid, Edition::from_text("mine")).unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("mine"))
+            .unwrap();
         let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
         let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
         let result = server.work_publish(stranger_sid, work_id);
@@ -8395,7 +9815,9 @@ mod tests {
     fn work_unpublish_requires_owner() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
-        let work_id = server.create_work(owner_sid, Edition::from_text("mine")).unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("mine"))
+            .unwrap();
         server.work_publish(owner_sid, work_id).unwrap();
         let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
         let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
@@ -8407,41 +9829,71 @@ mod tests {
     fn work_irrevocably_unpublish_requires_owner() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
-        let work_id = server.create_work(owner_sid, Edition::from_text("mine")).unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("mine"))
+            .unwrap();
         let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
         let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
         let result = server.work_irrevocably_unpublish(stranger_sid, work_id);
-        assert!(result.is_err(), "non-owner should not irrevocably unpublish");
+        assert!(
+            result.is_err(),
+            "non-owner should not irrevocably unpublish"
+        );
     }
 
     #[test]
     fn work_sponsor_requires_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
-        let edit_club = server.create_named_club(owner_sid, "sponsor_gate", Edition::empty()).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("sponsored")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let edit_club = server
+            .create_named_club(owner_sid, "sponsor_gate", Edition::empty())
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("sponsored"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(edit_club))
+            .unwrap();
         let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
         let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
         let result = server.work_sponsor(stranger_sid, work_id, server.public_club_id());
-        assert!(result.is_err(), "stranger should not sponsor restricted work");
+        assert!(
+            result.is_err(),
+            "stranger should not sponsor restricted work"
+        );
     }
 
     #[test]
     fn crdt_two_users_concurrent_edit() {
         let (mut server, sid1) = ac_setup();
-        let work_id = server.create_work(sid1, Edition::from_text("initial")).unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("initial"))
+            .unwrap();
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
         let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
         let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
-        let ops1 = vec![TextDeltaOp::Retain { count: 0 }, TextDeltaOp::Insert { text: "A".to_string() }];
+        let ops1 = vec![
+            TextDeltaOp::Retain { count: 0 },
+            TextDeltaOp::Insert {
+                text: "A".to_string(),
+            },
+        ];
         let result1 = server.crdt_apply_text_delta(sid1, work_id, &ops1).unwrap();
         assert_eq!(result1.0.relay_to.len(), 1);
-        let ops2 = vec![TextDeltaOp::Retain { count: 0 }, TextDeltaOp::Insert { text: "B".to_string() }];
+        let ops2 = vec![
+            TextDeltaOp::Retain { count: 0 },
+            TextDeltaOp::Insert {
+                text: "B".to_string(),
+            },
+        ];
         server.crdt_apply_text_delta(sid2, work_id, &ops2).unwrap();
         let text = server.crdt_current_text(work_id).unwrap();
-        assert!(text.contains('A') && text.contains('B'), "both edits present, got: {}", text);
+        assert!(
+            text.contains('A') && text.contains('B'),
+            "both edits present, got: {}",
+            text
+        );
     }
 
     #[test]
@@ -8455,58 +9907,135 @@ mod tests {
         let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
         let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
         let _r3 = server.crdt_open_session(sid3, work_id).unwrap();
-        server.crdt_apply_text_delta(sid1, work_id, &[TextDeltaOp::Insert { text: "alice".to_string() }]).unwrap();
-        server.crdt_apply_text_delta(sid2, work_id, &[TextDeltaOp::Insert { text: "bob".to_string() }]).unwrap();
-        server.crdt_apply_text_delta(sid3, work_id, &[TextDeltaOp::Insert { text: "carol".to_string() }]).unwrap();
+        server
+            .crdt_apply_text_delta(
+                sid1,
+                work_id,
+                &[TextDeltaOp::Insert {
+                    text: "alice".to_string(),
+                }],
+            )
+            .unwrap();
+        server
+            .crdt_apply_text_delta(
+                sid2,
+                work_id,
+                &[TextDeltaOp::Insert {
+                    text: "bob".to_string(),
+                }],
+            )
+            .unwrap();
+        server
+            .crdt_apply_text_delta(
+                sid3,
+                work_id,
+                &[TextDeltaOp::Insert {
+                    text: "carol".to_string(),
+                }],
+            )
+            .unwrap();
         let text = server.crdt_current_text(work_id).unwrap();
-        assert!(text.contains("alice") && text.contains("bob") && text.contains("carol"), "got: {}", text);
+        assert!(
+            text.contains("alice") && text.contains("bob") && text.contains("carol"),
+            "got: {}",
+            text
+        );
     }
 
     #[test]
     fn crdt_close_session_materializes() {
         let (mut server, sid1) = ac_setup();
-        let work_id = server.create_work(sid1, Edition::from_text("original")).unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("original"))
+            .unwrap();
         let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
-        server.crdt_apply_text_delta(sid1, work_id, &[TextDeltaOp::Insert { text: "modified ".to_string() }]).unwrap();
+        server
+            .crdt_apply_text_delta(
+                sid1,
+                work_id,
+                &[TextDeltaOp::Insert {
+                    text: "modified ".to_string(),
+                }],
+            )
+            .unwrap();
         server.crdt_close_session(sid1, work_id).unwrap();
         let text = server.work_edition(work_id).unwrap().to_text();
-        assert!(text.contains("modified"), "close should materialize, got: {}", text);
+        assert!(
+            text.contains("modified"),
+            "close should materialize, got: {}",
+            text
+        );
     }
 
     #[test]
     fn crdt_close_one_session_keeps_others() {
         let (mut server, sid1) = ac_setup();
-        let work_id = server.create_work(sid1, Edition::from_text("shared")).unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("shared"))
+            .unwrap();
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
         let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
         let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
-        server.crdt_apply_text_delta(sid1, work_id, &[TextDeltaOp::Insert { text: "A".to_string() }]).unwrap();
+        server
+            .crdt_apply_text_delta(
+                sid1,
+                work_id,
+                &[TextDeltaOp::Insert {
+                    text: "A".to_string(),
+                }],
+            )
+            .unwrap();
         server.crdt_close_session(sid1, work_id).unwrap();
-        assert!(server.crdt_is_active(work_id), "work should still be active with sid2");
+        assert!(
+            server.crdt_is_active(work_id),
+            "work should still be active with sid2"
+        );
         assert_eq!(server.crdt_subscriber_count(work_id), 1);
     }
 
     #[test]
     fn crdt_conflict_resolution_overlapping_edits() {
         let (mut server, sid1) = ac_setup();
-        let work_id = server.create_work(sid1, Edition::from_text("ABCDEFGH")).unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("ABCDEFGH"))
+            .unwrap();
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
         let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
         let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
-        server.crdt_apply_text_delta(sid1, work_id, &[
-            TextDeltaOp::Retain { count: 4 },
-            TextDeltaOp::Delete { count: 4 },
-            TextDeltaOp::Insert { text: "XYZ".to_string() },
-        ]).unwrap();
-        server.crdt_apply_text_delta(sid2, work_id, &[
-            TextDeltaOp::Retain { count: 2 },
-            TextDeltaOp::Delete { count: 2 },
-            TextDeltaOp::Insert { text: "12".to_string() },
-        ]).unwrap();
+        server
+            .crdt_apply_text_delta(
+                sid1,
+                work_id,
+                &[
+                    TextDeltaOp::Retain { count: 4 },
+                    TextDeltaOp::Delete { count: 4 },
+                    TextDeltaOp::Insert {
+                        text: "XYZ".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+        server
+            .crdt_apply_text_delta(
+                sid2,
+                work_id,
+                &[
+                    TextDeltaOp::Retain { count: 2 },
+                    TextDeltaOp::Delete { count: 2 },
+                    TextDeltaOp::Insert {
+                        text: "12".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
         let text = server.crdt_current_text(work_id).unwrap();
-        assert!(text.contains("XYZ") || text.contains("12"), "conflict resolved, got: {}", text);
+        assert!(
+            text.contains("XYZ") || text.contains("12"),
+            "conflict resolved, got: {}",
+            text
+        );
         assert_eq!(text.len(), 7);
     }
 
@@ -8517,7 +10046,14 @@ mod tests {
         let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
         for ch in "rapid typing".chars() {
             let text = server.crdt_current_text(work_id).unwrap();
-            let ops = vec![TextDeltaOp::Retain { count: text.len() as u64 }, TextDeltaOp::Insert { text: ch.to_string() }];
+            let ops = vec![
+                TextDeltaOp::Retain {
+                    count: text.len() as u64,
+                },
+                TextDeltaOp::Insert {
+                    text: ch.to_string(),
+                },
+            ];
             server.crdt_apply_text_delta(sid1, work_id, &ops).unwrap();
         }
         assert_eq!(server.crdt_current_text(work_id).unwrap(), "rapid typing");
@@ -8526,17 +10062,37 @@ mod tests {
     #[test]
     fn crdt_unicode_multi_user() {
         let (mut server, sid1) = ac_setup();
-        let work_id = server.create_work(sid1, Edition::from_text("abcd")).unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("abcd"))
+            .unwrap();
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
         let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
         let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
-        server.crdt_apply_text_delta(sid1, work_id, &[
-            TextDeltaOp::Retain { count: 1 }, TextDeltaOp::Insert { text: "X".to_string() },
-        ]).unwrap();
-        server.crdt_apply_text_delta(sid2, work_id, &[
-            TextDeltaOp::Retain { count: 3 }, TextDeltaOp::Insert { text: "Y".to_string() },
-        ]).unwrap();
+        server
+            .crdt_apply_text_delta(
+                sid1,
+                work_id,
+                &[
+                    TextDeltaOp::Retain { count: 1 },
+                    TextDeltaOp::Insert {
+                        text: "X".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+        server
+            .crdt_apply_text_delta(
+                sid2,
+                work_id,
+                &[
+                    TextDeltaOp::Retain { count: 3 },
+                    TextDeltaOp::Insert {
+                        text: "Y".to_string(),
+                    },
+                ],
+            )
+            .unwrap();
         let text = server.crdt_current_text(work_id).unwrap();
         assert!(text.contains('X') && text.contains('Y'), "got: {}", text);
     }
@@ -8544,20 +10100,28 @@ mod tests {
     #[test]
     fn crdt_awareness_multi_user() {
         let (mut server, sid1) = ac_setup();
-        let work_id = server.create_work(sid1, Edition::from_text("aware")).unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("aware"))
+            .unwrap();
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
         let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
         let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
         let state1 = AwarenessState {
-            session_id: sid1.as_u64(), user_name: "alice".to_string(),
-            cursor: Some(CursorPosition { index: 0 }), selection: None, is_typing: false,
+            session_id: sid1.as_u64(),
+            user_name: "alice".to_string(),
+            cursor: Some(CursorPosition { index: 0 }),
+            selection: None,
+            is_typing: false,
         };
         let result1 = server.crdt_update_awareness(sid1, work_id, state1).unwrap();
         assert_eq!(result1.relay_to.len(), 1);
         let state2 = AwarenessState {
-            session_id: sid2.as_u64(), user_name: "bob".to_string(),
-            cursor: Some(CursorPosition { index: 5 }), selection: None, is_typing: false,
+            session_id: sid2.as_u64(),
+            user_name: "bob".to_string(),
+            cursor: Some(CursorPosition { index: 5 }),
+            selection: None,
+            is_typing: false,
         };
         let result2 = server.crdt_update_awareness(sid2, work_id, state2).unwrap();
         assert_eq!(result2.relay_to.len(), 1);
@@ -8568,7 +10132,9 @@ mod tests {
     #[test]
     fn crdt_author_registration_multi_user() {
         let (mut server, sid1) = ac_setup();
-        let work_id = server.create_work(sid1, Edition::from_text("auth")).unwrap();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("auth"))
+            .unwrap();
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
         let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
@@ -8585,9 +10151,15 @@ mod tests {
     #[test]
     fn private_club_blocks_non_member_from_edit() {
         let (mut server, owner_sid) = ac_setup();
-        let private_club = server.create_named_club(owner_sid, "exclusive", Edition::empty()).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("gated")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(private_club)).unwrap();
+        let private_club = server
+            .create_named_club(owner_sid, "exclusive", Edition::empty())
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("gated"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(private_club))
+            .unwrap();
         let stranger_sid = server.connect();
         server.login_public(stranger_sid).unwrap();
         assert!(!server.work_can_revise(stranger_sid, work_id).unwrap());
@@ -8597,48 +10169,86 @@ mod tests {
     #[test]
     fn adding_member_to_edit_club_grants_access() {
         let (mut server, owner_sid) = ac_setup();
-        let edit_club = server.create_named_club(owner_sid, "invited_editors", Edition::empty()).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("invited")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let edit_club = server
+            .create_named_club(owner_sid, "invited_editors", Edition::empty())
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("invited"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(edit_club))
+            .unwrap();
         let (user_club, user_sid) = ac_create_user(&mut server, "invitee", b"password1");
-        assert!(!server.work_can_revise(user_sid, work_id).unwrap(), "before invite, user cannot edit");
-        server.club_add_member(owner_sid, edit_club, user_club).unwrap();
+        assert!(
+            !server.work_can_revise(user_sid, work_id).unwrap(),
+            "before invite, user cannot edit"
+        );
+        server
+            .club_add_member(owner_sid, edit_club, user_club)
+            .unwrap();
         let user_sid2 = ac_login_as(&mut server, user_club, b"password1");
-        assert!(server.work_can_revise(user_sid2, work_id).unwrap(), "after invite, user can edit");
+        assert!(
+            server.work_can_revise(user_sid2, work_id).unwrap(),
+            "after invite, user can edit"
+        );
     }
 
     #[test]
     fn removing_member_revokes_access() {
         let (mut server, owner_sid) = ac_setup();
-        let edit_club = server.create_named_club(owner_sid, "revokable_edit", Edition::empty()).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("revokable")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let edit_club = server
+            .create_named_club(owner_sid, "revokable_edit", Edition::empty())
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("revokable"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(edit_club))
+            .unwrap();
         let (user_club, _user_sid) = ac_create_user(&mut server, "tempuser", b"password1");
-        server.club_add_member(owner_sid, edit_club, user_club).unwrap();
+        server
+            .club_add_member(owner_sid, edit_club, user_club)
+            .unwrap();
         let user_sid2 = ac_login_as(&mut server, user_club, b"password1");
         assert!(server.work_can_revise(user_sid2, work_id).unwrap());
-        server.club_remove_member(owner_sid, edit_club, user_club).unwrap();
+        server
+            .club_remove_member(owner_sid, edit_club, user_club)
+            .unwrap();
         let user_sid3 = ac_login_as(&mut server, user_club, b"password1");
-        assert!(!server.work_can_revise(user_sid3, work_id).unwrap(), "removed member should not edit");
+        assert!(
+            !server.work_can_revise(user_sid3, work_id).unwrap(),
+            "removed member should not edit"
+        );
     }
 
     #[test]
     fn read_club_restricts_visibility() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
-        let read_club = server.create_named_club(owner_sid, "secret_readers", Edition::empty()).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("hidden")).unwrap();
-        server.work_set_read_club(owner_sid, work_id, Some(read_club)).unwrap();
+        let read_club = server
+            .create_named_club(owner_sid, "secret_readers", Edition::empty())
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("hidden"))
+            .unwrap();
+        server
+            .work_set_read_club(owner_sid, work_id, Some(read_club))
+            .unwrap();
         let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
         let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
         let can_read = server.work_can_read(stranger_sid, work_id).unwrap();
-        assert!(!can_read, "stranger should not read work with restricted read_club");
+        assert!(
+            !can_read,
+            "stranger should not read work with restricted read_club"
+        );
     }
 
     #[test]
     fn publish_makes_readable_by_all() {
         let (mut server, owner_sid) = ac_setup();
-        let work_id = server.create_work(owner_sid, Edition::from_text("my doc")).unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("my doc"))
+            .unwrap();
         server.work_publish(owner_sid, work_id).unwrap();
         let stranger_sid = server.connect();
         server.login_public(stranger_sid).unwrap();
@@ -8649,24 +10259,37 @@ mod tests {
     fn unpublish_restricts_to_owner() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
-        let work_id = server.create_work(owner_sid, Edition::from_text("my doc")).unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("my doc"))
+            .unwrap();
         server.work_publish(owner_sid, work_id).unwrap();
         server.work_unpublish(owner_sid, work_id).unwrap();
         let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
         let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
-        assert!(!server.work_can_read(stranger_sid, work_id).unwrap(), "unpublished work should not be readable by strangers");
+        assert!(
+            !server.work_can_read(stranger_sid, work_id).unwrap(),
+            "unpublished work should not be readable by strangers"
+        );
     }
 
     #[test]
     fn crdt_edit_club_blocks_unauthorized_session() {
         let (mut server, owner_sid) = ac_setup();
-        let edit_club = server.create_named_club(owner_sid, "crdt_gate", Edition::empty()).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("crdt_gated")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let edit_club = server
+            .create_named_club(owner_sid, "crdt_gate", Edition::empty())
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("crdt_gated"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(edit_club))
+            .unwrap();
         let (user_club, _user_sid) = ac_create_user(&mut server, "crdt_user", b"password1");
         let user_sid = ac_login_as(&mut server, user_club, b"password1");
         assert!(server.crdt_open_session(user_sid, work_id).is_err());
-        server.club_add_member(owner_sid, edit_club, user_club).unwrap();
+        server
+            .club_add_member(owner_sid, edit_club, user_club)
+            .unwrap();
         let user_sid2 = ac_login_as(&mut server, user_club, b"password1");
         assert!(server.crdt_open_session(user_sid2, work_id).is_ok());
     }
@@ -8674,32 +10297,65 @@ mod tests {
     #[test]
     fn crdt_revoked_member_cannot_edit_anymore() {
         let (mut server, owner_sid) = ac_setup();
-        let edit_club = server.create_named_club(owner_sid, "crdt_revoke", Edition::empty()).unwrap();
-        let work_id = server.create_work(owner_sid, Edition::from_text("revokable crdt")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let edit_club = server
+            .create_named_club(owner_sid, "crdt_revoke", Edition::empty())
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("revokable crdt"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(edit_club))
+            .unwrap();
         let (user_club, _user_sid) = ac_create_user(&mut server, "revokee", b"password1");
-        server.club_add_member(owner_sid, edit_club, user_club).unwrap();
+        server
+            .club_add_member(owner_sid, edit_club, user_club)
+            .unwrap();
         let user_sid = ac_login_as(&mut server, user_club, b"password1");
         let _r = server.crdt_open_session(user_sid, work_id).unwrap();
-        server.crdt_apply_text_delta(user_sid, work_id, &[TextDeltaOp::Insert { text: "before revoke".to_string() }]).unwrap();
-        server.club_remove_member(owner_sid, edit_club, user_club).unwrap();
-        let result = server.crdt_apply_text_delta(user_sid, work_id, &[TextDeltaOp::Insert { text: "after revoke".to_string() }]);
+        server
+            .crdt_apply_text_delta(
+                user_sid,
+                work_id,
+                &[TextDeltaOp::Insert {
+                    text: "before revoke".to_string(),
+                }],
+            )
+            .unwrap();
+        server
+            .club_remove_member(owner_sid, edit_club, user_club)
+            .unwrap();
+        let result = server.crdt_apply_text_delta(
+            user_sid,
+            work_id,
+            &[TextDeltaOp::Insert {
+                text: "after revoke".to_string(),
+            }],
+        );
         assert!(result.is_err(), "revoked member should not apply deltas");
     }
 
     #[test]
     fn no_edit_club_means_no_one_can_edit() {
         let (mut server, owner_sid) = ac_setup();
-        let work_id = server.create_work(owner_sid, Edition::from_text("no edit")).unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("no edit"))
+            .unwrap();
         server.work_set_edit_club(owner_sid, work_id, None).unwrap();
-        assert!(!server.work_can_revise(owner_sid, work_id).unwrap(), "no edit_club means even owner cannot revise");
+        assert!(
+            !server.work_can_revise(owner_sid, work_id).unwrap(),
+            "no edit_club means even owner cannot revise"
+        );
     }
 
     #[test]
     fn public_edit_club_allows_all() {
         let (mut server, owner_sid) = ac_setup();
-        let work_id = server.create_work(owner_sid, Edition::from_text("open")).unwrap();
-        server.work_set_edit_club(owner_sid, work_id, Some(server.public_club_id())).unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("open"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(server.public_club_id()))
+            .unwrap();
         let stranger_sid = server.connect();
         server.login_public(stranger_sid).unwrap();
         assert!(server.work_can_revise(stranger_sid, work_id).unwrap());
@@ -8708,15 +10364,29 @@ mod tests {
     #[test]
     fn work_list_includes_read_club_info() {
         let (mut server, owner_sid) = ac_setup();
-        let public_work = server.create_work(owner_sid, Edition::from_text("public")).unwrap();
+        let public_work = server
+            .create_work(owner_sid, Edition::from_text("public"))
+            .unwrap();
         server.work_publish(owner_sid, public_work).unwrap();
-        let read_club = server.create_named_club(owner_sid, "secret_list", Edition::empty()).unwrap();
-        let private_work = server.create_work(owner_sid, Edition::from_text("private")).unwrap();
-        server.work_set_read_club(owner_sid, private_work, Some(read_club)).unwrap();
+        let read_club = server
+            .create_named_club(owner_sid, "secret_list", Edition::empty())
+            .unwrap();
+        let private_work = server
+            .create_work(owner_sid, Edition::from_text("private"))
+            .unwrap();
+        server
+            .work_set_read_club(owner_sid, private_work, Some(read_club))
+            .unwrap();
         let works = server.list_works_with_titles();
-        let pub_entry = works.iter().find(|(id, _, _, _, _, _)| *id == public_work).unwrap();
+        let pub_entry = works
+            .iter()
+            .find(|(id, _, _, _, _, _)| *id == public_work)
+            .unwrap();
         assert_eq!(pub_entry.5, Some(server.public_club_id()));
-        let priv_entry = works.iter().find(|(id, _, _, _, _, _)| *id == private_work).unwrap();
+        let priv_entry = works
+            .iter()
+            .find(|(id, _, _, _, _, _)| *id == private_work)
+            .unwrap();
         assert_eq!(priv_entry.5, Some(read_club));
     }
 }

@@ -47,7 +47,10 @@ impl BlobMeta {
 pub enum BlobError {
     NotFound([u8; 32]),
     IoError(String),
-    CorruptData { expected: [u8; 32], actual: [u8; 32] },
+    CorruptData {
+        expected: [u8; 32],
+        actual: [u8; 32],
+    },
     BackendError(String),
 }
 
@@ -57,7 +60,12 @@ impl std::fmt::Display for BlobError {
             BlobError::NotFound(hash) => write!(f, "blob not found: {:016x}", u64_from_hash(hash)),
             BlobError::IoError(e) => write!(f, "io error: {}", e),
             BlobError::CorruptData { expected, actual } => {
-                write!(f, "corrupt blob: expected {:016x}, got {:016x}", u64_from_hash(expected), u64_from_hash(actual))
+                write!(
+                    f,
+                    "corrupt blob: expected {:016x}, got {:016x}",
+                    u64_from_hash(expected),
+                    u64_from_hash(actual)
+                )
             }
             BlobError::BackendError(e) => write!(f, "backend error: {}", e),
         }
@@ -119,7 +127,10 @@ impl BlobBackend for MemoryBackend {
 
     fn retrieve(&self, hash: &[u8; 32]) -> Result<Vec<u8>, BlobError> {
         let blobs = self.blobs.lock().unwrap_or_else(|e| e.into_inner());
-        blobs.get(hash).cloned().ok_or_else(|| BlobError::NotFound(*hash))
+        blobs
+            .get(hash)
+            .cloned()
+            .ok_or_else(|| BlobError::NotFound(*hash))
     }
 
     fn exists(&self, hash: &[u8; 32]) -> Result<bool, BlobError> {
@@ -161,8 +172,7 @@ pub struct FilesystemBackend {
 impl FilesystemBackend {
     pub fn new(base_dir: impl AsRef<Path>) -> Result<Self, BlobError> {
         let base_dir = base_dir.as_ref().to_path_buf();
-        std::fs::create_dir_all(&base_dir)
-            .map_err(|e| BlobError::IoError(e.to_string()))?;
+        std::fs::create_dir_all(&base_dir).map_err(|e| BlobError::IoError(e.to_string()))?;
         Ok(FilesystemBackend { base_dir })
     }
 
@@ -182,8 +192,7 @@ impl FilesystemBackend {
         let hex = hex_encode(hash);
         let prefix = &hex[..2];
         let dir = self.base_dir.join(prefix);
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| BlobError::IoError(e.to_string()))?;
+        std::fs::create_dir_all(&dir).map_err(|e| BlobError::IoError(e.to_string()))?;
         Ok(dir)
     }
 }
@@ -195,8 +204,8 @@ impl BlobBackend for FilesystemBackend {
             return Ok(());
         }
         self.ensure_dir(hash)?;
-        let mut file = std::fs::File::create(&path)
-            .map_err(|e| BlobError::IoError(e.to_string()))?;
+        let mut file =
+            std::fs::File::create(&path).map_err(|e| BlobError::IoError(e.to_string()))?;
         file.write_all(data)
             .map_err(|e| BlobError::IoError(e.to_string()))?;
         Ok(())
@@ -217,8 +226,7 @@ impl BlobBackend for FilesystemBackend {
     fn delete(&self, hash: &[u8; 32]) -> Result<(), BlobError> {
         let path = self.blob_path(hash);
         if path.exists() {
-            std::fs::remove_file(&path)
-                .map_err(|e| BlobError::IoError(e.to_string()))?;
+            std::fs::remove_file(&path).map_err(|e| BlobError::IoError(e.to_string()))?;
         }
         Ok(())
     }
@@ -228,14 +236,14 @@ impl BlobBackend for FilesystemBackend {
         if !path.exists() {
             return Err(BlobError::NotFound(*hash));
         }
-        let mut file = std::fs::File::open(&path)
-            .map_err(|e| BlobError::IoError(e.to_string()))?;
+        let mut file = std::fs::File::open(&path).map_err(|e| BlobError::IoError(e.to_string()))?;
         use std::io::Seek;
         file.seek(std::io::SeekFrom::Start(offset))
             .map_err(|e| BlobError::IoError(e.to_string()))?;
         let read_len = (len as usize).min(64 * 1024 * 1024);
         let mut buf = vec![0u8; read_len];
-        let n = file.read(&mut buf)
+        let n = file
+            .read(&mut buf)
             .map_err(|e| BlobError::IoError(e.to_string()))?;
         buf.truncate(n);
         Ok(buf)
@@ -262,7 +270,10 @@ impl BlobBackend for FilesystemBackend {
                 }
             }
         }
-        BlobBackendStats { total_blobs, total_bytes }
+        BlobBackendStats {
+            total_blobs,
+            total_bytes,
+        }
     }
 }
 
@@ -298,7 +309,13 @@ impl BlobStore {
         let hash = hash_content(data);
         let byte_size = data.len() as u64;
         self.backend.store(&hash, data)?;
-        if let Some(existing) = self.meta.lock().unwrap_or_else(|e| e.into_inner()).get(&hash).cloned() {
+        if let Some(existing) = self
+            .meta
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&hash)
+            .cloned()
+        {
             return Ok(existing);
         }
         let mut meta = BlobMeta::new(hash, byte_size, mime_type);
@@ -309,15 +326,25 @@ impl BlobStore {
                 meta = meta.with_preview(preview_hash);
             }
         }
-        self.meta.lock().unwrap_or_else(|e| e.into_inner()).insert(hash, meta.clone());
-        self.by_u64.lock().unwrap_or_else(|e| e.into_inner()).insert(meta.hash_u64(), hash);
+        self.meta
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(hash, meta.clone());
+        self.by_u64
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(meta.hash_u64(), hash);
         Ok(meta)
     }
 
-    pub fn store_overlay(&self, base_hash: u64, ops: Vec<ImageOp>, mime_type: String) -> Result<BlobMeta, BlobError> {
+    pub fn store_overlay(
+        &self,
+        base_hash: u64,
+        ops: Vec<ImageOp>,
+        mime_type: String,
+    ) -> Result<BlobMeta, BlobError> {
         let overlay = ImageOverlay::new(base_hash, ops, mime_type);
-        let json = serde_json::to_vec(&overlay)
-            .map_err(|e| BlobError::IoError(e.to_string()))?;
+        let json = serde_json::to_vec(&overlay).map_err(|e| BlobError::IoError(e.to_string()))?;
         self.store(&json, "application/x-xudanu-overlay".to_string())
     }
 
@@ -328,8 +355,12 @@ impl BlobStore {
     }
 
     pub fn retrieve_overlay_by_u64(&self, hash_u64: u64) -> Result<ImageOverlay, BlobError> {
-        let full_hash = self.by_u64.lock().unwrap_or_else(|e| e.into_inner())
-            .get(&hash_u64).copied()
+        let full_hash = self
+            .by_u64
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&hash_u64)
+            .copied()
             .ok_or(BlobError::NotFound([0u8; 32]))?;
         self.retrieve_overlay(&full_hash)
     }
@@ -352,30 +383,62 @@ impl BlobStore {
 
     pub fn delete(&self, hash: &[u8; 32]) -> Result<(), BlobError> {
         self.backend.delete(hash)?;
-        if let Some(meta) = self.meta.lock().unwrap_or_else(|e| e.into_inner()).remove(hash) {
-            self.by_u64.lock().unwrap_or_else(|e| e.into_inner()).remove(&meta.hash_u64());
+        if let Some(meta) = self
+            .meta
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(hash)
+        {
+            self.by_u64
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&meta.hash_u64());
         }
         Ok(())
     }
 
-    pub fn retrieve_range(&self, hash: &[u8; 32], offset: u64, len: u64) -> Result<Vec<u8>, BlobError> {
+    pub fn retrieve_range(
+        &self,
+        hash: &[u8; 32],
+        offset: u64,
+        len: u64,
+    ) -> Result<Vec<u8>, BlobError> {
         self.backend.retrieve_range(hash, offset, len)
     }
 
     pub fn get_meta(&self, hash: &[u8; 32]) -> Option<BlobMeta> {
-        self.meta.lock().unwrap_or_else(|e| e.into_inner()).get(hash).cloned()
+        self.meta
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(hash)
+            .cloned()
     }
 
     pub fn get_meta_by_u64(&self, hash_u64: u64) -> Option<BlobMeta> {
-        let full_hash = self.by_u64.lock().unwrap_or_else(|e| e.into_inner()).get(&hash_u64).copied()?;
-        self.meta.lock().unwrap_or_else(|e| e.into_inner()).get(&full_hash).cloned()
+        let full_hash = self
+            .by_u64
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&hash_u64)
+            .copied()?;
+        self.meta
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&full_hash)
+            .cloned()
     }
 
     pub fn register_meta(&self, meta: BlobMeta) {
         let hash_u64 = meta.hash_u64();
         let full_hash = meta.content_hash;
-        self.meta.lock().unwrap_or_else(|e| e.into_inner()).insert(full_hash, meta);
-        self.by_u64.lock().unwrap_or_else(|e| e.into_inner()).insert(hash_u64, full_hash);
+        self.meta
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(full_hash, meta);
+        self.by_u64
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(hash_u64, full_hash);
     }
 
     pub fn stats(&self) -> BlobBackendStats {
@@ -383,19 +446,35 @@ impl BlobStore {
     }
 
     pub fn all_hashes(&self) -> Vec<[u8; 32]> {
-        self.meta.lock().unwrap_or_else(|e| e.into_inner()).keys().copied().collect()
+        self.meta
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .keys()
+            .copied()
+            .collect()
     }
 
     pub fn all_metas(&self) -> Vec<([u8; 32], BlobMeta)> {
-        self.meta.lock().unwrap_or_else(|e| e.into_inner()).iter().map(|(k, v)| (*k, v.clone())).collect()
+        self.meta
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect()
     }
 
     pub fn restore_metas(&self, metas: Vec<BlobMeta>) {
         for meta in metas {
             let hash_u64 = meta.hash_u64();
             let full_hash = meta.content_hash;
-            self.meta.lock().unwrap_or_else(|e| e.into_inner()).insert(full_hash, meta);
-            self.by_u64.lock().unwrap_or_else(|e| e.into_inner()).insert(hash_u64, full_hash);
+            self.meta
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(full_hash, meta);
+            self.by_u64
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(hash_u64, full_hash);
         }
     }
 }
@@ -484,9 +563,7 @@ pub fn base64_decode(input: &str) -> Option<Vec<u8>> {
 
 fn generate_preview(data: &[u8], mime_type: &str) -> Option<Vec<u8>> {
     match mime_type {
-        "image/png" | "image/jpeg" | "image/gif" | "image/webp" => {
-            generate_image_preview(data)
-        }
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp" => generate_image_preview(data),
         _ => None,
     }
 }
@@ -501,13 +578,21 @@ fn generate_image_preview(data: &[u8]) -> Option<Vec<u8>> {
 pub enum ImageOp {
     Brightness(i32),
     Contrast(i32),
-    Crop { x: u32, y: u32, width: u32, height: u32 },
+    Crop {
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    },
     Rotate(u16),
     FlipHorizontal,
     FlipVertical,
     Grayscale,
     Opacity(u16),
-    Resize { width: u32, height: u32 },
+    Resize {
+        width: u32,
+        height: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -520,11 +605,19 @@ pub struct ImageOverlay {
 
 impl ImageOverlay {
     pub fn new(base_hash: u64, operations: Vec<ImageOp>, mime_type: String) -> Self {
-        ImageOverlay { base_hash, operations, mime_type }
+        ImageOverlay {
+            base_hash,
+            operations,
+            mime_type,
+        }
     }
 
     pub fn single(base_hash: u64, op: ImageOp, mime_type: String) -> Self {
-        ImageOverlay { base_hash, operations: vec![op], mime_type }
+        ImageOverlay {
+            base_hash,
+            operations: vec![op],
+            mime_type,
+        }
     }
 }
 
@@ -707,7 +800,12 @@ mod tests {
 
     #[test]
     fn image_op_hash_deterministic() {
-        let op = ImageOp::Crop { x: 10, y: 20, width: 100, height: 200 };
+        let op = ImageOp::Crop {
+            x: 10,
+            y: 20,
+            width: 100,
+            height: 200,
+        };
         let mut h1 = DefaultHasher::new();
         let mut h2 = DefaultHasher::new();
         op.hash(&mut h1);
@@ -736,7 +834,12 @@ mod tests {
     #[test]
     #[cfg(feature = "serde")]
     fn image_op_serde_roundtrip() {
-        let op = ImageOp::Crop { x: 10, y: 20, width: 100, height: 200 };
+        let op = ImageOp::Crop {
+            x: 10,
+            y: 20,
+            width: 100,
+            height: 200,
+        };
         let json = serde_json::to_string(&op).unwrap();
         let op2: ImageOp = serde_json::from_str(&json).unwrap();
         assert_eq!(op, op2);
@@ -819,10 +922,14 @@ mod tests {
     #[test]
     fn store_overlay_creates_blob() {
         let store = BlobStore::in_memory();
-        let base = store.store(b"fake image data", "image/png".to_string()).unwrap();
+        let base = store
+            .store(b"fake image data", "image/png".to_string())
+            .unwrap();
         let base_hash = base.hash_u64();
         let ops = vec![ImageOp::Brightness(800), ImageOp::Grayscale];
-        let meta = store.store_overlay(base_hash, ops.clone(), "image/png".to_string()).unwrap();
+        let meta = store
+            .store_overlay(base_hash, ops.clone(), "image/png".to_string())
+            .unwrap();
         assert_eq!(meta.mime_type, "application/x-xudanu-overlay");
         assert!(meta.byte_size > 0);
     }
@@ -832,8 +939,14 @@ mod tests {
         let store = BlobStore::in_memory();
         let base = store.store(b"base data", "image/jpeg".to_string()).unwrap();
         let base_hash = base.hash_u64();
-        let ops = vec![ImageOp::Contrast(1200), ImageOp::Rotate(90), ImageOp::FlipHorizontal];
-        let meta = store.store_overlay(base_hash, ops.clone(), "image/jpeg".to_string()).unwrap();
+        let ops = vec![
+            ImageOp::Contrast(1200),
+            ImageOp::Rotate(90),
+            ImageOp::FlipHorizontal,
+        ];
+        let meta = store
+            .store_overlay(base_hash, ops.clone(), "image/jpeg".to_string())
+            .unwrap();
         let overlay = store.retrieve_overlay_by_u64(meta.hash_u64()).unwrap();
         assert_eq!(overlay.base_hash, base_hash);
         assert_eq!(overlay.operations, ops);
@@ -846,8 +959,12 @@ mod tests {
         let base = store.store(b"base", "image/png".to_string()).unwrap();
         let base_hash = base.hash_u64();
         let ops = vec![ImageOp::Grayscale];
-        let m1 = store.store_overlay(base_hash, ops.clone(), "image/png".to_string()).unwrap();
-        let m2 = store.store_overlay(base_hash, ops.clone(), "image/png".to_string()).unwrap();
+        let m1 = store
+            .store_overlay(base_hash, ops.clone(), "image/png".to_string())
+            .unwrap();
+        let m2 = store
+            .store_overlay(base_hash, ops.clone(), "image/png".to_string())
+            .unwrap();
         assert_eq!(m1.hash_u64(), m2.hash_u64());
     }
 
@@ -856,8 +973,16 @@ mod tests {
         let store = BlobStore::in_memory();
         let base = store.store(b"base", "image/png".to_string()).unwrap();
         let base_hash = base.hash_u64();
-        let m1 = store.store_overlay(base_hash, vec![ImageOp::Grayscale], "image/png".to_string()).unwrap();
-        let m2 = store.store_overlay(base_hash, vec![ImageOp::FlipVertical], "image/png".to_string()).unwrap();
+        let m1 = store
+            .store_overlay(base_hash, vec![ImageOp::Grayscale], "image/png".to_string())
+            .unwrap();
+        let m2 = store
+            .store_overlay(
+                base_hash,
+                vec![ImageOp::FlipVertical],
+                "image/png".to_string(),
+            )
+            .unwrap();
         assert_ne!(m1.hash_u64(), m2.hash_u64());
     }
 }

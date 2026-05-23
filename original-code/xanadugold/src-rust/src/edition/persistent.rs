@@ -5,8 +5,8 @@ use std::sync::Arc;
 use crate::edition::backend::BeId;
 use crate::edition::edition::Edition;
 use crate::edition::orgl::OrglRoot;
-use crate::edition::range_element::{Carrier, RangeElement};
 use crate::edition::provenance::SpanProvenance;
+use crate::edition::range_element::{Carrier, RangeElement};
 use crate::edition::work::Work;
 use crate::edition::xn_region::XnRegion;
 use crate::persist::engine::StorageError;
@@ -59,16 +59,24 @@ impl EditionSnapshot {
             } else {
                 XnRegion::empty()
             };
-            let carriers: Vec<(i64, Arc<Carrier>)> = self.entries.iter()
+            let carriers: Vec<(i64, Arc<Carrier>)> = self
+                .entries
+                .iter()
                 .map(|(pos, elem)| (*pos, Arc::new(Carrier::new(elem.clone()))))
                 .collect();
             Edition::new_inner_with_provenance(
-                OrglRoot::from_bulk_entries(carriers, Some(Arc::new(Carrier::new(default.clone()))), region),
+                OrglRoot::from_bulk_entries(
+                    carriers,
+                    Some(Arc::new(Carrier::new(default.clone()))),
+                    region,
+                ),
                 super::endorsement::EndorsementSet::new(),
                 self.span_provenance.clone(),
             )
         } else {
-            let carriers: Vec<(i64, Arc<Carrier>)> = self.entries.iter()
+            let carriers: Vec<(i64, Arc<Carrier>)> = self
+                .entries
+                .iter()
                 .map(|(pos, elem)| (*pos, Arc::new(Carrier::new(elem.clone()))))
                 .collect();
             let n = carriers.len();
@@ -121,7 +129,8 @@ impl WorkSnapshot {
 
     pub fn to_work(&self, flock_id: FlockId, info: Option<FlockInfo>) -> PersistentWork {
         let current = self.current.to_edition();
-        let history: BTreeMap<u64, Edition> = self.history
+        let history: BTreeMap<u64, Edition> = self
+            .history
             .iter()
             .map(|(k, v)| (*k, v.to_edition()))
             .collect();
@@ -176,13 +185,27 @@ impl PersistentWork {
 }
 
 impl Persistent for PersistentWork {
-    fn flock_id(&self) -> FlockId { self.flock_id }
-    fn set_flock_id(&mut self, id: FlockId) { self.flock_id = id; }
-    fn flock_info(&self) -> Option<&FlockInfo> { self.info.as_ref() }
-    fn set_flock_info(&mut self, info: Option<FlockInfo>) { self.info = info; }
-    fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> { self.info.as_mut() }
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn flock_id(&self) -> FlockId {
+        self.flock_id
+    }
+    fn set_flock_id(&mut self, id: FlockId) {
+        self.flock_id = id;
+    }
+    fn flock_info(&self) -> Option<&FlockInfo> {
+        self.info.as_ref()
+    }
+    fn set_flock_info(&mut self, info: Option<FlockInfo>) {
+        self.info = info;
+    }
+    fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> {
+        self.info.as_mut()
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
     fn clone_boxed(&self) -> Box<dyn Persistent> {
         Box::new(PersistentWork {
             flock_id: self.flock_id,
@@ -190,16 +213,21 @@ impl Persistent for PersistentWork {
             work: self.work.clone(),
         })
     }
-    fn type_tag(&self) -> &'static str { "Work" }
+    fn type_tag(&self) -> &'static str {
+        "Work"
+    }
     fn to_bytes(&self) -> Result<Vec<u8>, StorageError> {
         let snapshot = WorkSnapshot::from_work(&self.work);
         serde_json::to_vec(&snapshot).map_err(|e| StorageError::Io(e.to_string()))
     }
 }
 
-pub fn deserialize_work(data: &[u8], flock_id: FlockId) -> Result<Box<dyn Persistent>, StorageError> {
-    let snapshot: WorkSnapshot = serde_json::from_slice(data)
-        .map_err(|e| StorageError::CorruptData(e.to_string()))?;
+pub fn deserialize_work(
+    data: &[u8],
+    flock_id: FlockId,
+) -> Result<Box<dyn Persistent>, StorageError> {
+    let snapshot: WorkSnapshot =
+        serde_json::from_slice(data).map_err(|e| StorageError::CorruptData(e.to_string()))?;
     Ok(Box::new(snapshot.to_work(flock_id, None)))
 }
 
@@ -229,13 +257,27 @@ impl PersistentEdition {
 }
 
 impl Persistent for PersistentEdition {
-    fn flock_id(&self) -> FlockId { self.flock_id }
-    fn set_flock_id(&mut self, id: FlockId) { self.flock_id = id; }
-    fn flock_info(&self) -> Option<&FlockInfo> { self.info.as_ref() }
-    fn set_flock_info(&mut self, info: Option<FlockInfo>) { self.info = info; }
-    fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> { self.info.as_mut() }
-    fn as_any(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn flock_id(&self) -> FlockId {
+        self.flock_id
+    }
+    fn set_flock_id(&mut self, id: FlockId) {
+        self.flock_id = id;
+    }
+    fn flock_info(&self) -> Option<&FlockInfo> {
+        self.info.as_ref()
+    }
+    fn set_flock_info(&mut self, info: Option<FlockInfo>) {
+        self.info = info;
+    }
+    fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> {
+        self.info.as_mut()
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
     fn clone_boxed(&self) -> Box<dyn Persistent> {
         Box::new(PersistentEdition {
             flock_id: self.flock_id,
@@ -243,16 +285,21 @@ impl Persistent for PersistentEdition {
             edition: self.edition.clone(),
         })
     }
-    fn type_tag(&self) -> &'static str { "Edition" }
+    fn type_tag(&self) -> &'static str {
+        "Edition"
+    }
     fn to_bytes(&self) -> Result<Vec<u8>, StorageError> {
         let snapshot = EditionSnapshot::from_edition(&self.edition);
         serde_json::to_vec(&snapshot).map_err(|e| StorageError::Io(e.to_string()))
     }
 }
 
-pub fn deserialize_edition(data: &[u8], flock_id: FlockId) -> Result<Box<dyn Persistent>, StorageError> {
-    let snapshot: EditionSnapshot = serde_json::from_slice(data)
-        .map_err(|e| StorageError::CorruptData(e.to_string()))?;
+pub fn deserialize_edition(
+    data: &[u8],
+    flock_id: FlockId,
+) -> Result<Box<dyn Persistent>, StorageError> {
+    let snapshot: EditionSnapshot =
+        serde_json::from_slice(data).map_err(|e| StorageError::CorruptData(e.to_string()))?;
     Ok(Box::new(PersistentEdition {
         flock_id,
         info: None,
@@ -330,7 +377,10 @@ mod tests {
         let pe = PersistentEdition::new(FlockId::new(42, 7), edition);
         let data = pe.to_bytes().unwrap();
         let restored = deserialize_edition(&data, pe.flock_id()).unwrap();
-        let pe2 = restored.as_any().downcast_ref::<PersistentEdition>().unwrap();
+        let pe2 = restored
+            .as_any()
+            .downcast_ref::<PersistentEdition>()
+            .unwrap();
         assert_eq!(pe2.edition().to_text(), "test data");
         assert_eq!(pe2.flock_id(), FlockId::new(42, 7));
     }
@@ -367,7 +417,12 @@ mod tests {
         let pw2 = restored.as_any().downcast_ref::<PersistentWork>().unwrap();
         assert_eq!(pw2.work().edition().count(), 10_000);
         assert_eq!(
-            pw2.work().edition().fetch(9999).unwrap().as_bytes().unwrap(),
+            pw2.work()
+                .edition()
+                .fetch(9999)
+                .unwrap()
+                .as_bytes()
+                .unwrap(),
             b"entry-9999"
         );
     }

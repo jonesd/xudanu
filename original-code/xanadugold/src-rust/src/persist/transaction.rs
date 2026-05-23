@@ -48,15 +48,33 @@ mod tests {
     }
 
     impl Persistent for TObj {
-        fn flock_id(&self) -> FlockId { self.flock_id }
-        fn set_flock_id(&mut self, id: FlockId) { self.flock_id = id; }
-        fn flock_info(&self) -> Option<&FlockInfo> { self.info.as_ref() }
-        fn set_flock_info(&mut self, info: Option<FlockInfo>) { self.info = info; }
-        fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> { self.info.as_mut() }
-        fn as_any(&self) -> &dyn Any { self }
-        fn as_any_mut(&mut self) -> &mut dyn Any { self }
-        fn clone_boxed(&self) -> Box<dyn Persistent> { Box::new(self.clone()) }
-        fn type_tag(&self) -> &'static str { "TObj" }
+        fn flock_id(&self) -> FlockId {
+            self.flock_id
+        }
+        fn set_flock_id(&mut self, id: FlockId) {
+            self.flock_id = id;
+        }
+        fn flock_info(&self) -> Option<&FlockInfo> {
+            self.info.as_ref()
+        }
+        fn set_flock_info(&mut self, info: Option<FlockInfo>) {
+            self.info = info;
+        }
+        fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> {
+            self.info.as_mut()
+        }
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+        fn clone_boxed(&self) -> Box<dyn Persistent> {
+            Box::new(self.clone())
+        }
+        fn type_tag(&self) -> &'static str {
+            "TObj"
+        }
         fn to_bytes(&self) -> Result<Vec<u8>, crate::persist::StorageError> {
             Ok(self.val.to_le_bytes().to_vec())
         }
@@ -68,7 +86,13 @@ mod tests {
         {
             let mut tx = Transaction::begin(&mut storage).unwrap();
             let id = tx.engine().allocate_flock_id();
-            tx.engine().store_new(Box::new(TObj { flock_id: id, info: None, val: 42 })).unwrap();
+            tx.engine()
+                .store_new(Box::new(TObj {
+                    flock_id: id,
+                    info: None,
+                    val: 42,
+                }))
+                .unwrap();
             tx.commit().unwrap();
         }
         assert_eq!(storage.object_count(), 1);
@@ -80,7 +104,13 @@ mod tests {
         {
             let mut tx = Transaction::begin(&mut storage).unwrap();
             let id = tx.engine().allocate_flock_id();
-            tx.engine().store_new(Box::new(TObj { flock_id: id, info: None, val: 1 })).unwrap();
+            tx.engine()
+                .store_new(Box::new(TObj {
+                    flock_id: id,
+                    info: None,
+                    val: 1,
+                }))
+                .unwrap();
         }
         assert_eq!(storage.object_count(), 0);
     }
@@ -92,7 +122,13 @@ mod tests {
         {
             let mut tx = Transaction::begin(&mut storage).unwrap();
             id = tx.engine().allocate_flock_id();
-            tx.engine().store_new(Box::new(TObj { flock_id: id, info: None, val: 99 })).unwrap();
+            tx.engine()
+                .store_new(Box::new(TObj {
+                    flock_id: id,
+                    info: None,
+                    val: 99,
+                }))
+                .unwrap();
             tx.commit().unwrap();
         }
         let fetched = storage.fetch(&id).unwrap().unwrap();
@@ -107,7 +143,13 @@ mod tests {
         {
             let mut tx = Transaction::begin(&mut storage).unwrap();
             id = tx.engine().allocate_flock_id();
-            tx.engine().store_new(Box::new(TObj { flock_id: id, info: None, val: 1 })).unwrap();
+            tx.engine()
+                .store_new(Box::new(TObj {
+                    flock_id: id,
+                    info: None,
+                    val: 1,
+                }))
+                .unwrap();
             tx.commit().unwrap();
         }
         {

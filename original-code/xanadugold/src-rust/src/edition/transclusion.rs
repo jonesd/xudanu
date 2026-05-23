@@ -43,10 +43,7 @@ impl TrailBlazer {
         self.recorded.insert(id_hash);
         let position = self.next_id as i64;
         self.next_id += 1;
-        self.trail = self
-            .trail
-            .clone()
-            .with(position, answer.clone());
+        self.trail = self.trail.clone().with(position, answer.clone());
         true
     }
 
@@ -248,11 +245,7 @@ impl TransclusionIndex {
         }
     }
 
-    pub fn register_work(
-        &mut self,
-        edition: &Edition,
-        work_element: &RangeElement,
-    ) {
+    pub fn register_work(&mut self, edition: &Edition, work_element: &RangeElement) {
         let entries = edition.fetch_all();
         for (_pos, carrier) in &entries {
             let key = element_key(&carrier.element);
@@ -314,7 +307,10 @@ impl TransclusionIndex {
             });
     }
 
-    pub fn find_federated_transcluders(&self, content: &RangeElement) -> Vec<&FederatedTransclusionResult> {
+    pub fn find_federated_transcluders(
+        &self,
+        content: &RangeElement,
+    ) -> Vec<&FederatedTransclusionResult> {
         let key = element_key(content);
         self.federated_entries
             .get(&key)
@@ -329,7 +325,10 @@ impl TransclusionIndex {
             .unwrap_or_default()
     }
 
-    pub fn find_federated_by_hex(&self, fingerprint_hex: &str) -> Vec<&FederatedTransclusionResult> {
+    pub fn find_federated_by_hex(
+        &self,
+        fingerprint_hex: &str,
+    ) -> Vec<&FederatedTransclusionResult> {
         self.federated_entries
             .get(fingerprint_hex)
             .map(|entries| entries.iter().collect())
@@ -363,11 +362,7 @@ impl TransclusionIndex {
         }
     }
 
-    pub fn unregister_work(
-        &mut self,
-        edition: &Edition,
-        work_element: &RangeElement,
-    ) {
+    pub fn unregister_work(&mut self, edition: &Edition, work_element: &RangeElement) {
         let entries = edition.fetch_all();
         for (_pos, carrier) in &entries {
             let key = element_key(&carrier.element);
@@ -622,9 +617,27 @@ mod tests {
     fn federated_multiple_entries_for_same_content() {
         let mut idx = TransclusionIndex::new();
         let content = RangeElement::text("shared");
-        idx.register_federated(&content, "server-a".to_string(), 1, "work".to_string(), true);
-        idx.register_federated(&content, "server-b".to_string(), 2, "edition".to_string(), true);
-        idx.register_federated(&content, "server-c".to_string(), 3, "work".to_string(), false);
+        idx.register_federated(
+            &content,
+            "server-a".to_string(),
+            1,
+            "work".to_string(),
+            true,
+        );
+        idx.register_federated(
+            &content,
+            "server-b".to_string(),
+            2,
+            "edition".to_string(),
+            true,
+        );
+        idx.register_federated(
+            &content,
+            "server-c".to_string(),
+            3,
+            "work".to_string(),
+            false,
+        );
 
         let results = idx.find_federated_transcluders(&content);
         assert_eq!(results.len(), 3);
@@ -636,15 +649,33 @@ mod tests {
         let mut idx = TransclusionIndex::new();
         let edition = Edition::from_one(0, RangeElement::text("hello"));
         idx.register_edition(&edition, &RangeElement::edition(1), None);
-        idx.register_federated(&RangeElement::text("hello"), "remote".to_string(), 10, "work".to_string(), true);
+        idx.register_federated(
+            &RangeElement::text("hello"),
+            "remote".to_string(),
+            10,
+            "work".to_string(),
+            true,
+        );
 
         let q = TransclusionQuery::all();
-        assert_eq!(idx.find_transcluders(&RangeElement::text("hello"), &q).len(), 1);
-        assert_eq!(idx.find_federated_transcluders(&RangeElement::text("hello")).len(), 1);
+        assert_eq!(
+            idx.find_transcluders(&RangeElement::text("hello"), &q)
+                .len(),
+            1
+        );
+        assert_eq!(
+            idx.find_federated_transcluders(&RangeElement::text("hello"))
+                .len(),
+            1
+        );
 
         idx.clear();
-        assert!(idx.find_transcluders(&RangeElement::text("hello"), &q).is_empty());
-        assert!(idx.find_federated_transcluders(&RangeElement::text("hello")).is_empty());
+        assert!(idx
+            .find_transcluders(&RangeElement::text("hello"), &q)
+            .is_empty());
+        assert!(idx
+            .find_federated_transcluders(&RangeElement::text("hello"))
+            .is_empty());
         assert!(!idx.has_federated_entries());
     }
 
@@ -654,7 +685,13 @@ mod tests {
         let content = RangeElement::text("hello");
         let edition = Edition::from_one(0, content.clone());
         idx.register_edition(&edition, &RangeElement::edition(1), None);
-        idx.register_federated(&content, "remote".to_string(), 99, "edition".to_string(), true);
+        idx.register_federated(
+            &content,
+            "remote".to_string(),
+            99,
+            "edition".to_string(),
+            true,
+        );
 
         let q = TransclusionQuery::all();
         let local = idx.find_transcluders(&content, &q);
@@ -671,10 +708,16 @@ mod tests {
         idx.register_edition(&edition, &elem, None);
 
         let q = TransclusionQuery::all();
-        assert_eq!(idx.find_transcluders(&RangeElement::text("hello"), &q).len(), 1);
+        assert_eq!(
+            idx.find_transcluders(&RangeElement::text("hello"), &q)
+                .len(),
+            1
+        );
 
         idx.unregister_edition(&edition, &elem, None);
-        assert!(idx.find_transcluders(&RangeElement::text("hello"), &q).is_empty());
+        assert!(idx
+            .find_transcluders(&RangeElement::text("hello"), &q)
+            .is_empty());
     }
 
     #[test]
@@ -688,7 +731,11 @@ mod tests {
         idx.register_edition(&edition_b, &elem_b, None);
 
         let q = TransclusionQuery::all();
-        assert_eq!(idx.find_transcluders(&RangeElement::text("hello"), &q).len(), 2);
+        assert_eq!(
+            idx.find_transcluders(&RangeElement::text("hello"), &q)
+                .len(),
+            2
+        );
 
         idx.unregister_edition(&edition_a, &elem_a, None);
         let results = idx.find_transcluders(&RangeElement::text("hello"), &q);
