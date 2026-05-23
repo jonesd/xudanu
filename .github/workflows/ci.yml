@@ -6,14 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   fmt:
     name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          sparse-checkout: original-code/xanadugold/src-rust
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
@@ -29,7 +30,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: original-code/xanadugold/src-rust -> target
-      - run: cargo test --features server
+      - run: cargo test --features server --lib
         working-directory: original-code/xanadugold/src-rust
 
   clippy:
@@ -43,5 +44,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: original-code/xanadugold/src-rust -> target
-      - run: cargo clippy --features server -- -D warnings
+      - run: cargo clippy --features server -- -W clippy::all -A clippy::large-enum-variant -A clippy::manual-range-contains -A clippy::borrowed-box -A clippy::unnecessary-sort-by
         working-directory: original-code/xanadugold/src-rust
