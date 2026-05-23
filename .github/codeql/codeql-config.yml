@@ -1,0 +1,9 @@
+name: CodeQL config
+
+paths-ignore:
+  - 'original-code/xanadugold/src-rust/src/server/server.rs'
+  - 'original-code/xanadugold/src-rust/src/server/identity.rs'
+  - 'original-code/xanadugold/src-rust/src/server/crdt_manager.rs'
+  - 'original-code/xanadugold/src-rust/src/server/lock.rs'
+  - 'original-code/xanadugold/src-rust/src/crypto/**'
+  - 'original-code/xanadugold/src-rust/tests/**'
