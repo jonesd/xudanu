@@ -71,9 +71,10 @@ td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
   <a class="toc-section" href="#s7">7. Manifest: The Lightweight Index</a>
   <a class="toc-section" href="#s8">8. Incremental Checkpoints</a>
   <a class="toc-section" href="#s9">9. Data Integrity and Verification</a>
-  <a class="toc-section" href="#s10">10. Federation: Chunk Replication</a>
-  <a class="toc-section" href="#s11">11. Performance Characteristics</a>
-  <a class="toc-section" href="#s12">12. File Layout and Operations Guide</a>
+  <a class="toc-section" href="#s10">10. Garbage Collection</a>
+  <a class="toc-section" href="#s11">11. Federation: Chunk Replication</a>
+  <a class="toc-section" href="#s12">12. Performance Characteristics</a>
+  <a class="toc-section" href="#s13">13. File Layout and Operations Guide</a>
 </div>
 
 <!-- ============================================================ -->
@@ -511,6 +512,12 @@ pub struct WorkChunkRef {
 Revisions are loaded lazily. <code>work_from_chunks_current()</code> reads only the current edition. <code>work_load_revision()</code> loads a specific revision by number. This means opening a document with 200 revisions reads <strong>1 edition</strong>, not 201.
 </p>
 
+<h3>Provenance Chunks</h3>
+
+<p>
+The root chunk of an edition may also contain an optional <code>provenance_hash</code> pointing to a separate <code>ProvenanceChunk</code>. This chunk stores <code>SpanProvenance</code> data that tracks where each span of content originally came from &mdash; essential for transclusion tracking. When content is transcluded from one document into another, the provenance record preserves the source document's identity and span location, enabling correct attribution and back-references even after the source document is modified.
+</p>
+
 <!-- ============================================================ -->
 <!-- SECTION 7 -->
 <!-- ============================================================ -->
@@ -522,23 +529,57 @@ The manifest (<code>manifest.json</code>) is the only JSON file in the system. I
 
 <pre>
 pub struct Manifest {
-    format_version: u32,                // schema migration
-    checksum: String,                   // SHA-256 of content (excl. timestamp)
+    format_version: u32,                // currently version 3
+    created_at: String,                 // ISO 8601 timestamp
+    server_version: String,             // cargo package version
+    checksum: String,                   // SHA-256 of content
     grand_map_id_counter: BeId,
+    session_counter: u64,
+    operation_counter: u64,
+    system_clubs: SystemClubs,
     works: Vec&lt;(BeId, WorkChunkRef)&gt;,   // references to chunk trees
     clubs: Vec&lt;ClubChunkRef&gt;,
+    standalone_editions: Vec&lt;StandaloneEditionChunkRef&gt;,
     links: Vec&lt;LinkEntry&gt;,
+    link_counter: BeId,
     admin: AdminEntry,
+    reconcile_store: ReconcileStore,       // federation reconciliation
+    reconcile_counter: u64,
     federation: Option&lt;FederationSnapshot&gt;,
     content_address: Option&lt;ContentAddressIndex&gt;,
-    blob_metas: Vec&lt;BlobMetaEntry&gt;,
-    key_history: Option&lt;KeyHistoryEntry&gt;,
+    blob_metas: Vec&lt;BlobMetaEntry&gt;,        // binary blob metadata
+    key_history: Option&lt;KeyHistoryEntry&gt;,  // server key rotation history
 }
 </pre>
 
+<h3>Club Chunk Refs</h3>
+
+<p>
+Each club is stored as its own chunk tree. The <code>ClubChunkRef</code> in the manifest captures all club metadata:
+</p>
+
+<pre>
+pub struct ClubChunkRef {
+    be_id: BeId,
+    name: Option&lt;String&gt;,
+    signature_club: Option&lt;BeId&gt;,
+    work_root: WorkChunkRef,
+    default_read_club: Option&lt;BeId&gt;,
+    default_edit_club: Option&lt;BeId&gt;,
+    is_personal: bool,                        // personal identity clubs
+    display_name: Option&lt;String&gt;,             // human-readable name
+    credential: Option&lt;Credential&gt;,           // password/boo auth
+    encrypted_signing_key: Option&lt;EncryptedSigningKey&gt;,
+    members: Vec&lt;BeId&gt;,
+    sponsored_works: Vec&lt;BeId&gt;,
+}
+</pre>
+
+<div class="note">
+<strong>Clubs contain their own work tree.</strong> Each club has a <code>work_root: WorkChunkRef</code> pointing to a chunk tree for club-level documents (member lists, permissions). This means clubs are self-contained &mdash; loading a club reads its work root plus member data from a single chunk tree.
+</div>
+
 <div class="diagram-container">
-<svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
-  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Manifest Points to Chunks</text>
 
   <!-- Manifest box -->
   <rect x="30" y="50" width="250" height="250" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
@@ -640,8 +681,55 @@ The most significant performance benefit of chunked storage is incremental check
 <p class="diagram-caption">Figure 7: With 10,000 documents and 1 edit, the old system writes all 10K. The new system writes the changed edition's chunks plus the manifest.</p>
 
 <p>
-The checkpoint path in <code>server.rs</code> serializes each work to its chunk tree, then writes the manifest. Because <code>ChunkStore::write_chunk</code> is idempotent (same data = same hash = no disk write if chunk exists), unchanged works produce no I/O even if the checkpoint code iterates over them.
+The checkpoint path in <code>server.rs</code> (<code>checkpoint_to_store()</code>) follows this sequence:
 </p>
+
+<ol style="margin:12px 0 12px 24px;max-width:780px">
+  <li style="margin-bottom:6px">Iterate works &mdash; skip if cached <code>chunk_ref</code> exists, serialize dirty ones</li>
+  <li style="margin-bottom:6px">Iterate clubs &mdash; skip if not in <code>dirty_clubs</code> set and cached ref exists</li>
+  <li style="margin-bottom:6px">Iterate standalone editions &mdash; skip if cached ref exists</li>
+  <li style="margin-bottom:6px">Collect all references into the manifest</li>
+  <li style="margin-bottom:6px">Write manifest atomically (tmp + rename)</li>
+  <li style="margin-bottom:6px">Run GC to remove orphaned chunks</li>
+  <li>Log: <code>"Checkpoint saved in Xms (dirty: W/C/E works/clubs/editions)"</code></li>
+</ol>
+
+<h3>Dirty Tracking</h3>
+
+<p>
+Incremental checkpoints rely on precise dirty tracking to avoid re-serializing unchanged data. Each entity type uses a different strategy:
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 220" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Dirty Tracking: Works vs. Clubs</text>
+
+  <!-- Works -->
+  <rect x="30" y="50" width="350" height="140" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="205" y="74" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">WORKS (implicit dirty flag)</text>
+  <line x1="50" y1="84" x2="360" y2="84" stroke="#21262d" stroke-width="1"/>
+  <text x="50" y="104" fill="#8b949e" font-size="10">State: <code>chunk_ref: Option&lt;WorkChunkRef&gt;</code></text>
+  <text x="50" y="124" fill="#8b949e" font-size="10">Dirty = no cached chunk_ref (first write or after mutation)</text>
+  <text x="50" y="144" fill="#3fb950" font-size="10">Clean = chunk_ref cached from prior serialization</text>
+  <text x="50" y="164" fill="#3fb950" font-size="10" font-weight="600">After serialize: cache the ref &rarr; next checkpoint = zero I/O</text>
+  <text x="50" y="180" fill="#484f58" font-size="9">is_work_dirty() available for testing/monitoring</text>
+
+  <!-- Clubs -->
+  <rect x="400" y="50" width="350" height="140" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="575" y="74" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="700">CLUBS (explicit dirty set)</text>
+  <line x1="420" y1="84" x2="730" y2="84" stroke="#21262d" stroke-width="1"/>
+  <text x="420" y="104" fill="#8b949e" font-size="10">State: <code>dirty_clubs: HashSet&lt;BeId&gt;</code></text>
+  <text x="420" y="124" fill="#8b949e" font-size="10">add_member() / remove_member() &rarr; insert ID into set</text>
+  <text x="420" y="144" fill="#d29922" font-size="10">On checkpoint: only re-serialize clubs in the set</text>
+  <text x="420" y="164" fill="#3fb950" font-size="10" font-weight="600">After checkpoint: clear the set entirely</text>
+  <text x="420" y="180" fill="#484f58" font-size="9">is_club_dirty() available for testing/monitoring</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 8: Works use cached refs as implicit dirty flags. Clubs use an explicit HashSet for precise tracking.</p>
+
+<div class="note">
+<strong>Because <code>ChunkStore::write_chunk</code> is idempotent</strong> (same data = same hash = no disk write if chunk exists), unchanged works produce no I/O even if the checkpoint code iterates over them. The dirty tracking is an optimization that avoids the serialization cost, not just the disk I/O.
+</div>
 
 <!-- ============================================================ -->
 <!-- SECTION 9 -->
@@ -692,7 +780,7 @@ Xudanu provides a built-in verification tool: <code>xudanu-server verify &lt;dat
   <text x="300" y="314" fill="#8b949e" font-size="11">Flag chunks on disk not referenced by manifest (leak detection)</text>
 </svg>
 </div>
-<p class="diagram-caption">Figure 8: Five-stage verification catches corruption, missing data, and storage leaks.</p>
+<p class="diagram-caption">Figure 9: Five-stage verification catches corruption, missing data, and storage leaks.</p>
 
 <h3>Report Output</h3>
 
@@ -714,7 +802,72 @@ The <code>VerifyReport</code> tracks: chunks verified, chunks corrupt (hash mism
 <!-- ============================================================ -->
 <!-- SECTION 10 -->
 <!-- ============================================================ -->
-<h2 id="s10">10. Federation: Chunk Replication</h2>
+<h2 id="s10">10. Garbage Collection</h2>
+
+<p>
+After every checkpoint, the server automatically runs <code>gc_orphaned_chunks()</code> to reclaim disk space occupied by chunks no longer referenced by any work, club, or standalone edition. This prevents unbounded growth as documents are edited and old chunk trees are superseded.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Garbage Collection Pipeline</text>
+
+  <rect x="30" y="60" width="170" height="90" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="115" y="84" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">1. CHECKPOINT</text>
+  <line x1="50" y1="96" x2="180" y2="96" stroke="#21262d" stroke-width="1"/>
+  <text x="50" y="116" fill="#8b949e" font-size="10">Write manifest + dirty</text>
+  <text x="50" y="132" fill="#8b949e" font-size="10">chunks to disk. GC</text>
+  <text x="50" y="148" fill="#8b949e" font-size="10">runs immediately after.</text>
+
+  <line x1="200" y1="105" x2="220" y2="105" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrDown)"/>
+
+  <rect x="220" y="60" width="170" height="90" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="305" y="84" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700">2. COLLECT REFS</text>
+  <line x1="240" y1="96" x2="370" y2="96" stroke="#21262d" stroke-width="1"/>
+  <text x="240" y="116" fill="#8b949e" font-size="10">Walk works, clubs,</text>
+  <text x="240" y="132" fill="#8b949e" font-size="10">standalone editions.</text>
+  <text x="240" y="148" fill="#3fb950" font-size="10" font-weight="600">HashSet of referenced hashes</text>
+
+  <line x1="390" y1="105" x2="410" y2="105" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrDown)"/>
+
+  <rect x="410" y="60" width="170" height="90" rx="8" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="495" y="84" text-anchor="middle" fill="#d29922" font-size="11" font-weight="700">3. COMPARE DISK</text>
+  <line x1="430" y1="96" x2="560" y2="96" stroke="#21262d" stroke-width="1"/>
+  <text x="430" y="116" fill="#8b949e" font-size="10">List all chunk files in</text>
+  <text x="430" y="132" fill="#8b949e" font-size="10">chunks/ directory.</text>
+  <text x="430" y="148" fill="#d29922" font-size="10" font-weight="600">Set difference = orphans</text>
+
+  <line x1="580" y1="105" x2="600" y2="105" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrDown)"/>
+
+  <rect x="600" y="60" width="160" height="90" rx="8" fill="rgba(248,81,73,0.06)" stroke="#f85149" stroke-width="1.5"/>
+  <text x="680" y="84" text-anchor="middle" fill="#f85149" font-size="11" font-weight="700">4. DELETE ORPHANS</text>
+  <line x1="620" y1="96" x2="740" y2="96" stroke="#21262d" stroke-width="1"/>
+  <text x="620" y="116" fill="#8b949e" font-size="10">Remove unreferenced</text>
+  <text x="620" y="132" fill="#8b949e" font-size="10">chunk files from disk.</text>
+  <text x="620" y="148" fill="#f85149" font-size="10" font-weight="600">Space reclaimed</text>
+
+  <rect x="60" y="190" width="660" height="60" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="80" y="214" fill="#e6edf3" font-size="11" font-weight="600">Log output:</text>
+  <text x="80" y="236" fill="#8b949e" font-size="11" font-family="'JetBrains Mono',monospace">"Chunk GC: removed 3 orphaned chunks (247 referenced, 250 total on disk)"</text>
+
+  <rect x="60" y="268" width="660" height="40" rx="8" fill="rgba(88,166,255,0.04)" stroke="#21262d" stroke-width="1"/>
+  <text x="80" y="292" fill="#8b949e" font-size="10">Source: <code>src/server/server.rs</code> &mdash; gc_orphaned_chunks() runs automatically after each checkpoint_to_store()</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 10: Garbage collection reclaims disk space by removing chunks no longer reachable from the manifest.</p>
+
+<p>
+The GC process is safe because it runs after the manifest has been atomically written. Any chunk that was referenced by the previous manifest but is no longer referenced by the new one is guaranteed to be an orphan &mdash; the new manifest's references are the single source of truth.
+</p>
+
+<div class="note">
+<strong>GC is not a separate maintenance task.</strong> It runs as part of the normal checkpoint cycle. There is no cron job, no manual cleanup command, and no risk of accumulating orphaned chunks between maintenance windows. Each checkpoint is self-cleaning.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 11 -->
+<!-- ============================================================ -->
+<h2 id="s11">11. Federation: Chunk Replication</h2>
 
 <p>
 Content-addressed storage is a natural fit for federation. When two Xudanu servers synchronize, they exchange content at the chunk level. Because chunk identity is determined by content (BLAKE3 hash), peers can:
@@ -773,7 +926,7 @@ Content-addressed storage is a natural fit for federation. When two Xudanu serve
   <text x="380" y="310" text-anchor="middle" fill="#8b949e" font-size="10">a3f7 and f1a0 already on both &rarr; skip (no transfer)</text>
 </svg>
 </div>
-<p class="diagram-caption">Figure 9: Federation sync exchanges only missing chunks. Shared content (same hash) is never sent twice.</p>
+<p class="diagram-caption">Figure 11: Federation sync exchanges only missing chunks. Shared content (same hash) is never sent twice.</p>
 
 <p>
 The chunk-based federation protocol works in three steps:
@@ -791,9 +944,9 @@ The chunk-based federation protocol works in three steps:
 </div>
 
 <!-- ============================================================ -->
-<!-- SECTION 11 -->
+<!-- SECTION 12 -->
 <!-- ============================================================ -->
-<h2 id="s11">11. Performance Characteristics</h2>
+<h2 id="s12">12. Performance Characteristics</h2>
 
 <p>
 The storage system was designed for the access patterns that Xudanu actually exhibits: frequent writes to a small number of active documents, infrequent reads of historical revisions, and periodic full checkpoints.
@@ -890,12 +1043,12 @@ The 1,024-entry LRU cache is particularly effective for Xudanu's workload. A use
   <text x="70" y="182" fill="#8b949e" font-size="10">Stats tracked: cache_hits, cache_misses (atomic u64). Exposed via cache_stats().</text>
 </svg>
 </div>
-<p class="diagram-caption">Figure 10: LRU cache with 1,024 entries covers the active working set of most sessions.</p>
+<p class="diagram-caption">Figure 12: LRU cache with 1,024 entries covers the active working set of most sessions.</p>
 
 <!-- ============================================================ -->
-<!-- SECTION 12 -->
+<!-- SECTION 13 -->
 <!-- ============================================================ -->
-<h2 id="s12">12. File Layout and Operations Guide</h2>
+<h2 id="s13">13. File Layout and Operations Guide</h2>
 
 <h3>Directory Structure</h3>
 
@@ -941,6 +1094,49 @@ data-dir/
     <td>Verify security log chain integrity (hash chain from seed)</td>
   </tr>
 </table>
+
+<h3>Blob Storage</h3>
+
+<p>
+Binary blobs (images, attachments, and other non-text data) are stored in the <code>blobs/</code> directory using the same content-addressed scheme as edition chunks. Each blob's filename is its BLAKE3 hash, ensuring automatic deduplication.
+</p>
+
+<p>
+The manifest tracks blob metadata via <code>BlobMetaEntry</code> records:
+</p>
+
+<pre>
+pub struct BlobMetaEntry {
+    content_hash: [u8; 32],       // BLAKE3 of blob data
+    byte_size: u64,                // original file size
+    mime_type: String,             // e.g. "image/png"
+    preview_hash: Option&lt;[u8; 32]&gt;,// thumbnail/preview BLAKE3
+    metadata: HashMap&lt;String, String&gt;, // extensible metadata
+}
+</pre>
+
+<div class="note">
+<strong>Blobs are separate from edition chunks.</strong> Edition chunks store document structure (entries, spans, transclusions). Blobs store raw binary data. This separation means blob storage can be backed by different infrastructure (CDN, object store) without affecting the edition chunk system.
+</div>
+
+<h3>Key History</h3>
+
+<p>
+The manifest stores a <code>KeyHistoryEntry</code> that enables key rotation verification across server restarts:
+</p>
+
+<pre>
+pub struct KeyHistoryEntry {
+    server_id: BeId,
+    entries: Vec&lt;KeyHistoryRecord&gt;,
+    rotation_proofs: Vec&lt;SignedProof&gt;,
+    current_key_id: String,
+}
+</pre>
+
+<p>
+Each key rotation generates a signed proof that the old key authorized the new key. On startup, the server verifies the entire chain from the initial key to the current key. This prevents an attacker who compromises an old key from forging subsequent rotations.
+</p>
 
 <h3>Recovery Scenarios</h3>
 
@@ -1000,15 +1196,16 @@ data-dir/
   <text x="550" y="154" fill="#a371f7" font-size="10" font-weight="600">Implicit, zero-cost</text>
 </svg>
 </div>
-<p class="diagram-caption">Figure 11: Three guarantees provided by the storage architecture.</p>
+<p class="diagram-caption">Figure 13: Three guarantees provided by the storage architecture.</p>
 
 <div class="note" style="margin-top:40px">
 <strong>Source files:</strong>
-<code>src/persist/chunk_store.rs</code> (580 lines) &mdash; ChunkStore with LRU cache.
-<code>src/persist/edition_chunks.rs</code> (432 lines) &mdash; Edition/Work serialization.
-<code>src/persist/manifest.rs</code> (394 lines) &mdash; Manifest with checksums.
-<code>src/persist/verify.rs</code> (406 lines) &mdash; Full-store verification.
+<code>src/persist/chunk_store.rs</code> (950 lines) &mdash; ChunkStore with LRU cache.
+<code>src/persist/edition_chunks.rs</code> (508 lines) &mdash; Edition/Work serialization.
+<code>src/persist/manifest.rs</code> (418 lines) &mdash; Manifest with checksums.
+<code>src/persist/verify.rs</code> (422 lines) &mdash; Full-store verification.
 <code>src/persist/stress.rs</code> (1,259 lines) &mdash; Performance stress tests at Fast/Medium/Heavy scales.
+<code>src/server/server.rs</code> &mdash; checkpoint_to_store(), gc_orphaned_chunks(), dirty tracking.
 </div>
 
 <div class="footer">
