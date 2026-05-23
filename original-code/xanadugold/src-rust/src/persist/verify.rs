@@ -51,14 +51,22 @@ fn collect_referenced_hashes(manifest: &Manifest, store: &ChunkStore) -> HashSet
     hashes
 }
 
-fn collect_work_ref_hashes(work_ref: &WorkChunkRef, store: &ChunkStore, hashes: &mut HashSet<[u8; 32]>) {
+fn collect_work_ref_hashes(
+    work_ref: &WorkChunkRef,
+    store: &ChunkStore,
+    hashes: &mut HashSet<[u8; 32]>,
+) {
     collect_edition_ref_hashes(&work_ref.current_root, store, hashes);
     for ed_ref in work_ref.history.values() {
         collect_edition_ref_hashes(ed_ref, store, hashes);
     }
 }
 
-fn collect_edition_ref_hashes(ed_ref: &EditionChunkRef, store: &ChunkStore, hashes: &mut HashSet<[u8; 32]>) {
+fn collect_edition_ref_hashes(
+    ed_ref: &EditionChunkRef,
+    store: &ChunkStore,
+    hashes: &mut HashSet<[u8; 32]>,
+) {
     hashes.insert(ed_ref.root_hash);
     if let Ok(data) = store.read_chunk(&ed_ref.root_hash) {
         if let Ok(root) = postcard::from_bytes::<EditionRootChunkFull>(&data) {
@@ -80,11 +88,11 @@ struct EditionRootChunkFull {
 
 pub fn verify_store(data_dir: &Path) -> Result<VerifyReport, String> {
     let manifest_path = manifest::manifest_path(data_dir);
-    let manifest = manifest::read_manifest(&manifest_path)
-        .map_err(|e| format!("manifest error: {}", e))?;
+    let manifest =
+        manifest::read_manifest(&manifest_path).map_err(|e| format!("manifest error: {}", e))?;
 
-    let chunk_store = ChunkStore::open(data_dir)
-        .map_err(|e| format!("chunk store error: {}", e))?;
+    let chunk_store =
+        ChunkStore::open(data_dir).map_err(|e| format!("chunk store error: {}", e))?;
 
     let mut report = VerifyReport {
         chunks_total: 0,
@@ -110,13 +118,16 @@ pub fn verify_store(data_dir: &Path) -> Result<VerifyReport, String> {
         }
     }
 
-    let all_hashes = chunk_store.all_chunk_hashes()
+    let all_hashes = chunk_store
+        .all_chunk_hashes()
         .map_err(|e| format!("failed to list chunks: {}", e))?;
     report.chunks_total = all_hashes.len();
 
     for hash in &all_hashes {
         if let Err(e) = chunk_store.verify_chunk(hash) {
-            report.chunks_corrupt.push(format!("{}: {}", format_hash(hash), e));
+            report
+                .chunks_corrupt
+                .push(format!("{}: {}", format_hash(hash), e));
             continue;
         }
         report.chunks_verified += 1;
@@ -134,7 +145,9 @@ pub fn verify_store(data_dir: &Path) -> Result<VerifyReport, String> {
             Ok(_) => report.works_ok += 1,
             Err(e) => {
                 report.works_failed += 1;
-                report.deserialization_errors.push(format!("work {}: {}", id, e));
+                report
+                    .deserialization_errors
+                    .push(format!("work {}: {}", id, e));
             }
         }
     }
@@ -144,7 +157,9 @@ pub fn verify_store(data_dir: &Path) -> Result<VerifyReport, String> {
             Ok(_) => report.clubs_ok += 1,
             Err(e) => {
                 report.clubs_failed += 1;
-                report.deserialization_errors.push(format!("club {}: {}", club_ref.be_id, e));
+                report
+                    .deserialization_errors
+                    .push(format!("club {}: {}", club_ref.be_id, e));
             }
         }
     }
@@ -154,7 +169,9 @@ pub fn verify_store(data_dir: &Path) -> Result<VerifyReport, String> {
             Ok(_) => report.standalone_ok += 1,
             Err(e) => {
                 report.standalone_failed += 1;
-                report.deserialization_errors.push(format!("edition {}: {}", se_ref.be_id, e));
+                report
+                    .deserialization_errors
+                    .push(format!("edition {}: {}", se_ref.be_id, e));
             }
         }
     }
@@ -184,10 +201,11 @@ pub fn rebuild_manifest(data_dir: &Path) -> Result<VerifyReport, String> {
         return Err("no manifest to rebuild from".to_string());
     };
 
-    let chunk_store = ChunkStore::open(data_dir)
-        .map_err(|e| format!("chunk store error: {}", e))?;
+    let chunk_store =
+        ChunkStore::open(data_dir).map_err(|e| format!("chunk store error: {}", e))?;
 
-    let total_chunks = chunk_store.all_chunk_hashes()
+    let total_chunks = chunk_store
+        .all_chunk_hashes()
         .map_err(|e| format!("failed to list chunks: {}", e))?
         .len();
 
@@ -219,11 +237,7 @@ mod tests {
     fn temp_dir() -> std::path::PathBuf {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "xudanu_verify_test_{}_{}",
-            std::process::id(),
-            id
-        ))
+        std::env::temp_dir().join(format!("xudanu_verify_test_{}_{}", std::process::id(), id))
     }
 
     fn test_system_clubs() -> crate::server::SystemClubs {
@@ -332,7 +346,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
 
         let store = ChunkStore::open(&dir).unwrap();
-        store.write_chunk(b"orphaned data that nobody references").unwrap();
+        store
+            .write_chunk(b"orphaned data that nobody references")
+            .unwrap();
 
         let mut m = create_empty_manifest(test_system_clubs(), 0);
         let path = manifest::manifest_path(&dir);

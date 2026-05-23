@@ -109,7 +109,10 @@ impl StorageEngine for InMemoryStorage {
         }
     }
 
-    fn fetch_by_location(&self, _location: &super::persistent::FlockLocation) -> StorageResult<Option<Box<dyn Persistent>>> {
+    fn fetch_by_location(
+        &self,
+        _location: &super::persistent::FlockLocation,
+    ) -> StorageResult<Option<Box<dyn Persistent>>> {
         Ok(None)
     }
 
@@ -123,7 +126,9 @@ impl StorageEngine for InMemoryStorage {
 
     fn begin_transaction(&mut self) -> StorageResult<()> {
         if self.in_transaction {
-            return Err(StorageError::TransactionError("already in transaction".into()));
+            return Err(StorageError::TransactionError(
+                "already in transaction".into(),
+            ));
         }
         self.in_transaction = true;
         self.dirty_set.clear();
@@ -211,17 +216,33 @@ mod tests {
     }
 
     impl Persistent for TestObj {
-        fn flock_id(&self) -> FlockId { self.flock_id }
-        fn set_flock_id(&mut self, id: FlockId) { self.flock_id = id; }
-        fn flock_info(&self) -> Option<&FlockInfo> { self.info.as_ref() }
-        fn set_flock_info(&mut self, info: Option<FlockInfo>) { self.info = info; }
-        fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> { self.info.as_mut() }
-        fn as_any(&self) -> &dyn Any { self }
-        fn as_any_mut(&mut self) -> &mut dyn Any { self }
+        fn flock_id(&self) -> FlockId {
+            self.flock_id
+        }
+        fn set_flock_id(&mut self, id: FlockId) {
+            self.flock_id = id;
+        }
+        fn flock_info(&self) -> Option<&FlockInfo> {
+            self.info.as_ref()
+        }
+        fn set_flock_info(&mut self, info: Option<FlockInfo>) {
+            self.info = info;
+        }
+        fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> {
+            self.info.as_mut()
+        }
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
         fn clone_boxed(&self) -> Box<dyn Persistent> {
             Box::new(self.clone())
         }
-        fn type_tag(&self) -> &'static str { "TestObj" }
+        fn type_tag(&self) -> &'static str {
+            "TestObj"
+        }
         fn to_bytes(&self) -> Result<Vec<u8>, crate::persist::StorageError> {
             Ok(self.value.to_le_bytes().to_vec())
         }
@@ -229,7 +250,11 @@ mod tests {
 
     fn make_obj(storage: &mut dyn StorageEngine, value: i64) -> FlockId {
         let id = storage.allocate_flock_id();
-        let obj = Box::new(TestObj { flock_id: id, info: None, value });
+        let obj = Box::new(TestObj {
+            flock_id: id,
+            info: None,
+            value,
+        });
         storage.store_new(obj).unwrap();
         id
     }

@@ -12,10 +12,10 @@ pub mod snapshot;
 pub mod varint;
 
 pub use audit::{
-    AuditEvent, AuditEventKind, AuditLog, CollectorAuditLog, SecurityConfig,
-    SecurityMonitor, TracingAuditLog,
+    AuditEvent, AuditEventKind, AuditLog, CollectorAuditLog, SecurityConfig, SecurityMonitor,
+    TracingAuditLog,
 };
-pub use codec::{BinaryCodec, JsonCodec, WireCodec, ProtocolError};
+pub use codec::{BinaryCodec, JsonCodec, ProtocolError, WireCodec};
 pub use federation_handler::{build_federation_router, merge_routers, FederationFrame};
 pub use handler::build_router;
 pub use protocol::*;

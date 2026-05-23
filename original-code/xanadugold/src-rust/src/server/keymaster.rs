@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use crate::edition::BeId;
 use super::club::Club;
+use crate::edition::BeId;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -64,11 +64,7 @@ impl KeyMaster {
         self.actual_authority = self.login_authority.clone();
     }
 
-    pub fn has_signature_authority(
-        &self,
-        club_id: BeId,
-        all_clubs: &HashMap<BeId, Club>,
-    ) -> bool {
+    pub fn has_signature_authority(&self, club_id: BeId, all_clubs: &HashMap<BeId, Club>) -> bool {
         if let Some(club) = all_clubs.get(&club_id) {
             if let Some(sig_club) = club.signature_club() {
                 return self.has_authority(sig_club);
@@ -77,10 +73,7 @@ impl KeyMaster {
         false
     }
 
-    pub fn update_authority(
-        &mut self,
-        all_clubs: &HashMap<BeId, Club>,
-    ) {
+    pub fn update_authority(&mut self, all_clubs: &HashMap<BeId, Club>) {
         self.actual_authority = HashSet::new();
         for login_id in &self.login_authority {
             if let Some(club) = all_clubs.get(login_id) {

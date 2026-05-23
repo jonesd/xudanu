@@ -48,8 +48,14 @@ mod serde_id {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct DocumentId(
-    #[cfg_attr(feature = "serde", serde(serialize_with = "serde_id::serialize_u64_as_string"))]
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_id::deserialize_string_as_u64"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(serialize_with = "serde_id::serialize_u64_as_string")
+    )]
+    #[cfg_attr(
+        feature = "serde",
+        serde(deserialize_with = "serde_id::deserialize_string_as_u64")
+    )]
     pub u64,
 );
 
@@ -66,8 +72,14 @@ impl DocumentId {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct NodeId(
-    #[cfg_attr(feature = "serde", serde(serialize_with = "serde_id::serialize_u64_as_string"))]
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_id::deserialize_string_as_u64"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(serialize_with = "serde_id::serialize_u64_as_string")
+    )]
+    #[cfg_attr(
+        feature = "serde",
+        serde(deserialize_with = "serde_id::deserialize_string_as_u64")
+    )]
     pub u64,
 );
 
@@ -81,8 +93,14 @@ impl NodeId {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct SpanId(
-    #[cfg_attr(feature = "serde", serde(serialize_with = "serde_id::serialize_u64_as_string"))]
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_id::deserialize_string_as_u64"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(serialize_with = "serde_id::serialize_u64_as_string")
+    )]
+    #[cfg_attr(
+        feature = "serde",
+        serde(deserialize_with = "serde_id::deserialize_string_as_u64")
+    )]
     pub u64,
 );
 
@@ -96,8 +114,14 @@ impl SpanId {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct AnnotationId(
-    #[cfg_attr(feature = "serde", serde(serialize_with = "serde_id::serialize_u64_as_string"))]
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_id::deserialize_string_as_u64"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(serialize_with = "serde_id::serialize_u64_as_string")
+    )]
+    #[cfg_attr(
+        feature = "serde",
+        serde(deserialize_with = "serde_id::deserialize_string_as_u64")
+    )]
     pub u64,
 );
 
@@ -111,8 +135,14 @@ impl AnnotationId {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct AssertionId(
-    #[cfg_attr(feature = "serde", serde(serialize_with = "serde_id::serialize_u64_as_string"))]
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_id::deserialize_string_as_u64"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(serialize_with = "serde_id::serialize_u64_as_string")
+    )]
+    #[cfg_attr(
+        feature = "serde",
+        serde(deserialize_with = "serde_id::deserialize_string_as_u64")
+    )]
     pub u64,
 );
 
@@ -423,24 +453,45 @@ impl<'a> VisibleIndex<'a> {
                 AssertionPayload::AttachChild { parent_id, .. } => {
                     idx.attach_child.entry(*parent_id).or_default().push(i);
                 }
-                AssertionPayload::DetachChild { parent_id, child_id } => {
-                    idx.detach_child.entry(*parent_id).or_default().insert(*child_id);
+                AssertionPayload::DetachChild {
+                    parent_id,
+                    child_id,
+                } => {
+                    idx.detach_child
+                        .entry(*parent_id)
+                        .or_default()
+                        .insert(*child_id);
                 }
                 AssertionPayload::AttachSpanToNode { node_id, .. } => {
                     idx.attach_span.entry(*node_id).or_default().push(i);
                 }
                 AssertionPayload::DetachSpanFromNode { node_id, span_id } => {
-                    idx.detach_span.entry(*node_id).or_default().insert(*span_id);
+                    idx.detach_span
+                        .entry(*node_id)
+                        .or_default()
+                        .insert(*span_id);
                 }
                 AssertionPayload::SetSpanText { span_id, .. } => {
                     idx.set_span_text.entry(*span_id).or_default().push(i);
                 }
-                AssertionPayload::AttachAnnotationToNode { annotation_id, node_id } => {
-                    idx.attach_annotation_to_node.entry(*node_id).or_default().push(i);
+                AssertionPayload::AttachAnnotationToNode {
+                    annotation_id,
+                    node_id,
+                } => {
+                    idx.attach_annotation_to_node
+                        .entry(*node_id)
+                        .or_default()
+                        .push(i);
                     let _ = annotation_id;
                 }
-                AssertionPayload::AttachAnnotationToSpan { annotation_id, span_id } => {
-                    idx.attach_annotation_to_span.entry(*span_id).or_default().push(i);
+                AssertionPayload::AttachAnnotationToSpan {
+                    annotation_id,
+                    span_id,
+                } => {
+                    idx.attach_annotation_to_span
+                        .entry(*span_id)
+                        .or_default()
+                        .push(i);
                     let _ = annotation_id;
                 }
             }
@@ -496,9 +547,7 @@ fn collect_children_indexed(idx: &VisibleIndex, node_id: NodeId) -> Vec<Material
     if let Some(indices) = idx.attach_child.get(&node_id) {
         for &i in indices {
             if let AssertionPayload::AttachChild {
-                child_id,
-                ordinal,
-                ..
+                child_id, ordinal, ..
             } = &idx.assertions[i].payload
             {
                 let pos = idx.assertions[i].position.position();
@@ -530,9 +579,7 @@ fn collect_spans_indexed(idx: &VisibleIndex, node_id: NodeId) -> Vec<Materialize
     if let Some(indices) = idx.attach_span.get(&node_id) {
         for &i in indices {
             if let AssertionPayload::AttachSpanToNode {
-                span_id,
-                ordinal,
-                ..
+                span_id, ordinal, ..
             } = &idx.assertions[i].payload
             {
                 let pos = idx.assertions[i].position.position();
@@ -679,10 +726,7 @@ fn collect_annotations_for_span_indexed(
         .collect()
 }
 
-fn materialize_entity_indexed(
-    idx: &VisibleIndex,
-    entity: EntityId,
-) -> MaterializedEntity {
+fn materialize_entity_indexed(idx: &VisibleIndex, entity: EntityId) -> MaterializedEntity {
     match entity {
         EntityId::Node(id) => materialize_node_indexed(idx, id)
             .map(MaterializedEntity::Node)
@@ -769,7 +813,10 @@ mod tests {
         let span_b = SpanId::new(2);
 
         let mut store = AssertionStore::new();
-        store.add(positions[1], AssertionPayload::CreateSpan { span_id: span_a });
+        store.add(
+            positions[1],
+            AssertionPayload::CreateSpan { span_id: span_a },
+        );
         store.add(
             positions[1],
             AssertionPayload::SetSpanText {
@@ -777,7 +824,10 @@ mod tests {
                 text: "visible".into(),
             },
         );
-        store.add(positions[3], AssertionPayload::CreateSpan { span_id: span_b });
+        store.add(
+            positions[3],
+            AssertionPayload::CreateSpan { span_id: span_b },
+        );
         store.add(
             positions[3],
             AssertionPayload::SetSpanText {
@@ -1184,7 +1234,10 @@ mod tests {
 
         let view = dw.trace_view(positions[2]);
         let span = materialize_span(&store, &view, span_id);
-        assert!(span.is_none(), "span created after view should not be visible");
+        assert!(
+            span.is_none(),
+            "span created after view should not be visible"
+        );
     }
 
     // C14: multi-merge chain — alternatives propagate through stacked merges
@@ -1370,7 +1423,11 @@ mod tests {
         let span_merged = materialize_span(&store, &view_merged, span_id).unwrap();
         match &span_merged.text {
             AlternativeSet::Alternatives(texts) => {
-                assert_eq!(texts.len(), 2, "merge of text conflict: exactly 2 alternatives");
+                assert_eq!(
+                    texts.len(),
+                    2,
+                    "merge of text conflict: exactly 2 alternatives"
+                );
                 assert!(texts.contains(&"Hello!".to_string()));
                 assert!(texts.contains(&"Hello world".to_string()));
             }
@@ -1505,17 +1562,16 @@ mod tests {
                 assert!(texts.contains(&"gamma".to_string()));
                 assert!(texts.contains(&"delta".to_string()));
             }
-            other => panic!(
-                "expected 4 alternatives in final merge, got {:?}",
-                other
-            ),
+            other => panic!("expected 4 alternatives in final merge, got {:?}", other),
         }
     }
 
     // === Serde round-trip tests (S1–S18) ===
 
     #[cfg(feature = "serde_json")]
-    fn serde_round_trip<T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug>(
+    fn serde_round_trip<
+        T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug,
+    >(
         value: &T,
     ) {
         let json = serde_json::to_string(value).unwrap();
@@ -1526,7 +1582,10 @@ mod tests {
     #[cfg(feature = "serde_json")]
     #[test]
     fn serde_id_types_round_trip() {
-        assert_eq!(serde_json::to_string(&DocumentId::new(42)).unwrap(), "\"42\"");
+        assert_eq!(
+            serde_json::to_string(&DocumentId::new(42)).unwrap(),
+            "\"42\""
+        );
         serde_round_trip(&DocumentId::new(0));
         serde_round_trip(&DocumentId::new(1));
         serde_round_trip(&DocumentId::new(999));
@@ -1542,36 +1601,89 @@ mod tests {
         assert_eq!(serde_json::to_string(&DocumentId::new(7)).unwrap(), "\"7\"");
         assert_eq!(serde_json::to_string(&NodeId::new(8)).unwrap(), "\"8\"");
         assert_eq!(serde_json::to_string(&SpanId::new(9)).unwrap(), "\"9\"");
-        assert_eq!(serde_json::to_string(&AnnotationId::new(10)).unwrap(), "\"10\"");
+        assert_eq!(
+            serde_json::to_string(&AnnotationId::new(10)).unwrap(),
+            "\"10\""
+        );
         assert_eq!(serde_json::to_string(&AssertionId(11)).unwrap(), "\"11\"");
     }
 
     #[cfg(feature = "serde_json")]
     #[test]
     fn serde_id_accepts_both_string_and_number() {
-        assert_eq!(serde_json::from_str::<DocumentId>("\"42\"").unwrap(), DocumentId::new(42));
-        assert_eq!(serde_json::from_str::<DocumentId>("42").unwrap(), DocumentId::new(42));
-        assert_eq!(serde_json::from_str::<NodeId>("\"100\"").unwrap(), NodeId::new(100));
-        assert_eq!(serde_json::from_str::<NodeId>("100").unwrap(), NodeId::new(100));
+        assert_eq!(
+            serde_json::from_str::<DocumentId>("\"42\"").unwrap(),
+            DocumentId::new(42)
+        );
+        assert_eq!(
+            serde_json::from_str::<DocumentId>("42").unwrap(),
+            DocumentId::new(42)
+        );
+        assert_eq!(
+            serde_json::from_str::<NodeId>("\"100\"").unwrap(),
+            NodeId::new(100)
+        );
+        assert_eq!(
+            serde_json::from_str::<NodeId>("100").unwrap(),
+            NodeId::new(100)
+        );
     }
 
     #[cfg(feature = "serde_json")]
     #[test]
     fn serde_payload_all_variants_round_trip() {
         let payloads = vec![
-            AssertionPayload::CreateNode { node_id: NodeId::new(1), kind: "doc".into() },
-            AssertionPayload::AttachChild { parent_id: NodeId::new(1), child_id: NodeId::new(2), ordinal: 0 },
-            AssertionPayload::DetachChild { parent_id: NodeId::new(1), child_id: NodeId::new(2) },
-            AssertionPayload::DeleteNode { node_id: NodeId::new(1) },
-            AssertionPayload::CreateSpan { span_id: SpanId::new(10) },
-            AssertionPayload::SetSpanText { span_id: SpanId::new(10), text: "hello".into() },
-            AssertionPayload::DeleteSpan { span_id: SpanId::new(10) },
-            AssertionPayload::AttachSpanToNode { node_id: NodeId::new(1), span_id: SpanId::new(10), ordinal: 1 },
-            AssertionPayload::DetachSpanFromNode { node_id: NodeId::new(1), span_id: SpanId::new(10) },
-            AssertionPayload::CreateAnnotation { annotation_id: AnnotationId::new(100), kind: "bold".into(), payload: "true".into() },
-            AssertionPayload::AttachAnnotationToNode { annotation_id: AnnotationId::new(100), node_id: NodeId::new(1) },
-            AssertionPayload::AttachAnnotationToSpan { annotation_id: AnnotationId::new(100), span_id: SpanId::new(10) },
-            AssertionPayload::DeleteAnnotation { annotation_id: AnnotationId::new(100) },
+            AssertionPayload::CreateNode {
+                node_id: NodeId::new(1),
+                kind: "doc".into(),
+            },
+            AssertionPayload::AttachChild {
+                parent_id: NodeId::new(1),
+                child_id: NodeId::new(2),
+                ordinal: 0,
+            },
+            AssertionPayload::DetachChild {
+                parent_id: NodeId::new(1),
+                child_id: NodeId::new(2),
+            },
+            AssertionPayload::DeleteNode {
+                node_id: NodeId::new(1),
+            },
+            AssertionPayload::CreateSpan {
+                span_id: SpanId::new(10),
+            },
+            AssertionPayload::SetSpanText {
+                span_id: SpanId::new(10),
+                text: "hello".into(),
+            },
+            AssertionPayload::DeleteSpan {
+                span_id: SpanId::new(10),
+            },
+            AssertionPayload::AttachSpanToNode {
+                node_id: NodeId::new(1),
+                span_id: SpanId::new(10),
+                ordinal: 1,
+            },
+            AssertionPayload::DetachSpanFromNode {
+                node_id: NodeId::new(1),
+                span_id: SpanId::new(10),
+            },
+            AssertionPayload::CreateAnnotation {
+                annotation_id: AnnotationId::new(100),
+                kind: "bold".into(),
+                payload: "true".into(),
+            },
+            AssertionPayload::AttachAnnotationToNode {
+                annotation_id: AnnotationId::new(100),
+                node_id: NodeId::new(1),
+            },
+            AssertionPayload::AttachAnnotationToSpan {
+                annotation_id: AnnotationId::new(100),
+                span_id: SpanId::new(10),
+            },
+            AssertionPayload::DeleteAnnotation {
+                annotation_id: AnnotationId::new(100),
+            },
         ];
         for payload in &payloads {
             serde_round_trip(payload);
@@ -1582,7 +1694,10 @@ mod tests {
     #[test]
     fn serde_alternative_set_round_trip() {
         serde_round_trip(&AlternativeSet::Single("hello".to_string()));
-        serde_round_trip(&AlternativeSet::<String>::Alternatives(vec!["alpha".into(), "beta".into()]));
+        serde_round_trip(&AlternativeSet::<String>::Alternatives(vec![
+            "alpha".into(),
+            "beta".into(),
+        ]));
         serde_round_trip(&AlternativeSet::<String>::Alternatives(vec![]));
     }
 
@@ -1591,10 +1706,16 @@ mod tests {
     fn serde_alternative_set_json_structure() {
         let single = serde_json::to_string(&AlternativeSet::Single("hello".to_string())).unwrap();
         assert!(single.contains("\"Single\""), "Single variant: {}", single);
-        let alt = serde_json::to_string(
-            &AlternativeSet::<String>::Alternatives(vec!["a".into(), "b".into()])
-        ).unwrap();
-        assert!(alt.contains("\"Alternatives\""), "Alternatives variant: {}", alt);
+        let alt = serde_json::to_string(&AlternativeSet::<String>::Alternatives(vec![
+            "a".into(),
+            "b".into(),
+        ]))
+        .unwrap();
+        assert!(
+            alt.contains("\"Alternatives\""),
+            "Alternatives variant: {}",
+            alt
+        );
     }
 
     #[cfg(feature = "serde_json")]
@@ -1605,12 +1726,44 @@ mod tests {
         let span_id = SpanId::new(10);
         let ann_id = AnnotationId::new(100);
         let mut store = AssertionStore::new();
-        store.add(positions[1], AssertionPayload::CreateNode { node_id: doc_id.node_id(), kind: "document".into() });
+        store.add(
+            positions[1],
+            AssertionPayload::CreateNode {
+                node_id: doc_id.node_id(),
+                kind: "document".into(),
+            },
+        );
         store.add(positions[2], AssertionPayload::CreateSpan { span_id });
-        store.add(positions[2], AssertionPayload::SetSpanText { span_id, text: "Hello".into() });
-        store.add(positions[2], AssertionPayload::AttachSpanToNode { node_id: doc_id.node_id(), span_id, ordinal: 1 });
-        store.add(positions[2], AssertionPayload::CreateAnnotation { annotation_id: ann_id, kind: "bold".into(), payload: "true".into() });
-        store.add(positions[2], AssertionPayload::AttachAnnotationToSpan { annotation_id: ann_id, span_id });
+        store.add(
+            positions[2],
+            AssertionPayload::SetSpanText {
+                span_id,
+                text: "Hello".into(),
+            },
+        );
+        store.add(
+            positions[2],
+            AssertionPayload::AttachSpanToNode {
+                node_id: doc_id.node_id(),
+                span_id,
+                ordinal: 1,
+            },
+        );
+        store.add(
+            positions[2],
+            AssertionPayload::CreateAnnotation {
+                annotation_id: ann_id,
+                kind: "bold".into(),
+                payload: "true".into(),
+            },
+        );
+        store.add(
+            positions[2],
+            AssertionPayload::AttachAnnotationToSpan {
+                annotation_id: ann_id,
+                span_id,
+            },
+        );
         let view = dw.trace_view(positions[2]);
         let doc = materialize_document(&store, &view, doc_id);
         let json = serde_json::to_string(&doc).unwrap();
@@ -1636,8 +1789,20 @@ mod tests {
         let span_id = SpanId::new(1);
         let mut store = AssertionStore::new();
         store.add(root, AssertionPayload::CreateSpan { span_id });
-        store.add(a, AssertionPayload::SetSpanText { span_id, text: "Hello!".into() });
-        store.add(b, AssertionPayload::SetSpanText { span_id, text: "Hello world".into() });
+        store.add(
+            a,
+            AssertionPayload::SetSpanText {
+                span_id,
+                text: "Hello!".into(),
+            },
+        );
+        store.add(
+            b,
+            AssertionPayload::SetSpanText {
+                span_id,
+                text: "Hello world".into(),
+            },
+        );
         let view = dw.trace_view(merged);
         let span = materialize_span(&store, &view, span_id).unwrap();
         let json = serde_json::to_string(&span).unwrap();
@@ -1659,17 +1824,52 @@ mod tests {
         let child_id = NodeId::new(2);
         let grandchild_id = NodeId::new(3);
         let mut store = AssertionStore::new();
-        store.add(positions[1], AssertionPayload::CreateNode { node_id: parent_id, kind: "doc".into() });
-        store.add(positions[1], AssertionPayload::CreateNode { node_id: child_id, kind: "para".into() });
-        store.add(positions[1], AssertionPayload::CreateNode { node_id: grandchild_id, kind: "span_node".into() });
-        store.add(positions[1], AssertionPayload::AttachChild { parent_id, child_id, ordinal: 1 });
-        store.add(positions[1], AssertionPayload::AttachChild { parent_id: child_id, child_id: grandchild_id, ordinal: 1 });
+        store.add(
+            positions[1],
+            AssertionPayload::CreateNode {
+                node_id: parent_id,
+                kind: "doc".into(),
+            },
+        );
+        store.add(
+            positions[1],
+            AssertionPayload::CreateNode {
+                node_id: child_id,
+                kind: "para".into(),
+            },
+        );
+        store.add(
+            positions[1],
+            AssertionPayload::CreateNode {
+                node_id: grandchild_id,
+                kind: "span_node".into(),
+            },
+        );
+        store.add(
+            positions[1],
+            AssertionPayload::AttachChild {
+                parent_id,
+                child_id,
+                ordinal: 1,
+            },
+        );
+        store.add(
+            positions[1],
+            AssertionPayload::AttachChild {
+                parent_id: child_id,
+                child_id: grandchild_id,
+                ordinal: 1,
+            },
+        );
         let view = dw.trace_view(positions[3]);
         let node = materialize_node(&store, &view, parent_id).unwrap();
         let json = serde_json::to_string(&node).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["children"][0]["node_id"].as_str(), Some("2"));
-        assert_eq!(parsed["children"][0]["children"][0]["node_id"].as_str(), Some("3"));
+        assert_eq!(
+            parsed["children"][0]["children"][0]["node_id"].as_str(),
+            Some("3")
+        );
         let back: MaterializedNode = serde_json::from_str(&json).unwrap();
         assert_eq!(node, back);
     }
@@ -1694,7 +1894,13 @@ mod tests {
         let span_id = SpanId::new(1);
         let mut store = AssertionStore::new();
         store.add(positions[1], AssertionPayload::CreateSpan { span_id });
-        store.add(positions[1], AssertionPayload::SetSpanText { span_id, text: String::new() });
+        store.add(
+            positions[1],
+            AssertionPayload::SetSpanText {
+                span_id,
+                text: String::new(),
+            },
+        );
         let view = dw.trace_view(positions[2]);
         let span = materialize_span(&store, &view, span_id).unwrap();
         let json = serde_json::to_string(&span).unwrap();
@@ -1712,7 +1918,10 @@ mod tests {
         store.add(positions[2], AssertionPayload::DeleteSpan { span_id });
         let view = dw.trace_view(positions[2]);
         assert!(materialize_span(&store, &view, span_id).is_none());
-        assert_eq!(serde_json::to_string(&materialize_span(&store, &view, span_id)).unwrap(), "null");
+        assert_eq!(
+            serde_json::to_string(&materialize_span(&store, &view, span_id)).unwrap(),
+            "null"
+        );
     }
 
     #[cfg(feature = "serde_json")]
@@ -1723,7 +1932,13 @@ mod tests {
         let text = "你好世界 🌍 こんにちは";
         let mut store = AssertionStore::new();
         store.add(positions[1], AssertionPayload::CreateSpan { span_id });
-        store.add(positions[1], AssertionPayload::SetSpanText { span_id, text: text.into() });
+        store.add(
+            positions[1],
+            AssertionPayload::SetSpanText {
+                span_id,
+                text: text.into(),
+            },
+        );
         let view = dw.trace_view(positions[2]);
         let span = materialize_span(&store, &view, span_id).unwrap();
         let json = serde_json::to_string(&span).unwrap();
@@ -1735,19 +1950,50 @@ mod tests {
     #[test]
     fn serde_payload_from_js_format() {
         let cases: Vec<(&str, AssertionPayload)> = vec![
-            (r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#,
-             AssertionPayload::CreateNode { node_id: NodeId::new(1), kind: "document".into() }),
-            (r#"{"SetSpanText":{"span_id":10,"text":"Hello"}}"#,
-             AssertionPayload::SetSpanText { span_id: SpanId::new(10), text: "Hello".into() }),
-            (r#"{"DeleteNode":{"node_id":5}}"#,
-             AssertionPayload::DeleteNode { node_id: NodeId::new(5) }),
-            (r#"{"AttachChild":{"parent_id":1,"child_id":2,"ordinal":0}}"#,
-             AssertionPayload::AttachChild { parent_id: NodeId::new(1), child_id: NodeId::new(2), ordinal: 0 }),
-            (r#"{"CreateAnnotation":{"annotation_id":100,"kind":"bold","payload":"true"}}"#,
-             AssertionPayload::CreateAnnotation { annotation_id: AnnotationId::new(100), kind: "bold".into(), payload: "true".into() }),
+            (
+                r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#,
+                AssertionPayload::CreateNode {
+                    node_id: NodeId::new(1),
+                    kind: "document".into(),
+                },
+            ),
+            (
+                r#"{"SetSpanText":{"span_id":10,"text":"Hello"}}"#,
+                AssertionPayload::SetSpanText {
+                    span_id: SpanId::new(10),
+                    text: "Hello".into(),
+                },
+            ),
+            (
+                r#"{"DeleteNode":{"node_id":5}}"#,
+                AssertionPayload::DeleteNode {
+                    node_id: NodeId::new(5),
+                },
+            ),
+            (
+                r#"{"AttachChild":{"parent_id":1,"child_id":2,"ordinal":0}}"#,
+                AssertionPayload::AttachChild {
+                    parent_id: NodeId::new(1),
+                    child_id: NodeId::new(2),
+                    ordinal: 0,
+                },
+            ),
+            (
+                r#"{"CreateAnnotation":{"annotation_id":100,"kind":"bold","payload":"true"}}"#,
+                AssertionPayload::CreateAnnotation {
+                    annotation_id: AnnotationId::new(100),
+                    kind: "bold".into(),
+                    payload: "true".into(),
+                },
+            ),
         ];
         for (json, expected) in cases {
-            assert_eq!(serde_json::from_str::<AssertionPayload>(json).unwrap(), expected, "failed: {}", json);
+            assert_eq!(
+                serde_json::from_str::<AssertionPayload>(json).unwrap(),
+                expected,
+                "failed: {}",
+                json
+            );
         }
     }
 
@@ -1793,7 +2039,13 @@ mod tests {
 
         let mut store = AssertionStore::new();
         let doc_id = DocumentId::new(1);
-        store.add(pos, AssertionPayload::CreateNode { node_id: doc_id.node_id(), kind: "document".into() });
+        store.add(
+            pos,
+            AssertionPayload::CreateNode {
+                node_id: doc_id.node_id(),
+                kind: "document".into(),
+            },
+        );
 
         let n_children = 1000usize;
         let n_spans = 10usize;
@@ -1802,20 +2054,54 @@ mod tests {
         for i in 0..n_children {
             let nid = NodeId::new(100 + i as u64);
             child_ids.push(nid);
-            store.add(pos, AssertionPayload::CreateNode { node_id: nid, kind: "paragraph".into() });
-            store.add(pos, AssertionPayload::AttachChild { parent_id: doc_id.node_id(), child_id: nid, ordinal: i as u32 });
+            store.add(
+                pos,
+                AssertionPayload::CreateNode {
+                    node_id: nid,
+                    kind: "paragraph".into(),
+                },
+            );
+            store.add(
+                pos,
+                AssertionPayload::AttachChild {
+                    parent_id: doc_id.node_id(),
+                    child_id: nid,
+                    ordinal: i as u32,
+                },
+            );
         }
-        eprintln!("  P3 create {} nodes: {:.3}s", n_children, t.elapsed().as_secs_f64());
+        eprintln!(
+            "  P3 create {} nodes: {:.3}s",
+            n_children,
+            t.elapsed().as_secs_f64()
+        );
 
         for (i, &nid) in child_ids.iter().enumerate() {
             for j in 0..n_spans {
                 let sid = SpanId::new(10_000 + (i as u64) * 10 + j as u64);
                 store.add(pos, AssertionPayload::CreateSpan { span_id: sid });
-                store.add(pos, AssertionPayload::SetSpanText { span_id: sid, text: format!("text-{}-{}", i, j) });
-                store.add(pos, AssertionPayload::AttachSpanToNode { node_id: nid, span_id: sid, ordinal: j as u32 });
+                store.add(
+                    pos,
+                    AssertionPayload::SetSpanText {
+                        span_id: sid,
+                        text: format!("text-{}-{}", i, j),
+                    },
+                );
+                store.add(
+                    pos,
+                    AssertionPayload::AttachSpanToNode {
+                        node_id: nid,
+                        span_id: sid,
+                        ordinal: j as u32,
+                    },
+                );
             }
         }
-        eprintln!("  P3 {} total assertions added: {:.3}s", store.all_assertions().len(), t.elapsed().as_secs_f64());
+        eprintln!(
+            "  P3 {} total assertions added: {:.3}s",
+            store.all_assertions().len(),
+            t.elapsed().as_secs_f64()
+        );
 
         let t2 = Instant::now();
         let view = dw.trace_view(positions[2]);
@@ -1850,25 +2136,58 @@ mod tests {
         let depth = 500;
         let mut store = AssertionStore::new();
         let mut parent_id = NodeId::new(1);
-        store.add(pos, AssertionPayload::CreateNode { node_id: parent_id, kind: "level_0".into() });
+        store.add(
+            pos,
+            AssertionPayload::CreateNode {
+                node_id: parent_id,
+                kind: "level_0".into(),
+            },
+        );
 
         for d in 1..depth {
             let child_id = NodeId::new(1 + d as u64);
-            store.add(pos, AssertionPayload::CreateNode { node_id: child_id, kind: format!("level_{}", d) });
-            store.add(pos, AssertionPayload::AttachChild { parent_id, child_id, ordinal: 1 });
+            store.add(
+                pos,
+                AssertionPayload::CreateNode {
+                    node_id: child_id,
+                    kind: format!("level_{}", d),
+                },
+            );
+            store.add(
+                pos,
+                AssertionPayload::AttachChild {
+                    parent_id,
+                    child_id,
+                    ordinal: 1,
+                },
+            );
             parent_id = child_id;
         }
-        eprintln!("  P4 build {} levels ({} assertions): {:.3}s", depth, store.all_assertions().len(), t.elapsed().as_secs_f64());
+        eprintln!(
+            "  P4 build {} levels ({} assertions): {:.3}s",
+            depth,
+            store.all_assertions().len(),
+            t.elapsed().as_secs_f64()
+        );
 
         let t2 = Instant::now();
         let view = dw.trace_view(positions[2]);
         let doc = materialize_document(&store, &view, DocumentId::new(1));
-        eprintln!("  P4 materialize {} levels: {:.3}s", depth, t2.elapsed().as_secs_f64());
+        eprintln!(
+            "  P4 materialize {} levels: {:.3}s",
+            depth,
+            t2.elapsed().as_secs_f64()
+        );
 
         let root = doc.root.expect("should have root");
         let mut node = &root;
         for d in 0..depth {
-            assert_eq!(node.kind, format!("level_{}", d), "wrong kind at depth {}", d);
+            assert_eq!(
+                node.kind,
+                format!("level_{}", d),
+                "wrong kind at depth {}",
+                d
+            );
             if d < depth - 1 {
                 assert_eq!(node.children.len(), 1);
                 node = &node.children[0];
@@ -1899,13 +2218,20 @@ mod tests {
         let mut branches: Vec<TracePosition> = Vec::new();
         for i in 0..n_branches {
             let branch = dw.new_position();
-            store.add(branch, AssertionPayload::SetSpanText {
-                span_id,
-                text: format!("version_{}", i),
-            });
+            store.add(
+                branch,
+                AssertionPayload::SetSpanText {
+                    span_id,
+                    text: format!("version_{}", i),
+                },
+            );
             branches.push(branch);
         }
-        eprintln!("  P5 create {} branches: {:.3}s", n_branches, t.elapsed().as_secs_f64());
+        eprintln!(
+            "  P5 create {} branches: {:.3}s",
+            n_branches,
+            t.elapsed().as_secs_f64()
+        );
 
         let t2 = Instant::now();
         while branches.len() > 1 {
@@ -1933,10 +2259,18 @@ mod tests {
 
         match &span.text {
             AlternativeSet::Alternatives(texts) => {
-                assert!(texts.len() >= 9000, "expected ~10K alternatives, got {}", texts.len());
+                assert!(
+                    texts.len() >= 9000,
+                    "expected ~10K alternatives, got {}",
+                    texts.len()
+                );
                 for i in 0..n_branches {
                     let expected = format!("version_{}", i);
-                    assert!(texts.contains(&expected), "missing alternative: {}", expected);
+                    assert!(
+                        texts.contains(&expected),
+                        "missing alternative: {}",
+                        expected
+                    );
                 }
             }
             other => panic!("expected Alternatives, got {:?}", other),
@@ -1953,7 +2287,13 @@ mod tests {
         let (dw, positions) = linear_history(3);
         let mut store = AssertionStore::new();
         let nid = NodeId::new(1);
-        store.add(positions[1], AssertionPayload::CreateNode { node_id: nid, kind: "doc".into() });
+        store.add(
+            positions[1],
+            AssertionPayload::CreateNode {
+                node_id: nid,
+                kind: "doc".into(),
+            },
+        );
         let view = dw.trace_view(positions[2]);
         let entity = materialize_entity(&store, &view, EntityId::Node(nid));
         match entity {
@@ -1968,7 +2308,13 @@ mod tests {
         let mut store = AssertionStore::new();
         let sid = SpanId::new(1);
         store.add(positions[1], AssertionPayload::CreateSpan { span_id: sid });
-        store.add(positions[1], AssertionPayload::SetSpanText { span_id: sid, text: "hi".into() });
+        store.add(
+            positions[1],
+            AssertionPayload::SetSpanText {
+                span_id: sid,
+                text: "hi".into(),
+            },
+        );
         let view = dw.trace_view(positions[2]);
         let entity = materialize_entity(&store, &view, EntityId::Span(sid));
         match entity {
@@ -1982,9 +2328,14 @@ mod tests {
         let (dw, positions) = linear_history(3);
         let mut store = AssertionStore::new();
         let aid = AnnotationId::new(1);
-        store.add(positions[1], AssertionPayload::CreateAnnotation {
-            annotation_id: aid, kind: "note".into(), payload: "x".into(),
-        });
+        store.add(
+            positions[1],
+            AssertionPayload::CreateAnnotation {
+                annotation_id: aid,
+                kind: "note".into(),
+                payload: "x".into(),
+            },
+        );
         let view = dw.trace_view(positions[2]);
         let entity = materialize_entity(&store, &view, EntityId::Annotation(aid));
         match entity {
@@ -2018,8 +2369,14 @@ mod tests {
 
     #[test]
     fn alternative_set_single_value() {
-        assert_eq!(AlternativeSet::Single("a".to_string()).single_value(), Some(&"a".to_string()));
-        assert_eq!(AlternativeSet::<String>::Alternatives(vec!["a".into()]).single_value(), None);
+        assert_eq!(
+            AlternativeSet::Single("a".to_string()).single_value(),
+            Some(&"a".to_string())
+        );
+        assert_eq!(
+            AlternativeSet::<String>::Alternatives(vec!["a".into()]).single_value(),
+            None
+        );
     }
 
     #[test]
@@ -2034,7 +2391,13 @@ mod tests {
         let mut store = AssertionStore::new();
         assert_eq!(store.all_assertions().len(), 0);
         let (_dw, positions) = linear_history(2);
-        store.add(positions[1], AssertionPayload::CreateNode { node_id: NodeId::new(1), kind: "doc".into() });
+        store.add(
+            positions[1],
+            AssertionPayload::CreateNode {
+                node_id: NodeId::new(1),
+                kind: "doc".into(),
+            },
+        );
         assert_eq!(store.all_assertions().len(), 1);
     }
 
@@ -2046,20 +2409,43 @@ mod tests {
         let pos = positions[1];
         let parent = NodeId::new(1);
         let mut store = AssertionStore::new();
-        store.add(pos, AssertionPayload::CreateNode { node_id: parent, kind: "doc".into() });
+        store.add(
+            pos,
+            AssertionPayload::CreateNode {
+                node_id: parent,
+                kind: "doc".into(),
+            },
+        );
         let child_ids: Vec<NodeId> = (0..5).map(|i| NodeId::new(100 + i)).collect();
         let ordinals = [4u32, 2, 5, 1, 3];
         for (i, &ord) in ordinals.iter().enumerate() {
-            store.add(pos, AssertionPayload::CreateNode { node_id: child_ids[i], kind: format!("c{}", i) });
-            store.add(pos, AssertionPayload::AttachChild { parent_id: parent, child_id: child_ids[i], ordinal: ord });
+            store.add(
+                pos,
+                AssertionPayload::CreateNode {
+                    node_id: child_ids[i],
+                    kind: format!("c{}", i),
+                },
+            );
+            store.add(
+                pos,
+                AssertionPayload::AttachChild {
+                    parent_id: parent,
+                    child_id: child_ids[i],
+                    ordinal: ord,
+                },
+            );
         }
 
         let view = dw.trace_view(positions[2]);
         let node = materialize_node(&store, &view, parent).unwrap();
         assert_eq!(node.children.len(), 5);
         let actual: Vec<u64> = node.children.iter().map(|c| c.node_id.0).collect();
-        assert_eq!(actual, vec![103, 101, 104, 100, 102],
-            "children should be sorted by ordinal [1,2,3,4,5] not insertion order, got {:?}", actual);
+        assert_eq!(
+            actual,
+            vec![103, 101, 104, 100, 102],
+            "children should be sorted by ordinal [1,2,3,4,5] not insertion order, got {:?}",
+            actual
+        );
     }
 
     #[test]
@@ -2068,21 +2454,49 @@ mod tests {
         let pos = positions[1];
         let parent = NodeId::new(1);
         let mut store = AssertionStore::new();
-        store.add(pos, AssertionPayload::CreateNode { node_id: parent, kind: "doc".into() });
+        store.add(
+            pos,
+            AssertionPayload::CreateNode {
+                node_id: parent,
+                kind: "doc".into(),
+            },
+        );
         let span_ids: Vec<SpanId> = (0..5).map(|i| SpanId::new(100 + i)).collect();
         let ordinals = [4u32, 2, 5, 1, 3];
         for (i, &ord) in ordinals.iter().enumerate() {
-            store.add(pos, AssertionPayload::CreateSpan { span_id: span_ids[i] });
-            store.add(pos, AssertionPayload::SetSpanText { span_id: span_ids[i], text: format!("s{}", i) });
-            store.add(pos, AssertionPayload::AttachSpanToNode { node_id: parent, span_id: span_ids[i], ordinal: ord });
+            store.add(
+                pos,
+                AssertionPayload::CreateSpan {
+                    span_id: span_ids[i],
+                },
+            );
+            store.add(
+                pos,
+                AssertionPayload::SetSpanText {
+                    span_id: span_ids[i],
+                    text: format!("s{}", i),
+                },
+            );
+            store.add(
+                pos,
+                AssertionPayload::AttachSpanToNode {
+                    node_id: parent,
+                    span_id: span_ids[i],
+                    ordinal: ord,
+                },
+            );
         }
 
         let view = dw.trace_view(positions[2]);
         let node = materialize_node(&store, &view, parent).unwrap();
         assert_eq!(node.spans.len(), 5);
         let actual: Vec<u64> = node.spans.iter().map(|s| s.span_id.0).collect();
-        assert_eq!(actual, vec![103, 101, 104, 100, 102],
-            "spans should be sorted by ordinal [1,2,3,4,5], got {:?}", actual);
+        assert_eq!(
+            actual,
+            vec![103, 101, 104, 100, 102],
+            "spans should be sorted by ordinal [1,2,3,4,5], got {:?}",
+            actual
+        );
     }
 
     #[test]
@@ -2096,10 +2510,36 @@ mod tests {
         let parent = NodeId::new(1);
         let child = NodeId::new(10);
         let mut store = AssertionStore::new();
-        store.add(root, AssertionPayload::CreateNode { node_id: parent, kind: "doc".into() });
-        store.add(root, AssertionPayload::CreateNode { node_id: child, kind: "para".into() });
-        store.add(branch_a, AssertionPayload::AttachChild { parent_id: parent, child_id: child, ordinal: 5 });
-        store.add(branch_b, AssertionPayload::AttachChild { parent_id: parent, child_id: child, ordinal: 99 });
+        store.add(
+            root,
+            AssertionPayload::CreateNode {
+                node_id: parent,
+                kind: "doc".into(),
+            },
+        );
+        store.add(
+            root,
+            AssertionPayload::CreateNode {
+                node_id: child,
+                kind: "para".into(),
+            },
+        );
+        store.add(
+            branch_a,
+            AssertionPayload::AttachChild {
+                parent_id: parent,
+                child_id: child,
+                ordinal: 5,
+            },
+        );
+        store.add(
+            branch_b,
+            AssertionPayload::AttachChild {
+                parent_id: parent,
+                child_id: child,
+                ordinal: 99,
+            },
+        );
 
         let view = dw.trace_view(merged);
         let node = materialize_node(&store, &view, parent).unwrap();

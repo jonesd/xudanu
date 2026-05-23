@@ -1,6 +1,6 @@
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
+use argon2::password_hash::SaltString;
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use subtle::ConstantTimeEq;
 
 const ARGON2ID_M_COST: u32 = 19456;
@@ -175,17 +175,31 @@ mod tests {
         assert!(verify_password(&hash, b"passw0rd").is_err(), "l33t speak");
         assert!(verify_password(&hash, b"pssword").is_err(), "missing char");
         assert!(verify_password(&hash, b"passwd").is_err(), "abbreviated");
-        assert!(verify_password(&hash, b"password\n").is_err(), "trailing newline");
-        assert!(verify_password(&hash, b"\npassword").is_err(), "leading newline");
-        assert!(verify_password(&hash, b"password ").is_err(), "trailing space");
+        assert!(
+            verify_password(&hash, b"password\n").is_err(),
+            "trailing newline"
+        );
+        assert!(
+            verify_password(&hash, b"\npassword").is_err(),
+            "leading newline"
+        );
+        assert!(
+            verify_password(&hash, b"password ").is_err(),
+            "trailing space"
+        );
     }
 
     #[test]
     fn different_hashes_for_different_passwords() {
         let hashes: Vec<String> = ["alpha", "bravo", "charlie", "delta", "echo"]
-            .iter().map(|pw| hash_password(pw.as_bytes()).unwrap()).collect();
+            .iter()
+            .map(|pw| hash_password(pw.as_bytes()).unwrap())
+            .collect();
         for (i, h) in hashes.iter().enumerate() {
-            for (j, pw) in ["alpha", "bravo", "charlie", "delta", "echo"].iter().enumerate() {
+            for (j, pw) in ["alpha", "bravo", "charlie", "delta", "echo"]
+                .iter()
+                .enumerate()
+            {
                 if i == j {
                     assert!(verify_password(h, pw.as_bytes()).is_ok());
                 } else {

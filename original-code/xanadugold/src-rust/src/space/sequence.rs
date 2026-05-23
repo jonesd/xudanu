@@ -40,10 +40,7 @@ impl Sequence {
         while numbers.first() == Some(&0) {
             numbers.remove(0);
         }
-        Sequence {
-            shift: 0,
-            numbers,
-        }
+        Sequence { shift: 0, numbers }
     }
 
     fn from_numbers_with_shift(mut numbers: Vec<i64>, mut shift: i64) -> Self {
@@ -569,7 +566,9 @@ impl Dsp for SequenceDsp {
     }
 
     fn inverse(&self) -> Self {
-        let inv_translation = Sequence::zero().minus(&self.translation).shifted(-self.shift);
+        let inv_translation = Sequence::zero()
+            .minus(&self.translation)
+            .shifted(-self.shift);
         SequenceDsp {
             shift: -self.shift,
             translation: inv_translation,

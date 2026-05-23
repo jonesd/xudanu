@@ -66,7 +66,9 @@ impl FlockInfo {
         FlockInfo {
             flock_id,
             location: None,
-            flags: FlockFlags::IS_NEW | FlockFlags::CONTENTS_DIRTY | FlockFlags::FORGOTTEN_STATE_DIRTY,
+            flags: FlockFlags::IS_NEW
+                | FlockFlags::CONTENTS_DIRTY
+                | FlockFlags::FORGOTTEN_STATE_DIRTY,
             old_size: 0,
         }
     }
@@ -75,7 +77,11 @@ impl FlockInfo {
         FlockInfo {
             flock_id,
             location: Some(location),
-            flags: if forgotten { FlockFlags::FORGOTTEN } else { FlockFlags::empty() },
+            flags: if forgotten {
+                FlockFlags::FORGOTTEN
+            } else {
+                FlockFlags::empty()
+            },
             old_size: 0,
         }
     }
@@ -107,7 +113,8 @@ impl FlockInfo {
     }
 
     pub fn mark_forgotten(&mut self) {
-        self.flags.insert(FlockFlags::FORGOTTEN | FlockFlags::FORGOTTEN_STATE_DIRTY);
+        self.flags
+            .insert(FlockFlags::FORGOTTEN | FlockFlags::FORGOTTEN_STATE_DIRTY);
     }
 
     pub fn mark_remembered(&mut self) {
@@ -116,11 +123,14 @@ impl FlockInfo {
     }
 
     pub fn mark_destroyed(&mut self) {
-        self.flags.insert(FlockFlags::DESTROYED | FlockFlags::FORGOTTEN);
+        self.flags
+            .insert(FlockFlags::DESTROYED | FlockFlags::FORGOTTEN);
     }
 
     pub fn commit_flags(&mut self) {
-        self.flags.remove(FlockFlags::IS_NEW | FlockFlags::CONTENTS_DIRTY | FlockFlags::FORGOTTEN_STATE_DIRTY);
+        self.flags.remove(
+            FlockFlags::IS_NEW | FlockFlags::CONTENTS_DIRTY | FlockFlags::FORGOTTEN_STATE_DIRTY,
+        );
     }
 
     pub fn forward_to(&mut self, new_location: FlockLocation) {
@@ -133,7 +143,9 @@ impl FlockInfo {
             FlockState::Destroyed
         } else if self.flags.contains(FlockFlags::FORGOTTEN) {
             FlockState::Forgotten
-        } else if self.flags.contains(FlockFlags::CONTENTS_DIRTY) || self.flags.contains(FlockFlags::IS_NEW) {
+        } else if self.flags.contains(FlockFlags::CONTENTS_DIRTY)
+            || self.flags.contains(FlockFlags::IS_NEW)
+        {
             FlockState::Dirty
         } else {
             FlockState::Clean

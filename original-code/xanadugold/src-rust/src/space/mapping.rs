@@ -88,7 +88,9 @@ impl<S: MappingSpace> CompositeMapping<S> {
     }
 
     pub fn empty() -> Self {
-        CompositeMapping { mappings: Vec::new() }
+        CompositeMapping {
+            mappings: Vec::new(),
+        }
     }
 
     pub fn from_single(mapping: SimpleMapping<S>) -> Self {
@@ -104,9 +106,9 @@ impl<S: MappingSpace> CompositeMapping<S> {
     }
 
     pub fn range(&self) -> S::Region {
-        self.mappings
-            .iter()
-            .fold(S::empty_region(), |acc, m| acc.union_with(&m.dsp.of_all(&m.domain)))
+        self.mappings.iter().fold(S::empty_region(), |acc, m| {
+            acc.union_with(&m.dsp.of_all(&m.domain))
+        })
     }
 
     pub fn of(&self, pos: &S::Position) -> Option<S::Position> {
@@ -119,11 +121,9 @@ impl<S: MappingSpace> CompositeMapping<S> {
     }
 
     pub fn of_all(&self, region: &S::Region) -> S::Region {
-        self.mappings
-            .iter()
-            .fold(S::empty_region(), |acc, m| {
-                acc.union_with(&m.dsp.of_all(&m.domain.intersect(region)))
-            })
+        self.mappings.iter().fold(S::empty_region(), |acc, m| {
+            acc.union_with(&m.dsp.of_all(&m.domain.intersect(region)))
+        })
     }
 
     pub fn inverse(&self) -> Self {

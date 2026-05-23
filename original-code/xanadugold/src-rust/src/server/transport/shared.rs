@@ -2,9 +2,9 @@ use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::server::Server;
 use super::audit::SecurityMonitor;
 use super::channel::EventMessage;
+use crate::server::Server;
 
 pub const MAX_CSRF_TOKENS: usize = 10_000;
 
@@ -22,7 +22,10 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(srv: Server) -> Self {
-        Self::with_security(srv, SecurityMonitor::new(Arc::new(super::audit::TracingAuditLog)))
+        Self::with_security(
+            srv,
+            SecurityMonitor::new(Arc::new(super::audit::TracingAuditLog)),
+        )
     }
 
     pub fn with_security(srv: Server, monitor: SecurityMonitor) -> Self {

@@ -149,7 +149,12 @@ mod tests {
         texts
             .iter()
             .enumerate()
-            .map(|(i, t)| (i as i64, Arc::new(Carrier::new(RangeElement::text(t.to_string())))))
+            .map(|(i, t)| {
+                (
+                    i as i64,
+                    Arc::new(Carrier::new(RangeElement::text(t.to_string()))),
+                )
+            })
             .collect()
     }
 
@@ -212,7 +217,11 @@ mod tests {
         let b = make_entries(&["x", "y"]);
         let m = content_map_shared_onto(&a, &b);
         let targets: BTreeSet<i64> = m.pairs().iter().map(|(_, t)| *t).collect();
-        assert_eq!(targets.len(), m.len(), "each target should appear at most once");
+        assert_eq!(
+            targets.len(),
+            m.len(),
+            "each target should appear at most once"
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 pub const CURRENT_VERSION: EnvelopeVersion = EnvelopeVersion::V1;
 
@@ -61,9 +61,7 @@ impl AuthenticatedMessage {
     }
 
     pub fn signing_input(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(
-            1 + 8 + self.message_type.len() + self.payload.len()
-        );
+        let mut buf = Vec::with_capacity(1 + 8 + self.message_type.len() + self.payload.len());
         buf.push(self.version.to_u8());
         buf.extend_from_slice(&self.key_id.to_be_bytes());
         buf.extend_from_slice(self.message_type.as_bytes());

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use super::edition::Edition;
 use super::range_element::{Carrier, RangeElement, RangeElementId};
 use super::xn_region::XnRegion;
-use super::edition::Edition;
 
 static LABEL_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -118,7 +118,10 @@ impl LabelledEdition {
         }
     }
 
-    pub fn combine(&self, other: &LabelledEdition) -> Result<LabelledEdition, super::edition::CombineConflict> {
+    pub fn combine(
+        &self,
+        other: &LabelledEdition,
+    ) -> Result<LabelledEdition, super::edition::CombineConflict> {
         let combined = self.edition.combine(&other.edition)?;
         Ok(LabelledEdition {
             edition: combined,
@@ -140,13 +143,23 @@ impl LabelledEdition {
         }
     }
 
-    pub fn with(&self, position: i64, value: RangeElement, label: Option<LabelId>) -> LabelledEdition {
+    pub fn with(
+        &self,
+        position: i64,
+        value: RangeElement,
+        label: Option<LabelId>,
+    ) -> LabelledEdition {
         let carrier = match label {
             Some(lid) => Carrier::labelled(RangeElementId::new(lid.as_u64()), value),
             None => Carrier::new(value),
         };
         LabelledEdition {
-            edition: Edition::new_inner(self.edition.orgl.with(position, std::sync::Arc::new(carrier)), self.edition.endorsements.clone()),
+            edition: Edition::new_inner(
+                self.edition
+                    .orgl
+                    .with(position, std::sync::Arc::new(carrier)),
+                self.edition.endorsements.clone(),
+            ),
             label: self.label.clone(),
         }
     }
@@ -158,8 +171,15 @@ impl LabelledEdition {
         }
     }
 
-    pub fn rebind(&self, position: i64, new_edition: &Edition) -> Result<LabelledEdition, RebindError> {
-        let old = self.edition.fetch_owned(position).ok_or(RebindError::position_not_found(position))?;
+    pub fn rebind(
+        &self,
+        position: i64,
+        new_edition: &Edition,
+    ) -> Result<LabelledEdition, RebindError> {
+        let old = self
+            .edition
+            .fetch_owned(position)
+            .ok_or(RebindError::position_not_found(position))?;
         let old_label_id = old.label.clone();
         let new_carrier = match old_label_id {
             Some(lid) => {
@@ -172,7 +192,12 @@ impl LabelledEdition {
             }
         };
         Ok(LabelledEdition {
-            edition: Edition::new_inner(self.edition.orgl.with(position, std::sync::Arc::new(new_carrier)), self.edition.endorsements.clone()),
+            edition: Edition::new_inner(
+                self.edition
+                    .orgl
+                    .with(position, std::sync::Arc::new(new_carrier)),
+                self.edition.endorsements.clone(),
+            ),
             label: self.label.clone(),
         })
     }
@@ -335,7 +360,16 @@ pub fn can_make_identical(source: &RangeElement, target: &RangeElement) -> CanMa
                 CanMakeIdenticalResult::DifferentContent
             }
         }
-        (RangeElement::Label { label_id: la, inner: ia }, RangeElement::Label { label_id: lb, inner: ib }) => {
+        (
+            RangeElement::Label {
+                label_id: la,
+                inner: ia,
+            },
+            RangeElement::Label {
+                label_id: lb,
+                inner: ib,
+            },
+        ) => {
             let inner_result = can_make_identical(ia, ib);
             match inner_result {
                 CanMakeIdenticalResult::Yes => {
@@ -348,7 +382,14 @@ pub fn can_make_identical(source: &RangeElement, target: &RangeElement) -> CanMa
                 other => other,
             }
         }
-        (RangeElement::Blob { content_hash: a, .. }, RangeElement::Blob { content_hash: b, .. }) => {
+        (
+            RangeElement::Blob {
+                content_hash: a, ..
+            },
+            RangeElement::Blob {
+                content_hash: b, ..
+            },
+        ) => {
             if a == b {
                 CanMakeIdenticalResult::Yes
             } else {
@@ -532,7 +573,8 @@ mod tests {
 
     #[test]
     fn labelled_carrier_with_label() {
-        let lc = LabelledCarrier::labelled(LabelId::from_raw(42), Carrier::new(RangeElement::text("x")));
+        let lc =
+            LabelledCarrier::labelled(LabelId::from_raw(42), Carrier::new(RangeElement::text("x")));
         assert_eq!(lc.label, Some(LabelId::from_raw(42)));
     }
 
@@ -627,8 +669,11 @@ mod tests {
 
     #[test]
     fn labelled_edition_rebind_preserves_label() {
-        let le = LabelledEdition::new(Edition::empty())
-            .with(0, RangeElement::text("old"), Some(LabelId::from_raw(10)));
+        let le = LabelledEdition::new(Edition::empty()).with(
+            0,
+            RangeElement::text("old"),
+            Some(LabelId::from_raw(10)),
+        );
         let new_edition = Edition::from_text("new");
         let rebound = le.rebind(0, &new_edition).unwrap();
         let carrier = rebound.get_carrier(0).unwrap();
@@ -685,7 +730,10 @@ mod tests {
     fn can_make_identical_different_text() {
         let a = RangeElement::text("hello");
         let b = RangeElement::text("world");
-        assert_eq!(can_make_identical(&a, &b), CanMakeIdenticalResult::DifferentContent);
+        assert_eq!(
+            can_make_identical(&a, &b),
+            CanMakeIdenticalResult::DifferentContent
+        );
     }
 
     #[test]
@@ -699,14 +747,20 @@ mod tests {
     fn can_make_identical_different_data() {
         let a = RangeElement::data(vec![1, 2, 3]);
         let b = RangeElement::data(vec![4, 5, 6]);
-        assert_eq!(can_make_identical(&a, &b), CanMakeIdenticalResult::DifferentContent);
+        assert_eq!(
+            can_make_identical(&a, &b),
+            CanMakeIdenticalResult::DifferentContent
+        );
     }
 
     #[test]
     fn can_make_identical_text_vs_data() {
         let a = RangeElement::text("hello");
         let b = RangeElement::data(b"hello".to_vec());
-        assert_eq!(can_make_identical(&a, &b), CanMakeIdenticalResult::DifferentType);
+        assert_eq!(
+            can_make_identical(&a, &b),
+            CanMakeIdenticalResult::DifferentType
+        );
     }
 
     #[test]
@@ -720,7 +774,10 @@ mod tests {
     fn can_make_identical_different_edition() {
         let a = RangeElement::edition(42);
         let b = RangeElement::edition(99);
-        assert_eq!(can_make_identical(&a, &b), CanMakeIdenticalResult::DifferentContent);
+        assert_eq!(
+            can_make_identical(&a, &b),
+            CanMakeIdenticalResult::DifferentContent
+        );
     }
 
     #[test]
@@ -741,7 +798,10 @@ mod tests {
     fn can_make_identical_different_blob() {
         let a = RangeElement::blob(0xabcd, "image/png", 100);
         let b = RangeElement::blob(0x1234, "image/png", 100);
-        assert_eq!(can_make_identical(&a, &b), CanMakeIdenticalResult::DifferentContent);
+        assert_eq!(
+            can_make_identical(&a, &b),
+            CanMakeIdenticalResult::DifferentContent
+        );
     }
 
     #[test]
@@ -755,7 +815,10 @@ mod tests {
     fn can_make_identical_different_types() {
         let a = RangeElement::text("hello");
         let b = RangeElement::edition(1);
-        assert_eq!(can_make_identical(&a, &b), CanMakeIdenticalResult::DifferentType);
+        assert_eq!(
+            can_make_identical(&a, &b),
+            CanMakeIdenticalResult::DifferentType
+        );
     }
 
     #[test]
@@ -922,13 +985,19 @@ mod tests {
     fn can_make_identical_label_different_label() {
         let a = RangeElement::label(1, RangeElement::text("x"));
         let b = RangeElement::label(2, RangeElement::text("x"));
-        assert_eq!(can_make_identical(&a, &b), CanMakeIdenticalResult::DifferentContent);
+        assert_eq!(
+            can_make_identical(&a, &b),
+            CanMakeIdenticalResult::DifferentContent
+        );
     }
 
     #[test]
     fn can_make_identical_label_different_inner() {
         let a = RangeElement::label(1, RangeElement::text("x"));
         let b = RangeElement::label(1, RangeElement::text("y"));
-        assert_eq!(can_make_identical(&a, &b), CanMakeIdenticalResult::DifferentContent);
+        assert_eq!(
+            can_make_identical(&a, &b),
+            CanMakeIdenticalResult::DifferentContent
+        );
     }
 }

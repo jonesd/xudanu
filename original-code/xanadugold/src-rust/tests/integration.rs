@@ -1,12 +1,12 @@
-use std::net::SocketAddr;
 use futures_util::{SinkExt, StreamExt};
+use std::net::SocketAddr;
 use tokio_tungstenite::tungstenite::Message;
-use xudanu::server::Server;
-use xudanu::server::transport::{
-    AppState, build_router, OperationCode, MessageType, PROTOCOL_VERSION,
-    EditionPayload, WireRequest,
-};
 use xudanu::server::transport::varint;
+use xudanu::server::transport::{
+    build_router, AppState, EditionPayload, MessageType, OperationCode, WireRequest,
+    PROTOCOL_VERSION,
+};
+use xudanu::server::Server;
 
 fn parse_hash_hex(v: &serde_json::Value) -> u64 {
     u64::from_str_radix(v.as_str().unwrap(), 16).unwrap()
@@ -33,11 +33,12 @@ impl TestServer {
         let setup_sid = server.connect();
         server.login_public(setup_sid).unwrap();
         server.grant_admin_authority(setup_sid).unwrap();
-        server.club_set_password(setup_sid, admin_club, ADMIN_PASSWORD).unwrap();
+        server
+            .club_set_password(setup_sid, admin_club, ADMIN_PASSWORD)
+            .unwrap();
         server.disconnect(setup_sid).unwrap();
         let state = AppState::new(server).shared();
-        let app = build_router(state)
-            .into_make_service_with_connect_info::<std::net::SocketAddr>();
+        let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -51,17 +52,17 @@ impl TestServer {
     }
 }
 
-type WsStream = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type WsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 type SplitSender = futures_util::stream::SplitSink<WsStream, Message>;
 type SplitReceiver = futures_util::stream::SplitStream<WsStream>;
 
 async fn connect(srv: &TestServer, format: &str) -> (SplitSender, SplitReceiver) {
-    let url = format!("ws://{}/xudanu?format={}&version={}", srv.addr, format, PROTOCOL_VERSION);
-    let (stream, _) = tokio_tungstenite::connect_async(&url)
-        .await
-        .unwrap();
+    let url = format!(
+        "ws://{}/xudanu?format={}&version={}",
+        srv.addr, format, PROTOCOL_VERSION
+    );
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     stream.split()
 }
 
@@ -94,7 +95,11 @@ async fn connect_binary_with_handshake(srv: &TestServer) -> (SplitSender, SplitR
     (s, r)
 }
 
-async fn send_recv(sender: &mut SplitSender, receiver: &mut SplitReceiver, msg: Message) -> Message {
+async fn send_recv(
+    sender: &mut SplitSender,
+    receiver: &mut SplitReceiver,
+    msg: Message,
+) -> Message {
     sender.send(msg).await.unwrap();
     receiver.next().await.unwrap().unwrap()
 }
@@ -123,8 +128,8 @@ fn json_req(id: u16, op: &str, payload: Option<serde_json::Value>) -> serde_json
 
 async fn json_setup(srv: &TestServer) -> (SplitSender, SplitReceiver, u64) {
     let (mut s, mut r) = connect_with_handshake(srv, "json").await;
-    let sid = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await
-        ["value"]["value"]
+    let sid = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await["value"]
+        ["value"]
         .as_u64()
         .unwrap();
     send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
@@ -133,19 +138,42 @@ async fn json_setup(srv: &TestServer) -> (SplitSender, SplitReceiver, u64) {
 
 async fn json_admin_login(srv: &TestServer) -> (SplitSender, SplitReceiver, u64) {
     let (mut s, mut r) = connect_with_handshake(srv, "json").await;
-    let sid = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await
-        ["value"]["value"]
+    let sid = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await["value"]
+        ["value"]
         .as_u64()
         .unwrap();
-    let admin_club_id = send_recv_json(&mut s, &mut r, json_req(2, "club_id_by_name", Some(
-        serde_json::json!({"name": "admin"})
-    ))).await["value"]["value"].as_u64().unwrap();
-    send_recv_json(&mut s, &mut r, json_req(3, "session_login", Some(
-        serde_json::json!({"club_id": admin_club_id})
-    ))).await;
-    send_recv_json(&mut s, &mut r, json_req(4, "session_authenticate", Some(
-        serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})
-    ))).await;
+    let admin_club_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "club_id_by_name",
+            Some(serde_json::json!({"name": "admin"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            3,
+            "session_login",
+            Some(serde_json::json!({"club_id": admin_club_id})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            4,
+            "session_authenticate",
+            Some(serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})),
+        ),
+    )
+    .await;
     (s, r, sid)
 }
 
@@ -190,35 +218,92 @@ async fn json_work_full_lifecycle() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "Hello"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "Hello"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["type"], "edition");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(13, "work_revise", Some(serde_json::json!({
-            "work_id": work_id, "edition": {"text": "Updated"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            13,
+            "work_revise",
+            Some(serde_json::json!({
+                "work_id": work_id, "edition": {"text": "Updated"}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], 1);
 
-    send_recv_json(&mut s, &mut r,
-        json_req(14, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            14,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(15, "work_revision_count", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            15,
+            "work_revision_count",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], 1);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(16, "work_fetch_revision", Some(serde_json::json!({
-            "work_id": work_id, "number": 0
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            16,
+            "work_fetch_revision",
+            Some(serde_json::json!({
+                "work_id": work_id, "number": 0
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["type"], "edition");
 }
 
@@ -227,24 +312,65 @@ async fn json_work_permissions() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": "empty"}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": "empty"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(20, "work_can_read", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "work_can_read",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], true);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(21, "work_can_revise", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "work_can_revise",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], true);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(22, "work_is_grabbed", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            22,
+            "work_is_grabbed",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], false);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(23, "work_owner", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            23,
+            "work_owner",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert!(resp["value"]["value"].as_u64().unwrap() > 0);
 }
 
@@ -253,23 +379,56 @@ async fn json_work_set_read_edit_club() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": "empty"}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": "empty"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s, &mut r,
-        json_req(30, "work_set_edit_club", Some(serde_json::json!({
-            "work_id": work_id, "club_id": 99999
-        })))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            30,
+            "work_set_edit_club",
+            Some(serde_json::json!({
+                "work_id": work_id, "club_id": 99999
+            })),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(31, "work_edit_club", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            31,
+            "work_edit_club",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], 99999);
 
-    send_recv_json(&mut s, &mut r,
-        json_req(32, "work_set_read_club", Some(serde_json::json!({
-            "work_id": work_id, "club_id": null
-        })))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            32,
+            "work_set_read_club",
+            Some(serde_json::json!({
+                "work_id": work_id, "club_id": null
+            })),
+        ),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -277,21 +436,56 @@ async fn json_club_operations() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let club_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "club_create", Some(serde_json::json!({"description": {"text": "test"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let club_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "club_create",
+            Some(serde_json::json!({"description": {"text": "test"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let named_id = send_recv_json(&mut s, &mut r,
-        json_req(11, "club_create_named", Some(serde_json::json!({
-            "name": "editors", "description": "empty"
-        })))).await["value"]["value"].as_u64().unwrap();
+    let named_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "club_create_named",
+            Some(serde_json::json!({
+                "name": "editors", "description": "empty"
+            })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "club_id_by_name", Some(serde_json::json!({"name": "editors"})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "club_id_by_name",
+            Some(serde_json::json!({"name": "editors"})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], named_id);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(13, "club_name_by_id", Some(serde_json::json!({"club_id": named_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            13,
+            "club_name_by_id",
+            Some(serde_json::json!({"club_id": named_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], "editors");
 
     let resp = send_recv_json(&mut s, &mut r, json_req(14, "club_names", None)).await;
@@ -303,16 +497,33 @@ async fn json_edition_store_and_get() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let ed_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "edition_store", Some(serde_json::json!({"edition": {"text": "standalone"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let ed_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "edition_store",
+            Some(serde_json::json!({"edition": {"text": "standalone"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "edition_get", Some(serde_json::json!({"be_id": ed_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(11, "edition_get", Some(serde_json::json!({"be_id": ed_id}))),
+    )
+    .await;
     assert_eq!(resp["value"]["type"], "edition");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "edition_get", Some(serde_json::json!({"be_id": 99999})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(12, "edition_get", Some(serde_json::json!({"be_id": 99999}))),
+    )
+    .await;
     assert_eq!(resp["value"]["type"], "void");
 }
 
@@ -321,13 +532,31 @@ async fn json_edition_with_entries() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"entries": [[0, {"Text": {"text": "A"}}], [1, {"Text": {"text": "B"}}]]}
-        })))).await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"entries": [[0, {"Text": {"text": "A"}}], [1, {"Text": {"text": "B"}}]]}
+            })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     let edition = &resp["value"]["value"];
     if let Some(text) = edition["text"].as_str() {
         assert_eq!(text, "AB");
@@ -343,12 +572,29 @@ async fn json_server_get_by_be_id() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "test"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "test"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(20, "server_get_by_be_id", Some(serde_json::json!({"be_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "server_get_by_be_id",
+            Some(serde_json::json!({"be_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["type"], "range_element");
 }
 
@@ -357,27 +603,83 @@ async fn json_work_sponsor_unsponsor() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": "empty"}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": "empty"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let club_id = send_recv_json(&mut s, &mut r,
-        json_req(11, "club_create", Some(serde_json::json!({"description": "empty"}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let club_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "club_create",
+            Some(serde_json::json!({"description": "empty"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s, &mut r,
-        json_req(12, "work_sponsor", Some(serde_json::json!({"work_id": work_id, "club_id": club_id})))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "work_sponsor",
+            Some(serde_json::json!({"work_id": work_id, "club_id": club_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(13, "work_sponsors", Some(serde_json::json!({"work_id": work_id})))).await;
-    assert!(resp["value"]["value"].as_array().unwrap().contains(&serde_json::json!(club_id)));
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            13,
+            "work_sponsors",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+    assert!(resp["value"]["value"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!(club_id)));
 
-    send_recv_json(&mut s, &mut r,
-        json_req(14, "work_unsponsor", Some(serde_json::json!({"work_id": work_id, "club_id": club_id})))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            14,
+            "work_unsponsor",
+            Some(serde_json::json!({"work_id": work_id, "club_id": club_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(15, "work_sponsors", Some(serde_json::json!({"work_id": work_id})))).await;
-    assert!(!resp["value"]["value"].as_array().unwrap().contains(&serde_json::json!(club_id)));
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            15,
+            "work_sponsors",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+    assert!(!resp["value"]["value"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!(club_id)));
 }
 
 #[tokio::test]
@@ -385,19 +687,52 @@ async fn json_work_grabber_tracking() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": "empty"}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": "empty"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(20, "work_grabber", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "work_grabber",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], 0);
 
-    send_recv_json(&mut s, &mut r,
-        json_req(21, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(22, "work_grabber", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            22,
+            "work_grabber",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert!(resp["value"]["value"].as_u64().unwrap() > 0);
 }
 
@@ -406,7 +741,12 @@ async fn json_heartbeat() {
     let srv = TestServer::start().await;
     let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
-    let resp = send_recv_json(&mut s, &mut r, serde_json::json!({"v":2,"type":"heartbeat","id":0})).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        serde_json::json!({"v":2,"type":"heartbeat","id":0}),
+    )
+    .await;
     assert_eq!(resp["type"], "heartbeat");
 }
 
@@ -416,28 +756,85 @@ async fn json_multi_session_editing() {
     let (mut s1, mut r1, _) = json_setup(&srv).await;
     let (mut s2, mut r2, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s1, &mut r1,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "shared"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "shared"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s1, &mut r1,
-        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
-    send_recv_json(&mut s1, &mut r1,
-        json_req(12, "work_revise", Some(serde_json::json!({
-            "work_id": work_id, "edition": {"text": "alice"}
-        })))).await;
-    send_recv_json(&mut s1, &mut r1,
-        json_req(13, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            11,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            12,
+            "work_revise",
+            Some(serde_json::json!({
+                "work_id": work_id, "edition": {"text": "alice"}
+            })),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            13,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    send_recv_json(&mut s2, &mut r2,
-        json_req(10, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
-    send_recv_json(&mut s2, &mut r2,
-        json_req(11, "work_revise", Some(serde_json::json!({
-            "work_id": work_id, "edition": {"text": "bob"}
-        })))).await;
+    send_recv_json(
+        &mut s2,
+        &mut r2,
+        json_req(
+            10,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s2,
+        &mut r2,
+        json_req(
+            11,
+            "work_revise",
+            Some(serde_json::json!({
+                "work_id": work_id, "edition": {"text": "bob"}
+            })),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s1, &mut r1,
-        json_req(20, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            20,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 }
 
@@ -450,19 +847,31 @@ async fn binary_session_connect_and_login() {
     let srv = TestServer::start().await;
     let (mut s, mut r) = connect_binary_with_handshake(&srv).await;
 
-    let resp = send_recv(&mut s, &mut r,
-        Message::Binary(build_binary_request(1, OperationCode::SessionConnect, &[]).into()))
-        .await;
-    let resp_bytes = match resp { Message::Binary(b) => b.to_vec(), other => panic!("{:?}", other) };
+    let resp = send_recv(
+        &mut s,
+        &mut r,
+        Message::Binary(build_binary_request(1, OperationCode::SessionConnect, &[]).into()),
+    )
+    .await;
+    let resp_bytes = match resp {
+        Message::Binary(b) => b.to_vec(),
+        other => panic!("{:?}", other),
+    };
     let (ver, mt, rid) = parse_header(&resp_bytes);
     assert_eq!(ver, PROTOCOL_VERSION);
     assert_eq!(mt, MessageType::Response as u8);
     assert_eq!(rid, 1);
 
-    let resp = send_recv(&mut s, &mut r,
-        Message::Binary(build_binary_request(2, OperationCode::SessionLoginPublic, &[]).into()))
-        .await;
-    let resp_bytes = match resp { Message::Binary(b) => b.to_vec(), other => panic!("{:?}", other) };
+    let resp = send_recv(
+        &mut s,
+        &mut r,
+        Message::Binary(build_binary_request(2, OperationCode::SessionLoginPublic, &[]).into()),
+    )
+    .await;
+    let resp_bytes = match resp {
+        Message::Binary(b) => b.to_vec(),
+        other => panic!("{:?}", other),
+    };
     let (_, mt, _) = parse_header(&resp_bytes);
     assert_eq!(mt, MessageType::Response as u8);
 }
@@ -474,7 +883,10 @@ async fn binary_heartbeat() {
 
     let hb = vec![PROTOCOL_VERSION, MessageType::Heartbeat as u8, 0x00, 0x00];
     let resp = send_recv(&mut s, &mut r, Message::Binary(hb.into())).await;
-    let resp_bytes = match resp { Message::Binary(b) => b.to_vec(), other => panic!("{:?}", other) };
+    let resp_bytes = match resp {
+        Message::Binary(b) => b.to_vec(),
+        other => panic!("{:?}", other),
+    };
     let (_, mt, _) = parse_header(&resp_bytes);
     assert_eq!(mt, MessageType::Heartbeat as u8);
 }
@@ -490,8 +902,16 @@ async fn err_not_logged_in_cannot_create_work() {
 
     send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "test"}})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "test"}})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "not_authorized");
 }
@@ -501,14 +921,31 @@ async fn err_revise_without_grab() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "v1"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "v1"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_revise", Some(serde_json::json!({
-            "work_id": work_id, "edition": {"text": "v2"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_revise",
+            Some(serde_json::json!({
+                "work_id": work_id, "edition": {"text": "v2"}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "not_grabbed");
 }
@@ -519,15 +956,40 @@ async fn err_grab_conflict() {
     let (mut s1, mut r1, _) = json_setup(&srv).await;
     let (mut s2, mut r2, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s1, &mut r1,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": "empty"}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": "empty"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s1, &mut r1,
-        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            11,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s2, &mut r2,
-        json_req(10, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s2,
+        &mut r2,
+        json_req(
+            10,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "already_grabbed");
 }
@@ -537,15 +999,31 @@ async fn err_duplicate_club_name() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    send_recv_json(&mut s, &mut r,
-        json_req(10, "club_create_named", Some(serde_json::json!({
-            "name": "unique", "description": "empty"
-        })))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "club_create_named",
+            Some(serde_json::json!({
+                "name": "unique", "description": "empty"
+            })),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "club_create_named", Some(serde_json::json!({
-            "name": "unique", "description": "empty"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "club_create_named",
+            Some(serde_json::json!({
+                "name": "unique", "description": "empty"
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "already_exists");
 }
@@ -555,8 +1033,16 @@ async fn err_work_not_found() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_get_edition", Some(serde_json::json!({"work_id": 999999})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": 999999})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "work_not_found");
 }
@@ -566,8 +1052,16 @@ async fn err_club_not_found() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "club_name_by_id", Some(serde_json::json!({"club_id": 999999})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "club_name_by_id",
+            Some(serde_json::json!({"club_id": 999999})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "club_not_found");
 }
@@ -577,8 +1071,16 @@ async fn err_club_name_not_found() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "club_id_by_name", Some(serde_json::json!({"name": "nonexistent"})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "club_id_by_name",
+            Some(serde_json::json!({"name": "nonexistent"})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "not_found");
 }
@@ -588,12 +1090,29 @@ async fn err_release_without_grab() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": "empty"}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": "empty"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "not_grabbed");
 }
@@ -604,15 +1123,40 @@ async fn err_wrong_session_releases_grab() {
     let (mut s1, mut r1, _) = json_setup(&srv).await;
     let (mut s2, mut r2, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s1, &mut r1,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": "empty"}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": "empty"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s1, &mut r1,
-        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            11,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s2, &mut r2,
-        json_req(10, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s2,
+        &mut r2,
+        json_req(
+            10,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "already_grabbed");
 }
@@ -623,17 +1167,42 @@ async fn err_wrong_session_revises() {
     let (mut s1, mut r1, _) = json_setup(&srv).await;
     let (mut s2, mut r2, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s1, &mut r1,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "v1"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "v1"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s1, &mut r1,
-        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            11,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s2, &mut r2,
-        json_req(10, "work_revise", Some(serde_json::json!({
-            "work_id": work_id, "edition": {"text": "hacked"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s2,
+        &mut r2,
+        json_req(
+            10,
+            "work_revise",
+            Some(serde_json::json!({
+                "work_id": work_id, "edition": {"text": "hacked"}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -657,8 +1226,12 @@ async fn adversarial_empty_payload() {
     let srv = TestServer::start().await;
     let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "work_create", Some(serde_json::json!({})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(1, "work_create", Some(serde_json::json!({}))),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -678,8 +1251,12 @@ async fn adversarial_unknown_message_type() {
     let srv = TestServer::start().await;
     let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        serde_json::json!({"v":2,"type":"bogus","id":1})).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        serde_json::json!({"v":2,"type":"bogus","id":1}),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -688,8 +1265,12 @@ async fn adversarial_wrong_version() {
     let srv = TestServer::start().await;
     let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        serde_json::json!({"v":99,"type":"request","id":1,"op":"session_connect"})).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        serde_json::json!({"v":99,"type":"request","id":1,"op":"session_connect"}),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -701,7 +1282,10 @@ async fn adversarial_binary_unknown_op() {
     let mut frame = vec![PROTOCOL_VERSION, MessageType::Request as u8, 0x00, 0x01];
     varint::encode_varint(0xFFFF, &mut frame);
     let resp = send_recv(&mut s, &mut r, Message::Binary(frame.into())).await;
-    let resp_bytes = match resp { Message::Binary(b) => b.to_vec(), other => panic!("{:?}", other) };
+    let resp_bytes = match resp {
+        Message::Binary(b) => b.to_vec(),
+        other => panic!("{:?}", other),
+    };
     let (_, mt, _) = parse_header(&resp_bytes);
     assert_eq!(mt, MessageType::Error as u8);
 }
@@ -711,8 +1295,16 @@ async fn adversarial_binary_truncated_frame() {
     let srv = TestServer::start().await;
     let (mut s, mut r) = connect_binary_with_handshake(&srv).await;
 
-    let resp = send_recv(&mut s, &mut r, Message::Binary(vec![PROTOCOL_VERSION].into())).await;
-    let resp_bytes = match resp { Message::Binary(b) => b.to_vec(), other => panic!("{:?}", other) };
+    let resp = send_recv(
+        &mut s,
+        &mut r,
+        Message::Binary(vec![PROTOCOL_VERSION].into()),
+    )
+    .await;
+    let resp_bytes = match resp {
+        Message::Binary(b) => b.to_vec(),
+        other => panic!("{:?}", other),
+    };
     let (_, mt, _) = parse_header(&resp_bytes);
     assert_eq!(mt, MessageType::Error as u8);
 }
@@ -724,7 +1316,10 @@ async fn adversarial_binary_wrong_version() {
 
     let frame = vec![0xFF, MessageType::Request as u8, 0x00, 0x01, 0x01];
     let resp = send_recv(&mut s, &mut r, Message::Binary(frame.into())).await;
-    let resp_bytes = match resp { Message::Binary(b) => b.to_vec(), other => panic!("{:?}", other) };
+    let resp_bytes = match resp {
+        Message::Binary(b) => b.to_vec(),
+        other => panic!("{:?}", other),
+    };
     let (_, mt, _) = parse_header(&resp_bytes);
     assert_eq!(mt, MessageType::Error as u8);
 }
@@ -734,8 +1329,16 @@ async fn adversarial_huge_work_id() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_get_edition", Some(serde_json::json!({"work_id": u64::MAX})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": u64::MAX})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -745,21 +1348,55 @@ async fn adversarial_restricted_work_cannot_be_grabbed_by_other() {
     let (mut s1, mut r1, _) = json_setup(&srv).await;
     let (mut s2, mut r2, _) = json_setup(&srv).await;
 
-    let private_club = send_recv_json(&mut s1, &mut r1,
-        json_req(10, "club_create", Some(serde_json::json!({"description": "empty"}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let private_club = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            10,
+            "club_create",
+            Some(serde_json::json!({"description": "empty"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let work_id = send_recv_json(&mut s1, &mut r1,
-        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "secret"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "secret"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s1, &mut r1,
-        json_req(12, "work_set_edit_club", Some(serde_json::json!({
-            "work_id": work_id, "club_id": private_club
-        })))).await;
+    send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            12,
+            "work_set_edit_club",
+            Some(serde_json::json!({
+                "work_id": work_id, "club_id": private_club
+            })),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s2, &mut r2,
-        json_req(10, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s2,
+        &mut r2,
+        json_req(
+            10,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "not_authorized");
 }
@@ -770,10 +1407,20 @@ async fn adversarial_rapid_fire_requests() {
     let (mut s, mut r, _) = json_setup(&srv).await;
 
     for i in 0..50 {
-        let work_id = send_recv_json(&mut s, &mut r,
-            json_req(i, "work_create", Some(serde_json::json!({
-                "edition": {"text": format!("doc_{}", i)}
-            })))).await["value"]["value"].as_u64().unwrap();
+        let work_id = send_recv_json(
+            &mut s,
+            &mut r,
+            json_req(
+                i,
+                "work_create",
+                Some(serde_json::json!({
+                    "edition": {"text": format!("doc_{}", i)}
+                })),
+            ),
+        )
+        .await["value"]["value"]
+            .as_u64()
+            .unwrap();
         assert!(work_id > 0);
     }
 }
@@ -785,13 +1432,29 @@ async fn adversarial_connect_without_login_then_operate() {
 
     send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(2, "club_create", Some(serde_json::json!({"description": "empty"})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "club_create",
+            Some(serde_json::json!({"description": "empty"})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "not_authorized");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(3, "edition_store", Some(serde_json::json!({"edition": {"text": "x"}})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            3,
+            "edition_store",
+            Some(serde_json::json!({"edition": {"text": "x"}})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "not_authorized");
 }
@@ -859,20 +1522,20 @@ async fn handshake_wrong_version_rejected() {
 async fn admin_server_info() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(50, "admin_server_info", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(50, "admin_server_info", None)).await;
     assert_eq!(resp["type"], "response");
     assert!(resp["value"]["value"]["session_count"].as_u64().unwrap() >= 1);
     assert!(resp["value"]["value"]["work_count"].as_u64().unwrap() >= 0);
-    assert!(resp["value"]["value"]["is_accepting_connections"].as_bool().unwrap());
+    assert!(resp["value"]["value"]["is_accepting_connections"]
+        .as_bool()
+        .unwrap());
 }
 
 #[tokio::test]
 async fn admin_active_sessions() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(50, "admin_active_sessions", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(50, "admin_active_sessions", None)).await;
     assert_eq!(resp["type"], "response");
     let sessions = resp["value"]["value"].as_array().unwrap();
     assert!(!sessions.is_empty());
@@ -884,20 +1547,44 @@ async fn admin_accept_connections_toggle() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(50, "admin_is_accepting_connections", None)).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(50, "admin_is_accepting_connections", None),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], true);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(51, "admin_accept_connections", Some(serde_json::json!({"accept": false})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            51,
+            "admin_accept_connections",
+            Some(serde_json::json!({"accept": false})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(52, "admin_is_accepting_connections", None)).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(52, "admin_is_accepting_connections", None),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], false);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(53, "admin_accept_connections", Some(serde_json::json!({"accept": true})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            53,
+            "admin_accept_connections",
+            Some(serde_json::json!({"accept": true})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 }
 
@@ -906,24 +1593,38 @@ async fn admin_grant_revoke() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(50, "admin_grant", Some(serde_json::json!({
-            "club_id": 100, "region_start": 1000, "region_end": 2000
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            50,
+            "admin_grant",
+            Some(serde_json::json!({
+                "club_id": 100, "region_start": 1000, "region_end": 2000
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(51, "admin_grants", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(51, "admin_grants", None)).await;
     assert_eq!(resp["type"], "response");
     let grants = resp["value"]["value"].as_array().unwrap();
     assert!(!grants.is_empty());
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(52, "admin_revoke_grant", Some(serde_json::json!({"club_id": 100})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            52,
+            "admin_revoke_grant",
+            Some(serde_json::json!({"club_id": 100})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], true);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(53, "admin_grants", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(53, "admin_grants", None)).await;
     assert!(resp["value"]["value"].as_array().unwrap().is_empty());
 }
 
@@ -932,8 +1633,7 @@ async fn admin_shutdown() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(50, "admin_shutdown", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(50, "admin_shutdown", None)).await;
     assert_eq!(resp["type"], "response");
 }
 
@@ -942,8 +1642,7 @@ async fn server_stats() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(50, "server_stats", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(50, "server_stats", None)).await;
     assert_eq!(resp["type"], "response");
     assert!(resp["value"]["value"]["session_count"].as_u64().unwrap() >= 1);
 }
@@ -953,9 +1652,18 @@ async fn subscribe_returns_subscription_id() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "test"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "test"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
     let sub_frame = serde_json::json!({
         "v": PROTOCOL_VERSION,
@@ -977,9 +1685,18 @@ async fn subscribe_and_receive_event() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "test"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "test"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
     let sub_frame = serde_json::json!({
         "v": PROTOCOL_VERSION,
@@ -995,8 +1712,16 @@ async fn subscribe_and_receive_event() {
     let sub_id = resp["value"]["value"].as_u64().unwrap();
     assert!(sub_id > 0);
 
-    send_recv_json(&mut s, &mut r,
-        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            30,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
@@ -1019,7 +1744,10 @@ async fn subscribe_and_receive_event() {
             _ => continue,
         }
     }
-    assert!(received_event, "expected to receive a detector event within 3s");
+    assert!(
+        received_event,
+        "expected to receive a detector event within 3s"
+    );
 }
 
 // ============================================================
@@ -1036,9 +1764,18 @@ async fn two_clients_see_each_others_revisions() {
     let (mut s_a, mut r_a, _) = json_setup(&srv).await;
     let (mut s_b, mut r_b, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s_a, &mut r_a,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "initial"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "initial"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
     let sub_frame = serde_json::json!({
         "v": PROTOCOL_VERSION, "type": "subscribe", "id": 20,
@@ -1046,16 +1783,40 @@ async fn two_clients_see_each_others_revisions() {
     });
     send_recv_json(&mut s_b, &mut r_b, sub_frame.clone()).await;
 
-    send_recv_json(&mut s_a, &mut r_a,
-        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            30,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    send_recv_json(&mut s_a, &mut r_a,
-        json_req(40, "work_revise", Some(serde_json::json!({
-            "work_id": work_id, "edition": {"text": "client a was here"}
-        })))).await;
+    send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            40,
+            "work_revise",
+            Some(serde_json::json!({
+                "work_id": work_id, "edition": {"text": "client a was here"}
+            })),
+        ),
+    )
+    .await;
 
-    send_recv_json(&mut s_a, &mut r_a,
-        json_req(50, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            50,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
     let deadline = std::time::Duration::from_secs(3);
     let start = std::time::Instant::now();
@@ -1080,8 +1841,16 @@ async fn two_clients_see_each_others_revisions() {
     }
     assert!(got_event, "client B should receive work_revised event");
 
-    let resp = send_recv_json(&mut s_b, &mut r_b,
-        json_req(60, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(
+            60,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"]["text"], "client a was here");
 }
 
@@ -1091,15 +1860,40 @@ async fn grab_lock_prevents_concurrent_edit() {
     let (mut s_a, mut r_a, _) = json_setup(&srv).await;
     let (mut s_b, mut r_b, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s_a, &mut r_a,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "shared"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "shared"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s_a, &mut r_a,
-        json_req(20, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            20,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s_b, &mut r_b,
-        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(
+            30,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
     assert_eq!(resp["code"], "already_grabbed");
 }
@@ -1110,33 +1904,82 @@ async fn delta_conflict_with_concurrent_client() {
     let (mut s_a, mut r_a, _) = json_setup(&srv).await;
     let (mut s_b, mut r_b, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s_a, &mut r_a,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "hello"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "hello"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s_a, &mut r_a,
-        json_req(20, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            20,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    send_recv_json(&mut s_a, &mut r_a,
-        json_req(30, "work_revise", Some(serde_json::json!({
-            "work_id": work_id, "edition": {"text": "hello world"}
-        })))).await;
+    send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            30,
+            "work_revise",
+            Some(serde_json::json!({
+                "work_id": work_id, "edition": {"text": "hello world"}
+            })),
+        ),
+    )
+    .await;
 
-    send_recv_json(&mut s_a, &mut r_a,
-        json_req(40, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            40,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    send_recv_json(&mut s_b, &mut r_b,
-        json_req(50, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(
+            50,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s_b, &mut r_b,
-        json_req(60, "work_revise_delta", Some(serde_json::json!({
-            "work_id": work_id,
-            "base_revision": 0,
-            "ops": [
-                {"type": "retain", "count": 5},
-                {"type": "insert", "text": "!"}
-            ]
-        })))).await;
+    let resp = send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(
+            60,
+            "work_revise_delta",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "base_revision": 0,
+                "ops": [
+                    {"type": "retain", "count": 5},
+                    {"type": "insert", "text": "!"}
+                ]
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["type"], "edition");
     assert_eq!(resp["value"]["value"]["text"], "hello world");
 }
@@ -1147,35 +1990,100 @@ async fn sequential_edits_by_two_clients() {
     let (mut s_a, mut r_a, _) = json_setup(&srv).await;
     let (mut s_b, mut r_b, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s_a, &mut r_a,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "one"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "one"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s_a, &mut r_a,
-        json_req(20, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
-    send_recv_json(&mut s_a, &mut r_a,
-        json_req(30, "work_revise", Some(serde_json::json!({
-            "work_id": work_id, "edition": {"text": "one two"}
-        })))).await;
-    send_recv_json(&mut s_a, &mut r_a,
-        json_req(40, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            20,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            30,
+            "work_revise",
+            Some(serde_json::json!({
+                "work_id": work_id, "edition": {"text": "one two"}
+            })),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            40,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    send_recv_json(&mut s_b, &mut r_b,
-        json_req(50, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
-    send_recv_json(&mut s_b, &mut r_b,
-        json_req(60, "work_revise_delta", Some(serde_json::json!({
-            "work_id": work_id,
-            "base_revision": 1,
-            "ops": [
-                {"type": "retain", "count": 7},
-                {"type": "insert", "text": " three"}
-            ]
-        })))).await;
-    send_recv_json(&mut s_b, &mut r_b,
-        json_req(70, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(
+            50,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(
+            60,
+            "work_revise_delta",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "base_revision": 1,
+                "ops": [
+                    {"type": "retain", "count": 7},
+                    {"type": "insert", "text": " three"}
+                ]
+            })),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(
+            70,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s_a, &mut r_a,
-        json_req(80, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            80,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"]["text"], "one two three");
 }
 
@@ -1185,9 +2093,18 @@ async fn status_events_cross_client() {
     let (mut s_a, mut r_a, _) = json_setup(&srv).await;
     let (mut s_b, mut r_b, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s_a, &mut r_a,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "test"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "test"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
     let sub_frame = serde_json::json!({
         "v": PROTOCOL_VERSION, "type": "subscribe", "id": 20,
@@ -1195,8 +2112,16 @@ async fn status_events_cross_client() {
     });
     send_recv_json(&mut s_a, &mut r_a, sub_frame).await;
 
-    send_recv_json(&mut s_b, &mut r_b,
-        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(
+            30,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
     let deadline = std::time::Duration::from_secs(3);
     let start = std::time::Instant::now();
@@ -1220,8 +2145,16 @@ async fn status_events_cross_client() {
     }
     assert!(got_grabbed, "client A should see client B grab the work");
 
-    send_recv_json(&mut s_b, &mut r_b,
-        json_req(40, "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(
+            40,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
     let start = std::time::Instant::now();
     let mut got_released = false;
@@ -1241,7 +2174,10 @@ async fn status_events_cross_client() {
             _ => continue,
         }
     }
-    assert!(got_released, "client A should see client B release the work");
+    assert!(
+        got_released,
+        "client A should see client B release the work"
+    );
 }
 
 #[tokio::test]
@@ -1249,30 +2185,79 @@ async fn revision_history_preserves_all_edits() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "v0"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "v0"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
     for i in 1..=5u64 {
-        send_recv_json(&mut s, &mut r,
-            json_req((20 + i as u16 * 10), "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
-        send_recv_json(&mut s, &mut r,
-            json_req((21 + i as u16 * 10), "work_revise", Some(serde_json::json!({
-                "work_id": work_id, "edition": {"text": format!("v{}", i)}
-            })))).await;
-        send_recv_json(&mut s, &mut r,
-            json_req((22 + i as u16 * 10), "work_release", Some(serde_json::json!({"work_id": work_id})))).await;
+        send_recv_json(
+            &mut s,
+            &mut r,
+            json_req(
+                (20 + i as u16 * 10),
+                "work_grab",
+                Some(serde_json::json!({"work_id": work_id})),
+            ),
+        )
+        .await;
+        send_recv_json(
+            &mut s,
+            &mut r,
+            json_req(
+                (21 + i as u16 * 10),
+                "work_revise",
+                Some(serde_json::json!({
+                    "work_id": work_id, "edition": {"text": format!("v{}", i)}
+                })),
+            ),
+        )
+        .await;
+        send_recv_json(
+            &mut s,
+            &mut r,
+            json_req(
+                (22 + i as u16 * 10),
+                "work_release",
+                Some(serde_json::json!({"work_id": work_id})),
+            ),
+        )
+        .await;
     }
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(200, "work_revision_count", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            200,
+            "work_revision_count",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], 5);
 
     for i in 0..=5u64 {
-        let resp = send_recv_json(&mut s, &mut r,
-            json_req(300 + i as u16, "work_fetch_revision", Some(serde_json::json!({
-                "work_id": work_id, "number": i
-            })))).await;
+        let resp = send_recv_json(
+            &mut s,
+            &mut r,
+            json_req(
+                300 + i as u16,
+                "work_fetch_revision",
+                Some(serde_json::json!({
+                    "work_id": work_id, "number": i
+                })),
+            ),
+        )
+        .await;
         assert_eq!(resp["value"]["value"]["text"], format!("v{}", i));
     }
 }
@@ -1291,10 +2276,26 @@ async fn work_list_after_create() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "doc1"}})))).await;
-    send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "doc2"}})))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "doc1"}})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "doc2"}})),
+        ),
+    )
+    .await;
 
     let resp = send_recv_json(&mut s, &mut r, json_req(50, "work_list", None)).await;
     let entries = resp["value"]["value"].as_array().unwrap();
@@ -1309,12 +2310,29 @@ async fn work_list_by_owner() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let owner = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "owned"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let owner = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "owned"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(50, "work_list_by_owner", Some(serde_json::json!({"owner": owner})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            50,
+            "work_list_by_owner",
+            Some(serde_json::json!({"owner": owner})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 }
 
@@ -1323,31 +2341,83 @@ async fn link_create_get_delete() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_a = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "source"}}))))
-        .await["value"]["value"].as_u64().unwrap();
-    let work_b = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "target"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "source"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let work_b = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "target"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let link_id = send_recv_json(&mut s, &mut r,
-        json_req(20, "link_create", Some(serde_json::json!({
-            "origin": work_a, "destination": work_b
-        })))).await["value"]["value"].as_u64().unwrap();
+    let link_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": work_a, "destination": work_b
+            })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
     assert!(link_id > 0);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(21, "link_get", Some(serde_json::json!({"link_id": link_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "link_get",
+            Some(serde_json::json!({"link_id": link_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["origin"], work_a);
     assert_eq!(resp["value"]["value"]["destination"], work_b);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(22, "link_delete", Some(serde_json::json!({"link_id": link_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            22,
+            "link_delete",
+            Some(serde_json::json!({"link_id": link_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(23, "link_get", Some(serde_json::json!({"link_id": link_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            23,
+            "link_get",
+            Some(serde_json::json!({"link_id": link_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -1356,20 +2426,54 @@ async fn link_list_for_work() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_a = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "a"}}))))
-        .await["value"]["value"].as_u64().unwrap();
-    let work_b = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "b"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "a"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let work_b = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "b"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s, &mut r,
-        json_req(20, "link_create", Some(serde_json::json!({
-            "origin": work_a, "destination": work_b
-        })))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": work_a, "destination": work_b
+            })),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(30, "link_list_for_work", Some(serde_json::json!({"work_id": work_a})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            30,
+            "link_list_for_work",
+            Some(serde_json::json!({"work_id": work_a})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let links = resp["value"]["value"].as_array().unwrap();
     assert_eq!(links.len(), 1);
@@ -1382,14 +2486,31 @@ async fn find_works_for_content() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let content_ed = send_recv_json(&mut s, &mut r,
-        json_req(10, "edition_store", Some(serde_json::json!({"edition": {"text": "shared content"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let content_ed = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "edition_store",
+            Some(serde_json::json!({"edition": {"text": "shared content"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(20, "find_works_for_content", Some(serde_json::json!({
-            "content_be_id": content_ed
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "find_works_for_content",
+            Some(serde_json::json!({
+                "content_be_id": content_ed
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert!(resp["value"]["value"].as_array().unwrap().is_empty());
 }
@@ -1399,32 +2520,74 @@ async fn delta_edit_success() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "hello world"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "hello world"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let rev0 = send_recv_json(&mut s, &mut r,
-        json_req(20, "work_revision_count", Some(serde_json::json!({"work_id": work_id}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let rev0 = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "work_revision_count",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s, &mut r,
-        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            30,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(40, "work_revise_delta", Some(serde_json::json!({
-            "work_id": work_id,
-            "base_revision": rev0,
-            "ops": [
-                {"type": "retain", "count": 5},
-                {"type": "insert", "text": "beautiful"}
-            ]
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            40,
+            "work_revise_delta",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "base_revision": rev0,
+                "ops": [
+                    {"type": "retain", "count": 5},
+                    {"type": "insert", "text": "beautiful"}
+                ]
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "humber");
     assert_eq!(resp["value"]["value"], rev0 + 1);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(50, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            50,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"]["text"], "hellobeautiful world");
 }
 
@@ -1433,28 +2596,61 @@ async fn delta_edit_conflict_returns_edition() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "hello world"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "hello world"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s, &mut r,
-        json_req(20, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    send_recv_json(&mut s, &mut r,
-        json_req(30, "work_revise", Some(serde_json::json!({
-            "work_id": work_id,
-            "edition": {"text": "hello world"}
-        })))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            30,
+            "work_revise",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "edition": {"text": "hello world"}
+            })),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(40, "work_revise_delta", Some(serde_json::json!({
-            "work_id": work_id,
-            "base_revision": 0,
-            "ops": [
-                {"type": "retain", "count": 5},
-                {"type": "insert", "text": "!"}
-            ]
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            40,
+            "work_revise_delta",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "base_revision": 0,
+                "ops": [
+                    {"type": "retain", "count": 5},
+                    {"type": "insert", "text": "!"}
+                ]
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "edition");
     assert_eq!(resp["value"]["value"]["text"], "hello world");
@@ -1465,28 +2661,61 @@ async fn delta_delete_and_insert() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "the quick brown fox"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "the quick brown fox"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s, &mut r,
-        json_req(20, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(30, "work_revise_delta", Some(serde_json::json!({
-            "work_id": work_id,
-            "base_revision": 0,
-            "ops": [
-                {"type": "retain", "count": 4},
-                {"type": "delete", "count": 5},
-                {"type": "insert", "text": "slow"},
-                {"type": "retain", "count": 7}
-            ]
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            30,
+            "work_revise_delta",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "base_revision": 0,
+                "ops": [
+                    {"type": "retain", "count": 4},
+                    {"type": "delete", "count": 5},
+                    {"type": "insert", "text": "slow"},
+                    {"type": "retain", "count": 7}
+                ]
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["type"], "humber");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(40, "work_get_edition", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            40,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"]["text"], "the slow brown fox");
 }
 
@@ -1500,11 +2729,19 @@ async fn blob_upload_and_get_json() {
     let (mut s, mut r, _) = json_setup(&srv).await;
 
     let data = xudanu::edition::base64_encode(b"hello blob world");
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "blob_upload", Some(serde_json::json!({
-            "data": data,
-            "mime_type": "text/plain"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "blob_upload",
+            Some(serde_json::json!({
+                "data": data,
+                "mime_type": "text/plain"
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "blob_meta");
     let meta = &resp["value"]["value"];
@@ -1513,10 +2750,18 @@ async fn blob_upload_and_get_json() {
     assert_eq!(meta["byte_size"].as_u64().unwrap(), 16);
     assert_eq!(meta["mime_type"].as_str().unwrap(), "text/plain");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "blob_get", Some(serde_json::json!({
-            "content_hash": hash_hex(content_hash)
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "blob_get",
+            Some(serde_json::json!({
+                "content_hash": hash_hex(content_hash)
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "string");
     let decoded = xudanu::edition::base64_decode(resp["value"]["value"].as_str().unwrap()).unwrap();
@@ -1528,25 +2773,57 @@ async fn blob_exists_and_info_json() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "blob_exists", Some(serde_json::json!({"content_hash": hash_hex(99999)})))) .await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "blob_exists",
+            Some(serde_json::json!({"content_hash": hash_hex(99999)})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["type"], "boolean");
     assert!(!resp["value"]["value"].as_bool().unwrap());
 
     let data = xudanu::edition::base64_encode(b"test data");
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "blob_upload", Some(serde_json::json!({
-            "data": data,
-            "mime_type": "image/png"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "blob_upload",
+            Some(serde_json::json!({
+                "data": data,
+                "mime_type": "image/png"
+            })),
+        ),
+    )
+    .await;
     let hash = parse_hash_hex(&resp["value"]["value"]["content_hash"]);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "blob_exists", Some(serde_json::json!({"content_hash": hash_hex(hash)})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "blob_exists",
+            Some(serde_json::json!({"content_hash": hash_hex(hash)})),
+        ),
+    )
+    .await;
     assert!(resp["value"]["value"].as_bool().unwrap());
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(13, "blob_info", Some(serde_json::json!({"content_hash": hash_hex(hash)})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            13,
+            "blob_info",
+            Some(serde_json::json!({"content_hash": hash_hex(hash)})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["type"], "blob_meta");
     let meta = &resp["value"]["value"];
     assert_eq!(meta["mime_type"].as_str().unwrap(), "image/png");
@@ -1558,17 +2835,23 @@ async fn blob_stats_json() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "blob_stats", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(10, "blob_stats", None)).await;
     assert_eq!(resp["value"]["type"], "blob_stats_info");
     assert_eq!(resp["value"]["value"]["total_blobs"].as_u64().unwrap(), 0);
 
     let data = xudanu::edition::base64_encode(b"x");
-    send_recv_json(&mut s, &mut r,
-        json_req(11, "blob_upload", Some(serde_json::json!({"data": data, "mime_type": "text/plain"})))) .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "blob_upload",
+            Some(serde_json::json!({"data": data, "mime_type": "text/plain"})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "blob_stats", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(12, "blob_stats", None)).await;
     assert_eq!(resp["value"]["value"]["total_blobs"].as_u64().unwrap(), 1);
     assert_eq!(resp["value"]["value"]["total_bytes"].as_u64().unwrap(), 1);
 }
@@ -1580,11 +2863,19 @@ async fn blob_upload_requires_login() {
     send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
 
     let data = xudanu::edition::base64_encode(b"unauth");
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(2, "blob_upload", Some(serde_json::json!({
-            "data": data,
-            "mime_type": "text/plain"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "blob_upload",
+            Some(serde_json::json!({
+                "data": data,
+                "mime_type": "text/plain"
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -1593,8 +2884,16 @@ async fn blob_get_not_found_json() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "blob_get", Some(serde_json::json!({"content_hash": hash_hex(99999)})))) .await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "blob_get",
+            Some(serde_json::json!({"content_hash": hash_hex(99999)})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -1604,10 +2903,26 @@ async fn blob_deduplication_json() {
     let (mut s, mut r, _) = json_setup(&srv).await;
 
     let data = xudanu::edition::base64_encode(b"duplicate");
-    let resp1 = send_recv_json(&mut s, &mut r,
-        json_req(10, "blob_upload", Some(serde_json::json!({"data": data.clone(), "mime_type": "text/plain"})))) .await;
-    let resp2 = send_recv_json(&mut s, &mut r,
-        json_req(11, "blob_upload", Some(serde_json::json!({"data": data, "mime_type": "text/plain"})))) .await;
+    let resp1 = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "blob_upload",
+            Some(serde_json::json!({"data": data.clone(), "mime_type": "text/plain"})),
+        ),
+    )
+    .await;
+    let resp2 = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "blob_upload",
+            Some(serde_json::json!({"data": data, "mime_type": "text/plain"})),
+        ),
+    )
+    .await;
     assert_eq!(
         parse_hash_hex(&resp1["value"]["value"]["content_hash"]),
         parse_hash_hex(&resp2["value"]["value"]["content_hash"])
@@ -1620,19 +2935,36 @@ async fn blob_http_get_serves_data() {
     let (mut s, mut r, _) = json_setup(&srv).await;
 
     let data = xudanu::edition::base64_encode(b"http blob test");
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "blob_upload", Some(serde_json::json!({
-            "data": data,
-            "mime_type": "text/plain"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "blob_upload",
+            Some(serde_json::json!({
+                "data": data,
+                "mime_type": "text/plain"
+            })),
+        ),
+    )
+    .await;
     let hash = parse_hash_hex(&resp["value"]["value"]["content_hash"]);
-    let hash_hex_val = resp["value"]["value"]["content_hash"].as_str().unwrap().to_string();
+    let hash_hex_val = resp["value"]["value"]["content_hash"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     let client = reqwest::Client::new();
-    let http_resp = client.get(format!("http://{}/blobs/{}", srv.addr, hash_hex_val))
-        .send().await.unwrap();
+    let http_resp = client
+        .get(format!("http://{}/blobs/{}", srv.addr, hash_hex_val))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(http_resp.status(), 200);
-    assert_eq!(http_resp.headers().get("content-type").unwrap(), "text/plain");
+    assert_eq!(
+        http_resp.headers().get("content-type").unwrap(),
+        "text/plain"
+    );
     let body = http_resp.bytes().await.unwrap();
     assert_eq!(&body[..], b"http blob test");
 }
@@ -1641,8 +2973,11 @@ async fn blob_http_get_serves_data() {
 async fn blob_http_get_not_found() {
     let srv = TestServer::start().await;
     let client = reqwest::Client::new();
-    let http_resp = client.get(format!("http://{}/blobs/{:016x}", srv.addr, 99999u64))
-        .send().await.unwrap();
+    let http_resp = client
+        .get(format!("http://{}/blobs/{:016x}", srv.addr, 99999u64))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(http_resp.status(), 404);
 }
 
@@ -1652,32 +2987,68 @@ async fn overlay_apply_and_get() {
     let (mut s, mut r, _) = json_setup(&srv).await;
 
     let data = xudanu::edition::base64_encode(b"base image bytes");
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "blob_upload", Some(serde_json::json!({
-            "data": data,
-            "mime_type": "image/png"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "blob_upload",
+            Some(serde_json::json!({
+                "data": data,
+                "mime_type": "image/png"
+            })),
+        ),
+    )
+    .await;
     let base_hash = parse_hash_hex(&resp["value"]["value"]["content_hash"]);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "overlay_apply", Some(serde_json::json!({
-            "base_hash": hash_hex(base_hash),
-            "ops": [{"Brightness": 800}, "Grayscale"],
-            "mime_type": "image/png"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "overlay_apply",
+            Some(serde_json::json!({
+                "base_hash": hash_hex(base_hash),
+                "ops": [{"Brightness": 800}, "Grayscale"],
+                "mime_type": "image/png"
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "blob_meta");
     let overlay_hash = parse_hash_hex(&resp["value"]["value"]["content_hash"]);
     assert_ne!(overlay_hash, base_hash);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "overlay_get", Some(serde_json::json!({
-            "overlay_hash": hash_hex(overlay_hash)
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "overlay_get",
+            Some(serde_json::json!({
+                "overlay_hash": hash_hex(overlay_hash)
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["type"], "overlay_info");
-    assert_eq!(parse_hash_hex(&resp["value"]["value"]["base_hash"]), base_hash);
-    assert_eq!(resp["value"]["value"]["mime_type"].as_str().unwrap(), "image/png");
-    assert_eq!(resp["value"]["value"]["operations"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        parse_hash_hex(&resp["value"]["value"]["base_hash"]),
+        base_hash
+    );
+    assert_eq!(
+        resp["value"]["value"]["mime_type"].as_str().unwrap(),
+        "image/png"
+    );
+    assert_eq!(
+        resp["value"]["value"]["operations"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
 }
 
 #[tokio::test]
@@ -1685,10 +3056,18 @@ async fn overlay_requires_login() {
     let srv = TestServer::start().await;
     let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
     send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(2, "overlay_apply", Some(serde_json::json!({
-            "base_hash": hash_hex(1), "ops": [], "mime_type": "image/png"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "overlay_apply",
+            Some(serde_json::json!({
+                "base_hash": hash_hex(1), "ops": [], "mime_type": "image/png"
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -1696,8 +3075,7 @@ async fn overlay_requires_login() {
 async fn label_create() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "label_create", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(10, "label_create", None)).await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "label_info");
     let label_id = resp["value"]["value"]["label_id"].as_u64().unwrap();
@@ -1708,16 +3086,32 @@ async fn label_create() {
 async fn label_get_positions() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "hello"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "hello"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "label_get_positions", Some(serde_json::json!({
-            "work_id": work_id, "label_id": 999
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "label_get_positions",
+            Some(serde_json::json!({
+                "work_id": work_id, "label_id": 999
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "label_positions");
 }
@@ -1726,16 +3120,32 @@ async fn label_get_positions() {
 async fn can_make_identical_same_work() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abc"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abc"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "can_make_identical", Some(serde_json::json!({
-            "source_work_id": work_id, "target_work_id": work_id
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "can_make_identical",
+            Some(serde_json::json!({
+                "source_work_id": work_id, "target_work_id": work_id
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["result"].as_str().unwrap(), "yes");
 }
@@ -1744,21 +3154,45 @@ async fn can_make_identical_same_work() {
 async fn can_make_identical_different_content() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp_a = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abc"}
-        })))).await;
+    let resp_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abc"}
+            })),
+        ),
+    )
+    .await;
     let work_a = resp_a["value"]["value"].as_u64().unwrap();
-    let resp_b = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({
-            "edition": {"text": "xyz"}
-        })))).await;
+    let resp_b = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "xyz"}
+            })),
+        ),
+    )
+    .await;
     let work_b = resp_b["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "can_make_identical", Some(serde_json::json!({
-            "source_work_id": work_a, "target_work_id": work_b
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "can_make_identical",
+            Some(serde_json::json!({
+                "source_work_id": work_a, "target_work_id": work_b
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["result"].as_str().unwrap(), "no");
 }
@@ -1767,18 +3201,37 @@ async fn can_make_identical_different_content() {
 async fn make_range_identical_same_work() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abc"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abc"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "make_range_identical", Some(serde_json::json!({
-            "source_work_id": work_id, "target_work_id": work_id
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "make_range_identical",
+            Some(serde_json::json!({
+                "source_work_id": work_id, "target_work_id": work_id
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
-    assert_eq!(resp["value"]["value"]["outcome"].as_str().unwrap(), "all_unified");
+    assert_eq!(
+        resp["value"]["value"]["outcome"].as_str().unwrap(),
+        "all_unified"
+    );
     assert_eq!(resp["value"]["value"]["failed_count"].as_u64().unwrap(), 0);
 }
 
@@ -1786,17 +3239,33 @@ async fn make_range_identical_same_work() {
 async fn identity_unify_and_resolve() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "identity_unify", Some(serde_json::json!({
-            "source_id": 100, "target_id": 200
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "identity_unify",
+            Some(serde_json::json!({
+                "source_id": 100, "target_id": 200
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["resolved_id"].as_u64().unwrap(), 200);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "identity_resolve", Some(serde_json::json!({
-            "id": 100
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "identity_resolve",
+            Some(serde_json::json!({
+                "id": 100
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["resolved_id"].as_u64().unwrap(), 200);
 }
@@ -1805,17 +3274,33 @@ async fn identity_unify_and_resolve() {
 async fn edition_rebind_requires_grab() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abc"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abc"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "edition_rebind", Some(serde_json::json!({
-            "work_id": work_id, "position": 0,
-            "new_edition": {"text": "Xbc"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "edition_rebind",
+            Some(serde_json::json!({
+                "work_id": work_id, "position": 0,
+                "new_edition": {"text": "Xbc"}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -1823,19 +3308,43 @@ async fn edition_rebind_requires_grab() {
 async fn edition_rebind_after_grab() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abc"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abc"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
-    send_recv_json(&mut s, &mut r,
-        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id})))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "edition_rebind", Some(serde_json::json!({
-            "work_id": work_id, "position": 1,
-            "new_edition": {"text": "Xbc"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "edition_rebind",
+            Some(serde_json::json!({
+                "work_id": work_id, "position": 1,
+                "new_edition": {"text": "Xbc"}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "edition");
@@ -1845,16 +3354,32 @@ async fn edition_rebind_after_grab() {
 async fn edition_retrieve_text_work() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "hello"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "hello"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "edition_retrieve", Some(serde_json::json!({
-            "work_id": work_id
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "edition_retrieve",
+            Some(serde_json::json!({
+                "work_id": work_id
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let bundles = resp["value"]["value"]["bundles"].as_array().unwrap();
     assert!(!bundles.is_empty());
@@ -1868,17 +3393,33 @@ async fn edition_retrieve_text_work() {
 async fn edition_retrieve_with_region() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abcdef"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abcdef"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "edition_retrieve", Some(serde_json::json!({
-            "work_id": work_id,
-            "region": {"starts_inside": false, "transitions": [2, 5]}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "edition_retrieve",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "region": {"starts_inside": false, "transitions": [2, 5]}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let bundles = resp["value"]["value"]["bundles"].as_array().unwrap();
     assert!(!bundles.is_empty());
@@ -1894,16 +3435,32 @@ async fn edition_retrieve_empty_work() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": ""}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": ""}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "edition_retrieve", Some(serde_json::json!({
-            "work_id": work_id
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "edition_retrieve",
+            Some(serde_json::json!({
+                "work_id": work_id
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 }
 
@@ -1911,37 +3468,72 @@ async fn edition_retrieve_empty_work() {
 async fn edition_cost_text_work() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "hello world"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "hello world"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "edition_cost", Some(serde_json::json!({
-            "work_id": work_id,
-            "method": "total_shared"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "edition_cost",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "method": "total_shared"
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert!(resp["value"]["value"]["total_bytes"].as_u64().unwrap() > 0);
-    assert_eq!(resp["value"]["value"]["method"].as_str().unwrap(), "totalshared");
+    assert_eq!(
+        resp["value"]["value"]["method"].as_str().unwrap(),
+        "totalshared"
+    );
 }
 
 #[tokio::test]
 async fn edition_cost_omit_shared() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "test"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "test"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "edition_cost", Some(serde_json::json!({
-            "work_id": work_id,
-            "method": "omit_shared"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "edition_cost",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "method": "omit_shared"
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let billed = resp["value"]["value"]["billed_bytes"].as_u64().unwrap();
     assert!(billed > 0);
@@ -1951,10 +3543,18 @@ async fn edition_cost_omit_shared() {
 async fn edition_retrieve_not_found() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "edition_retrieve", Some(serde_json::json!({
-            "work_id": 99999
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "edition_retrieve",
+            Some(serde_json::json!({
+                "work_id": 99999
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -1962,10 +3562,18 @@ async fn edition_retrieve_not_found() {
 async fn edition_cost_not_found() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "edition_cost", Some(serde_json::json!({
-            "work_id": 99999
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "edition_cost",
+            Some(serde_json::json!({
+                "work_id": 99999
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -1973,22 +3581,46 @@ async fn edition_cost_not_found() {
 async fn content_shared_region_overlap() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abcdef"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abcdef"}
+            })),
+        ),
+    )
+    .await;
     let work_a = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({
-            "edition": {"text": "xyzcde"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "xyzcde"}
+            })),
+        ),
+    )
+    .await;
     let work_b = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "content_shared_region", Some(serde_json::json!({
-            "work_a": work_a, "work_b": work_b
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "content_shared_region",
+            Some(serde_json::json!({
+                "work_a": work_a, "work_b": work_b
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let region = &resp["value"]["value"]["region"];
     assert!(region["transitions"].as_array().unwrap().len() > 0);
@@ -1998,22 +3630,46 @@ async fn content_shared_region_overlap() {
 async fn content_shared_region_no_overlap() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abc"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abc"}
+            })),
+        ),
+    )
+    .await;
     let work_a = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({
-            "edition": {"text": "xyz"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "xyz"}
+            })),
+        ),
+    )
+    .await;
     let work_b = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "content_shared_region", Some(serde_json::json!({
-            "work_a": work_a, "work_b": work_b
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "content_shared_region",
+            Some(serde_json::json!({
+                "work_a": work_a, "work_b": work_b
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let region = &resp["value"]["value"]["region"];
     assert!(region["transitions"].as_array().unwrap().is_empty());
@@ -2023,22 +3679,46 @@ async fn content_shared_region_no_overlap() {
 async fn content_map_shared_to() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abc"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abc"}
+            })),
+        ),
+    )
+    .await;
     let work_a = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({
-            "edition": {"text": "xaybzc"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "xaybzc"}
+            })),
+        ),
+    )
+    .await;
     let work_b = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "content_map_shared_to", Some(serde_json::json!({
-            "work_a": work_a, "work_b": work_b
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "content_map_shared_to",
+            Some(serde_json::json!({
+                "work_a": work_a, "work_b": work_b
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let pairs = resp["value"]["value"]["pairs"].as_array().unwrap();
     assert!(pairs.len() >= 3);
@@ -2048,22 +3728,46 @@ async fn content_map_shared_to() {
 async fn content_map_shared_onto() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abc"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abc"}
+            })),
+        ),
+    )
+    .await;
     let work_a = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abc"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abc"}
+            })),
+        ),
+    )
+    .await;
     let work_b = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "content_map_shared_onto", Some(serde_json::json!({
-            "work_a": work_a, "work_b": work_b
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "content_map_shared_onto",
+            Some(serde_json::json!({
+                "work_a": work_a, "work_b": work_b
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let pairs = resp["value"]["value"]["pairs"].as_array().unwrap();
     assert_eq!(pairs.len(), 3);
@@ -2073,17 +3777,33 @@ async fn content_map_shared_onto() {
 async fn positions_of_element() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abac"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abac"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "positions_of", Some(serde_json::json!({
-            "work_id": work_id,
-            "element": {"Text": {"text": "a"}}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "positions_of",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "element": {"Text": {"text": "a"}}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let region = &resp["value"]["value"]["region"];
     let transitions = region["transitions"].as_array().unwrap();
@@ -2095,21 +3815,45 @@ async fn range_transcluders_basic() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "hello world"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "hello world"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({
-            "edition": {"text": "hello universe"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "hello universe"}
+            })),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "range_transcluders", Some(serde_json::json!({
-            "work_id": work_id
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "range_transcluders",
+            Some(serde_json::json!({
+                "work_id": work_id
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let edition_ids = resp["value"]["value"]["edition_ids"].as_array().unwrap();
     let work_ids = resp["value"]["value"]["work_ids"].as_array().unwrap();
@@ -2127,16 +3871,32 @@ async fn range_transcluders_with_region() {
         })))).await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({
-            "edition": {"entries": [[0, {"Text": {"text": "a"}}], [1, {"Text": {"text": "b"}}]]}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"entries": [[0, {"Text": {"text": "a"}}], [1, {"Text": {"text": "b"}}]]}
+            })),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "range_transcluders", Some(serde_json::json!({
-            "work_id": work_id,
-            "region": {"starts_inside": false, "transitions": [2]}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "range_transcluders",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "region": {"starts_inside": false, "transitions": [2]}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 }
 
@@ -2145,10 +3905,18 @@ async fn range_transcluders_not_found() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "range_transcluders", Some(serde_json::json!({
-            "work_id": 99999
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "range_transcluders",
+            Some(serde_json::json!({
+                "work_id": 99999
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -2157,16 +3925,32 @@ async fn range_works_basic() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "document content"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "document content"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "range_works", Some(serde_json::json!({
-            "work_id": work_id
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "range_works",
+            Some(serde_json::json!({
+                "work_id": work_id
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let work_ids = resp["value"]["value"]["work_ids"].as_array().unwrap();
     assert!(work_ids.contains(&serde_json::json!(work_id)));
@@ -2177,17 +3961,33 @@ async fn range_works_with_region() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "hello world"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "hello world"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "range_works", Some(serde_json::json!({
-            "work_id": work_id,
-            "region": {"starts_inside": false, "transitions": [5]}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "range_works",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "region": {"starts_inside": false, "transitions": [5]}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 }
 
@@ -2196,16 +3996,32 @@ async fn ordered_bundles_text() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abc"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abc"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "ordered_bundles", Some(serde_json::json!({
-            "work_id": work_id
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "ordered_bundles",
+            Some(serde_json::json!({
+                "work_id": work_id
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let bundles = resp["value"]["value"]["bundles"].as_array().unwrap();
     assert!(!bundles.is_empty());
@@ -2216,17 +4032,33 @@ async fn ordered_bundles_with_region() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "abcde"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "abcde"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "ordered_bundles", Some(serde_json::json!({
-            "work_id": work_id,
-            "region": {"starts_inside": false, "transitions": [1, 4]}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "ordered_bundles",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "region": {"starts_inside": false, "transitions": [1, 4]}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let bundles = resp["value"]["value"]["bundles"].as_array().unwrap();
     assert!(!bundles.is_empty());
@@ -2237,10 +4069,18 @@ async fn ordered_bundles_not_found() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "ordered_bundles", Some(serde_json::json!({
-            "work_id": 99999
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "ordered_bundles",
+            Some(serde_json::json!({
+                "work_id": 99999
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -2249,20 +4089,39 @@ async fn transclusion_depth_basic() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "unique content"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "unique content"}
+            })),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "transclusion_depth", Some(serde_json::json!({
-            "work_id": work_id,
-            "position": 0
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "transclusion_depth",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "position": 0
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let depth = resp["value"]["value"]["depth"].as_u64().unwrap();
-    assert!(depth >= 1, "content registered by the work itself has at least depth 1");
+    assert!(
+        depth >= 1,
+        "content registered by the work itself has at least depth 1"
+    );
 }
 
 #[tokio::test]
@@ -2270,24 +4129,48 @@ async fn transclusion_depth_shared_content() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "shared text"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "shared text"}
+            })),
+        ),
+    )
+    .await;
     let _work_a = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({
-            "edition": {"text": "shared text"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "shared text"}
+            })),
+        ),
+    )
+    .await;
     let work_b = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "transclusion_depth", Some(serde_json::json!({
-            "work_id": work_b,
-            "position": 0,
-            "max_depth": 5
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "transclusion_depth",
+            Some(serde_json::json!({
+                "work_id": work_b,
+                "position": 0,
+                "max_depth": 5
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let depth = resp["value"]["value"]["depth"].as_u64().unwrap();
     assert!(depth >= 1);
@@ -2298,11 +4181,19 @@ async fn transclusion_depth_not_found() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "transclusion_depth", Some(serde_json::json!({
-            "work_id": 99999,
-            "position": 0
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "transclusion_depth",
+            Some(serde_json::json!({
+                "work_id": 99999,
+                "position": 0
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -2311,22 +4202,37 @@ async fn admin_recorder_create_and_list() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "admin_recorder_create", Some(serde_json::json!({
-            "kind": "transcluders",
-            "direct_only": true
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "admin_recorder_create",
+            Some(serde_json::json!({
+                "kind": "transcluders",
+                "direct_only": true
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let recorder_id = resp["value"]["value"]["recorder_id"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "admin_recorder_create", Some(serde_json::json!({
-            "kind": "works"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "admin_recorder_create",
+            Some(serde_json::json!({
+                "kind": "works"
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "admin_recorder_list", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(12, "admin_recorder_list", None)).await;
     assert_eq!(resp["type"], "response");
     let recorders = resp["value"]["value"]["recorders"].as_array().unwrap();
     assert!(recorders.len() >= 2);
@@ -2341,24 +4247,48 @@ async fn admin_recorder_record_and_get() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "admin_recorder_create", Some(serde_json::json!({
-            "kind": "transcluders"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "admin_recorder_create",
+            Some(serde_json::json!({
+                "kind": "transcluders"
+            })),
+        ),
+    )
+    .await;
     let recorder_id = resp["value"]["value"]["recorder_id"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "admin_recorder_record", Some(serde_json::json!({
-            "recorder_id": recorder_id,
-            "element": {"Edition": {"edition_id": 42}}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "admin_recorder_record",
+            Some(serde_json::json!({
+                "recorder_id": recorder_id,
+                "element": {"Edition": {"edition_id": 42}}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["recorded"], true);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "admin_recorder_get", Some(serde_json::json!({
-            "recorder_id": recorder_id
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "admin_recorder_get",
+            Some(serde_json::json!({
+                "recorder_id": recorder_id
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let info = &resp["value"]["value"]["recorder"];
     assert_eq!(info["id"].as_u64().unwrap(), recorder_id);
@@ -2370,17 +4300,33 @@ async fn admin_recorder_record_wrong_kind() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "admin_recorder_create", Some(serde_json::json!({
-            "kind": "works"
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "admin_recorder_create",
+            Some(serde_json::json!({
+                "kind": "works"
+            })),
+        ),
+    )
+    .await;
     let recorder_id = resp["value"]["value"]["recorder_id"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "admin_recorder_record", Some(serde_json::json!({
-            "recorder_id": recorder_id,
-            "element": {"Edition": {"edition_id": 42}}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "admin_recorder_record",
+            Some(serde_json::json!({
+                "recorder_id": recorder_id,
+                "element": {"Edition": {"edition_id": 42}}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["recorded"], false);
 }
@@ -2390,8 +4336,7 @@ async fn crypto_get_public_key() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "crypto_get_public_key", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(1, "crypto_get_public_key", None)).await;
     assert_eq!(resp["type"], "response");
     let val = &resp["value"]["value"];
     assert!(val["key_id"].as_u64().is_some());
@@ -2406,20 +4351,39 @@ async fn crypto_sign_and_verify() {
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
     let data: Vec<u8> = vec![1, 2, 3, 4, 5];
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "crypto_sign_data", Some(serde_json::json!({
-            "data": data
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "crypto_sign_data",
+            Some(serde_json::json!({
+                "data": data
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let signature = resp["value"]["value"]["signature"].as_array().unwrap();
     assert_eq!(signature.len(), 64);
 
-    let sig_bytes: Vec<u8> = signature.iter().map(|v| v.as_u64().unwrap() as u8).collect();
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(2, "crypto_verify_signature", Some(serde_json::json!({
-            "data": data,
-            "signature": sig_bytes
-        })))).await;
+    let sig_bytes: Vec<u8> = signature
+        .iter()
+        .map(|v| v.as_u64().unwrap() as u8)
+        .collect();
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "crypto_verify_signature",
+            Some(serde_json::json!({
+                "data": data,
+                "signature": sig_bytes
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["valid"], true);
 }
@@ -2430,19 +4394,35 @@ async fn crypto_verify_rejects_tampered() {
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
     let data: Vec<u8> = vec![1, 2, 3];
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "crypto_sign_data", Some(serde_json::json!({
-            "data": data
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "crypto_sign_data",
+            Some(serde_json::json!({
+                "data": data
+            })),
+        ),
+    )
+    .await;
     let sig = resp["value"]["value"]["signature"].as_array().unwrap();
     let mut tampered: Vec<u8> = sig.iter().map(|v| v.as_u64().unwrap() as u8).collect();
     tampered[0] ^= 0xff;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(2, "crypto_verify_signature", Some(serde_json::json!({
-            "data": data,
-            "signature": tampered
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "crypto_verify_signature",
+            Some(serde_json::json!({
+                "data": data,
+                "signature": tampered
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["valid"], false);
 }
@@ -2452,18 +4432,15 @@ async fn crypto_key_rotation() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "crypto_get_public_key", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(1, "crypto_get_public_key", None)).await;
     let old_key_id = resp["value"]["value"]["key_id"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(2, "crypto_key_rotation", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(2, "crypto_key_rotation", None)).await;
     assert_eq!(resp["type"], "response");
     let new_key_id = resp["value"]["value"]["new_key_id"].as_u64().unwrap();
     assert_ne!(old_key_id, new_key_id);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(3, "crypto_get_public_key", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(3, "crypto_get_public_key", None)).await;
     let current_key_id = resp["value"]["value"]["key_id"].as_u64().unwrap();
     assert_eq!(current_key_id, new_key_id);
 }
@@ -2473,23 +4450,23 @@ async fn crypto_key_history() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "crypto_key_history", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(1, "crypto_key_history", None)).await;
     assert_eq!(resp["type"], "response");
     let val = &resp["value"]["value"];
     assert!(val["current_key_id"].as_u64().is_some());
     assert_eq!(val["entry_count"].as_u64().unwrap(), 1);
 
-    send_recv_json(&mut s, &mut r,
-        json_req(2, "crypto_key_rotation", None)).await;
+    send_recv_json(&mut s, &mut r, json_req(2, "crypto_key_rotation", None)).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(3, "crypto_key_history", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(3, "crypto_key_history", None)).await;
     let val = &resp["value"]["value"];
     assert_eq!(val["entry_count"].as_u64().unwrap(), 2);
     let entries = val["entries"].as_array().unwrap();
     assert_eq!(entries.len(), 2);
-    assert_ne!(entries[0]["key_id"].as_u64().unwrap(), entries[1]["key_id"].as_u64().unwrap());
+    assert_ne!(
+        entries[0]["key_id"].as_u64().unwrap(),
+        entries[1]["key_id"].as_u64().unwrap()
+    );
 }
 
 #[tokio::test]
@@ -2497,10 +4474,18 @@ async fn crypto_sign_requires_admin() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "crypto_sign_data", Some(serde_json::json!({
-            "data": [1, 2, 3]
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "crypto_sign_data",
+            Some(serde_json::json!({
+                "data": [1, 2, 3]
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -2509,10 +4494,18 @@ async fn admin_recorder_not_found() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "admin_recorder_get", Some(serde_json::json!({
-            "recorder_id": 99999
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "admin_recorder_get",
+            Some(serde_json::json!({
+                "recorder_id": 99999
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert!(resp["value"]["value"]["recorder"].is_null());
 }
@@ -2522,11 +4515,19 @@ async fn admin_recorder_record_not_found() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "admin_recorder_record", Some(serde_json::json!({
-            "recorder_id": 99999,
-            "element": {"Edition": {"edition_id": 1}}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "admin_recorder_record",
+            Some(serde_json::json!({
+                "recorder_id": 99999,
+                "element": {"Edition": {"edition_id": 1}}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["recorded"], false);
 }
@@ -2536,25 +4537,58 @@ async fn work_endorse_and_query() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let admin_club_id = send_recv_json(&mut s, &mut r,
-        json_req(50, "club_id_by_name", Some(serde_json::json!({"name": "admin"})))).await
-        ["value"]["value"].as_u64().unwrap();
+    let admin_club_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            50,
+            "club_id_by_name",
+            Some(serde_json::json!({"name": "admin"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "work_create", Some(serde_json::json!({"edition": "empty"})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "work_create",
+            Some(serde_json::json!({"edition": "empty"})),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(2, "work_endorse", Some(serde_json::json!({
-            "work_id": work_id,
-            "endorsements": [[admin_club_id, 10], [admin_club_id, 20]]
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "work_endorse",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "endorsements": [[admin_club_id, 10], [admin_club_id, 20]]
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(3, "work_endorsements", Some(serde_json::json!({
-            "work_id": work_id
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            3,
+            "work_endorsements",
+            Some(serde_json::json!({
+                "work_id": work_id
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let endorsements = resp["value"]["value"]["endorsements"].as_array().unwrap();
     assert_eq!(endorsements.len(), 2);
@@ -2565,31 +4599,72 @@ async fn work_endorse_retract() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let admin_club_id = send_recv_json(&mut s, &mut r,
-        json_req(100, "club_id_by_name", Some(serde_json::json!({"name": "admin"})))).await
-        ["value"]["value"].as_u64().unwrap();
+    let admin_club_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            100,
+            "club_id_by_name",
+            Some(serde_json::json!({"name": "admin"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "work_create", Some(serde_json::json!({"edition": "empty"})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "work_create",
+            Some(serde_json::json!({"edition": "empty"})),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    send_recv_json(&mut s, &mut r,
-        json_req(2, "work_endorse", Some(serde_json::json!({
-            "work_id": work_id,
-            "endorsements": [[admin_club_id, 10], [admin_club_id, 20]]
-        })))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "work_endorse",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "endorsements": [[admin_club_id, 10], [admin_club_id, 20]]
+            })),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(3, "work_retract", Some(serde_json::json!({
-            "work_id": work_id,
-            "endorsements": [[admin_club_id, 10]]
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            3,
+            "work_retract",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "endorsements": [[admin_club_id, 10]]
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(4, "work_endorsements", Some(serde_json::json!({
-            "work_id": work_id
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            4,
+            "work_endorsements",
+            Some(serde_json::json!({
+                "work_id": work_id
+            })),
+        ),
+    )
+    .await;
     let endorsements = resp["value"]["value"]["endorsements"].as_array().unwrap();
     assert_eq!(endorsements.len(), 1);
 }
@@ -2599,26 +4674,61 @@ async fn edition_endorse_and_query() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let admin_club_id = send_recv_json(&mut s, &mut r,
-        json_req(50, "club_id_by_name", Some(serde_json::json!({"name": "admin"})))).await
-        ["value"]["value"].as_u64().unwrap();
+    let admin_club_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            50,
+            "club_id_by_name",
+            Some(serde_json::json!({"name": "admin"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let edition_id = send_recv_json(&mut s, &mut r,
-        json_req(1, "edition_store", Some(serde_json::json!({
-            "edition": {"text": "test content"}
-        })))).await["value"]["value"].as_u64().unwrap();
+    let edition_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "edition_store",
+            Some(serde_json::json!({
+                "edition": {"text": "test content"}
+            })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(2, "edition_endorse", Some(serde_json::json!({
-            "edition_id": edition_id,
-            "endorsements": [[admin_club_id, 5]]
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "edition_endorse",
+            Some(serde_json::json!({
+                "edition_id": edition_id,
+                "endorsements": [[admin_club_id, 5]]
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(3, "edition_endorsements", Some(serde_json::json!({
-            "edition_id": edition_id
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            3,
+            "edition_endorsements",
+            Some(serde_json::json!({
+                "edition_id": edition_id
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let endorsements = resp["value"]["value"]["endorsements"].as_array().unwrap();
     assert_eq!(endorsements.len(), 1);
@@ -2629,15 +4739,31 @@ async fn endorsement_requires_authority() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "work_create", Some(serde_json::json!({"edition": "empty"})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "work_create",
+            Some(serde_json::json!({"edition": "empty"})),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(2, "work_endorse", Some(serde_json::json!({
-            "work_id": work_id,
-            "endorsements": [[99, 1]]
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "work_endorse",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "endorsements": [[99, 1]]
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -2646,30 +4772,71 @@ async fn work_endorse_idempotent() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_admin_login(&srv).await;
 
-    let admin_club_id = send_recv_json(&mut s, &mut r,
-        json_req(100, "club_id_by_name", Some(serde_json::json!({"name": "admin"})))).await
-        ["value"]["value"].as_u64().unwrap();
+    let admin_club_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            100,
+            "club_id_by_name",
+            Some(serde_json::json!({"name": "admin"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "work_create", Some(serde_json::json!({"edition": "empty"})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "work_create",
+            Some(serde_json::json!({"edition": "empty"})),
+        ),
+    )
+    .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
-    send_recv_json(&mut s, &mut r,
-        json_req(2, "work_endorse", Some(serde_json::json!({
-            "work_id": work_id,
-            "endorsements": [[admin_club_id, 10]]
-        })))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "work_endorse",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "endorsements": [[admin_club_id, 10]]
+            })),
+        ),
+    )
+    .await;
 
-    send_recv_json(&mut s, &mut r,
-        json_req(3, "work_endorse", Some(serde_json::json!({
-            "work_id": work_id,
-            "endorsements": [[admin_club_id, 10]]
-        })))).await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            3,
+            "work_endorse",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "endorsements": [[admin_club_id, 10]]
+            })),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(4, "work_endorsements", Some(serde_json::json!({
-            "work_id": work_id
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            4,
+            "work_endorsements",
+            Some(serde_json::json!({
+                "work_id": work_id
+            })),
+        ),
+    )
+    .await;
     let endorsements = resp["value"]["value"]["endorsements"].as_array().unwrap();
     assert_eq!(endorsements.len(), 1);
 }
@@ -2681,8 +4848,7 @@ async fn federation_info_returns_server_identity() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "federation_info", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(1, "federation_info", None)).await;
     assert_eq!(resp["type"], "response");
     let val = &resp["value"]["value"];
     assert!(!val["server_id"].as_str().unwrap().is_empty());
@@ -2701,8 +4867,7 @@ async fn federation_peers_returns_empty_when_unconfigured() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "federation_peers", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(1, "federation_peers", None)).await;
     assert_eq!(resp["type"], "response");
     let peers = resp["value"]["value"]["peers"].as_array().unwrap();
     assert_eq!(peers.len(), 0);
@@ -2713,13 +4878,14 @@ async fn federation_info_no_auth_required() {
     let srv = TestServer::start().await;
     let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
-    let _resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "session_connect", None)).await;
+    let _resp = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(2, "federation_info", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(2, "federation_info", None)).await;
     assert_eq!(resp["type"], "response");
-    assert!(!resp["value"]["value"]["server_id"].as_str().unwrap().is_empty());
+    assert!(!resp["value"]["value"]["server_id"]
+        .as_str()
+        .unwrap()
+        .is_empty());
 }
 
 // ── Federation transport tests (Phase 15) ────────────────────────────
@@ -2734,9 +4900,11 @@ impl FederationTestServer {
         let server = Server::new();
         let state = AppState::new(server).shared();
         let client_router = build_router(state.clone());
-        let fed_router = xudanu::server::transport::federation_handler::build_federation_router(state.clone());
-        let app = xudanu::server::transport::federation_handler::merge_routers(client_router, fed_router)
-            .into_make_service_with_connect_info::<std::net::SocketAddr>();
+        let fed_router =
+            xudanu::server::transport::federation_handler::build_federation_router(state.clone());
+        let app =
+            xudanu::server::transport::federation_handler::merge_routers(client_router, fed_router)
+                .into_make_service_with_connect_info::<std::net::SocketAddr>();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -2770,15 +4938,18 @@ async fn federation_handshake_between_two_servers() {
         srv_b_inner.federation_register_peer_key(a_key);
     });
 
-    let (mut ws_a, _) = tokio_tungstenite::connect_async(srv_a.federation_url()).await.unwrap();
+    let (mut ws_a, _) = tokio_tungstenite::connect_async(srv_a.federation_url())
+        .await
+        .unwrap();
 
     let msg_from_a = ws_a.next().await.unwrap().unwrap();
-    let hello_a: serde_json::Value = serde_json::from_str(
-        msg_from_a.to_text().unwrap()
-    ).unwrap();
+    let hello_a: serde_json::Value = serde_json::from_str(msg_from_a.to_text().unwrap()).unwrap();
     assert_eq!(hello_a["type"], "Hello");
     assert_eq!(hello_a["protocol_version"], 1);
-    assert_eq!(hello_a["ephemeral_public_key"].as_array().unwrap().len(), 32);
+    assert_eq!(
+        hello_a["ephemeral_public_key"].as_array().unwrap().len(),
+        32
+    );
 
     let fake_hello = serde_json::json!({
         "type": "Hello",
@@ -2787,13 +4958,13 @@ async fn federation_handshake_between_two_servers() {
         "server_id": "test-peer"
     });
     ws_a.send(tokio_tungstenite::tungstenite::Message::Text(
-        fake_hello.to_string().into()
-    )).await.unwrap();
+        fake_hello.to_string().into(),
+    ))
+    .await
+    .unwrap();
 
     let sig_from_a = ws_a.next().await.unwrap().unwrap();
-    let sig_a: serde_json::Value = serde_json::from_str(
-        sig_from_a.to_text().unwrap()
-    ).unwrap();
+    let sig_a: serde_json::Value = serde_json::from_str(sig_from_a.to_text().unwrap()).unwrap();
     assert_eq!(sig_a["type"], "Signature");
     assert_eq!(sig_a["signature"].as_array().unwrap().len(), 64);
     assert_eq!(sig_a["verifying_key"].as_array().unwrap().len(), 32);
@@ -2805,8 +4976,12 @@ async fn federation_handshake_between_two_servers() {
             "signature": vec![0u8; 64],
             "verifying_key": sig_a["verifying_key"],
             "kex_key": sig_a["kex_key"],
-        }).to_string().into()
-    )).await.unwrap();
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
 
     let ready_msg = ws_a.next().await.unwrap().unwrap();
     match ready_msg {
@@ -2833,37 +5008,58 @@ async fn federation_content_replication_between_two_servers() {
     let srv_a = FederationTestServer::start().await;
     let srv_b = FederationTestServer::start().await;
 
-    let url_a = format!("ws://{}/xudanu?format=json&version={}", srv_a.addr, PROTOCOL_VERSION);
+    let url_a = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv_a.addr, PROTOCOL_VERSION
+    );
     let (stream_a, _) = tokio_tungstenite::connect_async(&url_a).await.unwrap();
     let (mut s_a, mut r_a) = stream_a.split();
     recv_handshake(&mut r_a).await;
-    let _ = send_recv_json(&mut s_a, &mut r_a,
-        json_req(1, "session_connect", None)).await;
-    let _ = send_recv_json(&mut s_a, &mut r_a,
-        json_req(2, "session_login_public", None)).await;
+    let _ = send_recv_json(&mut s_a, &mut r_a, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(2, "session_login_public", None),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s_a, &mut r_a,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "Hello from server A"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "Hello from server A"}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let _work_id_a = resp["value"]["value"].as_u64().unwrap();
 
-    let url_b = format!("ws://{}/xudanu?format=json&version={}", srv_b.addr, PROTOCOL_VERSION);
+    let url_b = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv_b.addr, PROTOCOL_VERSION
+    );
     let (stream_b, _) = tokio_tungstenite::connect_async(&url_b).await.unwrap();
     let (mut s_b, mut r_b) = stream_b.split();
     recv_handshake(&mut r_b).await;
-    let _ = send_recv_json(&mut s_b, &mut r_b,
-        json_req(1, "session_connect", None)).await;
-    let _ = send_recv_json(&mut s_b, &mut r_b,
-        json_req(2, "session_login_public", None)).await;
+    let _ = send_recv_json(&mut s_b, &mut r_b, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(2, "session_login_public", None),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s_b, &mut r_b,
-        json_req(10, "work_list", None)).await;
+    let resp = send_recv_json(&mut s_b, &mut r_b, json_req(10, "work_list", None)).await;
     assert_eq!(resp["type"], "response");
     let initial_b_count = resp["value"]["value"].as_array().unwrap().len();
 
-    let (mut fed_a, _) = tokio_tungstenite::connect_async(srv_a.federation_url()).await.unwrap();
+    let (mut fed_a, _) = tokio_tungstenite::connect_async(srv_a.federation_url())
+        .await
+        .unwrap();
 
     let hello_from_a = fed_a.next().await.unwrap().unwrap();
     let hello_a: serde_json::Value = serde_json::from_str(hello_from_a.to_text().unwrap()).unwrap();
@@ -2877,28 +5073,34 @@ async fn federation_content_replication_between_two_servers() {
         "ephemeral_public_key": my_eph.to_vec(),
         "server_id": "test-client"
     });
-    fed_a.send(tokio_tungstenite::tungstenite::Message::Text(
-        fake_hello.to_string().into()
-    )).await.unwrap();
+    fed_a
+        .send(tokio_tungstenite::tungstenite::Message::Text(
+            fake_hello.to_string().into(),
+        ))
+        .await
+        .unwrap();
 
     let sig_from_a = fed_a.next().await.unwrap().unwrap();
     let sig_a: serde_json::Value = serde_json::from_str(sig_from_a.to_text().unwrap()).unwrap();
     assert_eq!(sig_a["type"], "Signature");
 
-    fed_a.send(tokio_tungstenite::tungstenite::Message::Text(
-        serde_json::json!({
-            "type": "Signature",
-            "signature": vec![0u8; 64],
-            "verifying_key": sig_a["verifying_key"],
-            "kex_key": sig_a["kex_key"],
-        }).to_string().into()
-    )).await.unwrap();
+    fed_a
+        .send(tokio_tungstenite::tungstenite::Message::Text(
+            serde_json::json!({
+                "type": "Signature",
+                "signature": vec![0u8; 64],
+                "verifying_key": sig_a["verifying_key"],
+                "kex_key": sig_a["kex_key"],
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .unwrap();
 
     let next_msg = fed_a.next().await.unwrap().unwrap();
     let next_val: serde_json::Value = match next_msg {
-        tokio_tungstenite::tungstenite::Message::Text(text) => {
-            serde_json::from_str(&text).unwrap()
-        }
+        tokio_tungstenite::tungstenite::Message::Text(text) => serde_json::from_str(&text).unwrap(),
         tokio_tungstenite::tungstenite::Message::Binary(_) => {
             // If we somehow got an encrypted response, the handshake
             // completed. Fall through to server-side verification.
@@ -2908,32 +5110,41 @@ async fn federation_content_replication_between_two_servers() {
     };
 
     if next_val["type"] == "error" || next_val["type"] == "encrypted_ready" {
-        let push = srv_a.state.server.with_server(|srv| {
-            srv.federation_export_works()
-        });
+        let push = srv_a
+            .state
+            .server
+            .with_server(|srv| srv.federation_export_works());
         assert!(push.len() >= 1);
         let mut found = false;
         for w in &push {
             match &w.edition_payload {
                 xudanu::server::transport::protocol::EditionPayload::Text(t) => {
-                    if t == "Hello from server A" { found = true; }
+                    if t == "Hello from server A" {
+                        found = true;
+                    }
                 }
                 _ => {}
             }
         }
         assert!(found, "export should contain 'Hello from server A'");
 
-        let my_id = srv_b.state.server.with_server_ref(|srv| srv.federation_server_id());
-        let (imported, _already) = srv_b.state.server.with_server(|srv| {
-            srv.federation_import_works(&push, &my_id)
-        });
+        let my_id = srv_b
+            .state
+            .server
+            .with_server_ref(|srv| srv.federation_server_id());
+        let (imported, _already) = srv_b
+            .state
+            .server
+            .with_server(|srv| srv.federation_import_works(&push, &my_id));
         assert!(imported >= 1);
 
-        let resp = send_recv_json(&mut s_b, &mut r_b,
-            json_req(11, "work_list", None)).await;
+        let resp = send_recv_json(&mut s_b, &mut r_b, json_req(11, "work_list", None)).await;
         assert_eq!(resp["type"], "response");
         let after_b_count = resp["value"]["value"].as_array().unwrap().len();
-        assert!(after_b_count > initial_b_count, "server B should have more works after import");
+        assert!(
+            after_b_count > initial_b_count,
+            "server B should have more works after import"
+        );
         return;
     }
 
@@ -2947,41 +5158,68 @@ async fn federated_transclusion_records_origin_on_import() {
     let srv_a = FederationTestServer::start().await;
     let srv_b = FederationTestServer::start().await;
 
-    let url_a = format!("ws://{}/xudanu?format=json&version={}", srv_a.addr, PROTOCOL_VERSION);
+    let url_a = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv_a.addr, PROTOCOL_VERSION
+    );
     let (stream_a, _) = tokio_tungstenite::connect_async(&url_a).await.unwrap();
     let (mut s_a, mut r_a) = stream_a.split();
     recv_handshake(&mut r_a).await;
-    let _ = send_recv_json(&mut s_a, &mut r_a,
-        json_req(1, "session_connect", None)).await;
-    let _ = send_recv_json(&mut s_a, &mut r_a,
-        json_req(2, "session_login_public", None)).await;
+    let _ = send_recv_json(&mut s_a, &mut r_a, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(2, "session_login_public", None),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s_a, &mut r_a,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "unique federated text"}
-        })))).await;
+    let resp = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "unique federated text"}
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 
-    let push = srv_a.state.server.with_server(|srv| {
-        srv.federation_export_works()
-    });
+    let push = srv_a
+        .state
+        .server
+        .with_server(|srv| srv.federation_export_works());
     assert!(push.len() >= 1);
 
-    let my_id = srv_b.state.server.with_server_ref(|srv| srv.federation_server_id());
-    let (imported, _) = srv_b.state.server.with_server(|srv| {
-        srv.federation_import_works(&push, &my_id)
-    });
+    let my_id = srv_b
+        .state
+        .server
+        .with_server_ref(|srv| srv.federation_server_id());
+    let (imported, _) = srv_b
+        .state
+        .server
+        .with_server(|srv| srv.federation_import_works(&push, &my_id));
     assert!(imported >= 1);
 
-    let has_origins = srv_b.state.server.with_server_ref(|srv| {
-        srv.federation_remote_origin_count() > 0
-    });
-    assert!(has_origins, "server B should have remote origin entries after import");
+    let has_origins = srv_b
+        .state
+        .server
+        .with_server_ref(|srv| srv.federation_remote_origin_count() > 0);
+    assert!(
+        has_origins,
+        "server B should have remote origin entries after import"
+    );
 
-    let has_federated = srv_b.state.server.with_server_ref(|srv| {
-        srv.federation_has_federated_transclusions()
-    });
-    assert!(has_federated, "server B should have federated transclusion entries");
+    let has_federated = srv_b
+        .state
+        .server
+        .with_server_ref(|srv| srv.federation_has_federated_transclusions());
+    assert!(
+        has_federated,
+        "server B should have federated transclusion entries"
+    );
 }
 
 #[tokio::test]
@@ -2991,32 +5229,52 @@ async fn federated_transclusion_query_returns_local_results() {
         srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
     });
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv.addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(1, "session_connect", None)).await;
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(2, "session_login_public", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "hello"}
-        })))).await;
+    let _ = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "hello"}
+            })),
+        ),
+    )
+    .await;
 
     let text_elem = xudanu::edition::RangeElement::text("h".to_string());
     let fp = text_elem.content_fingerprint();
     let fp_hex: String = fp.iter().map(|b| format!("{:02x}", b)).collect();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "federated_transclusion_query", Some(serde_json::json!({
-            "content_fingerprint_hex": fp_hex,
-            "direct_only": false
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "federated_transclusion_query",
+            Some(serde_json::json!({
+                "content_fingerprint_hex": fp_hex,
+                "direct_only": false
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let results = resp["value"]["value"]["results"].as_array().unwrap();
-    assert!(!results.is_empty(), "should find local transclusion results");
+    assert!(
+        !results.is_empty(),
+        "should find local transclusion results"
+    );
 }
 
 #[tokio::test]
@@ -3026,28 +5284,45 @@ async fn federated_content_fetch_returns_edition() {
         srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
     });
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv.addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(1, "session_connect", None)).await;
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(2, "session_login_public", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "fetch me"}
-        })))).await;
+    let _ = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "fetch me"}
+            })),
+        ),
+    )
+    .await;
 
     let text_elem = xudanu::edition::RangeElement::text("f".to_string());
     let fp = text_elem.content_fingerprint();
     let fp_hex: String = fp.iter().map(|b| format!("{:02x}", b)).collect();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "federated_content_fetch", Some(serde_json::json!({
-            "content_fingerprint_hex": fp_hex
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "federated_content_fetch",
+            Some(serde_json::json!({
+                "content_fingerprint_hex": fp_hex
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["found"], true);
 }
@@ -3059,19 +5334,28 @@ async fn federated_content_fetch_not_found() {
         srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
     });
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv.addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(1, "session_connect", None)).await;
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(2, "session_login_public", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "federated_content_fetch", Some(serde_json::json!({
-            "content_fingerprint_hex": "ff".repeat(32)
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "federated_content_fetch",
+            Some(serde_json::json!({
+                "content_fingerprint_hex": "ff".repeat(32)
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["found"], false);
 }
@@ -3084,50 +5368,95 @@ async fn cross_server_transclusion_after_sync() {
         srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
     });
 
-    let url_a = format!("ws://{}/xudanu?format=json&version={}", srv_a.addr, PROTOCOL_VERSION);
+    let url_a = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv_a.addr, PROTOCOL_VERSION
+    );
     let (stream_a, _) = tokio_tungstenite::connect_async(&url_a).await.unwrap();
     let (mut s_a, mut r_a) = stream_a.split();
     recv_handshake(&mut r_a).await;
     let _ = send_recv_json(&mut s_a, &mut r_a, json_req(1, "session_connect", None)).await;
-    let _ = send_recv_json(&mut s_a, &mut r_a, json_req(2, "session_login_public", None)).await;
+    let _ = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(2, "session_login_public", None),
+    )
+    .await;
 
-    let _ = send_recv_json(&mut s_a, &mut r_a,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "shared across servers"}
-        })))).await;
+    let _ = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "shared across servers"}
+            })),
+        ),
+    )
+    .await;
 
-    let push = srv_a.state.server.with_server(|srv| srv.federation_export_works());
-    let my_id = srv_b.state.server.with_server_ref(|srv| srv.federation_server_id());
-    srv_b.state.server.with_server(|srv| {
-        srv.federation_import_works(&push, &my_id)
-    });
+    let push = srv_a
+        .state
+        .server
+        .with_server(|srv| srv.federation_export_works());
+    let my_id = srv_b
+        .state
+        .server
+        .with_server_ref(|srv| srv.federation_server_id());
+    srv_b
+        .state
+        .server
+        .with_server(|srv| srv.federation_import_works(&push, &my_id));
 
     let text_elem = xudanu::edition::RangeElement::text("s".to_string());
     let fp = text_elem.content_fingerprint();
     let fp_hex: String = fp.iter().map(|b| format!("{:02x}", b)).collect();
 
-    let url_b = format!("ws://{}/xudanu?format=json&version={}", srv_b.addr, PROTOCOL_VERSION);
+    let url_b = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv_b.addr, PROTOCOL_VERSION
+    );
     let (stream_b, _) = tokio_tungstenite::connect_async(&url_b).await.unwrap();
     let (mut s_b, mut r_b) = stream_b.split();
     recv_handshake(&mut r_b).await;
     let _ = send_recv_json(&mut s_b, &mut r_b, json_req(1, "session_connect", None)).await;
-    let _ = send_recv_json(&mut s_b, &mut r_b, json_req(2, "session_login_public", None)).await;
+    let _ = send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(2, "session_login_public", None),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s_b, &mut r_b,
-        json_req(10, "federated_transclusion_query", Some(serde_json::json!({
-            "content_fingerprint_hex": fp_hex,
-            "direct_only": false
-        })))).await;
+    let resp = send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(
+            10,
+            "federated_transclusion_query",
+            Some(serde_json::json!({
+                "content_fingerprint_hex": fp_hex,
+                "direct_only": false
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let results = resp["value"]["value"]["results"].as_array().unwrap();
-    assert!(!results.is_empty(), "server B should find transclusion results after sync");
+    assert!(
+        !results.is_empty(),
+        "server B should find transclusion results after sync"
+    );
 }
 
 #[tokio::test]
 async fn federated_transclusion_query_rejected_when_federation_disabled() {
     let srv = FederationTestServer::start().await;
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv.addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
@@ -3135,19 +5464,33 @@ async fn federated_transclusion_query_rejected_when_federation_disabled() {
     let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
     let fp_hex = "ab".repeat(32);
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "federated_transclusion_query", Some(serde_json::json!({
-            "content_fingerprint_hex": fp_hex,
-            "direct_only": false
-        })))).await;
-    assert_eq!(resp["type"], "error", "should reject transclusion query when federation disabled");
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "federated_transclusion_query",
+            Some(serde_json::json!({
+                "content_fingerprint_hex": fp_hex,
+                "direct_only": false
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(
+        resp["type"], "error",
+        "should reject transclusion query when federation disabled"
+    );
 }
 
 #[tokio::test]
 async fn federated_content_fetch_rejected_when_federation_disabled() {
     let srv = FederationTestServer::start().await;
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv.addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
@@ -3155,11 +5498,22 @@ async fn federated_content_fetch_rejected_when_federation_disabled() {
     let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
     let fp_hex = "ff".repeat(32);
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "federated_content_fetch", Some(serde_json::json!({
-            "content_fingerprint_hex": fp_hex
-        })))).await;
-    assert_eq!(resp["type"], "error", "should reject content fetch when federation disabled");
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "federated_content_fetch",
+            Some(serde_json::json!({
+                "content_fingerprint_hex": fp_hex
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(
+        resp["type"], "error",
+        "should reject content fetch when federation disabled"
+    );
 }
 
 // =====================================================================
@@ -3173,27 +5527,49 @@ async fn endorsement_add_returns_tag() {
         srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
     });
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv.addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "endorsed content"}
-        })))).await;
+    let _ = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "endorsed content"}
+            })),
+        ),
+    )
+    .await;
 
-    let states = srv.state.server.with_server(|srv| srv.reconcile_export_all());
+    let states = srv
+        .state
+        .server
+        .with_server(|srv| srv.reconcile_export_all());
     let fp = &states[0].work_fingerprint;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "endorsement_add", Some(serde_json::json!({
-            "work_fingerprint": fp,
-            "club_id": 42,
-            "token_id": 7
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "endorsement_add",
+            Some(serde_json::json!({
+                "work_fingerprint": fp,
+                "club_id": 42,
+                "token_id": 7
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert!(resp["value"]["value"]["tag_counter"].as_u64().unwrap() > 0);
 }
@@ -3205,32 +5581,62 @@ async fn endorsement_query_returns_added_endorsements() {
         srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
     });
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv.addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "query me"}
-        })))).await;
+    let _ = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "query me"}
+            })),
+        ),
+    )
+    .await;
 
-    let states = srv.state.server.with_server(|srv| srv.reconcile_export_all());
+    let states = srv
+        .state
+        .server
+        .with_server(|srv| srv.reconcile_export_all());
     let fp = &states[0].work_fingerprint;
 
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(11, "endorsement_add", Some(serde_json::json!({
-            "work_fingerprint": fp,
-            "club_id": 5,
-            "token_id": 10
-        })))).await;
+    let _ = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "endorsement_add",
+            Some(serde_json::json!({
+                "work_fingerprint": fp,
+                "club_id": 5,
+                "token_id": 10
+            })),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "endorsement_query", Some(serde_json::json!({
-            "work_fingerprint": fp
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "endorsement_query",
+            Some(serde_json::json!({
+                "work_fingerprint": fp
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let endorsements = resp["value"]["value"]["endorsements"].as_array().unwrap();
     assert_eq!(endorsements.len(), 1);
@@ -3245,22 +5651,41 @@ async fn state_sync_returns_reconcile_states() {
         srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
     });
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv.addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "sync state"}
-        })))).await;
+    let _ = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "sync state"}
+            })),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "state_sync", Some(serde_json::json!({
-            "work_fingerprints": []
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "state_sync",
+            Some(serde_json::json!({
+                "work_fingerprints": []
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let states = resp["value"]["value"]["states"].as_array().unwrap();
     assert!(!states.is_empty(), "should return reconcile states");
@@ -3273,29 +5698,54 @@ async fn state_alternatives_returns_editions() {
         srv.set_federation_config(xudanu::server::federation::FederationConfig::closed(vec![]));
     });
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", srv.addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv.addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "alt content"}
-        })))).await;
+    let _ = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "alt content"}
+            })),
+        ),
+    )
+    .await;
 
-    let states = srv.state.server.with_server(|srv| srv.reconcile_export_all());
+    let states = srv
+        .state
+        .server
+        .with_server(|srv| srv.reconcile_export_all());
     let fp = &states[0].work_fingerprint;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "state_alternatives", Some(serde_json::json!({
-            "work_fingerprint": fp
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "state_alternatives",
+            Some(serde_json::json!({
+                "work_fingerprint": fp
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let alternatives = resp["value"]["value"]["alternatives"].as_array().unwrap();
     assert_eq!(alternatives.len(), 1);
-    assert!(!resp["value"]["value"]["current_key"].as_str().unwrap().is_empty());
+    assert!(!resp["value"]["value"]["current_key"]
+        .as_str()
+        .unwrap()
+        .is_empty());
 }
 
 #[tokio::test]
@@ -3303,19 +5753,38 @@ async fn reconcile_merge_across_servers() {
     let srv_a = FederationTestServer::start().await;
     let srv_b = FederationTestServer::start().await;
 
-    let url_a = format!("ws://{}/xudanu?format=json&version={}", srv_a.addr, PROTOCOL_VERSION);
+    let url_a = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv_a.addr, PROTOCOL_VERSION
+    );
     let (stream_a, _) = tokio_tungstenite::connect_async(&url_a).await.unwrap();
     let (mut s_a, mut r_a) = stream_a.split();
     recv_handshake(&mut r_a).await;
     let _ = send_recv_json(&mut s_a, &mut r_a, json_req(1, "session_connect", None)).await;
-    let _ = send_recv_json(&mut s_a, &mut r_a, json_req(2, "session_login_public", None)).await;
+    let _ = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(2, "session_login_public", None),
+    )
+    .await;
 
-    let _ = send_recv_json(&mut s_a, &mut r_a,
-        json_req(10, "work_create", Some(serde_json::json!({
-            "edition": {"text": "shared content for reconcile"}
-        })))).await;
+    let _ = send_recv_json(
+        &mut s_a,
+        &mut r_a,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({
+                "edition": {"text": "shared content for reconcile"}
+            })),
+        ),
+    )
+    .await;
 
-    let states_a = srv_a.state.server.with_server(|srv| srv.reconcile_export_all());
+    let states_a = srv_a
+        .state
+        .server
+        .with_server(|srv| srv.reconcile_export_all());
     let fp = states_a[0].work_fingerprint.clone();
 
     let alt_b = srv_b.state.server.with_server(|srv| {
@@ -3344,7 +5813,10 @@ async fn reconcile_merge_across_servers() {
         srv.reconcile_merge_remote(remote);
     });
 
-    let states_b = srv_b.state.server.with_server(|srv| srv.reconcile_export_all());
+    let states_b = srv_b
+        .state
+        .server
+        .with_server(|srv| srv.reconcile_export_all());
     assert_eq!(states_b.len(), 1);
     assert_eq!(states_b[0].alternative_count(), 1);
     assert_eq!(states_b[0].current_text().unwrap(), "server B version");
@@ -3360,7 +5832,9 @@ fn setup_federated_server_state() -> xudanu::server::transport::SharedState {
     let setup_sid = server.connect();
     server.login_public(setup_sid).unwrap();
     server.grant_admin_authority(setup_sid).unwrap();
-    server.club_set_password(setup_sid, admin_club, ADMIN_PASSWORD).unwrap();
+    server
+        .club_set_password(setup_sid, admin_club, ADMIN_PASSWORD)
+        .unwrap();
     server.disconnect(setup_sid).unwrap();
     let state = AppState::new(server).shared();
     state.server.with_server(|srv| {
@@ -3372,11 +5846,15 @@ fn setup_federated_server_state() -> xudanu::server::transport::SharedState {
     state
 }
 
-async fn start_server_on_random_port(state: xudanu::server::transport::SharedState) -> std::net::SocketAddr {
+async fn start_server_on_random_port(
+    state: xudanu::server::transport::SharedState,
+) -> std::net::SocketAddr {
     let client_router = build_router(state.clone());
-    let fed_router = xudanu::server::transport::federation_handler::build_federation_router(state.clone());
-    let app = xudanu::server::transport::federation_handler::merge_routers(client_router, fed_router)
-        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let fed_router =
+        xudanu::server::transport::federation_handler::build_federation_router(state.clone());
+    let app =
+        xudanu::server::transport::federation_handler::merge_routers(client_router, fed_router)
+            .into_make_service_with_connect_info::<std::net::SocketAddr>();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
@@ -3390,7 +5868,10 @@ async fn membership_bootstrap_registers_self_as_member() {
     let state = setup_federated_server_state();
     let addr = start_server_on_random_port(state.clone()).await;
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
@@ -3406,20 +5887,35 @@ async fn membership_bootstrap_registers_self_as_member() {
 async fn membership_verify_returns_member_info() {
     let state = setup_federated_server_state();
     let addr = start_server_on_random_port(state.clone()).await;
-    let server_id = state.server.with_server_ref(|srv| srv.federation_server_id());
+    let server_id = state
+        .server
+        .with_server_ref(|srv| srv.federation_server_id());
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "membership_verify", Some(serde_json::json!({
-            "server_id": server_id
-        })))).await;
-    assert!(resp["value"]["value"]["verify"]["is_member"].as_bool().unwrap());
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "membership_verify",
+            Some(serde_json::json!({
+                "server_id": server_id
+            })),
+        ),
+    )
+    .await;
+    assert!(resp["value"]["value"]["verify"]["is_member"]
+        .as_bool()
+        .unwrap());
 }
 
 #[tokio::test]
@@ -3427,7 +5923,10 @@ async fn membership_join_via_wire_op() {
     let state = setup_federated_server_state();
     let addr = start_server_on_random_port(state.clone()).await;
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
@@ -3435,7 +5934,9 @@ async fn membership_join_via_wire_op() {
     let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
     let (proof_json, _my_id) = state.server.with_server(|srv| {
-        let proof = srv.membership_sign_endorsement("joining-server", "vk-joining").unwrap();
+        let proof = srv
+            .membership_sign_endorsement("joining-server", "vk-joining")
+            .unwrap();
         let my_id = srv.federation_server_id();
         (serde_json::to_value(&proof).unwrap(), my_id)
     });
@@ -3449,14 +5950,29 @@ async fn membership_join_via_wire_op() {
         "status": "active"
     });
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "membership_join_request", Some(serde_json::json!({
-            "entry": join_entry
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "membership_join_request",
+            Some(serde_json::json!({
+                "entry": join_entry
+            })),
+        ),
+    )
+    .await;
 
     let result = &resp["value"]["value"]["result"];
-    assert!(result.get("accepted").is_some(), "expected accepted, got: {:?}", result);
-    assert_eq!(result["accepted"]["server_id"].as_str().unwrap(), "joining-server");
+    assert!(
+        result.get("accepted").is_some(),
+        "expected accepted, got: {:?}",
+        result
+    );
+    assert_eq!(
+        result["accepted"]["server_id"].as_str().unwrap(),
+        "joining-server"
+    );
 }
 
 #[tokio::test]
@@ -3464,7 +5980,10 @@ async fn membership_sync_via_wire_op() {
     let state = setup_federated_server_state();
     let addr = start_server_on_random_port(state.clone()).await;
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
@@ -3481,24 +6000,53 @@ async fn membership_leave_via_wire_op() {
     let state = setup_federated_server_state();
     let addr = start_server_on_random_port(state.clone()).await;
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
 
-    let admin_club_id = send_recv_json(&mut s, &mut r, json_req(2, "club_id_by_name", Some(
-        serde_json::json!({"name": "admin"})
-    ))).await["value"]["value"].as_u64().unwrap();
-    send_recv_json(&mut s, &mut r, json_req(3, "session_login", Some(
-        serde_json::json!({"club_id": admin_club_id})
-    ))).await;
-    send_recv_json(&mut s, &mut r, json_req(4, "session_authenticate", Some(
-        serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})
-    ))).await;
+    let admin_club_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "club_id_by_name",
+            Some(serde_json::json!({"name": "admin"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            3,
+            "session_login",
+            Some(serde_json::json!({"club_id": admin_club_id})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            4,
+            "session_authenticate",
+            Some(serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})),
+        ),
+    )
+    .await;
 
     let resp = send_recv_json(&mut s, &mut r, json_req(10, "membership_leave", None)).await;
-    assert!(resp.get("error").is_none(), "leave should succeed with admin auth");
+    assert!(
+        resp.get("error").is_none(),
+        "leave should succeed with admin auth"
+    );
 
     let count = state.server.with_server(|srv| srv.membership_count());
     assert_eq!(count, 0);
@@ -3509,7 +6057,10 @@ async fn membership_endorse_offer_via_wire_op() {
     let state = setup_federated_server_state();
     let addr = start_server_on_random_port(state.clone()).await;
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
@@ -3517,20 +6068,36 @@ async fn membership_endorse_offer_via_wire_op() {
     let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
     let proof_json = state.server.with_server(|srv| {
-        let join_proof = srv.membership_sign_endorsement("new-server", "vk-new").unwrap();
+        let join_proof = srv
+            .membership_sign_endorsement("new-server", "vk-new")
+            .unwrap();
         let entry = xudanu::server::federation::MembershipEntry::new(
-            "new-server", "vk-new", "kex-new", vec![join_proof], 1000,
+            "new-server",
+            "vk-new",
+            "kex-new",
+            vec![join_proof],
+            1000,
         );
         srv.membership_process_join(entry);
-        let proof = srv.membership_sign_endorsement("new-server", "vk-new").unwrap();
+        let proof = srv
+            .membership_sign_endorsement("new-server", "vk-new")
+            .unwrap();
         serde_json::to_value(&proof).unwrap()
     });
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "membership_endorse_offer", Some(serde_json::json!({
-            "server_id": "new-server",
-            "proof": proof_json
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "membership_endorse_offer",
+            Some(serde_json::json!({
+                "server_id": "new-server",
+                "proof": proof_json
+            })),
+        ),
+    )
+    .await;
     assert!(resp["value"]["value"]["accepted"].as_bool().unwrap());
 }
 
@@ -3539,17 +6106,21 @@ async fn membership_merge_across_two_servers() {
     let state_a = setup_federated_server_state();
     let state_b = setup_federated_server_state();
 
-    let id_a = state_a.server.with_server_ref(|srv| srv.federation_server_id());
+    let id_a = state_a
+        .server
+        .with_server_ref(|srv| srv.federation_server_id());
 
-    let membership_b = state_b.server.with_server(|srv| {
-        srv.membership_export_orset().clone()
-    });
+    let membership_b = state_b
+        .server
+        .with_server(|srv| srv.membership_export_orset().clone());
 
     state_a.server.with_server(|srv| {
         srv.membership_merge_orset(&membership_b);
     });
 
-    assert!(state_a.server.with_server(|srv| srv.membership_is_known_member(&id_a)));
+    assert!(state_a
+        .server
+        .with_server(|srv| srv.membership_is_known_member(&id_a)));
 }
 
 #[tokio::test]
@@ -3557,7 +6128,9 @@ async fn membership_cross_server_endorsement_verification() {
     let state_a = setup_federated_server_state();
     let state_b = setup_federated_server_state();
 
-    let id_b = state_b.server.with_server_ref(|srv| srv.federation_server_id());
+    let id_b = state_b
+        .server
+        .with_server_ref(|srv| srv.federation_server_id());
     let (proof, vk_a_bytes) = state_a.server.with_server(|srv| {
         let proof = srv.membership_sign_endorsement(&id_b, "vk-b").unwrap();
         let vk_bytes = srv.server_verifying_key().to_bytes();
@@ -3587,10 +6160,7 @@ async fn membership_rejects_tampered_endorsement() {
     };
 
     let valid = state.server.with_server(|srv| {
-        srv.membership_verify_endorsement_proof(
-            &fake_proof,
-            &other_keypair.signing_verifying_key(),
-        )
+        srv.membership_verify_endorsement_proof(&fake_proof, &other_keypair.signing_verifying_key())
     });
     assert!(!valid, "all-zero signature should be invalid");
 
@@ -3612,14 +6182,19 @@ async fn membership_join_rejects_forged_endorsement_signature() {
     let state = setup_federated_server_state();
     let addr = start_server_on_random_port(state.clone()).await;
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
-    let my_id = state.server.with_server_ref(|srv| srv.federation_server_id());
+    let my_id = state
+        .server
+        .with_server_ref(|srv| srv.federation_server_id());
 
     let forged_proof = serde_json::json!({
         "endorser_server_id": my_id,
@@ -3639,14 +6214,25 @@ async fn membership_join_rejects_forged_endorsement_signature() {
         "status": "active"
     });
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "membership_join_request", Some(serde_json::json!({
-            "entry": join_entry
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "membership_join_request",
+            Some(serde_json::json!({
+                "entry": join_entry
+            })),
+        ),
+    )
+    .await;
 
     let result = &resp["value"]["value"]["result"];
-    assert!(result.get("rejected").is_some(),
-        "join with forged endorsement should be rejected, got: {:?}", result);
+    assert!(
+        result.get("rejected").is_some(),
+        "join with forged endorsement should be rejected, got: {:?}",
+        result
+    );
 }
 
 #[tokio::test]
@@ -3662,9 +6248,9 @@ async fn membership_endorse_rejects_forged_proof() {
         timestamp: 1000,
     };
 
-    let accepted = state.server.with_server(|srv| {
-        srv.membership_endorse("target", forged_proof)
-    });
+    let accepted = state
+        .server
+        .with_server(|srv| srv.membership_endorse("target", forged_proof));
     assert!(!accepted, "endorse with forged proof should be rejected");
 }
 
@@ -3677,7 +6263,10 @@ async fn governance_status_via_wire_op() {
     let state = setup_federated_server_state();
     let addr = start_server_on_random_port(state.clone()).await;
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
@@ -3697,21 +6286,47 @@ async fn governance_propose_via_wire_op() {
     let state = setup_federated_server_state();
     let addr = start_server_on_random_port(state.clone()).await;
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
 
-    let admin_club_id = send_recv_json(&mut s, &mut r, json_req(2, "club_id_by_name", Some(
-        serde_json::json!({"name": "admin"})
-    ))).await["value"]["value"].as_u64().unwrap();
-    send_recv_json(&mut s, &mut r, json_req(3, "session_login", Some(
-        serde_json::json!({"club_id": admin_club_id})
-    ))).await;
-    send_recv_json(&mut s, &mut r, json_req(4, "session_authenticate", Some(
-        serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})
-    ))).await;
+    let admin_club_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "club_id_by_name",
+            Some(serde_json::json!({"name": "admin"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            3,
+            "session_login",
+            Some(serde_json::json!({"club_id": admin_club_id})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            4,
+            "session_authenticate",
+            Some(serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})),
+        ),
+    )
+    .await;
 
     let tx = serde_json::json!({
         "type": "admit",
@@ -3720,10 +6335,18 @@ async fn governance_propose_via_wire_op() {
         "kex_public_hex": "kex-new"
     });
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "governance_propose", Some(serde_json::json!({
-            "transactions": [tx]
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "governance_propose",
+            Some(serde_json::json!({
+                "transactions": [tx]
+            })),
+        ),
+    )
+    .await;
 
     let proposal = &resp["value"]["value"]["proposal"];
     assert!(proposal.is_object());
@@ -3736,7 +6359,10 @@ async fn governance_log_empty_then_propose() {
     let state = setup_federated_server_state();
     let addr = start_server_on_random_port(state.clone()).await;
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
@@ -3751,16 +6377,18 @@ async fn governance_log_empty_then_propose() {
 #[tokio::test]
 async fn governance_full_consensus_via_server_methods() {
     let state = setup_federated_server_state();
-    let my_id = state.server.with_server_ref(|srv| srv.federation_server_id());
+    let my_id = state
+        .server
+        .with_server_ref(|srv| srv.federation_server_id());
 
     state.server.with_server(|srv| {
-        let proposal = srv.governance_propose(vec![
-            xudanu::server::federation::GovernanceTx::Admit {
+        let proposal = srv
+            .governance_propose(vec![xudanu::server::federation::GovernanceTx::Admit {
                 server_id: "srv-joined".to_string(),
                 verifying_key_hex: "vk-joined".to_string(),
                 kex_public_hex: "kex-joined".to_string(),
-            }
-        ]).unwrap();
+            }])
+            .unwrap();
 
         let vote = xudanu::server::federation::PbftVote {
             view_number: proposal.view_number,
@@ -3788,7 +6416,9 @@ async fn governance_full_consensus_via_server_methods() {
 #[tokio::test]
 async fn governance_royalty_recording_via_consensus() {
     let state = setup_federated_server_state();
-    let my_id = state.server.with_server_ref(|srv| srv.federation_server_id());
+    let my_id = state
+        .server
+        .with_server_ref(|srv| srv.federation_server_id());
 
     state.server.with_server(|srv| {
         srv.governance_propose(vec![
@@ -3798,18 +6428,23 @@ async fn governance_royalty_recording_via_consensus() {
                 content_fingerprint_hex: format!("{:064x}", 42),
                 royalty_type: xudanu::server::federation::RoyaltyType::Transclusion,
                 amount: 500,
-            }
-        ]).unwrap();
+            },
+        ])
+        .unwrap();
 
         let vote = xudanu::server::federation::PbftVote {
-            view_number: 0, sequence_number: 1,
-            voter_id: my_id.clone(), phase: xudanu::server::federation::PbftPhase::Prepare,
+            view_number: 0,
+            sequence_number: 1,
+            voter_id: my_id.clone(),
+            phase: xudanu::server::federation::PbftPhase::Prepare,
         };
         srv.governance_receive_prepare(vote);
 
         let commit = xudanu::server::federation::PbftVote {
-            view_number: 0, sequence_number: 1,
-            voter_id: my_id.clone(), phase: xudanu::server::federation::PbftPhase::Commit,
+            view_number: 0,
+            sequence_number: 1,
+            voter_id: my_id.clone(),
+            phase: xudanu::server::federation::PbftPhase::Commit,
         };
         srv.governance_receive_commit(commit);
 
@@ -3818,7 +6453,10 @@ async fn governance_royalty_recording_via_consensus() {
         let ledger = srv.federation_royalty_ledger();
         assert_eq!(ledger.len(), 1);
         assert_eq!(ledger[0].amount, 500);
-        assert_eq!(ledger[0].royalty_type, xudanu::server::federation::RoyaltyType::Transclusion);
+        assert_eq!(
+            ledger[0].royalty_type,
+            xudanu::server::federation::RoyaltyType::Transclusion
+        );
     });
 }
 
@@ -3827,62 +6465,108 @@ async fn governance_propose_requires_admin() {
     let state = setup_federated_server_state();
     let addr = start_server_on_random_port(state.clone()).await;
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(10, "governance_propose", Some(serde_json::json!({
-            "transactions": []
-        })))).await;
-    assert!(resp["type"].as_str() == Some("error") || resp.get("error").is_some(), "propose should require admin, got: {:?}", resp);
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "governance_propose",
+            Some(serde_json::json!({
+                "transactions": []
+            })),
+        ),
+    )
+    .await;
+    assert!(
+        resp["type"].as_str() == Some("error") || resp.get("error").is_some(),
+        "propose should require admin, got: {:?}",
+        resp
+    );
 }
 
 #[tokio::test]
 async fn governance_seal_via_wire_op() {
     let state = setup_federated_server_state();
     let addr = start_server_on_random_port(state.clone()).await;
-    let my_id = state.server.with_server_ref(|srv| srv.federation_server_id());
+    let my_id = state
+        .server
+        .with_server_ref(|srv| srv.federation_server_id());
 
     state.server.with_server(|srv| {
-        srv.governance_propose(vec![
-            xudanu::server::federation::GovernanceTx::Expel {
-                server_id: "srv-bad".to_string(),
-                reason: "test".to_string(),
-            }
-        ]).unwrap();
+        srv.governance_propose(vec![xudanu::server::federation::GovernanceTx::Expel {
+            server_id: "srv-bad".to_string(),
+            reason: "test".to_string(),
+        }])
+        .unwrap();
 
         let vote = xudanu::server::federation::PbftVote {
-            view_number: 0, sequence_number: 1,
-            voter_id: my_id.clone(), phase: xudanu::server::federation::PbftPhase::Prepare,
+            view_number: 0,
+            sequence_number: 1,
+            voter_id: my_id.clone(),
+            phase: xudanu::server::federation::PbftPhase::Prepare,
         };
         srv.governance_receive_prepare(vote);
 
         let commit = xudanu::server::federation::PbftVote {
-            view_number: 0, sequence_number: 1,
-            voter_id: my_id.clone(), phase: xudanu::server::federation::PbftPhase::Commit,
+            view_number: 0,
+            sequence_number: 1,
+            voter_id: my_id.clone(),
+            phase: xudanu::server::federation::PbftPhase::Commit,
         };
         srv.governance_receive_commit(commit);
     });
 
-    let url = format!("ws://{}/xudanu?format=json&version={}", addr, PROTOCOL_VERSION);
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        addr, PROTOCOL_VERSION
+    );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let (mut s, mut r) = stream.split();
     recv_handshake(&mut r).await;
     let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
 
-    let admin_club_id = send_recv_json(&mut s, &mut r, json_req(2, "club_id_by_name", Some(
-        serde_json::json!({"name": "admin"})
-    ))).await["value"]["value"].as_u64().unwrap();
-    send_recv_json(&mut s, &mut r, json_req(3, "session_login", Some(
-        serde_json::json!({"club_id": admin_club_id})
-    ))).await;
-    send_recv_json(&mut s, &mut r, json_req(4, "session_authenticate", Some(
-        serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})
-    ))).await;
+    let admin_club_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "club_id_by_name",
+            Some(serde_json::json!({"name": "admin"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            3,
+            "session_login",
+            Some(serde_json::json!({"club_id": admin_club_id})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            4,
+            "session_authenticate",
+            Some(serde_json::json!({"credential": password_credential(ADMIN_PASSWORD)})),
+        ),
+    )
+    .await;
 
     let resp = send_recv_json(&mut s, &mut r, json_req(10, "governance_seal", None)).await;
     let batch = &resp["value"]["value"]["batch"];
@@ -3918,13 +6602,16 @@ fn server_restore(data_dir: &std::path::Path) -> xudanu::server::Server {
 }
 
 fn admin_session(srv: &mut xudanu::server::Server) -> (xudanu::server::SessionId, u64) {
-    let club_id = srv.club_names_list().iter()
+    let club_id = srv
+        .club_names_list()
+        .iter()
         .find(|(n, _)| *n == "admin")
         .map(|(_, id)| *id)
         .unwrap();
     let session = srv.connect();
     let lock = xudanu::server::lock::BooLock::new(club_id);
-    srv.authenticate(session, &lock, &xudanu::server::lock::LockCredential::Boo).unwrap();
+    srv.authenticate(session, &lock, &xudanu::server::lock::LockCredential::Boo)
+        .unwrap();
     (session, club_id)
 }
 
@@ -3933,25 +6620,32 @@ fn admin_session_id(srv: &mut xudanu::server::Server) -> xudanu::server::Session
 }
 
 fn make_admin_session(srv: &mut xudanu::server::Server) -> xudanu::server::SessionId {
-    let club_id = srv.club_names_list().iter()
+    let club_id = srv
+        .club_names_list()
+        .iter()
         .find(|(n, _)| *n == "admin")
         .map(|(_, id)| *id)
         .unwrap();
     let session = srv.connect();
     let lock = xudanu::server::lock::BooLock::new(club_id);
-    srv.authenticate(session, &lock, &xudanu::server::lock::LockCredential::Boo).unwrap();
+    srv.authenticate(session, &lock, &xudanu::server::lock::LockCredential::Boo)
+        .unwrap();
     session
 }
 
 #[tokio::test]
 async fn persistence_works_survive_restart() {
     let dir = temp_data_dir("works");
-    
+
     let mut srv = server_init(&dir);
     let (session, _) = admin_session(&mut srv);
 
-    let w1 = srv.create_work(session, xudanu::edition::Edition::from_text("doc one")).unwrap();
-    let w2 = srv.create_work(session, xudanu::edition::Edition::from_text("doc two")).unwrap();
+    let w1 = srv
+        .create_work(session, xudanu::edition::Edition::from_text("doc one"))
+        .unwrap();
+    let w2 = srv
+        .create_work(session, xudanu::edition::Edition::from_text("doc two"))
+        .unwrap();
     assert_eq!(srv.work_count(), 2);
 
     srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
@@ -3959,8 +6653,16 @@ async fn persistence_works_survive_restart() {
 
     let srv2 = server_restore(&dir);
     assert_eq!(srv2.work_count(), 2, "work count should survive restart");
-    assert!(srv2.work(w1).is_ok(), "work {} should exist after restart", w1);
-    assert!(srv2.work(w2).is_ok(), "work {} should exist after restart", w2);
+    assert!(
+        srv2.work(w1).is_ok(),
+        "work {} should exist after restart",
+        w1
+    );
+    assert!(
+        srv2.work(w2).is_ok(),
+        "work {} should exist after restart",
+        w2
+    );
 }
 
 #[tokio::test]
@@ -3984,9 +6686,16 @@ async fn persistence_edition_content_survives_restart() {
     let mut srv = server_init(&dir);
     let (session, _) = admin_session(&mut srv);
 
-    let wid = srv.create_work(session, xudanu::edition::Edition::from_text("hello world")).unwrap();
+    let wid = srv
+        .create_work(session, xudanu::edition::Edition::from_text("hello world"))
+        .unwrap();
     srv.work_grab(session, wid).unwrap();
-    srv.work_revise(session, wid, xudanu::edition::Edition::from_text("updated content!")).unwrap();
+    srv.work_revise(
+        session,
+        wid,
+        xudanu::edition::Edition::from_text("updated content!"),
+    )
+    .unwrap();
     srv.work_release(session, wid).unwrap();
 
     srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
@@ -3994,14 +6703,20 @@ async fn persistence_edition_content_survives_restart() {
 
     let srv2 = server_restore(&dir);
     let work = srv2.work(wid).unwrap();
-    let text: String = work.current_edition().all_entries()
+    let text: String = work
+        .current_edition()
+        .all_entries()
         .iter()
         .filter_map(|(_, c)| match &c.element {
             xudanu::edition::RangeElement::Text { text } => Some(text.as_str()),
             _ => None,
         })
         .collect();
-    assert!(text.contains("updated content"), "edition text should survive restart, got: {}", text);
+    assert!(
+        text.contains("updated content"),
+        "edition text should survive restart, got: {}",
+        text
+    );
 }
 
 #[tokio::test]
@@ -4011,7 +6726,13 @@ async fn persistence_blobs_survive_restart() {
     let mut srv = server_init(&dir);
     let (session, _) = admin_session(&mut srv);
 
-    let meta = srv.blob_upload(session, b"test-blob-data".to_vec(), "application/octet-stream".to_string()).unwrap();
+    let meta = srv
+        .blob_upload(
+            session,
+            b"test-blob-data".to_vec(),
+            "application/octet-stream".to_string(),
+        )
+        .unwrap();
     assert_eq!(srv.blob_count(), 1);
     let hash_u64 = meta.hash_u64();
 
@@ -4029,16 +6750,32 @@ async fn persistence_club_names_survive_restart() {
     let dir = temp_data_dir("clubs");
 
     let srv1 = server_init(&dir);
-    let names1: Vec<String> = srv1.club_names_list().iter().map(|(n, _)| n.to_string()).collect();
+    let names1: Vec<String> = srv1
+        .club_names_list()
+        .iter()
+        .map(|(n, _)| n.to_string())
+        .collect();
     srv1.checkpoint_to_file(&dir.join("server.json")).unwrap();
     drop(srv1);
 
     let srv2 = server_restore(&dir);
-    let names2: Vec<String> = srv2.club_names_list().iter().map(|(n, _)| n.to_string()).collect();
-    
+    let names2: Vec<String> = srv2
+        .club_names_list()
+        .iter()
+        .map(|(n, _)| n.to_string())
+        .collect();
+
     for name in &["public", "admin", "access", "empty"] {
-        assert!(names1.contains(&name.to_string()), "club '{}' should exist before restart", name);
-        assert!(names2.contains(&name.to_string()), "club '{}' should survive restart", name);
+        assert!(
+            names1.contains(&name.to_string()),
+            "club '{}' should exist before restart",
+            name
+        );
+        assert!(
+            names2.contains(&name.to_string()),
+            "club '{}' should survive restart",
+            name
+        );
     }
 }
 
@@ -4057,9 +6794,18 @@ async fn persistence_federation_state_in_snapshot() {
     } else {
         &snap
     };
-    assert!(data["federation"].is_object(), "federation state should be in snapshot");
-    assert!(data["content_address"].is_object(), "content address index should be in snapshot");
-    assert!(data["blob_metas"].is_array(), "blob metas should be in snapshot");
+    assert!(
+        data["federation"].is_object(),
+        "federation state should be in snapshot"
+    );
+    assert!(
+        data["content_address"].is_object(),
+        "content address index should be in snapshot"
+    );
+    assert!(
+        data["blob_metas"].is_array(),
+        "blob metas should be in snapshot"
+    );
 }
 
 #[tokio::test]
@@ -4070,12 +6816,22 @@ async fn persistence_key_history_file_written() {
     srv1.checkpoint_to_file(&dir.join("server.json")).unwrap();
     drop(srv1);
 
-    assert!(dir.join("key_history.json").exists(), "key_history.json should be written on checkpoint");
+    assert!(
+        dir.join("key_history.json").exists(),
+        "key_history.json should be written on checkpoint"
+    );
 
     let kh_json = std::fs::read_to_string(dir.join("key_history.json")).unwrap();
     let kh: serde_json::Value = serde_json::from_str(&kh_json).unwrap();
-    assert!(kh["entries"].is_array(), "key history should have entries array");
-    assert_eq!(kh["entries"].as_array().unwrap().len(), 1, "should have 1 key entry");
+    assert!(
+        kh["entries"].is_array(),
+        "key history should have entries array"
+    );
+    assert_eq!(
+        kh["entries"].as_array().unwrap().len(),
+        1,
+        "should have 1 key entry"
+    );
 }
 
 #[test]
@@ -4084,7 +6840,9 @@ fn grab_timeout_releases_expired_grab() {
     let mut srv = server_init(&dir);
     let (session, club_id) = admin_session(&mut srv);
 
-    let work_id = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+    let work_id = srv
+        .create_work(session, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
     srv.work_grab(session, work_id).unwrap();
 
     let grabber = srv.work_grabber(work_id).unwrap();
@@ -4108,7 +6866,9 @@ fn work_release_clears_grabbed_at() {
     let mut srv = server_init(&dir);
     let (session, club_id) = admin_session(&mut srv);
 
-    let work_id = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+    let work_id = srv
+        .create_work(session, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
     srv.work_grab(session, work_id).unwrap();
 
     let grabbed_at = srv.work_grabbed_at(work_id).unwrap();
@@ -4120,7 +6880,10 @@ fn work_release_clears_grabbed_at() {
     assert!(grabber.is_none());
 
     let grabbed_at = srv.work_grabbed_at(work_id).unwrap();
-    assert!(grabbed_at.is_none(), "grabbed_at should be cleared on release");
+    assert!(
+        grabbed_at.is_none(),
+        "grabbed_at should be cleared on release"
+    );
 }
 
 #[test]
@@ -4129,16 +6892,30 @@ fn health_json_returns_valid_data() {
     let mut srv = server_init(&dir);
     let (session, club_id) = admin_session(&mut srv);
 
-    let _work_id = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+    let _work_id = srv
+        .create_work(session, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
 
     let json_str = srv.health_json();
     let health: serde_json::Value = serde_json::from_str(&json_str).unwrap();
 
     assert_eq!(health["status"], "ok");
-    assert!(health["works"].as_u64().unwrap() >= 1, "should have at least 1 work");
-    assert!(health["clubs"].as_u64().unwrap() >= 4, "should have system clubs");
-    assert!(health["sessions"].as_u64().unwrap() >= 1, "should have the admin session");
-    assert!(health["operations"].is_number(), "operations should be a number");
+    assert!(
+        health["works"].as_u64().unwrap() >= 1,
+        "should have at least 1 work"
+    );
+    assert!(
+        health["clubs"].as_u64().unwrap() >= 4,
+        "should have system clubs"
+    );
+    assert!(
+        health["sessions"].as_u64().unwrap() >= 1,
+        "should have the admin session"
+    );
+    assert!(
+        health["operations"].is_number(),
+        "operations should be a number"
+    );
     assert!(health["last_checkpoint_ago_secs"].is_number());
     assert!(health["server_id"].is_string());
 }
@@ -4147,8 +6924,7 @@ fn health_json_returns_valid_data() {
 async fn health_endpoint_via_http() {
     let server = Server::new();
     let state = AppState::new(server).shared();
-    let app = build_router(state)
-        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
@@ -4156,8 +6932,11 @@ async fn health_endpoint_via_http() {
     });
 
     let client = reqwest::Client::new();
-    let resp = client.get(format!("http://{}/health", addr))
-        .send().await.unwrap();
+    let resp = client
+        .get(format!("http://{}/health", addr))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let body_text = resp.text().await.unwrap();
     let body: serde_json::Value = serde_json::from_str(&body_text).unwrap();
@@ -4172,7 +6951,9 @@ fn recovery_stats_format() {
     let mut srv = server_init(&dir);
     let (session, _) = admin_session(&mut srv);
 
-    let _work_id = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+    let _work_id = srv
+        .create_work(session, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
 
     let stats = srv.recovery_stats();
     assert!(stats.contains("works="), "should show work count");
@@ -4189,7 +6970,10 @@ fn persistence_atomic_write_no_partial_file() {
     srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
     drop(srv);
 
-    assert!(!dir.join("server.json.tmp").exists(), "tmp file should not linger after successful checkpoint");
+    assert!(
+        !dir.join("server.json.tmp").exists(),
+        "tmp file should not linger after successful checkpoint"
+    );
     assert!(dir.join("server.json").exists(), "final file should exist");
 
     let json = std::fs::read_to_string(dir.join("server.json")).unwrap();
@@ -4203,8 +6987,12 @@ fn persistence_corrupt_snapshot_graceful_error() {
     std::fs::create_dir_all(dir.join("blobs")).unwrap();
     std::fs::write(dir.join("server.json"), "{ this is not valid json !!!").unwrap();
 
-    let result = xudanu::server::Server::restore_from_file_with_persistence(&dir.join("server.json"));
-    assert!(result.is_err(), "corrupt snapshot should return an error, not panic");
+    let result =
+        xudanu::server::Server::restore_from_file_with_persistence(&dir.join("server.json"));
+    assert!(
+        result.is_err(),
+        "corrupt snapshot should return an error, not panic"
+    );
 }
 
 #[test]
@@ -4214,7 +7002,9 @@ fn auto_checkpoint_skips_within_30s_window() {
     let mut srv = server_init(&dir);
     let (session, _) = admin_session(&mut srv);
 
-    let _w = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+    let _w = srv
+        .create_work(session, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
     srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
     let size_after_first = std::fs::metadata(dir.join("server.json")).unwrap().len();
 
@@ -4230,7 +7020,10 @@ fn auto_checkpoint_skips_within_30s_window() {
     srv.bump_operation();
 
     let size_after_ops = std::fs::metadata(dir.join("server.json")).unwrap().len();
-    assert_eq!(size_after_first, size_after_ops, "checkpoint should not rewrite within 30s window");
+    assert_eq!(
+        size_after_first, size_after_ops,
+        "checkpoint should not rewrite within 30s window"
+    );
 }
 
 #[test]
@@ -4240,16 +7033,27 @@ fn grabbed_works_released_after_restart() {
     let mut srv = server_init(&dir);
     let (session, _) = admin_session(&mut srv);
 
-    let wid = srv.create_work(session, xudanu::edition::Edition::from_text("grabbed doc")).unwrap();
+    let wid = srv
+        .create_work(session, xudanu::edition::Edition::from_text("grabbed doc"))
+        .unwrap();
     srv.work_grab(session, wid).unwrap();
-    assert!(srv.work_grabber(wid).unwrap().is_some(), "work should be grabbed before restart");
+    assert!(
+        srv.work_grabber(wid).unwrap().is_some(),
+        "work should be grabbed before restart"
+    );
 
     srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
     drop(srv);
 
     let srv2 = server_restore(&dir);
-    assert!(srv2.work_grabber(wid).unwrap().is_none(), "grabbed work should be released after restart — sessions don't survive");
-    assert!(srv2.work_grabbed_at(wid).unwrap().is_none(), "grabbed_at should also be cleared after restart");
+    assert!(
+        srv2.work_grabber(wid).unwrap().is_none(),
+        "grabbed work should be released after restart — sessions don't survive"
+    );
+    assert!(
+        srv2.work_grabbed_at(wid).unwrap().is_none(),
+        "grabbed_at should also be cleared after restart"
+    );
 }
 
 #[test]
@@ -4258,10 +7062,18 @@ fn request_grab_succeeds_immediately_when_unlocked() {
     let mut srv = server_init(&dir);
     let (session, _) = admin_session(&mut srv);
 
-    let wid = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+    let wid = srv
+        .create_work(session, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
     let granted = srv.work_request_grab(session, wid).unwrap();
-    assert!(granted, "request_grab should succeed immediately when work is unlocked");
-    assert!(srv.work_grabber(wid).unwrap().is_some(), "work should be grabbed after request_grab");
+    assert!(
+        granted,
+        "request_grab should succeed immediately when work is unlocked"
+    );
+    assert!(
+        srv.work_grabber(wid).unwrap().is_some(),
+        "work should be grabbed after request_grab"
+    );
 }
 
 #[test]
@@ -4272,13 +7084,18 @@ fn request_grab_queues_when_already_grabbed() {
     let s1 = make_admin_session(&mut srv);
     let s2 = make_admin_session(&mut srv);
 
-    let wid = srv.create_work(s1, xudanu::edition::Edition::from_text("test")).unwrap();
+    let wid = srv
+        .create_work(s1, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
 
     srv.work_grab(s1, wid).unwrap();
     assert!(srv.work_grabber(wid).unwrap() == Some(s1));
 
     let granted = srv.work_request_grab(s2, wid).unwrap();
-    assert!(!granted, "request_grab should return false when work is locked");
+    assert!(
+        !granted,
+        "request_grab should return false when work is locked"
+    );
 
     let waiters = srv.work_grab_waiters(wid).unwrap();
     assert_eq!(waiters, vec![s2], "s2 should be in the wait queue");
@@ -4292,14 +7109,20 @@ fn request_grab_auto_grants_on_release() {
     let s1 = make_admin_session(&mut srv);
     let s2 = make_admin_session(&mut srv);
 
-    let wid = srv.create_work(s1, xudanu::edition::Edition::from_text("test")).unwrap();
+    let wid = srv
+        .create_work(s1, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
 
     srv.work_grab(s1, wid).unwrap();
     srv.work_request_grab(s2, wid).unwrap();
 
     srv.work_release(s1, wid).unwrap();
 
-    assert_eq!(srv.work_grabber(wid).unwrap(), Some(s2), "s2 should get the grab after s1 releases");
+    assert_eq!(
+        srv.work_grabber(wid).unwrap(),
+        Some(s2),
+        "s2 should get the grab after s1 releases"
+    );
     let waiters = srv.work_grab_waiters(wid).unwrap();
     assert!(waiters.is_empty(), "wait queue should be empty after grant");
 }
@@ -4312,17 +7135,25 @@ fn cancel_grab_request_removes_from_queue() {
     let s1 = make_admin_session(&mut srv);
     let s2 = make_admin_session(&mut srv);
 
-    let wid = srv.create_work(s1, xudanu::edition::Edition::from_text("test")).unwrap();
+    let wid = srv
+        .create_work(s1, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
 
     srv.work_grab(s1, wid).unwrap();
     srv.work_request_grab(s2, wid).unwrap();
 
     srv.work_cancel_grab_request(s2, wid).unwrap();
     let waiters = srv.work_grab_waiters(wid).unwrap();
-    assert!(waiters.is_empty(), "wait queue should be empty after cancel");
+    assert!(
+        waiters.is_empty(),
+        "wait queue should be empty after cancel"
+    );
 
     srv.work_release(s1, wid).unwrap();
-    assert!(srv.work_grabber(wid).unwrap().is_none(), "no waiter to grant to");
+    assert!(
+        srv.work_grabber(wid).unwrap().is_none(),
+        "no waiter to grant to"
+    );
 }
 
 #[test]
@@ -4333,14 +7164,20 @@ fn disconnect_releases_grab_and_grants_to_waiter() {
     let s1 = make_admin_session(&mut srv);
     let s2 = make_admin_session(&mut srv);
 
-    let wid = srv.create_work(s1, xudanu::edition::Edition::from_text("test")).unwrap();
+    let wid = srv
+        .create_work(s1, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
 
     srv.work_grab(s1, wid).unwrap();
     srv.work_request_grab(s2, wid).unwrap();
 
     srv.disconnect(s1).unwrap();
 
-    assert_eq!(srv.work_grabber(wid).unwrap(), Some(s2), "s2 should get the grab after s1 disconnects");
+    assert_eq!(
+        srv.work_grabber(wid).unwrap(),
+        Some(s2),
+        "s2 should get the grab after s1 disconnects"
+    );
 }
 
 #[test]
@@ -4351,7 +7188,9 @@ fn disconnect_cancels_pending_grab_requests() {
     let s1 = make_admin_session(&mut srv);
     let s2 = make_admin_session(&mut srv);
 
-    let wid = srv.create_work(s1, xudanu::edition::Edition::from_text("test")).unwrap();
+    let wid = srv
+        .create_work(s1, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
 
     srv.work_grab(s1, wid).unwrap();
     srv.work_request_grab(s2, wid).unwrap();
@@ -4359,10 +7198,16 @@ fn disconnect_cancels_pending_grab_requests() {
     srv.disconnect(s2).unwrap();
 
     let waiters = srv.work_grab_waiters(wid).unwrap();
-    assert!(waiters.is_empty(), "s2's grab request should be cancelled on disconnect");
+    assert!(
+        waiters.is_empty(),
+        "s2's grab request should be cancelled on disconnect"
+    );
 
     srv.work_release(s1, wid).unwrap();
-    assert!(srv.work_grabber(wid).unwrap().is_none(), "no waiter to grant to");
+    assert!(
+        srv.work_grabber(wid).unwrap().is_none(),
+        "no waiter to grant to"
+    );
 }
 
 #[test]
@@ -4371,7 +7216,9 @@ fn request_grab_idempotent_for_holder() {
     let mut srv = server_init(&dir);
     let (session, _) = admin_session(&mut srv);
 
-    let wid = srv.create_work(session, xudanu::edition::Edition::from_text("test")).unwrap();
+    let wid = srv
+        .create_work(session, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
 
     srv.work_grab(session, wid).unwrap();
     let granted = srv.work_request_grab(session, wid).unwrap();
@@ -4383,7 +7230,9 @@ fn grant_pending_skips_session_without_edit_perm() {
     let dir = temp_data_dir("grant_skip_no_perm");
     let mut srv = server_init(&dir);
 
-    let admin_club = srv.club_names_list().iter()
+    let admin_club = srv
+        .club_names_list()
+        .iter()
         .find(|(n, _)| *n == "admin")
         .map(|(_, id)| *id)
         .unwrap();
@@ -4392,7 +7241,9 @@ fn grant_pending_skips_session_without_edit_perm() {
     let s2 = make_admin_session(&mut srv);
     let s3 = make_admin_session(&mut srv);
 
-    let wid = srv.create_work(s1, xudanu::edition::Edition::from_text("test")).unwrap();
+    let wid = srv
+        .create_work(s1, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
     srv.work_set_edit_club(s1, wid, Some(admin_club)).unwrap();
 
     srv.work_grab(s1, wid).unwrap();
@@ -4403,7 +7254,11 @@ fn grant_pending_skips_session_without_edit_perm() {
 
     srv.work_release(s1, wid).unwrap();
 
-    assert_eq!(srv.work_grabber(wid).unwrap(), Some(s2), "should grant to s2, skip disconnected s3");
+    assert_eq!(
+        srv.work_grabber(wid).unwrap(),
+        Some(s2),
+        "should grant to s2, skip disconnected s3"
+    );
 }
 
 // ── Rule 8: Publication model integration tests ──────────────────────
@@ -4411,9 +7266,12 @@ fn grant_pending_skips_session_without_edit_perm() {
 fn owned_session(srv: &mut xudanu::server::Server) -> (xudanu::server::SessionId, u64) {
     let session = srv.connect();
     srv.login_public(session).unwrap();
-    let club_id = srv.create_club(session, xudanu::edition::Edition::from_text("owner club")).unwrap();
+    let club_id = srv
+        .create_club(session, xudanu::edition::Edition::from_text("owner club"))
+        .unwrap();
     let lock = xudanu::server::lock::BooLock::new(club_id);
-    srv.authenticate(session, &lock, &xudanu::server::lock::LockCredential::Boo).unwrap();
+    srv.authenticate(session, &lock, &xudanu::server::lock::LockCredential::Boo)
+        .unwrap();
     (session, club_id)
 }
 
@@ -4421,28 +7279,50 @@ fn owned_session(srv: &mut xudanu::server::Server) -> (xudanu::server::SessionId
 fn publish_unpublish_via_server_methods() {
     let mut srv = xudanu::server::Server::new();
     let (sid, _) = owned_session(&mut srv);
-    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("test")).unwrap();
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
 
-    assert!(!srv.work_is_published(sid, wid).unwrap(), "new work should be private");
+    assert!(
+        !srv.work_is_published(sid, wid).unwrap(),
+        "new work should be private"
+    );
 
     srv.work_publish(sid, wid).unwrap();
-    assert!(srv.work_is_published(sid, wid).unwrap(), "after publish should be public");
+    assert!(
+        srv.work_is_published(sid, wid).unwrap(),
+        "after publish should be public"
+    );
 
     srv.work_unpublish(sid, wid).unwrap();
-    assert!(!srv.work_is_published(sid, wid).unwrap(), "after unpublish should be private");
+    assert!(
+        !srv.work_is_published(sid, wid).unwrap(),
+        "after unpublish should be private"
+    );
 }
 
 #[test]
 fn irrevocably_unpublish_blocks_republish() {
     let mut srv = xudanu::server::Server::new();
     let (sid, _) = owned_session(&mut srv);
-    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("permanent")).unwrap();
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("permanent"))
+        .unwrap();
 
     srv.work_irrevocably_unpublish(sid, wid).unwrap();
 
-    assert!(srv.work_publish(sid, wid).is_err(), "should not be able to republish");
-    assert!(srv.work_unpublish(sid, wid).is_err(), "should not be able to unpublish");
-    assert!(srv.work_set_read_club(sid, wid, None).is_err(), "should not be able to set_read_club");
+    assert!(
+        srv.work_publish(sid, wid).is_err(),
+        "should not be able to republish"
+    );
+    assert!(
+        srv.work_unpublish(sid, wid).is_err(),
+        "should not be able to unpublish"
+    );
+    assert!(
+        srv.work_set_read_club(sid, wid, None).is_err(),
+        "should not be able to set_read_club"
+    );
 }
 
 #[test]
@@ -4450,14 +7330,20 @@ fn private_work_invisible_to_other_session() {
     let mut srv = xudanu::server::Server::new();
 
     let (sid1, _) = owned_session(&mut srv);
-    let wid = srv.create_work(sid1, xudanu::edition::Edition::from_text("secret")).unwrap();
+    let wid = srv
+        .create_work(sid1, xudanu::edition::Edition::from_text("secret"))
+        .unwrap();
 
     let (sid2, _) = owned_session(&mut srv);
 
-    assert!(!srv.work_is_readable(sid2, srv.work(wid).unwrap()),
-        "other session should not be able to read private work");
-    assert!(srv.ensure_can_read(sid2, wid).is_err(),
-        "ensure_can_read should fail for non-owner of private work");
+    assert!(
+        !srv.work_is_readable(sid2, srv.work(wid).unwrap()),
+        "other session should not be able to read private work"
+    );
+    assert!(
+        srv.ensure_can_read(sid2, wid).is_err(),
+        "ensure_can_read should fail for non-owner of private work"
+    );
 }
 
 #[test]
@@ -4465,14 +7351,18 @@ fn published_work_visible_to_public() {
     let mut srv = xudanu::server::Server::new();
 
     let (sid1, _) = owned_session(&mut srv);
-    let wid = srv.create_work(sid1, xudanu::edition::Edition::from_text("public doc")).unwrap();
+    let wid = srv
+        .create_work(sid1, xudanu::edition::Edition::from_text("public doc"))
+        .unwrap();
     srv.work_publish(sid1, wid).unwrap();
 
     let sid2 = srv.connect();
     srv.login_public(sid2).unwrap();
 
-    assert!(srv.work_is_readable(sid2, srv.work(wid).unwrap()),
-        "public session should be able to read published work");
+    assert!(
+        srv.work_is_readable(sid2, srv.work(wid).unwrap()),
+        "public session should be able to read published work"
+    );
 }
 
 #[test]
@@ -4480,23 +7370,36 @@ fn work_list_filters_by_read_permission() {
     let mut srv = xudanu::server::Server::new();
 
     let (sid1, _) = owned_session(&mut srv);
-    let pub_wid = srv.create_work(sid1, xudanu::edition::Edition::from_text("public")).unwrap();
+    let pub_wid = srv
+        .create_work(sid1, xudanu::edition::Edition::from_text("public"))
+        .unwrap();
     srv.work_publish(sid1, pub_wid).unwrap();
-    let priv_wid = srv.create_work(sid1, xudanu::edition::Edition::from_text("private")).unwrap();
+    let priv_wid = srv
+        .create_work(sid1, xudanu::edition::Edition::from_text("private"))
+        .unwrap();
 
     let sid2 = srv.connect();
     srv.login_public(sid2).unwrap();
 
     let entries = srv.list_works_with_titles();
-    let visible_ids: Vec<u64> = entries.iter()
+    let visible_ids: Vec<u64> = entries
+        .iter()
         .filter(|(id, _, _, _, _, _)| {
-            srv.work(*id).map(|w| srv.work_is_readable(sid2, w)).unwrap_or(false)
+            srv.work(*id)
+                .map(|w| srv.work_is_readable(sid2, w))
+                .unwrap_or(false)
         })
         .map(|(id, _, _, _, _, _)| *id)
         .collect();
 
-    assert!(visible_ids.contains(&pub_wid), "published work should be visible");
-    assert!(!visible_ids.contains(&priv_wid), "private work should not be visible");
+    assert!(
+        visible_ids.contains(&pub_wid),
+        "published work should be visible"
+    );
+    assert!(
+        !visible_ids.contains(&priv_wid),
+        "private work should not be visible"
+    );
 }
 
 #[test]
@@ -4504,13 +7407,17 @@ fn editors_can_always_read() {
     let mut srv = xudanu::server::Server::new();
 
     let (sid1, club1) = owned_session(&mut srv);
-    let wid = srv.create_work(sid1, xudanu::edition::Edition::from_text("owned")).unwrap();
+    let wid = srv
+        .create_work(sid1, xudanu::edition::Edition::from_text("owned"))
+        .unwrap();
 
     let (sid2, club2) = owned_session(&mut srv);
     srv.work_set_edit_club(sid1, wid, Some(club2)).unwrap();
 
-    assert!(srv.work_is_readable(sid2, srv.work(wid).unwrap()),
-        "editor should be able to read even if not in read_club");
+    assert!(
+        srv.work_is_readable(sid2, srv.work(wid).unwrap()),
+        "editor should be able to read even if not in read_club"
+    );
 }
 
 #[test]
@@ -4521,10 +7428,16 @@ fn club_set_default_requires_ownership() {
     let (sid2, _) = owned_session(&mut srv);
 
     let result = srv.club_set_default_read_club(sid2, club1, Some(club1));
-    assert!(result.is_err(), "non-owner should not be able to set default_read_club");
+    assert!(
+        result.is_err(),
+        "non-owner should not be able to set default_read_club"
+    );
 
     let result = srv.club_set_default_read_club(sid1, club1, Some(club1));
-    assert!(result.is_ok(), "owner should be able to set default_read_club");
+    assert!(
+        result.is_ok(),
+        "owner should be able to set default_read_club"
+    );
 }
 
 #[test]
@@ -4532,22 +7445,32 @@ fn per_club_defaults_applied_on_work_creation() {
     let mut srv = xudanu::server::Server::new();
 
     let (sid, club) = owned_session(&mut srv);
-    let custom_club = srv.create_club(sid, xudanu::edition::Edition::from_text("custom")).unwrap();
+    let custom_club = srv
+        .create_club(sid, xudanu::edition::Edition::from_text("custom"))
+        .unwrap();
 
-    srv.club_set_default_read_club(sid, club, Some(custom_club)).unwrap();
+    srv.club_set_default_read_club(sid, club, Some(custom_club))
+        .unwrap();
 
-    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("test")).unwrap();
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
     let work = srv.work(wid).unwrap();
 
-    assert_eq!(work.read_club(), Some(custom_club),
-        "new work should use club's default_read_club");
+    assert_eq!(
+        work.read_club(),
+        Some(custom_club),
+        "new work should use club's default_read_club"
+    );
 }
 
 #[test]
 fn publication_state_survives_persistence_roundtrip() {
     let mut srv = xudanu::server::Server::new();
     let (sid, _) = owned_session(&mut srv);
-    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("persist")).unwrap();
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("persist"))
+        .unwrap();
     srv.work_publish(sid, wid).unwrap();
 
     let snapshot = srv.to_snapshot();
@@ -4555,10 +7478,14 @@ fn publication_state_survives_persistence_roundtrip() {
     let sid2 = restored.connect();
     restored.login_public(sid2).unwrap();
 
-    assert!(restored.work_is_published(sid2, wid).unwrap(),
-        "published state should survive persistence roundtrip");
-    assert!(restored.work_is_readable(sid2, restored.work(wid).unwrap()),
-        "published work should be readable after restore");
+    assert!(
+        restored.work_is_published(sid2, wid).unwrap(),
+        "published state should survive persistence roundtrip"
+    );
+    assert!(
+        restored.work_is_readable(sid2, restored.work(wid).unwrap()),
+        "published work should be readable after restore"
+    );
 }
 
 #[test]
@@ -4566,16 +7493,26 @@ fn federation_only_exports_published_works() {
     let mut srv = xudanu::server::Server::new();
     let (sid, _) = owned_session(&mut srv);
 
-    let pub_wid = srv.create_work(sid, xudanu::edition::Edition::from_text("exported")).unwrap();
+    let pub_wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("exported"))
+        .unwrap();
     srv.work_publish(sid, pub_wid).unwrap();
 
-    let priv_wid = srv.create_work(sid, xudanu::edition::Edition::from_text("secret")).unwrap();
+    let priv_wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("secret"))
+        .unwrap();
 
     let exports = srv.federation_export_works();
     let export_ids: Vec<u64> = exports.iter().map(|e| e.work_id).collect();
 
-    assert!(export_ids.contains(&pub_wid), "published work should be exported");
-    assert!(!export_ids.contains(&priv_wid), "private work should not be exported");
+    assert!(
+        export_ids.contains(&pub_wid),
+        "published work should be exported"
+    );
+    assert!(
+        !export_ids.contains(&priv_wid),
+        "private work should not be exported"
+    );
 }
 
 #[tokio::test]
@@ -4583,40 +7520,122 @@ async fn publish_unpublish_via_wire() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _sid) = json_setup(&srv).await;
 
-    let club_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "club_create", Some(serde_json::json!({"description": {"text": "owner club"}}))))
-        .await["value"]["value"].as_u64().unwrap();
-    send_recv_json(&mut s, &mut r,
-        json_req(11, "club_set_password", Some(serde_json::json!({"club_id": club_id, "password": b"owner" })))).await;
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(12, "session_login", Some(serde_json::json!({"club_id": club_id})))).await;
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(13, "session_authenticate", Some(serde_json::json!({"credential": password_credential(b"owner")})))).await;
+    let club_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "club_create",
+            Some(serde_json::json!({"description": {"text": "owner club"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "club_set_password",
+            Some(serde_json::json!({"club_id": club_id, "password": b"owner" })),
+        ),
+    )
+    .await;
+    let _ = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "session_login",
+            Some(serde_json::json!({"club_id": club_id})),
+        ),
+    )
+    .await;
+    let _ = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            13,
+            "session_authenticate",
+            Some(serde_json::json!({"credential": password_credential(b"owner")})),
+        ),
+    )
+    .await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(20, "work_create", Some(serde_json::json!({"edition": {"text": "wire test"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "wire test"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(21, "work_is_published", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "work_is_published",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"], false, "new work should be private");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(22, "work_publish", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            22,
+            "work_publish",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(23, "work_is_published", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            23,
+            "work_is_published",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"], true);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(24, "work_unpublish", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            24,
+            "work_unpublish",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(25, "work_is_published", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            25,
+            "work_is_published",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["value"]["value"], false);
 }
 
@@ -4625,27 +7644,88 @@ async fn irrevocably_unpublish_via_wire() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _sid) = json_setup(&srv).await;
 
-    let club_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "club_create", Some(serde_json::json!({"description": {"text": "owner club"}}))))
-        .await["value"]["value"].as_u64().unwrap();
-    send_recv_json(&mut s, &mut r,
-        json_req(11, "club_set_password", Some(serde_json::json!({"club_id": club_id, "password": b"owner" })))).await;
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(12, "session_login", Some(serde_json::json!({"club_id": club_id})))).await;
-    let _ = send_recv_json(&mut s, &mut r,
-        json_req(13, "session_authenticate", Some(serde_json::json!({"credential": password_credential(b"owner")})))).await;
+    let club_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "club_create",
+            Some(serde_json::json!({"description": {"text": "owner club"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "club_set_password",
+            Some(serde_json::json!({"club_id": club_id, "password": b"owner" })),
+        ),
+    )
+    .await;
+    let _ = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "session_login",
+            Some(serde_json::json!({"club_id": club_id})),
+        ),
+    )
+    .await;
+    let _ = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            13,
+            "session_authenticate",
+            Some(serde_json::json!({"credential": password_credential(b"owner")})),
+        ),
+    )
+    .await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(20, "work_create", Some(serde_json::json!({"edition": {"text": "permanent"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "permanent"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(21, "work_irrevocably_unpublish", Some(serde_json::json!({"work_id": work_id})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "work_irrevocably_unpublish",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(22, "work_publish", Some(serde_json::json!({"work_id": work_id})))).await;
-    assert_eq!(resp["type"], "error", "republish should fail after irrevocable unpublish");
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            22,
+            "work_publish",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+    assert_eq!(
+        resp["type"], "error",
+        "republish should fail after irrevocable unpublish"
+    );
 }
 
 #[tokio::test]
@@ -4653,31 +7733,99 @@ async fn work_list_filters_private_from_other_session() {
     let srv = TestServer::start().await;
 
     let (mut s1, mut r1, _sid1) = json_setup(&srv).await;
-    let club_id = send_recv_json(&mut s1, &mut r1,
-        json_req(10, "club_create", Some(serde_json::json!({"description": {"text": "owner club"}}))))
-        .await["value"]["value"].as_u64().unwrap();
-    send_recv_json(&mut s1, &mut r1,
-        json_req(11, "club_set_password", Some(serde_json::json!({"club_id": club_id, "password": b"owner" })))).await;
-    let _ = send_recv_json(&mut s1, &mut r1,
-        json_req(12, "session_login", Some(serde_json::json!({"club_id": club_id})))).await;
-    let _ = send_recv_json(&mut s1, &mut r1,
-        json_req(13, "session_authenticate", Some(serde_json::json!({"credential": password_credential(b"owner")})))).await;
-    let pub_wid = send_recv_json(&mut s1, &mut r1,
-        json_req(20, "work_create", Some(serde_json::json!({"edition": {"text": "will publish"}}))))
-        .await["value"]["value"].as_u64().unwrap();
-    let priv_wid = send_recv_json(&mut s1, &mut r1,
-        json_req(21, "work_create", Some(serde_json::json!({"edition": {"text": "stays private"}}))))
-        .await["value"]["value"].as_u64().unwrap();
-    let _ = send_recv_json(&mut s1, &mut r1,
-        json_req(22, "work_publish", Some(serde_json::json!({"work_id": pub_wid})))).await;
+    let club_id = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            10,
+            "club_create",
+            Some(serde_json::json!({"description": {"text": "owner club"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            11,
+            "club_set_password",
+            Some(serde_json::json!({"club_id": club_id, "password": b"owner" })),
+        ),
+    )
+    .await;
+    let _ = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            12,
+            "session_login",
+            Some(serde_json::json!({"club_id": club_id})),
+        ),
+    )
+    .await;
+    let _ = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            13,
+            "session_authenticate",
+            Some(serde_json::json!({"credential": password_credential(b"owner")})),
+        ),
+    )
+    .await;
+    let pub_wid = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            20,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "will publish"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let priv_wid = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            21,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "stays private"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let _ = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            22,
+            "work_publish",
+            Some(serde_json::json!({"work_id": pub_wid})),
+        ),
+    )
+    .await;
 
     let (mut s2, mut r2, _sid2) = json_setup(&srv).await;
     let resp = send_recv_json(&mut s2, &mut r2, json_req(50, "work_list", None)).await;
     let entries = resp["value"]["value"].as_array().unwrap();
-    let visible_ids: Vec<u64> = entries.iter().map(|e| e["work_id"].as_u64().unwrap()).collect();
+    let visible_ids: Vec<u64> = entries
+        .iter()
+        .map(|e| e["work_id"].as_u64().unwrap())
+        .collect();
 
-    assert!(visible_ids.contains(&pub_wid), "published work should be visible to other session");
-    assert!(!visible_ids.contains(&priv_wid), "private work should not be visible to other session");
+    assert!(
+        visible_ids.contains(&pub_wid),
+        "published work should be visible to other session"
+    );
+    assert!(
+        !visible_ids.contains(&priv_wid),
+        "private work should not be visible to other session"
+    );
 }
 
 #[tokio::test]
@@ -4685,25 +7833,55 @@ async fn json_crdt_sync_lifecycle() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _sid) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "Hello"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "Hello"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "crdt_sync_open", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "crdt_sync_open",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "crdt_sync_open_result");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "crdt_sync_subscriber_count", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "crdt_sync_subscriber_count",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["value"]["count"], 1);
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(13, "crdt_sync_close", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            13,
+            "crdt_sync_close",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "void");
 }
@@ -4713,29 +7891,66 @@ async fn json_crdt_update_and_materialize() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _sid) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "Hello"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "Hello"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s, &mut r,
-        json_req(11, "crdt_sync_open", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "crdt_sync_open",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let full_state = send_recv_json(&mut s, &mut r,
-        json_req(12, "crdt_sync_full_state", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    let full_state = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "crdt_sync_full_state",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(full_state["type"], "response");
     assert!(full_state["value"]["type"] == "crdt_sync_full_state_result");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(13, "crdt_sync_materialize", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            13,
+            "crdt_sync_materialize",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "crdt_sync_materialize_result");
 
-    send_recv_json(&mut s, &mut r,
-        json_req(14, "crdt_sync_close", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            14,
+            "crdt_sync_close",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -4743,37 +7958,75 @@ async fn json_crdt_awareness() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _sid) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "Hello"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "Hello"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s, &mut r,
-        json_req(11, "crdt_sync_open", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "crdt_sync_open",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(12, "crdt_awareness_update", Some(serde_json::json!({
-            "work_id": work_id,
-            "state": {
-                "session_id": 0,
-                "user_name": "Alice",
-                "cursor": {"index": 5},
-                "selection": null,
-                "is_typing": true
-            }
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "crdt_awareness_update",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "state": {
+                    "session_id": 0,
+                    "user_name": "Alice",
+                    "cursor": {"index": 5},
+                    "selection": null,
+                    "is_typing": true
+                }
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "crdt_awareness_update_result");
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(13, "crdt_awareness_get", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            13,
+            "crdt_awareness_get",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     assert_eq!(resp["value"]["type"], "crdt_awareness_get_result");
 
-    send_recv_json(&mut s, &mut r,
-        json_req(14, "crdt_sync_close", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            14,
+            "crdt_sync_close",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -4781,9 +8034,12 @@ async fn json_crdt_requires_login() {
     let srv = TestServer::start().await;
     let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(1, "crdt_sync_open", Some(serde_json::json!({"work_id": 1}))))
-        .await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(1, "crdt_sync_open", Some(serde_json::json!({"work_id": 1}))),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -4792,15 +8048,32 @@ async fn json_crdt_update_requires_subscription() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _sid) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "Hello"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "Hello"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let resp = send_recv_json(&mut s, &mut r,
-        json_req(11, "crdt_sync_update", Some(serde_json::json!({
-            "work_id": work_id,
-            "update": ""
-        })))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "crdt_sync_update",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "update": ""
+            })),
+        ),
+    )
+    .await;
     assert_eq!(resp["type"], "error");
 }
 
@@ -4811,40 +8084,98 @@ async fn json_crdt_multi_user_sync() {
     let (mut s1, mut r1, _) = json_setup(&srv).await;
     let (mut s2, mut r2, _) = json_setup(&srv).await;
 
-    let work_id = send_recv_json(&mut s1, &mut r1,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "Hello"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_id = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "Hello"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    send_recv_json(&mut s1, &mut r1,
-        json_req(11, "crdt_sync_open", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            11,
+            "crdt_sync_open",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    send_recv_json(&mut s2, &mut r2,
-        json_req(10, "crdt_sync_open", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    send_recv_json(
+        &mut s2,
+        &mut r2,
+        json_req(
+            10,
+            "crdt_sync_open",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let count1 = send_recv_json(&mut s1, &mut r1,
-        json_req(12, "crdt_sync_subscriber_count", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    let count1 = send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            12,
+            "crdt_sync_subscriber_count",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(count1["value"]["value"]["count"], 2);
 
-    let count2 = send_recv_json(&mut s2, &mut r2,
-        json_req(11, "crdt_sync_subscriber_count", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    let count2 = send_recv_json(
+        &mut s2,
+        &mut r2,
+        json_req(
+            11,
+            "crdt_sync_subscriber_count",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(count2["value"]["value"]["count"], 2);
 
-    send_recv_json(&mut s1, &mut r1,
-        json_req(13, "crdt_sync_close", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    send_recv_json(
+        &mut s1,
+        &mut r1,
+        json_req(
+            13,
+            "crdt_sync_close",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 
-    let count2_after = send_recv_json(&mut s2, &mut r2,
-        json_req(12, "crdt_sync_subscriber_count", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    let count2_after = send_recv_json(
+        &mut s2,
+        &mut r2,
+        json_req(
+            12,
+            "crdt_sync_subscriber_count",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
     assert_eq!(count2_after["value"]["value"]["count"], 1);
 
-    send_recv_json(&mut s2, &mut r2,
-        json_req(13, "crdt_sync_close", Some(serde_json::json!({"work_id": work_id}))))
-        .await;
+    send_recv_json(
+        &mut s2,
+        &mut r2,
+        json_req(
+            13,
+            "crdt_sync_close",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
 }
 
 #[test]
@@ -4855,12 +8186,14 @@ fn personal_club_with_password_survives_persistence_roundtrip() {
 
     let phc_hash = xudanu::crypto::password::hash_password(b"testpass123").unwrap();
     let credential = Some(xudanu::server::club::Credential::Password { phc_hash });
-    let club_id = srv.create_personal_club(
-        sid,
-        "alice".to_string(),
-        credential,
-        Some(b"testpass123".to_vec()),
-    ).unwrap();
+    let club_id = srv
+        .create_personal_club(
+            sid,
+            "alice".to_string(),
+            credential,
+            Some(b"testpass123".to_vec()),
+        )
+        .unwrap();
 
     let club = srv.club(club_id).unwrap();
     assert!(club.is_personal());
@@ -4871,16 +8204,33 @@ fn personal_club_with_password_survives_persistence_roundtrip() {
     let mut restored = xudanu::server::Server::from_snapshot(&snapshot);
 
     let restored_club = restored.club(club_id).unwrap();
-    assert!(restored_club.is_personal(), "is_personal should survive roundtrip");
-    assert_eq!(restored_club.display_name(), Some("alice"), "display_name should survive roundtrip");
-    assert!(restored_club.credential().is_some(), "credential should survive roundtrip");
-    assert!(restored_club.encrypted_signing_key().is_some(), "encrypted_signing_key should survive roundtrip");
+    assert!(
+        restored_club.is_personal(),
+        "is_personal should survive roundtrip"
+    );
+    assert_eq!(
+        restored_club.display_name(),
+        Some("alice"),
+        "display_name should survive roundtrip"
+    );
+    assert!(
+        restored_club.credential().is_some(),
+        "credential should survive roundtrip"
+    );
+    assert!(
+        restored_club.encrypted_signing_key().is_some(),
+        "encrypted_signing_key should survive roundtrip"
+    );
     assert_eq!(
         restored_club.encrypted_signing_key().unwrap().verifying_key,
         verifying_key_bytes,
         "signing key should be identical after roundtrip"
     );
-    assert_eq!(restored.personal_club_count(), 1, "personal_club_count should be reconstructed");
+    assert_eq!(
+        restored.personal_club_count(),
+        1,
+        "personal_club_count should be reconstructed"
+    );
 }
 
 // ============================================================
@@ -4892,15 +8242,33 @@ async fn content_watch_receives_initial_match_for_existing_work() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _sid) = json_setup(&srv).await;
 
-    let resp_a = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "one two three"}}))))
-        .await;
-    let work_a = resp_a["value"]["value"].as_u64().expect("work_a should be u64");
+    let resp_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "one two three"}})),
+        ),
+    )
+    .await;
+    let work_a = resp_a["value"]["value"]
+        .as_u64()
+        .expect("work_a should be u64");
 
-    let resp_b = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "two three four"}}))))
-        .await;
-    let work_b = resp_b["value"]["value"].as_u64().expect("work_b should be u64");
+    let resp_b = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "two three four"}})),
+        ),
+    )
+    .await;
+    let work_b = resp_b["value"]["value"]
+        .as_u64()
+        .expect("work_b should be u64");
 
     let sub_frame = serde_json::json!({
         "v": PROTOCOL_VERSION,
@@ -4912,7 +8280,11 @@ async fn content_watch_receives_initial_match_for_existing_work() {
         }
     });
     let resp = send_recv_json(&mut s, &mut r, sub_frame).await;
-    assert_eq!(resp["type"], "response", "subscribe should succeed, got: {:?}", resp);
+    assert_eq!(
+        resp["type"], "response",
+        "subscribe should succeed, got: {:?}",
+        resp
+    );
 
     let deadline = std::time::Duration::from_secs(3);
     let start = std::time::Instant::now();
@@ -4930,7 +8302,9 @@ async fn content_watch_receives_initial_match_for_existing_work() {
                 if val["type"] == "event" {
                     let event_type = val["event"]["type"].as_str().unwrap_or("");
                     if event_type == "content_match" {
-                        let matched_id = val["event"]["payload"]["edition_be_id"].as_u64().unwrap_or(0);
+                        let matched_id = val["event"]["payload"]["edition_be_id"]
+                            .as_u64()
+                            .unwrap_or(0);
                         if matched_id == work_b {
                             found_work_b = true;
                             break;
@@ -4941,8 +8315,11 @@ async fn content_watch_receives_initial_match_for_existing_work() {
             _ => continue,
         }
     }
-    assert!(found_work_b,
-        "expected content_match event for work_b ({}) within 3s. Received events: {:?}", work_b, events);
+    assert!(
+        found_work_b,
+        "expected content_match event for work_b ({}) within 3s. Received events: {:?}",
+        work_b, events
+    );
 }
 
 #[tokio::test]
@@ -4950,13 +8327,31 @@ async fn content_watch_receives_notification_on_revision() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _sid) = json_setup(&srv).await;
 
-    let work_a = send_recv_json(&mut s, &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "hello"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "hello"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
-    let work_b = send_recv_json(&mut s, &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "zzzzz"}}))))
-        .await["value"]["value"].as_u64().unwrap();
+    let work_b = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "zzzzz"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
 
     let sub_frame = serde_json::json!({
         "v": PROTOCOL_VERSION,
@@ -4968,26 +8363,52 @@ async fn content_watch_receives_notification_on_revision() {
         }
     });
     let resp = send_recv_json(&mut s, &mut r, sub_frame).await;
-    assert_eq!(resp["type"], "response", "subscribe should succeed, got: {:?}", resp);
+    assert_eq!(
+        resp["type"], "response",
+        "subscribe should succeed, got: {:?}",
+        resp
+    );
 
     // drain any initial events
-    while tokio::time::timeout(std::time::Duration::from_millis(50), r.next()).await.is_ok() {}
+    while tokio::time::timeout(std::time::Duration::from_millis(50), r.next())
+        .await
+        .is_ok()
+    {}
 
-    send_recv_json(&mut s, &mut r,
-        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_b})))).await;
-    send_recv_json(&mut s, &mut r,
-        json_req(31, "work_revise", Some(serde_json::json!({"work_id": work_b, "edition": {"text": "hello"}}))))
-        .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            30,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_b})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            31,
+            "work_revise",
+            Some(serde_json::json!({"work_id": work_b, "edition": {"text": "hello"}})),
+        ),
+    )
+    .await;
 
     // content notifications are drained on every incoming message, so the
     // work_revise response comes first, then we need another message to flush
     // the notification that was queued during the revise
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    let _ = s.send(Message::Text(
-        serde_json::to_string(&serde_json::json!({
-            "v": PROTOCOL_VERSION, "type": "request", "id": 32, "op": "server_health"
-        })).unwrap().into()
-    )).await;
+    let _ = s
+        .send(Message::Text(
+            serde_json::to_string(&serde_json::json!({
+                "v": PROTOCOL_VERSION, "type": "request", "id": 32, "op": "server_health"
+            }))
+            .unwrap()
+            .into(),
+        ))
+        .await;
 
     let deadline = std::time::Duration::from_secs(3);
     let start = std::time::Instant::now();
@@ -5000,7 +8421,8 @@ async fn content_watch_receives_notification_on_revision() {
                     Message::Binary(b) => serde_json::from_slice(&b).unwrap(),
                     _ => continue,
                 };
-                if val["type"] == "event" && val["event"]["type"].as_str() == Some("content_match") {
+                if val["type"] == "event" && val["event"]["type"].as_str() == Some("content_match")
+                {
                     found = true;
                     break;
                 }
@@ -5008,7 +8430,10 @@ async fn content_watch_receives_notification_on_revision() {
             _ => break,
         }
     }
-    assert!(found, "expected content_match event after revising work_b to match work_a");
+    assert!(
+        found,
+        "expected content_match event after revising work_b to match work_a"
+    );
 }
 
 // ================================================================
@@ -5018,7 +8443,12 @@ async fn content_watch_receives_notification_on_revision() {
 fn temp_chunk_data_dir(name: &str) -> std::path::PathBuf {
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("xudanu-chunk-{}-{}-{}", name, std::process::id(), id));
+    let dir = std::env::temp_dir().join(format!(
+        "xudanu-chunk-{}-{}-{}",
+        name,
+        std::process::id(),
+        id
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     dir
 }
@@ -5044,8 +8474,12 @@ fn chunk_store_persistence_works_survive_restart() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let w1 = srv.create_work(sid, xudanu::edition::Edition::from_text("chunk doc one")).unwrap();
-    let w2 = srv.create_work(sid, xudanu::edition::Edition::from_text("chunk doc two")).unwrap();
+    let w1 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("chunk doc one"))
+        .unwrap();
+    let w2 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("chunk doc two"))
+        .unwrap();
     assert_eq!(srv.work_count(), 2);
 
     srv.checkpoint_to_store().unwrap();
@@ -5070,10 +8504,14 @@ fn chunk_store_persistence_revision_history() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("v0")).unwrap();
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("v0"))
+        .unwrap();
     srv.work_grab(sid, wid).unwrap();
-    srv.work_revise(sid, wid, xudanu::edition::Edition::from_text("v1")).unwrap();
-    srv.work_revise(sid, wid, xudanu::edition::Edition::from_text("v2")).unwrap();
+    srv.work_revise(sid, wid, xudanu::edition::Edition::from_text("v1"))
+        .unwrap();
+    srv.work_revise(sid, wid, xudanu::edition::Edition::from_text("v2"))
+        .unwrap();
     srv.work_release(sid, wid).unwrap();
     assert_eq!(srv.work_revision_count(wid).unwrap(), 2);
 
@@ -5107,7 +8545,9 @@ fn chunk_store_persistence_clubs_survive_restart() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let club_id = srv.create_club(sid, xudanu::edition::Edition::from_text("my club")).unwrap();
+    let club_id = srv
+        .create_club(sid, xudanu::edition::Edition::from_text("my club"))
+        .unwrap();
 
     srv.checkpoint_to_store().unwrap();
     drop(srv);
@@ -5128,15 +8568,20 @@ fn chunk_store_multiple_checkpoints() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let w1 = srv.create_work(sid, xudanu::edition::Edition::from_text("first")).unwrap();
+    let w1 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("first"))
+        .unwrap();
     srv.checkpoint_to_store().unwrap();
 
     srv.work_grab(sid, w1).unwrap();
-    srv.work_revise(sid, w1, xudanu::edition::Edition::from_text("second")).unwrap();
+    srv.work_revise(sid, w1, xudanu::edition::Edition::from_text("second"))
+        .unwrap();
     srv.work_release(sid, w1).unwrap();
     srv.checkpoint_to_store().unwrap();
 
-    let w2 = srv.create_work(sid, xudanu::edition::Edition::from_text("third")).unwrap();
+    let w2 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("third"))
+        .unwrap();
     srv.checkpoint_to_store().unwrap();
     drop(srv);
 
@@ -5156,7 +8601,12 @@ fn read_only_data_dir_returns_error() {
     let mut srv = server_init_chunk_store(&dir);
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
-    let _wid = srv.create_work(sid, xudanu::edition::Edition::from_text("should fail on checkpoint")).unwrap();
+    let _wid = srv
+        .create_work(
+            sid,
+            xudanu::edition::Edition::from_text("should fail on checkpoint"),
+        )
+        .unwrap();
     srv.checkpoint_to_store().unwrap();
     drop(srv);
 
@@ -5170,7 +8620,12 @@ fn read_only_data_dir_returns_error() {
 
         let sid2 = srv2.connect();
         srv2.login_public(sid2).unwrap();
-        let _wid2 = srv2.create_work(sid2, xudanu::edition::Edition::from_text("new work needs new chunks")).unwrap();
+        let _wid2 = srv2
+            .create_work(
+                sid2,
+                xudanu::edition::Edition::from_text("new work needs new chunks"),
+            )
+            .unwrap();
 
         let result = srv2.checkpoint_to_store();
         assert!(result.is_err(), "checkpoint to read-only dir should fail");
@@ -5226,7 +8681,13 @@ fn chunk_store_verify_after_checkpoint() {
 
     let mut work_ids = Vec::new();
     for i in 0..20 {
-        work_ids.push(srv.create_work(sid, xudanu::edition::Edition::from_text(&format!("doc {}", i))).unwrap());
+        work_ids.push(
+            srv.create_work(
+                sid,
+                xudanu::edition::Edition::from_text(&format!("doc {}", i)),
+            )
+            .unwrap(),
+        );
     }
     srv.checkpoint_to_store().unwrap();
 
@@ -5281,7 +8742,9 @@ fn concurrent_server_writes_dont_corrupt() {
                 handle.with_server(|srv| {
                     let sid = srv.connect();
                     srv.login_public(sid).unwrap();
-                    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text(&text)).unwrap();
+                    let wid = srv
+                        .create_work(sid, xudanu::edition::Edition::from_text(&text))
+                        .unwrap();
                     ids.lock().unwrap_or_else(|e| e.into_inner()).push(wid);
                 });
             }
@@ -5307,8 +8770,8 @@ fn concurrent_server_writes_dont_corrupt() {
 
 #[test]
 fn concurrent_checkpoint_while_editing() {
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::Arc;
 
     let dir = temp_chunk_data_dir("cp_edit");
     std::fs::create_dir_all(&dir).unwrap();
@@ -5317,7 +8780,9 @@ fn concurrent_checkpoint_while_editing() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("v0")).unwrap();
+    let wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("v0"))
+        .unwrap();
 
     let handle = Arc::new(xudanu::server::transport::ServerHandle::new(srv));
     let stop = Arc::new(AtomicBool::new(false));
@@ -5343,7 +8808,12 @@ fn concurrent_checkpoint_while_editing() {
                 let sid = srv.connect();
                 srv.login_public(sid).unwrap();
                 srv.work_grab(sid, wid).unwrap();
-                srv.work_revise(sid, wid, xudanu::edition::Edition::from_text(&format!("v{}", i))).unwrap();
+                srv.work_revise(
+                    sid,
+                    wid,
+                    xudanu::edition::Edition::from_text(&format!("v{}", i)),
+                )
+                .unwrap();
                 srv.work_release(sid, wid).unwrap();
             });
             revs.store(i, Ordering::Relaxed);
@@ -5357,7 +8827,10 @@ fn concurrent_checkpoint_while_editing() {
     let final_revs = revisions.load(Ordering::Relaxed);
     handle.with_server(|srv| {
         assert_eq!(srv.work_revision_count(wid).unwrap(), final_revs);
-        assert_eq!(srv.work_edition(wid).unwrap().to_text(), format!("v{}", final_revs));
+        assert_eq!(
+            srv.work_edition(wid).unwrap().to_text(),
+            format!("v{}", final_revs)
+        );
     });
 
     drop(handle);
@@ -5365,7 +8838,10 @@ fn concurrent_checkpoint_while_editing() {
     let mut srv2 = server_restore_chunk_store(&dir);
     let restored_rev = srv2.work_revision_count(wid).unwrap();
     assert!(restored_rev <= final_revs);
-    assert!(restored_rev > 0, "at least one revision should have been checkpointed");
+    assert!(
+        restored_rev > 0,
+        "at least one revision should have been checkpointed"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -5379,7 +8855,12 @@ fn corrupt_chunk_detected_on_restore() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let wid = srv.create_work(sid, xudanu::edition::Edition::from_text("will be corrupted")).unwrap();
+    let wid = srv
+        .create_work(
+            sid,
+            xudanu::edition::Edition::from_text("will be corrupted"),
+        )
+        .unwrap();
     srv.checkpoint_to_store().unwrap();
     drop(srv);
 
@@ -5421,7 +8902,9 @@ fn missing_chunk_detected_on_restore() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let _wid = srv.create_work(sid, xudanu::edition::Edition::from_text("will go missing")).unwrap();
+    let _wid = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("will go missing"))
+        .unwrap();
     srv.checkpoint_to_store().unwrap();
     drop(srv);
 
@@ -5448,9 +8931,15 @@ fn dirty_checkpoint_only_reserializes_changed_works() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let w1 = srv.create_work(sid, xudanu::edition::Edition::from_text("work one")).unwrap();
-    let w2 = srv.create_work(sid, xudanu::edition::Edition::from_text("work two")).unwrap();
-    let w3 = srv.create_work(sid, xudanu::edition::Edition::from_text("work three")).unwrap();
+    let w1 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("work one"))
+        .unwrap();
+    let w2 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("work two"))
+        .unwrap();
+    let w3 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("work three"))
+        .unwrap();
 
     srv.checkpoint_to_store().unwrap();
 
@@ -5459,7 +8948,13 @@ fn dirty_checkpoint_only_reserializes_changed_works() {
     assert!(!srv.is_work_dirty(w3).unwrap());
 
     srv.work_grab(sid, w2).unwrap();
-    let _ = srv.work_revise(sid, w2, xudanu::edition::Edition::from_text("work two revised")).unwrap();
+    let _ = srv
+        .work_revise(
+            sid,
+            w2,
+            xudanu::edition::Edition::from_text("work two revised"),
+        )
+        .unwrap();
     assert!(!srv.is_work_dirty(w1).unwrap(), "w1 should still be clean");
     assert!(srv.is_work_dirty(w2).unwrap(), "w2 should be dirty");
     assert!(!srv.is_work_dirty(w3).unwrap(), "w3 should still be clean");
@@ -5480,9 +8975,21 @@ fn dirty_checkpoint_only_reserializes_changed_works() {
     let ed2 = srv2.work_edition(w2).unwrap();
     let ed3 = srv2.work_edition(w3).unwrap();
 
-    let t1: String = ed1.all_entries().iter().map(|(_, c)| c.element.as_text().unwrap_or("")).collect();
-    let t2: String = ed2.all_entries().iter().map(|(_, c)| c.element.as_text().unwrap_or("")).collect();
-    let t3: String = ed3.all_entries().iter().map(|(_, c)| c.element.as_text().unwrap_or("")).collect();
+    let t1: String = ed1
+        .all_entries()
+        .iter()
+        .map(|(_, c)| c.element.as_text().unwrap_or(""))
+        .collect();
+    let t2: String = ed2
+        .all_entries()
+        .iter()
+        .map(|(_, c)| c.element.as_text().unwrap_or(""))
+        .collect();
+    let t3: String = ed3
+        .all_entries()
+        .iter()
+        .map(|(_, c)| c.element.as_text().unwrap_or(""))
+        .collect();
 
     assert_eq!(t1, "work one");
     assert_eq!(t2, "work two revised");
@@ -5500,18 +9007,34 @@ fn dirty_checkpoint_tracks_club_mutations() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let club1 = srv.create_named_club(sid, "club1", xudanu::edition::Edition::from_text("club one")).unwrap();
+    let club1 = srv
+        .create_named_club(
+            sid,
+            "club1",
+            xudanu::edition::Edition::from_text("club one"),
+        )
+        .unwrap();
 
     srv.checkpoint_to_store().unwrap();
 
-    assert!(!srv.is_club_dirty(club1), "club should be clean after checkpoint");
+    assert!(
+        !srv.is_club_dirty(club1),
+        "club should be clean after checkpoint"
+    );
 
-    srv.club_add_member(sid, club1, srv.system_clubs().public_club).unwrap();
-    assert!(srv.is_club_dirty(club1), "club should be dirty after add_member");
+    srv.club_add_member(sid, club1, srv.system_clubs().public_club)
+        .unwrap();
+    assert!(
+        srv.is_club_dirty(club1),
+        "club should be dirty after add_member"
+    );
 
     srv.checkpoint_to_store().unwrap();
 
-    assert!(!srv.is_club_dirty(club1), "club should be clean after second checkpoint");
+    assert!(
+        !srv.is_club_dirty(club1),
+        "club should be clean after second checkpoint"
+    );
 
     drop(srv);
 
@@ -5532,24 +9055,47 @@ fn dirty_checkpoint_all_work_mutation_paths() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let w_set_read = srv.create_work(sid, xudanu::edition::Edition::from_text("a")).unwrap();
-    let w_set_edit = srv.create_work(sid, xudanu::edition::Edition::from_text("b")).unwrap();
-    let w_sponsor = srv.create_work(sid, xudanu::edition::Edition::from_text("c")).unwrap();
-    let w_publish = srv.create_work(sid, xudanu::edition::Edition::from_text("d")).unwrap();
+    let w_set_read = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("a"))
+        .unwrap();
+    let w_set_edit = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("b"))
+        .unwrap();
+    let w_sponsor = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("c"))
+        .unwrap();
+    let w_publish = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("d"))
+        .unwrap();
 
     srv.checkpoint_to_store().unwrap();
 
-    srv.work_set_read_club(sid, w_set_read, Some(srv.system_clubs().public_club)).unwrap();
-    assert!(srv.is_work_dirty(w_set_read).unwrap(), "set_read_club should dirty work");
+    srv.work_set_read_club(sid, w_set_read, Some(srv.system_clubs().public_club))
+        .unwrap();
+    assert!(
+        srv.is_work_dirty(w_set_read).unwrap(),
+        "set_read_club should dirty work"
+    );
 
-    srv.work_set_edit_club(sid, w_set_edit, Some(srv.system_clubs().public_club)).unwrap();
-    assert!(srv.is_work_dirty(w_set_edit).unwrap(), "set_edit_club should dirty work");
+    srv.work_set_edit_club(sid, w_set_edit, Some(srv.system_clubs().public_club))
+        .unwrap();
+    assert!(
+        srv.is_work_dirty(w_set_edit).unwrap(),
+        "set_edit_club should dirty work"
+    );
 
-    srv.work_sponsor(sid, w_sponsor, srv.system_clubs().public_club).unwrap();
-    assert!(srv.is_work_dirty(w_sponsor).unwrap(), "sponsor should dirty work");
+    srv.work_sponsor(sid, w_sponsor, srv.system_clubs().public_club)
+        .unwrap();
+    assert!(
+        srv.is_work_dirty(w_sponsor).unwrap(),
+        "sponsor should dirty work"
+    );
 
     srv.work_publish(sid, w_publish).unwrap();
-    assert!(srv.is_work_dirty(w_publish).unwrap(), "publish should dirty work");
+    assert!(
+        srv.is_work_dirty(w_publish).unwrap(),
+        "publish should dirty work"
+    );
 
     srv.checkpoint_to_store().unwrap();
 
@@ -5565,7 +9111,11 @@ fn dirty_checkpoint_all_work_mutation_paths() {
     srv2.login_public(sid2).unwrap();
 
     let ed_pub = srv2.work_edition(w_publish).unwrap();
-    let t: String = ed_pub.all_entries().iter().map(|(_, c)| c.element.as_text().unwrap_or("")).collect();
+    let t: String = ed_pub
+        .all_entries()
+        .iter()
+        .map(|(_, c)| c.element.as_text().unwrap_or(""))
+        .collect();
     assert_eq!(t, "d");
     assert!(srv2.work_is_published(sid2, w_publish).unwrap());
 
@@ -5584,14 +9134,26 @@ fn dirty_checkpoint_survives_multiple_rounds() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let w = srv.create_work(sid, xudanu::edition::Edition::from_text("v0")).unwrap();
+    let w = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("v0"))
+        .unwrap();
 
     for i in 1..=5 {
         srv.work_grab(sid, w).unwrap();
-        let _ = srv.work_revise(sid, w, xudanu::edition::Edition::from_text(&format!("v{}", i))).unwrap();
+        let _ = srv
+            .work_revise(
+                sid,
+                w,
+                xudanu::edition::Edition::from_text(&format!("v{}", i)),
+            )
+            .unwrap();
         srv.work_release(sid, w).unwrap();
         srv.checkpoint_to_store().unwrap();
-        assert!(!srv.is_work_dirty(w).unwrap(), "work should be clean after checkpoint round {}", i);
+        assert!(
+            !srv.is_work_dirty(w).unwrap(),
+            "work should be clean after checkpoint round {}",
+            i
+        );
     }
 
     drop(srv);
@@ -5601,7 +9163,11 @@ fn dirty_checkpoint_survives_multiple_rounds() {
     srv2.login_public(sid2).unwrap();
 
     let ed = srv2.work_edition(w).unwrap();
-    let t: String = ed.all_entries().iter().map(|(_, c)| c.element.as_text().unwrap_or("")).collect();
+    let t: String = ed
+        .all_entries()
+        .iter()
+        .map(|(_, c)| c.element.as_text().unwrap_or(""))
+        .collect();
     assert_eq!(t, "v5");
 
     let rev_count = srv2.work_revision_count(w).unwrap();
@@ -5617,27 +9183,44 @@ fn authority_refreshes_immediately_after_membership_change() {
     let sid1 = srv.connect();
     srv.login_public(sid1).unwrap();
 
-    let club_a = srv.create_named_club(sid1, "clubA", xudanu::edition::Edition::from_text("a")).unwrap();
-    let club_b = srv.create_named_club(sid1, "clubB", xudanu::edition::Edition::from_text("b")).unwrap();
+    let club_a = srv
+        .create_named_club(sid1, "clubA", xudanu::edition::Edition::from_text("a"))
+        .unwrap();
+    let club_b = srv
+        .create_named_club(sid1, "clubB", xudanu::edition::Edition::from_text("b"))
+        .unwrap();
 
-    let w = srv.create_work(sid1, xudanu::edition::Edition::from_text("secret")).unwrap();
+    let w = srv
+        .create_work(sid1, xudanu::edition::Edition::from_text("secret"))
+        .unwrap();
     srv.work_set_edit_club(sid1, w, Some(club_b)).unwrap();
 
     let sid2 = srv.connect();
     let lock2 = xudanu::server::lock::BooLock::new(club_a);
-    srv.authenticate(sid2, &lock2, &xudanu::server::lock::LockCredential::Boo).unwrap();
+    srv.authenticate(sid2, &lock2, &xudanu::server::lock::LockCredential::Boo)
+        .unwrap();
 
-    assert!(!srv.work_can_revise(sid2, w).unwrap(), "sid2 should NOT be able to edit before clubA is added to clubB");
+    assert!(
+        !srv.work_can_revise(sid2, w).unwrap(),
+        "sid2 should NOT be able to edit before clubA is added to clubB"
+    );
 
     srv.club_add_member(sid1, club_b, club_a).unwrap();
 
-    assert!(srv.work_can_revise(sid2, w).unwrap(), "sid2 should gain access after clubA added to clubB (existing session refreshed)");
+    assert!(
+        srv.work_can_revise(sid2, w).unwrap(),
+        "sid2 should gain access after clubA added to clubB (existing session refreshed)"
+    );
 
     let sid3 = srv.connect();
     let lock3 = xudanu::server::lock::BooLock::new(club_a);
-    srv.authenticate(sid3, &lock3, &xudanu::server::lock::LockCredential::Boo).unwrap();
+    srv.authenticate(sid3, &lock3, &xudanu::server::lock::LockCredential::Boo)
+        .unwrap();
 
-    assert!(srv.work_can_revise(sid3, w).unwrap(), "new session logged in as clubA should also have access (resolved at login)");
+    assert!(
+        srv.work_can_revise(sid3, w).unwrap(),
+        "new session logged in as clubA should also have access (resolved at login)"
+    );
 }
 
 #[test]
@@ -5647,23 +9230,36 @@ fn authority_revoked_after_member_removal() {
     let sid1 = srv.connect();
     srv.login_public(sid1).unwrap();
 
-    let club_a = srv.create_named_club(sid1, "clubA", xudanu::edition::Edition::from_text("a")).unwrap();
-    let club_b = srv.create_named_club(sid1, "clubB", xudanu::edition::Edition::from_text("b")).unwrap();
+    let club_a = srv
+        .create_named_club(sid1, "clubA", xudanu::edition::Edition::from_text("a"))
+        .unwrap();
+    let club_b = srv
+        .create_named_club(sid1, "clubB", xudanu::edition::Edition::from_text("b"))
+        .unwrap();
 
     srv.club_add_member(sid1, club_b, club_a).unwrap();
 
-    let w = srv.create_work(sid1, xudanu::edition::Edition::from_text("secret")).unwrap();
+    let w = srv
+        .create_work(sid1, xudanu::edition::Edition::from_text("secret"))
+        .unwrap();
     srv.work_set_edit_club(sid1, w, Some(club_b)).unwrap();
 
     let sid2 = srv.connect();
     let lock2 = xudanu::server::lock::BooLock::new(club_a);
-    srv.authenticate(sid2, &lock2, &xudanu::server::lock::LockCredential::Boo).unwrap();
+    srv.authenticate(sid2, &lock2, &xudanu::server::lock::LockCredential::Boo)
+        .unwrap();
 
-    assert!(srv.work_can_revise(sid2, w).unwrap(), "sid2 should be able to edit while clubA is member of clubB");
+    assert!(
+        srv.work_can_revise(sid2, w).unwrap(),
+        "sid2 should be able to edit while clubA is member of clubB"
+    );
 
     srv.club_remove_member(sid1, club_b, club_a).unwrap();
 
-    assert!(!srv.work_can_revise(sid2, w).unwrap(), "sid2 should LOSE access after clubA removed from clubB");
+    assert!(
+        !srv.work_can_revise(sid2, w).unwrap(),
+        "sid2 should LOSE access after clubA removed from clubB"
+    );
 }
 
 #[test]
@@ -5674,13 +9270,17 @@ fn init_data_dir_refuses_if_manifest_exists() {
     let mut srv = server_init_chunk_store(&dir);
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
-    srv.create_work(sid, xudanu::edition::Edition::from_text("existing")).unwrap();
+    srv.create_work(sid, xudanu::edition::Edition::from_text("existing"))
+        .unwrap();
     srv.checkpoint_to_store().unwrap();
     drop(srv);
 
     let mut srv2 = xudanu::server::Server::new();
     let result = srv2.init_data_dir(&dir, None);
-    assert!(result.is_err(), "init_data_dir should fail when manifest already exists");
+    assert!(
+        result.is_err(),
+        "init_data_dir should fail when manifest already exists"
+    );
     match result.unwrap_err().kind() {
         std::io::ErrorKind::AlreadyExists => {}
         other => panic!("expected AlreadyExists, got {:?}", other),
@@ -5702,12 +9302,17 @@ fn gc_removes_orphaned_chunks_after_work_changes() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let w1 = srv.create_work(sid, xudanu::edition::Edition::from_text("temp work")).unwrap();
-    let w2 = srv.create_work(sid, xudanu::edition::Edition::from_text("keep work")).unwrap();
+    let w1 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("temp work"))
+        .unwrap();
+    let w2 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("keep work"))
+        .unwrap();
     srv.checkpoint_to_store().unwrap();
 
     srv.work_grab(sid, w1).unwrap();
-    srv.work_revise(sid, w1, xudanu::edition::Edition::from_text("revised temp")).unwrap();
+    srv.work_revise(sid, w1, xudanu::edition::Edition::from_text("revised temp"))
+        .unwrap();
     srv.work_release(sid, w1).unwrap();
     srv.checkpoint_to_store().unwrap();
 

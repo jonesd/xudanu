@@ -1,20 +1,16 @@
+use futures_util::{SinkExt, StreamExt};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
+use xudanu::server::transport::{build_router, AppState, PROTOCOL_VERSION};
 use xudanu::server::Server;
-use xudanu::server::transport::{AppState, build_router, PROTOCOL_VERSION};
 
 type SplitSender = futures_util::stream::SplitSink<
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
     Message,
 >;
 type SplitReceiver = futures_util::stream::SplitStream<
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
 >;
 
 struct TlsTestServer {
@@ -24,22 +20,22 @@ struct TlsTestServer {
 
 impl TlsTestServer {
     async fn start() -> Self {
-        let rcgen::CertifiedKey { cert, key_pair } =
-            rcgen::generate_simple_self_signed(vec![
-                "localhost".to_string(),
-                "127.0.0.1".to_string(),
-            ])
-            .expect("failed to generate cert");
+        let rcgen::CertifiedKey { cert, key_pair } = rcgen::generate_simple_self_signed(vec![
+            "localhost".to_string(),
+            "127.0.0.1".to_string(),
+        ])
+        .expect("failed to generate cert");
 
         let cert_der_bytes = cert.der().as_ref().to_vec();
         let cert_der = cert.der().clone();
         let key_der = key_pair.serialize_der();
-        let key =
-            rustls::pki_types::PrivateKeyDer::from(rustls::pki_types::PrivatePkcs8KeyDer::from(
-                key_der,
-            ));
+        let key = rustls::pki_types::PrivateKeyDer::from(
+            rustls::pki_types::PrivatePkcs8KeyDer::from(key_der),
+        );
 
-        rustls::crypto::ring::default_provider().install_default().ok();
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .ok();
 
         let mut server_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
@@ -103,7 +99,9 @@ impl TlsTestServer {
     async fn connect_wss(&self, path: &str) -> (SplitSender, SplitReceiver) {
         let mut root_store = rustls::RootCertStore::empty();
         root_store
-            .add(rustls::pki_types::CertificateDer::from(self.cert_der.clone()))
+            .add(rustls::pki_types::CertificateDer::from(
+                self.cert_der.clone(),
+            ))
             .unwrap();
         let client_config = rustls::ClientConfig::builder()
             .with_root_certificates(root_store)
@@ -111,14 +109,10 @@ impl TlsTestServer {
         let connector = tokio_tungstenite::Connector::Rustls(Arc::new(client_config));
 
         let url = self.wss_url(path);
-        let (stream, _) = tokio_tungstenite::connect_async_tls_with_config(
-            &url,
-            None,
-            false,
-            Some(connector),
-        )
-        .await
-        .expect("failed wss connect");
+        let (stream, _) =
+            tokio_tungstenite::connect_async_tls_with_config(&url, None, false, Some(connector))
+                .await
+                .expect("failed wss connect");
         stream.split()
     }
 }
@@ -156,8 +150,8 @@ async fn json_setup(srv: &TlsTestServer) -> (SplitSender, SplitReceiver, u64) {
         .connect_wss(&format!("/xudanu?format=json&version={}", PROTOCOL_VERSION))
         .await;
     let _hs = recv_json(&mut rx).await;
-    let sid = send_recv_json(&mut tx, &mut rx, json_req(1, "session_connect", None)).await
-        ["value"]["value"]
+    let sid = send_recv_json(&mut tx, &mut rx, json_req(1, "session_connect", None)).await["value"]
+        ["value"]
         .as_u64()
         .unwrap();
     send_recv_json(&mut tx, &mut rx, json_req(2, "session_login_public", None)).await;
@@ -215,7 +209,11 @@ async fn tls_wss_create_and_open_edition() {
     let resp = send_recv_json(
         &mut tx,
         &mut rx,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "hello tls"}}))),
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "hello tls"}})),
+        ),
     )
     .await;
     assert_eq!(resp["type"], "response");
@@ -225,7 +223,11 @@ async fn tls_wss_create_and_open_edition() {
     let resp = send_recv_json(
         &mut tx,
         &mut rx,
-        json_req(20, "work_get_edition", Some(serde_json::json!({"work_id": work_id}))),
+        json_req(
+            20,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
     )
     .await;
     assert_eq!(resp["type"], "response");
@@ -242,7 +244,11 @@ async fn tls_wss_two_clients_sync() {
     let work_id = send_recv_json(
         &mut tx_a,
         &mut rx_a,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "initial"}}))),
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "initial"}})),
+        ),
     )
     .await["value"]["value"]
         .as_u64()
@@ -262,7 +268,11 @@ async fn tls_wss_two_clients_sync() {
     let grab_resp = send_recv_json(
         &mut tx_a,
         &mut rx_a,
-        json_req(30, "work_grab", Some(serde_json::json!({"work_id": work_id}))),
+        json_req(
+            30,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
     )
     .await;
     assert_eq!(grab_resp["type"], "response");
@@ -270,10 +280,14 @@ async fn tls_wss_two_clients_sync() {
     let revise_resp = send_recv_json(
         &mut tx_a,
         &mut rx_a,
-        json_req(40, "work_revise", Some(serde_json::json!({
-            "work_id": work_id,
-            "edition": {"text": "hello from client a over tls"}
-        }))),
+        json_req(
+            40,
+            "work_revise",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "edition": {"text": "hello from client a over tls"}
+            })),
+        ),
     )
     .await;
     assert_eq!(revise_resp["type"], "response");

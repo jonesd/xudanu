@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::edition::{BeId, Edition, RangeElement, XnRegion, ImageOp, Bundle};
+use crate::edition::{BeId, Bundle, Edition, ImageOp, RangeElement, XnRegion};
 use crate::server::lock::LockCredential;
 
 pub const PROTOCOL_VERSION: u8 = 0x02;
@@ -9,14 +9,14 @@ pub const MIN_SUPPORTED_VERSION: u8 = 0x01;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MessageType {
-    Handshake   = 0x00,
-    Request     = 0x01,
-    Response    = 0x02,
-    Error       = 0x03,
-    Event       = 0x04,
-    Subscribe   = 0x05,
+    Handshake = 0x00,
+    Request = 0x01,
+    Response = 0x02,
+    Error = 0x03,
+    Event = 0x04,
+    Subscribe = 0x05,
     Unsubscribe = 0x06,
-    Heartbeat   = 0x07,
+    Heartbeat = 0x07,
 }
 
 impl MessageType {
@@ -456,114 +456,114 @@ impl OperationCode {
 
     pub fn to_u16(self) -> u16 {
         match self {
-            OperationCode::SessionConnect     => 0x0001,
-            OperationCode::SessionDisconnect  => 0x0002,
-            OperationCode::SessionLogin       => 0x0003,
+            OperationCode::SessionConnect => 0x0001,
+            OperationCode::SessionDisconnect => 0x0002,
+            OperationCode::SessionLogin => 0x0003,
             OperationCode::SessionLoginByName => 0x0004,
-            OperationCode::SessionAuthenticate=> 0x0005,
+            OperationCode::SessionAuthenticate => 0x0005,
             OperationCode::SessionLoginPublic => 0x0006,
 
-            OperationCode::ServerGetById  => 0x0101,
-            OperationCode::ServerGetByBeId=> 0x0102,
+            OperationCode::ServerGetById => 0x0101,
+            OperationCode::ServerGetByBeId => 0x0102,
 
-            OperationCode::ClubCreate     => 0x0201,
-            OperationCode::ClubCreateNamed=> 0x0202,
-            OperationCode::ClubGet        => 0x0203,
-            OperationCode::ClubByName     => 0x0204,
-            OperationCode::ClubIdByName   => 0x0205,
-            OperationCode::ClubNameById   => 0x0206,
-            OperationCode::ClubNames      => 0x0207,
+            OperationCode::ClubCreate => 0x0201,
+            OperationCode::ClubCreateNamed => 0x0202,
+            OperationCode::ClubGet => 0x0203,
+            OperationCode::ClubByName => 0x0204,
+            OperationCode::ClubIdByName => 0x0205,
+            OperationCode::ClubNameById => 0x0206,
+            OperationCode::ClubNames => 0x0207,
 
-            OperationCode::WorkCreate        => 0x0301,
-            OperationCode::WorkGetEdition    => 0x0302,
-            OperationCode::WorkRevise        => 0x0303,
-            OperationCode::WorkGrab          => 0x0304,
-            OperationCode::WorkRelease       => 0x0305,
-            OperationCode::WorkIsGrabbed     => 0x0306,
-            OperationCode::WorkGrabber       => 0x0307,
-            OperationCode::WorkCanRead       => 0x0308,
+            OperationCode::WorkCreate => 0x0301,
+            OperationCode::WorkGetEdition => 0x0302,
+            OperationCode::WorkRevise => 0x0303,
+            OperationCode::WorkGrab => 0x0304,
+            OperationCode::WorkRelease => 0x0305,
+            OperationCode::WorkIsGrabbed => 0x0306,
+            OperationCode::WorkGrabber => 0x0307,
+            OperationCode::WorkCanRead => 0x0308,
             OperationCode::WorkSaveAndRelease => 0x0333,
-            OperationCode::WorkForceRelease  => 0x0334,
-            OperationCode::WorkRequestGrab     => 0x0330,
+            OperationCode::WorkForceRelease => 0x0334,
+            OperationCode::WorkRequestGrab => 0x0330,
             OperationCode::WorkCancelGrabRequest => 0x0331,
-            OperationCode::WorkGrabWaiters    => 0x0332,
-            OperationCode::WorkCanRevise     => 0x0309,
-            OperationCode::WorkSetReadClub   => 0x030A,
-            OperationCode::WorkSetEditClub   => 0x030B,
-            OperationCode::WorkReadClub      => 0x030C,
-            OperationCode::WorkEditClub      => 0x030D,
+            OperationCode::WorkGrabWaiters => 0x0332,
+            OperationCode::WorkCanRevise => 0x0309,
+            OperationCode::WorkSetReadClub => 0x030A,
+            OperationCode::WorkSetEditClub => 0x030B,
+            OperationCode::WorkReadClub => 0x030C,
+            OperationCode::WorkEditClub => 0x030D,
             OperationCode::WorkRevisionCount => 0x030E,
             OperationCode::WorkFetchRevision => 0x030F,
-            OperationCode::WorkSponsor       => 0x0310,
-            OperationCode::WorkUnsponsor     => 0x0311,
-            OperationCode::WorkSponsors      => 0x0312,
-            OperationCode::WorkOwner         => 0x0313,
-            OperationCode::WorkPublish       => 0x0317,
-            OperationCode::WorkUnpublish     => 0x0318,
+            OperationCode::WorkSponsor => 0x0310,
+            OperationCode::WorkUnsponsor => 0x0311,
+            OperationCode::WorkSponsors => 0x0312,
+            OperationCode::WorkOwner => 0x0313,
+            OperationCode::WorkPublish => 0x0317,
+            OperationCode::WorkUnpublish => 0x0318,
             OperationCode::WorkIrrevocablyUnpublish => 0x0319,
-            OperationCode::WorkIsPublished        => 0x031A,
-            OperationCode::WorkFetchRevisionRange  => 0x031B,
+            OperationCode::WorkIsPublished => 0x031A,
+            OperationCode::WorkFetchRevisionRange => 0x031B,
 
-            OperationCode::ClubSetDefaultReadClub  => 0x0208,
-            OperationCode::ClubSetDefaultEditClub  => 0x0209,
-            OperationCode::ClubSetPassword         => 0x020A,
-            OperationCode::ClubClearCredential     => 0x020B,
-            OperationCode::ClubCreatePersonal      => 0x020C,
-            OperationCode::ClubWhoAmI              => 0x020D,
-            OperationCode::ClubAddMember            => 0x020E,
-            OperationCode::ClubRemoveMember         => 0x020F,
-            OperationCode::ClubMembers              => 0x0210,
+            OperationCode::ClubSetDefaultReadClub => 0x0208,
+            OperationCode::ClubSetDefaultEditClub => 0x0209,
+            OperationCode::ClubSetPassword => 0x020A,
+            OperationCode::ClubClearCredential => 0x020B,
+            OperationCode::ClubCreatePersonal => 0x020C,
+            OperationCode::ClubWhoAmI => 0x020D,
+            OperationCode::ClubAddMember => 0x020E,
+            OperationCode::ClubRemoveMember => 0x020F,
+            OperationCode::ClubMembers => 0x0210,
 
             OperationCode::EditionStore => 0x0401,
-            OperationCode::EditionGet   => 0x0402,
+            OperationCode::EditionGet => 0x0402,
 
-            OperationCode::AdminAcceptConnections    => 0x0501,
+            OperationCode::AdminAcceptConnections => 0x0501,
             OperationCode::AdminIsAcceptingConnections => 0x0502,
-            OperationCode::AdminActiveSessions        => 0x0503,
-            OperationCode::AdminShutdown              => 0x0504,
-            OperationCode::AdminGrant                 => 0x0505,
-            OperationCode::AdminRevokeGrant           => 0x0506,
-            OperationCode::AdminGrants                => 0x0507,
-            OperationCode::AdminServerInfo            => 0x0508,
+            OperationCode::AdminActiveSessions => 0x0503,
+            OperationCode::AdminShutdown => 0x0504,
+            OperationCode::AdminGrant => 0x0505,
+            OperationCode::AdminRevokeGrant => 0x0506,
+            OperationCode::AdminGrants => 0x0507,
+            OperationCode::AdminServerInfo => 0x0508,
 
-            OperationCode::WorkList                    => 0x0314,
-            OperationCode::WorkListByOwner             => 0x0315,
-            OperationCode::WorkReviseDelta             => 0x0316,
+            OperationCode::WorkList => 0x0314,
+            OperationCode::WorkListByOwner => 0x0315,
+            OperationCode::WorkReviseDelta => 0x0316,
 
-            OperationCode::LinkCreate                  => 0x0701,
-            OperationCode::LinkGet                     => 0x0702,
-            OperationCode::LinkUpdate                  => 0x0703,
-            OperationCode::LinkDelete                  => 0x0704,
-            OperationCode::LinkListForWork             => 0x0705,
+            OperationCode::LinkCreate => 0x0701,
+            OperationCode::LinkGet => 0x0702,
+            OperationCode::LinkUpdate => 0x0703,
+            OperationCode::LinkDelete => 0x0704,
+            OperationCode::LinkListForWork => 0x0705,
 
-            OperationCode::FindTranscluders            => 0x0801,
-            OperationCode::FindWorksForContent         => 0x0802,
-            OperationCode::FindTextTranscluders        => 0x0803,
-            OperationCode::FindSharedRegions           => 0x0804,
+            OperationCode::FindTranscluders => 0x0801,
+            OperationCode::FindWorksForContent => 0x0802,
+            OperationCode::FindTextTranscluders => 0x0803,
+            OperationCode::FindSharedRegions => 0x0804,
 
             OperationCode::ServerStats => 0x0601,
 
-            OperationCode::BlobUpload      => 0x0901,
-            OperationCode::BlobGet          => 0x0902,
-            OperationCode::BlobGetPreview   => 0x0903,
-            OperationCode::BlobExists       => 0x0904,
-            OperationCode::BlobInfo         => 0x0905,
-            OperationCode::BlobStats        => 0x0906,
+            OperationCode::BlobUpload => 0x0901,
+            OperationCode::BlobGet => 0x0902,
+            OperationCode::BlobGetPreview => 0x0903,
+            OperationCode::BlobExists => 0x0904,
+            OperationCode::BlobInfo => 0x0905,
+            OperationCode::BlobStats => 0x0906,
 
-            OperationCode::OverlayApply      => 0x0a01,
-            OperationCode::OverlayGet        => 0x0a02,
+            OperationCode::OverlayApply => 0x0a01,
+            OperationCode::OverlayGet => 0x0a02,
 
-            OperationCode::LabelCreate           => 0x0b01,
-            OperationCode::LabelGetPositions     => 0x0b02,
-            OperationCode::EditionRelabel        => 0x0b03,
-            OperationCode::EditionRebind         => 0x0b04,
-            OperationCode::CanMakeIdentical      => 0x0b05,
-            OperationCode::MakeRangeIdentical    => 0x0b06,
-            OperationCode::IdentityUnify         => 0x0b07,
-            OperationCode::IdentityResolve       => 0x0b08,
+            OperationCode::LabelCreate => 0x0b01,
+            OperationCode::LabelGetPositions => 0x0b02,
+            OperationCode::EditionRelabel => 0x0b03,
+            OperationCode::EditionRebind => 0x0b04,
+            OperationCode::CanMakeIdentical => 0x0b05,
+            OperationCode::MakeRangeIdentical => 0x0b06,
+            OperationCode::IdentityUnify => 0x0b07,
+            OperationCode::IdentityResolve => 0x0b08,
 
             OperationCode::EditionRetrieve => 0x0c01,
-            OperationCode::EditionCost     => 0x0c02,
+            OperationCode::EditionCost => 0x0c02,
 
             OperationCode::ContentSharedRegion => 0x0e01,
             OperationCode::ContentMapSharedTo => 0x0e02,
@@ -699,149 +699,450 @@ pub enum WireRequest {
     },
     SessionLoginPublic,
 
-    ServerGetById { id: u64 },
-    ServerGetByBeId { be_id: BeId },
+    ServerGetById {
+        id: u64,
+    },
+    ServerGetByBeId {
+        be_id: BeId,
+    },
 
-    ClubCreate { description: EditionPayload },
-    ClubCreateNamed { name: String, description: EditionPayload },
-    ClubGet { club_id: BeId },
-    ClubByName { name: String },
-    ClubIdByName { name: String },
-    ClubNameById { club_id: BeId },
+    ClubCreate {
+        description: EditionPayload,
+    },
+    ClubCreateNamed {
+        name: String,
+        description: EditionPayload,
+    },
+    ClubGet {
+        club_id: BeId,
+    },
+    ClubByName {
+        name: String,
+    },
+    ClubIdByName {
+        name: String,
+    },
+    ClubNameById {
+        club_id: BeId,
+    },
     ClubNames,
 
-    WorkCreate { edition: EditionPayload },
-    WorkGetEdition { work_id: BeId },
-    WorkRevise { work_id: BeId, edition: EditionPayload },
-    WorkGrab { work_id: BeId },
-    WorkRelease { work_id: BeId },
-    WorkSaveAndRelease { work_id: BeId, edition: EditionPayload },
-    WorkForceRelease { work_id: BeId },
-    WorkIsGrabbed { work_id: BeId },
-    WorkGrabber { work_id: BeId },
-    WorkRequestGrab { work_id: BeId },
-    WorkCancelGrabRequest { work_id: BeId },
-    WorkGrabWaiters { work_id: BeId },
-    WorkCanRead { work_id: BeId },
-    WorkCanRevise { work_id: BeId },
-    WorkSetReadClub { work_id: BeId, club_id: Option<BeId> },
-    WorkSetEditClub { work_id: BeId, club_id: Option<BeId> },
-    WorkReadClub { work_id: BeId },
-    WorkEditClub { work_id: BeId },
-    WorkRevisionCount { work_id: BeId },
-    WorkFetchRevision { work_id: BeId, number: u64 },
-    WorkFetchRevisionRange { work_id: BeId, from: u64, to: u64 },
-    WorkSponsor { work_id: BeId, club_id: BeId },
-    WorkUnsponsor { work_id: BeId, club_id: BeId },
-    WorkSponsors { work_id: BeId },
-    WorkOwner { work_id: BeId },
-    WorkPublish { work_id: BeId },
-    WorkUnpublish { work_id: BeId },
-    WorkIrrevocablyUnpublish { work_id: BeId },
-    WorkIsPublished { work_id: BeId },
+    WorkCreate {
+        edition: EditionPayload,
+    },
+    WorkGetEdition {
+        work_id: BeId,
+    },
+    WorkRevise {
+        work_id: BeId,
+        edition: EditionPayload,
+    },
+    WorkGrab {
+        work_id: BeId,
+    },
+    WorkRelease {
+        work_id: BeId,
+    },
+    WorkSaveAndRelease {
+        work_id: BeId,
+        edition: EditionPayload,
+    },
+    WorkForceRelease {
+        work_id: BeId,
+    },
+    WorkIsGrabbed {
+        work_id: BeId,
+    },
+    WorkGrabber {
+        work_id: BeId,
+    },
+    WorkRequestGrab {
+        work_id: BeId,
+    },
+    WorkCancelGrabRequest {
+        work_id: BeId,
+    },
+    WorkGrabWaiters {
+        work_id: BeId,
+    },
+    WorkCanRead {
+        work_id: BeId,
+    },
+    WorkCanRevise {
+        work_id: BeId,
+    },
+    WorkSetReadClub {
+        work_id: BeId,
+        club_id: Option<BeId>,
+    },
+    WorkSetEditClub {
+        work_id: BeId,
+        club_id: Option<BeId>,
+    },
+    WorkReadClub {
+        work_id: BeId,
+    },
+    WorkEditClub {
+        work_id: BeId,
+    },
+    WorkRevisionCount {
+        work_id: BeId,
+    },
+    WorkFetchRevision {
+        work_id: BeId,
+        number: u64,
+    },
+    WorkFetchRevisionRange {
+        work_id: BeId,
+        from: u64,
+        to: u64,
+    },
+    WorkSponsor {
+        work_id: BeId,
+        club_id: BeId,
+    },
+    WorkUnsponsor {
+        work_id: BeId,
+        club_id: BeId,
+    },
+    WorkSponsors {
+        work_id: BeId,
+    },
+    WorkOwner {
+        work_id: BeId,
+    },
+    WorkPublish {
+        work_id: BeId,
+    },
+    WorkUnpublish {
+        work_id: BeId,
+    },
+    WorkIrrevocablyUnpublish {
+        work_id: BeId,
+    },
+    WorkIsPublished {
+        work_id: BeId,
+    },
 
-    ClubSetDefaultReadClub { club_id: BeId, default_read_club: Option<BeId> },
-    ClubSetDefaultEditClub { club_id: BeId, default_edit_club: Option<BeId> },
+    ClubSetDefaultReadClub {
+        club_id: BeId,
+        default_read_club: Option<BeId>,
+    },
+    ClubSetDefaultEditClub {
+        club_id: BeId,
+        default_edit_club: Option<BeId>,
+    },
 
-    ClubSetPassword { club_id: BeId, password: Vec<u8> },
-    ClubClearCredential { club_id: BeId },
-    ClubCreatePersonal { display_name: String, password: Option<Vec<u8>> },
+    ClubSetPassword {
+        club_id: BeId,
+        password: Vec<u8>,
+    },
+    ClubClearCredential {
+        club_id: BeId,
+    },
+    ClubCreatePersonal {
+        display_name: String,
+        password: Option<Vec<u8>>,
+    },
     ClubWhoAmI,
-    ClubAddMember { club_id: BeId, member_id: BeId },
-    ClubRemoveMember { club_id: BeId, member_id: BeId },
-    ClubMembers { club_id: BeId },
+    ClubAddMember {
+        club_id: BeId,
+        member_id: BeId,
+    },
+    ClubRemoveMember {
+        club_id: BeId,
+        member_id: BeId,
+    },
+    ClubMembers {
+        club_id: BeId,
+    },
 
-    EditionStore { edition: EditionPayload },
-    EditionGet { be_id: BeId },
+    EditionStore {
+        edition: EditionPayload,
+    },
+    EditionGet {
+        be_id: BeId,
+    },
 
-    AdminAcceptConnections { accept: bool },
+    AdminAcceptConnections {
+        accept: bool,
+    },
     AdminIsAcceptingConnections,
     AdminActiveSessions,
     AdminShutdown,
-    AdminGrant { club_id: BeId, region_start: i64, region_end: i64 },
-    AdminRevokeGrant { club_id: BeId },
+    AdminGrant {
+        club_id: BeId,
+        region_start: i64,
+        region_end: i64,
+    },
+    AdminRevokeGrant {
+        club_id: BeId,
+    },
     AdminGrants,
     AdminServerInfo,
 
     WorkList,
-    WorkListByOwner { owner: BeId },
+    WorkListByOwner {
+        owner: BeId,
+    },
 
-    WorkReviseDelta { work_id: BeId, base_revision: u64, ops: Vec<TextDeltaOp> },
+    WorkReviseDelta {
+        work_id: BeId,
+        base_revision: u64,
+        ops: Vec<TextDeltaOp>,
+    },
 
-    LinkCreate { origin: BeId, destination: BeId, origin_ref: Option<HyperRefPayload>, destination_ref: Option<HyperRefPayload> },
-    LinkGet { link_id: BeId },
-    LinkUpdate { link_id: BeId, origin_ref: Option<HyperRefPayload>, destination_ref: Option<HyperRefPayload> },
-    LinkDelete { link_id: BeId },
-    LinkListForWork { work_id: BeId },
+    LinkCreate {
+        origin: BeId,
+        destination: BeId,
+        origin_ref: Option<HyperRefPayload>,
+        destination_ref: Option<HyperRefPayload>,
+    },
+    LinkGet {
+        link_id: BeId,
+    },
+    LinkUpdate {
+        link_id: BeId,
+        origin_ref: Option<HyperRefPayload>,
+        destination_ref: Option<HyperRefPayload>,
+    },
+    LinkDelete {
+        link_id: BeId,
+    },
+    LinkListForWork {
+        work_id: BeId,
+    },
 
-    FindTranscluders { content_be_id: BeId },
-    FindWorksForContent { content_be_id: BeId },
-    FindTextTranscluders { text: String },
-    FindSharedRegions { work_a: BeId, work_b: BeId, filter_text: Option<String> },
+    FindTranscluders {
+        content_be_id: BeId,
+    },
+    FindWorksForContent {
+        content_be_id: BeId,
+    },
+    FindTextTranscluders {
+        text: String,
+    },
+    FindSharedRegions {
+        work_a: BeId,
+        work_b: BeId,
+        filter_text: Option<String>,
+    },
 
     ServerStats,
 
-    BlobUpload { data: String, mime_type: String },
-    BlobGet { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] content_hash: u64 },
-    BlobGetPreview { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] content_hash: u64 },
-    BlobExists { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] content_hash: u64 },
-    BlobInfo { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] content_hash: u64 },
+    BlobUpload {
+        data: String,
+        mime_type: String,
+    },
+    BlobGet {
+        #[serde(
+            serialize_with = "u64_hex::serialize",
+            deserialize_with = "u64_hex::deserialize"
+        )]
+        content_hash: u64,
+    },
+    BlobGetPreview {
+        #[serde(
+            serialize_with = "u64_hex::serialize",
+            deserialize_with = "u64_hex::deserialize"
+        )]
+        content_hash: u64,
+    },
+    BlobExists {
+        #[serde(
+            serialize_with = "u64_hex::serialize",
+            deserialize_with = "u64_hex::deserialize"
+        )]
+        content_hash: u64,
+    },
+    BlobInfo {
+        #[serde(
+            serialize_with = "u64_hex::serialize",
+            deserialize_with = "u64_hex::deserialize"
+        )]
+        content_hash: u64,
+    },
     BlobStats,
-    OverlayApply { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] base_hash: u64, ops: Vec<ImageOp>, mime_type: String },
-    OverlayGet { #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")] overlay_hash: u64 },
+    OverlayApply {
+        #[serde(
+            serialize_with = "u64_hex::serialize",
+            deserialize_with = "u64_hex::deserialize"
+        )]
+        base_hash: u64,
+        ops: Vec<ImageOp>,
+        mime_type: String,
+    },
+    OverlayGet {
+        #[serde(
+            serialize_with = "u64_hex::serialize",
+            deserialize_with = "u64_hex::deserialize"
+        )]
+        overlay_hash: u64,
+    },
 
     LabelCreate,
-    LabelGetPositions { work_id: BeId, label_id: u64 },
-    EditionRelabel { work_id: BeId, label_id: u64 },
-    EditionRebind { work_id: BeId, position: i64, new_edition: EditionPayload },
-    CanMakeIdentical { source_work_id: BeId, target_work_id: BeId, position: Option<i64> },
-    MakeRangeIdentical { source_work_id: BeId, target_work_id: BeId, region: Option<XnRegion> },
-    IdentityUnify { source_id: u64, target_id: u64 },
-    IdentityResolve { id: u64 },
+    LabelGetPositions {
+        work_id: BeId,
+        label_id: u64,
+    },
+    EditionRelabel {
+        work_id: BeId,
+        label_id: u64,
+    },
+    EditionRebind {
+        work_id: BeId,
+        position: i64,
+        new_edition: EditionPayload,
+    },
+    CanMakeIdentical {
+        source_work_id: BeId,
+        target_work_id: BeId,
+        position: Option<i64>,
+    },
+    MakeRangeIdentical {
+        source_work_id: BeId,
+        target_work_id: BeId,
+        region: Option<XnRegion>,
+    },
+    IdentityUnify {
+        source_id: u64,
+        target_id: u64,
+    },
+    IdentityResolve {
+        id: u64,
+    },
 
-    EditionRetrieve { work_id: BeId, region: Option<XnRegion>, flags: Option<RetrieveFlagsPayload> },
-    EditionCost { work_id: BeId, method: Option<String> },
+    EditionRetrieve {
+        work_id: BeId,
+        region: Option<XnRegion>,
+        flags: Option<RetrieveFlagsPayload>,
+    },
+    EditionCost {
+        work_id: BeId,
+        method: Option<String>,
+    },
 
-    ContentSharedRegion { work_a: BeId, work_b: BeId },
-    ContentMapSharedTo { work_a: BeId, work_b: BeId },
-    ContentMapSharedOnto { work_a: BeId, work_b: BeId },
-    PositionsOf { work_id: BeId, element: RangeElement },
+    ContentSharedRegion {
+        work_a: BeId,
+        work_b: BeId,
+    },
+    ContentMapSharedTo {
+        work_a: BeId,
+        work_b: BeId,
+    },
+    ContentMapSharedOnto {
+        work_a: BeId,
+        work_b: BeId,
+    },
+    PositionsOf {
+        work_id: BeId,
+        element: RangeElement,
+    },
 
-    RangeTranscluders { work_id: BeId, region: Option<XnRegion>, direct_only: Option<bool> },
-    RangeWorks { work_id: BeId, region: Option<XnRegion> },
-    OrderedBundles { work_id: BeId, region: Option<XnRegion> },
-    TransclusionDepth { work_id: BeId, position: i64, max_depth: Option<usize> },
+    RangeTranscluders {
+        work_id: BeId,
+        region: Option<XnRegion>,
+        direct_only: Option<bool>,
+    },
+    RangeWorks {
+        work_id: BeId,
+        region: Option<XnRegion>,
+    },
+    OrderedBundles {
+        work_id: BeId,
+        region: Option<XnRegion>,
+    },
+    TransclusionDepth {
+        work_id: BeId,
+        position: i64,
+        max_depth: Option<usize>,
+    },
 
-    AdminRecorderCreate { kind: String, direct_only: Option<bool>, region: Option<XnRegion> },
-    AdminRecorderRecord { recorder_id: u64, element: RangeElement },
+    AdminRecorderCreate {
+        kind: String,
+        direct_only: Option<bool>,
+        region: Option<XnRegion>,
+    },
+    AdminRecorderRecord {
+        recorder_id: u64,
+        element: RangeElement,
+    },
     AdminRecorderList,
-    AdminRecorderGet { recorder_id: u64 },
+    AdminRecorderGet {
+        recorder_id: u64,
+    },
     AdminServerHealth,
     CryptoGetPublicKey,
-    CryptoSignData { data: Vec<u8> },
-    CryptoVerifySignature { data: Vec<u8>, signature: Vec<u8> },
+    CryptoSignData {
+        data: Vec<u8>,
+    },
+    CryptoVerifySignature {
+        data: Vec<u8>,
+        signature: Vec<u8>,
+    },
     CryptoKeyRotation,
     CryptoKeyHistory,
-    WorkEndorse { work_id: BeId, endorsements: Vec<(u64, u64)> },
-    WorkRetract { work_id: BeId, endorsements: Vec<(u64, u64)> },
-    WorkEndorsements { work_id: BeId },
-    EditionEndorse { edition_id: BeId, endorsements: Vec<(u64, u64)> },
-    EditionRetract { edition_id: BeId, endorsements: Vec<(u64, u64)> },
-    EditionEndorsements { edition_id: BeId },
-    EditionVisibleEndorsements { edition_id: BeId },
-    EditionTotalEndorsements { edition_id: BeId },
+    WorkEndorse {
+        work_id: BeId,
+        endorsements: Vec<(u64, u64)>,
+    },
+    WorkRetract {
+        work_id: BeId,
+        endorsements: Vec<(u64, u64)>,
+    },
+    WorkEndorsements {
+        work_id: BeId,
+    },
+    EditionEndorse {
+        edition_id: BeId,
+        endorsements: Vec<(u64, u64)>,
+    },
+    EditionRetract {
+        edition_id: BeId,
+        endorsements: Vec<(u64, u64)>,
+    },
+    EditionEndorsements {
+        edition_id: BeId,
+    },
+    EditionVisibleEndorsements {
+        edition_id: BeId,
+    },
+    EditionTotalEndorsements {
+        edition_id: BeId,
+    },
 
     FederationInfo,
     FederationPeers,
-    FederatedTransclusionQuery { content_fingerprint_hex: String, direct_only: bool },
-    FederatedContentFetch { content_fingerprint_hex: String },
+    FederatedTransclusionQuery {
+        content_fingerprint_hex: String,
+        direct_only: bool,
+    },
+    FederatedContentFetch {
+        content_fingerprint_hex: String,
+    },
 
-    EndorsementSync { work_fingerprint: String },
-    EndorsementAdd { work_fingerprint: String, club_id: u64, token_id: u64 },
-    EndorsementRetract { work_fingerprint: String, club_id: u64, token_id: u64 },
-    EndorsementQuery { work_fingerprint: String },
-    StateSync { work_fingerprints: Vec<String> },
-    StateAlternatives { work_fingerprint: String },
+    EndorsementSync {
+        work_fingerprint: String,
+    },
+    EndorsementAdd {
+        work_fingerprint: String,
+        club_id: u64,
+        token_id: u64,
+    },
+    EndorsementRetract {
+        work_fingerprint: String,
+        club_id: u64,
+        token_id: u64,
+    },
+    EndorsementQuery {
+        work_fingerprint: String,
+    },
+    StateSync {
+        work_fingerprints: Vec<String>,
+    },
+    StateAlternatives {
+        work_fingerprint: String,
+    },
 
     MembershipJoinRequest {
         entry: crate::server::federation::MembershipEntry,
@@ -873,17 +1174,40 @@ pub enum WireRequest {
     GovernanceLog,
     GovernanceStatus,
 
-    CrdtSyncOpen { work_id: BeId },
-    CrdtSyncClose { work_id: BeId },
-    CrdtSyncUpdate { work_id: BeId, update: Vec<u8> },
-    CrdtSyncDiff { work_id: BeId, state_vector: Vec<u8> },
-    CrdtSyncFullState { work_id: BeId },
-    CrdtSyncMaterialize { work_id: BeId },
-    CrdtSyncSubscriberCount { work_id: BeId },
-    CrdtSyncText { work_id: BeId },
+    CrdtSyncOpen {
+        work_id: BeId,
+    },
+    CrdtSyncClose {
+        work_id: BeId,
+    },
+    CrdtSyncUpdate {
+        work_id: BeId,
+        update: Vec<u8>,
+    },
+    CrdtSyncDiff {
+        work_id: BeId,
+        state_vector: Vec<u8>,
+    },
+    CrdtSyncFullState {
+        work_id: BeId,
+    },
+    CrdtSyncMaterialize {
+        work_id: BeId,
+    },
+    CrdtSyncSubscriberCount {
+        work_id: BeId,
+    },
+    CrdtSyncText {
+        work_id: BeId,
+    },
 
-    CrdtAwarenessUpdate { work_id: BeId, state: crate::server::crdt_manager::AwarenessState },
-    CrdtAwarenessGet { work_id: BeId },
+    CrdtAwarenessUpdate {
+        work_id: BeId,
+        state: crate::server::crdt_manager::AwarenessState,
+    },
+    CrdtAwarenessGet {
+        work_id: BeId,
+    },
 
     CrdtRegisterAuthor {
         work_id: BeId,
@@ -893,7 +1217,11 @@ pub enum WireRequest {
         display_name: String,
     },
 
-    AttributionQuery { work_id: BeId, start: Option<i64>, end: Option<i64> },
+    AttributionQuery {
+        work_id: BeId,
+        start: Option<i64>,
+        end: Option<i64>,
+    },
     AttributionVerify {
         author_public_key: Vec<u8>,
         signature: Vec<u8>,
@@ -951,9 +1279,10 @@ impl EditionPayload {
         if entries.is_empty() {
             EditionPayload::Empty
         } else if is_contiguous_text(&entries) {
-            let s: String = entries.iter().map(|(_, e)| {
-                e.as_text().unwrap_or("")
-            }).collect();
+            let s: String = entries
+                .iter()
+                .map(|(_, e)| e.as_text().unwrap_or(""))
+                .collect();
             EditionPayload::Text(s)
         } else {
             EditionPayload::Entries(entries)
@@ -988,24 +1317,71 @@ pub enum ResponseValue {
     BlobData(Vec<u8>),
     BlobStatsInfo(BlobStatsPayload),
     OverlayInfo(OverlayPayload),
-    LabelInfo { label_id: u64 },
-    LabelPositions { label_id: u64, positions: XnRegion },
-    CanMakeIdenticalResult { result: String },
-    MakeRangeIdenticalResult { outcome: String, failed_count: u64, failed: EditionPayload },
-    IdentityResolveResult { resolved_id: u64 },
-    BundleResults { bundles: Vec<BundlePayload> },
-    StorageCostResult { total_bytes: u64, unique_bytes: u64, shared_bytes: u64, share_count: u64, billed_bytes: u64, method: String },
-    SharedRegionResult { region: XnRegion },
-    SharedMappingResult { pairs: Vec<(i64, i64)> },
-    PositionsOfResult { region: XnRegion },
-    RangeTranscludersResult { edition_ids: Vec<BeId>, work_ids: Vec<BeId>, region: XnRegion },
-    RangeWorksResult { work_ids: Vec<BeId>, region: XnRegion },
-    OrderedBundlesResult { bundles: Vec<BundlePayload> },
-    TransclusionDepthResult { depth: usize },
-    RecorderCreateResult { recorder_id: u64 },
-    RecorderRecordResult { recorded: bool },
-    RecorderListResult { recorders: Vec<RecorderInfoPayload> },
-    RecorderGetResult { recorder: Option<RecorderInfoPayload> },
+    LabelInfo {
+        label_id: u64,
+    },
+    LabelPositions {
+        label_id: u64,
+        positions: XnRegion,
+    },
+    CanMakeIdenticalResult {
+        result: String,
+    },
+    MakeRangeIdenticalResult {
+        outcome: String,
+        failed_count: u64,
+        failed: EditionPayload,
+    },
+    IdentityResolveResult {
+        resolved_id: u64,
+    },
+    BundleResults {
+        bundles: Vec<BundlePayload>,
+    },
+    StorageCostResult {
+        total_bytes: u64,
+        unique_bytes: u64,
+        shared_bytes: u64,
+        share_count: u64,
+        billed_bytes: u64,
+        method: String,
+    },
+    SharedRegionResult {
+        region: XnRegion,
+    },
+    SharedMappingResult {
+        pairs: Vec<(i64, i64)>,
+    },
+    PositionsOfResult {
+        region: XnRegion,
+    },
+    RangeTranscludersResult {
+        edition_ids: Vec<BeId>,
+        work_ids: Vec<BeId>,
+        region: XnRegion,
+    },
+    RangeWorksResult {
+        work_ids: Vec<BeId>,
+        region: XnRegion,
+    },
+    OrderedBundlesResult {
+        bundles: Vec<BundlePayload>,
+    },
+    TransclusionDepthResult {
+        depth: usize,
+    },
+    RecorderCreateResult {
+        recorder_id: u64,
+    },
+    RecorderRecordResult {
+        recorded: bool,
+    },
+    RecorderListResult {
+        recorders: Vec<RecorderInfoPayload>,
+    },
+    RecorderGetResult {
+        recorder: Option<RecorderInfoPayload>,
+    },
     ServerHealthResult {
         operation_count: u64,
         active_recorders: usize,
@@ -1036,7 +1412,9 @@ pub enum ResponseValue {
         entry_count: usize,
         entries: Vec<KeyHistoryEntryPayload>,
     },
-    EndorsementResult { endorsements: Vec<(u64, u64)> },
+    EndorsementResult {
+        endorsements: Vec<(u64, u64)>,
+    },
     FederationInfoResult {
         server_id: String,
         federation_domain: String,
@@ -1232,9 +1610,17 @@ pub struct RetrieveFlagsPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BundlePayload {
-    Element { region: XnRegion, element: RangeElement },
-    Array { region: XnRegion, elements: Vec<RangeElement> },
-    PlaceHolder { region: XnRegion },
+    Element {
+        region: XnRegion,
+        element: RangeElement,
+    },
+    Array {
+        region: XnRegion,
+        elements: Vec<RangeElement>,
+    },
+    PlaceHolder {
+        region: XnRegion,
+    },
 }
 
 impl BundlePayload {
@@ -1322,17 +1708,29 @@ impl RangeElementPayload {
 impl HyperRefPayload {
     pub fn from_hyper_ref(hr: &crate::edition::links::HyperRef) -> Self {
         let path_context = hr.path_context().map(|p| {
-            p.labels().iter().map(RangeElementPayload::from_range_element).collect()
+            p.labels()
+                .iter()
+                .map(RangeElementPayload::from_range_element)
+                .collect()
         });
         let excerpt = hr.excerpt().and_then(|ed| {
             let entries = ed.all_entries();
-            let text: String = entries.iter()
+            let text: String = entries
+                .iter()
                 .filter_map(|(_, c)| c.element.as_text())
                 .collect();
-            if text.is_empty() { None } else { Some(text) }
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
         });
         HyperRefPayload {
-            kind: if hr.is_single() { "single".to_string() } else { "multi".to_string() },
+            kind: if hr.is_single() {
+                "single".to_string()
+            } else {
+                "multi".to_string()
+            },
             work_context: hr.work_context(),
             original_context: hr.original_context(),
             path_context,
@@ -1373,7 +1771,7 @@ pub struct SharedRegionPayload {
 }
 
 pub mod u64_hex {
-    use serde::{Serializer, Deserializer, de::Error};
+    use serde::{de::Error, Deserializer, Serializer};
     pub fn serialize<S: Serializer>(v: &u64, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&format!("{:016x}", v))
     }
@@ -1384,7 +1782,7 @@ pub mod u64_hex {
 }
 
 pub mod u64_option_hex {
-    use serde::{Serializer, Deserializer, de::Error};
+    use serde::{de::Error, Deserializer, Serializer};
     pub fn serialize<S: Serializer>(v: &Option<u64>, s: S) -> Result<S::Ok, S::Error> {
         match v {
             Some(n) => s.serialize_some(&format!("{:016x}", n)),
@@ -1402,11 +1800,17 @@ pub mod u64_option_hex {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlobMetaPayload {
-    #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")]
+    #[serde(
+        serialize_with = "u64_hex::serialize",
+        deserialize_with = "u64_hex::deserialize"
+    )]
     pub content_hash: u64,
     pub byte_size: u64,
     pub mime_type: String,
-    #[serde(serialize_with = "u64_option_hex::serialize", deserialize_with = "u64_option_hex::deserialize")]
+    #[serde(
+        serialize_with = "u64_option_hex::serialize",
+        deserialize_with = "u64_option_hex::deserialize"
+    )]
     pub preview_hash: Option<u64>,
     pub width: Option<u32>,
     pub height: Option<u32>,
@@ -1433,9 +1837,15 @@ pub struct BlobStatsPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverlayPayload {
-    #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")]
+    #[serde(
+        serialize_with = "u64_hex::serialize",
+        deserialize_with = "u64_hex::deserialize"
+    )]
     pub overlay_hash: u64,
-    #[serde(serialize_with = "u64_hex::serialize", deserialize_with = "u64_hex::deserialize")]
+    #[serde(
+        serialize_with = "u64_hex::serialize",
+        deserialize_with = "u64_hex::deserialize"
+    )]
     pub base_hash: u64,
     pub operations: Vec<ImageOp>,
     pub mime_type: String,
@@ -1523,8 +1933,12 @@ impl ErrorCode {
             crate::server::ServerError::AdminRequired => ErrorCode::AdminRequired,
             crate::server::ServerError::Unauthorized(_) => ErrorCode::Unauthorized,
             crate::server::ServerError::ServerShuttingDown => ErrorCode::ServerShuttingDown,
-            crate::server::ServerError::NotAcceptingConnections => ErrorCode::NotAcceptingConnections,
-            crate::server::ServerError::ReadClubIrrevocablyRemoved(_) => ErrorCode::IrrevocablyRemoved,
+            crate::server::ServerError::NotAcceptingConnections => {
+                ErrorCode::NotAcceptingConnections
+            }
+            crate::server::ServerError::ReadClubIrrevocablyRemoved(_) => {
+                ErrorCode::IrrevocablyRemoved
+            }
             crate::server::ServerError::NotOwner(_) => ErrorCode::NotAuthorized,
         }
     }
@@ -1550,13 +1964,13 @@ pub struct SubscribeRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum EventCode {
-    WorkGrabbed   = 0x01,
-    WorkReleased  = 0x02,
-    WorkRevised   = 0x03,
-    RangeFilled   = 0x04,
+    WorkGrabbed = 0x01,
+    WorkReleased = 0x02,
+    WorkRevised = 0x03,
+    RangeFilled = 0x04,
     ElementFilled = 0x05,
-    Done          = 0x06,
-    ContentMatch  = 0x07,
+    Done = 0x06,
+    ContentMatch = 0x07,
 }
 
 impl EventCode {
@@ -1584,36 +1998,77 @@ pub struct WireEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum EventPayload {
-    WorkGrabbed { work_be_id: BeId, session_id: u64 },
-    WorkReleased { work_be_id: BeId, session_id: u64 },
-    WorkRevised { work_be_id: BeId, revision: u64, session_id: u64 },
-    RangeFilled { edition_be_id: BeId, region: XnRegion },
-    ElementFilled { element_be_id: BeId },
-    Done { operation_id: u64 },
-    ContentMatch { fossil_id: u64, edition_be_id: BeId, is_direct: bool, work_be_id: Option<BeId>, title: Option<String> },
+    WorkGrabbed {
+        work_be_id: BeId,
+        session_id: u64,
+    },
+    WorkReleased {
+        work_be_id: BeId,
+        session_id: u64,
+    },
+    WorkRevised {
+        work_be_id: BeId,
+        revision: u64,
+        session_id: u64,
+    },
+    RangeFilled {
+        edition_be_id: BeId,
+        region: XnRegion,
+    },
+    ElementFilled {
+        element_be_id: BeId,
+    },
+    Done {
+        operation_id: u64,
+    },
+    ContentMatch {
+        fossil_id: u64,
+        edition_be_id: BeId,
+        is_direct: bool,
+        work_be_id: Option<BeId>,
+        title: Option<String>,
+    },
 }
 
 impl EventPayload {
     pub fn from_event(event: &crate::server::Event) -> Self {
         match event {
-            crate::server::Event::WorkGrabbed { work_be_id, session_id } => {
-                EventPayload::WorkGrabbed { work_be_id: *work_be_id, session_id: session_id.as_u64() }
-            }
-            crate::server::Event::WorkReleased { work_be_id, session_id } => {
-                EventPayload::WorkReleased { work_be_id: *work_be_id, session_id: session_id.as_u64() }
-            }
-            crate::server::Event::WorkRevised { work_be_id, revision, session_id } => {
-                EventPayload::WorkRevised { work_be_id: *work_be_id, revision: *revision, session_id: session_id.as_u64() }
-            }
-            crate::server::Event::RangeFilled { edition_be_id, region } => {
-                EventPayload::RangeFilled { edition_be_id: *edition_be_id, region: region.clone() }
-            }
-            crate::server::Event::ElementFilled { element_be_id } => {
-                EventPayload::ElementFilled { element_be_id: *element_be_id }
-            }
-            crate::server::Event::Done { operation_id } => {
-                EventPayload::Done { operation_id: *operation_id }
-            }
+            crate::server::Event::WorkGrabbed {
+                work_be_id,
+                session_id,
+            } => EventPayload::WorkGrabbed {
+                work_be_id: *work_be_id,
+                session_id: session_id.as_u64(),
+            },
+            crate::server::Event::WorkReleased {
+                work_be_id,
+                session_id,
+            } => EventPayload::WorkReleased {
+                work_be_id: *work_be_id,
+                session_id: session_id.as_u64(),
+            },
+            crate::server::Event::WorkRevised {
+                work_be_id,
+                revision,
+                session_id,
+            } => EventPayload::WorkRevised {
+                work_be_id: *work_be_id,
+                revision: *revision,
+                session_id: session_id.as_u64(),
+            },
+            crate::server::Event::RangeFilled {
+                edition_be_id,
+                region,
+            } => EventPayload::RangeFilled {
+                edition_be_id: *edition_be_id,
+                region: region.clone(),
+            },
+            crate::server::Event::ElementFilled { element_be_id } => EventPayload::ElementFilled {
+                element_be_id: *element_be_id,
+            },
+            crate::server::Event::Done { operation_id } => EventPayload::Done {
+                operation_id: *operation_id,
+            },
         }
     }
 }

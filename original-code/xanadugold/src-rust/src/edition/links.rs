@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use super::edition::Edition;
 use super::range_element::RangeElement;
 use super::xn_region::XnRegion;
+use std::collections::HashMap;
 
 pub trait EditionResolver: std::fmt::Debug {
     fn resolve_edition(&self, edition_id: u64) -> Option<Edition>;
@@ -44,10 +44,23 @@ impl EditionResolver for HashMapResolver {
 #[derive(Debug, Clone, PartialEq)]
 pub enum FollowError {
     EmptyPath,
-    LabelNotFound { step: usize, label_id: u64 },
-    MultiplePositions { step: usize, label_id: u64, count: usize },
-    EditionNotFound { step: usize, edition_id: u64 },
-    UnexpectedType { step: usize, position: i64 },
+    LabelNotFound {
+        step: usize,
+        label_id: u64,
+    },
+    MultiplePositions {
+        step: usize,
+        label_id: u64,
+        count: usize,
+    },
+    EditionNotFound {
+        step: usize,
+        edition_id: u64,
+    },
+    UnexpectedType {
+        step: usize,
+        position: i64,
+    },
 }
 
 impl std::fmt::Display for FollowError {
@@ -57,14 +70,30 @@ impl std::fmt::Display for FollowError {
             FollowError::LabelNotFound { step, label_id } => {
                 write!(f, "step {}: label {} not found", step, label_id)
             }
-            FollowError::MultiplePositions { step, label_id, count } => {
-                write!(f, "step {}: label {} found at {} positions (expected exactly one)", step, label_id, count)
+            FollowError::MultiplePositions {
+                step,
+                label_id,
+                count,
+            } => {
+                write!(
+                    f,
+                    "step {}: label {} found at {} positions (expected exactly one)",
+                    step, label_id, count
+                )
             }
             FollowError::EditionNotFound { step, edition_id } => {
-                write!(f, "step {}: nested edition {} could not be resolved", step, edition_id)
+                write!(
+                    f,
+                    "step {}: nested edition {} could not be resolved",
+                    step, edition_id
+                )
             }
             FollowError::UnexpectedType { step, position } => {
-                write!(f, "step {}: unexpected element type at position {}", step, position)
+                write!(
+                    f,
+                    "step {}: unexpected element type at position {}",
+                    step, position
+                )
             }
         }
     }
@@ -105,7 +134,8 @@ impl Path {
     }
 
     pub fn follow(&self, edition: &Edition) -> Option<RangeElement> {
-        self.follow_with_resolver(edition, &HashMapResolver::new()).ok()
+        self.follow_with_resolver(edition, &HashMapResolver::new())
+            .ok()
     }
 
     pub fn follow_with_resolver(
@@ -145,10 +175,7 @@ impl Path {
                             });
                         }
                         None => {
-                            return Err(FollowError::LabelNotFound {
-                                step,
-                                label_id: 0,
-                            });
+                            return Err(FollowError::LabelNotFound { step, label_id: 0 });
                         }
                     }
                 }
@@ -189,22 +216,22 @@ impl Path {
 
             match &element {
                 RangeElement::Edition { edition_id } => {
-                    let nested_edition = resolver
-                        .resolve_edition(edition_id.0)
-                        .ok_or(FollowError::EditionNotFound {
+                    let nested_edition = resolver.resolve_edition(edition_id.0).ok_or(
+                        FollowError::EditionNotFound {
                             step,
                             edition_id: edition_id.0,
-                        })?;
+                        },
+                    )?;
                     current_entries = nested_edition.all_entries();
                 }
                 RangeElement::Label { inner, .. } => {
                     if let RangeElement::Edition { edition_id } = inner.as_ref() {
-                        let nested_edition = resolver
-                            .resolve_edition(edition_id.0)
-                            .ok_or(FollowError::EditionNotFound {
+                        let nested_edition = resolver.resolve_edition(edition_id.0).ok_or(
+                            FollowError::EditionNotFound {
                                 step,
                                 edition_id: edition_id.0,
-                            })?;
+                            },
+                        )?;
                         current_entries = nested_edition.all_entries();
                     } else {
                         return Ok(element);
@@ -256,12 +283,8 @@ pub struct HyperRef {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HyperRefKind {
-    Single {
-        excerpt: Option<Edition>,
-    },
-    Multi {
-        refs: Vec<HyperRef>,
-    },
+    Single { excerpt: Option<Edition> },
+    Multi { refs: Vec<HyperRef> },
 }
 
 impl HyperRef {
@@ -333,7 +356,9 @@ impl HyperRef {
 
     pub fn with_excerpt(&self, excerpt: Edition) -> Self {
         HyperRef {
-            kind: HyperRefKind::Single { excerpt: Some(excerpt) },
+            kind: HyperRefKind::Single {
+                excerpt: Some(excerpt),
+            },
             work_context: self.work_context,
             original_context: self.original_context,
             path_context: self.path_context.clone(),
@@ -425,8 +450,11 @@ impl HyperRef {
     pub fn intersect(&self, other: &HyperRef) -> Self {
         match (&self.kind, &other.kind) {
             (HyperRefKind::Multi { refs: a }, HyperRefKind::Multi { refs: b }) => {
-                let kept: Vec<HyperRef> =
-                    a.iter().filter(|r| b.iter().any(|o| o == *r)).cloned().collect();
+                let kept: Vec<HyperRef> = a
+                    .iter()
+                    .filter(|r| b.iter().any(|o| o == *r))
+                    .cloned()
+                    .collect();
                 HyperRef {
                     kind: HyperRefKind::Multi { refs: kept },
                     work_context: self.work_context,
@@ -441,8 +469,11 @@ impl HyperRef {
     pub fn minus(&self, other: &HyperRef) -> Self {
         match (&self.kind, &other.kind) {
             (HyperRefKind::Multi { refs: a }, HyperRefKind::Multi { refs: b }) => {
-                let kept: Vec<HyperRef> =
-                    a.iter().filter(|r| !b.iter().any(|o| o == *r)).cloned().collect();
+                let kept: Vec<HyperRef> = a
+                    .iter()
+                    .filter(|r| !b.iter().any(|o| o == *r))
+                    .cloned()
+                    .collect();
                 HyperRef {
                     kind: HyperRefKind::Multi { refs: kept },
                     work_context: self.work_context,
@@ -490,11 +521,7 @@ impl HyperLink {
         }
     }
 
-    pub fn make(
-        types: Vec<u64>,
-        left_end: HyperRef,
-        right_end: HyperRef,
-    ) -> Self {
+    pub fn make(types: Vec<u64>, left_end: HyperRef, right_end: HyperRef) -> Self {
         let mut ends = HashMap::new();
         ends.insert("LeftEnd".to_string(), left_end);
         ends.insert("RightEnd".to_string(), right_end);
@@ -504,10 +531,7 @@ impl HyperLink {
         }
     }
 
-    pub fn make_with_ends(
-        types: Vec<u64>,
-        ends: HashMap<String, HyperRef>,
-    ) -> Self {
+    pub fn make_with_ends(types: Vec<u64>, ends: HashMap<String, HyperRef>) -> Self {
         HyperLink {
             ends,
             link_types: types,
@@ -812,8 +836,18 @@ mod tests {
 
     #[test]
     fn hyper_link_all_referenced_content() {
-        let left = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("A"))), None, None, None);
-        let right = HyperRef::single(Some(Edition::from_one(0, RangeElement::text("B"))), None, None, None);
+        let left = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("A"))),
+            None,
+            None,
+            None,
+        );
+        let right = HyperRef::single(
+            Some(Edition::from_one(0, RangeElement::text("B"))),
+            None,
+            None,
+            None,
+        );
         let link = HyperLink::make(vec![], left, right);
         let content = link.all_referenced_content();
         assert_eq!(content.len(), 2);
@@ -884,9 +918,18 @@ mod tests {
     #[test]
     fn hyper_link_make_with_custom_ends() {
         let mut ends = HashMap::new();
-        ends.insert("Source".to_string(), HyperRef::single(Some(Edition::from_text("s")), None, None, None));
-        ends.insert("Target".to_string(), HyperRef::single(Some(Edition::from_text("t")), None, None, None));
-        ends.insert("Annotation".to_string(), HyperRef::single(Some(Edition::from_text("a")), None, None, None));
+        ends.insert(
+            "Source".to_string(),
+            HyperRef::single(Some(Edition::from_text("s")), None, None, None),
+        );
+        ends.insert(
+            "Target".to_string(),
+            HyperRef::single(Some(Edition::from_text("t")), None, None, None),
+        );
+        ends.insert(
+            "Annotation".to_string(),
+            HyperRef::single(Some(Edition::from_text("a")), None, None, None),
+        );
         let link = HyperLink::make_with_ends(vec![1, 2], ends);
         assert_eq!(link.end_count(), 3);
         assert!(!link.is_two_ended());
@@ -922,9 +965,7 @@ mod tests {
 
     #[test]
     fn path_follow_text_match() {
-        let edition = Edition::from_text_elements(&[
-            RangeElement::text("hello"),
-        ]);
+        let edition = Edition::from_text_elements(&[RangeElement::text("hello")]);
         let path = Path::new(vec![RangeElement::text("hello")]);
         let result = path.follow(&edition);
         assert!(result.is_some());
@@ -947,21 +988,24 @@ mod tests {
             RangeElement::label(1, RangeElement::edition(100)),
             RangeElement::label(2, RangeElement::text("deep_value")),
         ]);
-        let result = path.follow_with_resolver(&outer_edition, &resolver).unwrap();
+        let result = path
+            .follow_with_resolver(&outer_edition, &resolver)
+            .unwrap();
         assert_eq!(result.as_text(), Some("deep_value"));
     }
 
     #[test]
     fn path_follow_with_resolver_missing_edition() {
-        let outer_edition = Edition::from_text_elements(&[
-            RangeElement::label(1, RangeElement::edition(999)),
-        ]);
+        let outer_edition =
+            Edition::from_text_elements(&[RangeElement::label(1, RangeElement::edition(999))]);
         let resolver = HashMapResolver::new();
         let path = Path::new(vec![
             RangeElement::label(1, RangeElement::edition(999)),
             RangeElement::label(2, RangeElement::text("x")),
         ]);
-        let err = path.follow_with_resolver(&outer_edition, &resolver).unwrap_err();
+        let err = path
+            .follow_with_resolver(&outer_edition, &resolver)
+            .unwrap_err();
         match err {
             FollowError::EditionNotFound { edition_id, .. } => assert_eq!(edition_id, 999),
             e => panic!("expected EditionNotFound, got: {}", e),
@@ -970,11 +1014,12 @@ mod tests {
 
     #[test]
     fn path_follow_label_not_found() {
-        let edition = Edition::from_text_elements(&[
-            RangeElement::label(1, RangeElement::text("x")),
-        ]);
+        let edition =
+            Edition::from_text_elements(&[RangeElement::label(1, RangeElement::text("x"))]);
         let path = Path::new(vec![RangeElement::label(99, RangeElement::text("y"))]);
-        let err = path.follow_with_resolver(&edition, &HashMapResolver::new()).unwrap_err();
+        let err = path
+            .follow_with_resolver(&edition, &HashMapResolver::new())
+            .unwrap_err();
         match err {
             FollowError::LabelNotFound { label_id, .. } => assert_eq!(label_id, 99),
             e => panic!("expected LabelNotFound, got: {}", e),
@@ -988,9 +1033,13 @@ mod tests {
             RangeElement::label(1, RangeElement::text("b")),
         ]);
         let path = Path::new(vec![RangeElement::label(1, RangeElement::text("a"))]);
-        let err = path.follow_with_resolver(&edition, &HashMapResolver::new()).unwrap_err();
+        let err = path
+            .follow_with_resolver(&edition, &HashMapResolver::new())
+            .unwrap_err();
         match err {
-            FollowError::MultiplePositions { label_id, count, .. } => {
+            FollowError::MultiplePositions {
+                label_id, count, ..
+            } => {
                 assert_eq!(label_id, 1);
                 assert_eq!(count, 2);
             }
@@ -1000,19 +1049,14 @@ mod tests {
 
     #[test]
     fn path_follow_deeply_nested() {
-        let leaf = Edition::from_text_elements(&[
-            RangeElement::label(3, RangeElement::text("leaf")),
-        ]);
-        let mid = Edition::from_text_elements(&[
-            RangeElement::label(2, RangeElement::edition(200)),
-        ]);
-        let resolver = HashMapResolver::new()
-            .with(100, mid)
-            .with(200, leaf);
+        let leaf =
+            Edition::from_text_elements(&[RangeElement::label(3, RangeElement::text("leaf"))]);
+        let mid =
+            Edition::from_text_elements(&[RangeElement::label(2, RangeElement::edition(200))]);
+        let resolver = HashMapResolver::new().with(100, mid).with(200, leaf);
 
-        let root = Edition::from_text_elements(&[
-            RangeElement::label(1, RangeElement::edition(100)),
-        ]);
+        let root =
+            Edition::from_text_elements(&[RangeElement::label(1, RangeElement::edition(100))]);
         let path = Path::new(vec![
             RangeElement::label(1, RangeElement::edition(100)),
             RangeElement::label(2, RangeElement::edition(200)),
@@ -1024,9 +1068,8 @@ mod tests {
 
     #[test]
     fn path_follow_single_label_returns_inner() {
-        let edition = Edition::from_text_elements(&[
-            RangeElement::label(42, RangeElement::text("found")),
-        ]);
+        let edition =
+            Edition::from_text_elements(&[RangeElement::label(42, RangeElement::text("found"))]);
         let path = Path::new(vec![RangeElement::label(42, RangeElement::text("found"))]);
         let result = path.follow(&edition).unwrap();
         assert_eq!(result.as_text(), Some("found"));
@@ -1037,12 +1080,9 @@ mod tests {
         let inner = Edition::from_text("inner content");
         let resolver = HashMapResolver::new().with(50, inner);
 
-        let outer = Edition::from_text_elements(&[
-            RangeElement::label(1, RangeElement::edition(50)),
-        ]);
-        let path = Path::new(vec![
-            RangeElement::label(1, RangeElement::edition(50)),
-        ]);
+        let outer =
+            Edition::from_text_elements(&[RangeElement::label(1, RangeElement::edition(50))]);
+        let path = Path::new(vec![RangeElement::label(1, RangeElement::edition(50))]);
         let result = path.follow_with_resolver(&outer, &resolver).unwrap();
         assert_eq!(result.as_edition_id(), Some(50));
     }
@@ -1072,28 +1112,40 @@ mod tests {
 
     #[test]
     fn path_follow_returns_edition_element_when_not_last_step_cant_resolve() {
-        let outer = Edition::from_text_elements(&[
-            RangeElement::label(1, RangeElement::edition(42)),
-        ]);
+        let outer =
+            Edition::from_text_elements(&[RangeElement::label(1, RangeElement::edition(42))]);
         let path = Path::new(vec![
             RangeElement::label(1, RangeElement::edition(42)),
             RangeElement::label(2, RangeElement::text("x")),
         ]);
         let resolver = HashMapResolver::new();
         let err = path.follow_with_resolver(&outer, &resolver).unwrap_err();
-        assert!(matches!(err, FollowError::EditionNotFound { edition_id: 42, .. }));
+        assert!(matches!(
+            err,
+            FollowError::EditionNotFound { edition_id: 42, .. }
+        ));
     }
 
     #[test]
     fn follow_error_display() {
-        let err = FollowError::LabelNotFound { step: 2, label_id: 5 };
+        let err = FollowError::LabelNotFound {
+            step: 2,
+            label_id: 5,
+        };
         assert!(err.to_string().contains("step 2"));
         assert!(err.to_string().contains("5"));
 
-        let err = FollowError::MultiplePositions { step: 0, label_id: 1, count: 3 };
+        let err = FollowError::MultiplePositions {
+            step: 0,
+            label_id: 1,
+            count: 3,
+        };
         assert!(err.to_string().contains("3 positions"));
 
-        let err = FollowError::EditionNotFound { step: 1, edition_id: 99 };
+        let err = FollowError::EditionNotFound {
+            step: 1,
+            edition_id: 99,
+        };
         assert!(err.to_string().contains("99"));
 
         let err = FollowError::EmptyPath;

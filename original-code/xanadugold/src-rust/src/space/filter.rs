@@ -8,7 +8,9 @@ pub struct FilterSpace {
 
 impl FilterSpace {
     pub fn new() -> Self {
-        FilterSpace { name: "FilterSpace" }
+        FilterSpace {
+            name: "FilterSpace",
+        }
     }
 }
 
@@ -74,9 +76,7 @@ impl Ord for Filter {
                 | (Filter::Intersection(a), Filter::Intersection(b))
                 | (Filter::NotSubset(a), Filter::NotSubset(b))
                 | (Filter::NotSuperset(a), Filter::NotSuperset(b)) => a.cmp(b),
-                (Filter::And(a), Filter::And(b)) | (Filter::Or(a), Filter::Or(b)) => {
-                    a.cmp(b)
-                }
+                (Filter::And(a), Filter::And(b)) | (Filter::Or(a), Filter::Or(b)) => a.cmp(b),
                 _ => Ordering::Equal,
             },
             ord => ord,
@@ -164,7 +164,10 @@ impl Filter {
     }
 
     pub fn is_any_filter(&self) -> bool {
-        matches!(self, Filter::Intersection(_) | Filter::Subset(_) | Filter::Full)
+        matches!(
+            self,
+            Filter::Intersection(_) | Filter::Subset(_) | Filter::Full
+        )
     }
 
     pub fn match_tag(&self, tag: u64, tags_set: &[u64]) -> bool {

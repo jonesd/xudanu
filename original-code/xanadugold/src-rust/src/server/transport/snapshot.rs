@@ -32,10 +32,20 @@ impl ValidationReport {
 pub enum SnapshotError {
     Io(std::io::Error),
     Json(serde_json::Error),
-    Migration { from_version: u32, to_version: u32, reason: String },
+    Migration {
+        from_version: u32,
+        to_version: u32,
+        reason: String,
+    },
     Validation(ValidationReport),
-    InsufficientDiskSpace { required_bytes: u64, available_bytes: u64 },
-    ChecksumMismatch { expected: String, actual: String },
+    InsufficientDiskSpace {
+        required_bytes: u64,
+        available_bytes: u64,
+    },
+    ChecksumMismatch {
+        expected: String,
+        actual: String,
+    },
 }
 
 impl std::fmt::Display for SnapshotError {
@@ -43,17 +53,36 @@ impl std::fmt::Display for SnapshotError {
         match self {
             SnapshotError::Io(e) => write!(f, "I/O error: {}", e),
             SnapshotError::Json(e) => write!(f, "JSON error: {}", e),
-            SnapshotError::Migration { from_version, to_version, reason } => {
-                write!(f, "migration v{} → v{} failed: {}", from_version, to_version, reason)
+            SnapshotError::Migration {
+                from_version,
+                to_version,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "migration v{} → v{} failed: {}",
+                    from_version, to_version, reason
+                )
             }
             SnapshotError::Validation(report) => {
                 write!(f, "validation failed: {} errors", report.errors.len())
             }
-            SnapshotError::InsufficientDiskSpace { required_bytes, available_bytes } => {
-                write!(f, "insufficient disk space: need {} bytes, have {} bytes", required_bytes, available_bytes)
+            SnapshotError::InsufficientDiskSpace {
+                required_bytes,
+                available_bytes,
+            } => {
+                write!(
+                    f,
+                    "insufficient disk space: need {} bytes, have {} bytes",
+                    required_bytes, available_bytes
+                )
             }
             SnapshotError::ChecksumMismatch { expected, actual } => {
-                write!(f, "checksum mismatch: expected {}, got {}", expected, actual)
+                write!(
+                    f,
+                    "checksum mismatch: expected {}, got {}",
+                    expected, actual
+                )
             }
         }
     }
@@ -62,11 +91,15 @@ impl std::fmt::Display for SnapshotError {
 impl std::error::Error for SnapshotError {}
 
 impl From<std::io::Error> for SnapshotError {
-    fn from(e: std::io::Error) -> Self { SnapshotError::Io(e) }
+    fn from(e: std::io::Error) -> Self {
+        SnapshotError::Io(e)
+    }
 }
 
 impl From<serde_json::Error> for SnapshotError {
-    fn from(e: serde_json::Error) -> Self { SnapshotError::Json(e) }
+    fn from(e: serde_json::Error) -> Self {
+        SnapshotError::Json(e)
+    }
 }
 
 fn server_version() -> String {
@@ -78,7 +111,7 @@ fn iso_now() -> String {
 }
 
 fn compute_checksum(data: &serde_json::Value) -> String {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let json_str = serde_json::to_string(data).unwrap_or_default();
     let mut hasher = Sha256::new();
     hasher.update(json_str.as_bytes());
@@ -86,7 +119,11 @@ fn compute_checksum(data: &serde_json::Value) -> String {
 }
 
 fn available_disk_space(path: &Path) -> Result<u64, SnapshotError> {
-    let parent = if path.is_dir() { path } else { path.parent().unwrap_or(path) };
+    let parent = if path.is_dir() {
+        path
+    } else {
+        path.parent().unwrap_or(path)
+    };
     let output = std::process::Command::new("df")
         .arg("-k")
         .arg(parent)
@@ -137,7 +174,8 @@ pub fn detect_version(raw: &serde_json::Value) -> u32 {
 fn migrate_v0_to_v1(mut raw: serde_json::Value) -> Result<serde_json::Value, SnapshotError> {
     if !raw.is_object() {
         return Err(SnapshotError::Migration {
-            from_version: 0, to_version: 1,
+            from_version: 0,
+            to_version: 1,
             reason: "expected JSON object".to_string(),
         });
     }
@@ -152,18 +190,23 @@ fn migrate_v0_to_v1(mut raw: serde_json::Value) -> Result<serde_json::Value, Sna
     Ok(wrapped)
 }
 
-pub fn migrate_to_latest(raw: serde_json::Value, from_version: u32) -> Result<serde_json::Value, SnapshotError> {
+pub fn migrate_to_latest(
+    raw: serde_json::Value,
+    from_version: u32,
+) -> Result<serde_json::Value, SnapshotError> {
     let mut current = raw;
     let mut version = from_version;
     while version < CURRENT_FORMAT_VERSION {
         let next = version + 1;
         current = match (version, next) {
             (0, 1) => migrate_v0_to_v1(current)?,
-            _ => return Err(SnapshotError::Migration {
-                from_version: version,
-                to_version: next,
-                reason: format!("no migration path from v{}", version),
-            }),
+            _ => {
+                return Err(SnapshotError::Migration {
+                    from_version: version,
+                    to_version: next,
+                    reason: format!("no migration path from v{}", version),
+                })
+            }
         };
         version = next;
     }
@@ -199,13 +242,20 @@ pub fn validate_snapshot(data: &serde_json::Value) -> ValidationReport {
                 continue;
             }
             let wo = work.as_object().unwrap();
-            let rev_count = wo.get("revision_count").and_then(|v| v.as_u64()).unwrap_or(0);
-            let history_len = wo.get("history")
+            let rev_count = wo
+                .get("revision_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let history_len = wo
+                .get("history")
                 .and_then(|v| v.as_object())
                 .map(|h| h.len() as u64)
                 .unwrap_or(0);
             if rev_count > 0 && history_len == 0 {
-                warnings.push(format!("works[{}] has revision_count={} but empty history", i, rev_count));
+                warnings.push(format!(
+                    "works[{}] has revision_count={} but empty history",
+                    i, rev_count
+                ));
             }
         }
     }
@@ -218,7 +268,10 @@ pub fn validate_snapshot(data: &serde_json::Value) -> ValidationReport {
     }
     if let Some(clubs) = obj.get("clubs").and_then(|c| c.as_array()) {
         if clubs.len() < 3 {
-            warnings.push(format!("only {} clubs (expected at least 3 system clubs)", clubs.len()));
+            warnings.push(format!(
+                "only {} clubs (expected at least 3 system clubs)",
+                clubs.len()
+            ));
         }
     }
 
@@ -227,7 +280,10 @@ pub fn validate_snapshot(data: &serde_json::Value) -> ValidationReport {
 
 pub fn create_backup(snapshot_path: &Path) -> Result<(), SnapshotError> {
     let version_suffix = detect_file_version(snapshot_path)?;
-    let file_name = snapshot_path.file_name().and_then(|n| n.to_str()).unwrap_or("server.json");
+    let file_name = snapshot_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("server.json");
     let backup_name = format!("{}.v{}.bak", file_name, version_suffix);
     let backup_path = snapshot_path.with_file_name(backup_name);
     if snapshot_path.exists() {
@@ -249,7 +305,10 @@ fn detect_file_version(path: &Path) -> Result<u32, SnapshotError> {
 
 fn cleanup_old_backups(snapshot_path: &Path) -> Result<(), SnapshotError> {
     let parent = snapshot_path.parent().unwrap_or(snapshot_path);
-    let stem = snapshot_path.file_stem().and_then(|s| s.to_str()).unwrap_or("server");
+    let stem = snapshot_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("server");
     let mut backups: Vec<(u32, std::path::PathBuf)> = Vec::new();
     for entry in std::fs::read_dir(parent)? {
         let entry = entry?;
@@ -287,15 +346,16 @@ pub fn write_versioned_snapshot(
         checksum,
         data: data.clone(),
     };
-    let json = serde_json::to_string_pretty(&versioned)
-        .map_err(SnapshotError::Json)?;
+    let json = serde_json::to_string_pretty(&versioned).map_err(SnapshotError::Json)?;
     let tmp_path = snapshot_path.with_extension("tmp");
     std::fs::write(&tmp_path, json.as_bytes())?;
     std::fs::rename(&tmp_path, snapshot_path)?;
     Ok(())
 }
 
-pub fn read_and_migrate(snapshot_path: &Path) -> Result<(serde_json::Value, u32, bool), SnapshotError> {
+pub fn read_and_migrate(
+    snapshot_path: &Path,
+) -> Result<(serde_json::Value, u32, bool), SnapshotError> {
     let content = std::fs::read_to_string(snapshot_path)?;
     let raw: serde_json::Value = serde_json::from_str(&content)?;
 
@@ -303,8 +363,8 @@ pub fn read_and_migrate(snapshot_path: &Path) -> Result<(serde_json::Value, u32,
     let needs_migration = detected_version < CURRENT_FORMAT_VERSION;
 
     let (data, final_version) = if detected_version == CURRENT_FORMAT_VERSION {
-        let versioned: VersionedSnapshot = serde_json::from_value(raw)
-            .map_err(SnapshotError::Json)?;
+        let versioned: VersionedSnapshot =
+            serde_json::from_value(raw).map_err(SnapshotError::Json)?;
         let computed = compute_checksum(&versioned.data);
         if computed != versioned.checksum {
             return Err(SnapshotError::ChecksumMismatch {
@@ -315,8 +375,8 @@ pub fn read_and_migrate(snapshot_path: &Path) -> Result<(serde_json::Value, u32,
         (versioned.data, versioned.format_version)
     } else {
         let migrated = migrate_to_latest(raw, detected_version)?;
-        let versioned: VersionedSnapshot = serde_json::from_value(migrated)
-            .map_err(SnapshotError::Json)?;
+        let versioned: VersionedSnapshot =
+            serde_json::from_value(migrated).map_err(SnapshotError::Json)?;
         (versioned.data, versioned.format_version)
     };
 
@@ -389,7 +449,10 @@ mod tests {
         let raw: serde_json::Value = serde_json::from_str(v0_snapshot_json()).unwrap();
         let original = raw.clone();
         let result = migrate_v0_to_v1(raw).unwrap();
-        assert_eq!(result["data"]["grand_map_id_counter"], original["grand_map_id_counter"]);
+        assert_eq!(
+            result["data"]["grand_map_id_counter"],
+            original["grand_map_id_counter"]
+        );
         assert_eq!(result["data"]["works"], original["works"]);
     }
 
@@ -486,7 +549,10 @@ mod tests {
             }
         };
 
-        assert!(dir.path().join("server.json.v0.bak").exists(), "backup should exist at server.json.v0.bak");
+        assert!(
+            dir.path().join("server.json.v0.bak").exists(),
+            "backup should exist at server.json.v0.bak"
+        );
 
         let content = std::fs::read_to_string(&path).unwrap();
         let raw: serde_json::Value = serde_json::from_str(&content).unwrap();

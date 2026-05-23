@@ -118,10 +118,9 @@ impl Mapping {
                     offset: b_off,
                     region: b_reg,
                 },
-            ) if a_off == b_off && !a_reg.intersects(b_reg) => Mapping::Composite(vec![
-                self.clone(),
-                other.clone(),
-            ]),
+            ) if a_off == b_off && !a_reg.intersects(b_reg) => {
+                Mapping::Composite(vec![self.clone(), other.clone()])
+            }
             _ => Mapping::Composite(vec![self.clone(), other.clone()]),
         }
     }
@@ -366,8 +365,14 @@ mod tests {
             Mapping::restricted(10, XnRegion::interval(0, 5)),
             Mapping::restricted(20, XnRegion::interval(10, 15)),
         ]);
-        assert_eq!(m.domain(), XnRegion::interval(0, 5).union(&XnRegion::interval(10, 15)));
-        assert_eq!(m.range(), XnRegion::interval(10, 15).union(&XnRegion::interval(30, 35)));
+        assert_eq!(
+            m.domain(),
+            XnRegion::interval(0, 5).union(&XnRegion::interval(10, 15))
+        );
+        assert_eq!(
+            m.range(),
+            XnRegion::interval(10, 15).union(&XnRegion::interval(30, 35))
+        );
     }
 
     #[test]
@@ -386,7 +391,10 @@ mod tests {
         ]);
         let input = XnRegion::interval(0, 10);
         let output = m.of_region(&input);
-        assert_eq!(output, XnRegion::interval(0, 5).union(&XnRegion::interval(15, 20)));
+        assert_eq!(
+            output,
+            XnRegion::interval(0, 5).union(&XnRegion::interval(15, 20))
+        );
     }
 
     #[test]

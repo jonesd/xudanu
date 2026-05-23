@@ -4,7 +4,6 @@ pub mod blob_store;
 pub mod bundle;
 pub mod bundle_stepper;
 pub mod canopy;
-pub mod shared_mapping;
 pub mod content_address;
 pub mod edition;
 pub mod endorsement;
@@ -13,70 +12,86 @@ pub mod grandmap;
 pub mod label;
 pub mod links;
 pub mod mapping;
+pub mod orgl;
 #[cfg(feature = "serde")]
 pub mod persistent;
-pub mod orgl;
 pub mod pool;
 pub mod props;
 pub mod provenance;
 pub mod range_element;
 pub mod range_transclusion;
 pub mod recorder;
+pub mod shared_mapping;
 pub mod snapshot;
 pub mod transclusion;
 pub mod work;
 pub mod wrapper;
 pub mod xn_region;
 
-pub use backend::{BeStorage, BeRangeElement, InMemoryBeStorage, BeId};
+pub use backend::{BeId, BeRangeElement, BeStorage, InMemoryBeStorage};
 pub use backfollow::{BackfollowEngine, EditionMeta};
-pub use shared_mapping::{SharedMapping, content_shared_region, content_map_shared_to, content_map_shared_onto};
-pub use blob_store::{BlobBackend, BlobStore, BlobMeta, BlobError, BlobBackendStats, MemoryBackend, FilesystemBackend, ImageOp, ImageOverlay, hash_content, u64_from_hash, base64_encode, base64_decode};
+pub use blob_store::{
+    base64_decode, base64_encode, hash_content, u64_from_hash, BlobBackend, BlobBackendStats,
+    BlobError, BlobMeta, BlobStore, FilesystemBackend, ImageOp, ImageOverlay, MemoryBackend,
+};
 pub use bundle::{
-    Bundle, CostMethod, StorageCost, RetrieveFlags,
-    retrieve_bundles, compute_storage_cost, element_byte_size,
+    compute_storage_cost, element_byte_size, retrieve_bundles, Bundle, CostMethod, RetrieveFlags,
+    StorageCost,
+};
+pub use bundle_stepper::{
+    loaf_bundle_stepper, loaf_merge_stepper, BundleStepper, MergeBundleStepper,
 };
 pub use canopy::{BertCanopy, CanopyCrumData, CanopyCrumKind, SensorCanopy};
 pub use content_address::ContentAddressIndex;
-pub use edition::{Edition, jaccard_similarity};
-pub use endorsement::{Endorsement, EndorsementSet, EndorsementFilter, Endorseable, endorsements_from_ids, endorsement_ids_to_grandmap};
+pub use edition::{jaccard_similarity, Edition};
+pub use endorsement::{
+    endorsement_ids_to_grandmap, endorsements_from_ids, Endorseable, Endorsement,
+    EndorsementFilter, EndorsementSet,
+};
 pub use fetext::{FeText, FeTextError};
 pub use grandmap::{GrandMap, Id, IdSpace, IdSpaceId};
 pub use label::{
-    Label, LabelId, LabelledCarrier, LabelledEdition, RebindError,
-    ElementIdentity, IdentityMap,
-    can_make_identical, CanMakeIdenticalResult,
-    make_range_identical, MakeRangeIdenticalResult, MakeRangeIdenticalOutcome, MakeIdenticalError,
+    can_make_identical, make_range_identical, CanMakeIdenticalResult, ElementIdentity, IdentityMap,
+    Label, LabelId, LabelledCarrier, LabelledEdition, MakeIdenticalError,
+    MakeRangeIdenticalOutcome, MakeRangeIdenticalResult, RebindError,
 };
-pub use links::{HyperLink, HyperRef, HyperRefKind, Path, FollowError, EditionResolver, HashMapResolver};
+pub use links::{
+    EditionResolver, FollowError, HashMapResolver, HyperLink, HyperRef, HyperRefKind, Path,
+};
 pub use mapping::Mapping;
 pub use orgl::{OrglRoot, SplayResult};
 pub use pool::{ContentHash, ContentPool};
 pub use props::{
-    BertProp, Prop, PropFinder, SensorProp,
-    PUBLIC_CLUB_FLAG, OTHER_CLUBS_FLAG, OTHER_ENDORSEMENTS_FLAG,
-    IS_SENSOR_WAITING_FLAG, IS_NOT_PARTIALIZABLE_FLAG, IS_PARTIAL_FLAG,
-    init_endorsement_flags,
+    init_endorsement_flags, BertProp, Prop, PropFinder, SensorProp, IS_NOT_PARTIALIZABLE_FLAG,
+    IS_PARTIAL_FLAG, IS_SENSOR_WAITING_FLAG, OTHER_CLUBS_FLAG, OTHER_ENDORSEMENTS_FLAG,
+    PUBLIC_CLUB_FLAG,
 };
-pub use provenance::{Provenance, SpanProvenance, sign_span, verify_span_provenance};
+pub use provenance::{sign_span, verify_span_provenance, Provenance, SpanProvenance};
 pub use range_element::RangeElement;
-pub use snapshot::{Snapshot, SnapshotStore, SnapshotError, is_frozen, freeze_work, validate_frozen_for_context, validate_not_frozen_for_edit};
-pub use bundle_stepper::{BundleStepper, MergeBundleStepper, loaf_bundle_stepper, loaf_merge_stepper};
 pub use range_transclusion::{
-    RangeTransclusionQuery, RangeTransclusionResult, RangeWorkResult,
-    range_transcluders, range_works, walk_otree_shared,
-    collect_unique_elements, count_transclusion_depth, find_deeply_transcluded,
+    collect_unique_elements, count_transclusion_depth, find_deeply_transcluded, range_transcluders,
+    range_works, walk_otree_shared, RangeTransclusionQuery, RangeTransclusionResult,
+    RangeWorkResult,
 };
 pub use recorder::{
-    RecorderSystem, RecorderQuery, RecorderKind, RecorderId,
-    Fossil, RecordedResult, Agenda, AgendaItem, Matcher, RecorderTrigger,
+    Agenda, AgendaItem, Fossil, Matcher, RecordedResult, RecorderId, RecorderKind, RecorderQuery,
+    RecorderSystem, RecorderTrigger,
 };
-pub use transclusion::{TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery};
+pub use shared_mapping::{
+    content_map_shared_onto, content_map_shared_to, content_shared_region, SharedMapping,
+};
+pub use snapshot::{
+    freeze_work, is_frozen, validate_frozen_for_context, validate_not_frozen_for_edit, Snapshot,
+    SnapshotError, SnapshotStore,
+};
+pub use transclusion::{
+    TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery,
+};
 pub use work::Work;
 pub use wrapper::{
-    WrapperSpec, WrapperRegistry, FeSet, FeSetError,
-    check_text, check_set, check_path, check_hyperlink, check_hyperref,
-    WRAPPER_CLUB_ID, TEXT_TOKEN, SET_TOKEN, PATH_TOKEN, HYPERLINK_TOKEN, HYPERREF_TOKEN,
-    text_endorsement, set_endorsement, path_endorsement, hyperlink_endorsement, hyperref_endorsement,
+    check_hyperlink, check_hyperref, check_path, check_set, check_text, hyperlink_endorsement,
+    hyperref_endorsement, path_endorsement, set_endorsement, text_endorsement, FeSet, FeSetError,
+    WrapperRegistry, WrapperSpec, HYPERLINK_TOKEN, HYPERREF_TOKEN, PATH_TOKEN, SET_TOKEN,
+    TEXT_TOKEN, WRAPPER_CLUB_ID,
 };
 pub use xn_region::XnRegion;

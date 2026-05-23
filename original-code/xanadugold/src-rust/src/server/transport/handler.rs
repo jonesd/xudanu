@@ -16,13 +16,13 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 
-use crate::edition::BeId;
 use super::audit::ThreatLevel;
 use super::channel::{ChannelDetector, EventMessage};
 use super::codec::{BinaryCodec, JsonCodec, WireCodec};
 use super::dispatch;
 use super::protocol::*;
 use super::shared::SharedState;
+use crate::edition::BeId;
 
 static SUBSCRIPTION_COUNTER: AtomicU16 = AtomicU16::new(1);
 
@@ -56,10 +56,14 @@ async fn index_handler(State(state): State<SharedState>) -> impl IntoResponse {
                 content
             }
             Err(e) => {
-                tracing::warn!("Failed to read {}/index.html: {}, using embedded", dir.display(), e);
+                tracing::warn!(
+                    "Failed to read {}/index.html: {}, using embedded",
+                    dir.display(),
+                    e
+                );
                 EMBEDDED_INDEX_HTML.to_owned()
             }
-        }
+        },
         None => EMBEDDED_INDEX_HTML.to_owned(),
     };
     (
@@ -70,12 +74,19 @@ async fn index_handler(State(state): State<SharedState>) -> impl IntoResponse {
 
 async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
     let json = state.server.with_server_ref(|server| server.health_json());
-    ([(axum::http::header::CONTENT_TYPE, "application/json")], json)
+    (
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        json,
+    )
 }
 
 async fn csrf_token_handler(State(state): State<SharedState>) -> impl IntoResponse {
     if !state.csrf_enabled {
-        return (axum::http::StatusCode::NOT_FOUND, "CSRF protection not enabled").into_response();
+        return (
+            axum::http::StatusCode::NOT_FOUND,
+            "CSRF protection not enabled",
+        )
+            .into_response();
     }
     use rand::RngCore;
     let mut bytes = [0u8; 32];
@@ -92,10 +103,18 @@ async fn csrf_token_handler(State(state): State<SharedState>) -> impl IntoRespon
     (
         [
             (axum::http::header::CONTENT_TYPE, "application/json"),
-            (axum::http::header::SET_COOKIE, format!("xudanu_csrf={}; HttpOnly; SameSite=Strict; Path=/csrf-token", token).as_str()),
+            (
+                axum::http::header::SET_COOKIE,
+                format!(
+                    "xudanu_csrf={}; HttpOnly; SameSite=Strict; Path=/csrf-token",
+                    token
+                )
+                .as_str(),
+            ),
         ],
         serde_json::to_string(&body).unwrap_or_default(),
-    ).into_response()
+    )
+        .into_response()
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -121,7 +140,11 @@ async fn static_fallback_handler(
     match tokio::fs::read(&file_path).await {
         Ok(bytes) => {
             let mime = mime_guess::from_path(&file_path).first_or_octet_stream();
-            ([(axum::http::header::CONTENT_TYPE, mime.to_string())], bytes).into_response()
+            (
+                [(axum::http::header::CONTENT_TYPE, mime.to_string())],
+                bytes,
+            )
+                .into_response()
         }
         Err(_) => axum::http::StatusCode::NOT_FOUND.into_response(),
     }
@@ -135,17 +158,18 @@ async fn ws_handler(
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
     if let Some(ref allowed) = state.allowed_origins {
-        let origin = headers.get("origin")
+        let origin = headers
+            .get("origin")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
-            if !allowed.contains(origin) {
-                tracing::warn!(
-                    target: "xudanu::security",
-                    origin = origin,
-                    remote_addr = %addr,
-                    event = "SECURITY:ws_origin_rejected",
-                    "WebSocket origin rejected"
-                );
+        if !allowed.contains(origin) {
+            tracing::warn!(
+                target: "xudanu::security",
+                origin = origin,
+                remote_addr = %addr,
+                event = "SECURITY:ws_origin_rejected",
+                "WebSocket origin rejected"
+            );
             return (axum::http::StatusCode::FORBIDDEN, "Origin not allowed").into_response();
         }
     }
@@ -184,7 +208,8 @@ async fn ws_handler(
 }
 
 fn safe_content_type(mime: &str) -> axum::http::HeaderValue {
-    mime.parse().unwrap_or_else(|_| "application/octet-stream".parse().unwrap())
+    mime.parse()
+        .unwrap_or_else(|_| "application/octet-stream".parse().unwrap())
 }
 
 async fn blob_get_handler(
@@ -204,7 +229,8 @@ async fn blob_get_handler(
         Some((bytes, mime)) => (
             [(axum::http::header::CONTENT_TYPE, safe_content_type(&mime))],
             bytes,
-        ).into_response(),
+        )
+            .into_response(),
         None => axum::http::StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -226,7 +252,8 @@ async fn blob_preview_handler(
         Some((bytes, mime)) => (
             [(axum::http::header::CONTENT_TYPE, safe_content_type(&mime))],
             bytes,
-        ).into_response(),
+        )
+            .into_response(),
         None => axum::http::StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -266,9 +293,15 @@ async fn perform_handshake(
                 "server_id": hs_resp.server_id,
                 "server_capabilities": hs_resp.server_capabilities,
             }
-        })).unwrap()
+        }))
+        .unwrap()
     } else {
-        let mut buf = vec![PROTOCOL_VERSION, MessageType::Handshake.as_byte(), 0x00, 0x00];
+        let mut buf = vec![
+            PROTOCOL_VERSION,
+            MessageType::Handshake.as_byte(),
+            0x00,
+            0x00,
+        ];
         let payload = serde_json::to_vec(&hs_resp).unwrap();
         super::varint::encode_varint(payload.len() as u64, &mut buf);
         buf.extend_from_slice(&payload);
@@ -302,7 +335,9 @@ async fn handle_socket(
     };
 
     {
-        let accepting = state.server.with_server_ref(|srv| srv.admin_is_accepting_connections());
+        let accepting = state
+            .server
+            .with_server_ref(|srv| srv.admin_is_accepting_connections());
         if !accepting {
             let (mut sender, _) = socket.split();
             let msg = if is_text {
@@ -317,7 +352,14 @@ async fn handle_socket(
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
-    let negotiated = perform_handshake(&codec, &mut ws_sender, &mut ws_receiver, client_version, is_text).await;
+    let negotiated = perform_handshake(
+        &codec,
+        &mut ws_sender,
+        &mut ws_receiver,
+        client_version,
+        is_text,
+    )
+    .await;
     if negotiated.is_none() {
         return;
     }
@@ -327,7 +369,10 @@ async fn handle_socket(
         sec.active_sessions_for_ip(remote_addr) >= 50
     };
     if too_many {
-        tracing::warn!("Rejecting connection from {}: too many sessions", remote_addr.map(|a| a.to_string()).unwrap_or_default());
+        tracing::warn!(
+            "Rejecting connection from {}: too many sessions",
+            remote_addr.map(|a| a.to_string()).unwrap_or_default()
+        );
         let _ = ws_sender.send(Message::Close(None)).await;
         return;
     }
@@ -336,7 +381,14 @@ async fn handle_socket(
 
     {
         let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());
-        sec.on_session_opened(session_id, remote_addr, format!("session opened from {}", remote_addr.map(|a| a.to_string()).unwrap_or_default()));
+        sec.on_session_opened(
+            session_id,
+            remote_addr,
+            format!(
+                "session opened from {}",
+                remote_addr.map(|a| a.to_string()).unwrap_or_default()
+            ),
+        );
     }
 
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
@@ -389,17 +441,26 @@ async fn handle_socket(
     });
 
     let mut subscriptions: HashMap<u16, (DetectorType, BeId)> = HashMap::new();
-    let mut content_subscriptions: HashMap<u16, (crate::edition::RecorderId, BeId, Vec<crate::edition::RangeElement>)> = HashMap::new();
+    let mut content_subscriptions: HashMap<
+        u16,
+        (
+            crate::edition::RecorderId,
+            BeId,
+            Vec<crate::edition::RangeElement>,
+        ),
+    > = HashMap::new();
     let mut fossil_to_sub: HashMap<crate::edition::RecorderId, u16> = HashMap::new();
 
     let drain_fn = |fossil_to_sub: &HashMap<crate::edition::RecorderId, u16>,
-                     out_tx: &mpsc::UnboundedSender<Vec<u8>>,
-                     is_text_writer: bool| {
+                    out_tx: &mpsc::UnboundedSender<Vec<u8>>,
+                    is_text_writer: bool| {
         if fossil_to_sub.is_empty() {
             return;
         }
         let my_fossils: std::collections::HashSet<_> = fossil_to_sub.keys().copied().collect();
-        let notifications = state.server.with_server(|srv| srv.drain_content_notifications_for(&my_fossils));
+        let notifications = state
+            .server
+            .with_server(|srv| srv.drain_content_notifications_for(&my_fossils));
         if notifications.is_empty() {
             return;
         }
@@ -732,7 +793,8 @@ async fn handle_socket(
         });
     }
     if !fossil_to_sub.is_empty() {
-        let remaining_fossils: std::collections::HashSet<_> = fossil_to_sub.keys().copied().collect();
+        let remaining_fossils: std::collections::HashSet<_> =
+            fossil_to_sub.keys().copied().collect();
         state.server.with_server(|srv| {
             srv.drain_content_notifications_for(&remaining_fossils);
         });

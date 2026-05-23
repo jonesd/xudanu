@@ -86,7 +86,10 @@ impl Work {
         self.current_edition = new_edition;
     }
 
-    pub fn try_revise(&mut self, new_edition: Edition) -> Result<(), super::snapshot::SnapshotError> {
+    pub fn try_revise(
+        &mut self,
+        new_edition: Edition,
+    ) -> Result<(), super::snapshot::SnapshotError> {
         if self.edit_club == Some(0) {
             return Err(super::snapshot::SnapshotError::CannotEditFrozen {
                 work_id: self.be_id,
@@ -194,18 +197,12 @@ mod tests {
         work.revise(edition_v2);
         assert_eq!(work.revision_count(), 1);
         assert_eq!(work.edition().to_text(), "v2");
-        assert_eq!(
-            work.fetch_revision(0).unwrap().to_text(),
-            "v1"
-        );
+        assert_eq!(work.fetch_revision(0).unwrap().to_text(), "v1");
 
         work.revise(edition_v3);
         assert_eq!(work.revision_count(), 2);
         assert_eq!(work.edition().to_text(), "v3");
-        assert_eq!(
-            work.fetch_revision(1).unwrap().to_text(),
-            "v2"
-        );
+        assert_eq!(work.fetch_revision(1).unwrap().to_text(), "v2");
     }
 
     #[test]
@@ -273,16 +270,21 @@ mod tests {
     fn work_many_revisions() {
         let mut work = Work::new(1, Edition::from_text("v0"));
         for i in 1..100u64 {
-            work.revise(Edition::from_one(i as i64, RangeElement::text(format!("v{}", i))));
+            work.revise(Edition::from_one(
+                i as i64,
+                RangeElement::text(format!("v{}", i)),
+            ));
         }
         assert_eq!(work.revision_count(), 99);
         assert_eq!(work.revision_history().len(), 99);
+        assert_eq!(work.fetch_revision(0).unwrap().to_text(), "v0");
         assert_eq!(
-            work.fetch_revision(0).unwrap().to_text(),
-            "v0"
-        );
-        assert_eq!(
-            work.fetch_revision(50).unwrap().fetch(50).unwrap().as_text().unwrap(),
+            work.fetch_revision(50)
+                .unwrap()
+                .fetch(50)
+                .unwrap()
+                .as_text()
+                .unwrap(),
             "v50"
         );
     }

@@ -20,13 +20,15 @@ mod orset_crdt_properties {
     use super::*;
 
     fn arb_entry() -> impl Strategy<Value = xudanu::server::federation::MembershipEntry> {
-        any::<u64>().prop_map(|n| xudanu::server::federation::MembershipEntry::new(
-            format!("server-{}", n),
-            format!("{:064x}", n),
-            format!("kex-{}", n),
-            vec![],
-            n,
-        ))
+        any::<u64>().prop_map(|n| {
+            xudanu::server::federation::MembershipEntry::new(
+                format!("server-{}", n),
+                format!("{:064x}", n),
+                format!("kex-{}", n),
+                vec![],
+                n,
+            )
+        })
     }
 
     proptest! {
@@ -222,13 +224,15 @@ mod membership_state_properties {
     use super::*;
 
     fn arb_entry() -> impl Strategy<Value = xudanu::server::federation::MembershipEntry> {
-        any::<u64>().prop_map(|n| xudanu::server::federation::MembershipEntry::new(
-            format!("server-{}", n),
-            format!("{:064x}", n),
-            format!("kex-{}", n),
-            vec![],
-            n,
-        ))
+        any::<u64>().prop_map(|n| {
+            xudanu::server::federation::MembershipEntry::new(
+                format!("server-{}", n),
+                format!("{:064x}", n),
+                format!("kex-{}", n),
+                vec![],
+                n,
+            )
+        })
     }
 
     proptest! {

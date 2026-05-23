@@ -216,11 +216,7 @@ impl FederationState {
         }
     }
     pub fn new(config: FederationConfig) -> Self {
-        let known_peers: HashSet<String> = config
-            .peers
-            .iter()
-            .map(|p| p.to_string())
-            .collect();
+        let known_peers: HashSet<String> = config.peers.iter().map(|p| p.to_string()).collect();
         let min_endorsements = config.min_endorsements;
         FederationState {
             config,
@@ -259,7 +255,9 @@ impl FederationState {
             return true;
         }
         if self.known_peer_keys.is_empty() {
-            tracing::warn!("Federation enabled but no peer keys registered — rejecting all connections");
+            tracing::warn!(
+                "Federation enabled but no peer keys registered — rejecting all connections"
+            );
             return false;
         }
         self.known_peer_keys.contains(verifying_key_hex)
@@ -594,10 +592,7 @@ impl<T: Clone + Eq + std::hash::Hash> OrSet<T> {
     /// Add a value with a unique tag. Idempotent for the same (value, tag) pair.
     /// Silently rejected if the tag is already tombstoned.
     pub fn add(&mut self, value: T, tag: OrSetTag) {
-        let is_tombstoned = self
-            .tombstones
-            .iter()
-            .any(|e| e.tag == tag);
+        let is_tombstoned = self.tombstones.iter().any(|e| e.tag == tag);
         if is_tombstoned {
             return;
         }
@@ -610,7 +605,10 @@ impl<T: Clone + Eq + std::hash::Hash> OrSet<T> {
     /// Remove a specific (value, tag) pair by moving it to tombstones.
     /// No-op if the pair doesn't exist in the add set.
     pub fn remove(&mut self, value: &T, tag: &OrSetTag) {
-        let idx = self.adds.iter().position(|e| e.value == *value && e.tag == *tag);
+        let idx = self
+            .adds
+            .iter()
+            .position(|e| e.value == *value && e.tag == *tag);
         if let Some(i) = idx {
             let entry = self.adds.remove(i);
             self.tombstones.push(entry);
@@ -638,11 +636,8 @@ impl<T: Clone + Eq + std::hash::Hash> OrSet<T> {
     ///
     /// The merge is commutative, associative, and idempotent (CRDT properties).
     pub fn merge(&mut self, other: &OrSet<T>) {
-        let mut tombstone_tags: HashSet<String> = self
-            .tombstones
-            .iter()
-            .map(|e| e.tag.to_string())
-            .collect();
+        let mut tombstone_tags: HashSet<String> =
+            self.tombstones.iter().map(|e| e.tag.to_string()).collect();
         for entry in &other.tombstones {
             let key = entry.tag.to_string();
             if !tombstone_tags.contains(&key) {
@@ -662,7 +657,8 @@ impl<T: Clone + Eq + std::hash::Hash> OrSet<T> {
             }
         }
 
-        self.adds.retain(|e| !tombstone_tags.contains(&e.tag.to_string()));
+        self.adds
+            .retain(|e| !tombstone_tags.contains(&e.tag.to_string()));
     }
 
     /// Return the set of unique values currently in the OR-Set.
@@ -709,20 +705,13 @@ impl<T: Clone + Eq + std::hash::Hash> OrSet<T> {
         }
         for entry in tombstones {
             let key = entry.tag.to_string();
-            let already = self
-                .tombstones
-                .iter()
-                .any(|e| e.tag.to_string() == key);
+            let already = self.tombstones.iter().any(|e| e.tag.to_string() == key);
             if !already {
                 self.tombstones.push(entry.clone());
             }
         }
-        self.adds.retain(|e| {
-            !self
-                .tombstones
-                .iter()
-                .any(|t| t.tag == e.tag)
-        });
+        self.adds
+            .retain(|e| !self.tombstones.iter().any(|t| t.tag == e.tag));
     }
 }
 
@@ -777,7 +766,11 @@ impl<T: Clone + PartialEq> LwwRegister<T> {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        if ts > now.saturating_add(3600) { now } else { ts }
+        if ts > now.saturating_add(3600) {
+            now
+        } else {
+            ts
+        }
     }
 
     pub fn set(&mut self, value: T, timestamp: u64, server_id: impl Into<String>) -> bool {
@@ -1045,7 +1038,8 @@ impl ReconcileStore {
                 ),
             );
         }
-        self.states.get_mut(work_fingerprint)
+        self.states
+            .get_mut(work_fingerprint)
             .expect("reconcile state must exist after insert")
     }
 
@@ -1314,7 +1308,9 @@ impl MembershipState {
     /// Check if a server is an active member with enough endorsements.
     pub fn is_member(&self, server_id: &str) -> bool {
         match self.find_member(server_id) {
-            Some(entry) => entry.is_active() && entry.endorsement_count() >= self.min_endorsements as usize,
+            Some(entry) => {
+                entry.is_active() && entry.endorsement_count() >= self.min_endorsements as usize
+            }
             None => false,
         }
     }
@@ -1328,7 +1324,9 @@ impl MembershipState {
     /// Merges endorsements from all OrSet entries with the same server_id
     /// to handle concurrent endorsement divergence after CRDT merge.
     pub fn find_member(&self, server_id: &str) -> Option<MembershipEntry> {
-        let matching: Vec<&MembershipEntry> = self.members.adds
+        let matching: Vec<&MembershipEntry> = self
+            .members
+            .adds
             .iter()
             .filter(|e| e.value.server_id == server_id)
             .map(|e| &e.value)
@@ -1651,7 +1649,7 @@ impl GovernanceState {
         }
         let leader_idx = self.current_view as usize % members.len();
         members.get(leader_idx).map(|s| s.as_str()) == Some(server_id)
-        }
+    }
 
     pub fn leader_id(&self, members: &[String]) -> Option<String> {
         if members.is_empty() {
@@ -1666,7 +1664,11 @@ impl GovernanceState {
         self.tag_counter
     }
 
-    pub fn propose(&mut self, transactions: Vec<GovernanceTx>, proposer_id: String) -> Option<GovernanceProposal> {
+    pub fn propose(
+        &mut self,
+        transactions: Vec<GovernanceTx>,
+        proposer_id: String,
+    ) -> Option<GovernanceProposal> {
         if self.pending_round.is_some() {
             return None;
         }
@@ -1919,9 +1921,7 @@ mod tests {
 
     #[test]
     fn federation_config_serialize_roundtrip() {
-        let config = FederationConfig::closed(vec![
-            PeerAddress::new("10.0.1.10", 8081),
-        ]);
+        let config = FederationConfig::closed(vec![PeerAddress::new("10.0.1.10", 8081)]);
         let json = serde_json::to_string_pretty(&config).unwrap();
         let back: FederationConfig = serde_json::from_str(&json).unwrap();
         assert!(back.enabled);
@@ -1953,16 +1953,22 @@ mod tests {
     fn remote_origin_overwrite_on_duplicate() {
         let mut registry = RemoteOriginRegistry::new();
         let fp = [2u8; 32];
-        registry.record(fp, RemoteOrigin {
-            server_id: "first".to_string(),
-            local_id: 1,
-            element_type: RemoteElementType::Edition,
-        });
-        registry.record(fp, RemoteOrigin {
-            server_id: "second".to_string(),
-            local_id: 2,
-            element_type: RemoteElementType::Work,
-        });
+        registry.record(
+            fp,
+            RemoteOrigin {
+                server_id: "first".to_string(),
+                local_id: 1,
+                element_type: RemoteElementType::Edition,
+            },
+        );
+        registry.record(
+            fp,
+            RemoteOrigin {
+                server_id: "second".to_string(),
+                local_id: 2,
+                element_type: RemoteElementType::Work,
+            },
+        );
         assert_eq!(registry.len(), 1);
         assert_eq!(registry.get(&fp).unwrap().server_id, "first");
     }
@@ -1970,21 +1976,30 @@ mod tests {
     #[test]
     fn remote_origins_by_server() {
         let mut registry = RemoteOriginRegistry::new();
-        registry.record([1u8; 32], RemoteOrigin {
-            server_id: "a".to_string(),
-            local_id: 1,
-            element_type: RemoteElementType::Work,
-        });
-        registry.record([2u8; 32], RemoteOrigin {
-            server_id: "b".to_string(),
-            local_id: 2,
-            element_type: RemoteElementType::Edition,
-        });
-        registry.record([3u8; 32], RemoteOrigin {
-            server_id: "a".to_string(),
-            local_id: 3,
-            element_type: RemoteElementType::Blob,
-        });
+        registry.record(
+            [1u8; 32],
+            RemoteOrigin {
+                server_id: "a".to_string(),
+                local_id: 1,
+                element_type: RemoteElementType::Work,
+            },
+        );
+        registry.record(
+            [2u8; 32],
+            RemoteOrigin {
+                server_id: "b".to_string(),
+                local_id: 2,
+                element_type: RemoteElementType::Edition,
+            },
+        );
+        registry.record(
+            [3u8; 32],
+            RemoteOrigin {
+                server_id: "a".to_string(),
+                local_id: 3,
+                element_type: RemoteElementType::Blob,
+            },
+        );
         let from_a = registry.origins_by_server("a");
         assert_eq!(from_a.len(), 2);
         let from_b = registry.origins_by_server("b");
@@ -2027,11 +2042,14 @@ mod tests {
     fn federation_state_remote_origin_tracking() {
         let mut state = FederationState::new(FederationConfig::disabled());
         let fp = [42u8; 32];
-        state.record_remote_origin(fp, RemoteOrigin {
-            server_id: "remote".to_string(),
-            local_id: 10,
-            element_type: RemoteElementType::Work,
-        });
+        state.record_remote_origin(
+            fp,
+            RemoteOrigin {
+                server_id: "remote".to_string(),
+                local_id: 10,
+                element_type: RemoteElementType::Work,
+            },
+        );
         let origin = state.get_remote_origin(&fp).unwrap();
         assert_eq!(origin.server_id, "remote");
         assert_eq!(origin.local_id, 10);
@@ -2067,7 +2085,11 @@ mod tests {
         let mut set: OrSet<String> = OrSet::new();
         set.add("hello".to_string(), OrSetTag::new("srv-a", 1));
         set.add("hello".to_string(), OrSetTag::new("srv-b", 1));
-        assert_eq!(set.add_count(), 2, "different tags for same value both stored");
+        assert_eq!(
+            set.add_count(),
+            2,
+            "different tags for same value both stored"
+        );
         assert_eq!(set.len(), 1, "values() deduplicates by value");
     }
 
@@ -2172,7 +2194,11 @@ mod tests {
 
         let snapshot = set_a.clone();
         set_a.merge(&snapshot);
-        assert_eq!(set_a.add_count(), 1, "merging with self should not duplicate");
+        assert_eq!(
+            set_a.add_count(),
+            1,
+            "merging with self should not duplicate"
+        );
         assert_eq!(set_a.tombstone_count(), 0);
     }
 
@@ -2337,7 +2363,10 @@ mod tests {
     fn lww_register_same_timestamp_same_server_rejected() {
         let mut reg = LwwRegister::new("keep".to_string(), 100, "srv-a");
         let updated = reg.set("discard".to_string(), 100, "srv-a");
-        assert!(!updated, "identical (timestamp, server_id) should not overwrite");
+        assert!(
+            !updated,
+            "identical (timestamp, server_id) should not overwrite"
+        );
         assert_eq!(reg.value(), "keep");
     }
 
@@ -2455,7 +2484,8 @@ mod tests {
     #[test]
     fn reconcile_state_add_duplicate_ignored() {
         let alt = make_alt_edition("srv-a", 0, "hello", 100);
-        let mut state = ReconcileState::new("fp-1", "srv-a:0".to_string(), alt.clone(), "srv-a", 100);
+        let mut state =
+            ReconcileState::new("fp-1", "srv-a:0".to_string(), alt.clone(), "srv-a", 100);
 
         let added = state.add_alternative(alt);
         assert!(!added, "duplicate should be ignored");
@@ -2743,8 +2773,8 @@ mod tests {
 
     #[test]
     fn membership_entry_with_status() {
-        let entry = make_membership_entry("srv-a", vec![], 1000)
-            .with_status(MembershipStatus::Suspended);
+        let entry =
+            make_membership_entry("srv-a", vec![], 1000).with_status(MembershipStatus::Suspended);
         assert_eq!(entry.status, MembershipStatus::Suspended);
         assert!(!entry.is_active());
     }
@@ -2761,9 +2791,7 @@ mod tests {
 
     #[test]
     fn membership_entry_has_endorsement_from() {
-        let proofs = vec![
-            make_endorsement_proof("srv-b", "srv-a", 100),
-        ];
+        let proofs = vec![make_endorsement_proof("srv-b", "srv-a", 100)];
         let entry = make_membership_entry("srv-a", proofs, 1000);
         assert!(entry.has_endorsement_from("srv-b"));
         assert!(!entry.has_endorsement_from("srv-c"));
@@ -2917,12 +2945,15 @@ mod tests {
     #[test]
     fn membership_state_is_member_suspended_is_false() {
         let mut state = MembershipState::new(0);
-        let entry = make_membership_entry("srv-a", vec![], 1000)
-            .with_status(MembershipStatus::Suspended);
+        let entry =
+            make_membership_entry("srv-a", vec![], 1000).with_status(MembershipStatus::Suspended);
         let tag = OrSetTag::new("srv-a", 1);
         state.add_member(entry, tag);
 
-        assert!(!state.is_member("srv-a"), "suspended member should not be active");
+        assert!(
+            !state.is_member("srv-a"),
+            "suspended member should not be active"
+        );
     }
 
     #[test]
@@ -2932,7 +2963,10 @@ mod tests {
         let tag = OrSetTag::new("srv-a", 1);
         state.add_member(entry, tag);
 
-        assert!(state.is_known_member("srv-a"), "known even without endorsements");
+        assert!(
+            state.is_known_member("srv-a"),
+            "known even without endorsements"
+        );
         assert!(!state.is_member("srv-a"), "but not a full member");
     }
 
@@ -2952,8 +2986,8 @@ mod tests {
     fn membership_state_active_members_filters_suspended() {
         let mut state = MembershipState::new(0);
         let entry_a = make_membership_entry("srv-a", vec![], 1000);
-        let entry_b = make_membership_entry("srv-b", vec![], 1000)
-            .with_status(MembershipStatus::Suspended);
+        let entry_b =
+            make_membership_entry("srv-b", vec![], 1000).with_status(MembershipStatus::Suspended);
         state.add_member(entry_a, OrSetTag::new("tag", 1));
         state.add_member(entry_b, OrSetTag::new("tag", 2));
 
@@ -2966,8 +3000,8 @@ mod tests {
     fn membership_state_all_members_includes_suspended() {
         let mut state = MembershipState::new(0);
         let entry_a = make_membership_entry("srv-a", vec![], 1000);
-        let entry_b = make_membership_entry("srv-b", vec![], 1000)
-            .with_status(MembershipStatus::Suspended);
+        let entry_b =
+            make_membership_entry("srv-b", vec![], 1000).with_status(MembershipStatus::Suspended);
         state.add_member(entry_a, OrSetTag::new("tag", 1));
         state.add_member(entry_b, OrSetTag::new("tag", 2));
 
@@ -2987,8 +3021,7 @@ mod tests {
         assert_eq!(state.member_count(), 1);
 
         state.add_member(
-            make_membership_entry("srv-b", vec![], 1000)
-                .with_status(MembershipStatus::Suspended),
+            make_membership_entry("srv-b", vec![], 1000).with_status(MembershipStatus::Suspended),
             OrSetTag::new("tag", 2),
         );
         assert_eq!(state.member_count(), 1, "suspended not counted");
@@ -3027,9 +3060,7 @@ mod tests {
     #[test]
     fn membership_validate_join_rejects_insufficient_endorsements() {
         let mut state = MembershipState::new(2);
-        let proofs = vec![
-            make_endorsement_proof("srv-b", "srv-new", 100),
-        ];
+        let proofs = vec![make_endorsement_proof("srv-b", "srv-new", 100)];
         let entry = make_membership_entry("srv-new", proofs, 1000);
 
         let result = state.validate_join(&entry);
@@ -3104,7 +3135,11 @@ mod tests {
         state.endorse_member("srv-a", proof2);
 
         let found = state.find_member("srv-a").unwrap();
-        assert_eq!(found.endorsement_count(), 1, "same endorser should not duplicate");
+        assert_eq!(
+            found.endorsement_count(),
+            1,
+            "same endorser should not duplicate"
+        );
     }
 
     #[test]
@@ -3181,11 +3216,17 @@ mod tests {
         let mut merged_ba = state_b.clone();
         merged_ba.merge(&state_a);
 
-        let mut members_ab: Vec<String> = merged_ab.all_members()
-            .iter().map(|m| m.server_id.clone()).collect();
+        let mut members_ab: Vec<String> = merged_ab
+            .all_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
         members_ab.sort();
-        let mut members_ba: Vec<String> = merged_ba.all_members()
-            .iter().map(|m| m.server_id.clone()).collect();
+        let mut members_ba: Vec<String> = merged_ba
+            .all_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
         members_ba.sort();
         assert_eq!(members_ab, members_ba);
     }
@@ -3206,24 +3247,45 @@ mod tests {
     #[test]
     fn membership_merge_three_way_converges() {
         let mut a = MembershipState::new(0);
-        a.add_member(make_membership_entry("srv-a", vec![], 1000), OrSetTag::new("tag", 1));
+        a.add_member(
+            make_membership_entry("srv-a", vec![], 1000),
+            OrSetTag::new("tag", 1),
+        );
 
         let mut b = MembershipState::new(0);
-        b.add_member(make_membership_entry("srv-b", vec![], 1000), OrSetTag::new("tag", 2));
+        b.add_member(
+            make_membership_entry("srv-b", vec![], 1000),
+            OrSetTag::new("tag", 2),
+        );
 
         let mut c = MembershipState::new(0);
-        c.add_member(make_membership_entry("srv-c", vec![], 1000), OrSetTag::new("tag", 3));
+        c.add_member(
+            make_membership_entry("srv-c", vec![], 1000),
+            OrSetTag::new("tag", 3),
+        );
 
         a.merge(&b);
         a.merge(&c);
         b.merge(&a);
         c.merge(&a);
 
-        let mut members_a: Vec<String> = a.all_members().iter().map(|m| m.server_id.clone()).collect();
+        let mut members_a: Vec<String> = a
+            .all_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
         members_a.sort();
-        let mut members_b: Vec<String> = b.all_members().iter().map(|m| m.server_id.clone()).collect();
+        let mut members_b: Vec<String> = b
+            .all_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
         members_b.sort();
-        let mut members_c: Vec<String> = c.all_members().iter().map(|m| m.server_id.clone()).collect();
+        let mut members_c: Vec<String> = c
+            .all_members()
+            .iter()
+            .map(|m| m.server_id.clone())
+            .collect();
         members_c.sort();
 
         assert_eq!(members_a, members_b);
@@ -3255,7 +3317,10 @@ mod tests {
 
         state_b.merge(&state_a);
         assert!(state_b.is_known_member("srv-a"));
-        assert!(!state_b.is_known_member("srv-b"), "removal should propagate via CRDT merge");
+        assert!(
+            !state_b.is_known_member("srv-b"),
+            "removal should propagate via CRDT merge"
+        );
     }
 
     // =====================================================================
@@ -3321,7 +3386,11 @@ mod tests {
             is_member: true,
             endorsement_count: 3,
             min_endorsements: 2,
-            endorsed_by: vec!["srv-b".to_string(), "srv-c".to_string(), "srv-d".to_string()],
+            endorsed_by: vec![
+                "srv-b".to_string(),
+                "srv-c".to_string(),
+                "srv-d".to_string(),
+            ],
         };
         let json = serde_json::to_string(&result).unwrap();
         let back: MembershipVerifyResult = serde_json::from_str(&json).unwrap();
@@ -3354,18 +3423,28 @@ mod tests {
     fn membership_eq_based_on_server_id_only() {
         let entry_a = MembershipEntry::new("srv-x", "vk-1", "kex-1", vec![], 1000);
         let mut entry_b = MembershipEntry::new("srv-x", "vk-1", "kex-1", vec![], 1000);
-        entry_b.endorsed_by.push(make_endorsement_proof("srv-b", "srv-x", 200));
-        assert_eq!(entry_a, entry_b, "entries with same server_id must be equal");
+        entry_b
+            .endorsed_by
+            .push(make_endorsement_proof("srv-b", "srv-x", 200));
+        assert_eq!(
+            entry_a, entry_b,
+            "entries with same server_id must be equal"
+        );
 
         let entry_c = MembershipEntry::new("srv-y", "vk-2", "kex-2", vec![], 1000);
-        assert_ne!(entry_a, entry_c, "entries with different server_id must not be equal");
+        assert_ne!(
+            entry_a, entry_c,
+            "entries with different server_id must not be equal"
+        );
     }
 
     #[test]
     fn membership_hash_based_on_server_id_only() {
         let entry_a = MembershipEntry::new("srv-x", "vk-1", "kex-1", vec![], 1000);
         let mut entry_b = MembershipEntry::new("srv-x", "vk-1", "kex-1", vec![], 1000);
-        entry_b.endorsed_by.push(make_endorsement_proof("srv-b", "srv-x", 200));
+        entry_b
+            .endorsed_by
+            .push(make_endorsement_proof("srv-b", "srv-x", 200));
         let mut set = std::collections::HashSet::new();
         set.insert(entry_a);
         assert!(set.contains(&entry_b), "hash must match for same server_id");
@@ -3401,9 +3480,14 @@ mod tests {
 
         state_a.merge(&state_b);
 
-        assert!(state_a.is_known_member("srv-x"), "srv-x should be known after merge");
+        assert!(
+            state_a.is_known_member("srv-x"),
+            "srv-x should be known after merge"
+        );
 
-        let entry = state_a.find_member("srv-x").expect("srv-x should exist after merge");
+        let entry = state_a
+            .find_member("srv-x")
+            .expect("srv-x should exist after merge");
         assert!(
             entry.endorsement_count() >= 2,
             "after merge, endorsements from both servers must be visible, got {}",
@@ -3440,7 +3524,11 @@ mod tests {
     #[test]
     fn governance_leader_rotation() {
         let gov = GovernanceState::new(3);
-        let members = vec!["srv-a".to_string(), "srv-b".to_string(), "srv-c".to_string()];
+        let members = vec![
+            "srv-a".to_string(),
+            "srv-b".to_string(),
+            "srv-c".to_string(),
+        ];
         assert!(gov.is_leader("srv-a", &members));
         assert!(!gov.is_leader("srv-b", &members));
         assert_eq!(gov.leader_id(&members), Some("srv-a".to_string()));
@@ -3449,7 +3537,11 @@ mod tests {
     #[test]
     fn governance_leader_view_rotation() {
         let mut gov = GovernanceState::new(3);
-        let members = vec!["srv-a".to_string(), "srv-b".to_string(), "srv-c".to_string()];
+        let members = vec![
+            "srv-a".to_string(),
+            "srv-b".to_string(),
+            "srv-c".to_string(),
+        ];
         assert!(gov.is_leader("srv-a", &members));
         gov.advance_view();
         assert!(gov.is_leader("srv-b", &members));
@@ -3492,36 +3584,46 @@ mod tests {
         assert_eq!(gov.pending_round().unwrap().phase, RoundPhase::Prepare);
 
         let vote_b = PbftVote {
-            view_number: 0, sequence_number: 1,
-            voter_id: "srv-b".to_string(), phase: PbftPhase::Prepare,
+            view_number: 0,
+            sequence_number: 1,
+            voter_id: "srv-b".to_string(),
+            phase: PbftPhase::Prepare,
         };
         let phase = gov.receive_prepare(vote_b);
         assert_eq!(phase, RoundPhase::Prepare, "2 prepares < quorum 3");
 
         let vote_c = PbftVote {
-            view_number: 0, sequence_number: 1,
-            voter_id: "srv-c".to_string(), phase: PbftPhase::Prepare,
+            view_number: 0,
+            sequence_number: 1,
+            voter_id: "srv-c".to_string(),
+            phase: PbftPhase::Prepare,
         };
         let phase = gov.receive_prepare(vote_c);
         assert_eq!(phase, RoundPhase::Commit, "3 prepares >= quorum 3");
 
         let commit_a = PbftVote {
-            view_number: 0, sequence_number: 1,
-            voter_id: "srv-a".to_string(), phase: PbftPhase::Commit,
+            view_number: 0,
+            sequence_number: 1,
+            voter_id: "srv-a".to_string(),
+            phase: PbftPhase::Commit,
         };
         let phase = gov.receive_commit(commit_a);
         assert_eq!(phase, RoundPhase::Commit);
 
         let commit_b = PbftVote {
-            view_number: 0, sequence_number: 1,
-            voter_id: "srv-b".to_string(), phase: PbftPhase::Commit,
+            view_number: 0,
+            sequence_number: 1,
+            voter_id: "srv-b".to_string(),
+            phase: PbftPhase::Commit,
         };
         let phase = gov.receive_commit(commit_b);
         assert_eq!(phase, RoundPhase::Commit);
 
         let commit_c = PbftVote {
-            view_number: 0, sequence_number: 1,
-            voter_id: "srv-c".to_string(), phase: PbftPhase::Commit,
+            view_number: 0,
+            sequence_number: 1,
+            voter_id: "srv-c".to_string(),
+            phase: PbftPhase::Commit,
         };
         let phase = gov.receive_commit(commit_c);
         assert_eq!(phase, RoundPhase::Sealed);
@@ -3540,8 +3642,14 @@ mod tests {
     fn governance_seal_fails_if_not_ready() {
         let mut gov = GovernanceState::new(3);
         gov.propose(vec![], "srv-a".to_string());
-        assert!(gov.seal_round().is_none(), "should not seal without commits");
-        assert!(gov.pending_round().is_some(), "round should still be pending");
+        assert!(
+            gov.seal_round().is_none(),
+            "should not seal without commits"
+        );
+        assert!(
+            gov.pending_round().is_some(),
+            "round should still be pending"
+        );
     }
 
     #[test]
@@ -3550,8 +3658,10 @@ mod tests {
         gov.propose(vec![], "srv-a".to_string());
 
         let wrong_view = PbftVote {
-            view_number: 99, sequence_number: 1,
-            voter_id: "srv-b".to_string(), phase: PbftPhase::Prepare,
+            view_number: 99,
+            sequence_number: 1,
+            voter_id: "srv-b".to_string(),
+            phase: PbftPhase::Prepare,
         };
         let phase = gov.receive_prepare(wrong_view);
         assert_eq!(phase, RoundPhase::Prepare, "wrong view should be ignored");
@@ -3570,10 +3680,44 @@ mod tests {
 
     #[test]
     fn governance_tx_type_names() {
-        assert_eq!(GovernanceTx::Admit { server_id: "a".into(), verifying_key_hex: "v".into(), kex_public_hex: "k".into() }.tx_type_name(), "admit");
-        assert_eq!(GovernanceTx::Expel { server_id: "a".into(), reason: "r".into() }.tx_type_name(), "expel");
-        assert_eq!(GovernanceTx::KeyRegister { server_id: "a".into(), key_id: 1, verifying_key_hex: "v".into(), kex_public_hex: "k".into() }.tx_type_name(), "key_register");
-        assert_eq!(GovernanceTx::RoyaltyRecord { origin_server_id: "a".into(), target_server_id: "b".into(), content_fingerprint_hex: "ff".into(), royalty_type: RoyaltyType::Transclusion, amount: 100 }.tx_type_name(), "royalty_record");
+        assert_eq!(
+            GovernanceTx::Admit {
+                server_id: "a".into(),
+                verifying_key_hex: "v".into(),
+                kex_public_hex: "k".into()
+            }
+            .tx_type_name(),
+            "admit"
+        );
+        assert_eq!(
+            GovernanceTx::Expel {
+                server_id: "a".into(),
+                reason: "r".into()
+            }
+            .tx_type_name(),
+            "expel"
+        );
+        assert_eq!(
+            GovernanceTx::KeyRegister {
+                server_id: "a".into(),
+                key_id: 1,
+                verifying_key_hex: "v".into(),
+                kex_public_hex: "k".into()
+            }
+            .tx_type_name(),
+            "key_register"
+        );
+        assert_eq!(
+            GovernanceTx::RoyaltyRecord {
+                origin_server_id: "a".into(),
+                target_server_id: "b".into(),
+                content_fingerprint_hex: "ff".into(),
+                royalty_type: RoyaltyType::Transclusion,
+                amount: 100
+            }
+            .tx_type_name(),
+            "royalty_record"
+        );
     }
 
     #[test]
@@ -3642,14 +3786,18 @@ mod tests {
 
             for voter in &["srv-a", "srv-b", "srv-c"] {
                 gov.receive_prepare(PbftVote {
-                    view_number: 0, sequence_number: (i as u64) + 1,
-                    voter_id: voter.to_string(), phase: PbftPhase::Prepare,
+                    view_number: 0,
+                    sequence_number: (i as u64) + 1,
+                    voter_id: voter.to_string(),
+                    phase: PbftPhase::Prepare,
                 });
             }
             for voter in &["srv-a", "srv-b", "srv-c"] {
                 gov.receive_commit(PbftVote {
-                    view_number: 0, sequence_number: (i as u64) + 1,
-                    voter_id: voter.to_string(), phase: PbftPhase::Commit,
+                    view_number: 0,
+                    sequence_number: (i as u64) + 1,
+                    voter_id: voter.to_string(),
+                    phase: PbftPhase::Commit,
                 });
             }
             gov.seal_round().unwrap();
@@ -3657,8 +3805,14 @@ mod tests {
 
         assert_eq!(gov.log_len(), 3);
         assert_eq!(gov.current_sequence(), 3);
-        assert_eq!(gov.log()[0].transactions[0].tx_type_name(), "royalty_record");
-        assert_eq!(gov.log()[2].transactions[0].tx_type_name(), "royalty_record");
+        assert_eq!(
+            gov.log()[0].transactions[0].tx_type_name(),
+            "royalty_record"
+        );
+        assert_eq!(
+            gov.log()[2].transactions[0].tx_type_name(),
+            "royalty_record"
+        );
     }
 
     #[test]

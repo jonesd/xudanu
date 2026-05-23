@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 const SEED_FILE: &str = "attribution.log.seed";
 
@@ -52,7 +52,8 @@ impl AttributionLog {
         let (sequence, prev_hash) = if log_path.exists() {
             let content = std::fs::read_to_string(&log_path).unwrap_or_default();
             let line_count = content.lines().filter(|l| !l.is_empty()).count() as u64;
-            let last_hash = content.lines()
+            let last_hash = content
+                .lines()
                 .filter(|l| !l.is_empty())
                 .last()
                 .and_then(|l| l.rfind(" chain=").map(|pos| l[pos + 7..].to_string()))
@@ -69,10 +70,7 @@ impl AttributionLog {
         })
     }
 
-    pub fn append(
-        &mut self,
-        entry: &AttributionEntry,
-    ) -> Result<(), std::io::Error> {
+    pub fn append(&mut self, entry: &AttributionEntry) -> Result<(), std::io::Error> {
         let line = format!(
             "{{\"seq\":{},\"ts\":{},\"author\":\"{}\",\"span_fp\":\"{}\",\"sig\":\"{}\",\"server\":\"{}\",\"work\":{},\"rev\":{}}}",
             entry.sequence,
@@ -113,7 +111,10 @@ fn sha256_hex(data: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub fn verify_attribution_log(content: &str, seed: &str) -> Result<(usize, String), ChainVerifyError> {
+pub fn verify_attribution_log(
+    content: &str,
+    seed: &str,
+) -> Result<(usize, String), ChainVerifyError> {
     let mut prev_hash = seed.to_string();
     let mut line_count = 0;
     for line in content.lines() {
@@ -186,7 +187,8 @@ mod tests {
             server_id_hex: "dd".repeat(64),
             work_id: 42,
             revision: 1,
-        }).unwrap();
+        })
+        .unwrap();
 
         log.append(&AttributionEntry {
             sequence: 1,
@@ -197,7 +199,8 @@ mod tests {
             server_id_hex: "22".repeat(64),
             work_id: 43,
             revision: 2,
-        }).unwrap();
+        })
+        .unwrap();
 
         let seed = std::fs::read_to_string(dir.join("attribution/attribution.log.seed")).unwrap();
         let content = std::fs::read_to_string(dir.join("attribution/attribution.log")).unwrap();
@@ -226,7 +229,8 @@ mod tests {
             server_id_hex: "dd".repeat(64),
             work_id: 42,
             revision: 1,
-        }).unwrap();
+        })
+        .unwrap();
 
         let seed = std::fs::read_to_string(dir.join("attribution/attribution.log.seed")).unwrap();
         let content = std::fs::read_to_string(dir.join("attribution/attribution.log")).unwrap();
@@ -255,7 +259,8 @@ mod tests {
             server_id_hex: "dd".repeat(64),
             work_id: 42,
             revision: 1,
-        }).unwrap();
+        })
+        .unwrap();
 
         log.append(&AttributionEntry {
             sequence: 1,
@@ -266,7 +271,8 @@ mod tests {
             server_id_hex: "22".repeat(64),
             work_id: 43,
             revision: 2,
-        }).unwrap();
+        })
+        .unwrap();
 
         let seed = std::fs::read_to_string(dir.join("attribution/attribution.log.seed")).unwrap();
         let content = std::fs::read_to_string(dir.join("attribution/attribution.log")).unwrap();
@@ -283,7 +289,8 @@ mod tests {
 
     #[test]
     fn chain_continues_after_restart() {
-        let dir = std::env::temp_dir().join(format!("xudanu-attrib-restart-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("xudanu-attrib-restart-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -297,7 +304,8 @@ mod tests {
             server_id_hex: "dd".repeat(64),
             work_id: 42,
             revision: 1,
-        }).unwrap();
+        })
+        .unwrap();
         drop(log);
 
         let mut log2 = AttributionLog::open(&dir).unwrap();
@@ -311,7 +319,8 @@ mod tests {
             server_id_hex: "22".repeat(64),
             work_id: 43,
             revision: 2,
-        }).unwrap();
+        })
+        .unwrap();
         drop(log2);
 
         let seed = std::fs::read_to_string(dir.join("attribution/attribution.log.seed")).unwrap();

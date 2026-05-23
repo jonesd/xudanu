@@ -12,11 +12,17 @@ pub struct BundleStepper {
 
 impl BundleStepper {
     pub fn empty() -> Self {
-        BundleStepper { bundles: Vec::new(), index: 0 }
+        BundleStepper {
+            bundles: Vec::new(),
+            index: 0,
+        }
     }
 
     pub fn single(bundle: Bundle) -> Self {
-        BundleStepper { bundles: vec![bundle], index: 0 }
+        BundleStepper {
+            bundles: vec![bundle],
+            index: 0,
+        }
     }
 
     pub fn from_entries(entries: Vec<(i64, Arc<Carrier>)>) -> Self {
@@ -26,14 +32,10 @@ impl BundleStepper {
         let mut bundles = Vec::new();
         let mut run_start = 0;
         for i in 1..=entries.len() {
-            let end_of_run = i == entries.len()
-                || *entries[i].1 != *entries[i - 1].1;
+            let end_of_run = i == entries.len() || *entries[i].1 != *entries[i - 1].1;
             if end_of_run {
                 let run_end = i;
-                let region = XnRegion::interval(
-                    entries[run_start].0,
-                    entries[run_end - 1].0 + 1,
-                );
+                let region = XnRegion::interval(entries[run_start].0, entries[run_end - 1].0 + 1);
                 if run_end - run_start == 1 {
                     bundles.push(Bundle::Element {
                         region,
@@ -140,7 +142,11 @@ pub fn loaf_bundle_stepper(loaf: &Loaf, region: &XnRegion) -> BundleStepper {
 
 fn collect_entries_in_region(loaf: &Loaf, region: &XnRegion) -> Vec<(i64, Arc<Carrier>)> {
     match loaf {
-        Loaf::Leaf { entries, region: leaf_region, .. } => {
+        Loaf::Leaf {
+            entries,
+            region: leaf_region,
+            ..
+        } => {
             let intersection = leaf_region.intersect(region);
             if intersection.is_empty() {
                 return Vec::new();
@@ -151,7 +157,11 @@ fn collect_entries_in_region(loaf: &Loaf, region: &XnRegion) -> Vec<(i64, Arc<Ca
                 .cloned()
                 .collect()
         }
-        Loaf::Split { split, in_child, out_child } => {
+        Loaf::Split {
+            split,
+            in_child,
+            out_child,
+        } => {
             let in_region = region.intersect(split);
             let out_region = region.minus(split);
             let mut in_entries = collect_entries_in_region(in_child, &in_region);
@@ -163,10 +173,7 @@ fn collect_entries_in_region(loaf: &Loaf, region: &XnRegion) -> Vec<(i64, Arc<Ca
         Loaf::Dsp { offset, child } => {
             let child_region = shift_region_inverted(region, *offset);
             let entries = collect_entries_in_region(child, &child_region);
-            entries
-                .into_iter()
-                .map(|(p, c)| (p + offset, c))
-                .collect()
+            entries.into_iter().map(|(p, c)| (p + offset, c)).collect()
         }
     }
 }
@@ -190,7 +197,11 @@ pub fn loaf_merge_stepper(loaf: &Loaf, region: &XnRegion) -> MergeBundleStepper 
             let stepper = loaf_bundle_stepper(loaf, region);
             MergeBundleStepper::new(stepper, BundleStepper::empty())
         }
-        Loaf::Split { split, in_child, out_child } => {
+        Loaf::Split {
+            split,
+            in_child,
+            out_child,
+        } => {
             let in_region = region.intersect(split);
             let out_region = region.minus(split);
             let in_ms = loaf_merge_stepper(in_child, &in_region);
@@ -213,16 +224,28 @@ pub fn loaf_merge_stepper(loaf: &Loaf, region: &XnRegion) -> MergeBundleStepper 
 fn merge_two(a: MergeBundleStepper, b: MergeBundleStepper) -> MergeBundleStepper {
     let all_a = a.collect_all();
     let all_b = b.collect_all();
-    let left = BundleStepper { bundles: all_a, index: 0 };
-    let right = BundleStepper { bundles: all_b, index: 0 };
+    let left = BundleStepper {
+        bundles: all_a,
+        index: 0,
+    };
+    let right = BundleStepper {
+        bundles: all_b,
+        index: 0,
+    };
     MergeBundleStepper::new(left, right)
 }
 
 fn shift_bundle(bundle: Bundle, offset: i64) -> Bundle {
     let new_region = shift_bundle_region(bundle.region(), offset);
     match bundle {
-        Bundle::Element { element, .. } => Bundle::Element { region: new_region, element },
-        Bundle::Array { elements, .. } => Bundle::Array { region: new_region, elements },
+        Bundle::Element { element, .. } => Bundle::Element {
+            region: new_region,
+            element,
+        },
+        Bundle::Array { elements, .. } => Bundle::Array {
+            region: new_region,
+            elements,
+        },
         Bundle::PlaceHolder { .. } => Bundle::PlaceHolder { region: new_region },
     }
 }
@@ -249,10 +272,23 @@ mod tests {
         let entries: Vec<(i64, Arc<Carrier>)> = text
             .chars()
             .enumerate()
-            .map(|(i, ch)| (i as i64, Arc::new(Carrier::new(RangeElement::text(ch.to_string())))))
+            .map(|(i, ch)| {
+                (
+                    i as i64,
+                    Arc::new(Carrier::new(RangeElement::text(ch.to_string()))),
+                )
+            })
             .collect();
-        let region = if entries.is_empty() { XnRegion::empty() } else { XnRegion::interval(0, entries.len() as i64) };
-        Loaf::Leaf { region, entries, default: None }
+        let region = if entries.is_empty() {
+            XnRegion::empty()
+        } else {
+            XnRegion::interval(0, entries.len() as i64)
+        };
+        Loaf::Leaf {
+            region,
+            entries,
+            default: None,
+        }
     }
 
     #[test]
@@ -406,7 +442,12 @@ mod tests {
         let mut last_start = i64::MIN;
         for b in &bundles {
             let start = b.region().start().unwrap_or(i64::MAX);
-            assert!(start >= last_start, "bundles not ordered: {} >= {}", start, last_start);
+            assert!(
+                start >= last_start,
+                "bundles not ordered: {} >= {}",
+                start,
+                last_start
+            );
             last_start = start;
         }
     }
@@ -442,7 +483,12 @@ mod tests {
     #[test]
     fn bundle_stepper_collect_all_exhausts() {
         let entries: Vec<(i64, Arc<Carrier>)> = (0..10)
-            .map(|i| (i, Arc::new(Carrier::new(RangeElement::text(format!("{i}"))))))
+            .map(|i| {
+                (
+                    i,
+                    Arc::new(Carrier::new(RangeElement::text(format!("{i}")))),
+                )
+            })
             .collect();
         let stepper = BundleStepper::from_entries(entries);
         let bundles = stepper.collect_all();

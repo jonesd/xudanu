@@ -60,7 +60,9 @@ impl Lock for BooLock {
         Box::new(self.clone())
     }
 
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -85,7 +87,9 @@ impl Lock for WallLock {
         Box::new(self.clone())
     }
 
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -115,14 +119,20 @@ impl Lock for ChallengeLock {
             LockCredential::ChallengeResponse(signature_bytes) => {
                 let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&self.verifying_key)
                     .map_err(|_| ServerError::LockFailed("invalid verifying key".into()))?;
-                let signature: ed25519_dalek::Signature = signature_bytes.as_slice().try_into()
-                    .map_err(|_| ServerError::LockFailed("invalid signature length (expected 64 bytes)".into()))?;
+                let signature: ed25519_dalek::Signature =
+                    signature_bytes.as_slice().try_into().map_err(|_| {
+                        ServerError::LockFailed(
+                            "invalid signature length (expected 64 bytes)".into(),
+                        )
+                    })?;
                 let mut message = Vec::with_capacity(8 + self.challenge.len());
                 message.extend_from_slice(b"xudanu/v1/");
                 message.extend_from_slice(&self.challenge);
                 crate::crypto::sign::verify_signature(&verifying_key, &message, &signature)
                     .map(|_| KeyMaster::make(self.club_id))
-                    .map_err(|_| ServerError::LockFailed("challenge signature verification failed".into()))
+                    .map_err(|_| {
+                        ServerError::LockFailed("challenge signature verification failed".into())
+                    })
             }
             _ => Err(ServerError::LockFailed(
                 "challenge lock requires ChallengeResponse credential".into(),
@@ -138,7 +148,9 @@ impl Lock for ChallengeLock {
         Box::new(self.clone())
     }
 
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -175,7 +187,9 @@ impl Lock for MatchLock {
         Box::new(self.clone())
     }
 
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -210,10 +224,9 @@ impl Lock for MultiLock {
     fn try_open(&self, credential: &LockCredential) -> Result<KeyMaster, ServerError> {
         match credential {
             LockCredential::Named { name, credential } => {
-                let sub_lock = self
-                    .sub_locks
-                    .get(name)
-                    .ok_or_else(|| ServerError::LockFailed(format!("no sub-lock named '{}'", name)))?;
+                let sub_lock = self.sub_locks.get(name).ok_or_else(|| {
+                    ServerError::LockFailed(format!("no sub-lock named '{}'", name))
+                })?;
                 sub_lock.try_open(credential)
             }
             _ => Err(ServerError::LockFailed(
@@ -237,7 +250,9 @@ impl Lock for MultiLock {
         })
     }
 
-    fn as_any(&self) -> &dyn std::any::Any { self }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 pub trait LockSmith: Send + Sync + std::fmt::Debug {
@@ -427,7 +442,9 @@ mod tests {
             .with_sub_lock("boo".to_string(), Box::new(BooLock::new(42)))
             .with_sub_lock(
                 "match".to_string(),
-                MatchLockSmith::from_password(b"pw").unwrap().create_lock(Some(99)),
+                MatchLockSmith::from_password(b"pw")
+                    .unwrap()
+                    .create_lock(Some(99)),
             );
         let km = ml
             .try_open(&LockCredential::Named {

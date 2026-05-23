@@ -12,8 +12,10 @@ impl DomainLabel {
     pub const CHALLENGE_KEY: &'static str = "xudanu/v1/challenge-key";
     pub const EXPORT_SECRET: &'static str = "xudanu/v1/export";
     pub const FEDERATION_HANDSHAKE: &'static str = "xudanu/v1/federation/handshake";
-    pub const FEDERATION_SERVER_TO_SERVER: &'static str = "xudanu/v1/federation/aead/server-to-server";
-    pub const FEDERATION_SERVER_FROM_SERVER: &'static str = "xudanu/v1/federation/aead/server-from-server";
+    pub const FEDERATION_SERVER_TO_SERVER: &'static str =
+        "xudanu/v1/federation/aead/server-to-server";
+    pub const FEDERATION_SERVER_FROM_SERVER: &'static str =
+        "xudanu/v1/federation/aead/server-from-server";
 }
 
 pub struct SessionKeys {
@@ -61,15 +63,38 @@ impl Drop for FederationSessionKeys {
     }
 }
 
-pub fn derive_federation_session_keys(shared_secret: &[u8], handshake_hash: &[u8]) -> FederationSessionKeys {
-    let outbound = derive_key(shared_secret, Some(handshake_hash), DomainLabel::FEDERATION_SERVER_TO_SERVER, &[]);
-    let inbound = derive_key(shared_secret, Some(handshake_hash), DomainLabel::FEDERATION_SERVER_FROM_SERVER, &[]);
+pub fn derive_federation_session_keys(
+    shared_secret: &[u8],
+    handshake_hash: &[u8],
+) -> FederationSessionKeys {
+    let outbound = derive_key(
+        shared_secret,
+        Some(handshake_hash),
+        DomainLabel::FEDERATION_SERVER_TO_SERVER,
+        &[],
+    );
+    let inbound = derive_key(
+        shared_secret,
+        Some(handshake_hash),
+        DomainLabel::FEDERATION_SERVER_FROM_SERVER,
+        &[],
+    );
     FederationSessionKeys { outbound, inbound }
 }
 
 pub fn derive_session_keys(shared_secret: &[u8], handshake_hash: &[u8]) -> SessionKeys {
-    let client_to_server = derive_key(shared_secret, Some(handshake_hash), DomainLabel::CLIENT_TO_SERVER, &[]);
-    let server_to_client = derive_key(shared_secret, Some(handshake_hash), DomainLabel::SERVER_TO_CLIENT, &[]);
+    let client_to_server = derive_key(
+        shared_secret,
+        Some(handshake_hash),
+        DomainLabel::CLIENT_TO_SERVER,
+        &[],
+    );
+    let server_to_client = derive_key(
+        shared_secret,
+        Some(handshake_hash),
+        DomainLabel::SERVER_TO_CLIENT,
+        &[],
+    );
     SessionKeys {
         client_to_server,
         server_to_client,

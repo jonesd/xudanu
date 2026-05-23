@@ -30,15 +30,33 @@ impl Counter {
 }
 
 impl Persistent for Counter {
-    fn flock_id(&self) -> FlockId { self.flock_id }
-    fn set_flock_id(&mut self, id: FlockId) { self.flock_id = id; }
-    fn flock_info(&self) -> Option<&FlockInfo> { self.info.as_ref() }
-    fn set_flock_info(&mut self, info: Option<FlockInfo>) { self.info = info; }
-    fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> { self.info.as_mut() }
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
-    fn clone_boxed(&self) -> Box<dyn Persistent> { Box::new(self.clone()) }
-    fn type_tag(&self) -> &'static str { "Counter" }
+    fn flock_id(&self) -> FlockId {
+        self.flock_id
+    }
+    fn set_flock_id(&mut self, id: FlockId) {
+        self.flock_id = id;
+    }
+    fn flock_info(&self) -> Option<&FlockInfo> {
+        self.info.as_ref()
+    }
+    fn set_flock_info(&mut self, info: Option<FlockInfo>) {
+        self.info = info;
+    }
+    fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> {
+        self.info.as_mut()
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn clone_boxed(&self) -> Box<dyn Persistent> {
+        Box::new(self.clone())
+    }
+    fn type_tag(&self) -> &'static str {
+        "Counter"
+    }
     fn to_bytes(&self) -> Result<Vec<u8>, super::engine::StorageError> {
         Ok(self.value.to_le_bytes().to_vec())
     }
@@ -78,7 +96,11 @@ impl BatchCounter {
         Ok(v)
     }
 
-    pub fn next_batch(&mut self, engine: &mut dyn StorageEngine, count: u64) -> StorageResult<(u64, u64)> {
+    pub fn next_batch(
+        &mut self,
+        engine: &mut dyn StorageEngine,
+        count: u64,
+    ) -> StorageResult<(u64, u64)> {
         let needed = self.current + count;
         if needed > self.limit {
             self.limit = needed + BATCH_SIZE;
@@ -91,15 +113,33 @@ impl BatchCounter {
 }
 
 impl Persistent for BatchCounter {
-    fn flock_id(&self) -> FlockId { self.flock_id }
-    fn set_flock_id(&mut self, id: FlockId) { self.flock_id = id; }
-    fn flock_info(&self) -> Option<&FlockInfo> { self.info.as_ref() }
-    fn set_flock_info(&mut self, info: Option<FlockInfo>) { self.info = info; }
-    fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> { self.info.as_mut() }
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
-    fn clone_boxed(&self) -> Box<dyn Persistent> { Box::new(self.clone()) }
-    fn type_tag(&self) -> &'static str { "BatchCounter" }
+    fn flock_id(&self) -> FlockId {
+        self.flock_id
+    }
+    fn set_flock_id(&mut self, id: FlockId) {
+        self.flock_id = id;
+    }
+    fn flock_info(&self) -> Option<&FlockInfo> {
+        self.info.as_ref()
+    }
+    fn set_flock_info(&mut self, info: Option<FlockInfo>) {
+        self.info = info;
+    }
+    fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> {
+        self.info.as_mut()
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn clone_boxed(&self) -> Box<dyn Persistent> {
+        Box::new(self.clone())
+    }
+    fn type_tag(&self) -> &'static str {
+        "BatchCounter"
+    }
     fn to_bytes(&self) -> Result<Vec<u8>, super::engine::StorageError> {
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&self.current.to_le_bytes());
@@ -137,15 +177,33 @@ impl SingleCounter {
 }
 
 impl Persistent for SingleCounter {
-    fn flock_id(&self) -> FlockId { self.flock_id }
-    fn set_flock_id(&mut self, id: FlockId) { self.flock_id = id; }
-    fn flock_info(&self) -> Option<&FlockInfo> { self.info.as_ref() }
-    fn set_flock_info(&mut self, info: Option<FlockInfo>) { self.info = info; }
-    fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> { self.info.as_mut() }
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
-    fn clone_boxed(&self) -> Box<dyn Persistent> { Box::new(self.clone()) }
-    fn type_tag(&self) -> &'static str { "SingleCounter" }
+    fn flock_id(&self) -> FlockId {
+        self.flock_id
+    }
+    fn set_flock_id(&mut self, id: FlockId) {
+        self.flock_id = id;
+    }
+    fn flock_info(&self) -> Option<&FlockInfo> {
+        self.info.as_ref()
+    }
+    fn set_flock_info(&mut self, info: Option<FlockInfo>) {
+        self.info = info;
+    }
+    fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> {
+        self.info.as_mut()
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn clone_boxed(&self) -> Box<dyn Persistent> {
+        Box::new(self.clone())
+    }
+    fn type_tag(&self) -> &'static str {
+        "SingleCounter"
+    }
     fn to_bytes(&self) -> Result<Vec<u8>, super::engine::StorageError> {
         Ok(self.value.to_le_bytes().to_vec())
     }

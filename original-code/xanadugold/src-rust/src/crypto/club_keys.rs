@@ -36,14 +36,19 @@ pub struct EncryptedSigningKey {
     pub salt: [u8; 32],
 }
 
-pub fn generate_club_keypair(password: &[u8]) -> Result<(EncryptedSigningKey, SigningKey), ClubKeyError> {
+pub fn generate_club_keypair(
+    password: &[u8],
+) -> Result<(EncryptedSigningKey, SigningKey), ClubKeyError> {
     let signing_key = sign::generate_signing_key();
     let verifying_key = signing_key.verifying_key();
     let encrypted = encrypt_signing_key(&signing_key, password)?;
     Ok((encrypted, signing_key))
 }
 
-pub fn encrypt_signing_key(signing_key: &SigningKey, password: &[u8]) -> Result<EncryptedSigningKey, ClubKeyError> {
+pub fn encrypt_signing_key(
+    signing_key: &SigningKey,
+    password: &[u8],
+) -> Result<EncryptedSigningKey, ClubKeyError> {
     let mut salt = [0u8; 32];
     OsRng.fill_bytes(&mut salt);
     let encryption_key = derive_encryption_key(password, &salt);
@@ -59,13 +64,17 @@ pub fn encrypt_signing_key(signing_key: &SigningKey, password: &[u8]) -> Result<
     })
 }
 
-pub fn decrypt_signing_key(encrypted: &EncryptedSigningKey, password: &[u8]) -> Result<SigningKey, ClubKeyError> {
+pub fn decrypt_signing_key(
+    encrypted: &EncryptedSigningKey,
+    password: &[u8],
+) -> Result<SigningKey, ClubKeyError> {
     let encryption_key = derive_encryption_key(password, &encrypted.salt);
-    let envelope = SealedEnvelope::decode(&encrypted.envelope)
-        .map_err(ClubKeyError::DecryptionFailed)?;
+    let envelope =
+        SealedEnvelope::decode(&encrypted.envelope).map_err(ClubKeyError::DecryptionFailed)?;
     let plaintext = aead::open_standalone(&encryption_key, &envelope, b"xudanu-club-key")
         .map_err(ClubKeyError::DecryptionFailed)?;
-    let mut secret_bytes: [u8; 32] = plaintext.try_into()
+    let mut secret_bytes: [u8; 32] = plaintext
+        .try_into()
         .map_err(|_| ClubKeyError::InvalidKeyBytes)?;
     let key = SigningKey::from_bytes(&secret_bytes);
     secret_bytes.zeroize();
@@ -77,11 +86,11 @@ pub fn verify_club_key(encrypted: &EncryptedSigningKey, signing_key: &SigningKey
 }
 
 fn derive_encryption_key(password: &[u8], salt: &[u8; 32]) -> [u8; 32] {
-    let params = argon2::Params::new(19456, 2, 1, Some(32))
-        .expect("valid argon2 params");
+    let params = argon2::Params::new(19456, 2, 1, Some(32)).expect("valid argon2 params");
     let argon2 = argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
     let mut key = [0u8; 32];
-    argon2.hash_password_into(password, salt, &mut key)
+    argon2
+        .hash_password_into(password, salt, &mut key)
         .expect("argon2 derivation should not fail with valid params");
     key
 }
@@ -94,7 +103,10 @@ mod tests {
     fn generate_and_decrypt_roundtrip() {
         let (encrypted, _signing_key) = generate_club_keypair(b"password123").unwrap();
         let decrypted = decrypt_signing_key(&encrypted, b"password123").unwrap();
-        assert_eq!(encrypted.verifying_key, decrypted.verifying_key().to_bytes());
+        assert_eq!(
+            encrypted.verifying_key,
+            decrypted.verifying_key().to_bytes()
+        );
     }
 
     #[test]

@@ -10,12 +10,12 @@ pub mod persistent;
 pub mod snarf;
 #[cfg(test)]
 mod stress;
-pub mod transaction;
 pub mod traits;
+pub mod transaction;
 pub mod urdi;
 pub mod verify;
 
-pub use chunk_store::{ChunkStore, ChunkError};
+pub use chunk_store::{ChunkError, ChunkStore};
 pub use counter::{BatchCounter, Counter, SingleCounter};
 pub use engine::{StorageEngine, StorageError, StorageResult};
 pub use file_storage::FileBackedStorage;
@@ -23,6 +23,12 @@ pub use memory::InMemoryStorage;
 pub use packer::SnarfStorage;
 pub use persistent::{FlockFlags, FlockId, FlockInfo, FlockLocation, FlockState};
 pub use snarf::{Snarf, SnarfStore, DEFAULT_SNARF_SIZE, SNARF_INFO_COUNT};
+pub use traits::{
+    decode_flock, encode_flock, DeserializerFn, Persistent, PersistentRef, PersistentRegistry,
+    TypeRegistry,
+};
 pub use transaction::Transaction;
-pub use traits::{Persistent, PersistentRef, PersistentRegistry, TypeRegistry, DeserializerFn, encode_flock, decode_flock};
-pub use urdi::{UrdiFile, UrdiHeader, DEFAULT_SNARF_SIZE_FILE, DEFAULT_INITIAL_COUNT, DEFAULT_STAGE_COUNT, DEFAULT_DATA_START};
+pub use urdi::{
+    UrdiFile, UrdiHeader, DEFAULT_DATA_START, DEFAULT_INITIAL_COUNT, DEFAULT_SNARF_SIZE_FILE,
+    DEFAULT_STAGE_COUNT,
+};

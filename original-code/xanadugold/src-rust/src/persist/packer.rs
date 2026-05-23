@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::engine::{StorageEngine, StorageError, StorageResult};
 use super::persistent::{FlockId, FlockInfo, FlockLocation};
 use super::snarf::{SnarfStore, DEFAULT_SNARF_SIZE};
-use super::traits::{Persistent, PersistentRegistry, TypeRegistry, encode_flock, decode_flock};
+use super::traits::{decode_flock, encode_flock, Persistent, PersistentRegistry, TypeRegistry};
 
 #[derive(Debug)]
 pub struct SnarfStorage {
@@ -69,7 +69,11 @@ impl SnarfStorage {
         }
     }
 
-    pub fn register_type(&mut self, type_tag: &'static str, deserializer: super::traits::DeserializerFn) {
+    pub fn register_type(
+        &mut self,
+        type_tag: &'static str,
+        deserializer: super::traits::DeserializerFn,
+    ) {
         self.type_registry.register(type_tag, deserializer);
     }
 
@@ -78,31 +82,44 @@ impl SnarfStorage {
         Ok(encode_flock(obj.type_tag(), &payload))
     }
 
-    fn deserialize_flock(&self, data: &[u8], flock_id: FlockId) -> StorageResult<Box<dyn Persistent>> {
+    fn deserialize_flock(
+        &self,
+        data: &[u8],
+        flock_id: FlockId,
+    ) -> StorageResult<Box<dyn Persistent>> {
         let (tag, payload) = decode_flock(data)?;
         self.type_registry.deserialize(tag, payload, flock_id)
     }
 
     fn write_flock_to_snarf(&mut self, flock_id: &FlockId) -> StorageResult<()> {
-        let obj = self.registry.get_dyn(flock_id)
+        let obj = self
+            .registry
+            .get_dyn(flock_id)
             .ok_or_else(|| StorageError::NotFound(*flock_id))?;
         let data = self.serialize_flock(obj)?;
-        let info = self.flock_infos.get(flock_id)
+        let info = self
+            .flock_infos
+            .get(flock_id)
             .ok_or_else(|| StorageError::NotFound(*flock_id))?;
 
         if let Some(ref loc) = info.location {
-            let existing_size = self.snarf_store.get(loc.snarf_id)
+            let existing_size = self
+                .snarf_store
+                .get(loc.snarf_id)
                 .and_then(|s| s.flock_size(loc.index as usize))
                 .unwrap_or(0);
 
             if data.len() as u32 <= existing_size {
-                self.snarf_store.write_flock(loc, &data)
+                self.snarf_store
+                    .write_flock(loc, &data)
                     .map_err(|e| StorageError::Io(e.to_string()))?;
                 return Ok(());
             }
         }
 
-        let new_loc = self.snarf_store.allocate_and_write(&data)
+        let new_loc = self
+            .snarf_store
+            .allocate_and_write(&data)
             .ok_or(StorageError::OutOfSpace)?;
 
         if let Some(old_loc) = self.locations.get(flock_id).cloned() {
@@ -143,7 +160,9 @@ impl SnarfStorage {
     }
 
     pub fn snapshot_meta(&self) -> super::file_storage::MetaRecord {
-        let flocks = self.flock_infos.iter()
+        let flocks = self
+            .flock_infos
+            .iter()
             .filter(|(_, info)| !info.is_destroyed())
             .map(|(id, info)| {
                 let loc = self.locations.get(id).cloned();
@@ -171,7 +190,9 @@ impl SnarfStorage {
     ) {
         let mut info = FlockInfo::new(flock_id);
         info.location = location.clone();
-        info.flags = flags & !super::persistent::FlockFlags::CONTENTS_DIRTY & !super::persistent::FlockFlags::IS_NEW;
+        info.flags = flags
+            & !super::persistent::FlockFlags::CONTENTS_DIRTY
+            & !super::persistent::FlockFlags::IS_NEW;
         info.old_size = old_size;
         self.flock_infos.insert(flock_id, info);
         if let Some(loc) = location {
@@ -188,7 +209,8 @@ impl SnarfStorage {
     }
 
     pub fn flock_info_count(&self) -> usize {
-        self.flock_infos.values()
+        self.flock_infos
+            .values()
             .filter(|info| !info.is_destroyed())
             .count()
     }
@@ -275,10 +297,17 @@ impl StorageEngine for SnarfStorage {
         }
     }
 
-    fn fetch_by_location(&self, location: &FlockLocation) -> StorageResult<Option<Box<dyn Persistent>>> {
-        let data = self.snarf_store.read_flock(location)
+    fn fetch_by_location(
+        &self,
+        location: &FlockLocation,
+    ) -> StorageResult<Option<Box<dyn Persistent>>> {
+        let data = self
+            .snarf_store
+            .read_flock(location)
             .map_err(|e| StorageError::Io(e.to_string()))?;
-        let flock_id = self.locations.iter()
+        let flock_id = self
+            .locations
+            .iter()
             .find(|(_, loc)| loc.snarf_id == location.snarf_id && loc.index == location.index)
             .map(|(id, _)| *id)
             .ok_or_else(|| StorageError::NotFound(FlockId::new(0, 0)))?;
@@ -296,7 +325,9 @@ impl StorageEngine for SnarfStorage {
 
     fn begin_transaction(&mut self) -> StorageResult<()> {
         if self.in_transaction {
-            return Err(StorageError::TransactionError("already in transaction".into()));
+            return Err(StorageError::TransactionError(
+                "already in transaction".into(),
+            ));
         }
         self.in_transaction = true;
         self.dirty_set.clear();
@@ -403,15 +434,33 @@ mod tests {
     }
 
     impl Persistent for TestObj {
-        fn flock_id(&self) -> FlockId { self.flock_id }
-        fn set_flock_id(&mut self, id: FlockId) { self.flock_id = id; }
-        fn flock_info(&self) -> Option<&FlockInfo> { self.info.as_ref() }
-        fn set_flock_info(&mut self, info: Option<FlockInfo>) { self.info = info; }
-        fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> { self.info.as_mut() }
-        fn as_any(&self) -> &dyn Any { self }
-        fn as_any_mut(&mut self) -> &mut dyn Any { self }
-        fn clone_boxed(&self) -> Box<dyn Persistent> { Box::new(self.clone()) }
-        fn type_tag(&self) -> &'static str { "TestObj" }
+        fn flock_id(&self) -> FlockId {
+            self.flock_id
+        }
+        fn set_flock_id(&mut self, id: FlockId) {
+            self.flock_id = id;
+        }
+        fn flock_info(&self) -> Option<&FlockInfo> {
+            self.info.as_ref()
+        }
+        fn set_flock_info(&mut self, info: Option<FlockInfo>) {
+            self.info = info;
+        }
+        fn flock_info_mut(&mut self) -> Option<&mut FlockInfo> {
+            self.info.as_mut()
+        }
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+        fn clone_boxed(&self) -> Box<dyn Persistent> {
+            Box::new(self.clone())
+        }
+        fn type_tag(&self) -> &'static str {
+            "TestObj"
+        }
         fn to_bytes(&self) -> Result<Vec<u8>, crate::persist::StorageError> {
             Ok(self.value.to_le_bytes().to_vec())
         }
@@ -419,7 +468,11 @@ mod tests {
 
     fn make_obj(engine: &mut dyn StorageEngine, value: i64) -> FlockId {
         let id = engine.allocate_flock_id();
-        let obj = Box::new(TestObj { flock_id: id, info: None, value });
+        let obj = Box::new(TestObj {
+            flock_id: id,
+            info: None,
+            value,
+        });
         engine.store_new(obj).unwrap();
         id
     }
@@ -427,8 +480,15 @@ mod tests {
     fn new_storage() -> SnarfStorage {
         let mut storage = SnarfStorage::new();
         storage.register_type("TestObj", |data, flock_id| {
-            let value = i64::from_le_bytes(data.try_into().map_err(|_| StorageError::CorruptData("bad i64".into()))?);
-            Ok(Box::new(TestObj { flock_id, info: None, value }))
+            let value = i64::from_le_bytes(
+                data.try_into()
+                    .map_err(|_| StorageError::CorruptData("bad i64".into()))?,
+            );
+            Ok(Box::new(TestObj {
+                flock_id,
+                info: None,
+                value,
+            }))
         });
         storage
     }
@@ -491,7 +551,10 @@ mod tests {
         assert_eq!(storage.object_count(), 10);
         for (i, id) in ids.iter().enumerate() {
             let obj = storage.fetch(id).unwrap().unwrap();
-            assert_eq!(obj.as_any().downcast_ref::<TestObj>().unwrap().value, i as i64);
+            assert_eq!(
+                obj.as_any().downcast_ref::<TestObj>().unwrap().value,
+                i as i64
+            );
         }
     }
 
@@ -577,7 +640,10 @@ mod tests {
 
         for (i, id) in ids.iter().enumerate() {
             let obj = storage.fetch(id).unwrap().unwrap();
-            assert_eq!(obj.as_any().downcast_ref::<TestObj>().unwrap().value, i as i64);
+            assert_eq!(
+                obj.as_any().downcast_ref::<TestObj>().unwrap().value,
+                i as i64
+            );
         }
 
         storage.begin_transaction().unwrap();

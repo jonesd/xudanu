@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use super::edition::Edition;
 use super::range_element::{Carrier, RangeElement};
@@ -163,10 +163,7 @@ pub fn walk_otree_shared(
     shared
 }
 
-pub fn collect_unique_elements(
-    edition: &Edition,
-    region: &XnRegion,
-) -> Vec<RangeElement> {
+pub fn collect_unique_elements(edition: &Edition, region: &XnRegion) -> Vec<RangeElement> {
     let entries = edition.fetch_range(region);
     let mut seen = HashSet::new();
     let mut unique = Vec::new();
@@ -244,8 +241,7 @@ mod tests {
 
     #[test]
     fn range_transclusion_query_with_region() {
-        let q = RangeTransclusionQuery::new()
-            .with_region(XnRegion::interval(0, 10));
+        let q = RangeTransclusionQuery::new().with_region(XnRegion::interval(0, 10));
         assert!(q.region().is_some());
         assert_eq!(q.region().unwrap().start(), Some(0));
     }

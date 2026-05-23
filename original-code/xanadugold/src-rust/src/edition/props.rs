@@ -382,92 +382,76 @@ impl Prop {
 
     pub fn changed(&self, change: PropChangeKind, new_prop: &Prop) -> Prop {
         match change {
-            PropChangeKind::Permissions => {
-                match (self, new_prop) {
-                    (Prop::Bert(old), Prop::Bert(new_p)) => Prop::Bert(BertProp::new(
-                        new_p.permissions.clone(),
-                        old.endorsements.clone(),
-                        old.is_sensor_waiting,
-                        old.is_not_partializable,
-                    )),
-                    (Prop::Sensor(old), Prop::Sensor(new_p)) => Prop::Sensor(SensorProp::new(
-                        new_p.relevant_permissions.clone(),
-                        old.relevant_endorsements.clone(),
-                        old.is_partial,
-                    )),
-                    _ => self.clone(),
-                }
-            }
-            PropChangeKind::Endorsements => {
-                match (self, new_prop) {
-                    (Prop::Bert(old), Prop::Bert(new_p)) => Prop::Bert(BertProp::new(
-                        old.permissions.clone(),
-                        new_p.endorsements.clone(),
-                        old.is_sensor_waiting,
-                        old.is_not_partializable,
-                    )),
-                    (Prop::Sensor(old), Prop::Sensor(new_p)) => Prop::Sensor(SensorProp::new(
-                        old.relevant_permissions.clone(),
-                        new_p.relevant_endorsements.clone(),
-                        old.is_partial,
-                    )),
-                    _ => self.clone(),
-                }
-            }
-            PropChangeKind::CannotPartialize => {
-                match (self, new_prop) {
-                    (Prop::Bert(old), Prop::Bert(new_p)) => Prop::Bert(BertProp::new(
-                        old.permissions.clone(),
-                        old.endorsements.clone(),
-                        old.is_sensor_waiting,
-                        new_p.is_not_partializable,
-                    )),
-                    _ => self.clone(),
-                }
-            }
-            PropChangeKind::DetectorWaiting => {
-                match (self, new_prop) {
-                    (Prop::Bert(old), Prop::Bert(new_p)) => Prop::Bert(BertProp::new(
-                        old.permissions.clone(),
-                        old.endorsements.clone(),
-                        new_p.is_sensor_waiting,
-                        old.is_not_partializable,
-                    )),
-                    _ => self.clone(),
-                }
-            }
+            PropChangeKind::Permissions => match (self, new_prop) {
+                (Prop::Bert(old), Prop::Bert(new_p)) => Prop::Bert(BertProp::new(
+                    new_p.permissions.clone(),
+                    old.endorsements.clone(),
+                    old.is_sensor_waiting,
+                    old.is_not_partializable,
+                )),
+                (Prop::Sensor(old), Prop::Sensor(new_p)) => Prop::Sensor(SensorProp::new(
+                    new_p.relevant_permissions.clone(),
+                    old.relevant_endorsements.clone(),
+                    old.is_partial,
+                )),
+                _ => self.clone(),
+            },
+            PropChangeKind::Endorsements => match (self, new_prop) {
+                (Prop::Bert(old), Prop::Bert(new_p)) => Prop::Bert(BertProp::new(
+                    old.permissions.clone(),
+                    new_p.endorsements.clone(),
+                    old.is_sensor_waiting,
+                    old.is_not_partializable,
+                )),
+                (Prop::Sensor(old), Prop::Sensor(new_p)) => Prop::Sensor(SensorProp::new(
+                    old.relevant_permissions.clone(),
+                    new_p.relevant_endorsements.clone(),
+                    old.is_partial,
+                )),
+                _ => self.clone(),
+            },
+            PropChangeKind::CannotPartialize => match (self, new_prop) {
+                (Prop::Bert(old), Prop::Bert(new_p)) => Prop::Bert(BertProp::new(
+                    old.permissions.clone(),
+                    old.endorsements.clone(),
+                    old.is_sensor_waiting,
+                    new_p.is_not_partializable,
+                )),
+                _ => self.clone(),
+            },
+            PropChangeKind::DetectorWaiting => match (self, new_prop) {
+                (Prop::Bert(old), Prop::Bert(new_p)) => Prop::Bert(BertProp::new(
+                    old.permissions.clone(),
+                    old.endorsements.clone(),
+                    new_p.is_sensor_waiting,
+                    old.is_not_partializable,
+                )),
+                _ => self.clone(),
+            },
             PropChangeKind::Bert | PropChangeKind::Sensor => new_prop.clone(),
         }
     }
 
     pub fn are_equal_props(&self, change: PropChangeKind, other: &Prop) -> bool {
         match change {
-            PropChangeKind::Permissions => {
-                match (self, other) {
-                    (Prop::Bert(a), Prop::Bert(b)) => a.permissions == b.permissions,
-                    (Prop::Sensor(a), Prop::Sensor(b)) => {
-                        a.relevant_permissions == b.relevant_permissions
-                    }
-                    _ => false,
+            PropChangeKind::Permissions => match (self, other) {
+                (Prop::Bert(a), Prop::Bert(b)) => a.permissions == b.permissions,
+                (Prop::Sensor(a), Prop::Sensor(b)) => {
+                    a.relevant_permissions == b.relevant_permissions
                 }
-            }
-            PropChangeKind::Endorsements => {
-                match (self, other) {
-                    (Prop::Bert(a), Prop::Bert(b)) => a.endorsements == b.endorsements,
-                    (Prop::Sensor(a), Prop::Sensor(b)) => {
-                        a.relevant_endorsements == b.relevant_endorsements
-                    }
-                    _ => false,
+                _ => false,
+            },
+            PropChangeKind::Endorsements => match (self, other) {
+                (Prop::Bert(a), Prop::Bert(b)) => a.endorsements == b.endorsements,
+                (Prop::Sensor(a), Prop::Sensor(b)) => {
+                    a.relevant_endorsements == b.relevant_endorsements
                 }
-            }
-            PropChangeKind::CannotPartialize => {
-                match (self, other) {
-                    (Prop::Bert(a), Prop::Bert(b)) => {
-                        a.is_not_partializable == b.is_not_partializable
-                    }
-                    _ => false,
-                }
-            }
+                _ => false,
+            },
+            PropChangeKind::CannotPartialize => match (self, other) {
+                (Prop::Bert(a), Prop::Bert(b)) => a.is_not_partializable == b.is_not_partializable,
+                _ => false,
+            },
             PropChangeKind::DetectorWaiting => match (self, other) {
                 (Prop::Bert(a), Prop::Bert(b)) => a.is_sensor_waiting == b.is_sensor_waiting,
                 _ => false,
@@ -704,7 +688,10 @@ mod tests {
     fn bert_prop_cannot_partialize() {
         let bp = BertProp::cannot_partialize_prop();
         assert!(bp.is_not_partializable());
-        assert_eq!(bp.flags() & IS_NOT_PARTIALIZABLE_FLAG, IS_NOT_PARTIALIZABLE_FLAG);
+        assert_eq!(
+            bp.flags() & IS_NOT_PARTIALIZABLE_FLAG,
+            IS_NOT_PARTIALIZABLE_FLAG
+        );
     }
 
     #[test]
@@ -872,17 +859,9 @@ mod tests {
 
     #[test]
     fn bert_flags_for_combines() {
-        let flags = bert_flags_for(
-            Some(&[Id::global(0)]),
-            Some(&[Id::global(1)]),
-            true,
-            true,
-        );
+        let flags = bert_flags_for(Some(&[Id::global(0)]), Some(&[Id::global(1)]), true, true);
         assert_eq!(flags & PUBLIC_CLUB_FLAG, PUBLIC_CLUB_FLAG);
-        assert_eq!(
-            flags & IS_NOT_PARTIALIZABLE_FLAG,
-            IS_NOT_PARTIALIZABLE_FLAG
-        );
+        assert_eq!(flags & IS_NOT_PARTIALIZABLE_FLAG, IS_NOT_PARTIALIZABLE_FLAG);
         assert_eq!(flags & IS_SENSOR_WAITING_FLAG, IS_SENSOR_WAITING_FLAG);
     }
 

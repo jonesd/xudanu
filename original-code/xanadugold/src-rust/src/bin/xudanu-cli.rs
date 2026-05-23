@@ -32,9 +32,8 @@ fn usage() {
     eprintln!("  login-admin                             Login as admin");
 }
 
-type WsStream = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type WsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 struct Client {
     sender: futures_util::stream::SplitSink<WsStream, Message>,
@@ -98,10 +97,25 @@ impl Client {
             let resp = self.request("session_connect", None).await;
             self.session_id = resp["value"]["value"].as_u64();
         }
-        let admin_id = self.request("club_id_by_name", Some(serde_json::json!({"name": "admin"}))).await;
-        let club_id = admin_id["value"]["value"].as_u64().ok_or("admin club not found")?;
-        self.request("session_login", Some(serde_json::json!({"club_id": club_id}))).await;
-        self.request("session_authenticate", Some(serde_json::json!({"club_id": club_id, "credential": "Boo"}))).await;
+        let admin_id = self
+            .request(
+                "club_id_by_name",
+                Some(serde_json::json!({"name": "admin"})),
+            )
+            .await;
+        let club_id = admin_id["value"]["value"]
+            .as_u64()
+            .ok_or("admin club not found")?;
+        self.request(
+            "session_login",
+            Some(serde_json::json!({"club_id": club_id})),
+        )
+        .await;
+        self.request(
+            "session_authenticate",
+            Some(serde_json::json!({"club_id": club_id, "credential": "Boo"})),
+        )
+        .await;
         self.logged_in = true;
         Ok(())
     }
@@ -111,7 +125,11 @@ fn extract_value(resp: &serde_json::Value) -> &serde_json::Value {
     &resp["value"]
 }
 
-async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_command(
+    client: &mut Client,
+    cmd: &str,
+    args: &[&str],
+) -> Result<(), Box<dyn std::error::Error>> {
     match cmd {
         "repl" => unreachable!(),
         "login" => {
@@ -119,15 +137,27 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
             println!("Logged in.");
         }
         "login-admin" => {
-            client.login_admin().await.map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)) as Box<dyn std::error::Error>)?;
+            client.login_admin().await.map_err(|e| {
+                Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+                    as Box<dyn std::error::Error>
+            })?;
             println!("Logged in as admin.");
         }
         "create-work" => {
             client.ensure_login().await;
-            let text = if args.is_empty() { "empty".to_string() } else { args.join(" ") };
-            let resp = client.request("work_create", Some(serde_json::json!({
-                "edition": {"text": text}
-            }))).await;
+            let text = if args.is_empty() {
+                "empty".to_string()
+            } else {
+                args.join(" ")
+            };
+            let resp = client
+                .request(
+                    "work_create",
+                    Some(serde_json::json!({
+                        "edition": {"text": text}
+                    })),
+                )
+                .await;
             if resp["type"] == "error" {
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
             } else {
@@ -138,11 +168,16 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
         "get-work" => {
             client.ensure_login().await;
             let id: u64 = args.first().ok_or("usage: get-work <id>")?.parse()?;
-            let resp = client.request("work_get_edition", Some(serde_json::json!({"work_id": id}))).await;
+            let resp = client
+                .request("work_get_edition", Some(serde_json::json!({"work_id": id})))
+                .await;
             if resp["type"] == "error" {
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
             } else {
-                println!("{}", serde_json::to_string_pretty(extract_value(&resp)).unwrap());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(extract_value(&resp)).unwrap()
+                );
             }
         }
         "list-works" => {
@@ -153,13 +188,21 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
                 if entries.is_empty() {
                     println!("No works.");
                 } else {
-                    println!("{:<10} {:<10} {:<10} {}", "ID", "OWNER", "REVISIONS", "GRABBED");
+                    println!(
+                        "{:<10} {:<10} {:<10} {}",
+                        "ID", "OWNER", "REVISIONS", "GRABBED"
+                    );
                     for e in entries {
-                        println!("{:<10} {:<10} {:<10} {}",
+                        println!(
+                            "{:<10} {:<10} {:<10} {}",
                             e["work_id"].as_u64().unwrap_or(0),
                             e["owner"].as_u64().unwrap_or(0),
                             e["revision_count"].as_u64().unwrap_or(0),
-                            if e["is_grabbed"].as_bool().unwrap_or(false) { "yes" } else { "no" }
+                            if e["is_grabbed"].as_bool().unwrap_or(false) {
+                                "yes"
+                            } else {
+                                "no"
+                            }
                         );
                     }
                 }
@@ -168,7 +211,9 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
         "grab" => {
             client.ensure_login().await;
             let id: u64 = args.first().ok_or("usage: grab <id>")?.parse()?;
-            let resp = client.request("work_grab", Some(serde_json::json!({"work_id": id}))).await;
+            let resp = client
+                .request("work_grab", Some(serde_json::json!({"work_id": id})))
+                .await;
             if resp["type"] == "error" {
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
             } else {
@@ -178,10 +223,19 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
         "revise" => {
             client.ensure_login().await;
             let id: u64 = args.first().ok_or("usage: revise <id> <text>")?.parse()?;
-            let text = if args.len() > 1 { args[1..].join(" ") } else { "".to_string() };
-            let resp = client.request("work_revise", Some(serde_json::json!({
-                "work_id": id, "edition": {"text": text}
-            }))).await;
+            let text = if args.len() > 1 {
+                args[1..].join(" ")
+            } else {
+                "".to_string()
+            };
+            let resp = client
+                .request(
+                    "work_revise",
+                    Some(serde_json::json!({
+                        "work_id": id, "edition": {"text": text}
+                    })),
+                )
+                .await;
             if resp["type"] == "error" {
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
             } else {
@@ -192,7 +246,9 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
         "release" => {
             client.ensure_login().await;
             let id: u64 = args.first().ok_or("usage: release <id>")?.parse()?;
-            let resp = client.request("work_release", Some(serde_json::json!({"work_id": id}))).await;
+            let resp = client
+                .request("work_release", Some(serde_json::json!({"work_id": id})))
+                .await;
             if resp["type"] == "error" {
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
             } else {
@@ -202,29 +258,62 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
         "history" => {
             client.ensure_login().await;
             let id: u64 = args.first().ok_or("usage: history <id>")?.parse()?;
-            let resp = client.request("work_revision_count", Some(serde_json::json!({"work_id": id}))).await;
+            let resp = client
+                .request(
+                    "work_revision_count",
+                    Some(serde_json::json!({"work_id": id})),
+                )
+                .await;
             if resp["type"] == "error" {
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
             } else {
-                println!("{} revisions.", extract_value(&resp)["value"].as_u64().unwrap_or(0));
+                println!(
+                    "{} revisions.",
+                    extract_value(&resp)["value"].as_u64().unwrap_or(0)
+                );
             }
         }
         "fetch-revision" => {
             client.ensure_login().await;
-            let id: u64 = args.first().ok_or("usage: fetch-revision <id> <n>")?.parse()?;
-            let n: u64 = args.get(1).ok_or("usage: fetch-revision <id> <n>")?.parse()?;
-            let resp = client.request("work_fetch_revision", Some(serde_json::json!({
-                "work_id": id, "number": n
-            }))).await;
-            println!("{}", serde_json::to_string_pretty(extract_value(&resp)).unwrap());
+            let id: u64 = args
+                .first()
+                .ok_or("usage: fetch-revision <id> <n>")?
+                .parse()?;
+            let n: u64 = args
+                .get(1)
+                .ok_or("usage: fetch-revision <id> <n>")?
+                .parse()?;
+            let resp = client
+                .request(
+                    "work_fetch_revision",
+                    Some(serde_json::json!({
+                        "work_id": id, "number": n
+                    })),
+                )
+                .await;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(extract_value(&resp)).unwrap()
+            );
         }
         "create-link" => {
             client.ensure_login().await;
-            let origin: u64 = args.first().ok_or("usage: create-link <origin-id> <dest-id>")?.parse()?;
-            let dest: u64 = args.get(1).ok_or("usage: create-link <origin-id> <dest-id>")?.parse()?;
-            let resp = client.request("link_create", Some(serde_json::json!({
-                "origin": origin, "destination": dest
-            }))).await;
+            let origin: u64 = args
+                .first()
+                .ok_or("usage: create-link <origin-id> <dest-id>")?
+                .parse()?;
+            let dest: u64 = args
+                .get(1)
+                .ok_or("usage: create-link <origin-id> <dest-id>")?
+                .parse()?;
+            let resp = client
+                .request(
+                    "link_create",
+                    Some(serde_json::json!({
+                        "origin": origin, "destination": dest
+                    })),
+                )
+                .await;
             if resp["type"] == "error" {
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
             } else {
@@ -235,13 +324,23 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
         "get-link" => {
             client.ensure_login().await;
             let id: u64 = args.first().ok_or("usage: get-link <link-id>")?.parse()?;
-            let resp = client.request("link_get", Some(serde_json::json!({"link_id": id}))).await;
-            println!("{}", serde_json::to_string_pretty(extract_value(&resp)).unwrap());
+            let resp = client
+                .request("link_get", Some(serde_json::json!({"link_id": id})))
+                .await;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(extract_value(&resp)).unwrap()
+            );
         }
         "list-links" => {
             client.ensure_login().await;
             let id: u64 = args.first().ok_or("usage: list-links <work-id>")?.parse()?;
-            let resp = client.request("link_list_for_work", Some(serde_json::json!({"work_id": id}))).await;
+            let resp = client
+                .request(
+                    "link_list_for_work",
+                    Some(serde_json::json!({"work_id": id})),
+                )
+                .await;
             let links = extract_value(&resp)["value"].as_array();
             if let Some(links) = links {
                 if links.is_empty() {
@@ -249,7 +348,8 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
                 } else {
                     println!("{:<10} {:<10} {}", "LINK_ID", "ORIGIN", "DEST");
                     for l in links {
-                        println!("{:<10} {:<10} {}",
+                        println!(
+                            "{:<10} {:<10} {}",
                             l["link_id"].as_u64().unwrap_or(0),
                             l["origin"].as_u64().unwrap_or(0),
                             l["destination"].as_u64().unwrap_or(0)
@@ -260,8 +360,13 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
         }
         "delete-link" => {
             client.ensure_login().await;
-            let id: u64 = args.first().ok_or("usage: delete-link <link-id>")?.parse()?;
-            let resp = client.request("link_delete", Some(serde_json::json!({"link_id": id}))).await;
+            let id: u64 = args
+                .first()
+                .ok_or("usage: delete-link <link-id>")?
+                .parse()?;
+            let resp = client
+                .request("link_delete", Some(serde_json::json!({"link_id": id})))
+                .await;
             if resp["type"] == "error" {
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
             } else {
@@ -271,9 +376,14 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
         "find-content" => {
             client.ensure_login().await;
             let id: u64 = args.first().ok_or("usage: find-content <be-id>")?.parse()?;
-            let resp = client.request("find_works_for_content", Some(serde_json::json!({
-                "content_be_id": id
-            }))).await;
+            let resp = client
+                .request(
+                    "find_works_for_content",
+                    Some(serde_json::json!({
+                        "content_be_id": id
+                    })),
+                )
+                .await;
             let ids = extract_value(&resp)["value"].as_array();
             if let Some(ids) = ids {
                 if ids.is_empty() {
@@ -290,11 +400,21 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
             client.ensure_login().await;
             let name = args.first();
             let resp = if let Some(name) = name {
-                client.request("club_create_named", Some(serde_json::json!({
-                    "name": name, "description": "empty"
-                }))).await
+                client
+                    .request(
+                        "club_create_named",
+                        Some(serde_json::json!({
+                            "name": name, "description": "empty"
+                        })),
+                    )
+                    .await
             } else {
-                client.request("club_create", Some(serde_json::json!({"description": "empty"}))).await
+                client
+                    .request(
+                        "club_create",
+                        Some(serde_json::json!({"description": "empty"})),
+                    )
+                    .await
             };
             if resp["type"] == "error" {
                 eprintln!("Error: {}", resp["message"].as_str().unwrap_or("unknown"));
@@ -309,7 +429,11 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
             if let Some(names) = names {
                 println!("{:<30} {}", "NAME", "ID");
                 for pair in names {
-                    println!("{:<30} {}", pair[0].as_str().unwrap_or("?"), pair[1].as_u64().unwrap_or(0));
+                    println!(
+                        "{:<30} {}",
+                        pair[0].as_str().unwrap_or("?"),
+                        pair[1].as_u64().unwrap_or(0)
+                    );
                 }
             }
         }
@@ -318,9 +442,15 @@ async fn run_command(client: &mut Client, cmd: &str, args: &[&str]) -> Result<()
             let resp = client.request("admin_server_info", None).await;
             if resp["type"] == "error" {
                 let resp = client.request("server_stats", None).await;
-                println!("{}", serde_json::to_string_pretty(extract_value(&resp)).unwrap());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(extract_value(&resp)).unwrap()
+                );
             } else {
-                println!("{}", serde_json::to_string_pretty(extract_value(&resp)).unwrap());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(extract_value(&resp)).unwrap()
+                );
             }
         }
         "help" => {
@@ -372,7 +502,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         format!("ws://{}", server_url)
     };
-    let base = if base.ends_with('/') { &base[..base.len()-1] } else { &base };
+    let base = if base.ends_with('/') {
+        &base[..base.len() - 1]
+    } else {
+        &base
+    };
     let url = format!("{}/xudanu?format=json&version=2", base);
 
     let mut client = Client::connect(&url).await?;

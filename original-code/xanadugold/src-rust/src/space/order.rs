@@ -93,9 +93,18 @@ mod tests {
     fn reverse_order_compare() {
         let inner = IntegerAscending;
         let rev: ReverseOrder<IntegerPos> = ReverseOrder::new(Box::new(inner));
-        assert_eq!(rev.compare(&IntegerPos(3), &IntegerPos(5)), Some(Ordering::Less));
-        assert_eq!(rev.compare(&IntegerPos(5), &IntegerPos(3)), Some(Ordering::Greater));
-        assert_eq!(rev.compare(&IntegerPos(5), &IntegerPos(5)), Some(Ordering::Equal));
+        assert_eq!(
+            rev.compare(&IntegerPos(3), &IntegerPos(5)),
+            Some(Ordering::Less)
+        );
+        assert_eq!(
+            rev.compare(&IntegerPos(5), &IntegerPos(3)),
+            Some(Ordering::Greater)
+        );
+        assert_eq!(
+            rev.compare(&IntegerPos(5), &IntegerPos(5)),
+            Some(Ordering::Equal)
+        );
     }
 
     #[test]

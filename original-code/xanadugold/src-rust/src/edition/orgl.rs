@@ -6,7 +6,7 @@ use super::xn_region::XnRegion;
 const MAX_LEAF_SIZE: usize = 16384;
 
 #[derive(Debug, Clone, PartialEq)]
-    pub(crate) enum Loaf {
+pub(crate) enum Loaf {
     Leaf {
         region: XnRegion,
         entries: Vec<(i64, Arc<Carrier>)>,
@@ -26,26 +26,50 @@ const MAX_LEAF_SIZE: usize = 16384;
 #[allow(dead_code)]
 impl Loaf {
     fn new_leaf(region: XnRegion, entries: Vec<(i64, Arc<Carrier>)>) -> Self {
-        Loaf::Leaf { region, entries, default: None }
+        Loaf::Leaf {
+            region,
+            entries,
+            default: None,
+        }
     }
 
     fn new_leaf_with_default(region: XnRegion, default: Arc<Carrier>) -> Self {
-        Loaf::Leaf { region, entries: Vec::new(), default: Some(default) }
+        Loaf::Leaf {
+            region,
+            entries: Vec::new(),
+            default: Some(default),
+        }
     }
 
-    fn build_bulk(sorted_entries: Vec<(i64, Arc<Carrier>)>, default: Option<Arc<Carrier>>, region: XnRegion) -> Self {
+    fn build_bulk(
+        sorted_entries: Vec<(i64, Arc<Carrier>)>,
+        default: Option<Arc<Carrier>>,
+        region: XnRegion,
+    ) -> Self {
         if sorted_entries.is_empty() && default.is_none() {
             return Loaf::empty_leaf();
         }
         if sorted_entries.is_empty() {
-            return Loaf::Leaf { region, entries: sorted_entries, default };
+            return Loaf::Leaf {
+                region,
+                entries: sorted_entries,
+                default,
+            };
         }
         if sorted_entries.len() <= MAX_LEAF_SIZE {
             let first = sorted_entries.first().unwrap().0;
             let last = sorted_entries.last().unwrap().0;
             let entry_region = XnRegion::interval(first, last + 1);
-            let leaf_region = if default.is_some() { region } else { entry_region };
-            return Loaf::Leaf { region: leaf_region, entries: sorted_entries, default };
+            let leaf_region = if default.is_some() {
+                region
+            } else {
+                entry_region
+            };
+            return Loaf::Leaf {
+                region: leaf_region,
+                entries: sorted_entries,
+                default,
+            };
         }
         let mid = sorted_entries.len() / 2;
         let split_pos = sorted_entries[mid].0;
@@ -56,7 +80,11 @@ impl Loaf {
         let out_region = region.intersect(&XnRegion::above(split_pos));
         let in_child = Box::new(Loaf::build_bulk(in_entries, default.clone(), in_region));
         let out_child = Box::new(Loaf::build_bulk(out_entries, default.clone(), out_region));
-        Loaf::Split { split, in_child, out_child }
+        Loaf::Split {
+            split,
+            in_child,
+            out_child,
+        }
     }
 
     fn empty_leaf() -> Self {
@@ -70,16 +98,22 @@ impl Loaf {
     fn domain(&self) -> XnRegion {
         match self {
             Loaf::Leaf { region, .. } => region.clone(),
-            Loaf::Split { in_child, out_child, .. } => {
-                in_child.domain().union(&out_child.domain())
-            }
+            Loaf::Split {
+                in_child,
+                out_child,
+                ..
+            } => in_child.domain().union(&out_child.domain()),
             Loaf::Dsp { offset, child } => shift_region(&child.domain(), *offset),
         }
     }
 
     fn count(&self) -> u64 {
         match self {
-            Loaf::Leaf { entries, region, default } => {
+            Loaf::Leaf {
+                entries,
+                region,
+                default,
+            } => {
                 if default.is_some() {
                     return match region.count() {
                         Some(c) => c,
@@ -88,9 +122,15 @@ impl Loaf {
                 }
                 entries.len() as u64
             }
-            Loaf::Split { in_child, out_child, .. } => {
+            Loaf::Split {
+                in_child,
+                out_child,
+                ..
+            } => {
                 let c = in_child.count().saturating_add(out_child.count());
-                if c == u64::MAX { return u64::MAX; }
+                if c == u64::MAX {
+                    return u64::MAX;
+                }
                 c
             }
             Loaf::Dsp { child, .. } => child.count(),
@@ -99,30 +139,42 @@ impl Loaf {
 
     fn is_infinite(&self) -> bool {
         match self {
-            Loaf::Leaf { default: Some(_), region, .. } => !region.is_finite(),
+            Loaf::Leaf {
+                default: Some(_),
+                region,
+                ..
+            } => !region.is_finite(),
             Loaf::Leaf { default: None, .. } => false,
-            Loaf::Split { in_child, out_child, .. } => {
-                in_child.is_infinite() || out_child.is_infinite()
-            }
+            Loaf::Split {
+                in_child,
+                out_child,
+                ..
+            } => in_child.is_infinite() || out_child.is_infinite(),
             Loaf::Dsp { child, .. } => child.is_infinite(),
         }
     }
 
     fn is_empty(&self) -> bool {
         match self {
-            Loaf::Leaf { entries, region, default } => {
-                default.is_none() && entries.is_empty() && region.is_empty()
-            }
-            Loaf::Split { in_child, out_child, .. } => {
-                in_child.is_empty() && out_child.is_empty()
-            }
+            Loaf::Leaf {
+                entries,
+                region,
+                default,
+            } => default.is_none() && entries.is_empty() && region.is_empty(),
+            Loaf::Split {
+                in_child,
+                out_child,
+                ..
+            } => in_child.is_empty() && out_child.is_empty(),
             Loaf::Dsp { child, .. } => child.is_empty(),
         }
     }
 
     fn default_value(&self) -> Option<RangeElement> {
         match self {
-            Loaf::Leaf { default: Some(c), .. } => Some(c.element.clone()),
+            Loaf::Leaf {
+                default: Some(c), ..
+            } => Some(c.element.clone()),
             Loaf::Leaf { default: None, .. } => None,
             Loaf::Split { in_child, .. } => in_child.default_value().or_else(|| None),
             Loaf::Dsp { child, .. } => child.default_value(),
@@ -131,7 +183,11 @@ impl Loaf {
 
     fn fetch(&self, position: i64) -> Option<Arc<Carrier>> {
         match self {
-            Loaf::Leaf { entries, region, default } => {
+            Loaf::Leaf {
+                entries,
+                region,
+                default,
+            } => {
                 if !region.contains(position) {
                     return None;
                 }
@@ -140,7 +196,11 @@ impl Loaf {
                     Err(_) => default.clone(),
                 }
             }
-            Loaf::Split { split, in_child, out_child } => {
+            Loaf::Split {
+                split,
+                in_child,
+                out_child,
+            } => {
                 if split.contains(position) {
                     in_child.fetch(position)
                 } else {
@@ -156,7 +216,11 @@ impl Loaf {
 
     fn has_position(&self, position: i64) -> bool {
         match self {
-            Loaf::Leaf { entries, region, default } => {
+            Loaf::Leaf {
+                entries,
+                region,
+                default,
+            } => {
                 if !region.contains(position) {
                     return false;
                 }
@@ -165,22 +229,28 @@ impl Loaf {
                 }
                 entries.binary_search_by_key(&position, |(p, _)| *p).is_ok()
             }
-            Loaf::Split { split, in_child, out_child } => {
+            Loaf::Split {
+                split,
+                in_child,
+                out_child,
+            } => {
                 if split.contains(position) {
                     in_child.has_position(position)
                 } else {
                     out_child.has_position(position)
                 }
             }
-            Loaf::Dsp { offset, child } => {
-                child.has_position(position - offset)
-            }
+            Loaf::Dsp { offset, child } => child.has_position(position - offset),
         }
     }
 
     fn with(&self, position: i64, carrier: Arc<Carrier>) -> Loaf {
         match self {
-            Loaf::Leaf { region, entries, default } => {
+            Loaf::Leaf {
+                region,
+                entries,
+                default,
+            } => {
                 let mut new_region = region.clone();
                 if !new_region.contains(position) {
                     new_region = new_region.with(position);
@@ -191,32 +261,59 @@ impl Loaf {
                     Err(idx) => new_entries.insert(idx, (position, carrier)),
                 }
                 if new_entries.len() <= MAX_LEAF_SIZE {
-                    Loaf::Leaf { region: new_region, entries: new_entries, default: default.clone() }
+                    Loaf::Leaf {
+                        region: new_region,
+                        entries: new_entries,
+                        default: default.clone(),
+                    }
                 } else {
-                    let loaf = Loaf::Leaf { region: new_region, entries: new_entries, default: default.clone() };
+                    let loaf = Loaf::Leaf {
+                        region: new_region,
+                        entries: new_entries,
+                        default: default.clone(),
+                    };
                     loaf.maybe_split()
                 }
             }
-            Loaf::Split { split, in_child, out_child } => {
+            Loaf::Split {
+                split,
+                in_child,
+                out_child,
+            } => {
                 if split.contains(position) {
                     let new_in = in_child.with(position, carrier);
-                    Loaf::Split { split: split.clone(), in_child: Box::new(new_in), out_child: out_child.clone() }
+                    Loaf::Split {
+                        split: split.clone(),
+                        in_child: Box::new(new_in),
+                        out_child: out_child.clone(),
+                    }
                 } else {
                     let new_out = out_child.with(position, carrier);
-                    Loaf::Split { split: split.clone(), in_child: in_child.clone(), out_child: Box::new(new_out) }
+                    Loaf::Split {
+                        split: split.clone(),
+                        in_child: in_child.clone(),
+                        out_child: Box::new(new_out),
+                    }
                 }
             }
             Loaf::Dsp { offset, child } => {
                 let child_pos = position - offset;
                 let new_child = child.with(child_pos, carrier);
-                Loaf::Dsp { offset: *offset, child: Box::new(new_child) }
+                Loaf::Dsp {
+                    offset: *offset,
+                    child: Box::new(new_child),
+                }
             }
         }
     }
 
     fn without(&self, position: i64) -> Loaf {
         match self {
-            Loaf::Leaf { region, entries, default } => {
+            Loaf::Leaf {
+                region,
+                entries,
+                default,
+            } => {
                 let mut new_entries = entries.clone();
                 if let Ok(idx) = new_entries.binary_search_by_key(&position, |(p, _)| *p) {
                     new_entries.remove(idx);
@@ -227,21 +324,40 @@ impl Loaf {
                     new_entries.push((position, default_val.clone()));
                     new_entries.sort_by_key(|(p, _)| *p);
                 }
-                Loaf::Leaf { region: new_region, entries: new_entries, default: default.clone() }
+                Loaf::Leaf {
+                    region: new_region,
+                    entries: new_entries,
+                    default: default.clone(),
+                }
             }
-            Loaf::Split { split, in_child, out_child } => {
+            Loaf::Split {
+                split,
+                in_child,
+                out_child,
+            } => {
                 if split.contains(position) {
                     let new_in = in_child.without(position);
-                    Loaf::Split { split: split.clone(), in_child: Box::new(new_in), out_child: out_child.clone() }
+                    Loaf::Split {
+                        split: split.clone(),
+                        in_child: Box::new(new_in),
+                        out_child: out_child.clone(),
+                    }
                 } else {
                     let new_out = out_child.without(position);
-                    Loaf::Split { split: split.clone(), in_child: in_child.clone(), out_child: Box::new(new_out) }
+                    Loaf::Split {
+                        split: split.clone(),
+                        in_child: in_child.clone(),
+                        out_child: Box::new(new_out),
+                    }
                 }
             }
             Loaf::Dsp { offset, child } => {
                 let child_pos = position - offset;
                 let new_child = child.without(child_pos);
-                Loaf::Dsp { offset: *offset, child: Box::new(new_child) }
+                Loaf::Dsp {
+                    offset: *offset,
+                    child: Box::new(new_child),
+                }
             }
         }
     }
@@ -259,20 +375,40 @@ impl Loaf {
             return self.clone();
         }
         match self {
-            Loaf::Leaf { region: leaf_region, entries, default } => {
+            Loaf::Leaf {
+                region: leaf_region,
+                entries,
+                default,
+            } => {
                 let new_region = leaf_region.intersect(region);
                 let new_entries: Vec<(i64, Arc<Carrier>)> = entries
                     .iter()
                     .filter(|(p, _)| region.contains(*p))
                     .cloned()
                     .collect();
-                Loaf::Leaf { region: new_region, entries: new_entries, default: default.clone() }
+                Loaf::Leaf {
+                    region: new_region,
+                    entries: new_entries,
+                    default: default.clone(),
+                }
             }
-            Loaf::Split { split, in_child, out_child } => {
+            Loaf::Split {
+                split,
+                in_child,
+                out_child,
+            } => {
                 let in_region = region.intersect(split);
                 let out_region = region.minus(split);
-                let new_in = if in_region.is_empty() { Loaf::empty_leaf() } else { in_child.copy(&in_region) };
-                let new_out = if out_region.is_empty() { Loaf::empty_leaf() } else { out_child.copy(&out_region) };
+                let new_in = if in_region.is_empty() {
+                    Loaf::empty_leaf()
+                } else {
+                    in_child.copy(&in_region)
+                };
+                let new_out = if out_region.is_empty() {
+                    Loaf::empty_leaf()
+                } else {
+                    out_child.copy(&out_region)
+                };
                 if new_in.is_empty() && new_out.is_empty() {
                     Loaf::empty_leaf()
                 } else if new_in.is_empty() {
@@ -280,7 +416,11 @@ impl Loaf {
                 } else if new_out.is_empty() {
                     new_in
                 } else {
-                    Loaf::Split { split: split.clone(), in_child: Box::new(new_in), out_child: Box::new(new_out) }
+                    Loaf::Split {
+                        split: split.clone(),
+                        in_child: Box::new(new_in),
+                        out_child: Box::new(new_out),
+                    }
                 }
             }
             Loaf::Dsp { offset, child } => {
@@ -289,7 +429,10 @@ impl Loaf {
                 if new_child.is_empty() {
                     Loaf::empty_leaf()
                 } else {
-                    Loaf::Dsp { offset: *offset, child: Box::new(new_child) }
+                    Loaf::Dsp {
+                        offset: *offset,
+                        child: Box::new(new_child),
+                    }
                 }
             }
         }
@@ -311,7 +454,11 @@ impl Loaf {
 
     fn actual_splay(&mut self, region: &XnRegion) -> SplayResult {
         match self {
-            Loaf::Leaf { region: leaf_region, entries, default } => {
+            Loaf::Leaf {
+                region: leaf_region,
+                entries,
+                default,
+            } => {
                 let in_region = leaf_region.intersect(region);
                 let out_region = leaf_region.minus(region);
                 if out_region.is_empty() {
@@ -330,8 +477,16 @@ impl Loaf {
                     .filter(|(p, _)| !region.contains(*p))
                     .cloned()
                     .collect();
-                let in_loaf = Loaf::Leaf { region: in_region, entries: in_entries, default: default.clone() };
-                let out_loaf = Loaf::Leaf { region: out_region, entries: out_entries, default: default.clone() };
+                let in_loaf = Loaf::Leaf {
+                    region: in_region,
+                    entries: in_entries,
+                    default: default.clone(),
+                };
+                let out_loaf = Loaf::Leaf {
+                    region: out_region,
+                    entries: out_entries,
+                    default: default.clone(),
+                };
                 *self = Loaf::Split {
                     split: region.intersect(leaf_region),
                     in_child: Box::new(in_loaf),
@@ -339,7 +494,11 @@ impl Loaf {
                 };
                 SplayResult::Partial
             }
-            Loaf::Split { split, in_child, out_child } => {
+            Loaf::Split {
+                split,
+                in_child,
+                out_child,
+            } => {
                 let mut in_res = in_child.splay(region);
                 let mut out_res = out_child.splay(&region.minus(split));
 
@@ -350,21 +509,35 @@ impl Loaf {
                 }
 
                 match (in_res, out_res) {
-                    (SplayResult::FullyContained, SplayResult::Outside) => SplayResult::FullyContained,
+                    (SplayResult::FullyContained, SplayResult::Outside) => {
+                        SplayResult::FullyContained
+                    }
                     (SplayResult::Outside, SplayResult::Outside) => SplayResult::Outside,
-                    (SplayResult::FullyContained, SplayResult::FullyContained) => SplayResult::FullyContained,
+                    (SplayResult::FullyContained, SplayResult::FullyContained) => {
+                        SplayResult::FullyContained
+                    }
                     _ => {
                         match (in_res, out_res) {
                             (SplayResult::Partial, SplayResult::Outside) => {
                                 let new_in = in_child.extract_in_part();
                                 let new_out_inner = in_child.extract_out_part();
-                                let old_out = std::mem::replace(out_child, Box::new(Loaf::empty_leaf()));
+                                let old_out =
+                                    std::mem::replace(out_child, Box::new(Loaf::empty_leaf()));
                                 *in_child = Box::new(new_in);
-                                *out_child = Box::new(Loaf::make_split(split.clone(), new_out_inner, *old_out));
+                                *out_child = Box::new(Loaf::make_split(
+                                    split.clone(),
+                                    new_out_inner,
+                                    *old_out,
+                                ));
                             }
                             (SplayResult::FullyContained, SplayResult::Partial) => {
-                                let old_in = std::mem::replace(in_child, Box::new(Loaf::empty_leaf()));
-                                let new_in_inner = Loaf::make_split(split.clone(), *old_in, out_child.extract_in_part());
+                                let old_in =
+                                    std::mem::replace(in_child, Box::new(Loaf::empty_leaf()));
+                                let new_in_inner = Loaf::make_split(
+                                    split.clone(),
+                                    *old_in,
+                                    out_child.extract_in_part(),
+                                );
                                 let new_out = out_child.extract_out_part();
                                 *in_child = Box::new(new_in_inner);
                                 *out_child = Box::new(new_out);
@@ -416,7 +589,9 @@ impl Loaf {
     fn extract_out_part(&mut self) -> Loaf {
         match self {
             Loaf::Leaf { .. } => Loaf::empty_leaf(),
-            Loaf::Split { out_child, .. } => std::mem::replace(&mut **out_child, Loaf::empty_leaf()),
+            Loaf::Split { out_child, .. } => {
+                std::mem::replace(&mut **out_child, Loaf::empty_leaf())
+            }
             Loaf::Dsp { .. } => Loaf::empty_leaf(),
         }
     }
@@ -431,12 +606,20 @@ impl Loaf {
         if out_child.is_empty() {
             return in_child;
         }
-        Loaf::Split { split, in_child: Box::new(in_child), out_child: Box::new(out_child) }
+        Loaf::Split {
+            split,
+            in_child: Box::new(in_child),
+            out_child: Box::new(out_child),
+        }
     }
 
     fn maybe_split(self) -> Loaf {
         match &self {
-            Loaf::Leaf { entries, region, default } => {
+            Loaf::Leaf {
+                entries,
+                region,
+                default,
+            } => {
                 if entries.len() <= MAX_LEAF_SIZE {
                     return self;
                 }
@@ -448,8 +631,16 @@ impl Loaf {
                 let out_region = region.intersect(&XnRegion::above(split_pos));
                 Loaf::Split {
                     split: XnRegion::below(split_pos),
-                    in_child: Box::new(Loaf::Leaf { region: in_region, entries: in_entries, default: default.clone() }),
-                    out_child: Box::new(Loaf::Leaf { region: out_region, entries: out_entries, default: default.clone() }),
+                    in_child: Box::new(Loaf::Leaf {
+                        region: in_region,
+                        entries: in_entries,
+                        default: default.clone(),
+                    }),
+                    out_child: Box::new(Loaf::Leaf {
+                        region: out_region,
+                        entries: out_entries,
+                        default: default.clone(),
+                    }),
                 }
             }
             Loaf::Split { .. } | Loaf::Dsp { .. } => self,
@@ -459,17 +650,21 @@ impl Loaf {
     fn all_entries(&self) -> Vec<(i64, Arc<Carrier>)> {
         match self {
             Loaf::Leaf { entries, .. } => entries.clone(),
-            Loaf::Split { in_child, out_child, .. } => {
+            Loaf::Split {
+                in_child,
+                out_child,
+                ..
+            } => {
                 let mut result = in_child.all_entries();
                 result.extend(out_child.all_entries());
                 result.sort_by_key(|(p, _)| *p);
                 result
             }
-            Loaf::Dsp { offset, child } => {
-                child.all_entries().into_iter()
-                    .map(|(p, c)| (p + offset, c))
-                    .collect()
-            }
+            Loaf::Dsp { offset, child } => child
+                .all_entries()
+                .into_iter()
+                .map(|(p, c)| (p + offset, c))
+                .collect(),
         }
     }
 
@@ -502,20 +697,35 @@ impl Loaf {
         if offset == 0 {
             return self.clone();
         }
-        Loaf::Dsp { offset, child: Box::new(self.clone()) }
+        Loaf::Dsp {
+            offset,
+            child: Box::new(self.clone()),
+        }
     }
 
     fn transform_materialized(&self, offset: i64) -> Loaf {
         match self {
-            Loaf::Leaf { region, entries, default } => {
+            Loaf::Leaf {
+                region,
+                entries,
+                default,
+            } => {
                 let new_region = shift_region(region, offset);
                 let new_entries: Vec<(i64, Arc<Carrier>)> = entries
                     .iter()
                     .map(|(p, c)| (p + offset, c.clone()))
                     .collect();
-                Loaf::Leaf { region: new_region, entries: new_entries, default: default.clone() }
+                Loaf::Leaf {
+                    region: new_region,
+                    entries: new_entries,
+                    default: default.clone(),
+                }
             }
-            Loaf::Split { split, in_child, out_child } => {
+            Loaf::Split {
+                split,
+                in_child,
+                out_child,
+            } => {
                 let new_split = shift_region(split, offset);
                 Loaf::Split {
                     split: new_split,
@@ -523,9 +733,10 @@ impl Loaf {
                     out_child: Box::new(out_child.transform_materialized(offset)),
                 }
             }
-            Loaf::Dsp { offset: existing, child } => {
-                child.transform_materialized(*existing + offset)
-            }
+            Loaf::Dsp {
+                offset: existing,
+                child,
+            } => child.transform_materialized(*existing + offset),
         }
     }
 
@@ -547,10 +758,18 @@ impl Loaf {
     fn merge_disjoint(&self, other: &Loaf, limit: &XnRegion) -> Loaf {
         let self_copy = self.copy(limit);
         let other_copy = other.copy(limit);
-        if self_copy.is_empty() { return other_copy; }
-        if other_copy.is_empty() { return self_copy; }
+        if self_copy.is_empty() {
+            return other_copy;
+        }
+        if other_copy.is_empty() {
+            return self_copy;
+        }
         let split = self_copy.domain();
-        Loaf::Split { split, in_child: Box::new(self_copy), out_child: Box::new(other_copy) }
+        Loaf::Split {
+            split,
+            in_child: Box::new(self_copy),
+            out_child: Box::new(other_copy),
+        }
     }
 }
 
@@ -591,15 +810,26 @@ enum OrglInner {
 
 impl OrglRoot {
     pub fn empty() -> Self {
-        OrglRoot { inner: OrglInner::Empty }
+        OrglRoot {
+            inner: OrglInner::Empty,
+        }
     }
 
     pub(crate) fn from_loaf(loaf: Loaf) -> Self {
         let domain = loaf.domain();
-        OrglRoot { inner: OrglInner::Actual { loaf, simple_domain: domain } }
+        OrglRoot {
+            inner: OrglInner::Actual {
+                loaf,
+                simple_domain: domain,
+            },
+        }
     }
 
-    pub fn from_bulk_entries(entries: Vec<(i64, Arc<Carrier>)>, default: Option<Arc<Carrier>>, region: XnRegion) -> Self {
+    pub fn from_bulk_entries(
+        entries: Vec<(i64, Arc<Carrier>)>,
+        default: Option<Arc<Carrier>>,
+        region: XnRegion,
+    ) -> Self {
         if entries.is_empty() && default.is_none() {
             return OrglRoot::empty();
         }
@@ -686,7 +916,11 @@ impl OrglRoot {
             OrglInner::Empty => OrglRoot::empty(),
             OrglInner::Actual { loaf, .. } => {
                 let new_loaf = loaf.without(position);
-                if new_loaf.is_empty() { OrglRoot::empty() } else { OrglRoot::from_loaf(new_loaf) }
+                if new_loaf.is_empty() {
+                    OrglRoot::empty()
+                } else {
+                    OrglRoot::from_loaf(new_loaf)
+                }
             }
         }
     }
@@ -696,14 +930,22 @@ impl OrglRoot {
             OrglInner::Empty => OrglRoot::empty(),
             OrglInner::Actual { loaf, .. } => {
                 let new_loaf = loaf.copy(region);
-                if new_loaf.is_empty() { OrglRoot::empty() } else { OrglRoot::from_loaf(new_loaf) }
+                if new_loaf.is_empty() {
+                    OrglRoot::empty()
+                } else {
+                    OrglRoot::from_loaf(new_loaf)
+                }
             }
         }
     }
 
     pub fn combine(&self, other: &OrglRoot) -> Result<OrglRoot, String> {
-        if self.is_empty() { return Ok(other.clone()); }
-        if other.is_empty() { return Ok(self.clone()); }
+        if self.is_empty() {
+            return Ok(other.clone());
+        }
+        if other.is_empty() {
+            return Ok(self.clone());
+        }
         let my_dom = self.domain();
         let other_dom = other.domain();
         if my_dom.intersect(&other_dom).is_empty() {
@@ -713,20 +955,32 @@ impl OrglRoot {
                 (other, self)
             };
             let split = in_root.domain();
-            let loaf = Loaf::Split { split, in_child: Box::new(in_root.loaf().clone()), out_child: Box::new(out_root.loaf().clone()) };
+            let loaf = Loaf::Split {
+                split,
+                in_child: Box::new(in_root.loaf().clone()),
+                out_child: Box::new(out_root.loaf().clone()),
+            };
             return Ok(OrglRoot::from_loaf(loaf));
         }
         Err("combine: overlapping domains not yet supported".into())
     }
 
     pub fn replace(&self, other: &OrglRoot) -> OrglRoot {
-        if other.is_empty() { return self.clone(); }
+        if other.is_empty() {
+            return self.clone();
+        }
         let keep_region = self.domain().minus(&other.domain());
         let kept = self.copy(&keep_region);
-        if kept.is_empty() { return other.clone(); }
+        if kept.is_empty() {
+            return other.clone();
+        }
         if other.domain().intersect(&kept.domain()).is_empty() {
             kept.combine(other).unwrap_or_else(|_| {
-                let loaf = Loaf::Split { split: kept.domain(), in_child: Box::new(kept.loaf().clone()), out_child: Box::new(other.loaf().clone()) };
+                let loaf = Loaf::Split {
+                    split: kept.domain(),
+                    in_child: Box::new(kept.loaf().clone()),
+                    out_child: Box::new(other.loaf().clone()),
+                };
                 OrglRoot::from_loaf(loaf)
             })
         } else {
@@ -750,7 +1004,9 @@ impl OrglRoot {
     pub fn shared_region(&self, other: &OrglRoot) -> XnRegion {
         match (&self.inner, &other.inner) {
             (OrglInner::Empty, _) | (_, OrglInner::Empty) => XnRegion::empty(),
-            (OrglInner::Actual { loaf: a, .. }, OrglInner::Actual { loaf: b, .. }) => a.shared_region(b),
+            (OrglInner::Actual { loaf: a, .. }, OrglInner::Actual { loaf: b, .. }) => {
+                a.shared_region(b)
+            }
         }
     }
 
@@ -805,10 +1061,23 @@ mod tests {
         let entries: Vec<(i64, Arc<Carrier>)> = text
             .chars()
             .enumerate()
-            .map(|(i, ch)| (i as i64, Arc::new(Carrier::new(RangeElement::text(ch.to_string())))))
+            .map(|(i, ch)| {
+                (
+                    i as i64,
+                    Arc::new(Carrier::new(RangeElement::text(ch.to_string()))),
+                )
+            })
             .collect();
-        let region = if entries.is_empty() { XnRegion::empty() } else { XnRegion::interval(0, entries.len() as i64) };
-        Loaf::Leaf { region, entries, default: None }
+        let region = if entries.is_empty() {
+            XnRegion::empty()
+        } else {
+            XnRegion::interval(0, entries.len() as i64)
+        };
+        Loaf::Leaf {
+            region,
+            entries,
+            default: None,
+        }
     }
 
     #[test]
@@ -951,7 +1220,10 @@ mod tests {
     fn orgl_replace() {
         let loaf = make_text_loaf("abc");
         let orgl = OrglRoot::from_loaf(loaf);
-        let replacement = OrglRoot::from_loaf(Loaf::new_leaf(XnRegion::singleton(1), vec![(1, Arc::new(Carrier::new(RangeElement::text("X"))))]));
+        let replacement = OrglRoot::from_loaf(Loaf::new_leaf(
+            XnRegion::singleton(1),
+            vec![(1, Arc::new(Carrier::new(RangeElement::text("X"))))],
+        ));
         let replaced = orgl.replace(&replacement);
         assert_eq!(replaced.fetch(1).unwrap().element.as_text(), Some("X"));
         assert_eq!(replaced.fetch(0).unwrap().element.as_text(), Some("a"));
@@ -982,11 +1254,23 @@ mod tests {
     #[test]
     fn loaf_split_on_overflow() {
         let entries: Vec<(i64, Arc<Carrier>)> = (0..MAX_LEAF_SIZE + 1)
-            .map(|i| (i as i64, Arc::new(Carrier::new(RangeElement::text(format!("{i}"))))))
+            .map(|i| {
+                (
+                    i as i64,
+                    Arc::new(Carrier::new(RangeElement::text(format!("{i}")))),
+                )
+            })
             .collect();
         let region = XnRegion::interval(0, (MAX_LEAF_SIZE + 1) as i64);
-        let loaf = Loaf::Leaf { region, entries: entries.clone(), default: None };
-        let with_overflow = loaf.with(MAX_LEAF_SIZE as i64 + 10, Arc::new(Carrier::new(RangeElement::text("extra"))));
+        let loaf = Loaf::Leaf {
+            region,
+            entries: entries.clone(),
+            default: None,
+        };
+        let with_overflow = loaf.with(
+            MAX_LEAF_SIZE as i64 + 10,
+            Arc::new(Carrier::new(RangeElement::text("extra"))),
+        );
         assert!(matches!(with_overflow, Loaf::Split { .. }));
     }
 
@@ -1012,10 +1296,19 @@ mod tests {
     fn loaf_large_tree() {
         let n = 5000;
         let entries: Vec<(i64, Arc<Carrier>)> = (0..n)
-            .map(|i| (i as i64, Arc::new(Carrier::new(RangeElement::text(format!("{i}"))))))
+            .map(|i| {
+                (
+                    i as i64,
+                    Arc::new(Carrier::new(RangeElement::text(format!("{i}")))),
+                )
+            })
             .collect();
         let region = XnRegion::interval(0, n as i64);
-        let mut loaf = Loaf::Leaf { region, entries, default: None };
+        let mut loaf = Loaf::Leaf {
+            region,
+            entries,
+            default: None,
+        };
         assert_eq!(loaf.count(), n as u64);
         assert_eq!(loaf.fetch(2500).unwrap().element.as_text(), Some("2500"));
         let result = loaf.splay(&XnRegion::interval(1000, 2000));
@@ -1028,7 +1321,10 @@ mod tests {
     #[test]
     fn dsp_loaf_fetch() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::Dsp { offset: 10, child: Box::new(inner) };
+        let dsp = Loaf::Dsp {
+            offset: 10,
+            child: Box::new(inner),
+        };
         assert_eq!(dsp.fetch(10).unwrap().element.as_text(), Some("a"));
         assert_eq!(dsp.fetch(12).unwrap().element.as_text(), Some("c"));
         assert!(dsp.fetch(0).is_none());
@@ -1037,14 +1333,20 @@ mod tests {
     #[test]
     fn dsp_loaf_domain() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::Dsp { offset: 5, child: Box::new(inner) };
+        let dsp = Loaf::Dsp {
+            offset: 5,
+            child: Box::new(inner),
+        };
         assert_eq!(dsp.domain(), XnRegion::interval(5, 8));
     }
 
     #[test]
     fn dsp_loaf_has_position() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::Dsp { offset: 100, child: Box::new(inner) };
+        let dsp = Loaf::Dsp {
+            offset: 100,
+            child: Box::new(inner),
+        };
         assert!(dsp.has_position(100));
         assert!(dsp.has_position(102));
         assert!(!dsp.has_position(0));
@@ -1054,7 +1356,10 @@ mod tests {
     #[test]
     fn dsp_loaf_with() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::Dsp { offset: 10, child: Box::new(inner) };
+        let dsp = Loaf::Dsp {
+            offset: 10,
+            child: Box::new(inner),
+        };
         let new_dsp = dsp.with(13, Arc::new(Carrier::new(RangeElement::text("X"))));
         assert_eq!(new_dsp.fetch(13).unwrap().element.as_text(), Some("X"));
         assert_eq!(new_dsp.fetch(10).unwrap().element.as_text(), Some("a"));
@@ -1063,7 +1368,10 @@ mod tests {
     #[test]
     fn dsp_loaf_without() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::Dsp { offset: 10, child: Box::new(inner) };
+        let dsp = Loaf::Dsp {
+            offset: 10,
+            child: Box::new(inner),
+        };
         let new_dsp = dsp.without(11);
         assert!(!new_dsp.has_position(11));
         assert!(new_dsp.has_position(10));
@@ -1072,7 +1380,10 @@ mod tests {
     #[test]
     fn dsp_loaf_all_entries() {
         let inner = make_text_loaf("abc");
-        let dsp = Loaf::Dsp { offset: 5, child: Box::new(inner) };
+        let dsp = Loaf::Dsp {
+            offset: 5,
+            child: Box::new(inner),
+        };
         let entries = dsp.all_entries();
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].0, 5);
@@ -1082,8 +1393,14 @@ mod tests {
     #[test]
     fn dsp_loaf_chained() {
         let inner = make_text_loaf("abc");
-        let dsp1 = Loaf::Dsp { offset: 10, child: Box::new(inner) };
-        let dsp2 = Loaf::Dsp { offset: 5, child: Box::new(dsp1) };
+        let dsp1 = Loaf::Dsp {
+            offset: 10,
+            child: Box::new(inner),
+        };
+        let dsp2 = Loaf::Dsp {
+            offset: 5,
+            child: Box::new(dsp1),
+        };
         assert_eq!(dsp2.domain(), XnRegion::interval(15, 18));
         assert_eq!(dsp2.fetch(15).unwrap().element.as_text(), Some("a"));
     }
@@ -1091,7 +1408,10 @@ mod tests {
     #[test]
     fn dsp_loaf_copy() {
         let inner = make_text_loaf("abcde");
-        let dsp = Loaf::Dsp { offset: 10, child: Box::new(inner) };
+        let dsp = Loaf::Dsp {
+            offset: 10,
+            child: Box::new(inner),
+        };
         let copied = dsp.copy(&XnRegion::interval(11, 14));
         assert!(copied.has_position(11));
         assert!(copied.has_position(13));
@@ -1142,7 +1462,10 @@ mod tests {
         );
         let with_override = loaf.with(5, Arc::new(Carrier::new(RangeElement::text("X"))));
         assert_eq!(with_override.fetch(5).unwrap().element.as_text(), Some("X"));
-        assert_eq!(with_override.fetch(100).unwrap().element.as_text(), Some("?"));
+        assert_eq!(
+            with_override.fetch(100).unwrap().element.as_text(),
+            Some("?")
+        );
     }
 
     #[test]
@@ -1209,7 +1532,10 @@ mod tests {
             XnRegion::above(0),
             Arc::new(Carrier::new(RangeElement::text("."))),
         );
-        let dsp = Loaf::Dsp { offset: 100, child: Box::new(inner) };
+        let dsp = Loaf::Dsp {
+            offset: 100,
+            child: Box::new(inner),
+        };
         assert!(dsp.is_infinite());
         assert_eq!(dsp.fetch(150).unwrap().element.as_text(), Some("."));
     }

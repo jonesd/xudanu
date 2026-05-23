@@ -1,8 +1,8 @@
 use wasm_bindgen::prelude::*;
 
 use crate::ent::content::{
-    materialize_document, materialize_node, materialize_span,
-    AssertionPayload, AssertionStore, DocumentId, NodeId, SpanId,
+    materialize_document, materialize_node, materialize_span, AssertionPayload, AssertionStore,
+    DocumentId, NodeId, SpanId,
 };
 use crate::ent::dagwood::{DagWood, TraceView};
 use crate::ent::ent::Ent;
@@ -26,11 +26,19 @@ macro_rules! console_warn {
 }
 
 const VALID_PAYLOADS: &[&str] = &[
-    "CreateNode", "AttachChild", "DetachChild", "DeleteNode",
-    "CreateSpan", "SetSpanText", "DeleteSpan",
-    "AttachSpanToNode", "DetachSpanFromNode",
-    "CreateAnnotation", "AttachAnnotationToNode",
-    "AttachAnnotationToSpan", "DeleteAnnotation",
+    "CreateNode",
+    "AttachChild",
+    "DetachChild",
+    "DeleteNode",
+    "CreateSpan",
+    "SetSpanText",
+    "DeleteSpan",
+    "AttachSpanToNode",
+    "DetachSpanFromNode",
+    "CreateAnnotation",
+    "AttachAnnotationToNode",
+    "AttachAnnotationToSpan",
+    "DeleteAnnotation",
 ];
 
 fn suggest_payload_variants(input: &str) -> String {
@@ -38,8 +46,7 @@ fn suggest_payload_variants(input: &str) -> String {
     let mut suggestions: Vec<&str> = VALID_PAYLOADS
         .iter()
         .filter(|v| {
-            v.to_lowercase().contains(&input_lower)
-            || input_lower.contains(&v.to_lowercase())
+            v.to_lowercase().contains(&input_lower) || input_lower.contains(&v.to_lowercase())
         })
         .copied()
         .collect();
@@ -91,11 +98,7 @@ impl WasmDagWood {
         }
     }
 
-    pub fn is_le(
-        &mut self,
-        a: &WasmTracePosition,
-        b: &WasmTracePosition,
-    ) -> bool {
+    pub fn is_le(&mut self, a: &WasmTracePosition, b: &WasmTracePosition) -> bool {
         self.inner.is_le(a.inner, b.inner)
     }
 
@@ -210,8 +213,11 @@ impl WasmAssertionStore {
                 console_warn!("xudanu: {}", suggestion);
                 JsValue::from_str(&format!("invalid payload: {}.\n{}", err_str, suggestion))
             } else {
-                JsValue::from_str(&format!("invalid payload: {}.\nExpected a JSON object with one of these keys: {}",
-                    err_str, VALID_PAYLOADS.join(", ")))
+                JsValue::from_str(&format!(
+                    "invalid payload: {}.\nExpected a JSON object with one of these keys: {}",
+                    err_str,
+                    VALID_PAYLOADS.join(", ")
+                ))
             }
         })?;
         self.inner.add(position.inner, p);
@@ -234,11 +240,7 @@ impl WasmAssertionStore {
         view: &WasmTraceView,
         doc_id: f64,
     ) -> Result<JsValue, JsValue> {
-        let doc = materialize_document(
-            &self.inner,
-            &view.inner,
-            DocumentId::new(doc_id as u64),
-        );
+        let doc = materialize_document(&self.inner, &view.inner, DocumentId::new(doc_id as u64));
         if doc.root.is_none() {
             console_warn!(
                 "xudanu: materialize_document({}) returned null root.",
@@ -253,11 +255,7 @@ impl WasmAssertionStore {
         view: &WasmTraceView,
         doc_id: f64,
     ) -> Result<String, JsValue> {
-        let doc = materialize_document(
-            &self.inner,
-            &view.inner,
-            DocumentId::new(doc_id as u64),
-        );
+        let doc = materialize_document(&self.inner, &view.inner, DocumentId::new(doc_id as u64));
         if doc.root.is_none() {
             console_warn!(
                 "xudanu: materialize_document_json({}) returned null root. No CreateNode assertion found for this document ID.",
@@ -267,29 +265,13 @@ impl WasmAssertionStore {
         self.serialize_to_json_string(&doc)
     }
 
-    pub fn materialize_node(
-        &self,
-        view: &WasmTraceView,
-        node_id: f64,
-    ) -> Result<JsValue, JsValue> {
-        let node = materialize_node(
-            &self.inner,
-            &view.inner,
-            NodeId::new(node_id as u64),
-        );
+    pub fn materialize_node(&self, view: &WasmTraceView, node_id: f64) -> Result<JsValue, JsValue> {
+        let node = materialize_node(&self.inner, &view.inner, NodeId::new(node_id as u64));
         self.serialize_to_json(&node)
     }
 
-    pub fn materialize_span(
-        &self,
-        view: &WasmTraceView,
-        span_id: f64,
-    ) -> Result<JsValue, JsValue> {
-        let span = materialize_span(
-            &self.inner,
-            &view.inner,
-            SpanId::new(span_id as u64),
-        );
+    pub fn materialize_span(&self, view: &WasmTraceView, span_id: f64) -> Result<JsValue, JsValue> {
+        let span = materialize_span(&self.inner, &view.inner, SpanId::new(span_id as u64));
         self.serialize_to_json(&span)
     }
 }
@@ -298,7 +280,9 @@ impl WasmAssertionStore {
 mod wasm_tests {
     use super::*;
 
-    fn make_store_with_doc(_n_children: usize) -> (WasmDagWood, WasmTracePosition, WasmAssertionStore) {
+    fn make_store_with_doc(
+        _n_children: usize,
+    ) -> (WasmDagWood, WasmTracePosition, WasmAssertionStore) {
         let mut dw = WasmDagWood::new();
         let store = WasmAssertionStore::new();
         let root = dw.root();
@@ -309,7 +293,9 @@ mod wasm_tests {
     #[test]
     fn wasm_add_valid_payload() {
         let (dw, pos, mut store) = make_store_with_doc(0);
-        store.add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#).unwrap();
+        store
+            .add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#)
+            .unwrap();
         assert_eq!(store.assertion_count(), 1);
     }
 
@@ -319,7 +305,11 @@ mod wasm_tests {
         let result = store.add(&pos, r#"{"NotARealThing":{"node_id":1}}"#);
         assert!(result.is_err());
         let msg = format!("{:?}", result.unwrap_err());
-        assert!(msg.contains("unknown variant"), "should mention unknown variant: {}", msg);
+        assert!(
+            msg.contains("unknown variant"),
+            "should mention unknown variant: {}",
+            msg
+        );
     }
 
     #[test]
@@ -328,13 +318,20 @@ mod wasm_tests {
         let result = store.add(&pos, r#"{"CreateNode":{"node_id":1}}"#);
         assert!(result.is_err());
         let msg = format!("{:?}", result.unwrap_err());
-        assert!(msg.contains("missing field"), "should mention missing field: {}", msg);
+        assert!(
+            msg.contains("missing field"),
+            "should mention missing field: {}",
+            msg
+        );
     }
 
     #[test]
     fn wasm_add_rejects_wrong_type() {
         let (dw, pos, mut store) = make_store_with_doc(0);
-        let result = store.add(&pos, r#"{"CreateNode":{"node_id":"not_a_number","kind":"doc"}}"#);
+        let result = store.add(
+            &pos,
+            r#"{"CreateNode":{"node_id":"not_a_number","kind":"doc"}}"#,
+        );
         assert!(result.is_err());
     }
 
@@ -352,7 +349,10 @@ mod wasm_tests {
         let root = dw.root();
         let view = dw.trace_view(&root);
         let result = store.materialize_document(&view, 1.0).unwrap();
-        let doc = js_sys::JSON::stringify(&result).unwrap().as_string().unwrap();
+        let doc = js_sys::JSON::stringify(&result)
+            .unwrap()
+            .as_string()
+            .unwrap();
         assert!(doc.contains("\"doc_id\":1"));
         assert!(doc.contains("\"root\":null"));
     }
@@ -361,7 +361,9 @@ mod wasm_tests {
     fn wasm_assertion_count_tracks_adds() {
         let (dw, pos, mut store) = make_store_with_doc(0);
         assert_eq!(store.assertion_count(), 0);
-        store.add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#).unwrap();
+        store
+            .add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#)
+            .unwrap();
         assert_eq!(store.assertion_count(), 1);
         store.add(&pos, r#"{"CreateSpan":{"span_id":10}}"#).unwrap();
         assert_eq!(store.assertion_count(), 2);
@@ -374,14 +376,29 @@ mod wasm_tests {
         let root = dw.root();
         let pos = dw.new_position();
 
-        store.add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#).unwrap();
+        store
+            .add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#)
+            .unwrap();
         store.add(&pos, r#"{"CreateSpan":{"span_id":10}}"#).unwrap();
-        store.add(&pos, r#"{"SetSpanText":{"span_id":10,"text":"Hello WASM"}}"#).unwrap();
-        store.add(&pos, r#"{"AttachSpanToNode":{"node_id":1,"span_id":10,"ordinal":1}}"#).unwrap();
+        store
+            .add(
+                &pos,
+                r#"{"SetSpanText":{"span_id":10,"text":"Hello WASM"}}"#,
+            )
+            .unwrap();
+        store
+            .add(
+                &pos,
+                r#"{"AttachSpanToNode":{"node_id":1,"span_id":10,"ordinal":1}}"#,
+            )
+            .unwrap();
 
         let view = dw.trace_view(&pos);
         let result = store.materialize_document(&view, 1.0).unwrap();
-        let doc_str = js_sys::JSON::stringify(&result).unwrap().as_string().unwrap();
+        let doc_str = js_sys::JSON::stringify(&result)
+            .unwrap()
+            .as_string()
+            .unwrap();
         assert!(doc_str.contains("Hello WASM"));
         assert!(doc_str.contains("document"));
     }
@@ -391,7 +408,9 @@ mod wasm_tests {
         let mut dw = WasmDagWood::new();
         let mut store = WasmAssertionStore::new();
         let pos = dw.new_position();
-        store.add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"doc"}}"#).unwrap();
+        store
+            .add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"doc"}}"#)
+            .unwrap();
 
         let view = dw.trace_view(&pos);
         let json = store.materialize_document_json(&view, 1.0).unwrap();
@@ -405,7 +424,9 @@ mod wasm_tests {
         let mut store = WasmAssertionStore::new();
         let pos = dw.new_position();
 
-        store.add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#).unwrap();
+        store
+            .add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#)
+            .unwrap();
 
         for i in 0..200 {
             let payload = format!(
@@ -415,7 +436,8 @@ mod wasm_tests {
             store.add(&pos, &payload).unwrap();
             let attach = format!(
                 r#"{{"AttachChild":{{"parent_id":1,"child_id":{},"ordinal":{}}}}}"#,
-                100 + i, i
+                100 + i,
+                i
             );
             store.add(&pos, &attach).unwrap();
         }
@@ -424,7 +446,10 @@ mod wasm_tests {
 
         let view = dw.trace_view(&pos);
         let result = store.materialize_document(&view, 1.0).unwrap();
-        let doc_str = js_sys::JSON::stringify(&result).unwrap().as_string().unwrap();
+        let doc_str = js_sys::JSON::stringify(&result)
+            .unwrap()
+            .as_string()
+            .unwrap();
         assert!(doc_str.contains("paragraph"));
 
         let parsed: serde_json::Value = serde_json::from_str(&doc_str).unwrap();

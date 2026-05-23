@@ -235,8 +235,14 @@ mod tests {
     #[test]
     fn cross_intersect() {
         let s = space();
-        let r1 = s.box_region(IntegerRegion::interval(0, 10), IntegerRegion::interval(0, 10));
-        let r2 = s.box_region(IntegerRegion::interval(5, 15), IntegerRegion::interval(3, 7));
+        let r1 = s.box_region(
+            IntegerRegion::interval(0, 10),
+            IntegerRegion::interval(0, 10),
+        );
+        let r2 = s.box_region(
+            IntegerRegion::interval(5, 15),
+            IntegerRegion::interval(3, 7),
+        );
         let ri = r1.intersect(&r2);
         assert!(ri.contains(&Tuple2(IntegerPos(7), IntegerPos(5))));
         assert!(!ri.contains(&Tuple2(IntegerPos(3), IntegerPos(5))));

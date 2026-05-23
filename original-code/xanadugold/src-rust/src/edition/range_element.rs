@@ -97,7 +97,13 @@ impl RangeElement {
         }
     }
 
-    pub fn blob_with_dims(content_hash: u64, mime_type: impl Into<String>, byte_size: u64, width: u32, height: u32) -> Self {
+    pub fn blob_with_dims(
+        content_hash: u64,
+        mime_type: impl Into<String>,
+        byte_size: u64,
+        width: u32,
+        height: u32,
+    ) -> Self {
         RangeElement::Blob {
             content_hash,
             mime_type: mime_type.into(),
@@ -108,7 +114,9 @@ impl RangeElement {
     }
 
     pub fn overlay(image_overlay: ImageOverlay) -> Self {
-        RangeElement::Overlay { overlay: image_overlay }
+        RangeElement::Overlay {
+            overlay: image_overlay,
+        }
     }
 
     pub fn is_data(&self) -> bool {
@@ -175,9 +183,19 @@ impl RangeElement {
 
     pub fn as_blob(&self) -> Option<(u64, &str, u64, Option<u32>, Option<u32>)> {
         match self {
-            RangeElement::Blob { content_hash, mime_type, byte_size, width, height } => {
-                Some((*content_hash, mime_type.as_str(), *byte_size, *width, *height))
-            }
+            RangeElement::Blob {
+                content_hash,
+                mime_type,
+                byte_size,
+                width,
+                height,
+            } => Some((
+                *content_hash,
+                mime_type.as_str(),
+                *byte_size,
+                *width,
+                *height,
+            )),
             _ => None,
         }
     }
@@ -320,7 +338,10 @@ mod tests {
         let inner = RangeElement::text("hi");
         let labelled = RangeElement::label(7, inner.clone());
         match &labelled {
-            RangeElement::Label { label_id, inner: boxed } => {
+            RangeElement::Label {
+                label_id,
+                inner: boxed,
+            } => {
                 assert_eq!(label_id.0, 7);
                 assert_eq!(**boxed, inner);
             }
@@ -415,16 +436,22 @@ mod tests {
     fn fingerprint_blob_by_hash() {
         let e1 = RangeElement::blob(0xabcd, "image/png", 100);
         let e2 = RangeElement::blob(0xabcd, "image/jpeg", 200);
-        assert_eq!(e1.content_fingerprint(), e2.content_fingerprint(),
-            "blob fingerprint should be by content_hash only");
+        assert_eq!(
+            e1.content_fingerprint(),
+            e2.content_fingerprint(),
+            "blob fingerprint should be by content_hash only"
+        );
     }
 
     #[test]
     fn fingerprint_text_not_equal_data() {
         let e1 = RangeElement::text("hello");
         let e2 = RangeElement::data(b"hello".to_vec());
-        assert_ne!(e1.content_fingerprint(), e2.content_fingerprint(),
-            "Text and Data with same bytes should have different fingerprints due to type prefix");
+        assert_ne!(
+            e1.content_fingerprint(),
+            e2.content_fingerprint(),
+            "Text and Data with same bytes should have different fingerprints due to type prefix"
+        );
     }
 
     #[test]

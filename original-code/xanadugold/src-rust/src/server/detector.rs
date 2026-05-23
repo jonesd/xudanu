@@ -31,7 +31,9 @@ pub enum Event {
 
 pub trait Detector: Send + Sync + std::fmt::Debug {
     fn on_event(&mut self, event: &Event);
-    fn subscription_id(&self) -> u16 { u16::MAX }
+    fn subscription_id(&self) -> u16 {
+        u16::MAX
+    }
 }
 
 pub struct FnDetector<F>
