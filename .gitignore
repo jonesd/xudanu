@@ -10,3 +10,8 @@ key_history.json
 *.cha
 .idea/
 run/
+dgj-server1/
+xudanu/
+web/app/app@*
+web/app/tsc
+docs/*.bak
