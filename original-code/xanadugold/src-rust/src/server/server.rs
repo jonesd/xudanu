@@ -5620,6 +5620,9 @@ mod tests_find_text {
 mod tests {
     use super::*;
     use crate::edition::RangeElement;
+    use crate::server::crdt_manager::{AwarenessState, CursorPosition};
+    use crate::server::lock::LockCredential;
+    use crate::server::transport::protocol::TextDeltaOp;
 
     fn setup_logged_in_server() -> (Server, SessionId) {
         let mut server = Server::new();
@@ -8203,5 +8206,517 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn ac_setup() -> (Server, SessionId) {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        (server, sid)
+    }
+
+    fn ac_create_user(
+        server: &mut Server,
+        name: &str,
+        password: &[u8],
+    ) -> (BeId, SessionId) {
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let phc = crate::crypto::password::hash_password(password).unwrap();
+        let club_id = server
+            .create_personal_club(
+                sid,
+                name.to_string(),
+                Some(crate::server::club::Credential::Password { phc_hash: phc }),
+                Some(password.to_vec()),
+            )
+            .unwrap();
+        let sid2 = ac_login_as(server, club_id, password);
+        (club_id, sid2)
+    }
+
+    fn ac_login_as(server: &mut Server, club_id: BeId, password: &[u8]) -> SessionId {
+        let sid = server.connect();
+        let _lock = server.login(sid, club_id).unwrap();
+        server
+            .authenticate_with_pending(sid, &LockCredential::Password(password.to_vec()))
+            .unwrap();
+        sid
+    }
+
+    fn ac_make_private_work(server: &mut Server, owner_sid: SessionId) -> (BeId, BeId) {
+        let private_club = server
+            .create_named_club(owner_sid, "private_edit", Edition::empty())
+            .unwrap();
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("secret doc"))
+            .unwrap();
+        server
+            .work_set_edit_club(owner_sid, work_id, Some(private_club))
+            .unwrap();
+        (work_id, private_club)
+    }
+
+    #[test]
+    fn crdt_open_session_checks_edit_permission() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let edit_club = server.create_named_club(owner_sid, "priv_edit", Edition::empty()).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("secret")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", b"pass2");
+        let intruder_sid = ac_login_as(&mut server, user_club, b"pass2");
+        let result = server.crdt_open_session(intruder_sid, work_id);
+        assert!(result.is_err(), "non-member should not open CRDT session");
+    }
+
+    #[test]
+    fn crdt_open_session_allows_member() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let edit_club = server.create_named_club(owner_sid, "priv_edit", Edition::empty()).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("secret")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let (user_club, _user_sid) = ac_create_user(&mut server, "member", b"pass2");
+        server.club_add_member(owner_sid, edit_club, user_club).unwrap();
+        let member_sid = ac_login_as(&mut server, user_club, b"pass2");
+        let result = server.crdt_open_session(member_sid, work_id);
+        assert!(result.is_ok(), "member should open CRDT session");
+    }
+
+    #[test]
+    fn crdt_apply_text_delta_checks_edit_permission() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let edit_club = server.create_named_club(owner_sid, "priv_edit", Edition::empty()).unwrap();
+        server.club_add_member(owner_sid, edit_club, owner_club).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("secret")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let owner_sid2 = ac_login_as(&mut server, owner_club, b"pass1");
+        let _ = server.crdt_open_session(owner_sid2, work_id).unwrap();
+        let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", b"pass2");
+        let intruder_sid = ac_login_as(&mut server, user_club, b"pass2");
+        let ops = vec![TextDeltaOp::Insert { text: "hacked".to_string() }];
+        let result = server.crdt_apply_text_delta(intruder_sid, work_id, &ops);
+        assert!(result.is_err(), "non-member should not apply text delta");
+    }
+
+    #[test]
+    fn crdt_apply_update_checks_edit_permission() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let edit_club = server.create_named_club(owner_sid, "priv_edit", Edition::empty()).unwrap();
+        server.club_add_member(owner_sid, edit_club, owner_club).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("secret")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let owner_sid2 = ac_login_as(&mut server, owner_club, b"pass1");
+        let _ = server.crdt_open_session(owner_sid2, work_id).unwrap();
+        let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", b"pass2");
+        let intruder_sid = ac_login_as(&mut server, user_club, b"pass2");
+        let result = server.crdt_apply_update(intruder_sid, work_id, vec![1, 2, 3]);
+        assert!(result.is_err(), "non-member should not apply update");
+    }
+
+    #[test]
+    fn crdt_materialize_now_checks_session() {
+        let (mut server, owner_sid) = ac_setup();
+        let work_id = server.create_work(owner_sid, Edition::from_text("test")).unwrap();
+        let _ = server.crdt_open_session(owner_sid, work_id).unwrap();
+        let fake_sid = SessionId::new(9999999);
+        let result = server.crdt_materialize_now(fake_sid, work_id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn crdt_awareness_update_requires_session() {
+        let (mut server, owner_sid) = ac_setup();
+        let work_id = server.create_work(owner_sid, Edition::from_text("aware")).unwrap();
+        let _ = server.crdt_open_session(owner_sid, work_id).unwrap();
+        let stranger_sid = server.connect();
+        let state = AwarenessState {
+            session_id: stranger_sid.as_u64(),
+            user_name: "stranger".to_string(),
+            cursor: None,
+            selection: None,
+            is_typing: false,
+        };
+        let result = server.crdt_update_awareness(stranger_sid, work_id, state);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn crdt_register_author_requires_session() {
+        let (mut server, owner_sid) = ac_setup();
+        let work_id = server.create_work(owner_sid, Edition::from_text("auth")).unwrap();
+        let _ = server.crdt_open_session(owner_sid, work_id).unwrap();
+        let stranger_sid = server.connect();
+        let result = server.crdt_update_author(stranger_sid, work_id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn work_set_edit_club_requires_edit_permission() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let edit_club = server.create_named_club(owner_sid, "edit_gate", Edition::empty()).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("gated")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
+        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let result = server.work_set_edit_club(stranger_sid, work_id, Some(server.public_club_id()));
+        assert!(result.is_err(), "stranger should not change edit club");
+    }
+
+    #[test]
+    fn work_set_read_club_requires_edit_permission() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let edit_club = server.create_named_club(owner_sid, "read_gate", Edition::empty()).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("gated")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
+        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let result = server.work_set_read_club(stranger_sid, work_id, Some(server.public_club_id()));
+        assert!(result.is_err(), "stranger should not change read club");
+    }
+
+    #[test]
+    fn work_publish_requires_owner() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let work_id = server.create_work(owner_sid, Edition::from_text("mine")).unwrap();
+        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
+        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let result = server.work_publish(stranger_sid, work_id);
+        assert!(result.is_err(), "non-owner should not publish");
+    }
+
+    #[test]
+    fn work_unpublish_requires_owner() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let work_id = server.create_work(owner_sid, Edition::from_text("mine")).unwrap();
+        server.work_publish(owner_sid, work_id).unwrap();
+        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
+        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let result = server.work_unpublish(stranger_sid, work_id);
+        assert!(result.is_err(), "non-owner should not unpublish");
+    }
+
+    #[test]
+    fn work_irrevocably_unpublish_requires_owner() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let work_id = server.create_work(owner_sid, Edition::from_text("mine")).unwrap();
+        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
+        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let result = server.work_irrevocably_unpublish(stranger_sid, work_id);
+        assert!(result.is_err(), "non-owner should not irrevocably unpublish");
+    }
+
+    #[test]
+    fn work_sponsor_requires_edit_permission() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let edit_club = server.create_named_club(owner_sid, "sponsor_gate", Edition::empty()).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("sponsored")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
+        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let result = server.work_sponsor(stranger_sid, work_id, server.public_club_id());
+        assert!(result.is_err(), "stranger should not sponsor restricted work");
+    }
+
+    #[test]
+    fn crdt_two_users_concurrent_edit() {
+        let (mut server, sid1) = ac_setup();
+        let work_id = server.create_work(sid1, Edition::from_text("initial")).unwrap();
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
+        let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
+        let ops1 = vec![TextDeltaOp::Retain { count: 0 }, TextDeltaOp::Insert { text: "A".to_string() }];
+        let result1 = server.crdt_apply_text_delta(sid1, work_id, &ops1).unwrap();
+        assert_eq!(result1.0.relay_to.len(), 1);
+        let ops2 = vec![TextDeltaOp::Retain { count: 0 }, TextDeltaOp::Insert { text: "B".to_string() }];
+        server.crdt_apply_text_delta(sid2, work_id, &ops2).unwrap();
+        let text = server.crdt_current_text(work_id).unwrap();
+        assert!(text.contains('A') && text.contains('B'), "both edits present, got: {}", text);
+    }
+
+    #[test]
+    fn crdt_three_users() {
+        let (mut server, sid1) = ac_setup();
+        let work_id = server.create_work(sid1, Edition::from_text("")).unwrap();
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        let sid3 = server.connect();
+        server.login_public(sid3).unwrap();
+        let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
+        let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
+        let _r3 = server.crdt_open_session(sid3, work_id).unwrap();
+        server.crdt_apply_text_delta(sid1, work_id, &[TextDeltaOp::Insert { text: "alice".to_string() }]).unwrap();
+        server.crdt_apply_text_delta(sid2, work_id, &[TextDeltaOp::Insert { text: "bob".to_string() }]).unwrap();
+        server.crdt_apply_text_delta(sid3, work_id, &[TextDeltaOp::Insert { text: "carol".to_string() }]).unwrap();
+        let text = server.crdt_current_text(work_id).unwrap();
+        assert!(text.contains("alice") && text.contains("bob") && text.contains("carol"), "got: {}", text);
+    }
+
+    #[test]
+    fn crdt_close_session_materializes() {
+        let (mut server, sid1) = ac_setup();
+        let work_id = server.create_work(sid1, Edition::from_text("original")).unwrap();
+        let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
+        server.crdt_apply_text_delta(sid1, work_id, &[TextDeltaOp::Insert { text: "modified ".to_string() }]).unwrap();
+        server.crdt_close_session(sid1, work_id).unwrap();
+        let text = server.work_edition(work_id).unwrap().to_text();
+        assert!(text.contains("modified"), "close should materialize, got: {}", text);
+    }
+
+    #[test]
+    fn crdt_close_one_session_keeps_others() {
+        let (mut server, sid1) = ac_setup();
+        let work_id = server.create_work(sid1, Edition::from_text("shared")).unwrap();
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
+        let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
+        server.crdt_apply_text_delta(sid1, work_id, &[TextDeltaOp::Insert { text: "A".to_string() }]).unwrap();
+        server.crdt_close_session(sid1, work_id).unwrap();
+        assert!(server.crdt_is_active(work_id), "work should still be active with sid2");
+        assert_eq!(server.crdt_subscriber_count(work_id), 1);
+    }
+
+    #[test]
+    fn crdt_conflict_resolution_overlapping_edits() {
+        let (mut server, sid1) = ac_setup();
+        let work_id = server.create_work(sid1, Edition::from_text("ABCDEFGH")).unwrap();
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
+        let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
+        server.crdt_apply_text_delta(sid1, work_id, &[
+            TextDeltaOp::Retain { count: 4 },
+            TextDeltaOp::Delete { count: 4 },
+            TextDeltaOp::Insert { text: "XYZ".to_string() },
+        ]).unwrap();
+        server.crdt_apply_text_delta(sid2, work_id, &[
+            TextDeltaOp::Retain { count: 2 },
+            TextDeltaOp::Delete { count: 2 },
+            TextDeltaOp::Insert { text: "12".to_string() },
+        ]).unwrap();
+        let text = server.crdt_current_text(work_id).unwrap();
+        assert!(text.contains("XYZ") || text.contains("12"), "conflict resolved, got: {}", text);
+        assert_eq!(text.len(), 7);
+    }
+
+    #[test]
+    fn crdt_rapid_edits_same_user() {
+        let (mut server, sid1) = ac_setup();
+        let work_id = server.create_work(sid1, Edition::from_text("")).unwrap();
+        let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
+        for ch in "rapid typing".chars() {
+            let text = server.crdt_current_text(work_id).unwrap();
+            let ops = vec![TextDeltaOp::Retain { count: text.len() as u64 }, TextDeltaOp::Insert { text: ch.to_string() }];
+            server.crdt_apply_text_delta(sid1, work_id, &ops).unwrap();
+        }
+        assert_eq!(server.crdt_current_text(work_id).unwrap(), "rapid typing");
+    }
+
+    #[test]
+    fn crdt_unicode_multi_user() {
+        let (mut server, sid1) = ac_setup();
+        let work_id = server.create_work(sid1, Edition::from_text("abcd")).unwrap();
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
+        let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
+        server.crdt_apply_text_delta(sid1, work_id, &[
+            TextDeltaOp::Retain { count: 1 }, TextDeltaOp::Insert { text: "X".to_string() },
+        ]).unwrap();
+        server.crdt_apply_text_delta(sid2, work_id, &[
+            TextDeltaOp::Retain { count: 3 }, TextDeltaOp::Insert { text: "Y".to_string() },
+        ]).unwrap();
+        let text = server.crdt_current_text(work_id).unwrap();
+        assert!(text.contains('X') && text.contains('Y'), "got: {}", text);
+    }
+
+    #[test]
+    fn crdt_awareness_multi_user() {
+        let (mut server, sid1) = ac_setup();
+        let work_id = server.create_work(sid1, Edition::from_text("aware")).unwrap();
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
+        let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
+        let state1 = AwarenessState {
+            session_id: sid1.as_u64(), user_name: "alice".to_string(),
+            cursor: Some(CursorPosition { index: 0 }), selection: None, is_typing: false,
+        };
+        let result1 = server.crdt_update_awareness(sid1, work_id, state1).unwrap();
+        assert_eq!(result1.relay_to.len(), 1);
+        let state2 = AwarenessState {
+            session_id: sid2.as_u64(), user_name: "bob".to_string(),
+            cursor: Some(CursorPosition { index: 5 }), selection: None, is_typing: false,
+        };
+        let result2 = server.crdt_update_awareness(sid2, work_id, state2).unwrap();
+        assert_eq!(result2.relay_to.len(), 1);
+        let states = server.crdt_get_awareness(work_id).unwrap();
+        assert_eq!(states.len(), 2);
+    }
+
+    #[test]
+    fn crdt_author_registration_multi_user() {
+        let (mut server, sid1) = ac_setup();
+        let work_id = server.create_work(sid1, Edition::from_text("auth")).unwrap();
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        let _r1 = server.crdt_open_session(sid1, work_id).unwrap();
+        let _r2 = server.crdt_open_session(sid2, work_id).unwrap();
+        server.crdt_update_author(sid1, work_id).unwrap();
+        server.crdt_update_author(sid2, work_id).unwrap();
+        let authors = server.crdt_manager.get_author_sessions(work_id).unwrap();
+        assert_eq!(authors.len(), 2, "two authors should be registered");
+        let sids: Vec<SessionId> = authors.iter().map(|(sid, _)| *sid).collect();
+        assert!(sids.contains(&sid1));
+        assert!(sids.contains(&sid2));
+    }
+
+    #[test]
+    fn private_club_blocks_non_member_from_edit() {
+        let (mut server, owner_sid) = ac_setup();
+        let private_club = server.create_named_club(owner_sid, "exclusive", Edition::empty()).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("gated")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(private_club)).unwrap();
+        let stranger_sid = server.connect();
+        server.login_public(stranger_sid).unwrap();
+        assert!(!server.work_can_revise(stranger_sid, work_id).unwrap());
+        assert!(server.work_grab(stranger_sid, work_id).is_err());
+    }
+
+    #[test]
+    fn adding_member_to_edit_club_grants_access() {
+        let (mut server, owner_sid) = ac_setup();
+        let edit_club = server.create_named_club(owner_sid, "invited_editors", Edition::empty()).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("invited")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let (user_club, user_sid) = ac_create_user(&mut server, "invitee", b"password1");
+        assert!(!server.work_can_revise(user_sid, work_id).unwrap(), "before invite, user cannot edit");
+        server.club_add_member(owner_sid, edit_club, user_club).unwrap();
+        let user_sid2 = ac_login_as(&mut server, user_club, b"password1");
+        assert!(server.work_can_revise(user_sid2, work_id).unwrap(), "after invite, user can edit");
+    }
+
+    #[test]
+    fn removing_member_revokes_access() {
+        let (mut server, owner_sid) = ac_setup();
+        let edit_club = server.create_named_club(owner_sid, "revokable_edit", Edition::empty()).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("revokable")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let (user_club, _user_sid) = ac_create_user(&mut server, "tempuser", b"password1");
+        server.club_add_member(owner_sid, edit_club, user_club).unwrap();
+        let user_sid2 = ac_login_as(&mut server, user_club, b"password1");
+        assert!(server.work_can_revise(user_sid2, work_id).unwrap());
+        server.club_remove_member(owner_sid, edit_club, user_club).unwrap();
+        let user_sid3 = ac_login_as(&mut server, user_club, b"password1");
+        assert!(!server.work_can_revise(user_sid3, work_id).unwrap(), "removed member should not edit");
+    }
+
+    #[test]
+    fn read_club_restricts_visibility() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let read_club = server.create_named_club(owner_sid, "secret_readers", Edition::empty()).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("hidden")).unwrap();
+        server.work_set_read_club(owner_sid, work_id, Some(read_club)).unwrap();
+        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
+        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let can_read = server.work_can_read(stranger_sid, work_id).unwrap();
+        assert!(!can_read, "stranger should not read work with restricted read_club");
+    }
+
+    #[test]
+    fn publish_makes_readable_by_all() {
+        let (mut server, owner_sid) = ac_setup();
+        let work_id = server.create_work(owner_sid, Edition::from_text("my doc")).unwrap();
+        server.work_publish(owner_sid, work_id).unwrap();
+        let stranger_sid = server.connect();
+        server.login_public(stranger_sid).unwrap();
+        assert!(server.work_can_read(stranger_sid, work_id).unwrap());
+    }
+
+    #[test]
+    fn unpublish_restricts_to_owner() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let work_id = server.create_work(owner_sid, Edition::from_text("my doc")).unwrap();
+        server.work_publish(owner_sid, work_id).unwrap();
+        server.work_unpublish(owner_sid, work_id).unwrap();
+        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
+        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        assert!(!server.work_can_read(stranger_sid, work_id).unwrap(), "unpublished work should not be readable by strangers");
+    }
+
+    #[test]
+    fn crdt_edit_club_blocks_unauthorized_session() {
+        let (mut server, owner_sid) = ac_setup();
+        let edit_club = server.create_named_club(owner_sid, "crdt_gate", Edition::empty()).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("crdt_gated")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let (user_club, _user_sid) = ac_create_user(&mut server, "crdt_user", b"password1");
+        let user_sid = ac_login_as(&mut server, user_club, b"password1");
+        assert!(server.crdt_open_session(user_sid, work_id).is_err());
+        server.club_add_member(owner_sid, edit_club, user_club).unwrap();
+        let user_sid2 = ac_login_as(&mut server, user_club, b"password1");
+        assert!(server.crdt_open_session(user_sid2, work_id).is_ok());
+    }
+
+    #[test]
+    fn crdt_revoked_member_cannot_edit_anymore() {
+        let (mut server, owner_sid) = ac_setup();
+        let edit_club = server.create_named_club(owner_sid, "crdt_revoke", Edition::empty()).unwrap();
+        let work_id = server.create_work(owner_sid, Edition::from_text("revokable crdt")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(edit_club)).unwrap();
+        let (user_club, _user_sid) = ac_create_user(&mut server, "revokee", b"password1");
+        server.club_add_member(owner_sid, edit_club, user_club).unwrap();
+        let user_sid = ac_login_as(&mut server, user_club, b"password1");
+        let _r = server.crdt_open_session(user_sid, work_id).unwrap();
+        server.crdt_apply_text_delta(user_sid, work_id, &[TextDeltaOp::Insert { text: "before revoke".to_string() }]).unwrap();
+        server.club_remove_member(owner_sid, edit_club, user_club).unwrap();
+        let result = server.crdt_apply_text_delta(user_sid, work_id, &[TextDeltaOp::Insert { text: "after revoke".to_string() }]);
+        assert!(result.is_err(), "revoked member should not apply deltas");
+    }
+
+    #[test]
+    fn no_edit_club_means_no_one_can_edit() {
+        let (mut server, owner_sid) = ac_setup();
+        let work_id = server.create_work(owner_sid, Edition::from_text("no edit")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, None).unwrap();
+        assert!(!server.work_can_revise(owner_sid, work_id).unwrap(), "no edit_club means even owner cannot revise");
+    }
+
+    #[test]
+    fn public_edit_club_allows_all() {
+        let (mut server, owner_sid) = ac_setup();
+        let work_id = server.create_work(owner_sid, Edition::from_text("open")).unwrap();
+        server.work_set_edit_club(owner_sid, work_id, Some(server.public_club_id())).unwrap();
+        let stranger_sid = server.connect();
+        server.login_public(stranger_sid).unwrap();
+        assert!(server.work_can_revise(stranger_sid, work_id).unwrap());
+    }
+
+    #[test]
+    fn work_list_includes_read_club_info() {
+        let (mut server, owner_sid) = ac_setup();
+        let public_work = server.create_work(owner_sid, Edition::from_text("public")).unwrap();
+        server.work_publish(owner_sid, public_work).unwrap();
+        let read_club = server.create_named_club(owner_sid, "secret_list", Edition::empty()).unwrap();
+        let private_work = server.create_work(owner_sid, Edition::from_text("private")).unwrap();
+        server.work_set_read_club(owner_sid, private_work, Some(read_club)).unwrap();
+        let works = server.list_works_with_titles();
+        let pub_entry = works.iter().find(|(id, _, _, _, _, _)| *id == public_work).unwrap();
+        assert_eq!(pub_entry.5, Some(server.public_club_id()));
+        let priv_entry = works.iter().find(|(id, _, _, _, _, _)| *id == private_work).unwrap();
+        assert_eq!(priv_entry.5, Some(read_club));
     }
 }
