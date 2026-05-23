@@ -1,8 +1,0 @@
-[workspace]
-members = [
-    "crates/ent-core",
-    "crates/ent-api-types",
-    "crates/ent-server",
-    "crates/ent-wasm",
-]
-resolver = "2"
