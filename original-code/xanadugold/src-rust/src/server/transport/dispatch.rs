@@ -120,6 +120,7 @@ fn dispatch_inner(
         }
 
         WireRequest::WorkCreate { edition } => {
+            srv.ensure_authenticated(session_id)?;
             let ed = edition.to_edition();
             let id = srv.create_work(session_id, ed)?;
             Ok(ResponseValue::Id(id))
@@ -130,6 +131,7 @@ fn dispatch_inner(
             Ok(ResponseValue::Edition(EditionPayload::from_edition(&ed)))
         }
         WireRequest::WorkRevise { work_id, edition } => {
+            srv.ensure_authenticated(session_id)?;
             let ed = edition.to_edition();
             let rev = srv.work_revise(session_id, work_id, ed)?;
             Ok(ResponseValue::Humber(rev))
@@ -139,6 +141,7 @@ fn dispatch_inner(
             base_revision,
             ops,
         } => {
+            srv.ensure_authenticated(session_id)?;
             if srv.crdt_is_active(work_id) {
                 let (_relay, revision) = srv.crdt_apply_text_delta(session_id, work_id, &ops)?;
                 let rev = revision.unwrap_or_else(|| srv.work_revision_count(work_id).unwrap_or(0));
@@ -160,19 +163,23 @@ fn dispatch_inner(
             }
         }
         WireRequest::WorkGrab { work_id } => {
+            srv.ensure_authenticated(session_id)?;
             srv.work_grab(session_id, work_id)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkRelease { work_id } => {
+            srv.ensure_authenticated(session_id)?;
             srv.work_release(session_id, work_id)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkSaveAndRelease { work_id, edition } => {
+            srv.ensure_authenticated(session_id)?;
             let ed = edition.to_edition();
             srv.work_save_and_release(session_id, work_id, ed)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkForceRelease { work_id } => {
+            srv.ensure_authenticated(session_id)?;
             let prev = srv.work_force_release(session_id, work_id)?;
             match prev {
                 Some(prev_session) => {
@@ -216,10 +223,12 @@ fn dispatch_inner(
             Ok(ResponseValue::Boolean(can))
         }
         WireRequest::WorkSetReadClub { work_id, club_id } => {
+            srv.ensure_authenticated(session_id)?;
             srv.work_set_read_club(session_id, work_id, club_id)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkSetEditClub { work_id, club_id } => {
+            srv.ensure_authenticated(session_id)?;
             srv.work_set_edit_club(session_id, work_id, club_id)?;
             Ok(ResponseValue::Void)
         }
@@ -273,14 +282,17 @@ fn dispatch_inner(
         }
 
         WireRequest::WorkPublish { work_id } => {
+            srv.ensure_authenticated(session_id)?;
             srv.work_publish(session_id, work_id)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkUnpublish { work_id } => {
+            srv.ensure_authenticated(session_id)?;
             srv.work_unpublish(session_id, work_id)?;
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkIrrevocablyUnpublish { work_id } => {
+            srv.ensure_authenticated(session_id)?;
             srv.work_irrevocably_unpublish(session_id, work_id)?;
             Ok(ResponseValue::Void)
         }
@@ -347,6 +359,7 @@ fn dispatch_inner(
         }
 
         WireRequest::EditionStore { edition } => {
+            srv.ensure_authenticated(session_id)?;
             let ed = edition.to_edition();
             let id = srv.store_edition(session_id, ed)?;
             Ok(ResponseValue::Id(id))
@@ -494,6 +507,7 @@ fn dispatch_inner(
             origin_ref,
             destination_ref,
         } => {
+            srv.ensure_authenticated(session_id)?;
             srv.ensure_can_read(session_id, origin)?;
             srv.ensure_can_read(session_id, destination)?;
             let o_ref = origin_ref.map(|hr| {
@@ -696,6 +710,7 @@ fn dispatch_inner(
         }
 
         WireRequest::BlobUpload { data, mime_type } => {
+            srv.ensure_authenticated(session_id)?;
             let raw_data = crate::edition::base64_decode(&data).ok_or_else(|| {
                 crate::server::ServerError::InvalidArgument("invalid base64 data".to_string())
             })?;
@@ -736,6 +751,7 @@ fn dispatch_inner(
             ops,
             mime_type,
         } => {
+            srv.ensure_authenticated(session_id)?;
             let meta = srv.blob_apply_overlay(session_id, base_hash, ops, mime_type)?;
             Ok(ResponseValue::BlobMeta(
                 super::protocol::BlobMetaPayload::from_blob_meta(&meta),
@@ -765,6 +781,7 @@ fn dispatch_inner(
             })
         }
         WireRequest::EditionRelabel { work_id, label_id } => {
+            srv.ensure_authenticated(session_id)?;
             let _ed = srv.edition_relabel(work_id, label_id)?;
             Ok(ResponseValue::LabelInfo { label_id })
         }
@@ -773,6 +790,7 @@ fn dispatch_inner(
             position,
             new_edition,
         } => {
+            srv.ensure_authenticated(session_id)?;
             let ed = new_edition.to_edition();
             let updated = srv.edition_rebind(session_id, work_id, position, ed)?;
             Ok(ResponseValue::Edition(EditionPayload::from_edition(
