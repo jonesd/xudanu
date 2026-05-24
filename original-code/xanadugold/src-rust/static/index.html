@@ -144,6 +144,61 @@ textarea.editor-content:focus{outline:none}
 .transclusion-hl[data-cidx="5"]{background:rgba(230,159,0,0.22);border-color:#e69f00}
 .transclusion-hl[data-cidx="6"]{background:rgba(0,114,178,0.22);border-color:#0072b2}
 .transclusion-hl[data-cidx="7"]{background:rgba(213,94,0,0.22);border-color:#d55e00}
+
+.attr-bg{border-radius:2px;transition:background .2s}
+.attr-bg[data-aidx="0"]{background:rgba(210,153,34,0.10)}
+.attr-bg[data-aidx="1"]{background:rgba(86,180,233,0.10)}
+.attr-bg[data-aidx="2"]{background:rgba(0,158,115,0.10)}
+.attr-bg[data-aidx="3"]{background:rgba(204,121,167,0.10)}
+.attr-bg[data-aidx="4"]{background:rgba(240,228,66,0.10)}
+.attr-bg[data-aidx="5"]{background:rgba(230,159,0,0.10)}
+.attr-bg[data-aidx="6"]{background:rgba(0,114,178,0.10)}
+.attr-bg[data-aidx="7"]{background:rgba(213,94,0,0.10)}
+
+.crdt-ul{border-bottom:2px dotted;border-radius:0;text-decoration:none;transition:border-color .3s}
+.crdt-ul[data-cidx="0"]{border-color:#56b4e9}
+.crdt-ul[data-cidx="1"]{border-color:#cc79a7}
+.crdt-ul[data-cidx="2"]{border-color:#009e73}
+.crdt-ul[data-cidx="3"]{border-color:#e69f00}
+.crdt-ul[data-cidx="4"]{border-color:#0072b2}
+.crdt-ul[data-cidx="5"]{border-color:#d55e00}
+.crdt-ul[data-cidx="6"]{border-color:#d29922}
+.crdt-ul[data-cidx="7"]{border-color:#a371f7}
+
+.attr-label{font-size:9px;padding:1px 5px;border-radius:3px;font-weight:600;position:relative;top:-6px;vertical-align:super;margin-left:1px;color:#fff;opacity:0.85;line-height:1}
+.attr-label[data-aidx="0"]{background:#d29922}
+.attr-label[data-aidx="1"]{background:#56b4e9}
+.attr-label[data-aidx="2"]{background:#009e73}
+.attr-label[data-aidx="3"]{background:#cc79a7}
+.attr-label[data-aidx="4"]{background:#b8b000}
+.attr-label[data-aidx="5"]{background:#e69f00}
+.attr-label[data-aidx="6"]{background:#0072b2}
+.attr-label[data-aidx="7"]{background:#d55e00}
+
+.crdt-tag{position:absolute;font-size:9px;font-weight:600;padding:1px 6px;border-radius:8px;color:#fff;white-space:nowrap;z-index:10;pointer-events:none;opacity:0.9;transform:translateX(-50%)}
+.crdt-tag[data-cidx="0"]{background:#56b4e9}
+.crdt-tag[data-cidx="1"]{background:#cc79a7}
+.crdt-tag[data-cidx="2"]{background:#009e73}
+.crdt-tag[data-cidx="3"]{background:#e69f00}
+.crdt-tag[data-cidx="4"]{background:#0072b2}
+.crdt-tag[data-cidx="5"]{background:#d55e00}
+.crdt-tag[data-cidx="6"]{background:#d29922}
+.crdt-tag[data-cidx="7"]{background:#a371f7}
+
+.attr-legend{display:inline-flex;gap:8px;font-size:10px;color:var(--fg3);align-items:center}
+.attr-legend-item{display:inline-flex;align-items:center;gap:3px}
+.attr-legend-swatch{width:14px;height:8px;border-radius:2px}
+.attr-legend-dots{width:14px;height:0;border-bottom:2px dotted}
+
+[data-theme="light"] .attr-bg{opacity:1}
+[data-theme="light"] .attr-bg[data-aidx="0"]{background:rgba(210,153,34,0.12)}
+[data-theme="light"] .attr-bg[data-aidx="1"]{background:rgba(86,180,233,0.12)}
+[data-theme="light"] .attr-bg[data-aidx="2"]{background:rgba(0,158,115,0.12)}
+[data-theme="light"] .attr-bg[data-aidx="3"]{background:rgba(204,121,167,0.12)}
+[data-theme="light"] .attr-bg[data-aidx="4"]{background:rgba(240,228,66,0.15)}
+[data-theme="light"] .attr-bg[data-aidx="5"]{background:rgba(230,159,0,0.12)}
+[data-theme="light"] .attr-bg[data-aidx="6"]{background:rgba(0,114,178,0.12)}
+[data-theme="light"] .attr-bg[data-aidx="7"]{background:rgba(213,94,0,0.12)}
 .editor-area.split .transclusion-hl{cursor:pointer;transition:background .15s}
 .editor-area.split .transclusion-hl:hover{filter:brightness(1.4)}
 .unique-left{background:rgba(88,166,255,0.10);border-radius:2px}
@@ -194,7 +249,7 @@ textarea.editor-content:focus{outline:none}
 @media(max-width:700px){.sidebar{display:none}}
 .theme-btn{background:none;border:1px solid var(--border);color:var(--fg2);padding:2px 8px;border-radius:var(--radius);cursor:pointer;font-size:11px;line-height:1}
 .theme-btn:hover{background:var(--bg3)}
-.sync-status{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--fg2);font-family:inherit}
+.sync-status{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--fg2);font-family:inherit;min-width:68px}
 .sync-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
 .sync-status.saving .sync-dot,.sync-status.syncing .sync-dot{background:var(--orange);animation:sync-pulse .8s ease-in-out infinite}
 .sync-status.idle .sync-dot{background:var(--green)}
@@ -214,7 +269,7 @@ var useState = ph.useState, useEffect = ph.useEffect, useRef = ph.useRef,
 var AUTO_SAVE_MS = 1500;
 
 function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/\n/g,'<br>');
 }
 
 function computeDelta(oldText, newText) {
@@ -269,11 +324,7 @@ function computeDelta(oldText, newText) {
   }
 
   function editorKeyDown(e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      insertTextNodeAtCursor('\n');
-      e.currentTarget.dispatchEvent(new Event('input', {bubbles: true}));
-    } else if (e.key === 'Tab') {
+    if (e.key === 'Tab') {
       e.preventDefault();
       insertTextNodeAtCursor('\t');
       e.currentTarget.dispatchEvent(new Event('input', {bubbles: true}));
@@ -300,6 +351,10 @@ function computeDelta(oldText, newText) {
   }
 
   function restoreCursor(el, offset) {
+    var last = el.lastChild;
+    if (last && last.nodeType === 1 && last.tagName === 'BR') {
+      el.appendChild(document.createTextNode(''));
+    }
     var range = document.createRange();
     var pos = 0, found = false;
     function walk(node) {
@@ -311,10 +366,19 @@ function computeDelta(oldText, newText) {
           found = true;
         }
         pos += node.length;
-      } else {
-        for (var i = 0; i < node.childNodes.length; i++) {
-          walk(node.childNodes[i]);
-          if (found) return;
+      } else if (node.nodeType === 1) {
+        if (node.tagName === 'BR') {
+          if (pos + 1 >= offset && !found) {
+            range.setStartAfter(node);
+            range.collapse(true);
+            found = true;
+          }
+          pos += 1;
+        } else {
+          for (var i = 0; i < node.childNodes.length; i++) {
+            walk(node.childNodes[i]);
+            if (found) return;
+          }
         }
       }
     }
@@ -440,8 +504,34 @@ function renderImageMarkers(html, selectedHash, linkList) {
   });
 }
 
-function renderContent(text, selectedHash, linkList, highlights) {
-  var html = highlights && highlights.length ? highlightRegions(text, highlights, 'transclusion-hl') : escapeHtml(text);
+function highlightAttribution(text, spans) {
+  if (!spans || !spans.length) return escapeHtml(text);
+  var sorted = spans.slice().sort(function(a,b){return a.start - b.start});
+  var html = '', pos = 0;
+  for (var i = 0; i < sorted.length; i++) {
+    var s = sorted[i];
+    if (s.end <= pos) continue;
+    var start = Math.max(s.start, pos);
+    if (start > pos) html += escapeHtml(text.slice(pos, start));
+    html += '<span class="attr-bg" data-aidx="' + s.aidx + '">';
+    html += escapeHtml(text.slice(start, s.end));
+    if (s.name) html += '<span class="attr-label" data-aidx="' + s.aidx + '">' + escapeHtml(s.name) + '</span>';
+    html += '</span>';
+    pos = s.end;
+  }
+  if (pos < text.length) html += escapeHtml(text.slice(pos));
+  return html;
+}
+
+function renderContent(text, selectedHash, linkList, highlights, attrSpans) {
+  var html;
+  if (attrSpans && attrSpans.length) {
+    html = highlightAttribution(text, attrSpans);
+  } else if (highlights && highlights.length) {
+    html = highlightRegions(text, highlights, 'transclusion-hl');
+  } else {
+    html = escapeHtml(text);
+  }
   return renderImageMarkers(html, selectedHash || null, linkList);
 }
 
@@ -583,6 +673,9 @@ function App() {
   var watchSubRef = useRef(null);
   var _watchResults = useState([]), watchResults = _watchResults[0], setWatchResults = _watchResults[1];
   var _showWatch = useState(false), showWatch = _showWatch[0], setShowWatch = _showWatch[1];
+  var _sa = useState(false), showAttribution = _sa[0], setShowAttribution = _sa[1];
+  var _asp = useState([]), attributionSpans = _asp[0], setAttributionSpans = _asp[1];
+  var authorColorRef = useRef({});
 
   function toast(msg) {
     var id = ++toastId;
@@ -770,6 +863,8 @@ function App() {
     setLinks([]);
     setShowLinks(false);
     setRefHighlights([]);
+    setShowAttribution(false);
+    setAttributionSpans([]);
     var s1 = sub('revision', id);
     var s2 = sub('status', id);
     subsRef.current = {revision:s1, status:s2};
@@ -1049,6 +1144,30 @@ function App() {
           console.log('shared_regions received:', (v.value||[]).length, 'regions', v.value);
           setSharedRegions(v.value || []);
           setTimeout(function(){ window.dispatchEvent(new Event('resize')); }, 100);
+          return;
+        }
+
+        if (v && v.type === 'attribution_query_result') {
+          var rawSpans = (v.value && v.value.spans) ? v.value.spans : [];
+          var colorMap = authorColorRef.current;
+          var nextIdx = Object.keys(colorMap).length;
+          rawSpans.forEach(function(s) {
+            var key = s.author_public_key;
+            if (key && key.join) key = key.join(',');
+            if (!(key in colorMap)) {
+              colorMap[key] = nextIdx % 8;
+              nextIdx++;
+            }
+          });
+          authorColorRef.current = colorMap;
+          setAttributionSpans(rawSpans.map(function(s) {
+            var key = s.author_public_key;
+            if (key && key.join) key = key.join(',');
+            return {start: s.start, end: s.end, aidx: colorMap[key], name: s.author_display_name || null};
+          }));
+          if (rawSpans.length === 0) {
+            toast('No attribution data — log in with a user account to record provenance');
+          }
           return;
         }
 
@@ -1498,6 +1617,18 @@ function App() {
               }
             }
           }, watchSubRef.current ? 'Stop Watch' : 'Watch'),
+          h('button', {
+            disabled: !currentWorkId,
+            onClick: function(){
+              if (showAttribution) {
+                setShowAttribution(false);
+                setAttributionSpans([]);
+              } else {
+                req('attribution_query', {work_id: currentWorkId, start: null, end: null});
+                setShowAttribution(true);
+              }
+            }
+          }, showAttribution ? 'Hide Attribution' : 'Attribution'),
           revInfo
         ),
         showHistory ? h('div', {className:'revision-slider'},
@@ -1615,6 +1746,22 @@ function App() {
                 );
               })
             )
+        ) : null,
+        showAttribution && attributionSpans.length > 0 ? h('div', {className:'links-panel', style:{padding:'6px 10px'}},
+          h('div', {className:'attr-legend'},
+            h('span', null, 'Authors:'),
+            Object.values(attributionSpans.reduce(function(m, s) {
+              if (!m[s.aidx]) m[s.aidx] = {aidx: s.aidx, name: s.name || ('Author ' + s.aidx)};
+              return m;
+            }, {})).map(function(a) {
+              return h('span', {key: a.aidx, className:'attr-legend-item'},
+                h('span', {className:'attr-legend-swatch', style:{background: 'rgba(0,0,0,0)'}},
+                  h('span', {className:'attr-bg', 'data-aidx': String(a.aidx), style:{display:'inline-block',width:14,height:8,borderRadius:2}})
+                ),
+                a.name
+              );
+            })
+          )
         ) : null,
         !splitMode && links.length > 0 ? h('div', {className:'link-nav-bar'},
           links.map(function(lnk) {
@@ -1830,7 +1977,7 @@ function App() {
                   ref: function(el) {
                     if (!el) return;
                     editorRef.current = el;
-                    var newHtml = renderContent(currentText, selectedImg, links, refHighlights);
+                    var newHtml = renderContent(currentText, selectedImg, links, refHighlights, showAttribution ? attributionSpans : null);
                     if (el.innerHTML !== newHtml) {
                       var cur = saveCursor(el);
                       el.innerHTML = newHtml;
