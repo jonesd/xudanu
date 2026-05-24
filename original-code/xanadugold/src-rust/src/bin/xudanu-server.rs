@@ -6,9 +6,13 @@ fn init_tracing(data_dir: Option<&str>) {
     use tracing_subscriber::prelude::*;
     use xudanu::server::transport::chained_log::ChainedLogWriter;
 
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
     let console = tracing_subscriber::fmt::layer()
         .with_target(true)
-        .with_timer(tracing_subscriber::fmt::time::time());
+        .with_timer(tracing_subscriber::fmt::time::time())
+        .with_filter(env_filter);
 
     let security_filter = tracing_subscriber::filter::Targets::new()
         .with_target("xudanu::security", tracing::Level::INFO);
