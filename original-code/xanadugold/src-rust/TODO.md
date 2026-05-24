@@ -69,3 +69,48 @@ match quality. The stop word list should be language-aware.
 **Fix:** Detect document language (e.g. via a simple heuristic or configurable setting)
 and select the appropriate stop word list. Consider using a compact multilingual stop
 word library or embedding stop word lists for the top N languages.
+
+## Roadmap: O-tree Merge Algorithm (Enfilade-Based Collaborative Editing)
+
+**Priority:** Long-term
+**Related:** `src/server/crdt_manager.rs`, `src/edition/orgl.rs`
+
+The current CRDT system uses the external `yrs` crate (Yjs Rust port) which only
+handles plain text. Collaborative edits are materialized into O-tree Editions via
+`Edition::from_text()`, which loses all rich structure (transclusions, overlays,
+labels, data elements, blob references, work references).
+
+The ideal path forward is to build a merge algorithm **on top of the O-tree**
+(enfilade) so collaborative edits preserve the full data model:
+
+- **Transclusions survive collaborative editing** — work references within a
+  document aren't flattened to text when another user edits concurrently
+- **Overlays survive collaborative editing** — layered edits on blob/media
+  content remain intact through merges
+- **Attribution is per-element, not per-text-span** — each transclusion,
+  overlay, or data element carries its own provenance, not just text ranges
+- **No data loss at the materialization boundary** — the CRDT→Edition bridge
+  currently discards everything except plain text; an O-tree merge would
+  preserve the complete hypertext structure
+
+This is what would make Xudanu genuinely different from Google Docs. The
+current collaborative editor is functionally equivalent to Google Docs with
+cryptographic attribution. Building the merge algorithm on enfilades would
+make it a **collaborative editor that preserves hypertext structure**.
+
+Not urgent — the current system works. But this is the direction that moves
+Xudanu from reimplementing existing tools to building something new.
+
+## Roadmap: Product Direction — Xudanu as Reinterpretation
+
+Xudanu preserves the valuable Xanadu infrastructure, not the zigzag UI:
+
+- **Content-addressed storage** (no linkrot)
+- **Bidirectional links** (visible from both ends)
+- **Signed attribution** (who wrote what)
+- **Versioned editions** (full history)
+- **Access controls** (publish/unpublish, read/edit clubs)
+
+The Nelson rules worth following are the engineering principles (unique IDs,
+access controls, bidirectional visibility, publication semantics), not the
+business model rules (micropayments, royalty mechanisms).
