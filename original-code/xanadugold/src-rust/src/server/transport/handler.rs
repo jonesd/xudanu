@@ -394,6 +394,10 @@ async fn handle_socket(
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<EventMessage>();
 
+    state.register_session_sender(session_id, event_tx.clone());
+    let state_cleanup = state.clone();
+    let session_id_cleanup = session_id;
+
     let out_tx_clone = out_tx.clone();
     let is_text_writer = is_text;
     let writer_task = tokio::spawn(async move {
@@ -572,7 +576,7 @@ async fn handle_socket(
                                 | WireRequest::WorkSetEditClub { .. }
                                 | WireRequest::WorkRelease { .. }
                         );
-                        let result = dispatch::dispatch(&state.server, session_id, parsed.inner);
+                        let result = dispatch::dispatch(&state, session_id, parsed.inner);
 
                         if let Err(ref err) = result {
                             let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());
@@ -807,4 +811,5 @@ async fn handle_socket(
         sec.on_session_closed(session_id, remote_addr, "connection closed".to_string());
     }
     drop(out_tx_clone);
+    state_cleanup.unregister_session_sender(&session_id_cleanup);
 }

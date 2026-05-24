@@ -2029,6 +2029,10 @@ pub enum EventPayload {
         work_be_id: Option<BeId>,
         title: Option<String>,
     },
+    CrdtTextUpdate {
+        work_id: BeId,
+        text: String,
+    },
 }
 
 impl EventPayload {

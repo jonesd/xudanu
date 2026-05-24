@@ -141,6 +141,21 @@ impl Edition {
         }
     }
 
+    pub fn from_entries(entries: Vec<(i64, Arc<Carrier>)>) -> Self {
+        let n = entries.len();
+        let region = if n > 0 {
+            XnRegion::interval(0, n as i64)
+        } else {
+            XnRegion::empty()
+        };
+        Edition {
+            orgl: OrglRoot::from_bulk_entries(entries, None, region),
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        }
+    }
+
     pub fn from_text_elements(elements: &[RangeElement]) -> Self {
         let entries: Vec<(i64, Arc<Carrier>)> = elements
             .iter()

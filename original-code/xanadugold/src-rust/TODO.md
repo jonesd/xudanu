@@ -101,7 +101,20 @@ make it a **collaborative editor that preserves hypertext structure**.
 Not urgent — the current system works. But this is the direction that moves
 Xudanu from reimplementing existing tools to building something new.
 
-## Roadmap: Product Direction — Xudanu as Reinterpretation
+## Roadmap: O-tree Merge — Next Steps
+
+### Multi-user relay for O-tree CRDT
+
+The O-tree CRDT path correctly handles per-element attribution for a single
+author, but does not yet relay edits between concurrent sessions. When user A
+edits, user B does not see the change (and vice versa). The `apply_text_delta`
+return value includes a `relay_to` list of other subscribed sessions, but
+`dispatch.rs:146` discards it (`(_relay, revision)`).
+
+**Fix:** After applying a text delta, push the new full text (or the ops) to
+each session in the relay list via a `work_revised` event or a new
+`crdt_sync_update`-style push. The client already handles `work_revised`
+events to refresh its text state.
 
 Xudanu preserves the valuable Xanadu infrastructure, not the zigzag UI:
 

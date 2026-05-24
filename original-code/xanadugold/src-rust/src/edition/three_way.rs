@@ -787,7 +787,11 @@ fn assemble_merge_lww(
                         .ok()
                         .map(|idx| b_entries[idx].1.clone());
                     let carrier = a_carrier.or(b_carrier).unwrap_or_else(|| {
-                        Arc::new(Carrier::new(RangeElement::text("")))
+                        let mut c = Carrier::new(RangeElement::text(""));
+                        if let Some(prev) = merged_entries.last().and_then(|(_, c)| c.provenance.clone()) {
+                            c = c.with_provenance(prev);
+                        }
+                        Arc::new(c)
                     });
                     let m_pos = next_pos;
                     merged_entries.push((m_pos, carrier));

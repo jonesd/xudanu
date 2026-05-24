@@ -1,11 +1,11 @@
 use super::protocol::*;
-use super::shared::ServerHandle;
+use super::shared::{AppState, ServerHandle, SharedState};
 use crate::edition::{BeId, Edition};
 use crate::server::lock::LockCredential;
 use crate::server::Server;
 
 pub fn dispatch(
-    handle: &ServerHandle,
+    state: &SharedState,
     session_id: crate::server::SessionId,
     request: WireRequest,
 ) -> Result<ResponseValue, crate::server::ServerError> {
@@ -13,9 +13,9 @@ pub fn dispatch(
     let op_name = op_name.split_whitespace().next().unwrap_or("?");
     let span = tracing::info_span!("dispatch", op = op_name, session = session_id.as_u64());
     let _enter = span.enter();
-    handle.with_server(|srv| {
+    state.server.with_server(|srv| {
         srv.bump_operation();
-        dispatch_inner(srv, session_id, request)
+        dispatch_inner(srv, session_id, request, state)
     })
 }
 
@@ -23,6 +23,7 @@ fn dispatch_inner(
     srv: &mut Server,
     session_id: crate::server::SessionId,
     request: WireRequest,
+    state: &SharedState,
 ) -> Result<ResponseValue, crate::server::ServerError> {
     match request {
         WireRequest::SessionConnect => Ok(ResponseValue::Id(session_id.as_u64())),
@@ -143,8 +144,25 @@ fn dispatch_inner(
         } => {
             srv.ensure_authenticated(session_id)?;
             if srv.crdt_is_active(work_id) {
-                let (_relay, revision) = srv.crdt_apply_text_delta(session_id, work_id, &ops)?;
+                let (relay, revision) = srv.crdt_apply_text_delta(session_id, work_id, &ops)?;
                 let rev = revision.unwrap_or_else(|| srv.work_revision_count(work_id).unwrap_or(0));
+
+                if !relay.relay_to.is_empty() {
+                    let current_text = srv.crdt_current_text(work_id).unwrap_or_default();
+                    for (relay_sid, _) in &relay.relay_to {
+                        use super::channel::EventMessage;
+                        let ev = EventMessage {
+                            session_id: *relay_sid,
+                            subscription_id: 0,
+                            event: EventPayload::CrdtTextUpdate {
+                                work_id,
+                                text: current_text.clone(),
+                            },
+                        };
+                        state.send_to_session(relay_sid, ev);
+                    }
+                }
+
                 Ok(ResponseValue::Humber(rev))
             } else {
                 use super::protocol::apply_text_delta;
