@@ -3543,10 +3543,16 @@ impl Server {
             .sessions
             .get(&session_id)
             .ok_or(ServerError::SessionNotFound(session_id))?;
-        if session.club_signing_key().is_none() {
-            return Err(ServerError::NotAuthorized);
+        if session.club_signing_key().is_some() {
+            return Ok(());
         }
-        Ok(())
+        if let Some(km) = session._key_master() {
+            let auth = km.actual_authority();
+            if !auth.is_empty() && !auth.iter().all(|&id| id == 0) {
+                return Ok(());
+            }
+        }
+        Err(ServerError::NotAuthorized)
     }
 
     fn ensure_grabbed_by(

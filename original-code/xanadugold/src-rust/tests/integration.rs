@@ -20,10 +20,10 @@ struct TestServer {
     addr: SocketAddr,
 }
 
-const ADMIN_PASSWORD: &[u8] = b"admin";
+const ADMIN_PASSWORD: &[u8] = b"admin123";
 
 fn password_credential(pw: &[u8]) -> serde_json::Value {
-    serde_json::json!({"Password": pw.iter().map(|&b| serde_json::Value::from(b)).collect::<Vec<_>>()})
+    serde_json::json!({"password": pw.iter().map(|&b| serde_json::Value::from(b)).collect::<Vec<_>>()})
 }
 
 impl TestServer {
@@ -126,7 +126,7 @@ fn json_req(id: u16, op: &str, payload: Option<serde_json::Value>) -> serde_json
     f
 }
 
-async fn json_setup(srv: &TestServer) -> (SplitSender, SplitReceiver, u64) {
+async fn json_public_setup(srv: &TestServer) -> (SplitSender, SplitReceiver, u64) {
     let (mut s, mut r) = connect_with_handshake(srv, "json").await;
     let sid = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await["value"]
         ["value"]
@@ -136,7 +136,7 @@ async fn json_setup(srv: &TestServer) -> (SplitSender, SplitReceiver, u64) {
     (s, r, sid)
 }
 
-async fn json_admin_login(srv: &TestServer) -> (SplitSender, SplitReceiver, u64) {
+async fn json_setup(srv: &TestServer) -> (SplitSender, SplitReceiver, u64) {
     let (mut s, mut r) = connect_with_handshake(srv, "json").await;
     let sid = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await["value"]
         ["value"]
@@ -175,6 +175,10 @@ async fn json_admin_login(srv: &TestServer) -> (SplitSender, SplitReceiver, u64)
     )
     .await;
     (s, r, sid)
+}
+
+async fn json_admin_login(srv: &TestServer) -> (SplitSender, SplitReceiver, u64) {
+    json_setup(srv).await
 }
 
 fn build_binary_request(request_id: u16, op: OperationCode, payload: &[u8]) -> Vec<u8> {
@@ -4472,7 +4476,7 @@ async fn crypto_key_history() {
 #[tokio::test]
 async fn crypto_sign_requires_admin() {
     let srv = TestServer::start().await;
-    let (mut s, mut r, _) = json_setup(&srv).await;
+    let (mut s, mut r, _) = json_public_setup(&srv).await;
 
     let resp = send_recv_json(
         &mut s,
@@ -7538,7 +7542,7 @@ async fn publish_unpublish_via_wire() {
         json_req(
             11,
             "club_set_password",
-            Some(serde_json::json!({"club_id": club_id, "password": b"owner" })),
+            Some(serde_json::json!({"club_id": club_id, "password": b"owner123" })),
         ),
     )
     .await;
@@ -7558,7 +7562,7 @@ async fn publish_unpublish_via_wire() {
         json_req(
             13,
             "session_authenticate",
-            Some(serde_json::json!({"credential": password_credential(b"owner")})),
+            Some(serde_json::json!({"credential": password_credential(b"owner123")})),
         ),
     )
     .await;
@@ -7662,7 +7666,7 @@ async fn irrevocably_unpublish_via_wire() {
         json_req(
             11,
             "club_set_password",
-            Some(serde_json::json!({"club_id": club_id, "password": b"owner" })),
+            Some(serde_json::json!({"club_id": club_id, "password": b"owner123" })),
         ),
     )
     .await;
@@ -7682,7 +7686,7 @@ async fn irrevocably_unpublish_via_wire() {
         json_req(
             13,
             "session_authenticate",
-            Some(serde_json::json!({"credential": password_credential(b"owner")})),
+            Some(serde_json::json!({"credential": password_credential(b"owner123")})),
         ),
     )
     .await;
@@ -7751,7 +7755,7 @@ async fn work_list_filters_private_from_other_session() {
         json_req(
             11,
             "club_set_password",
-            Some(serde_json::json!({"club_id": club_id, "password": b"owner" })),
+            Some(serde_json::json!({"club_id": club_id, "password": b"owner123" })),
         ),
     )
     .await;
@@ -7771,7 +7775,7 @@ async fn work_list_filters_private_from_other_session() {
         json_req(
             13,
             "session_authenticate",
-            Some(serde_json::json!({"credential": password_credential(b"owner")})),
+            Some(serde_json::json!({"credential": password_credential(b"owner123")})),
         ),
     )
     .await;
