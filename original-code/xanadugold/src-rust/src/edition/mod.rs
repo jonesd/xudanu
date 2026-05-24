@@ -13,6 +13,7 @@ pub mod label;
 pub mod links;
 pub mod mapping;
 pub mod orgl;
+pub mod three_way;
 #[cfg(feature = "serde")]
 pub mod persistent;
 pub mod pool;
@@ -79,6 +80,10 @@ pub use recorder::{
 };
 pub use shared_mapping::{
     content_map_shared_onto, content_map_shared_to, content_shared_region, SharedMapping,
+};
+pub use three_way::{
+    three_way_diff, three_way_merge, build_merge_mapping, AlignedRun, ConflictRegion, DiffRegion,
+    MergeConflict, MergeResult, MergeStrategy, ThreeWayDiff,
 };
 pub use snapshot::{
     freeze_work, is_frozen, validate_frozen_for_context, validate_not_frozen_for_edit, Snapshot,
