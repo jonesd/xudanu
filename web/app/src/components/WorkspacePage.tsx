@@ -23,56 +23,6 @@ export function WorkspacePage() {
   }, []);
 
 
-  const handleCreate = useCallback(async () => {
-    setError(null);
-    try {
-      const ws = new WebSocket(`${WS_URL}?format=json&version=2`);
-      await new Promise<void>((resolve, reject) => {
-        ws.onopen = () => resolve();
-        ws.onerror = () => reject(new Error("Connection failed"));
-      });
-
-      let id = 0;
-      const send = (op: string, payload?: object): Promise<unknown> => {
-        return new Promise((resolve, reject) => {
-          const reqId = ++id;
-          const frame: Record<string, unknown> = { v: 2, type: "request", id: reqId, op };
-          if (payload) frame.payload = payload;
-          const handler = (e: MessageEvent) => {
-            try {
-              const msg = JSON.parse(e.data as string) as Record<string, unknown>;
-              if (msg.id === reqId) {
-                ws.removeEventListener("message", handler);
-                if (msg.type === "error") {
-                  reject(new Error(String(msg.message)));
-                } else {
-                  resolve(msg.value);
-                }
-              }
-            } catch { /* ignore */ }
-          };
-          ws.addEventListener("message", handler);
-          ws.send(JSON.stringify(frame));
-        });
-      };
-
-      await send("session_connect");
-      await send("session_login_public");
-
-      const edition = { text: "Start typing here..." };
-      const createResp = await send("work_create", { edition });
-      const newId = (createResp as Record<string, unknown>)?.value as number;
-
-      ws.close();
-      setWorkBeId(newId);
-      const url = new URL(window.location.href);
-      url.searchParams.set("work", String(newId));
-      window.history.replaceState({}, "", url.toString());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, []);
-
   const {
     text,
     connected,
@@ -90,7 +40,25 @@ export function WorkspacePage() {
     identity,
     createIdentity,
     login,
+    createWork,
   } = useCrdtSync(WS_URL, workBeId);
+
+  const handleCreate = useCallback(async () => {
+    setError(null);
+    try {
+      const newId = await createWork();
+      if (newId === null) {
+        setError("Not connected");
+        return;
+      }
+      setWorkBeId(newId);
+      const url = new URL(window.location.href);
+      url.searchParams.set("work", String(newId));
+      window.history.replaceState({}, "", url.toString());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [createWork]);
 
   useEffect(() => {
     if (workBeId !== null && connected && text === "") {
@@ -176,7 +144,7 @@ export function WorkspacePage() {
               Attribution
             </button>
           )}
-          {workBeId === null && (
+          {workBeId === null && identity && (
             <button onClick={handleCreate} type="button">
               New Document
             </button>
@@ -219,10 +187,16 @@ export function WorkspacePage() {
             </>
           ) : (
             <div className="welcome">
-              <p>Create a new document or open an existing one to start collaborating.</p>
-              <button onClick={handleCreate} type="button" className="welcome-create">
-                Create Document
-              </button>
+              {identity ? (
+                <>
+                  <p>Create a new document or open an existing one to start collaborating.</p>
+                  <button onClick={handleCreate} type="button" className="welcome-create">
+                    Create Document
+                  </button>
+                </>
+              ) : (
+                <p>Sign in or create an identity to start collaborating.</p>
+              )}
             </div>
           )}
         </main>
