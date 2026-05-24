@@ -288,7 +288,7 @@ export class CrdtSyncClient {
     return ++this.requestId;
   }
 
-  private sendRequest(op: string, payload?: object): Promise<unknown> {
+  sendRequest(op: string, payload?: object): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const id = this.nextId();
       const frame: Record<string, unknown> = {
@@ -326,30 +326,34 @@ export class CrdtSyncClient {
       this.sessionId = extractValue(resp) as number;
       await this.sendRequest("session_login_public");
 
-      const openResp = await this.sendRequest("crdt_sync_open", {
-        work_id: this.workBeId,
-      });
-      const inner = extractValue(openResp) as Record<string, unknown>;
-      this.text = (inner.current_text as string) || "";
-      this.crdtReady = true;
-      this.textListeners.forEach((cb) => cb(this.text));
+      if (this.workBeId) {
+        const openResp = await this.sendRequest("crdt_sync_open", {
+          work_id: this.workBeId,
+        });
+        const inner = extractValue(openResp) as Record<string, unknown>;
+        this.text = (inner.current_text as string) || "";
+        this.crdtReady = true;
+        this.textListeners.forEach((cb) => cb(this.text));
 
-      this.sendRequest("crdt_awareness_get", {
-        work_id: this.workBeId,
-      }).then((awareResp) => {
-        const awareVal = extractValue(awareResp) as Record<string, unknown>;
-        const states = awareVal.states as AwarenessState[] || [];
-        this.awarenessListeners.forEach((cb) => cb(states));
-      }).catch(() => {});
+        this.sendRequest("crdt_awareness_get", {
+          work_id: this.workBeId,
+        }).then((awareResp) => {
+          const awareVal = extractValue(awareResp) as Record<string, unknown>;
+          const states = awareVal.states as AwarenessState[] || [];
+          this.awarenessListeners.forEach((cb) => cb(states));
+        }).catch(() => {});
+      }
 
       this.checkWhoAmI();
     } catch (e) {
       console.error("CRDT session setup failed:", e);
-      const url = new URL(window.location.href);
-      if (url.searchParams.has("work")) {
-        url.searchParams.delete("work");
-        window.history.replaceState({}, "", url.toString());
-        window.location.reload();
+      if (this.workBeId) {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has("work")) {
+          url.searchParams.delete("work");
+          window.history.replaceState({}, "", url.toString());
+          window.location.reload();
+        }
       }
     }
   }

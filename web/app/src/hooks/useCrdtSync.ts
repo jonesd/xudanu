@@ -19,6 +19,7 @@ export interface CrdtSyncState {
   identity: WhoAmIEntry | null;
   createIdentity: (displayName: string, password: string) => Promise<void>;
   login: (clubName: string, password: string) => Promise<void>;
+  createWork: () => Promise<number | null>;
 }
 
 export function useCrdtSync(
@@ -36,11 +37,13 @@ export function useCrdtSync(
   const [attributionSpans, setAttributionSpans] = useState<AttributionSpan[]>([]);
   const [attributionLogStatus, setAttributionLogStatus] = useState<AttributionLogStatus | null>(null);
   const [identity, setIdentity] = useState<WhoAmIEntry | null>(null);
+  const credentialsRef = useRef<{ name: string; password: string } | null>(null);
+  const reconnectCountRef = useRef(0);
 
   useEffect(() => {
-    if (!wsUrl || workBeId === null) return;
+    if (!wsUrl) return;
 
-    const client = new CrdtSyncClient(wsUrl, workBeId);
+    const client = new CrdtSyncClient(wsUrl, workBeId ?? 0);
     clientRef.current = client;
 
     const unsubText = client.onTextChange(setTextState);
@@ -74,6 +77,21 @@ export function useCrdtSync(
       clientRef.current = null;
     };
   }, [wsUrl, workBeId]);
+
+  useEffect(() => {
+    if (!connected || !credentialsRef.current) return;
+    const { name, password } = credentialsRef.current;
+    reconnectCountRef.current += 1;
+    const count = reconnectCountRef.current;
+    const client = clientRef.current;
+    if (!client) return;
+    client.loginByName(name, password).catch((e) => {
+      if (reconnectCountRef.current === count) {
+        console.error("Re-login failed after reconnect:", e);
+        credentialsRef.current = null;
+      }
+    });
+  }, [connected]);
 
   const setText = useCallback((newText: string) => {
     clientRef.current?.setText(newText);
@@ -127,12 +145,24 @@ export function useCrdtSync(
     const client = clientRef.current;
     if (!client || !client.isConnected()) return;
     await client.createIdentity(displayName, password);
+    credentialsRef.current = { name: displayName, password };
   }, []);
 
   const login = useCallback(async (clubName: string, password: string) => {
     const client = clientRef.current;
     if (!client || !client.isConnected()) return;
     await client.loginByName(clubName, password);
+    credentialsRef.current = { name: clubName, password };
+  }, []);
+
+  const createWork = useCallback(async (): Promise<number | null> => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected()) return null;
+    const resp = await client.sendRequest("work_create", {
+      edition: { text: "Start typing here..." },
+    });
+    const val = resp as Record<string, unknown>;
+    return (val.value as number) ?? null;
   }, []);
 
   return {
@@ -140,6 +170,6 @@ export function useCrdtSync(
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
-    identity, createIdentity, login,
+    identity, createIdentity, login, createWork,
   };
 }
