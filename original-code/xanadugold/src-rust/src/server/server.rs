@@ -103,6 +103,8 @@ pub struct Server {
     reconcile_counter: u64,
     last_checkpoint_time: u64,
     pub(crate) crdt_manager: CrdtManager,
+    pub(crate) otree_crdt: super::otree_crdt::OtreeCrdtManager,
+    pub use_otree_crdt: bool,
     pub(crate) personal_club_count: usize,
     pub(crate) max_personal_clubs: usize,
     pub(crate) login_attempts: HashMap<BeId, crate::server::identity::ClubAttemptTracker>,
@@ -227,6 +229,8 @@ impl Server {
                 .unwrap_or_default()
                 .as_secs(),
             crdt_manager: CrdtManager::new(3),
+            otree_crdt: super::otree_crdt::OtreeCrdtManager::new(3),
+            use_otree_crdt: false,
             personal_club_count: 0,
             max_personal_clubs: 10_000,
             login_attempts: HashMap::new(),
@@ -407,49 +411,96 @@ impl Server {
         let server_id_bytes = self.federation_server_id_bytes();
         let timestamp = Self::current_timestamp_secs();
 
-        let author_sessions = self
-            .crdt_manager
-            .get_author_sessions(work_be_id)
-            .map_err(|e| ServerError::Internal(e.to_string()))?;
+        if self.use_otree_crdt {
+            let author_sessions = self
+                .otree_crdt
+                .get_author_sessions(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-        let mut author_signing_keys: std::collections::HashMap<BeId, ed25519_dalek::SigningKey> =
-            std::collections::HashMap::new();
-        for (sid, author_id) in &author_sessions {
-            if let Some(sk) = self
-                .sessions
-                .get(sid)
-                .and_then(|s| s.club_signing_key().cloned())
-            {
-                author_signing_keys.insert(author_id.club_be_id, sk);
-            }
-        }
-
-        for (_, author_id) in &author_sessions {
-            if !author_signing_keys.contains_key(&author_id.club_be_id) {
+            let mut author_signing_keys: std::collections::HashMap<BeId, ed25519_dalek::SigningKey> =
+                std::collections::HashMap::new();
+            for (sid, author_id) in &author_sessions {
                 if let Some(sk) = self
-                    .crdt_manager
-                    .get_club_signing_key(work_be_id, author_id.club_be_id)
+                    .sessions
+                    .get(sid)
+                    .and_then(|s| s.club_signing_key().cloned())
                 {
                     author_signing_keys.insert(author_id.club_be_id, sk);
                 }
             }
-        }
 
-        match signing_key {
-            Some(sk) => self
+            for (_, author_id) in &author_sessions {
+                if !author_signing_keys.contains_key(&author_id.club_be_id) {
+                    if let Some(sk) = self
+                        .otree_crdt
+                        .get_club_signing_key(work_be_id, author_id.club_be_id)
+                    {
+                        author_signing_keys.insert(author_id.club_be_id, sk);
+                    }
+                }
+            }
+
+            match signing_key {
+                Some(sk) => self
+                    .otree_crdt
+                    .materialize_edition_with_provenance(
+                        work_be_id,
+                        &sk,
+                        &server_id_bytes,
+                        timestamp,
+                        &author_signing_keys,
+                    )
+                    .map_err(|e| ServerError::Internal(e.to_string())),
+                None => self
+                    .otree_crdt
+                    .materialize_edition(work_be_id)
+                    .map_err(|e| ServerError::Internal(e.to_string())),
+            }
+        } else {
+            let author_sessions = self
                 .crdt_manager
-                .materialize_edition_with_provenance(
-                    work_be_id,
-                    &sk,
-                    &server_id_bytes,
-                    timestamp,
-                    &author_signing_keys,
-                )
-                .map_err(|e| ServerError::Internal(e.to_string())),
-            None => self
-                .crdt_manager
-                .materialize_edition(work_be_id)
-                .map_err(|e| ServerError::Internal(e.to_string())),
+                .get_author_sessions(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+
+            let mut author_signing_keys: std::collections::HashMap<BeId, ed25519_dalek::SigningKey> =
+                std::collections::HashMap::new();
+            for (sid, author_id) in &author_sessions {
+                if let Some(sk) = self
+                    .sessions
+                    .get(sid)
+                    .and_then(|s| s.club_signing_key().cloned())
+                {
+                    author_signing_keys.insert(author_id.club_be_id, sk);
+                }
+            }
+
+            for (_, author_id) in &author_sessions {
+                if !author_signing_keys.contains_key(&author_id.club_be_id) {
+                    if let Some(sk) = self
+                        .crdt_manager
+                        .get_club_signing_key(work_be_id, author_id.club_be_id)
+                    {
+                        author_signing_keys.insert(author_id.club_be_id, sk);
+                    }
+                }
+            }
+
+            match signing_key {
+                Some(sk) => self
+                    .crdt_manager
+                    .materialize_edition_with_provenance(
+                        work_be_id,
+                        &sk,
+                        &server_id_bytes,
+                        timestamp,
+                        &author_signing_keys,
+                    )
+                    .map_err(|e| ServerError::Internal(e.to_string())),
+                None => self
+                    .crdt_manager
+                    .materialize_edition(work_be_id)
+                    .map_err(|e| ServerError::Internal(e.to_string())),
+            }
         }
     }
 
@@ -1390,12 +1441,14 @@ impl Server {
                     entry_count,
                     chain_valid,
                     last_sequence: entry_count,
+                    has_log: true,
                 }
             }
             None => super::transport::protocol::ResponseValue::AttributionLogStatusResult {
                 entry_count: 0,
                 chain_valid: false,
                 last_sequence: 0,
+                has_log: false,
             },
         }
     }
@@ -1600,20 +1653,20 @@ impl Server {
         self.ensure_session(session_id)?;
         self.ensure_can_edit(session_id, work_be_id)?;
 
-        if self.crdt_manager.is_active(work_be_id) {
-            let needs = self
-                .crdt_manager
-                .needs_materialization(work_be_id)
-                .map_err(|e| ServerError::Internal(e.to_string()))?;
+        if self.crdt_is_active(work_be_id) {
+            let needs = self.crdt_needs_materialization(work_be_id);
             if needs {
-                let edition = self
-                    .crdt_manager
-                    .materialize_edition(work_be_id)
-                    .map_err(|e| ServerError::Internal(e.to_string()))?;
+                let edition = if self.use_otree_crdt {
+                    self.otree_crdt.materialize_edition(work_be_id)
+                        .map_err(|e| ServerError::Internal(e.to_string()))?
+                } else {
+                    self.crdt_manager.materialize_edition(work_be_id)
+                        .map_err(|e| ServerError::Internal(e.to_string()))?
+                };
 
-                let author_club = self.sessions.iter().find_map(|(sid, s)| {
-                    if self.crdt_manager.is_subscriber(work_be_id, *sid) {
-                        s.initial_login()
+                let author_club = self.sessions.iter().find_map(|(sid, _)| {
+                    if self.crdt_is_active_subscriber(work_be_id, *sid) {
+                        self.sessions.get(sid).and_then(|s| s.initial_login())
                     } else {
                         None
                     }
@@ -1623,23 +1676,61 @@ impl Server {
             }
         }
 
-        let initial_text = if !self.crdt_manager.is_active(work_be_id) {
-            let edition = self.work_edition(work_be_id)?;
-            Some(
-                edition
-                    .all_entries()
-                    .iter()
-                    .map(|(_, c)| c.element.as_text().unwrap_or(""))
-                    .collect::<String>(),
-            )
+        if self.use_otree_crdt {
+            let initial_edition = if !self.otree_crdt.is_active(work_be_id) {
+                Some(self.work_edition(work_be_id)?)
+            } else {
+                None
+            };
+
+            let result = self.otree_crdt.open_sync_session(
+                work_be_id, session_id, initial_edition.as_ref(),
+            );
+
+            self.register_crdt_author(session_id, work_be_id)?;
+
+            Ok(super::crdt_manager::SyncStartResult {
+                session_id: super::crdt_manager::SyncSessionId::from(result.session_id.as_u64()),
+                state_vector: Vec::new(),
+                current_text: result.current_text,
+            })
         } else {
-            None
-        };
+            let initial_text = if !self.crdt_manager.is_active(work_be_id) {
+                let edition = self.work_edition(work_be_id)?;
+                Some(
+                    edition
+                        .all_entries()
+                        .iter()
+                        .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                        .collect::<String>(),
+                )
+            } else {
+                None
+            };
 
-        let result =
-            self.crdt_manager
-                .open_sync_session(work_be_id, session_id, initial_text.as_deref());
+            let result =
+                self.crdt_manager
+                    .open_sync_session(work_be_id, session_id, initial_text.as_deref());
 
+            self.register_crdt_author(session_id, work_be_id)?;
+
+            Ok(result)
+        }
+    }
+
+    fn crdt_is_active_subscriber(&self, work_be_id: BeId, session_id: SessionId) -> bool {
+        if self.use_otree_crdt {
+            self.otree_crdt.is_subscriber(work_be_id, session_id)
+        } else {
+            self.crdt_manager.is_subscriber(work_be_id, session_id)
+        }
+    }
+
+    fn register_crdt_author(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<(), ServerError> {
         if let Some(session) = self.sessions.get(&session_id) {
             let author_club = session
                 .initial_login()
@@ -1670,21 +1761,29 @@ impl Server {
                         pk[..8].copy_from_slice(&login_club.to_le_bytes());
                         pk
                     });
-                let author = super::crdt_manager::AuthorIdentity {
-                    public_key,
-                    display_name,
-                    club_be_id: login_club,
-                };
-                if let Err(e) = self
-                    .crdt_manager
-                    .register_author(work_be_id, session_id, author)
-                {
-                    tracing::warn!(target: "xudanu::security", work_id = work_be_id, session_id = session_id.as_u64(), error = %e, event = "SECURITY:author_register_failed", "failed to register CRDT author");
+
+                if self.use_otree_crdt {
+                    let author = super::otree_crdt::OtreeAuthorIdentity {
+                        public_key,
+                        display_name,
+                        club_be_id: login_club,
+                    };
+                    if let Err(e) = self.otree_crdt.register_author(work_be_id, session_id, author) {
+                        tracing::warn!(target: "xudanu::security", work_id = work_be_id, session_id = session_id.as_u64(), error = %e, event = "SECURITY:author_register_failed", "failed to register CRDT author");
+                    }
+                } else {
+                    let author = super::crdt_manager::AuthorIdentity {
+                        public_key,
+                        display_name,
+                        club_be_id: login_club,
+                    };
+                    if let Err(e) = self.crdt_manager.register_author(work_be_id, session_id, author) {
+                        tracing::warn!(target: "xudanu::security", work_id = work_be_id, session_id = session_id.as_u64(), error = %e, event = "SECURITY:author_register_failed", "failed to register CRDT author");
+                    }
                 }
             }
         }
-
-        Ok(result)
+        Ok(())
     }
 
     pub fn crdt_close_session(
@@ -1694,16 +1793,16 @@ impl Server {
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
 
-        let needs = self
-            .crdt_manager
-            .needs_materialization(work_be_id)
-            .map_err(|e| ServerError::Internal(e.to_string()))?;
+        let needs = self.crdt_needs_materialization(work_be_id);
 
         if needs {
-            let edition = self
-                .crdt_manager
-                .materialize_edition(work_be_id)
-                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            let edition = if self.use_otree_crdt {
+                self.otree_crdt.materialize_edition(work_be_id)
+                    .map_err(|e| ServerError::Internal(e.to_string()))?
+            } else {
+                self.crdt_manager.materialize_edition(work_be_id)
+                    .map_err(|e| ServerError::Internal(e.to_string()))?
+            };
 
             let author_club = self
                 .sessions
@@ -1713,9 +1812,13 @@ impl Server {
             self.revise_work(work_be_id, session_id, edition, author_club)?;
         }
 
-        self.crdt_manager
-            .close_sync_session(work_be_id, session_id)
-            .map_err(|e| ServerError::Internal(e.to_string()))
+        if self.use_otree_crdt {
+            self.otree_crdt.close_sync_session(work_be_id, session_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))
+        } else {
+            self.crdt_manager.close_sync_session(work_be_id, session_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))
+        }
     }
 
     pub fn crdt_apply_text_delta(
@@ -1727,30 +1830,40 @@ impl Server {
         self.ensure_session(session_id)?;
         self.ensure_can_edit(session_id, work_be_id)?;
 
-        let result = self
-            .crdt_manager
-            .apply_text_delta(work_be_id, session_id, ops)
-            .map_err(|e| ServerError::Internal(e.to_string()))?;
+        if self.use_otree_crdt {
+            let result = self.otree_crdt
+                .apply_text_delta(work_be_id, session_id, ops)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-        let revision = if self
-            .crdt_manager
-            .needs_materialization(work_be_id)
-            .map_err(|e| ServerError::Internal(e.to_string()))?
-        {
-            let ed = self.materialize_with_provenance(work_be_id, session_id)?;
+            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result.relay_to
+                .into_iter()
+                .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
+                .collect();
 
-            let author_club = self
-                .sessions
-                .get(&session_id)
-                .and_then(|s| s.initial_login());
+            let revision = if self.crdt_needs_materialization(work_be_id) {
+                let ed = self.materialize_with_provenance(work_be_id, session_id)?;
+                let author_club = self.sessions.get(&session_id).and_then(|s| s.initial_login());
+                Some(self.revise_work(work_be_id, session_id, ed, author_club)?)
+            } else {
+                None
+            };
 
-            let rev = self.revise_work(work_be_id, session_id, ed, author_club)?;
-            Some(rev)
+            Ok((super::crdt_manager::ApplyUpdateResult { relay_to }, revision))
         } else {
-            None
-        };
+            let result = self.crdt_manager
+                .apply_text_delta(work_be_id, session_id, ops)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-        Ok((result, revision))
+            let revision = if self.crdt_needs_materialization(work_be_id) {
+                let ed = self.materialize_with_provenance(work_be_id, session_id)?;
+                let author_club = self.sessions.get(&session_id).and_then(|s| s.initial_login());
+                Some(self.revise_work(work_be_id, session_id, ed, author_club)?)
+            } else {
+                None
+            };
+
+            Ok((result, revision))
+        }
     }
 
     pub fn crdt_apply_update(
@@ -1762,50 +1875,86 @@ impl Server {
         self.ensure_session(session_id)?;
         self.ensure_can_edit(session_id, work_be_id)?;
 
-        let result = self
-            .crdt_manager
-            .apply_update(work_be_id, session_id, &update_bytes)
-            .map_err(|e| ServerError::Internal(e.to_string()))?;
-
-        self.try_materialize(work_be_id, session_id)?;
-
-        Ok(result)
+        if self.use_otree_crdt {
+            let text = String::from_utf8(update_bytes)
+                .map_err(|e| ServerError::Internal(format!("invalid utf8 update: {}", e)))?;
+            let result = self.otree_crdt
+                .apply_federation_update(work_be_id, &text, None)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result.relay_to
+                .into_iter()
+                .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
+                .collect();
+            self.try_materialize(work_be_id, session_id)?;
+            Ok(super::crdt_manager::ApplyUpdateResult { relay_to })
+        } else {
+            let result = self
+                .crdt_manager
+                .apply_update(work_be_id, session_id, &update_bytes)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            self.try_materialize(work_be_id, session_id)?;
+            Ok(result)
+        }
     }
 
     pub fn crdt_get_diff(
         &self,
         work_be_id: BeId,
-        state_vector: Vec<u8>,
+        _state_vector: Vec<u8>,
     ) -> Result<Vec<u8>, ServerError> {
-        self.crdt_manager
-            .get_diff_since(work_be_id, &state_vector)
-            .map_err(|e| ServerError::Internal(e.to_string()))
+        if self.use_otree_crdt {
+            self.otree_crdt.current_text(work_be_id)
+                .map(|t| t.into_bytes())
+                .map_err(|e| ServerError::Internal(e.to_string()))
+        } else {
+            self.crdt_manager
+                .get_diff_since(work_be_id, &_state_vector)
+                .map_err(|e| ServerError::Internal(e.to_string()))
+        }
     }
 
     pub fn crdt_get_full_state(&self, work_be_id: BeId) -> Result<Vec<u8>, ServerError> {
-        self.crdt_manager
-            .get_full_state(work_be_id)
-            .map_err(|e| ServerError::Internal(e.to_string()))
+        if self.use_otree_crdt {
+            self.otree_crdt.current_text(work_be_id)
+                .map(|t| t.into_bytes())
+                .map_err(|e| ServerError::Internal(e.to_string()))
+        } else {
+            self.crdt_manager
+                .get_full_state(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))
+        }
     }
 
     pub fn crdt_subscriber_count(&self, work_be_id: BeId) -> usize {
-        self.crdt_manager.subscriber_count(work_be_id)
+        if self.use_otree_crdt {
+            self.otree_crdt.subscriber_count(work_be_id)
+        } else {
+            self.crdt_manager.subscriber_count(work_be_id)
+        }
     }
 
     pub fn crdt_is_active(&self, work_be_id: BeId) -> bool {
-        self.crdt_manager.is_active(work_be_id)
+        if self.use_otree_crdt {
+            self.otree_crdt.is_active(work_be_id)
+        } else {
+            self.crdt_manager.is_active(work_be_id)
+        }
     }
 
     pub fn crdt_needs_materialization(&self, work_be_id: BeId) -> bool {
-        self.crdt_manager
-            .needs_materialization(work_be_id)
-            .unwrap_or(false)
+        if self.use_otree_crdt {
+            self.otree_crdt.needs_materialization(work_be_id).unwrap_or(false)
+        } else {
+            self.crdt_manager.needs_materialization(work_be_id).unwrap_or(false)
+        }
     }
 
     pub fn crdt_current_text(&self, work_be_id: BeId) -> Result<String, ServerError> {
-        self.crdt_manager
-            .current_text(work_be_id)
-            .map_err(|e| ServerError::Internal(e.to_string()))
+        if self.use_otree_crdt {
+            self.otree_crdt.current_text(work_be_id).map_err(|e| ServerError::Internal(e.to_string()))
+        } else {
+            self.crdt_manager.current_text(work_be_id).map_err(|e| ServerError::Internal(e.to_string()))
+        }
     }
 
     fn try_materialize(
@@ -1813,14 +1962,12 @@ impl Server {
         work_be_id: BeId,
         session_id: SessionId,
     ) -> Result<(), ServerError> {
-        let should = self
-            .crdt_manager
-            .needs_materialization(work_be_id)
-            .map_err(|e| ServerError::Internal(e.to_string()))?;
-        let elapsed = self
-            .crdt_manager
-            .debounce_elapsed(work_be_id)
-            .map_err(|e| ServerError::Internal(e.to_string()))?;
+        let should = self.crdt_needs_materialization(work_be_id);
+        let elapsed = if self.use_otree_crdt {
+            self.otree_crdt.debounce_elapsed(work_be_id).map_err(|e| ServerError::Internal(e.to_string()))?
+        } else {
+            self.crdt_manager.debounce_elapsed(work_be_id).map_err(|e| ServerError::Internal(e.to_string()))?
+        };
 
         if should && elapsed {
             let edition = self.materialize_with_provenance(work_be_id, session_id)?;
@@ -1843,7 +1990,7 @@ impl Server {
     ) -> Result<u64, ServerError> {
         self.ensure_session(session_id)?;
 
-        if !self.crdt_manager.is_active(work_be_id) {
+        if !self.crdt_is_active(work_be_id) {
             return Err(ServerError::Internal(
                 "no active CRDT session for this work".into(),
             ));
@@ -1861,14 +2008,17 @@ impl Server {
     }
 
     pub fn crdt_materialize_any_session(&mut self, work_be_id: BeId) -> Result<u64, ServerError> {
-        if !self.crdt_manager.is_active(work_be_id) {
+        if !self.crdt_is_active(work_be_id) {
             return Ok(0);
         }
 
-        let sessions = self
-            .crdt_manager
-            .get_subscribed_sessions(work_be_id)
-            .map_err(|e| ServerError::Internal(e.to_string()))?;
+        let sessions = if self.use_otree_crdt {
+            self.otree_crdt.get_subscribed_sessions(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?
+        } else {
+            self.crdt_manager.get_subscribed_sessions(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?
+        };
 
         let session_id = sessions
             .into_iter()
@@ -1879,11 +2029,11 @@ impl Server {
                     .is_some()
             })
             .or_else(|| {
-                self.crdt_manager
-                    .get_subscribed_sessions(work_be_id)
-                    .ok()?
-                    .into_iter()
-                    .next()
+                if self.use_otree_crdt {
+                    self.otree_crdt.get_subscribed_sessions(work_be_id).ok()?.into_iter().next()
+                } else {
+                    self.crdt_manager.get_subscribed_sessions(work_be_id).ok()?.into_iter().next()
+                }
             })
             .ok_or(ServerError::Internal("no subscribed session".into()))?;
 
@@ -1905,9 +2055,25 @@ impl Server {
         state: super::crdt_manager::AwarenessState,
     ) -> Result<super::crdt_manager::AwarenessRelayResult, ServerError> {
         self.ensure_session(session_id)?;
-        self.crdt_manager
-            .update_awareness(work_be_id, session_id, state)
-            .map_err(|e| ServerError::Internal(e.to_string()))
+        if self.use_otree_crdt {
+            let otree_state = super::otree_crdt::OtreeAwarenessState {
+                session_id: state.session_id,
+                user_name: state.user_name,
+                cursor: state.cursor.map(|c| super::otree_crdt::OtreeCursorPosition { index: c.index }),
+                selection: state.selection.map(|s| super::otree_crdt::OtreeSelectionRange { start: s.start, end: s.end }),
+                is_typing: state.is_typing,
+            };
+            let result = self.otree_crdt.update_awareness(work_be_id, session_id, otree_state)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result.relay_to
+                .into_iter()
+                .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
+                .collect();
+            Ok(super::crdt_manager::AwarenessRelayResult { relay_to })
+        } else {
+            self.crdt_manager.update_awareness(work_be_id, session_id, state)
+                .map_err(|e| ServerError::Internal(e.to_string()))
+        }
     }
 
     pub fn crdt_remove_awareness(
@@ -1915,20 +2081,39 @@ impl Server {
         session_id: SessionId,
         work_be_id: BeId,
     ) -> Result<super::crdt_manager::AwarenessRelayResult, ServerError> {
-        self.crdt_manager
-            .remove_awareness(work_be_id, session_id)
-            .map_err(|e| ServerError::Internal(e.to_string()))
+        if self.use_otree_crdt {
+            let result = self.otree_crdt.remove_awareness(work_be_id, session_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result.relay_to
+                .into_iter()
+                .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
+                .collect();
+            Ok(super::crdt_manager::AwarenessRelayResult { relay_to })
+        } else {
+            self.crdt_manager.remove_awareness(work_be_id, session_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))
+        }
     }
 
     pub fn crdt_get_awareness(
         &self,
         work_be_id: BeId,
     ) -> Result<Vec<super::crdt_manager::AwarenessState>, ServerError> {
-        let states = self
-            .crdt_manager
-            .get_awareness(work_be_id)
-            .map_err(|e| ServerError::Internal(e.to_string()))?;
-        Ok(states.into_iter().cloned().collect())
+        if self.use_otree_crdt {
+            let states = self.otree_crdt.get_awareness(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            Ok(states.into_iter().map(|s| super::crdt_manager::AwarenessState {
+                session_id: s.session_id,
+                user_name: s.user_name.clone(),
+                cursor: s.cursor.as_ref().map(|c| super::crdt_manager::CursorPosition { index: c.index }),
+                selection: s.selection.as_ref().map(|sel| super::crdt_manager::SelectionRange { start: sel.start, end: sel.end }),
+                is_typing: s.is_typing,
+            }).collect())
+        } else {
+            let states = self.crdt_manager.get_awareness(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            Ok(states.into_iter().cloned().collect())
+        }
     }
 
     pub fn crdt_register_author(
@@ -1938,9 +2123,18 @@ impl Server {
         author: super::crdt_manager::AuthorIdentity,
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
-        self.crdt_manager
-            .register_author(work_be_id, session_id, author)
-            .map_err(|e| ServerError::Internal(e.to_string()))
+        if self.use_otree_crdt {
+            let otree_author = super::otree_crdt::OtreeAuthorIdentity {
+                public_key: author.public_key,
+                display_name: author.display_name,
+                club_be_id: author.club_be_id,
+            };
+            self.otree_crdt.register_author(work_be_id, session_id, otree_author)
+                .map_err(|e| ServerError::Internal(e.to_string()))
+        } else {
+            self.crdt_manager.register_author(work_be_id, session_id, author)
+                .map_err(|e| ServerError::Internal(e.to_string()))
+        }
     }
 
     pub fn crdt_update_author(
@@ -1984,40 +2178,72 @@ impl Server {
                 pk
             });
 
-        let author = super::crdt_manager::AuthorIdentity {
-            public_key,
-            display_name,
-            club_be_id: login_club,
-        };
-
-        self.crdt_manager
-            .register_author(work_be_id, session_id, author)
-            .map_err(|e| ServerError::Internal(e.to_string()))?;
+        if self.use_otree_crdt {
+            let author = super::otree_crdt::OtreeAuthorIdentity {
+                public_key,
+                display_name,
+                club_be_id: login_club,
+            };
+            self.otree_crdt.register_author(work_be_id, session_id, author)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+        } else {
+            let author = super::crdt_manager::AuthorIdentity {
+                public_key,
+                display_name,
+                club_be_id: login_club,
+            };
+            self.crdt_manager.register_author(work_be_id, session_id, author)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+        }
 
         if let Some(sk) = self
             .sessions
             .get(&session_id)
             .and_then(|s| s.club_signing_key().cloned())
         {
-            self.crdt_manager
-                .store_club_signing_key(work_be_id, login_club, sk);
+            if self.use_otree_crdt {
+                self.otree_crdt.store_club_signing_key(work_be_id, login_club, sk);
+            } else {
+                self.crdt_manager.store_club_signing_key(work_be_id, login_club, sk);
+            }
         }
 
         Ok(())
     }
 
     pub fn crdt_sign_update(&self, update_bytes: &[u8]) -> super::crdt_manager::SignedUpdate {
-        self.crdt_manager
-            .sign_update(update_bytes, &self.server_keypair.signing_key)
+        if self.use_otree_crdt {
+            let text = String::from_utf8_lossy(update_bytes);
+            let signed = self.otree_crdt.sign_update(&text, &self.server_keypair.signing_key);
+            super::crdt_manager::SignedUpdate {
+                update_bytes: signed.update_text.into_bytes(),
+                signature: signed.signature,
+                signer_public_key: signed.signer_public_key,
+            }
+        } else {
+            self.crdt_manager
+                .sign_update(update_bytes, &self.server_keypair.signing_key)
+        }
     }
 
     pub fn crdt_extract_signed_update_for_federation(
         &mut self,
         work_be_id: BeId,
     ) -> Result<super::crdt_manager::SignedUpdate, ServerError> {
-        self.crdt_manager
-            .extract_signed_update_for_federation(work_be_id, &self.server_keypair.signing_key)
-            .map_err(|e| ServerError::Internal(e.to_string()))
+        if self.use_otree_crdt {
+            let signed = self.otree_crdt
+                .extract_signed_update_for_federation(work_be_id, &self.server_keypair.signing_key)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            Ok(super::crdt_manager::SignedUpdate {
+                update_bytes: signed.update_text.into_bytes(),
+                signature: signed.signature,
+                signer_public_key: signed.signer_public_key,
+            })
+        } else {
+            self.crdt_manager
+                .extract_signed_update_for_federation(work_be_id, &self.server_keypair.signing_key)
+                .map_err(|e| ServerError::Internal(e.to_string()))
+        }
     }
 
     pub fn crdt_apply_signed_federation_update(
@@ -2026,13 +2252,30 @@ impl Server {
         signed: &super::crdt_manager::SignedUpdate,
         initial_text: Option<&str>,
     ) -> Result<super::crdt_manager::ApplyUpdateResult, ServerError> {
-        let mut known_keys = std::collections::HashMap::new();
-        let server_vk = self.server_keypair.signing_key.verifying_key();
-        known_keys.insert(server_vk.to_bytes(), server_vk);
+        if self.use_otree_crdt {
+            let otree_signed = super::otree_crdt::OtreeSignedUpdate {
+                update_text: String::from_utf8_lossy(&signed.update_bytes).into_owned(),
+                signature: signed.signature.clone(),
+                signer_public_key: signed.signer_public_key,
+            };
+            let initial_edition = initial_text.map(|t| Edition::from_text(t));
+            let result = self.otree_crdt
+                .apply_signed_federation_update(work_be_id, &otree_signed, &std::collections::HashMap::new(), initial_edition.as_ref())
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result.relay_to
+                .into_iter()
+                .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
+                .collect();
+            Ok(super::crdt_manager::ApplyUpdateResult { relay_to })
+        } else {
+            let mut known_keys = std::collections::HashMap::new();
+            let server_vk = self.server_keypair.signing_key.verifying_key();
+            known_keys.insert(server_vk.to_bytes(), server_vk);
 
-        self.crdt_manager
-            .apply_signed_federation_update(work_be_id, signed, &known_keys, initial_text)
-            .map_err(|e| ServerError::Internal(e.to_string()))
+            self.crdt_manager
+                .apply_signed_federation_update(work_be_id, signed, &known_keys, initial_text)
+                .map_err(|e| ServerError::Internal(e.to_string()))
+        }
     }
 
     pub fn list_works(&self) -> Vec<(BeId, Option<BeId>, u64, bool)> {
@@ -5727,7 +5970,9 @@ pub(crate) mod persist_snapshot {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
-                crdt_manager: CrdtManager::new(3),
+            crdt_manager: CrdtManager::new(3),
+            otree_crdt: crate::server::otree_crdt::OtreeCrdtManager::new(3),
+            use_otree_crdt: false,
                 personal_club_count: 0,
                 max_personal_clubs: 10_000,
                 login_attempts: HashMap::new(),

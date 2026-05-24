@@ -71,8 +71,8 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
 
       {logStatus && (
         <div className="attribution-log-status">
-          <span className={logStatus.chain_valid ? "log-valid" : "log-invalid"}>
-            {logStatus.chain_valid ? "Chain valid" : "Chain INVALID"}
+          <span className={logStatus.has_log ? (logStatus.chain_valid ? "log-valid" : "log-invalid") : "log-none"}>
+            {logStatus.has_log ? (logStatus.chain_valid ? "Chain valid" : "Chain INVALID") : "No Log"}
           </span>
           <span className="log-detail">{logStatus.entry_count} entries, seq #{logStatus.last_sequence}</span>
         </div>

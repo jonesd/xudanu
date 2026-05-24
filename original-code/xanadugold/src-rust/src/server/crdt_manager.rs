@@ -16,6 +16,10 @@ use crate::edition::{BeId, Edition};
 pub struct SyncSessionId(u64);
 
 impl SyncSessionId {
+    pub fn from(val: u64) -> Self {
+        SyncSessionId(val)
+    }
+
     pub fn as_u64(self) -> u64 {
         self.0
     }

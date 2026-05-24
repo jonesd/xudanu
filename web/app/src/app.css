@@ -706,6 +706,11 @@ body {
   font-weight: 600;
 }
 
+.log-none {
+  color: #888;
+  font-weight: 600;
+}
+
 .log-detail {
   color: #888;
   font-size: 12px;

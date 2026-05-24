@@ -1571,6 +1571,7 @@ pub enum ResponseValue {
         entry_count: u64,
         chain_valid: bool,
         last_sequence: u64,
+        has_log: bool,
     },
 }
 
