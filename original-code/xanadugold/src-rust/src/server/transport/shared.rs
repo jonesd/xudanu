@@ -1,10 +1,11 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use super::audit::SecurityMonitor;
 use super::channel::EventMessage;
 use crate::server::Server;
+use crate::server::session::SessionId;
 
 pub const MAX_CSRF_TOKENS: usize = 10_000;
 
@@ -13,6 +14,7 @@ pub type SharedState = Arc<AppState>;
 pub struct AppState {
     pub server: ServerHandle,
     pub event_bus: tokio::sync::broadcast::Sender<EventMessage>,
+    pub session_senders: Mutex<HashMap<SessionId, tokio::sync::mpsc::UnboundedSender<EventMessage>>>,
     pub security: Arc<Mutex<SecurityMonitor>>,
     pub static_dir: Option<PathBuf>,
     pub allowed_origins: Option<HashSet<String>>,
@@ -34,11 +36,29 @@ impl AppState {
         AppState {
             server: handle,
             event_bus: tx,
+            session_senders: Mutex::new(HashMap::new()),
             security: Arc::new(Mutex::new(monitor)),
             static_dir: None,
             allowed_origins: None,
             csrf_enabled: false,
             csrf_tokens: Arc::new(Mutex::new(VecDeque::new())),
+        }
+    }
+
+    pub fn register_session_sender(&self, session_id: SessionId, sender: tokio::sync::mpsc::UnboundedSender<EventMessage>) {
+        self.session_senders.lock().unwrap().insert(session_id, sender);
+    }
+
+    pub fn unregister_session_sender(&self, session_id: &SessionId) {
+        self.session_senders.lock().unwrap().remove(session_id);
+    }
+
+    pub fn send_to_session(&self, session_id: &SessionId, event: EventMessage) -> bool {
+        let senders = self.session_senders.lock().unwrap();
+        if let Some(sender) = senders.get(session_id) {
+            sender.send(event).is_ok()
+        } else {
+            false
         }
     }
 

@@ -67,8 +67,8 @@ pub use props::{
     IS_PARTIAL_FLAG, IS_SENSOR_WAITING_FLAG, OTHER_CLUBS_FLAG, OTHER_ENDORSEMENTS_FLAG,
     PUBLIC_CLUB_FLAG,
 };
-pub use provenance::{sign_span, verify_span_provenance, Provenance, SpanProvenance};
-pub use range_element::RangeElement;
+pub use provenance::{sign_span, sign_element, verify_span_provenance, ElementProvenance, Provenance, SpanProvenance};
+pub use range_element::{Carrier, RangeElement};
 pub use range_transclusion::{
     collect_unique_elements, count_transclusion_depth, find_deeply_transcluded, range_transcluders,
     range_works, walk_otree_shared, RangeTransclusionQuery, RangeTransclusionResult,

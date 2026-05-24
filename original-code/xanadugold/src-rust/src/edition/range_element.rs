@@ -290,6 +290,8 @@ impl RangeElement {
 pub struct Carrier {
     pub label: Option<RangeElementId>,
     pub element: RangeElement,
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub provenance: Option<super::provenance::ElementProvenance>,
 }
 
 impl Carrier {
@@ -297,6 +299,7 @@ impl Carrier {
         Carrier {
             label: None,
             element,
+            provenance: None,
         }
     }
 
@@ -304,7 +307,13 @@ impl Carrier {
         Carrier {
             label: Some(label_id),
             element,
+            provenance: None,
         }
+    }
+
+    pub fn with_provenance(mut self, prov: super::provenance::ElementProvenance) -> Self {
+        self.provenance = Some(prov);
+        self
     }
 }
 

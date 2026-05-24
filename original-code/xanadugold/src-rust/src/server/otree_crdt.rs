@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use super::session::SessionId;
 use crate::crypto::sign::{sign_bytes, verify_signature};
-use crate::edition::provenance::{sign_span, SpanProvenance};
+use crate::edition::provenance::{sign_span, sign_element, ElementProvenance, SpanProvenance};
 use crate::edition::three_way::{three_way_merge, MergeStrategy};
-use crate::edition::{BeId, Edition, Mapping};
+use crate::edition::{BeId, Carrier, Edition, Mapping, RangeElement};
 use crate::server::transport::protocol::TextDeltaOp;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -142,10 +142,70 @@ pub struct OtreeCrdtManager {
     debounce_secs: u64,
 }
 
-fn apply_text_delta_to_edition(edition: &Edition, ops: &[TextDeltaOp]) -> Edition {
-    let text = edition.to_text();
-    let new_text = crate::server::transport::protocol::apply_text_delta(&text, ops);
-    Edition::from_text(&new_text)
+fn apply_text_delta_to_edition(
+    edition: &Edition,
+    ops: &[TextDeltaOp],
+    author: Option<&OtreeAuthorIdentity>,
+) -> Edition {
+    let old_text = edition.to_text();
+    let new_text = crate::server::transport::protocol::apply_text_delta(&old_text, ops);
+
+    let timestamp = current_timestamp_secs();
+    let prov = author.map(|a| ElementProvenance {
+        author_public_key: a.public_key,
+        author_display_name: a.display_name.clone(),
+        author_club_id: a.club_be_id,
+        timestamp,
+    });
+
+    let old_entries = edition.all_entries();
+    let mut old_pos = 0i64;
+    let mut old_idx = 0usize;
+
+    let mut new_entries: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(new_text.len().max(old_entries.len()));
+    let mut new_pos = 0i64;
+
+    for op in ops {
+        match op {
+            TextDeltaOp::Retain { count } => {
+                for _ in 0..*count {
+                    if old_idx < old_entries.len() && old_entries[old_idx].0 == old_pos {
+                        new_entries.push((new_pos, old_entries[old_idx].1.clone()));
+                        old_idx += 1;
+                    }
+                    old_pos += 1;
+                    new_pos += 1;
+                }
+            }
+            TextDeltaOp::Delete { count } => {
+                for _ in 0..*count {
+                    if old_idx < old_entries.len() && old_entries[old_idx].0 == old_pos {
+                        old_idx += 1;
+                    }
+                    old_pos += 1;
+                }
+            }
+            TextDeltaOp::Insert { text } => {
+                for ch in text.chars() {
+                    let carrier = Carrier::new(RangeElement::text(ch.to_string()));
+                    let carrier = match &prov {
+                        Some(p) => carrier.with_provenance(p.clone()),
+                        None => carrier,
+                    };
+                    new_entries.push((new_pos, Arc::new(carrier)));
+                    new_pos += 1;
+                }
+            }
+        }
+    }
+
+    while old_idx < old_entries.len() {
+        new_entries.push((new_pos, old_entries[old_idx].1.clone()));
+        old_idx += 1;
+        new_pos += 1;
+    }
+
+    Edition::from_entries(new_entries)
 }
 
 fn current_timestamp_secs() -> u64 {
@@ -244,7 +304,8 @@ impl OtreeCrdtManager {
             return Err(OtreeError::NotSubscribed(work_id, sender_session));
         }
 
-        let author_edition = apply_text_delta_to_edition(&wd.current_edition, ops);
+        let author = wd.author_keys.get(&sender_session).cloned();
+        let author_edition = apply_text_delta_to_edition(&wd.current_edition, ops, author.as_ref());
 
         let base = &wd.base_edition;
         let current = &wd.current_edition;
@@ -349,23 +410,76 @@ impl OtreeCrdtManager {
             return Vec::new();
         }
 
-        let first_pos = entries.first().map(|(p, _)| *p).unwrap_or(0);
-        let last_pos = entries.last().map(|(p, _)| *p).unwrap_or(0);
-
-        let fingerprints: Vec<[u8; 32]> = entries
-            .iter()
-            .map(|(_, c)| c.element.content_fingerprint())
-            .collect();
-
-        if fingerprints.is_empty() {
-            return Vec::new();
+        let has_element_prov = entries.iter().any(|(_, c)| c.provenance.is_some());
+        if !has_element_prov {
+            let first_pos = entries.first().map(|(p, _)| *p).unwrap_or(0);
+            let last_pos = entries.last().map(|(p, _)| *p).unwrap_or(0);
+            let fingerprints: Vec<[u8; 32]> = entries
+                .iter()
+                .map(|(_, c)| c.element.content_fingerprint())
+                .collect();
+            if fingerprints.is_empty() {
+                return Vec::new();
+            }
+            return vec![SpanProvenance {
+                start: first_pos,
+                end: last_pos + 1,
+                provenance: sign_span(fallback_signing_key, &fingerprints, timestamp, server_id_bytes),
+            }];
         }
 
-        vec![SpanProvenance {
-            start: first_pos,
-            end: last_pos + 1,
-            provenance: sign_span(fallback_signing_key, &fingerprints, timestamp, server_id_bytes),
-        }]
+        let mut spans: Vec<SpanProvenance> = Vec::new();
+        let mut i = 0;
+        while i < entries.len() {
+            let (start_pos, carrier) = &entries[i];
+            let ep = match &carrier.provenance {
+                Some(p) => p,
+                None => {
+                    i += 1;
+                    continue;
+                }
+            };
+
+            let author_key = ep.author_club_id;
+            let signing_key = _author_signing_keys
+                .get(&author_key)
+                .unwrap_or(fallback_signing_key);
+
+            let mut fingerprints = Vec::new();
+            let mut end_pos = *start_pos;
+            let mut last_ts = ep.timestamp;
+            let mut j = i;
+
+            while j < entries.len() {
+                let (pos, c) = &entries[j];
+                match &c.provenance {
+                    Some(p) if p.author_club_id == author_key => {
+                        fingerprints.push(c.element.content_fingerprint());
+                        end_pos = *pos + 1;
+                        last_ts = p.timestamp;
+                        j += 1;
+                    }
+                    Some(_) => break,
+                    None => {
+                        fingerprints.push(c.element.content_fingerprint());
+                        end_pos = *pos + 1;
+                        j += 1;
+                    }
+                }
+            }
+
+            if !fingerprints.is_empty() {
+                spans.push(SpanProvenance {
+                    start: *start_pos,
+                    end: end_pos,
+                    provenance: sign_span(signing_key, &fingerprints, last_ts, server_id_bytes),
+                });
+            }
+
+            i = j;
+        }
+
+        spans
     }
 
     pub fn needs_materialization(&self, work_id: BeId) -> Result<bool, OtreeError> {

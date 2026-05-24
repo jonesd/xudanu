@@ -133,9 +133,10 @@ Total test suite: **1939 tests passing** (1701 lib + 219 integration + 12 propte
 |-------|-------------|--------|
 | 1 | Three-way diff engine | Done |
 | 2 | Mapping-based position transforms | Done |
-| 3 | Replace yrs CRDT with O-tree merge | Next |
-| 4 | Per-element attribution (ElementProvenance on Carrier) | Planned |
-| 5 | LLM integration — semantic zoom, auto-transclusion | Planned |
+| 3 | Replace yrs CRDT with O-tree merge | Done |
+| 4 | Per-element attribution (ElementProvenance on Carrier) | Done |
+| 5 | Multi-user relay (push edits to concurrent sessions) | Next |
+| 6 | LLM integration — semantic zoom, auto-transclusion | Planned |
 
 Phase 3 is the visible milestone: swap out the Yjs-based CRDT so the server uses O-tree merge for all collaborative edits. After that, rich structure (transclusions, overlays, data bindings) survives concurrent editing — which no existing collaborative editor does.
 

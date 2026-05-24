@@ -8366,7 +8366,7 @@ mod tests {
         let session_id = crate::server::SessionId::new(1);
 
         let result = dispatch(
-            &state.server,
+            &state,
             session_id,
             crate::server::transport::protocol::WireRequest::EndorsementAdd {
                 work_fingerprint: "test".to_string(),
@@ -8393,7 +8393,7 @@ mod tests {
         let session_id = crate::server::SessionId::new(1);
 
         let result = dispatch(
-            &state.server,
+            &state,
             session_id,
             crate::server::transport::protocol::WireRequest::EndorsementRetract {
                 work_fingerprint: "test".to_string(),
@@ -8423,7 +8423,7 @@ mod tests {
         let session_id = crate::server::SessionId::new(1);
 
         let result = dispatch(
-            &state.server,
+            &state,
             session_id,
             crate::server::transport::protocol::WireRequest::EndorsementQuery {
                 work_fingerprint: "test".to_string(),
@@ -8707,7 +8707,7 @@ mod tests {
         let session_id = crate::server::SessionId::new(1);
 
         let result = dispatch(
-            &state.server,
+            &state,
             session_id,
             crate::server::transport::protocol::WireRequest::MembershipList,
         );
@@ -8725,7 +8725,7 @@ mod tests {
         let state = AppState::new(server).shared();
 
         let result = dispatch(
-            &state.server,
+            &state,
             sid,
             crate::server::transport::protocol::WireRequest::MembershipList,
         );

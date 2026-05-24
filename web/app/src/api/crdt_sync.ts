@@ -403,6 +403,17 @@ export class CrdtSyncClient {
       }
     }
 
+    if (eventType === "crdt_text_update") {
+      const payload = event.payload as Record<string, unknown> | undefined;
+      if (payload && payload.work_id === this.workBeId) {
+        const newText = payload.text as string;
+        if (newText !== this.text) {
+          this.text = newText;
+          this.textListeners.forEach((cb) => cb(newText));
+        }
+      }
+    }
+
     if (eventType === "content_match") {
       const payload = event.payload as Record<string, unknown> | undefined;
       if (payload) {

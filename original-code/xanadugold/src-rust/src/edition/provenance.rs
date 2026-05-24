@@ -1,7 +1,82 @@
 use blake3::Hasher;
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 
+use super::backend::BeId;
+
 const PROVENANCE_DOMAIN: &[u8] = b"xudanu/v1/provenance";
+const ELEMENT_PROVENANCE_DOMAIN: &[u8] = b"xudanu/v1/element-provenance";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ElementProvenance {
+    pub author_public_key: [u8; 32],
+    pub author_display_name: String,
+    pub author_club_id: BeId,
+    pub timestamp: u64,
+}
+
+#[cfg(feature = "serde")]
+mod element_serde_impl {
+    use super::*;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    struct ElementProvenanceData {
+        author_public_key: Vec<u8>,
+        author_display_name: String,
+        author_club_id: u64,
+        timestamp: u64,
+    }
+
+    impl Serialize for ElementProvenance {
+        fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            ElementProvenanceData {
+                author_public_key: self.author_public_key.to_vec(),
+                author_display_name: self.author_display_name.clone(),
+                author_club_id: self.author_club_id,
+                timestamp: self.timestamp,
+            }
+            .serialize(s)
+        }
+    }
+
+    impl<'de> Deserialize<'de> for ElementProvenance {
+        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            let data = ElementProvenanceData::deserialize(d)?;
+            let author_public_key: [u8; 32] = data
+                .author_public_key
+                .try_into()
+                .map_err(|_| serde::de::Error::custom("author_public_key must be 32 bytes"))?;
+            Ok(ElementProvenance {
+                author_public_key,
+                author_display_name: data.author_display_name,
+                author_club_id: data.author_club_id,
+                timestamp: data.timestamp,
+            })
+        }
+    }
+}
+
+pub fn sign_element(
+    signing_key: &SigningKey,
+    element_fingerprint: &[u8; 32],
+    timestamp: u64,
+    server_id: &[u8; 32],
+) -> Provenance {
+    let mut hasher = Hasher::new();
+    hasher.update(ELEMENT_PROVENANCE_DOMAIN);
+    hasher.update(element_fingerprint);
+    hasher.update(&signing_key.verifying_key().to_bytes());
+    hasher.update(&timestamp.to_le_bytes());
+    hasher.update(server_id);
+    let payload: [u8; 32] = hasher.finalize().into();
+    let signature = crate::crypto::sign::sign_bytes(signing_key, &payload);
+    Provenance {
+        author_public_key: signing_key.verifying_key().to_bytes(),
+        signature: signature.to_bytes(),
+        timestamp,
+        server_id: *server_id,
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Provenance {
