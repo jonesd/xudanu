@@ -1869,6 +1869,7 @@ pub struct ServerInfoPayload {
     pub club_count: usize,
     pub edition_count: usize,
     pub is_accepting_connections: bool,
+    pub public_club_id: BeId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

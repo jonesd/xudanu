@@ -20,6 +20,7 @@ export interface CrdtSyncState {
   createIdentity: (displayName: string, password: string) => Promise<void>;
   login: (clubName: string, password: string) => Promise<void>;
   createWork: () => Promise<number | null>;
+  shareWork: () => Promise<void>;
 }
 
 export function useCrdtSync(
@@ -165,11 +166,28 @@ export function useCrdtSync(
     return (val.value as number) ?? null;
   }, []);
 
+  const shareWork = useCallback(async (): Promise<void> => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected() || workBeId === null) return;
+    try {
+      const statsResp = await client.sendRequest("server_stats");
+      const stats = (statsResp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
+      const publicClubId = stats?.public_club_id as number | undefined;
+      if (publicClubId == null) return;
+      await client.sendRequest("work_set_edit_club", {
+        work_id: workBeId,
+        club_id: publicClubId,
+      });
+    } catch (e) {
+      console.error("Failed to share work:", e);
+    }
+  }, [workBeId]);
+
   return {
     text, connected, awareness, setText, sendCursor, sendSelection,
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
-    identity, createIdentity, login, createWork,
+    identity, createIdentity, login, createWork, shareWork,
   };
 }

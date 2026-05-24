@@ -41,6 +41,7 @@ export function WorkspacePage() {
     createIdentity,
     login,
     createWork,
+    shareWork,
   } = useCrdtSync(WS_URL, workBeId);
 
   const handleCreate = useCallback(async () => {
@@ -111,6 +112,15 @@ export function WorkspacePage() {
             onCreateIdentity={createIdentity}
             onLogin={login}
           />
+          {workBeId !== null && (
+            <button
+              onClick={shareWork}
+              type="button"
+              disabled={!connected}
+            >
+              Share
+            </button>
+          )}
           {workBeId !== null && (
             <button
               onClick={toggleWatch}

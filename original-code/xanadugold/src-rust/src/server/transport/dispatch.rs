@@ -454,6 +454,7 @@ fn dispatch_inner(
                     club_count: srv.club_count(),
                     edition_count: srv.edition_count(),
                     is_accepting_connections: srv.admin_is_accepting_connections(),
+                    public_club_id: srv.public_club_id(),
                 },
             ))
         }
@@ -468,6 +469,7 @@ fn dispatch_inner(
                     club_count: srv.club_count(),
                     edition_count: srv.edition_count(),
                     is_accepting_connections: srv.admin_is_accepting_connections(),
+                    public_club_id: srv.public_club_id(),
                 },
             ))
         }
