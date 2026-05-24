@@ -24,15 +24,20 @@ if [ -z "$STATIC_DIR" ]; then
     done
 fi
 
-PID=$(lsof -ti:"${PORT}" 2>/dev/null || true)
-if [ -n "$PID" ]; then
-    echo "Stopping existing server on ${PORT} (pid ${PID})..."
-    kill "$PID" 2>/dev/null || true
-    sleep 1
-    PID2=$(lsof -ti:"${PORT}" 2>/dev/null || true)
-    if [ -n "$PID2" ]; then
+PIDS=$(lsof -ti:"${PORT}" 2>/dev/null | sort -u || true)
+if [ -n "$PIDS" ]; then
+    echo "Stopping existing server on ${PORT} (pids $(echo $PIDS | tr '\n' ' '))..."
+    echo "$PIDS" | xargs kill 2>/dev/null || true
+    for i in $(seq 1 10); do
+        if ! lsof -ti:"${PORT}" 2>/dev/null; then
+            break
+        fi
+        sleep 0.5
+    done
+    REMAINING=$(lsof -ti:"${PORT}" 2>/dev/null | sort -u || true)
+    if [ -n "$REMAINING" ]; then
         echo "Force killing..."
-        kill -9 "$PID2" 2>/dev/null || true
+        echo "$REMAINING" | xargs kill -9 2>/dev/null || true
         sleep 1
     fi
     echo "Stopped."
@@ -64,7 +69,7 @@ fi
 echo "  Security:         origin check + CSRF tokens"
 echo ""
 
-cargo run --features server --bin xudanu-server -- \
+RUST_LOG=${RUST_LOG:-info} cargo run --features server --bin xudanu-server -- \
     run "$ADDR" "$DATA_DIR" \
     --allowed-origin "http://localhost:${PORT}" \
     --allowed-origin "http://127.0.0.1:${PORT}" \
