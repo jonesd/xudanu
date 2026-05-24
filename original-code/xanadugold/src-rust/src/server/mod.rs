@@ -17,6 +17,8 @@ pub mod keymaster;
 #[cfg(feature = "server")]
 pub mod lock;
 #[cfg(feature = "server")]
+pub mod otree_crdt;
+#[cfg(feature = "server")]
 pub mod server;
 #[cfg(feature = "server")]
 pub mod session;

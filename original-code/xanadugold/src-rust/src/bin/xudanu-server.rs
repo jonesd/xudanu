@@ -78,6 +78,7 @@ fn usage() {
     eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
     eprintln!("  --key-passphrase <pw>   Passphrase for encrypted server key file");
     eprintln!("                         (can also set XUDANU_KEY_PASSPHRASE env var)");
+    eprintln!("  --otree-crdt             Use O-tree merge instead of yrs for collaborative editing");
     eprintln!();
     eprintln!("Flags:");
     eprintln!("  --version, -V            Print version");
@@ -330,6 +331,7 @@ async fn main() {
                 std::collections::HashSet::new();
             let mut csrf_enabled = false;
             let mut key_passphrase: Option<String> = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
+            let mut use_otree_crdt = false;
             let mut i = 2;
             while i < args.len() {
                 match args[i].as_str() {
@@ -388,11 +390,15 @@ async fn main() {
                     }
                     "--key-passphrase" => {
                         i += 1;
-                        key_passphrase =
-                            Some(args.get(i).map(|s| s.to_string()).unwrap_or_else(|| {
+                        key_passphrase = Some(
+                            args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
                                 eprintln!("Error: --key-passphrase requires a value");
                                 std::process::exit(1);
-                            }));
+                            }),
+                        );
+                    }
+                    "--otree-crdt" => {
+                        use_otree_crdt = true;
                     }
                     s if s.contains(':') => {
                         addr = s.to_string();
@@ -439,6 +445,11 @@ async fn main() {
             } else {
                 Server::new()
             };
+
+            if use_otree_crdt {
+                server.use_otree_crdt = true;
+                tracing::info!("Using O-tree merge for collaborative editing");
+            }
 
             if !federation_peers.is_empty() {
                 let peers: Vec<xudanu::server::federation::PeerAddress> = federation_peers

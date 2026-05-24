@@ -31,6 +31,7 @@ export interface AttributionLogStatus {
   entry_count: number;
   chain_valid: boolean;
   last_sequence: number;
+  has_log: boolean;
 }
 
 export interface WhoAmIEntry {
