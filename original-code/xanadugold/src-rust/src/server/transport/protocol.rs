@@ -149,6 +149,7 @@ pub enum OperationCode {
     WorkListByOwner,
 
     WorkReviseDelta,
+    WorkDiffNarration,
 
     LinkCreate,
     LinkGet,
@@ -314,6 +315,7 @@ impl OperationCode {
             0x0314 => Some(OperationCode::WorkList),
             0x0315 => Some(OperationCode::WorkListByOwner),
             0x0316 => Some(OperationCode::WorkReviseDelta),
+            0x031C => Some(OperationCode::WorkDiffNarration),
 
             0x0208 => Some(OperationCode::ClubSetDefaultReadClub),
             0x0209 => Some(OperationCode::ClubSetDefaultEditClub),
@@ -529,6 +531,7 @@ impl OperationCode {
             OperationCode::WorkList => 0x0314,
             OperationCode::WorkListByOwner => 0x0315,
             OperationCode::WorkReviseDelta => 0x0316,
+            OperationCode::WorkDiffNarration => 0x031C,
 
             OperationCode::LinkCreate => 0x0701,
             OperationCode::LinkGet => 0x0702,
@@ -890,6 +893,10 @@ pub enum WireRequest {
         work_id: BeId,
         base_revision: u64,
         ops: Vec<TextDeltaOp>,
+    },
+
+    WorkDiffNarration {
+        work_id: BeId,
     },
 
     LinkCreate {
@@ -1572,6 +1579,10 @@ pub enum ResponseValue {
         chain_valid: bool,
         last_sequence: u64,
         has_log: bool,
+    },
+
+    NarrationResult {
+        narration: String,
     },
 }
 

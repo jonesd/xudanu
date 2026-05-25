@@ -91,6 +91,7 @@ struct OtreeWorkDoc {
     current_edition: Edition,
     base_edition: Edition,
     pending_edition: Option<Edition>,
+    narration_snapshot: Option<String>,
     subscribers: HashMap<SessionId, OtreeSyncSessionId>,
     author_keys: HashMap<SessionId, OtreeAuthorIdentity>,
     club_signing_keys: HashMap<BeId, SigningKey>,
@@ -247,6 +248,7 @@ impl OtreeCrdtManager {
                     base_edition: edition.clone(),
                     current_edition: edition,
                     pending_edition: None,
+                    narration_snapshot: None,
                     subscribers: HashMap::new(),
                     author_keys: HashMap::new(),
                     club_signing_keys: HashMap::new(),
@@ -360,6 +362,32 @@ impl OtreeCrdtManager {
         wd.base_edition = wd.current_edition.clone();
         wd.pending_edition = None;
         Ok(wd.current_edition.clone())
+    }
+
+    pub fn base_edition(&self, work_id: BeId) -> Result<Edition, OtreeError> {
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(OtreeError::WorkNotFound(work_id))?;
+        Ok(wd.base_edition.clone())
+    }
+
+    pub fn narration_snapshot(&self, work_id: BeId) -> Result<Option<String>, OtreeError> {
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(OtreeError::WorkNotFound(work_id))?;
+        Ok(wd.narration_snapshot.clone())
+    }
+
+    pub fn set_narration_snapshot(&mut self, work_id: BeId) -> Result<String, OtreeError> {
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(OtreeError::WorkNotFound(work_id))?;
+        let current = wd.current_edition.to_text();
+        wd.narration_snapshot = Some(current.clone());
+        Ok(current)
     }
 
     pub fn materialize_edition_with_provenance(
@@ -542,6 +570,7 @@ impl OtreeCrdtManager {
                 base_edition: edition.clone(),
                 current_edition: edition.clone(),
                 pending_edition: None,
+                narration_snapshot: None,
                 subscribers: HashMap::new(),
                 author_keys: HashMap::new(),
                 club_signing_keys: HashMap::new(),

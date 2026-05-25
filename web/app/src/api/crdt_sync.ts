@@ -171,6 +171,14 @@ export class CrdtSyncClient {
     return (val.spans as AttributionSpan[]) || [];
   }
 
+  async diffNarration(workId: number): Promise<string> {
+    const resp = await this.sendRequest("work_diff_narration", {
+      work_id: workId,
+    });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.narration as string) || "";
+  }
+
   async refreshAwareness(): Promise<AwarenessState[]> {
     const resp = await this.sendRequest("crdt_awareness_get", {
       work_id: this.workBeId,

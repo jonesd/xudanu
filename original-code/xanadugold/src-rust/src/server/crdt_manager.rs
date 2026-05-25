@@ -434,6 +434,18 @@ impl CrdtManager {
         Ok(edition)
     }
 
+    pub fn base_edition(&self, work_id: BeId) -> Result<Edition, CrdtError> {
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(CrdtError::WorkNotFound(work_id))?;
+        let text: String = {
+            let txn = wd.doc.transact();
+            wd.text.get_string(&txn)
+        };
+        Ok(text_to_edition(&text))
+    }
+
     pub fn materialize_edition_with_provenance(
         &mut self,
         work_id: BeId,

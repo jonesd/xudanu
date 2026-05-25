@@ -21,6 +21,7 @@ export interface CrdtSyncState {
   login: (clubName: string, password: string) => Promise<void>;
   createWork: () => Promise<number | null>;
   shareWork: () => Promise<void>;
+  narrateDiff: () => Promise<string>;
 }
 
 export function useCrdtSync(
@@ -183,11 +184,22 @@ export function useCrdtSync(
     }
   }, [workBeId]);
 
+  const narrateDiff = useCallback(async (): Promise<string> => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected() || workBeId === null) return "";
+    try {
+      return await client.diffNarration(workBeId);
+    } catch (e) {
+      console.error("Failed to narrate diff:", e);
+      return `Error: ${e}`;
+    }
+  }, [workBeId]);
+
   return {
     text, connected, awareness, setText, sendCursor, sendSelection,
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
-    identity, createIdentity, login, createWork, shareWork,
+    identity, createIdentity, login, createWork, shareWork, narrateDiff,
   };
 }
