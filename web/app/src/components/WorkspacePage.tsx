@@ -13,6 +13,8 @@ export function WorkspacePage() {
   const [showAttribution, setShowAttribution] = useState(false);
   const [workBeId, setWorkBeId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [narration, setNarration] = useState<string | null>(null);
+  const [narrating, setNarrating] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -42,6 +44,7 @@ export function WorkspacePage() {
     login,
     createWork,
     shareWork,
+    narrateDiff,
   } = useCrdtSync(WS_URL, workBeId);
 
   const handleCreate = useCallback(async () => {
@@ -111,48 +114,66 @@ export function WorkspacePage() {
             connected={connected}
             onCreateIdentity={createIdentity}
             onLogin={login}
-          />
+           />
           {workBeId !== null && (
-            <button
-              onClick={shareWork}
-              type="button"
-              disabled={!connected}
-            >
-              Share
-            </button>
+            <>
+              <button onClick={shareWork} type="button" disabled={!connected}>
+                Share
+              </button>
+              <button
+                onClick={toggleWatch}
+                type="button"
+                className={watchEnabled ? "watch-toggle-active" : ""}
+                disabled={!connected}
+              >
+                {watchEnabled ? "Watching" : "Watch"}
+              </button>
+              <button
+                onClick={() => setShowDebug((d) => !d)}
+                type="button"
+                className={showDebug ? "debug-toggle-active" : ""}
+              >
+                Debug
+              </button>
+              <button
+                onClick={() => {
+                  setShowAttribution((a) => {
+                    const next = !a;
+                    if (next) refreshAttribution();
+                    return next;
+                  });
+                }}
+                type="button"
+                className={showAttribution ? "attribution-toggle-active" : ""}
+                disabled={!connected}
+              >
+                Attribution
+              </button>
+              <button
+                onClick={async () => {
+                  setNarrating(true);
+                  setNarration(null);
+                  const text = await narrateDiff();
+                  setNarration(text);
+                  setNarrating(false);
+                }}
+                type="button"
+                disabled={!connected || narrating}
+              >
+                {narrating ? "Thinking..." : "Narrate"}
+              </button>
+            </>
           )}
-          {workBeId !== null && (
-            <button
-              onClick={toggleWatch}
-              type="button"
-              className={watchEnabled ? "watch-toggle-active" : ""}
-              disabled={!connected}
-            >
-              {watchEnabled ? "Watching" : "Watch"}
-            </button>
-          )}
-          <button
-            onClick={() => setShowDebug((d) => !d)}
-            type="button"
-            className={showDebug ? "debug-toggle-active" : ""}
-          >
-            Debug
-          </button>
-          {workBeId !== null && (
-            <button
-              onClick={() => {
-                setShowAttribution((a) => {
-                  const next = !a;
-                  if (next) refreshAttribution();
-                  return next;
-                });
-              }}
-              type="button"
-              className={showAttribution ? "attribution-toggle-active" : ""}
-              disabled={!connected}
-            >
-              Attribution
-            </button>
+          {workBeId === null && (
+            <>
+              <button
+                onClick={() => setShowDebug((d) => !d)}
+                type="button"
+                className={showDebug ? "debug-toggle-active" : ""}
+              >
+                Debug
+              </button>
+            </>
           )}
           {workBeId === null && identity && (
             <button onClick={handleCreate} type="button">
@@ -192,6 +213,12 @@ export function WorkspacePage() {
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+              {narration && (
+                <div className="narration-panel">
+                  <h3>Change Summary</h3>
+                  <p>{narration}</p>
                 </div>
               )}
             </>

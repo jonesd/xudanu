@@ -13,10 +13,86 @@ pub fn dispatch(
     let op_name = op_name.split_whitespace().next().unwrap_or("?");
     let span = tracing::info_span!("dispatch", op = op_name, session = session_id.as_u64());
     let _enter = span.enter();
-    state.server.with_server(|srv| {
+
+    if matches!(request, WireRequest::WorkDiffNarration { .. }) {
+        return dispatch_narration(state, session_id, request);
+    }
+
+    let result = state.server.with_server(|srv| {
         srv.bump_operation();
         dispatch_inner(srv, session_id, request, state)
-    })
+    });
+
+    if let Ok(ResponseValue::Id(work_id)) = &result {
+        spawn_auto_title(state, *work_id);
+    }
+
+    result
+}
+
+fn dispatch_narration(
+    state: &SharedState,
+    session_id: crate::server::SessionId,
+    request: WireRequest,
+) -> Result<ResponseValue, crate::server::ServerError> {
+    let work_id = match &request {
+        WireRequest::WorkDiffNarration { work_id } => *work_id,
+        _ => unreachable!(),
+    };
+
+    let (base_text, new_text, last_author) = state.server.with_server(|srv| {
+        srv.bump_operation();
+        srv.ensure_can_read(session_id, work_id)?;
+
+        let new_text = if srv.crdt_is_active(work_id) {
+            srv.crdt_current_text(work_id).unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        let base_text = if srv.crdt_is_active(work_id) {
+            if srv.use_otree_crdt {
+                srv.otree_crdt.narration_snapshot(work_id)
+                    .map_err(|e| crate::server::ServerError::Internal(e.to_string()))?
+                    .unwrap_or_default()
+            } else {
+                let edition = srv.work_edition(work_id)?;
+                edition_to_text(&edition)
+            }
+        } else {
+            String::new()
+        };
+
+        let last_author = srv.last_revision_author(work_id);
+        Ok::<_, crate::server::ServerError>((base_text, new_text, last_author))
+    })?;
+
+    tracing::info!(
+        "narration diff: base_len={} new_len={} base={:?} new={:?}",
+        base_text.len(), new_text.len(),
+        &base_text[..base_text.len().min(100)],
+        &new_text[..new_text.len().min(100)],
+    );
+
+    let llm = crate::server::ollama::LlmClient::default_client();
+    let prompt = crate::server::ollama::build_narration_prompt(
+        &base_text, &new_text, last_author.as_deref(),
+    );
+
+    let narration = match tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(llm.generate(&prompt))
+    }) {
+        Ok(text) => text,
+        Err(e) => format!("(LLM unavailable: {})", e),
+    };
+
+    state.server.with_server(|srv| {
+        if srv.crdt_is_active(work_id) && srv.use_otree_crdt {
+            let _ = srv.otree_crdt.set_narration_snapshot(work_id);
+        }
+    });
+
+    Ok(ResponseValue::NarrationResult { narration })
 }
 
 fn dispatch_inner(
@@ -1704,6 +1780,7 @@ fn dispatch_inner(
         }
 
         WireRequest::AttributionLogStatus => Ok(srv.attribution_log_status()),
+        WireRequest::WorkDiffNarration { .. } => unreachable!("handled in dispatch_narration"),
     }
 }
 
@@ -1713,4 +1790,35 @@ fn edition_to_text(edition: &Edition) -> String {
         .iter()
         .map(|(_, carrier)| carrier.element.as_text().unwrap_or(""))
         .collect()
+}
+
+fn spawn_auto_title(state: &SharedState, work_id: u64) {
+    let text = state.server.with_server(|srv| {
+        srv.crdt_current_text(work_id).unwrap_or_default()
+    });
+
+    if text.len() < 20 {
+        return;
+    }
+
+    let state = state.clone();
+    tokio::spawn(async move {
+        let llm = crate::server::ollama::LlmClient::default_client();
+        let prompt = crate::server::ollama::build_title_prompt(&text);
+
+        tracing::info!(work_id, "auto-title: requesting from LLM");
+
+        match llm.generate(&prompt).await {
+            Ok(title) => {
+                let title = title.trim().trim_matches('"').to_string();
+                tracing::info!(work_id, %title, "auto-title: generated");
+                state.server.with_server(|srv| {
+                    srv.set_work_title(work_id, title);
+                });
+            }
+            Err(e) => {
+                tracing::warn!(work_id, "auto-title: failed: {}", e);
+            }
+        }
+    });
 }

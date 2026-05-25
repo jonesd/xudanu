@@ -18,6 +18,9 @@ pub mod keymaster;
 pub mod lock;
 #[cfg(feature = "server")]
 pub mod otree_crdt;
+
+#[cfg(feature = "server")]
+pub mod ollama;
 #[cfg(feature = "server")]
 pub mod server;
 #[cfg(feature = "server")]

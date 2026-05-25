@@ -1482,6 +1482,14 @@ impl Server {
         Ok(ws.last_revision_author)
     }
 
+    pub fn last_revision_author(&self, work_be_id: BeId) -> Option<String> {
+        let club_id = self.work_last_revision_author(work_be_id).ok()??;
+        self.clubs
+            .get(&club_id)
+            .and_then(|c| c.display_name().map(|s| s.to_string()))
+            .or_else(|| Some(format!("club:{:04x}", club_id)))
+    }
+
     pub fn work_owner(&self, work_be_id: BeId) -> Result<Option<BeId>, ServerError> {
         let ws = self
             .works
@@ -1946,6 +1954,12 @@ impl Server {
             self.otree_crdt.needs_materialization(work_be_id).unwrap_or(false)
         } else {
             self.crdt_manager.needs_materialization(work_be_id).unwrap_or(false)
+        }
+    }
+
+    pub fn set_work_title(&mut self, work_be_id: BeId, title: String) {
+        if let Some(ws) = self.works.get_mut(&work_be_id) {
+            ws.cached_title = title;
         }
     }
 
