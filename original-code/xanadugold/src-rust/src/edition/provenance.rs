@@ -7,11 +7,25 @@ const PROVENANCE_DOMAIN: &[u8] = b"xudanu/v1/provenance";
 const ELEMENT_PROVENANCE_DOMAIN: &[u8] = b"xudanu/v1/element-provenance";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuthorType {
+    Human,
+    Llm,
+}
+
+impl Default for AuthorType {
+    fn default() -> Self {
+        AuthorType::Human
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ElementProvenance {
     pub author_public_key: [u8; 32],
     pub author_display_name: String,
     pub author_club_id: BeId,
     pub timestamp: u64,
+    pub author_type: AuthorType,
+    pub llm_model: Option<String>,
 }
 
 #[cfg(feature = "serde")]
@@ -25,6 +39,8 @@ mod element_serde_impl {
         author_display_name: String,
         author_club_id: u64,
         timestamp: u64,
+        author_type: Option<String>,
+        llm_model: Option<String>,
     }
 
     impl Serialize for ElementProvenance {
@@ -34,6 +50,11 @@ mod element_serde_impl {
                 author_display_name: self.author_display_name.clone(),
                 author_club_id: self.author_club_id,
                 timestamp: self.timestamp,
+                author_type: Some(match self.author_type {
+                    AuthorType::Human => "human".to_string(),
+                    AuthorType::Llm => "llm".to_string(),
+                }),
+                llm_model: self.llm_model.clone(),
             }
             .serialize(s)
         }
@@ -46,11 +67,17 @@ mod element_serde_impl {
                 .author_public_key
                 .try_into()
                 .map_err(|_| serde::de::Error::custom("author_public_key must be 32 bytes"))?;
+            let author_type = match data.author_type.as_deref() {
+                Some("llm") => AuthorType::Llm,
+                _ => AuthorType::Human,
+            };
             Ok(ElementProvenance {
                 author_public_key,
                 author_display_name: data.author_display_name,
                 author_club_id: data.author_club_id,
                 timestamp: data.timestamp,
+                author_type,
+                llm_model: data.llm_model,
             })
         }
     }

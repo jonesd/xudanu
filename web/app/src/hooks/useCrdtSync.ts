@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry } from "../api/crdt_sync";
+import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry, type WorkListEntry } from "../api/crdt_sync";
 
 export interface CrdtSyncState {
   text: string;
   connected: boolean;
   awareness: AwarenessState[];
   setText: (text: string) => void;
+  setTextLocal: (text: string) => void;
   sendCursor: (index: number | null) => void;
   sendSelection: (start: number | null, end: number | null) => void;
   contentMatches: ContentMatch[];
@@ -21,7 +22,16 @@ export interface CrdtSyncState {
   login: (clubName: string, password: string) => Promise<void>;
   createWork: () => Promise<number | null>;
   shareWork: () => Promise<void>;
-  narrateDiff: () => Promise<string>;
+  unshareWork: () => Promise<void>;
+  narrateDiff: () => Promise<{ text: string; model: string; updatedText: string }>;
+  getWritingFeedback: () => Promise<{ text: string; model: string }>;
+  llmEnabled: boolean;
+  fetchWorkList: () => Promise<WorkListEntry[]>;
+  setVisibility: (workId: number, publicClubId: number | null) => Promise<void>;
+  getReadClub: (workId: number) => Promise<number>;
+  getEditClub: (workId: number) => Promise<number>;
+  publicClubId: number;
+  logout: () => void;
 }
 
 export function useCrdtSync(
@@ -39,8 +49,19 @@ export function useCrdtSync(
   const [attributionSpans, setAttributionSpans] = useState<AttributionSpan[]>([]);
   const [attributionLogStatus, setAttributionLogStatus] = useState<AttributionLogStatus | null>(null);
   const [identity, setIdentity] = useState<WhoAmIEntry | null>(null);
+  const [llmEnabled, setLlmEnabled] = useState(false);
+  const [publicClubId, setPublicClubId] = useState(0);
   const credentialsRef = useRef<{ name: string; password: string } | null>(null);
   const reconnectCountRef = useRef(0);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("xudanu_credentials");
+      if (saved) {
+        credentialsRef.current = JSON.parse(saved);
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     if (!wsUrl) return;
@@ -60,11 +81,27 @@ export function useCrdtSync(
     });
     const unsubIdentity = client.onIdentityChange(setIdentity);
 
+    const unsubConn2 = client.onConnectionChange((isConnected) => {
+      if (isConnected) {
+        client.sendRequest("server_stats").then((resp) => {
+          const r = resp as Record<string, unknown>;
+          if (r && "value" in r) {
+            const val = r.value as Record<string, unknown>;
+            setLlmEnabled(val?.llm_enabled === true);
+            if (typeof val?.public_club_id === "number") {
+              setPublicClubId(val.public_club_id);
+            }
+          }
+        }).catch(() => {});
+      }
+    });
+
     client.connect();
 
     return () => {
       unsubText();
       unsubConn();
+      unsubConn2();
       unsubAware();
       unsubMatch();
       unsubIdentity();
@@ -97,6 +134,10 @@ export function useCrdtSync(
 
   const setText = useCallback((newText: string) => {
     clientRef.current?.setText(newText);
+  }, []);
+
+  const setTextLocal = useCallback((newText: string) => {
+    clientRef.current?.setTextLocal(newText);
   }, []);
 
   const sendCursor = useCallback((index: number | null) => {
@@ -148,6 +189,7 @@ export function useCrdtSync(
     if (!client || !client.isConnected()) return;
     await client.createIdentity(displayName, password);
     credentialsRef.current = { name: displayName, password };
+    try { localStorage.setItem("xudanu_credentials", JSON.stringify(credentialsRef.current)); } catch {}
   }, []);
 
   const login = useCallback(async (clubName: string, password: string) => {
@@ -155,6 +197,7 @@ export function useCrdtSync(
     if (!client || !client.isConnected()) return;
     await client.loginByName(clubName, password);
     credentialsRef.current = { name: clubName, password };
+    try { localStorage.setItem("xudanu_credentials", JSON.stringify(credentialsRef.current)); } catch {}
   }, []);
 
   const createWork = useCallback(async (): Promise<number | null> => {
@@ -171,10 +214,10 @@ export function useCrdtSync(
     const client = clientRef.current;
     if (!client || !client.isConnected() || workBeId === null) return;
     try {
-      const statsResp = await client.sendRequest("server_stats");
-      const stats = (statsResp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
-      const publicClubId = stats?.public_club_id as number | undefined;
-      if (publicClubId == null) return;
+      await client.sendRequest("work_set_read_club", {
+        work_id: workBeId,
+        club_id: publicClubId,
+      });
       await client.sendRequest("work_set_edit_club", {
         work_id: workBeId,
         club_id: publicClubId,
@@ -182,24 +225,102 @@ export function useCrdtSync(
     } catch (e) {
       console.error("Failed to share work:", e);
     }
-  }, [workBeId]);
+  }, [workBeId, publicClubId]);
 
-  const narrateDiff = useCallback(async (): Promise<string> => {
+  const unshareWork = useCallback(async (): Promise<void> => {
     const client = clientRef.current;
-    if (!client || !client.isConnected() || workBeId === null) return "";
+    if (!client || !client.isConnected() || workBeId === null || !identity) return;
+    try {
+      await client.sendRequest("work_set_edit_club", {
+        work_id: workBeId,
+        club_id: identity.club_id,
+      });
+    } catch (e) {
+      console.error("Failed to unshare work:", e);
+    }
+  }, [workBeId, identity]);
+
+  const narrateDiff = useCallback(async (): Promise<{ text: string; model: string; updatedText: string }> => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected() || workBeId === null) return { text: "", model: "", updatedText: "" };
     try {
       return await client.diffNarration(workBeId);
     } catch (e) {
       console.error("Failed to narrate diff:", e);
-      return `Error: ${e}`;
+      return { text: `Error: ${e}`, model: "", updatedText: "" };
     }
   }, [workBeId]);
 
+  const getWritingFeedback = useCallback(async (): Promise<{ text: string; model: string }> => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected() || workBeId === null) return { text: "", model: "" };
+    try {
+      return await client.writingFeedback(workBeId);
+    } catch (e) {
+      console.error("Failed to get writing feedback:", e);
+      return { text: `Error: ${e}`, model: "" };
+    }
+  }, [workBeId]);
+
+  const fetchWorkList = useCallback(async (): Promise<WorkListEntry[]> => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected()) return [];
+    try {
+      return await client.fetchWorkList();
+    } catch (e) {
+      console.error("Failed to fetch work list:", e);
+      return [];
+    }
+  }, []);
+
+  const setVisibility = useCallback(async (workId: number, pubClubId: number | null) => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected()) return;
+    try {
+      await client.setReadClub(workId, pubClubId);
+    } catch (e) {
+      console.error("Failed to set visibility:", e);
+    }
+  }, []);
+
+  const getReadClub = useCallback(async (workId: number): Promise<number> => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected()) return 0;
+    try {
+      return await client.getReadClub(workId);
+    } catch (e) {
+      console.error("Failed to get read club:", e);
+      return 0;
+    }
+  }, []);
+
+  const getEditClub = useCallback(async (workId: number): Promise<number> => {
+    const client = clientRef.current;
+    if (!client || !client.isConnected()) return 0;
+    try {
+      return await client.getEditClub(workId);
+    } catch (e) {
+      console.error("Failed to get edit club:", e);
+      return 0;
+    }
+  }, []);
+
+  const logout = useCallback(() => {
+    credentialsRef.current = null;
+    try { localStorage.removeItem("xudanu_credentials"); } catch {}
+    const client = clientRef.current;
+    if (client) {
+      client.disconnect();
+      client.connect();
+    }
+  }, []);
+
   return {
-    text, connected, awareness, setText, sendCursor, sendSelection,
+    text, connected, awareness, setText, setTextLocal, sendCursor, sendSelection,
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
-    identity, createIdentity, login, createWork, shareWork, narrateDiff,
+    identity, createIdentity, login,     createWork, shareWork, unshareWork, narrateDiff,
+    getWritingFeedback, llmEnabled, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
   };
 }

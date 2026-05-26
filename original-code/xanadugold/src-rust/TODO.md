@@ -2,18 +2,10 @@
 
 ## Must-fix before initial GitHub release
 
-### Non-atomic checkpoint writes
+### ~~Non-atomic checkpoint writes~~ ✅ Fixed
 
-**Severity:** Medium  
-**File:** `src/server/server.rs:1538-1543`
-
-`checkpoint_to_file` does `std::fs::write(path, json.as_bytes())` directly. If the
-process crashes or loses power during the write, the checkpoint file could be left
-partially-written, making restoration impossible. This is amplified by auto-checkpoint
-running every 50 operations.
-
-**Fix:** Write to a temp file (e.g. `server.json.tmp`) then `std::fs::rename()` to the
-final path. Rename is atomic on most filesystems (POSIX guarantee on same filesystem).
+`write_versioned_snapshot()` in `src/server/transport/snapshot.rs:337` already writes
+to a `.tmp` file then `std::fs::rename()` — the atomic write pattern.
 
 ### Auto-checkpoint blocks request processing
 
@@ -103,18 +95,16 @@ Xudanu from reimplementing existing tools to building something new.
 
 ## Roadmap: O-tree Merge — Next Steps
 
-### Multi-user relay for O-tree CRDT
+### ~~Multi-user relay for O-tree CRDT~~ ✅ Done (Phase 5)
 
-The O-tree CRDT path correctly handles per-element attribution for a single
-author, but does not yet relay edits between concurrent sessions. When user A
-edits, user B does not see the change (and vice versa). The `apply_text_delta`
-return value includes a `relay_to` list of other subscribed sessions, but
-`dispatch.rs:146` discards it (`(_relay, revision)`).
+Multi-user relay is live. `dispatch()` now pushes `CrdtTextUpdate` events to
+other subscribed sessions. `Share` button sets edit permissions via
+`public_club_id`. Tested with 2 concurrent users.
 
-**Fix:** After applying a text delta, push the new full text (or the ops) to
-each session in the relay list via a `work_revised` event or a new
-`crdt_sync_update`-style push. The client already handles `work_revised`
-events to refresh its text state.
+### ~~LLM integration~~ ✅ Done (Phase 6)
+
+Narration (snapshot-based diff), auto-title on work creation, GitHub Models
+and Ollama backends. See `docs/llm-integration.md`.
 
 Xudanu preserves the valuable Xanadu infrastructure, not the zigzag UI:
 

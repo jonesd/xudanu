@@ -19,18 +19,50 @@ body {
 .workspace-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 24px;
+  gap: 8px;
+  padding: 8px 16px;
   border-bottom: 1px solid #e0e0e0;
   background: #fff;
   overflow: visible;
   position: relative;
   z-index: 10;
+  flex-wrap: wrap;
 }
 
 .workspace-header h1 {
   font-size: 18px;
   font-weight: 600;
+}
+
+.header-spacer {
+  flex: 1;
+}
+
+.work-id-label {
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  color: #666;
+  background: #f0f0f0;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.visibility-public {
+  background: #e8f5e9 !important;
+  color: #2e7d32 !important;
+  border: 1px solid #a5d6a7 !important;
+}
+
+.visibility-private {
+  background: #fff3e0 !important;
+  color: #e65100 !important;
+  border: 1px solid #ffcc80 !important;
+}
+
+.share-active {
+  background: #e3f2fd !important;
+  color: #1565c0 !important;
+  border: 1px solid #90caf9 !important;
 }
 
 .workspace-header button {
@@ -51,6 +83,149 @@ body {
   display: flex;
   flex: 1;
   overflow: hidden;
+}
+
+.document-sidebar {
+  width: 220px;
+  border-right: 1px solid #e0e0e0;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.sidebar-header {
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.sidebar-header span {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.sidebar-header button {
+  background: #4361ee;
+  color: #fff;
+  border: none;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar-header button:hover {
+  opacity: .85;
+}
+
+.sidebar-header button:disabled {
+  opacity: .35;
+  cursor: default;
+}
+
+.sidebar-search {
+  padding: 4px 10px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.sidebar-search-input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  background: #fafafa;
+  outline: none;
+}
+
+.sidebar-search-input:focus {
+  border-color: #4361ee;
+  background: #fff;
+}
+
+.sidebar-header button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.work-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.work-list-empty {
+  padding: 16px 12px;
+  color: #aaa;
+  font-size: 12px;
+}
+
+.work-list-item {
+  padding: 5px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.work-list-item:hover {
+  background: #f5f5ff;
+}
+
+.work-list-item.active {
+  background: #eef0ff;
+  border-left: 3px solid #4361ee;
+}
+
+.work-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.work-list-item .work-list-id {
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  color: #4361ee;
+}
+
+.work-list-item .work-list-title {
+  font-size: 12px;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.work-list-item .work-list-rev {
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  color: #aaa;
+  margin-left: auto;
+}
+
+.work-list-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 0 4px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.badge-public {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.badge-private {
+  background: #fff3e0;
+  color: #e65100;
 }
 
 .branch-panel {
@@ -102,8 +277,79 @@ body {
 
 .document-area {
   flex: 1;
-  padding: 24px 32px;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-container {
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.attribution-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.editor-content {
+  position: relative;
+  z-index: 2;
+  padding: 16px 20px;
+  min-height: 300px;
+  font-size: 15px;
+  line-height: 1.7;
+  outline: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.editor-content:empty::before {
+  content: "Start typing...";
+  color: #aaa;
+}
+
+.editor-readonly:empty::before {
+  content: "Create an identity or log in to edit";
+  color: #aaa;
+  font-style: italic;
+}
+
+.editor-readonly {
+  background: #fafafa;
+  cursor: not-allowed;
+}
+
+.attribution-mode-label {
+  font-size: 11px;
+  color: #9b59b6;
+  margin-left: 8px;
+  font-weight: 500;
+}
+
+.attribution-legend {
+  display: inline-flex;
+  gap: 12px;
+  margin-left: 12px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #666;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
 }
 
 .document {
@@ -531,28 +777,54 @@ body {
   color: #2e7d32;
 }
 
+.identity-logout {
+  background: none !important;
+  border: 1px solid #ddd !important;
+  color: #888 !important;
+  padding: 2px 8px !important;
+  border-radius: 4px !important;
+  font-size: 11px !important;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+.identity-logout:hover {
+  color: #c33 !important;
+  border-color: #c33 !important;
+}
+
 .identity-actions {
   gap: 4px;
+  margin-left: auto;
 }
 
 .identity-btn {
-  padding: 4px 10px !important;
-  background: #f5f5f5 !important;
-  color: #555 !important;
-  border: 1px solid #ddd !important;
+  padding: 6px 14px !important;
+  background: #fff !important;
+  color: #4361ee !important;
+  border: 2px solid #4361ee !important;
   border-radius: 6px !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
   cursor: pointer;
 }
 
 .identity-btn:hover {
-  background: #eee !important;
+  background: #eef !important;
+}
+
+.identity-btn:disabled {
+  opacity: 0.4 !important;
+  cursor: default;
 }
 
 .identity-btn-secondary {
-  background: #fff !important;
-  color: #4361ee !important;
-  border-color: #4361ee !important;
+  background: #4361ee !important;
+  color: #fff !important;
+}
+
+.identity-btn-secondary:hover {
+  background: #3a56d4 !important;
 }
 
 .identity-form-container {
@@ -856,4 +1128,32 @@ body {
   font-size: 13px;
   text-align: center;
   padding: 16px 0;
+}
+
+.narration-panel {
+  background: #f8f8ff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-top: 12px;
+}
+
+.narration-panel h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 8px;
+}
+
+.narration-panel p {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #333;
+}
+
+.llm-provenance {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #7c4dff;
+  font-style: italic;
 }

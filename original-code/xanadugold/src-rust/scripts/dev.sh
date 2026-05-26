@@ -19,6 +19,19 @@ DATA_DIR="${2:-./data}"
 ADDR="127.0.0.1:${PORT}"
 WEB_DIR="../../../web/app"
 
+STATIC_DIR=""
+for candidate in ../../../web/app/dist ../web/app/dist ../../web/app/dist ./web/app/dist; do
+    if [ -d "$candidate" ]; then
+        STATIC_DIR="$candidate"
+        break
+    fi
+done
+
+STATIC_FLAGS=""
+if [ -n "$STATIC_DIR" ]; then
+    STATIC_FLAGS="--static-dir $STATIC_DIR"
+fi
+
 cleanup() {
     echo ""
     echo "Stopping..."
@@ -63,7 +76,7 @@ fi
 
 echo "Starting Rust server with auto-rebuild (cargo-watch)..."
 echo "  Watching src/ for changes..."
-cargo watch -x "run --features server --bin xudanu-server -- run $ADDR $DATA_DIR --allowed-origin http://localhost:5173 --allowed-origin http://localhost:8080 --allowed-origin http://127.0.0.1:8080" &
+cargo watch -x "run --features server --bin xudanu-server -- run $ADDR $DATA_DIR --otree-crdt $STATIC_FLAGS --allowed-origin http://localhost:5173 --allowed-origin http://localhost:8080 --allowed-origin http://127.0.0.1:8080" &
 WATCH_PID=$!
 
 sleep 3
@@ -76,6 +89,7 @@ echo ""
 echo "  Rust server:  http://${ADDR}  (auto-rebuild on src/ changes)"
 echo "  Vite (web):   http://localhost:5173  (hot reload)"
 echo "  WebSocket:    ws://${ADDR}/xudanu"
+echo "  O-tree CRDT:  enabled"
 echo ""
 echo "  Press Ctrl+C to stop both."
 echo ""

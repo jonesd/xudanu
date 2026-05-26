@@ -150,6 +150,7 @@ pub enum OperationCode {
 
     WorkReviseDelta,
     WorkDiffNarration,
+    WorkWritingFeedback,
 
     LinkCreate,
     LinkGet,
@@ -316,6 +317,7 @@ impl OperationCode {
             0x0315 => Some(OperationCode::WorkListByOwner),
             0x0316 => Some(OperationCode::WorkReviseDelta),
             0x031C => Some(OperationCode::WorkDiffNarration),
+            0x031D => Some(OperationCode::WorkWritingFeedback),
 
             0x0208 => Some(OperationCode::ClubSetDefaultReadClub),
             0x0209 => Some(OperationCode::ClubSetDefaultEditClub),
@@ -532,6 +534,7 @@ impl OperationCode {
             OperationCode::WorkListByOwner => 0x0315,
             OperationCode::WorkReviseDelta => 0x0316,
             OperationCode::WorkDiffNarration => 0x031C,
+            OperationCode::WorkWritingFeedback => 0x031D,
 
             OperationCode::LinkCreate => 0x0701,
             OperationCode::LinkGet => 0x0702,
@@ -896,6 +899,10 @@ pub enum WireRequest {
     },
 
     WorkDiffNarration {
+        work_id: BeId,
+    },
+
+    WorkWritingFeedback {
         work_id: BeId,
     },
 
@@ -1583,6 +1590,12 @@ pub enum ResponseValue {
 
     NarrationResult {
         narration: String,
+        llm_model: String,
+        updated_text: String,
+    },
+    WritingFeedbackResult {
+        feedback: String,
+        llm_model: String,
     },
 }
 
@@ -1596,6 +1609,8 @@ pub struct AttributionSpanPayload {
     pub signature_valid: bool,
     pub timestamp: u64,
     pub server_id: Vec<u8>,
+    pub author_type: Option<String>,
+    pub llm_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1881,6 +1896,8 @@ pub struct ServerInfoPayload {
     pub edition_count: usize,
     pub is_accepting_connections: bool,
     pub public_club_id: BeId,
+    pub llm_enabled: bool,
+    pub llm_usage: crate::server::ollama::LlmUsageSummary,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

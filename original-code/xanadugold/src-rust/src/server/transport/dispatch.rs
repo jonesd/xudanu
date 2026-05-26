@@ -18,6 +18,10 @@ pub fn dispatch(
         return dispatch_narration(state, session_id, request);
     }
 
+    if matches!(request, WireRequest::WorkWritingFeedback { .. }) {
+        return dispatch_writing_feedback(state, session_id, request);
+    }
+
     let result = state.server.with_server(|srv| {
         srv.bump_operation();
         dispatch_inner(srv, session_id, request, state)
@@ -74,25 +78,109 @@ fn dispatch_narration(
         &new_text[..new_text.len().min(100)],
     );
 
-    let llm = crate::server::ollama::LlmClient::default_client();
+    let llm = match crate::server::ollama::get_client() {
+        Some(c) => c,
+        None => return Ok(ResponseValue::NarrationResult {
+            narration: "(LLM features are disabled. Set OPENROUTER_API_KEY, GITHUB_TOKEN, or OLLAMA_BASE_URL to enable.)".to_string(),
+            llm_model: String::new(),
+            updated_text: String::new(),
+        }),
+    };
     let prompt = crate::server::ollama::build_narration_prompt(
         &base_text, &new_text, last_author.as_deref(),
     );
 
     let narration = match tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(llm.generate(&prompt))
+        tokio::runtime::Handle::current().block_on(
+            llm.generate_tracked(crate::server::ollama::LlmFeature::Narration, &prompt)
+        )
     }) {
         Ok(text) => text,
         Err(e) => format!("(LLM unavailable: {})", e),
     };
 
+    let llm_model = format!("{}/{}", llm.backend_label(), llm.model_name());
+
+    let insert_text = format!("\n\n---\n**Change Summary**\n{}\n— via {}", narration, llm_model);
+
     state.server.with_server(|srv| {
         if srv.crdt_is_active(work_id) && srv.use_otree_crdt {
             let _ = srv.otree_crdt.set_narration_snapshot(work_id);
+            let triggerer_club = srv.otree_crdt
+                .get_author(work_id, session_id)
+                .ok()
+                .flatten()
+                .map(|a| a.club_be_id)
+                .unwrap_or(0);
+            let _ = srv.otree_crdt.append_llm_text(
+                work_id,
+                &insert_text,
+                &llm_model,
+                triggerer_club,
+            );
         }
     });
 
-    Ok(ResponseValue::NarrationResult { narration })
+    let updated_text = state.server.with_server(|srv| {
+        if srv.crdt_is_active(work_id) {
+            srv.crdt_current_text(work_id).unwrap_or_default()
+        } else {
+            String::new()
+        }
+    });
+
+    Ok(ResponseValue::NarrationResult { narration, llm_model, updated_text })
+}
+
+fn dispatch_writing_feedback(
+    state: &SharedState,
+    session_id: crate::server::SessionId,
+    request: WireRequest,
+) -> Result<ResponseValue, crate::server::ServerError> {
+    let work_id = match &request {
+        WireRequest::WorkWritingFeedback { work_id } => *work_id,
+        _ => unreachable!(),
+    };
+
+    let text = state.server.with_server(|srv| {
+        srv.bump_operation();
+        srv.ensure_can_read(session_id, work_id)?;
+        let text = if srv.crdt_is_active(work_id) {
+            srv.crdt_current_text(work_id).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        Ok::<_, crate::server::ServerError>(text)
+    })?;
+
+    if text.is_empty() {
+        return Ok(ResponseValue::WritingFeedbackResult {
+            feedback: "(No content to review.)".to_string(),
+            llm_model: String::new(),
+        });
+    }
+
+    let llm = match crate::server::ollama::get_client() {
+        Some(c) => c,
+        None => return Ok(ResponseValue::WritingFeedbackResult {
+            feedback: "(LLM features are disabled. Set OPENROUTER_API_KEY, GITHUB_TOKEN, or OLLAMA_BASE_URL to enable.)".to_string(),
+            llm_model: String::new(),
+        }),
+    };
+    let prompt = crate::server::ollama::build_writing_feedback_prompt(&text);
+
+    let feedback = match tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(
+            llm.generate_tracked(crate::server::ollama::LlmFeature::WritingFeedback, &prompt)
+        )
+    }) {
+        Ok(text) => text,
+        Err(e) => format!("(LLM unavailable: {})", e),
+    };
+
+    let llm_model = format!("{}/{}", llm.backend_label(), llm.model_name());
+
+    Ok(ResponseValue::WritingFeedbackResult { feedback, llm_model })
 }
 
 fn dispatch_inner(
@@ -531,6 +619,8 @@ fn dispatch_inner(
                     edition_count: srv.edition_count(),
                     is_accepting_connections: srv.admin_is_accepting_connections(),
                     public_club_id: srv.public_club_id(),
+                    llm_enabled: crate::server::ollama::llm_enabled(),
+                    llm_usage: crate::server::ollama::usage_tracker().summary(),
                 },
             ))
         }
@@ -546,6 +636,8 @@ fn dispatch_inner(
                     edition_count: srv.edition_count(),
                     is_accepting_connections: srv.admin_is_accepting_connections(),
                     public_club_id: srv.public_club_id(),
+                    llm_enabled: crate::server::ollama::llm_enabled(),
+                    llm_usage: crate::server::ollama::usage_tracker().summary(),
                 },
             ))
         }
@@ -1781,6 +1873,7 @@ fn dispatch_inner(
 
         WireRequest::AttributionLogStatus => Ok(srv.attribution_log_status()),
         WireRequest::WorkDiffNarration { .. } => unreachable!("handled in dispatch_narration"),
+        WireRequest::WorkWritingFeedback { .. } => unreachable!("handled in dispatch_writing_feedback"),
     }
 }
 
@@ -1793,6 +1886,11 @@ fn edition_to_text(edition: &Edition) -> String {
 }
 
 fn spawn_auto_title(state: &SharedState, work_id: u64) {
+    let llm = match crate::server::ollama::get_client() {
+        Some(c) => c,
+        None => return,
+    };
+
     let text = state.server.with_server(|srv| {
         srv.crdt_current_text(work_id).unwrap_or_default()
     });
@@ -1802,13 +1900,12 @@ fn spawn_auto_title(state: &SharedState, work_id: u64) {
     }
 
     let state = state.clone();
+    let prompt = crate::server::ollama::build_title_prompt(&text);
+
+    tracing::info!(work_id, "auto-title: requesting from LLM");
+
     tokio::spawn(async move {
-        let llm = crate::server::ollama::LlmClient::default_client();
-        let prompt = crate::server::ollama::build_title_prompt(&text);
-
-        tracing::info!(work_id, "auto-title: requesting from LLM");
-
-        match llm.generate(&prompt).await {
+        match llm.generate_tracked(crate::server::ollama::LlmFeature::AutoTitle, &prompt).await {
             Ok(title) => {
                 let title = title.trim().trim_matches('"').to_string();
                 tracing::info!(work_id, %title, "auto-title: generated");

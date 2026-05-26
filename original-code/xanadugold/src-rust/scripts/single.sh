@@ -13,6 +13,14 @@ cd "$(dirname "$0")/.."
 ADDR="127.0.0.1:${1:-8080}"
 DATA_DIR="${2:-}"
 
+STATIC_DIR=""
+for candidate in ../../../web/app/dist ../web/app/dist ../../web/app/dist ./web/app/dist; do
+    if [ -d "$candidate" ]; then
+        STATIC_DIR="$candidate"
+        break
+    fi
+done
+
 echo "Building xudanu-server..."
 cargo build --features server --bin xudanu-server 2>/dev/null
 
@@ -28,16 +36,21 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+STATIC_FLAGS=()
+if [ -n "$STATIC_DIR" ]; then
+    STATIC_FLAGS=(--static-dir "$STATIC_DIR")
+fi
+
 if [ -n "$DATA_DIR" ]; then
     if [ ! -d "$DATA_DIR" ]; then
         echo "Initializing data directory: $DATA_DIR"
         cargo run --features server --bin xudanu-server -- init "$DATA_DIR"
     fi
     echo "Starting xudanu server on $ADDR (data: $DATA_DIR)"
-    cargo run --features server --bin xudanu-server -- run "$ADDR" "$DATA_DIR" &
+    cargo run --features server --bin xudanu-server -- run "$ADDR" "$DATA_DIR" --otree-crdt "${STATIC_FLAGS[@]}" &
 else
     echo "Starting xudanu server on $ADDR (in-memory)"
-    cargo run --features server --bin xudanu-server -- run "$ADDR" &
+    cargo run --features server --bin xudanu-server -- run "$ADDR" --otree-crdt "${STATIC_FLAGS[@]}" &
 fi
 PIDS+=($!)
 
@@ -46,6 +59,10 @@ echo "  Client WebSocket: ws://$ADDR/xudanu"
 echo "  Federation:       ws://$ADDR/federation (disabled)"
 echo "  Health:           http://$ADDR/health"
 echo "  Web UI:           http://$ADDR"
+echo "  O-tree CRDT:      enabled"
+if [ -n "$STATIC_DIR" ]; then
+    echo "  Static dir:       $STATIC_DIR"
+fi
 echo ""
 
 wait

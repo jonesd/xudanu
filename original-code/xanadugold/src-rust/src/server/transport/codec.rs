@@ -963,6 +963,17 @@ impl JsonCodec {
                     work_id: args.work_id,
                 })
             }
+            OperationCode::WorkWritingFeedback => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkWritingFeedback {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::WorkUnpublish => {
                 #[derive(Deserialize)]
                 struct Args {

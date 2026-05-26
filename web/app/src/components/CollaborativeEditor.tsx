@@ -11,11 +11,6 @@ interface AuthorStyle {
   name: string;
 }
 
-interface TextSegment {
-  text: string;
-  style: AuthorStyle | null;
-}
-
 interface CollaborativeEditorProps {
   text: string;
   onTextChange: (text: string) => void;
@@ -36,6 +31,7 @@ export function CollaborativeEditor({
   editable,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
   const isComposing = useRef(false);
   const lastText = useRef(text);
 
@@ -54,110 +50,36 @@ export function CollaborativeEditor({
     return map;
   }, [attributionSpans]);
 
-  const segments = useMemo(() => {
-    if (attributionSpans.length === 0 || text.length === 0) {
-      return [{ text, style: null as AuthorStyle | null }];
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const currentText = getTextContent(el);
+    if (currentText !== text) {
+      el.textContent = text;
     }
+    lastText.current = text;
+  }, [text]);
 
-    const result: TextSegment[] = [];
-    let pos = 0;
-
-    const sorted = [...attributionSpans].sort((a, b) => a.start - b.start);
-
-    for (const span of sorted) {
-      if (span.start >= text.length) break;
-      if (span.end <= pos) continue;
-
-      if (span.start > pos) {
-        result.push({ text: text.slice(pos, span.start), style: null });
-      }
-
-      const segStart = Math.max(span.start, pos);
-      const segEnd = Math.min(span.end, text.length);
-      const key = bytesToHex(span.author_public_key);
-      const style = authorColorMap.get(key) || null;
-
-      result.push({ text: text.slice(segStart, segEnd), style });
-      pos = segEnd;
-    }
-
-    if (pos < text.length) {
-      result.push({ text: text.slice(pos), style: null });
-    }
-
-    return result;
+  useEffect(() => {
+    drawOverlay(editorRef.current, overlayRef.current, attributionSpans, authorColorMap);
   }, [text, attributionSpans, authorColorMap]);
 
   useEffect(() => {
     const el = editorRef.current;
-    if (!el) return;
-
-    const currentText = getEditorText(el);
-    const textChanged = currentText !== text;
-
-    if (textChanged) {
-      const sel = window.getSelection();
-      const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
-      let offset = 0;
-
-      if (range) {
-        const pre = document.createRange();
-        pre.selectNodeContents(el);
-        pre.setEnd(range.startContainer, range.startOffset);
-        offset = pre.toString().length;
-      }
-
-      renderSegments(el, segments);
-
-      if (range && el.firstChild) {
-        try {
-          const newRange = document.createRange();
-          const pos = findPosition(el, offset);
-          newRange.setStart(pos.node, pos.offset);
-          newRange.collapse(true);
-          const selection = window.getSelection();
-          selection?.removeAllRanges();
-          selection?.addRange(newRange);
-        } catch {
-          // cursor restoration failed, leave at end
-        }
-      }
-    } else if (attributionSpans.length > 0) {
-      const sel = window.getSelection();
-      const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
-      let offset = 0;
-
-      if (range && el.contains(range.startContainer)) {
-        const pre = document.createRange();
-        pre.selectNodeContents(el);
-        pre.setEnd(range.startContainer, range.startOffset);
-        offset = pre.toString().length;
-      }
-
-      renderSegments(el, segments);
-
-      if (range && el.firstChild && el.contains(range.startContainer)) {
-        try {
-          const newRange = document.createRange();
-          const pos = findPosition(el, offset);
-          newRange.setStart(pos.node, pos.offset);
-          newRange.collapse(true);
-          const selection = window.getSelection();
-          selection?.removeAllRanges();
-          selection?.addRange(newRange);
-        } catch {
-          // cursor restoration failed
-        }
-      }
-    }
-    lastText.current = text;
-  }, [text, segments]);
+    const canvas = overlayRef.current;
+    if (!el || !canvas) return;
+    const ro = new ResizeObserver(() => {
+      drawOverlay(el, canvas, attributionSpans, authorColorMap);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [attributionSpans, authorColorMap]);
 
   const handleInput = useCallback(() => {
     if (isComposing.current || !editable) return;
     const el = editorRef.current;
     if (!el) return;
-    const newText = getEditorText(el);
+    const newText = getTextContent(el);
     if (newText !== lastText.current) {
       lastText.current = newText;
       onTextChange(newText);
@@ -248,21 +170,27 @@ export function CollaborativeEditor({
 
   return (
     <div className="collaborative-editor">
-      <div
-        ref={editorRef}
-        className={`editor-content${!editable ? " editor-readonly" : ""}`}
-        contentEditable={editable}
-        suppressContentEditableWarning
-        onInput={handleInput}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        onCompositionStart={() => { isComposing.current = true; }}
-        onCompositionEnd={() => {
-          isComposing.current = false;
-          handleInput();
-        }}
-        spellCheck
-      />
+      <div className="editor-container">
+        <canvas
+          ref={overlayRef}
+          className="attribution-overlay"
+        />
+        <div
+          ref={editorRef}
+          className={`editor-content${!editable ? " editor-readonly" : ""}`}
+          contentEditable={editable}
+          suppressContentEditableWarning
+          onInput={handleInput}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onCompositionStart={() => { isComposing.current = true; }}
+          onCompositionEnd={() => {
+            isComposing.current = false;
+            handleInput();
+          }}
+          spellCheck
+        />
+      </div>
       <div className="editor-status">
         <span className={`sync-indicator ${connected ? "sync-connected" : "sync-disconnected"}`}>
           {connected ? "Synced" : "Offline"}
@@ -272,31 +200,25 @@ export function CollaborativeEditor({
             Attribution view
           </span>
         )}
+        {attributionSpans.length > 0 && (
+          <div className="attribution-legend">
+            {Array.from(authorColorMap.entries()).map(([key, style]) => (
+              <span key={key} className="legend-item">
+                <span
+                  className="legend-swatch"
+                  style={{ backgroundColor: style.color + "60", borderBottom: `2px solid ${style.color}` }}
+                />
+                <span className="legend-name">{style.name}</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function renderSegments(el: HTMLElement, segments: TextSegment[]) {
-  const frag = document.createDocumentFragment();
-  for (const seg of segments) {
-    if (seg.style) {
-      const span = document.createElement("span");
-      span.className = "author-highlight";
-      span.style.backgroundColor = seg.style.color + "30";
-      span.style.borderBottom = `2px solid ${seg.style.color}50`;
-      span.textContent = seg.text;
-      span.title = seg.style.name;
-      frag.appendChild(span);
-    } else {
-      frag.appendChild(document.createTextNode(seg.text));
-    }
-  }
-  el.innerHTML = "";
-  el.appendChild(frag);
-}
-
-function getEditorText(el: HTMLElement): string {
+function getTextContent(el: HTMLElement): string {
   let result = "";
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
   let node: Node | null;
@@ -317,20 +239,69 @@ function getEditorText(el: HTMLElement): string {
   return result;
 }
 
-function findPosition(
-  el: Node,
-  targetOffset: number,
-): { node: Node; offset: number } {
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+function drawOverlay(
+  editor: HTMLElement | null,
+  canvas: HTMLCanvasElement | null,
+  spans: AttributionSpan[],
+  colorMap: Map<string, AuthorStyle>,
+) {
+  if (!editor || !canvas || spans.length === 0) return;
+
+  const rect = editor.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  canvas.style.width = rect.width + "px";
+  canvas.style.height = rect.height + "px";
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  const scrollTop = editor.scrollTop;
+
+  for (const span of spans) {
+    const key = bytesToHex(span.author_public_key);
+    const style = colorMap.get(key);
+    if (!style) continue;
+
+    for (let i = span.start; i < span.end && i < (editor.textContent?.length ?? 0); i++) {
+      const range = document.createRange();
+      const textNode = findTextNodeAt(editor, i);
+      if (!textNode) continue;
+      try {
+        range.setStart(textNode.node, textNode.offset);
+        range.setEnd(textNode.node, textNode.offset + 1);
+      } catch {
+        continue;
+      }
+
+      const rangeRects = range.getClientRects();
+      for (const r of rangeRects) {
+        const x = r.left - rect.left;
+        const y = r.top - rect.top + scrollTop;
+        ctx.fillStyle = style.color + "25";
+        ctx.fillRect(x, y, r.width, r.height);
+        ctx.fillStyle = style.color + "60";
+        ctx.fillRect(x, y + r.height - 2, r.width, 2);
+      }
+    }
+  }
+}
+
+function findTextNodeAt(root: Node, targetOffset: number): { node: Text; offset: number } | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
   let current = 0;
   let node: Node | null;
   while ((node = walker.nextNode())) {
     const len = node.textContent?.length ?? 0;
-    if (current + len >= targetOffset) {
-      return { node, offset: targetOffset - current };
+    if (current + len > targetOffset) {
+      return { node: node as Text, offset: targetOffset - current };
     }
     current += len;
   }
-  const last = el.lastChild || el;
-  return { node: last, offset: last.textContent?.length ?? 0 };
+  return null;
 }

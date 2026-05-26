@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useCrdtSync } from "../hooks/useCrdtSync";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
 import { AwarenessIndicators } from "../components/AwarenessIndicators";
 import { DebugPanel } from "../components/DebugPanel";
 import { AttributionPanel } from "../components/AttributionPanel";
 import { IdentityPanel } from "../components/IdentityPanel";
+import type { WorkListEntry } from "../api/crdt_sync";
 
 const WS_URL = `ws://${window.location.host}/xudanu`;
 
@@ -15,6 +16,14 @@ export function WorkspacePage() {
   const [error, setError] = useState<string | null>(null);
   const [narration, setNarration] = useState<string | null>(null);
   const [narrating, setNarrating] = useState(false);
+  const [narrationModel, setNarrationModel] = useState<string>("");
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [feedbackModel, setFeedbackModel] = useState<string>("");
+  const [works, setWorks] = useState<WorkListEntry[]>([]);
+  const [isPublic, setIsPublic] = useState(false);
+  const [isShared, setIsShared] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -23,7 +32,6 @@ export function WorkspacePage() {
       setWorkBeId(parseInt(wid, 10));
     }
   }, []);
-
 
   const {
     text,
@@ -44,8 +52,33 @@ export function WorkspacePage() {
     login,
     createWork,
     shareWork,
+    unshareWork,
     narrateDiff,
+    getWritingFeedback,
+    llmEnabled,
+    setTextLocal,
+    fetchWorkList,
+    setVisibility,
+    getReadClub,
+    getEditClub,
+    publicClubId,
+    logout,
   } = useCrdtSync(WS_URL, workBeId);
+
+  const loadWorks = useCallback(async () => {
+    const list = await fetchWorkList();
+    setWorks([...list].sort((a, b) => a.work_id - b.work_id));
+  }, [fetchWorkList]);
+
+  useEffect(() => {
+    if (connected) loadWorks();
+  }, [connected, loadWorks]);
+
+  useEffect(() => {
+    if (!connected) return;
+    const interval = setInterval(loadWorks, 5000);
+    return () => clearInterval(interval);
+  }, [connected, loadWorks]);
 
   const handleCreate = useCallback(async () => {
     setError(null);
@@ -59,10 +92,31 @@ export function WorkspacePage() {
       const url = new URL(window.location.href);
       url.searchParams.set("work", String(newId));
       window.history.replaceState({}, "", url.toString());
+      loadWorks();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [createWork]);
+  }, [createWork, loadWorks]);
+
+  const selectWork = useCallback((id: number) => {
+    setWorkBeId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("work", String(id));
+    window.history.replaceState({}, "", url.toString());
+    setNarration(null);
+    setFeedback(null);
+  }, []);
+
+  useEffect(() => {
+    if (connected && workBeId !== null && publicClubId > 0) {
+      getReadClub(workBeId).then((clubId) => {
+        setIsPublic(clubId === publicClubId);
+      });
+      getEditClub(workBeId).then((clubId) => {
+        setIsShared(clubId === publicClubId);
+      });
+    }
+  }, [connected, workBeId, publicClubId, getReadClub, getEditClub]);
 
   useEffect(() => {
     if (workBeId !== null && connected && text === "") {
@@ -94,98 +148,197 @@ export function WorkspacePage() {
     }
   }, [connected, workBeId, awareness.length, refreshAwareness]);
 
-  const workIdDisplay = useMemo(() => {
-    if (workBeId === null) return null;
-    return workBeId.toString(16).padStart(4, "0");
-  }, [workBeId]);
+  const workIdDisplay = workBeId !== null
+    ? workBeId.toString(16).padStart(4, "0")
+    : null;
 
   return (
     <div className="workspace-page">
       <header className="workspace-header">
-        <h1>
-          {workIdDisplay ? `Work ${workIdDisplay}` : "xudanu"}
-        </h1>
-        <div className="header-actions">
-          <span className={`sync-status ${connected ? "sync-connected" : "sync-disconnected"}`}>
-            {connected ? "Live" : "Offline"}
-          </span>
-          <IdentityPanel
-            identity={identity}
-            connected={connected}
-            onCreateIdentity={createIdentity}
-            onLogin={login}
-           />
-          {workBeId !== null && (
-            <>
-              <button onClick={shareWork} type="button" disabled={!connected}>
-                Share
-              </button>
-              <button
-                onClick={toggleWatch}
-                type="button"
-                className={watchEnabled ? "watch-toggle-active" : ""}
-                disabled={!connected}
-              >
-                {watchEnabled ? "Watching" : "Watch"}
-              </button>
-              <button
-                onClick={() => setShowDebug((d) => !d)}
-                type="button"
-                className={showDebug ? "debug-toggle-active" : ""}
-              >
-                Debug
-              </button>
-              <button
-                onClick={() => {
-                  setShowAttribution((a) => {
-                    const next = !a;
-                    if (next) refreshAttribution();
-                    return next;
-                  });
-                }}
-                type="button"
-                className={showAttribution ? "attribution-toggle-active" : ""}
-                disabled={!connected}
-              >
-                Attribution
-              </button>
-              <button
-                onClick={async () => {
-                  setNarrating(true);
-                  setNarration(null);
-                  const text = await narrateDiff();
-                  setNarration(text);
-                  setNarrating(false);
-                }}
-                type="button"
-                disabled={!connected || narrating}
-              >
-                {narrating ? "Thinking..." : "Narrate"}
-              </button>
-            </>
-          )}
-          {workBeId === null && (
-            <>
-              <button
-                onClick={() => setShowDebug((d) => !d)}
-                type="button"
-                className={showDebug ? "debug-toggle-active" : ""}
-              >
-                Debug
-              </button>
-            </>
-          )}
-          {workBeId === null && identity && (
-            <button onClick={handleCreate} type="button">
-              New Document
+        <h1>xudanu</h1>
+        <span className={`sync-status ${connected ? "sync-connected" : "sync-disconnected"}`}>
+          {connected ? "Live" : "Offline"}
+        </span>
+        <div className="header-spacer" />
+        {workIdDisplay && (
+          <span className="work-id-label">Work {workIdDisplay}</span>
+        )}
+        {workBeId !== null && (
+          <>
+            <button
+              onClick={async () => {
+                if (isShared) {
+                  await unshareWork();
+                  setIsShared(false);
+                } else {
+                  await shareWork();
+                  setIsPublic(true);
+                  setIsShared(true);
+                }
+              }}
+              type="button"
+              className={isShared ? "share-active" : ""}
+              disabled={!connected || !identity}
+              title={isShared ? "Anyone can edit. Click to restrict to owner." : "Click to let anyone read and edit."}
+            >
+              {isShared ? "Shared" : "Share"}
             </button>
-          )}
-        </div>
+            <button
+              onClick={async () => {
+                if (workBeId === null) return;
+                const nextPublic = !isPublic;
+                const targetClub = nextPublic ? publicClubId : identity?.club_id ?? null;
+                console.log("[visibility] toggle:", { isPublic, nextPublic, targetClub, publicClubId, identityClub: identity?.club_id });
+                if (!targetClub && !nextPublic) return;
+                await setVisibility(workBeId, targetClub);
+                setIsPublic(nextPublic);
+                loadWorks();
+              }}
+              type="button"
+              className={isPublic ? "visibility-public" : "visibility-private"}
+              disabled={!connected || !identity}
+              title={isPublic ? "Public — anyone can read. Click to make private." : "Private — only you can read. Click to make public."}
+            >
+              {isPublic ? "Public" : "Private"}
+            </button>
+            <button
+              onClick={toggleWatch}
+              type="button"
+              className={watchEnabled ? "watch-toggle-active" : ""}
+              disabled={!connected}
+            >
+              {watchEnabled ? "Watching" : "Watch"}
+            </button>
+            <button
+              onClick={() => setShowDebug((d) => !d)}
+              type="button"
+              className={showDebug ? "debug-toggle-active" : ""}
+            >
+              Debug
+            </button>
+            <button
+              onClick={() => {
+                setShowAttribution((a) => {
+                  const next = !a;
+                  if (next) refreshAttribution();
+                  return next;
+                });
+              }}
+              type="button"
+              className={showAttribution ? "attribution-toggle-active" : ""}
+              disabled={!connected}
+            >
+              Attribution
+            </button>
+            {llmEnabled && (
+              <>
+                <button
+                  onClick={async () => {
+                    setNarrating(true);
+                    setNarration(null);
+                    setNarrationModel("");
+                    const result = await narrateDiff();
+                    setNarration(result.text);
+                    setNarrationModel(result.model);
+                    if (result.updatedText) {
+                      setTextLocal(result.updatedText);
+                      setTimeout(() => refreshAttribution(), 300);
+                    }
+                    setNarrating(false);
+                  }}
+                  type="button"
+                  disabled={!connected || narrating}
+                >
+                  {narrating ? "Thinking..." : "Narrate"}
+                </button>
+                <button
+                  onClick={async () => {
+                    setLoadingFeedback(true);
+                    setFeedback(null);
+                    setFeedbackModel("");
+                    const result = await getWritingFeedback();
+                    setFeedback(result.text);
+                    setFeedbackModel(result.model);
+                    setLoadingFeedback(false);
+                  }}
+                  type="button"
+                  disabled={!connected || loadingFeedback}
+                >
+                  {loadingFeedback ? "Reviewing..." : "Feedback"}
+                </button>
+              </>
+            )}
+          </>
+        )}
+        <IdentityPanel
+          identity={identity}
+          connected={connected}
+          onCreateIdentity={createIdentity}
+          onLogin={login}
+          onLogout={logout}
+        />
       </header>
 
       {error && <div className="error">{error}</div>}
 
       <div className="workspace-body">
+        <aside className="document-sidebar">
+          <div className="sidebar-header">
+            <span>Documents</span>
+            <button onClick={handleCreate} type="button" disabled={!connected || !identity}>
+              + New
+            </button>
+          </div>
+          <div className="sidebar-search">
+            <input
+              type="text"
+              placeholder="Filter..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="sidebar-search-input"
+            />
+          </div>
+          <div className="work-list">
+            {(() => {
+              const q = searchQuery.toLowerCase();
+              const filtered = q
+                ? works.filter((w) =>
+                    (w.title || "").toLowerCase().includes(q) ||
+                    w.work_id.toString(16).includes(q)
+                  )
+                : works;
+              return filtered.length === 0 ? (
+                <div className="work-list-empty">{q ? "No matches" : "No documents yet"}</div>
+              ) : (
+                filtered.map((w) => (
+                  <div
+                    key={w.work_id}
+                    className={`work-list-item ${w.work_id === workBeId ? "active" : ""}`}
+                    onClick={() => selectWork(w.work_id)}
+                  >
+                    <div className="work-list-meta">
+                      <span className="work-list-id">
+                        {w.work_id.toString(16).padStart(4, "0")}
+                      </span>
+                      <span className={`work-list-badge ${w.read_club === publicClubId ? "badge-public" : "badge-private"}`}>
+                        {w.read_club === publicClubId ? "pub" : "priv"}
+                      </span>
+                      <span className="work-list-rev">r{w.revision_count}</span>
+                    </div>
+                    <span className="work-list-title">
+                      {w.title
+                        ? w.title.length > 30
+                          ? w.title.slice(0, 30) + "..."
+                          : w.title
+                        : "Untitled"}
+                    </span>
+                  </div>
+                ))
+              );
+            })()}
+          </div>
+        </aside>
+
         <main className="document-area">
           {workBeId !== null ? (
             <>
@@ -215,22 +368,25 @@ export function WorkspacePage() {
                   </ul>
                 </div>
               )}
-              {narration && (
+              {narration && !narrationModel && (
                 <div className="narration-panel">
-                  <h3>Change Summary</h3>
                   <p>{narration}</p>
+                </div>
+              )}
+              {feedback && (
+                <div className="narration-panel">
+                  <h3>Writing Feedback</h3>
+                  <p style={{ whiteSpace: "pre-wrap" }}>{feedback}</p>
+                  {feedbackModel && (
+                    <p className="llm-provenance">&mdash; via {feedbackModel}</p>
+                  )}
                 </div>
               )}
             </>
           ) : (
             <div className="welcome">
               {identity ? (
-                <>
-                  <p>Create a new document or open an existing one to start collaborating.</p>
-                  <button onClick={handleCreate} type="button" className="welcome-create">
-                    Create Document
-                  </button>
-                </>
+                <p>Select a document from the sidebar or create a new one.</p>
               ) : (
                 <p>Sign in or create an identity to start collaborating.</p>
               )}
