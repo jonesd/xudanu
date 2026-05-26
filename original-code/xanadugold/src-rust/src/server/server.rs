@@ -1383,15 +1383,32 @@ impl Server {
             let signature_valid =
                 crate::edition::provenance::verify_span_provenance(&sp.provenance, &fps);
 
-            let (author_display_name, author_club_id) = self
-                .clubs
+            let element_prov = all_entries
                 .iter()
-                .find(|(_, club)| match club.encrypted_signing_key() {
-                    Some(ek) => ek.verifying_key == sp.provenance.author_public_key,
-                    None => false,
-                })
-                .map(|(id, club)| (club.display_name().map(|s| s.to_string()), Some(*id)))
-                .unwrap_or((None, None));
+                .find(|(pos, _)| *pos >= sp.start && *pos < sp.end)
+                .and_then(|(_, c)| c.provenance.as_ref());
+            let author_type_str = element_prov.map(|ep| match ep.author_type {
+                crate::edition::provenance::AuthorType::Human => "human".to_string(),
+                crate::edition::provenance::AuthorType::Llm => "llm".to_string(),
+            });
+            let llm_model = element_prov.and_then(|ep| ep.llm_model.clone());
+            let is_llm = element_prov.is_some_and(|ep| {
+                matches!(ep.author_type, crate::edition::provenance::AuthorType::Llm)
+            });
+
+            let (author_display_name, author_club_id) = if is_llm {
+                let model_name = llm_model.clone().unwrap_or_else(|| "llm".to_string());
+                (Some(model_name), None)
+            } else {
+                self.clubs
+                    .iter()
+                    .find(|(_, club)| match club.encrypted_signing_key() {
+                        Some(ek) => ek.verifying_key == sp.provenance.author_public_key,
+                        None => false,
+                    })
+                    .map(|(id, club)| (club.display_name().map(|s| s.to_string()), Some(*id)))
+                    .unwrap_or((None, None))
+            };
 
             spans.push(super::transport::protocol::AttributionSpanPayload {
                 start: sp.start,
@@ -1402,6 +1419,8 @@ impl Server {
                 signature_valid,
                 timestamp: sp.provenance.timestamp,
                 server_id: sp.provenance.server_id.to_vec(),
+                author_type: author_type_str,
+                llm_model,
             });
         }
         Ok(spans)

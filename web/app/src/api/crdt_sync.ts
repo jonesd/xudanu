@@ -25,6 +25,8 @@ export interface AttributionSpan {
   signature_valid: boolean;
   timestamp: number;
   server_id: number[];
+  author_type: string | null;
+  llm_model: string | null;
 }
 
 export interface AttributionLogStatus {
@@ -37,6 +39,22 @@ export interface AttributionLogStatus {
 export interface WhoAmIEntry {
   club_id: number;
   display_name: string;
+}
+
+export interface LlmUsageSummary {
+  total_requests: number;
+  total_prompt_chars: number;
+  total_response_chars: number;
+  by_feature: Record<string, { count: number; prompt_chars: number; response_chars: number }>;
+}
+
+export interface WorkListEntry {
+  work_id: number;
+  owner: number | null;
+  revision_count: number;
+  is_grabbed: boolean;
+  title: string;
+  read_club: number | null;
 }
 
 type IdentityListener = (identity: WhoAmIEntry | null) => void;
@@ -69,7 +87,24 @@ export class CrdtSyncClient {
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
-    this.ws = new WebSocket(`${this.url}?format=json&version=${PROTOCOL_VERSION}`);
+    const wsUrl = `${this.url}?format=json&version=${PROTOCOL_VERSION}`;
+
+    fetch("/csrf-token")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.csrf_token) {
+          this.openWs(wsUrl + "&csrf_token=" + encodeURIComponent(d.csrf_token));
+        } else {
+          this.openWs(wsUrl);
+        }
+      })
+      .catch(() => {
+        this.openWs(wsUrl);
+      });
+  }
+
+  private openWs(url: string): void {
+    this.ws = new WebSocket(url);
     this.ws.onopen = () => this.onOpen();
     this.ws.onmessage = (e) => this.onMessage(e.data);
     this.ws.onclose = () => this.onClose();
@@ -103,6 +138,12 @@ export class CrdtSyncClient {
       this.sendTextDelta(oldText, newText);
     }
 
+    this.textListeners.forEach((cb) => cb(newText));
+  }
+
+  setTextLocal(newText: string): void {
+    if (newText === this.text) return;
+    this.text = newText;
     this.textListeners.forEach((cb) => cb(newText));
   }
 
@@ -171,12 +212,27 @@ export class CrdtSyncClient {
     return (val.spans as AttributionSpan[]) || [];
   }
 
-  async diffNarration(workId: number): Promise<string> {
+  async diffNarration(workId: number): Promise<{ text: string; model: string; updatedText: string }> {
     const resp = await this.sendRequest("work_diff_narration", {
       work_id: workId,
     });
     const val = extractValue(resp) as Record<string, unknown>;
-    return (val.narration as string) || "";
+    return { text: (val.narration as string) || "", model: (val.llm_model as string) || "", updatedText: (val.updated_text as string) || "" };
+  }
+
+  async writingFeedback(workId: number): Promise<{ text: string; model: string }> {
+    const resp = await this.sendRequest("work_writing_feedback", {
+      work_id: workId,
+    });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return { text: (val.feedback as string) || "", model: (val.llm_model as string) || "" };
+  }
+
+  async llmUsage(): Promise<LlmUsageSummary | null> {
+    const resp = await this.sendRequest("server_stats");
+    const val = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
+    if (!val) return null;
+    return val.llm_usage as LlmUsageSummary || null;
   }
 
   async refreshAwareness(): Promise<AwarenessState[]> {
@@ -190,6 +246,33 @@ export class CrdtSyncClient {
   async attributionLogStatus(): Promise<AttributionLogStatus> {
     const resp = await this.sendRequest("attribution_log_status");
     return extractValue(resp) as AttributionLogStatus;
+  }
+
+  async fetchWorkList(): Promise<WorkListEntry[]> {
+    const resp = await this.sendRequest("work_list");
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as WorkListEntry[];
+    const rec = val as Record<string, unknown>;
+    return (rec.work_list as WorkListEntry[]) || (rec.value as WorkListEntry[]) || [];
+  }
+
+  async setReadClub(workId: number, clubId: number | null): Promise<void> {
+    await this.sendRequest("work_set_read_club", {
+      work_id: workId,
+      club_id: clubId,
+    });
+  }
+
+  async getReadClub(workId: number): Promise<number> {
+    const resp = await this.sendRequest("work_read_club", { work_id: workId });
+    const val = extractValue(resp);
+    return (val as number) || 0;
+  }
+
+  async getEditClub(workId: number): Promise<number> {
+    const resp = await this.sendRequest("work_edit_club", { work_id: workId });
+    const val = extractValue(resp);
+    return (val as number) || 0;
   }
 
   async createIdentity(displayName: string, password: string): Promise<WhoAmIEntry> {
@@ -335,35 +418,34 @@ export class CrdtSyncClient {
       this.sessionId = extractValue(resp) as number;
       await this.sendRequest("session_login_public");
 
-      if (this.workBeId) {
-        const openResp = await this.sendRequest("crdt_sync_open", {
-          work_id: this.workBeId,
-        });
-        const inner = extractValue(openResp) as Record<string, unknown>;
-        this.text = (inner.current_text as string) || "";
-        this.crdtReady = true;
-        this.textListeners.forEach((cb) => cb(this.text));
-
-        this.sendRequest("crdt_awareness_get", {
-          work_id: this.workBeId,
-        }).then((awareResp) => {
-          const awareVal = extractValue(awareResp) as Record<string, unknown>;
-          const states = awareVal.states as AwarenessState[] || [];
-          this.awarenessListeners.forEach((cb) => cb(states));
-        }).catch(() => {});
-      }
-
       this.checkWhoAmI();
+
+      await this.tryOpenWork();
     } catch (e) {
       console.error("CRDT session setup failed:", e);
-      if (this.workBeId) {
-        const url = new URL(window.location.href);
-        if (url.searchParams.has("work")) {
-          url.searchParams.delete("work");
-          window.history.replaceState({}, "", url.toString());
-          window.location.reload();
-        }
-      }
+    }
+  }
+
+  async tryOpenWork(): Promise<void> {
+    if (!this.workBeId || !this.ws?.OPEN) return;
+    try {
+      const openResp = await this.sendRequest("crdt_sync_open", {
+        work_id: this.workBeId,
+      });
+      const inner = extractValue(openResp) as Record<string, unknown>;
+      this.text = (inner.current_text as string) || "";
+      this.crdtReady = true;
+      this.textListeners.forEach((cb) => cb(this.text));
+
+      this.sendRequest("crdt_awareness_get", {
+        work_id: this.workBeId,
+      }).then((awareResp) => {
+        const awareVal = extractValue(awareResp) as Record<string, unknown>;
+        const states = awareVal.states as AwarenessState[] || [];
+        this.awarenessListeners.forEach((cb) => cb(states));
+      }).catch(() => {});
+    } catch (e) {
+      console.warn("crdt_sync_open failed (work may be private):", e);
     }
   }
 

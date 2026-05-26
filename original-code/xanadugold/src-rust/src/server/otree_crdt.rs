@@ -157,6 +157,8 @@ fn apply_text_delta_to_edition(
         author_display_name: a.display_name.clone(),
         author_club_id: a.club_be_id,
         timestamp,
+        author_type: crate::edition::provenance::AuthorType::Human,
+        llm_model: None,
     });
 
     let old_entries = edition.all_entries();
@@ -207,6 +209,34 @@ fn apply_text_delta_to_edition(
     }
 
     Edition::from_entries(new_entries)
+}
+
+fn append_text_with_llm_provenance(
+    edition: &Edition,
+    text: &str,
+    llm_model: &str,
+    triggerer_club_id: BeId,
+) -> Edition {
+    let mut entries = edition.all_entries().to_vec();
+    let mut pos = entries.last().map(|(p, _)| *p + 1).unwrap_or(0);
+
+    let llm_prov = ElementProvenance {
+        author_public_key: [0u8; 32],
+        author_display_name: llm_model.to_string(),
+        author_club_id: triggerer_club_id,
+        timestamp: current_timestamp_secs(),
+        author_type: crate::edition::provenance::AuthorType::Llm,
+        llm_model: Some(llm_model.to_string()),
+    };
+
+    for ch in text.chars() {
+        let carrier = Carrier::new(RangeElement::text(ch.to_string()));
+        let carrier = carrier.with_provenance(llm_prov.clone());
+        entries.push((pos, Arc::new(carrier)));
+        pos += 1;
+    }
+
+    Edition::from_entries(entries)
 }
 
 fn current_timestamp_secs() -> u64 {
@@ -390,6 +420,26 @@ impl OtreeCrdtManager {
         Ok(current)
     }
 
+    pub fn append_llm_text(
+        &mut self,
+        work_id: BeId,
+        text: &str,
+        llm_model: &str,
+        triggerer_club_id: BeId,
+    ) -> Result<(), OtreeError> {
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(OtreeError::WorkNotFound(work_id))?;
+        wd.current_edition = append_text_with_llm_provenance(
+            &wd.current_edition,
+            text,
+            llm_model,
+            triggerer_club_id,
+        );
+        Ok(())
+    }
+
     pub fn materialize_edition_with_provenance(
         &mut self,
         work_id: BeId,
@@ -469,9 +519,17 @@ impl OtreeCrdtManager {
             };
 
             let author_key = ep.author_club_id;
-            let signing_key = _author_signing_keys
-                .get(&author_key)
-                .unwrap_or(fallback_signing_key);
+            let author_type = ep.author_type.clone();
+            let signing_key = if matches!(
+                ep.author_type,
+                crate::edition::provenance::AuthorType::Llm
+            ) {
+                fallback_signing_key
+            } else {
+                _author_signing_keys
+                    .get(&author_key)
+                    .unwrap_or(fallback_signing_key)
+            };
 
             let mut fingerprints = Vec::new();
             let mut end_pos = *start_pos;
@@ -481,7 +539,10 @@ impl OtreeCrdtManager {
             while j < entries.len() {
                 let (pos, c) = &entries[j];
                 match &c.provenance {
-                    Some(p) if p.author_club_id == author_key => {
+                    Some(p)
+                        if p.author_club_id == author_key
+                            && p.author_type == author_type =>
+                    {
                         fingerprints.push(c.element.content_fingerprint());
                         end_pos = *pos + 1;
                         last_ts = p.timestamp;

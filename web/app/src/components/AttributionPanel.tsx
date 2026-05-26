@@ -33,11 +33,14 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
     for (const span of spans) {
       const key = bytesToHex(span.author_public_key);
       if (!groups.has(key)) {
-        const displayName = span.author_display_name || shortKey(span.author_public_key);
+        const isLlm = span.author_type === "llm";
+        const displayName = isLlm
+          ? (span.llm_model || "LLM")
+          : (span.author_display_name || shortKey(span.author_public_key));
         groups.set(key, {
           key,
           displayName,
-          color: authorColor(displayName),
+          color: isLlm ? "#7c4dff" : authorColor(displayName),
           spans: [],
           allValid: true,
         });

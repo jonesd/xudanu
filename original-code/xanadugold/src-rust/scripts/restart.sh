@@ -5,6 +5,7 @@
 #   ./scripts/restart.sh                           # default: 8080, ./data, auto-detect web
 #   ./scripts/restart.sh 9090 /tmp/my-data         # custom port and data dir
 #   ./scripts/restart.sh 8080 /tmp/data ./web/dist # explicit static dir
+#   LAN=1 ./scripts/restart.sh                     # bind 0.0.0.0 for LAN access
 
 set -e
 
@@ -13,10 +14,15 @@ cd "$(dirname "$0")/.."
 PORT="${1:-8080}"
 DATA_DIR="${2:-./data}"
 STATIC_DIR="${3:-}"
-ADDR="127.0.0.1:${PORT}"
+
+if [ "${LAN:-0}" = "1" ]; then
+    ADDR="0.0.0.0:${PORT}"
+else
+    ADDR="127.0.0.1:${PORT}"
+fi
 
 if [ -z "$STATIC_DIR" ]; then
-    for candidate in ../web/app/dist ../../web/app/dist ./web/app/dist; do
+    for candidate in ../../../web/app/dist ../web/app/dist ../../web/app/dist ./web/app/dist; do
         if [ -d "$candidate" ]; then
             STATIC_DIR="$candidate"
             break
@@ -66,12 +72,26 @@ else
     echo "  Web UI:           http://${ADDR} (no static dir)"
 fi
 
-echo "  Security:         origin check + CSRF tokens"
+ORIGIN_FLAGS=(
+    --allowed-origin "http://localhost:${PORT}"
+    --allowed-origin "http://127.0.0.1:${PORT}"
+)
+
+if [ "${LAN:-0}" = "1" ]; then
+    LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -n "$LAN_IP" ]; then
+        echo "  LAN access:       http://${LAN_IP}:${PORT}"
+        ORIGIN_FLAGS+=(--allowed-origin "http://${LAN_IP}:${PORT}")
+    fi
+    echo "  Security:         origin check + CSRF tokens (LAN mode)"
+else
+    echo "  Security:         origin check + CSRF tokens"
+fi
 echo ""
 
 RUST_LOG=${RUST_LOG:-info} cargo run --features server --bin xudanu-server -- \
     run "$ADDR" "$DATA_DIR" \
-    --allowed-origin "http://localhost:${PORT}" \
-    --allowed-origin "http://127.0.0.1:${PORT}" \
+    "${ORIGIN_FLAGS[@]}" \
     --csrf-token \
+    --otree-crdt \
     "${STATIC_FLAGS[@]}"

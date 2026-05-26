@@ -6,9 +6,10 @@ interface IdentityPanelProps {
   connected: boolean;
   onCreateIdentity: (displayName: string, password: string) => Promise<void>;
   onLogin: (clubName: string, password: string) => Promise<void>;
+  onLogout: () => void;
 }
 
-export function IdentityPanel({ identity, connected, onCreateIdentity, onLogin }: IdentityPanelProps) {
+export function IdentityPanel({ identity, connected, onCreateIdentity, onLogin, onLogout }: IdentityPanelProps) {
   const [mode, setMode] = useState<"closed" | "create" | "login">("closed");
   const [displayName, setDisplayName] = useState("");
   const [clubName, setClubName] = useState("");
@@ -23,6 +24,7 @@ export function IdentityPanel({ identity, connected, onCreateIdentity, onLogin }
         <span className="identity-name">{identity.display_name}</span>
         <span className="identity-id">#{clubHex}</span>
         <span className="identity-badge identity-verified">verified</span>
+        <button type="button" className="identity-logout" onClick={onLogout}>Sign Out</button>
       </div>
     );
   }
