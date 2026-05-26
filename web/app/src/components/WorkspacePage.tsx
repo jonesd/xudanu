@@ -36,6 +36,7 @@ export function WorkspacePage() {
   const {
     text,
     connected,
+    authenticated,
     awareness,
     setText,
     sendCursor,
@@ -71,14 +72,14 @@ export function WorkspacePage() {
   }, [fetchWorkList]);
 
   useEffect(() => {
-    if (connected) loadWorks();
-  }, [connected, loadWorks]);
+    if (connected && authenticated) loadWorks();
+  }, [connected, authenticated, loadWorks]);
 
   useEffect(() => {
-    if (!connected) return;
+    if (!connected || !authenticated) return;
     const interval = setInterval(loadWorks, 5000);
     return () => clearInterval(interval);
-  }, [connected, loadWorks]);
+  }, [connected, authenticated, loadWorks]);
 
   const handleCreate = useCallback(async () => {
     setError(null);

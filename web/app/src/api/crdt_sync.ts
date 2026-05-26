@@ -437,6 +437,12 @@ export class CrdtSyncClient {
       this.crdtReady = true;
       this.textListeners.forEach((cb) => cb(this.text));
 
+      if (this.currentIdentity) {
+        try {
+          await this.sendRequest("crdt_register_author", { work_id: this.workBeId });
+        } catch {}
+      }
+
       this.sendRequest("crdt_awareness_get", {
         work_id: this.workBeId,
       }).then((awareResp) => {
