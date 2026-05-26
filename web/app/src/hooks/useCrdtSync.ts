@@ -4,6 +4,7 @@ import { CrdtSyncClient, type AwarenessState, type ContentMatch, type Attributio
 export interface CrdtSyncState {
   text: string;
   connected: boolean;
+  authenticated: boolean;
   awareness: AwarenessState[];
   setText: (text: string) => void;
   setTextLocal: (text: string) => void;
@@ -53,6 +54,7 @@ export function useCrdtSync(
   const [publicClubId, setPublicClubId] = useState(0);
   const credentialsRef = useRef<{ name: string; password: string } | null>(null);
   const reconnectCountRef = useRef(0);
+  const [authenticated, setAuthenticated] = useState(false);
 
   useEffect(() => {
     try {
@@ -118,16 +120,28 @@ export function useCrdtSync(
   }, [wsUrl, workBeId]);
 
   useEffect(() => {
-    if (!connected || !credentialsRef.current) return;
+    if (!connected) {
+      setAuthenticated(false);
+      return;
+    }
+    if (!credentialsRef.current) {
+      setAuthenticated(false);
+      return;
+    }
     const { name, password } = credentialsRef.current;
     reconnectCountRef.current += 1;
     const count = reconnectCountRef.current;
     const client = clientRef.current;
     if (!client) return;
-    client.loginByName(name, password).catch((e) => {
+    client.loginByName(name, password).then(() => {
+      if (reconnectCountRef.current === count) {
+        setAuthenticated(true);
+      }
+    }).catch((e) => {
       if (reconnectCountRef.current === count) {
         console.error("Re-login failed after reconnect:", e);
         credentialsRef.current = null;
+        setAuthenticated(false);
       }
     });
   }, [connected]);
@@ -190,6 +204,7 @@ export function useCrdtSync(
     await client.createIdentity(displayName, password);
     credentialsRef.current = { name: displayName, password };
     try { localStorage.setItem("xudanu_credentials", JSON.stringify(credentialsRef.current)); } catch {}
+    setAuthenticated(true);
   }, []);
 
   const login = useCallback(async (clubName: string, password: string) => {
@@ -198,6 +213,7 @@ export function useCrdtSync(
     await client.loginByName(clubName, password);
     credentialsRef.current = { name: clubName, password };
     try { localStorage.setItem("xudanu_credentials", JSON.stringify(credentialsRef.current)); } catch {}
+    setAuthenticated(true);
   }, []);
 
   const createWork = useCallback(async (): Promise<number | null> => {
@@ -307,6 +323,7 @@ export function useCrdtSync(
 
   const logout = useCallback(() => {
     credentialsRef.current = null;
+    setAuthenticated(false);
     try { localStorage.removeItem("xudanu_credentials"); } catch {}
     const client = clientRef.current;
     if (client) {
@@ -316,7 +333,7 @@ export function useCrdtSync(
   }, []);
 
   return {
-    text, connected, awareness, setText, setTextLocal, sendCursor, sendSelection,
+    text, connected, authenticated, awareness, setText, setTextLocal, sendCursor, sendSelection,
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
