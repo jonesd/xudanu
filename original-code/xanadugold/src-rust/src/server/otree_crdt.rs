@@ -143,6 +143,88 @@ pub struct OtreeCrdtManager {
     debounce_secs: u64,
 }
 
+fn find_entry_for_char(
+    entry_char_start: &[usize],
+    char_pos: usize,
+) -> usize {
+    let idx = entry_char_start.partition_point(|&start| start <= char_pos);
+    if idx == 0 { return 0; }
+    idx - 1
+}
+
+fn char_index_to_byte(s: &str, char_idx: usize) -> Option<usize> {
+    for (i, (byte_offset, _)) in s.char_indices().enumerate() {
+        if i == char_idx {
+            return Some(byte_offset);
+        }
+    }
+    if char_idx == s.chars().count() {
+        return Some(s.len());
+    }
+    None
+}
+
+fn split_text_carrier(carrier: &Carrier, start: usize, end: usize) -> Option<Carrier> {
+    match &carrier.element {
+        RangeElement::Text { text } => {
+            let start_byte = char_index_to_byte(text, start)?;
+            let end_byte = char_index_to_byte(text, end)?;
+            if start_byte == end_byte {
+                return None;
+            }
+            let slice = &text[start_byte..end_byte];
+            let mut c = Carrier::new(RangeElement::text(slice.to_string()));
+            if let Some(prov) = &carrier.provenance {
+                c = c.with_provenance(prov.clone());
+            }
+            Some(c)
+        }
+        _ => {
+            if start == 0 && end >= 1 {
+                Some(carrier.clone())
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn flush_batched_insert(
+    pending: &mut String,
+    prov: &Option<ElementProvenance>,
+    entries: &mut Vec<(i64, Arc<Carrier>)>,
+    pos: &mut i64,
+) {
+    if pending.is_empty() {
+        return;
+    }
+    let text = std::mem::take(pending);
+    let mut start = 0usize;
+    for (i, ch) in text.char_indices() {
+        if ch == '\n' {
+            let line = &text[start..i + ch.len_utf8()];
+            let carrier = Carrier::new(RangeElement::text(line.to_string()));
+            let carrier = match prov {
+                Some(p) => carrier.with_provenance(p.clone()),
+                None => carrier,
+            };
+            entries.push((*pos, Arc::new(carrier)));
+            *pos += 1;
+            start = i + ch.len_utf8();
+        }
+    }
+    if start < text.len() {
+        let remaining = &text[start..];
+        let carrier = Carrier::new(RangeElement::text(remaining.to_string()));
+        let carrier = match prov {
+            Some(p) => carrier.with_provenance(p.clone()),
+            None => carrier,
+        };
+        entries.push((*pos, Arc::new(carrier)));
+        *pos += 1;
+    }
+}
+
 fn apply_text_delta_to_edition(
     edition: &Edition,
     ops: &[TextDeltaOp],
@@ -162,50 +244,80 @@ fn apply_text_delta_to_edition(
     });
 
     let old_entries = edition.all_entries();
-    let mut old_pos = 0i64;
-    let mut old_idx = 0usize;
 
-    let mut new_entries: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(new_text.len().max(old_entries.len()));
+    let mut entry_char_start: Vec<usize> = Vec::with_capacity(old_entries.len());
+    let mut cum = 0usize;
+    for (_, carrier) in &old_entries {
+        entry_char_start.push(cum);
+        cum += carrier.char_len();
+    }
+    let total_old_chars = cum;
+
+    let mut old_char_pos = 0usize;
+    let mut new_entries: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(
+        new_text.len().max(old_entries.len()),
+    );
     let mut new_pos = 0i64;
+    let mut pending_insert = String::new();
 
     for op in ops {
         match op {
             TextDeltaOp::Retain { count } => {
-                for _ in 0..*count {
-                    if old_idx < old_entries.len() && old_entries[old_idx].0 == old_pos {
-                        new_entries.push((new_pos, old_entries[old_idx].1.clone()));
-                        old_idx += 1;
+                flush_batched_insert(&mut pending_insert, &prov, &mut new_entries, &mut new_pos);
+                let mut remaining = *count as usize;
+                while remaining > 0 {
+                    let entry_idx = find_entry_for_char(&entry_char_start, old_char_pos);
+                    let entry = &old_entries[entry_idx];
+                    let entry_start = entry_char_start[entry_idx];
+                    let entry_len = entry.1.char_len();
+                    let within = old_char_pos - entry_start;
+                    let available = entry_len - within;
+                    let take = remaining.min(available);
+
+                    if within == 0 && take == entry_len {
+                        new_entries.push((new_pos, entry.1.clone()));
+                        new_pos += 1;
+                    } else if let Some(carrier) =
+                        split_text_carrier(&entry.1, within, within + take)
+                    {
+                        new_entries.push((new_pos, Arc::new(carrier)));
+                        new_pos += 1;
                     }
-                    old_pos += 1;
-                    new_pos += 1;
+
+                    old_char_pos += take;
+                    remaining -= take;
                 }
             }
             TextDeltaOp::Delete { count } => {
-                for _ in 0..*count {
-                    if old_idx < old_entries.len() && old_entries[old_idx].0 == old_pos {
-                        old_idx += 1;
-                    }
-                    old_pos += 1;
-                }
+                flush_batched_insert(&mut pending_insert, &prov, &mut new_entries, &mut new_pos);
+                old_char_pos += *count as usize;
             }
             TextDeltaOp::Insert { text } => {
-                for ch in text.chars() {
-                    let carrier = Carrier::new(RangeElement::text(ch.to_string()));
-                    let carrier = match &prov {
-                        Some(p) => carrier.with_provenance(p.clone()),
-                        None => carrier,
-                    };
-                    new_entries.push((new_pos, Arc::new(carrier)));
-                    new_pos += 1;
-                }
+                pending_insert.push_str(text);
             }
         }
     }
 
-    while old_idx < old_entries.len() {
-        new_entries.push((new_pos, old_entries[old_idx].1.clone()));
-        old_idx += 1;
-        new_pos += 1;
+    flush_batched_insert(&mut pending_insert, &prov, &mut new_entries, &mut new_pos);
+
+    while old_char_pos < total_old_chars {
+        let entry_idx = find_entry_for_char(&entry_char_start, old_char_pos);
+        let entry = &old_entries[entry_idx];
+        let entry_start = entry_char_start[entry_idx];
+        let within = old_char_pos - entry_start;
+
+        if within == 0 {
+            new_entries.push((new_pos, entry.1.clone()));
+            new_pos += 1;
+            old_char_pos += entry.1.char_len();
+        } else {
+            let take = entry.1.char_len() - within;
+            if let Some(carrier) = split_text_carrier(&entry.1, within, within + take) {
+                new_entries.push((new_pos, Arc::new(carrier)));
+                new_pos += 1;
+            }
+            old_char_pos += take;
+        }
     }
 
     Edition::from_entries(new_entries)
@@ -229,11 +341,22 @@ fn append_text_with_llm_provenance(
         llm_model: Some(llm_model.to_string()),
     };
 
-    for ch in text.chars() {
-        let carrier = Carrier::new(RangeElement::text(ch.to_string()));
-        let carrier = carrier.with_provenance(llm_prov.clone());
+    let mut start = 0usize;
+    for (i, ch) in text.char_indices() {
+        if ch == '\n' {
+            let line = &text[start..i + ch.len_utf8()];
+            let carrier = Carrier::new(RangeElement::text(line.to_string()))
+                .with_provenance(llm_prov.clone());
+            entries.push((pos, Arc::new(carrier)));
+            pos += 1;
+            start = i + ch.len_utf8();
+        }
+    }
+    if start < text.len() {
+        let remaining = &text[start..];
+        let carrier = Carrier::new(RangeElement::text(remaining.to_string()))
+            .with_provenance(llm_prov.clone());
         entries.push((pos, Arc::new(carrier)));
-        pos += 1;
     }
 
     Edition::from_entries(entries)
@@ -1126,5 +1249,165 @@ mod tests {
 
         let text = mgr2.current_text(work_id).unwrap();
         assert_eq!(text, "hello world");
+    }
+
+    #[test]
+    fn test_batched_insert_creates_fewer_elements() {
+        let edition = Edition::from_text_batched("hello\nworld");
+        let ops = vec![TextDeltaOp::Insert {
+            text: "new line\n".to_string(),
+        }];
+        let result = apply_text_delta_to_edition(&edition, &ops, None);
+        assert_eq!(result.to_text(), "new line\nhello\nworld");
+        assert!(result.count() <= 4, "batched insert should create few elements, got {}", result.count());
+    }
+
+    #[test]
+    fn test_delta_on_batched_edition_retain() {
+        let edition = Edition::from_text_batched("hello\nworld");
+        assert_eq!(edition.count(), 2);
+        let ops = vec![
+            TextDeltaOp::Retain { count: 5 },
+            TextDeltaOp::Insert {
+                text: "!\n".to_string(),
+            },
+            TextDeltaOp::Retain { count: 6 },
+        ];
+        let result = apply_text_delta_to_edition(&edition, &ops, None);
+        assert_eq!(result.to_text(), "hello!\n\nworld");
+    }
+
+    #[test]
+    fn test_delta_on_batched_edition_delete() {
+        let edition = Edition::from_text_batched("hello\nworld\n");
+        let ops = vec![
+            TextDeltaOp::Retain { count: 5 },
+            TextDeltaOp::Delete { count: 1 },
+            TextDeltaOp::Retain { count: 6 },
+        ];
+        let result = apply_text_delta_to_edition(&edition, &ops, None);
+        assert_eq!(result.to_text(), "helloworld\n");
+    }
+
+    #[test]
+    fn test_delta_on_batched_edition_mid_element_split() {
+        let edition = Edition::from_text_batched("abcdef");
+        assert_eq!(edition.count(), 1);
+        let ops = vec![
+            TextDeltaOp::Retain { count: 3 },
+            TextDeltaOp::Delete { count: 2 },
+            TextDeltaOp::Retain { count: 1 },
+        ];
+        let result = apply_text_delta_to_edition(&edition, &ops, None);
+        assert_eq!(result.to_text(), "abcf");
+    }
+
+    #[test]
+    fn test_delta_on_batched_edition_mid_element_insert() {
+        let edition = Edition::from_text_batched("abcdef");
+        let ops = vec![
+            TextDeltaOp::Retain { count: 3 },
+            TextDeltaOp::Insert {
+                text: "XY".to_string(),
+            },
+            TextDeltaOp::Retain { count: 3 },
+        ];
+        let result = apply_text_delta_to_edition(&edition, &ops, None);
+        assert_eq!(result.to_text(), "abcXYdef");
+    }
+
+    #[test]
+    fn test_batched_insert_multiline() {
+        let edition = Edition::from_text("");
+        let ops = vec![TextDeltaOp::Insert {
+            text: "line1\nline2\nline3".to_string(),
+        }];
+        let result = apply_text_delta_to_edition(&edition, &ops, None);
+        assert_eq!(result.to_text(), "line1\nline2\nline3");
+        assert_eq!(result.count(), 3, "should create 3 line elements");
+    }
+
+    #[test]
+    fn test_batched_edition_delete_across_elements() {
+        let edition = Edition::from_text_batched("aa\nbb\ncc");
+        assert_eq!(edition.count(), 3);
+        let ops = vec![
+            TextDeltaOp::Retain { count: 2 },
+            TextDeltaOp::Delete { count: 4 },
+            TextDeltaOp::Retain { count: 2 },
+        ];
+        let result = apply_text_delta_to_edition(&edition, &ops, None);
+        assert_eq!(result.to_text(), "aacc");
+    }
+
+    #[test]
+    fn test_batched_edition_with_author_provenance() {
+        let edition = Edition::from_text_batched("hello\nworld");
+        let author = OtreeAuthorIdentity {
+            public_key: [1u8; 32],
+            display_name: "test".to_string(),
+            club_be_id: 0,
+        };
+        let ops = vec![TextDeltaOp::Insert {
+            text: "new\n".to_string(),
+        }];
+        let result = apply_text_delta_to_edition(&edition, &ops, Some(&author));
+        assert_eq!(result.to_text(), "new\nhello\nworld");
+        let entries = result.all_entries();
+        let has_prov = entries.iter().any(|(_, c)| c.provenance.is_some());
+        assert!(has_prov, "inserted elements should have provenance");
+    }
+
+    #[test]
+    fn test_batched_append_llm_provenance() {
+        let edition = Edition::from_text_batched("hello\n");
+        let result = append_text_with_llm_provenance(&edition, "world\nfoo", "test-model", 0);
+        assert_eq!(result.to_text(), "hello\nworld\nfoo");
+        let entries = result.all_entries();
+        let llm_entries: Vec<_> = entries
+            .iter()
+            .filter(|(_, c)| {
+                c.provenance
+                    .as_ref()
+                    .map_or(false, |p| matches!(p.author_type, crate::edition::provenance::AuthorType::Llm))
+            })
+            .collect();
+        assert_eq!(llm_entries.len(), 2, "LLM text should be 2 line-batched elements");
+    }
+
+    #[test]
+    fn test_split_text_carrier_basic() {
+        let carrier = Carrier::new(RangeElement::text("hello".to_string()));
+        let left = split_text_carrier(&carrier, 0, 3).unwrap();
+        assert_eq!(left.element.as_text(), Some("hel"));
+        let right = split_text_carrier(&carrier, 3, 5).unwrap();
+        assert_eq!(right.element.as_text(), Some("lo"));
+    }
+
+    #[test]
+    fn test_split_text_carrier_empty_returns_none() {
+        let carrier = Carrier::new(RangeElement::text("hello".to_string()));
+        assert!(split_text_carrier(&carrier, 3, 3).is_none());
+    }
+
+    #[test]
+    fn test_batched_mgr_full_workflow() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+        let sid = make_session(1);
+
+        mgr.open_sync_session(work_id, sid, Some(&Edition::from_text_batched("line1\nline2\n")));
+
+        let ops = vec![
+            TextDeltaOp::Retain { count: 6 },
+            TextDeltaOp::Insert {
+                text: "inserted\n".to_string(),
+            },
+            TextDeltaOp::Retain { count: 6 },
+        ];
+        mgr.apply_text_delta(work_id, sid, &ops).unwrap();
+
+        let text = mgr.current_text(work_id).unwrap();
+        assert_eq!(text, "line1\ninserted\nline2\n");
     }
 }
