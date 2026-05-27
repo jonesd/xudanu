@@ -1686,4 +1686,99 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn batched_three_way_merge_no_changes() {
+        let base = Edition::from_text_batched("hello\nworld\n");
+        let a = Edition::from_text_batched("hello\nworld\n");
+        let b = Edition::from_text_batched("hello\nworld\n");
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+        assert_eq!(mr.merged.to_text(), "hello\nworld\n");
+    }
+
+    #[test]
+    fn batched_three_way_merge_a_edits_one_line() {
+        let base = Edition::from_text_batched("line1\nline2\nline3\n");
+        let mut a_entries: Vec<(i64, Arc<Carrier>)> = base.all_entries();
+        a_entries[0] = (0, Arc::new(Carrier::new(RangeElement::text("LINE1\n".to_string()))));
+        let a = Edition::from_entries(a_entries);
+        let b = Edition::from_text_batched("line1\nline2\nline3\n");
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+        let text = mr.merged.to_text();
+        assert!(text.contains("LINE1"), "should contain A's edit");
+        assert!(text.contains("line2"), "should retain unchanged lines");
+        assert!(text.contains("line3"), "should retain unchanged lines");
+    }
+
+    #[test]
+    fn batched_three_way_merge_both_edit_different_lines() {
+        let base = Edition::from_text_batched("aaa\nbbb\nccc\n");
+        let mut a_entries: Vec<(i64, Arc<Carrier>)> = base.all_entries();
+        a_entries[0] = (0, Arc::new(Carrier::new(RangeElement::text("AAA\n".to_string()))));
+        let a = Edition::from_entries(a_entries);
+        let mut b_entries: Vec<(i64, Arc<Carrier>)> = base.all_entries();
+        b_entries[2] = (2, Arc::new(Carrier::new(RangeElement::text("CCC\n".to_string()))));
+        let b = Edition::from_entries(b_entries);
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+        let text = mr.merged.to_text();
+        assert!(text.contains("AAA"), "should contain A's edit to line 1");
+        assert!(text.contains("bbb"), "should retain unchanged line 2");
+        assert!(text.contains("CCC"), "should contain B's edit to line 3");
+    }
+
+    #[test]
+    fn batched_three_way_merge_delete_line() {
+        let base = Edition::from_text_batched("keep\ndelete\nkeep2\n");
+        let a_entries: Vec<(i64, Arc<Carrier>)> = vec![
+            (0, Arc::new(Carrier::new(RangeElement::text("keep\n".to_string())))),
+            (1, Arc::new(Carrier::new(RangeElement::text("keep2\n".to_string())))),
+        ];
+        let a = Edition::from_entries(a_entries);
+        let b = Edition::from_text_batched("keep\ndelete\nkeep2\n");
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+        let text = mr.merged.to_text();
+        assert!(!text.contains("delete"), "A deleted 'delete' line");
+        assert!(text.contains("keep"), "should retain other lines");
+    }
+
+    #[test]
+    fn batched_three_way_diff_identical_batched() {
+        let base = Edition::from_text_batched("hello\nworld\n");
+        let diff = three_way_diff(&base, &base, &base);
+        assert!(diff.only_a.is_empty());
+        assert!(diff.only_b.is_empty());
+        assert!(diff.conflict.is_empty());
+    }
+
+    #[test]
+    fn batched_build_merge_mapping() {
+        let source = Edition::from_text_batched("aaa\nbbb\nccc\n");
+        let merged = Edition::from_text_batched("aaa\nbbb\nccc\n");
+        let mapping = build_merge_mapping(&source, &merged);
+        assert!(!mapping.is_empty());
+        assert_eq!(mapping.of(0), Some(0));
+        assert_eq!(mapping.of(1), Some(1));
+        assert_eq!(mapping.of(2), Some(2));
+    }
+
+    #[test]
+    fn batched_merge_preserves_provenance() {
+        use crate::edition::provenance::{AuthorType, ElementProvenance};
+        let prov = ElementProvenance {
+            author_public_key: [1u8; 32],
+            author_display_name: "alice".to_string(),
+            author_club_id: 0,
+            timestamp: 100,
+            author_type: AuthorType::Human,
+            llm_model: None,
+        };
+        let base = Edition::from_text_batched("hello\nworld\n");
+        let mut a_entries: Vec<(i64, Arc<Carrier>)> = base.all_entries();
+        a_entries[0] = (0, Arc::new(Carrier::new(RangeElement::text("HELLO\n".to_string())).with_provenance(prov.clone())));
+        let a = Edition::from_entries(a_entries);
+        let b = Edition::from_text_batched("hello\nworld\n");
+        let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
+        let has_prov = mr.merged.all_entries().iter().any(|(_, c)| c.provenance.is_some());
+        assert!(has_prov, "merged edition should carry A's provenance");
+    }
 }
