@@ -626,7 +626,6 @@ fn dispatch_inner(
         }
 
         WireRequest::ServerStats => {
-            srv.ensure_logged_in(session_id)?;
             Ok(ResponseValue::ServerInfo(
                 super::protocol::ServerInfoPayload {
                     version: env!("CARGO_PKG_VERSION").to_string(),

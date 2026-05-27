@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useCrdtSync } from "../hooks/useCrdtSync";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
 import { AwarenessIndicators } from "../components/AwarenessIndicators";
@@ -24,6 +24,19 @@ export function WorkspacePage() {
   const [isPublic, setIsPublic] = useState(false);
   const [isShared, setIsShared] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [llmMenuOpen, setLlmMenuOpen] = useState(false);
+  const llmRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!llmMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (llmRef.current && !llmRef.current.contains(e.target as Node)) {
+        setLlmMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [llmMenuOpen]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -232,42 +245,56 @@ export function WorkspacePage() {
               Attribution
             </button>
             {llmEnabled && (
-              <>
+              <div className="llm-dropdown" ref={llmRef}>
                 <button
-                  onClick={async () => {
-                    setNarrating(true);
-                    setNarration(null);
-                    setNarrationModel("");
-                    const result = await narrateDiff();
-                    setNarration(result.text);
-                    setNarrationModel(result.model);
-                    if (result.updatedText) {
-                      setTextLocal(result.updatedText);
-                      setTimeout(() => refreshAttribution(), 300);
-                    }
-                    setNarrating(false);
-                  }}
                   type="button"
-                  disabled={!connected || narrating}
+                  className="llm-dropdown-toggle"
+                  disabled={!connected}
+                  onClick={() => setLlmMenuOpen((o) => !o)}
                 >
-                  {narrating ? "Thinking..." : "Narrate"}
+                  AI &#9662;
                 </button>
-                <button
-                  onClick={async () => {
-                    setLoadingFeedback(true);
-                    setFeedback(null);
-                    setFeedbackModel("");
-                    const result = await getWritingFeedback();
-                    setFeedback(result.text);
-                    setFeedbackModel(result.model);
-                    setLoadingFeedback(false);
-                  }}
-                  type="button"
-                  disabled={!connected || loadingFeedback}
-                >
-                  {loadingFeedback ? "Reviewing..." : "Feedback"}
-                </button>
-              </>
+                {llmMenuOpen && (
+                  <div className="llm-dropdown-menu">
+                    <button
+                      type="button"
+                      disabled={narrating}
+                      onClick={async () => {
+                        setLlmMenuOpen(false);
+                        setNarrating(true);
+                        setNarration(null);
+                        setNarrationModel("");
+                        const result = await narrateDiff();
+                        setNarration(result.text);
+                        setNarrationModel(result.model);
+                        if (result.updatedText) {
+                          setTextLocal(result.updatedText);
+                          setTimeout(() => refreshAttribution(), 300);
+                        }
+                        setNarrating(false);
+                      }}
+                    >
+                      {narrating ? "Summarizing..." : "Summarize Changes"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={loadingFeedback}
+                      onClick={async () => {
+                        setLlmMenuOpen(false);
+                        setLoadingFeedback(true);
+                        setFeedback(null);
+                        setFeedbackModel("");
+                        const result = await getWritingFeedback();
+                        setFeedback(result.text);
+                        setFeedbackModel(result.model);
+                        setLoadingFeedback(false);
+                      }}
+                    >
+                      {loadingFeedback ? "Reviewing..." : "Writing Feedback"}
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </>
         )}
