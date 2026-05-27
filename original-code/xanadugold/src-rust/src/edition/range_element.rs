@@ -283,6 +283,13 @@ impl RangeElement {
     pub fn is_content_addressable(&self) -> bool {
         matches!(self, RangeElement::Text { .. } | RangeElement::Data { .. })
     }
+
+    pub fn char_len(&self) -> usize {
+        match self {
+            RangeElement::Text { text } => text.chars().count(),
+            _ => 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -314,6 +321,10 @@ impl Carrier {
     pub fn with_provenance(mut self, prov: super::provenance::ElementProvenance) -> Self {
         self.provenance = Some(prov);
         self
+    }
+
+    pub fn char_len(&self) -> usize {
+        self.element.char_len()
     }
 }
 

@@ -141,6 +141,43 @@ impl Edition {
         }
     }
 
+    pub fn from_text_batched(text: &str) -> Self {
+        if text.is_empty() {
+            return Edition::empty();
+        }
+
+        let mut entries = Vec::new();
+        let mut pos = 0i64;
+        let mut start = 0usize;
+
+        for (i, ch) in text.char_indices() {
+            if ch == '\n' {
+                let line = &text[start..i + ch.len_utf8()];
+                entries.push((pos, Arc::new(Carrier::new(RangeElement::text(line.to_string())))));
+                pos += 1;
+                start = i + ch.len_utf8();
+            }
+        }
+
+        if start < text.len() {
+            let remaining = &text[start..];
+            entries.push((pos, Arc::new(Carrier::new(RangeElement::text(remaining.to_string())))));
+        }
+
+        if entries.is_empty() {
+            return Edition::empty();
+        }
+
+        let n = entries.len();
+        let region = XnRegion::interval(0, n as i64);
+        Edition {
+            orgl: OrglRoot::from_bulk_entries(entries, None, region),
+            endorsements: EndorsementSet::new(),
+            entries_cache: Arc::new(OnceLock::new()),
+            span_provenance: Vec::new(),
+        }
+    }
+
     pub fn from_entries(entries: Vec<(i64, Arc<Carrier>)>) -> Self {
         let n = entries.len();
         let region = if n > 0 {
@@ -449,6 +486,14 @@ impl Edition {
             }
         }
         result
+    }
+
+    pub fn char_len(&self) -> usize {
+        self.orgl
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.char_len())
+            .sum()
     }
 
     pub fn word_set(&self) -> HashSet<String> {
@@ -1728,5 +1773,112 @@ mod tests {
                 assert_eq!(old_val, bulk_val, "mismatch at position {}", i);
             }
         }
+    }
+
+    #[test]
+    fn from_text_batched_empty() {
+        let e = Edition::from_text_batched("");
+        assert!(e.is_empty());
+        assert_eq!(e.count(), 0);
+        assert_eq!(e.char_len(), 0);
+    }
+
+    #[test]
+    fn from_text_batched_single_line() {
+        let e = Edition::from_text_batched("hello");
+        assert_eq!(e.count(), 1);
+        assert_eq!(e.to_text(), "hello");
+        assert_eq!(e.char_len(), 5);
+    }
+
+    #[test]
+    fn from_text_batched_two_lines() {
+        let e = Edition::from_text_batched("hello\nworld");
+        assert_eq!(e.count(), 2);
+        assert_eq!(e.to_text(), "hello\nworld");
+        assert_eq!(e.char_len(), 11);
+    }
+
+    #[test]
+    fn from_text_batched_trailing_newline() {
+        let e = Edition::from_text_batched("hello\nworld\n");
+        assert_eq!(e.count(), 2);
+        assert_eq!(e.to_text(), "hello\nworld\n");
+        assert_eq!(e.char_len(), 12);
+    }
+
+    #[test]
+    fn from_text_batched_just_newline() {
+        let e = Edition::from_text_batched("\n");
+        assert_eq!(e.count(), 1);
+        assert_eq!(e.to_text(), "\n");
+        assert_eq!(e.char_len(), 1);
+    }
+
+    #[test]
+    fn from_text_batched_multiple_newlines() {
+        let e = Edition::from_text_batched("\n\n\n");
+        assert_eq!(e.count(), 3);
+        assert_eq!(e.to_text(), "\n\n\n");
+    }
+
+    #[test]
+    fn from_text_batched_empty_lines() {
+        let e = Edition::from_text_batched("a\n\nb");
+        assert_eq!(e.count(), 3);
+        assert_eq!(e.to_text(), "a\n\nb");
+    }
+
+    #[test]
+    fn char_len_matches_to_text_length() {
+        let texts = [
+            "",
+            "hello",
+            "hello\nworld",
+            "a\nb\nc\nd\ne",
+            "\n\n\n",
+            "x",
+        ];
+        for t in &texts {
+            let batched = Edition::from_text_batched(t);
+            assert_eq!(
+                batched.char_len(),
+                t.chars().count(),
+                "char_len mismatch for batched {:?}",
+                t
+            );
+            assert_eq!(batched.to_text(), *t, "to_text mismatch for batched {:?}", t);
+        }
+        for t in &texts {
+            let per_char = Edition::from_text(t);
+            assert_eq!(
+                per_char.char_len(),
+                t.chars().count(),
+                "char_len mismatch for per-char {:?}",
+                t
+            );
+        }
+    }
+
+    #[test]
+    fn from_text_batched_element_count_vs_from_text() {
+        let text = "line one\nline two\nline three\n";
+        let batched = Edition::from_text_batched(text);
+        let per_char = Edition::from_text(text);
+        assert_eq!(batched.to_text(), per_char.to_text());
+        assert!(batched.count() < per_char.count());
+        assert_eq!(batched.count(), 3);
+        assert_eq!(per_char.count(), text.len() as u64);
+    }
+
+    #[test]
+    fn range_element_char_len() {
+        assert_eq!(RangeElement::text("hello").char_len(), 5);
+        assert_eq!(RangeElement::text("").char_len(), 0);
+        assert_eq!(RangeElement::text("a\nb").char_len(), 3);
+        assert_eq!(RangeElement::data(vec![1, 2, 3]).char_len(), 0);
+        assert_eq!(RangeElement::edition(1).char_len(), 0);
+        assert_eq!(RangeElement::placeholder(1).char_len(), 0);
+        assert_eq!(RangeElement::blob(1, "image/png", 100).char_len(), 0);
     }
 }
