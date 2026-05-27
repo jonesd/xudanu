@@ -531,7 +531,8 @@ body {
   background: #fff;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
-  overflow: hidden;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .editor-content {
@@ -921,6 +922,70 @@ body {
 .attribution-toggle-active {
   background: #9b59b6 !important;
   color: #fff !important;
+}
+
+.llm-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.llm-dropdown-toggle {
+  background: #7c4dff;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.llm-dropdown-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.llm-dropdown-toggle:hover:not(:disabled) {
+  background: #651fff;
+}
+
+.llm-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  min-width: 180px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.llm-dropdown-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  cursor: pointer;
+  color: #333;
+}
+
+.llm-dropdown-menu button:hover:not(:disabled) {
+  background: #f0ebff;
+}
+
+.llm-dropdown-menu button:disabled {
+  color: #999;
+  cursor: default;
+}
+
+.llm-dropdown-menu button + button {
+  border-top: 1px solid #eee;
 }
 
 .attribution-panel {
