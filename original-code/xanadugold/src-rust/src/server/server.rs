@@ -2291,7 +2291,7 @@ impl Server {
                 signature: signed.signature.clone(),
                 signer_public_key: signed.signer_public_key,
             };
-            let initial_edition = initial_text.map(|t| Edition::from_text(t));
+            let initial_edition = initial_text.map(|t| Edition::from_text_batched(t));
             let result = self.otree_crdt
                 .apply_signed_federation_update(work_be_id, &otree_signed, &std::collections::HashMap::new(), initial_edition.as_ref())
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
