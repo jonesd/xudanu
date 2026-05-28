@@ -1361,6 +1361,28 @@ impl Server {
         let edition = ws.work.current_edition();
         let all_entries = edition.all_entries();
 
+        let mut elem_char_start: std::collections::HashMap<i64, usize> =
+            std::collections::HashMap::with_capacity(all_entries.len());
+        let mut cum = 0usize;
+        for (pos, c) in &all_entries {
+            elem_char_start.insert(*pos, cum);
+            cum += c.char_len();
+        }
+
+        let elem_to_char = |elem_pos: i64, elem_end: i64| -> (i64, i64) {
+            let c_start = elem_char_start.get(&elem_pos).copied().unwrap_or(0) as i64;
+            let c_end = if let Some(next_pos) = all_entries
+                .iter()
+                .find(|(p, _)| *p >= elem_end)
+                .map(|(p, _)| *p)
+            {
+                elem_char_start.get(&next_pos).copied().unwrap_or(cum) as i64
+            } else {
+                cum as i64
+            };
+            (c_start, c_end)
+        };
+
         let mut spans = Vec::new();
         for sp in &edition.span_provenance {
             if let Some(s) = start {
@@ -1410,9 +1432,11 @@ impl Server {
                     .unwrap_or((None, None))
             };
 
+            let (char_start, char_end) = elem_to_char(sp.start, sp.end);
+
             spans.push(super::transport::protocol::AttributionSpanPayload {
-                start: sp.start,
-                end: sp.end,
+                start: char_start,
+                end: char_end,
                 author_public_key: sp.provenance.author_public_key.to_vec(),
                 author_display_name,
                 author_club_id,
