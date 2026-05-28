@@ -320,7 +320,7 @@ fn apply_text_delta_to_edition(
         }
     }
 
-    Edition::from_entries(new_entries)
+    Edition::from_entries(new_entries).coalesce()
 }
 
 fn append_text_with_llm_provenance(
@@ -359,7 +359,7 @@ fn append_text_with_llm_provenance(
         entries.push((pos, Arc::new(carrier)));
     }
 
-    Edition::from_entries(entries)
+    Edition::from_entries(entries).coalesce()
 }
 
 fn current_timestamp_secs() -> u64 {
@@ -394,7 +394,7 @@ impl OtreeCrdtManager {
         if !self.docs.contains_key(&work_id) {
             let edition = initial_edition
                 .cloned()
-                .unwrap_or_else(|| Edition::from_text(""));
+                .unwrap_or_else(|| Edition::from_text_batched(""));
             self.docs.insert(
                 work_id,
                 OtreeWorkDoc {
@@ -935,7 +935,7 @@ impl OtreeCrdtManager {
         update_text: &str,
         initial_edition: Option<&Edition>,
     ) -> Result<OtreeApplyResult, OtreeError> {
-        let incoming_edition = Edition::from_text(update_text);
+        let incoming_edition = Edition::from_text_batched(update_text);
 
         if !self.docs.contains_key(&work_id) {
             let edition = initial_edition.cloned().unwrap_or_else(|| incoming_edition.clone());

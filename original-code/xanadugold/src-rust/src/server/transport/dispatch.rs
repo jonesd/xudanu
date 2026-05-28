@@ -339,7 +339,7 @@ fn dispatch_inner(
                 }
                 let current_text = edition_to_text(&current_ed);
                 let new_text = apply_text_delta(&current_text, &ops);
-                let new_ed = Edition::from_text(&new_text);
+                let new_ed = Edition::from_text_batched(&new_text);
                 let rev = srv.work_revise(session_id, work_id, new_ed)?;
                 Ok(ResponseValue::Humber(rev))
             }

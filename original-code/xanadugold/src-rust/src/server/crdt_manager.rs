@@ -948,7 +948,7 @@ impl CrdtManager {
 }
 
 fn text_to_edition(text: &str) -> Edition {
-    Edition::from_text(text)
+    Edition::from_text_batched(text)
 }
 
 fn utf16_len(s: &str) -> usize {

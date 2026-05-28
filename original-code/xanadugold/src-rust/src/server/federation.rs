@@ -2448,7 +2448,7 @@ mod tests {
     // =====================================================================
 
     fn make_alt_edition(server: &str, rev: u64, text: &str, ts: u64) -> AlternativeEdition {
-        let edition = crate::edition::Edition::from_text(text);
+        let edition = crate::edition::Edition::from_text_batched(text);
         AlternativeEdition::new(server, rev, &edition, ts)
     }
 
