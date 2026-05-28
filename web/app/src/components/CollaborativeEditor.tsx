@@ -21,6 +21,106 @@ interface CollaborativeEditorProps {
   editable: boolean;
 }
 
+const CHUNK_SIZE = 50_000;
+const LARGE_DOC_THRESHOLD = 100_000;
+
+function chunkedSetTextContent(el: HTMLElement, text: string): void {
+  el.textContent = "";
+  const textNode = document.createTextNode("");
+  el.appendChild(textNode);
+  let offset = 0;
+  function appendChunk() {
+    if (offset >= text.length) return;
+    const end = Math.min(offset + CHUNK_SIZE, text.length);
+    textNode.appendData(text.slice(offset, end));
+    offset = end;
+    requestAnimationFrame(appendChunk);
+  }
+  requestAnimationFrame(appendChunk);
+}
+
+function drawOverlay(
+  editor: HTMLElement | null,
+  canvas: HTMLCanvasElement | null,
+  spans: AttributionSpan[],
+  colorMap: Map<string, AuthorStyle>,
+) {
+  if (!editor || !canvas || spans.length === 0) return;
+
+  const container = editor.parentElement;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  canvas.style.width = rect.width + "px";
+  canvas.style.height = rect.height + "px";
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  const textLen = editor.textContent?.length ?? 0;
+  if (textLen === 0) return;
+
+  const textNode = editor.firstChild;
+  const singleNode = textNode && textNode.nodeType === Node.TEXT_NODE && textNode === editor.lastChild;
+
+  for (const span of spans) {
+    const key = bytesToHex(span.author_public_key);
+    const style = colorMap.get(key);
+    if (!style) continue;
+
+    const drawStart = Math.max(span.start, 0);
+    const drawEnd = Math.min(span.end, textLen);
+    if (drawStart >= drawEnd) continue;
+
+    const range = document.createRange();
+    try {
+      if (singleNode) {
+        range.setStart(textNode as Text, drawStart);
+        range.setEnd(textNode as Text, drawEnd);
+      } else {
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
+        if (!sn || !en) continue;
+        range.setStart(sn.node, sn.offset);
+        range.setEnd(en.node, en.offset + 1);
+      }
+    } catch {
+      continue;
+    }
+
+    const rangeRects = range.getClientRects();
+    for (const r of rangeRects) {
+      const x = r.left - rect.left;
+      const y = r.top - rect.top;
+      ctx.fillStyle = style.color + "25";
+      ctx.fillRect(x, y, r.width, r.height);
+      ctx.fillStyle = style.color + "60";
+      ctx.fillRect(x, y + r.height - 2, r.width, 2);
+    }
+  }
+}
+
+function findTextNodeAt(root: Node, targetOffset: number): { node: Text; offset: number } | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  let current = 0;
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const len = node.textContent?.length ?? 0;
+    if (current + len > targetOffset) {
+      return { node: node as Text, offset: targetOffset - current };
+    }
+    current += len;
+  }
+  return null;
+}
+
 export function CollaborativeEditor({
   text,
   onTextChange,
@@ -55,24 +155,41 @@ export function CollaborativeEditor({
     if (!el) return;
     const currentText = getTextContent(el);
     if (currentText !== text) {
-      el.textContent = text;
+      if (text.length > LARGE_DOC_THRESHOLD) {
+        chunkedSetTextContent(el, text);
+      } else {
+        el.textContent = text;
+      }
     }
     lastText.current = text;
   }, [text]);
 
   useEffect(() => {
-    drawOverlay(editorRef.current, overlayRef.current, attributionSpans, authorColorMap);
-  }, [text, attributionSpans, authorColorMap]);
-
-  useEffect(() => {
     const el = editorRef.current;
     const canvas = overlayRef.current;
     if (!el || !canvas) return;
-    const ro = new ResizeObserver(() => {
-      drawOverlay(el, canvas, attributionSpans, authorColorMap);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
+    const container = el.parentElement;
+    if (!container) return;
+
+    let rafId = 0;
+    const redraw = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        drawOverlay(el, canvas, attributionSpans, authorColorMap);
+      });
+    };
+
+    drawOverlay(el, canvas, attributionSpans, authorColorMap);
+
+    const ro = new ResizeObserver(redraw);
+    ro.observe(container);
+    container.addEventListener("scroll", redraw, { passive: true });
+
+    return () => {
+      ro.disconnect();
+      container.removeEventListener("scroll", redraw);
+      cancelAnimationFrame(rafId);
+    };
   }, [attributionSpans, authorColorMap]);
 
   const handleInput = useCallback(() => {
@@ -237,71 +354,4 @@ function getTextContent(el: HTMLElement): string {
     }
   }
   return result;
-}
-
-function drawOverlay(
-  editor: HTMLElement | null,
-  canvas: HTMLCanvasElement | null,
-  spans: AttributionSpan[],
-  colorMap: Map<string, AuthorStyle>,
-) {
-  if (!editor || !canvas || spans.length === 0) return;
-
-  const rect = editor.getBoundingClientRect();
-  if (rect.width === 0 || rect.height === 0) return;
-
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  canvas.style.width = rect.width + "px";
-  canvas.style.height = rect.height + "px";
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, rect.width, rect.height);
-
-  const scrollTop = editor.scrollTop;
-
-  for (const span of spans) {
-    const key = bytesToHex(span.author_public_key);
-    const style = colorMap.get(key);
-    if (!style) continue;
-
-    for (let i = span.start; i < span.end && i < (editor.textContent?.length ?? 0); i++) {
-      const range = document.createRange();
-      const textNode = findTextNodeAt(editor, i);
-      if (!textNode) continue;
-      try {
-        range.setStart(textNode.node, textNode.offset);
-        range.setEnd(textNode.node, textNode.offset + 1);
-      } catch {
-        continue;
-      }
-
-      const rangeRects = range.getClientRects();
-      for (const r of rangeRects) {
-        const x = r.left - rect.left;
-        const y = r.top - rect.top + scrollTop;
-        ctx.fillStyle = style.color + "25";
-        ctx.fillRect(x, y, r.width, r.height);
-        ctx.fillStyle = style.color + "60";
-        ctx.fillRect(x, y + r.height - 2, r.width, 2);
-      }
-    }
-  }
-}
-
-function findTextNodeAt(root: Node, targetOffset: number): { node: Text; offset: number } | null {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-  let current = 0;
-  let node: Node | null;
-  while ((node = walker.nextNode())) {
-    const len = node.textContent?.length ?? 0;
-    if (current + len > targetOffset) {
-      return { node: node as Text, offset: targetOffset - current };
-    }
-    current += len;
-  }
-  return null;
 }

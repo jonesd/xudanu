@@ -434,14 +434,15 @@ export class CrdtSyncClient {
       });
       const inner = extractValue(openResp) as Record<string, unknown>;
       this.text = (inner.current_text as string) || "";
-      this.crdtReady = true;
-      this.textListeners.forEach((cb) => cb(this.text));
 
       if (this.currentIdentity) {
         try {
           await this.sendRequest("crdt_register_author", { work_id: this.workBeId });
         } catch {}
       }
+
+      this.crdtReady = true;
+      this.textListeners.forEach((cb) => cb(this.text));
 
       this.sendRequest("crdt_awareness_get", {
         work_id: this.workBeId,

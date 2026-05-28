@@ -150,10 +150,10 @@ export function WorkspacePage() {
 
   useEffect(() => {
     if (showAttribution && connected && workBeId !== null && text.length > 0) {
-      const timer = setTimeout(() => { refreshAttribution(); }, 2000);
+      const timer = setTimeout(() => { refreshAttribution(); }, 500);
       return () => clearTimeout(timer);
     }
-  }, [showAttribution, connected, workBeId, text.length, refreshAttribution]);
+  }, [showAttribution, connected, workBeId, text, refreshAttribution]);
 
   useEffect(() => {
     if (connected && workBeId !== null) {
