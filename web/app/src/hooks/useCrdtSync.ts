@@ -220,7 +220,7 @@ export function useCrdtSync(
     const client = clientRef.current;
     if (!client || !client.isConnected()) return null;
     const resp = await client.sendRequest("work_create", {
-      edition: { text: "Start typing here..." },
+      edition: { text: "" },
     });
     const val = resp as Record<string, unknown>;
     return (val.value as number) ?? null;
