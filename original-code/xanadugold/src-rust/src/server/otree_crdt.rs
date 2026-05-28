@@ -254,6 +254,7 @@ fn apply_text_delta_to_edition(
     let total_old_chars = cum;
 
     let mut old_char_pos = 0usize;
+    let mut current_entry_idx = 0usize;
     let mut new_entries: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(
         new_text.len().max(old_entries.len()),
     );
@@ -264,14 +265,26 @@ fn apply_text_delta_to_edition(
         match op {
             TextDeltaOp::Retain { count } => {
                 flush_batched_insert(&mut pending_insert, &prov, &mut new_entries, &mut new_pos);
-                let mut remaining = *count as usize;
-                while remaining > 0 {
-                    let entry_idx = find_entry_for_char(&entry_char_start, old_char_pos);
-                    let entry = &old_entries[entry_idx];
-                    let entry_start = entry_char_start[entry_idx];
+                let target_char_pos = old_char_pos + *count as usize;
+
+                while old_char_pos < target_char_pos {
+                    if current_entry_idx >= old_entries.len() {
+                        break;
+                    }
+                    let entry = &old_entries[current_entry_idx];
+                    let entry_start = entry_char_start[current_entry_idx];
                     let entry_len = entry.1.char_len();
-                    let within = old_char_pos - entry_start;
+
+                    if entry_len == 0 {
+                        new_entries.push((new_pos, entry.1.clone()));
+                        new_pos += 1;
+                        current_entry_idx += 1;
+                        continue;
+                    }
+
+                    let within = old_char_pos.saturating_sub(entry_start);
                     let available = entry_len - within;
+                    let remaining = target_char_pos - old_char_pos;
                     let take = remaining.min(available);
 
                     if within == 0 && take == entry_len {
@@ -285,12 +298,33 @@ fn apply_text_delta_to_edition(
                     }
 
                     old_char_pos += take;
-                    remaining -= take;
+                    if within + take == entry_len {
+                        current_entry_idx += 1;
+                    }
                 }
             }
             TextDeltaOp::Delete { count } => {
                 flush_batched_insert(&mut pending_insert, &prov, &mut new_entries, &mut new_pos);
-                old_char_pos += *count as usize;
+                let target_char_pos = old_char_pos + *count as usize;
+                while old_char_pos < target_char_pos {
+                    if current_entry_idx >= old_entries.len() {
+                        break;
+                    }
+                    let entry_len = old_entries[current_entry_idx].1.char_len();
+                    if entry_len == 0 {
+                        current_entry_idx += 1;
+                        continue;
+                    }
+                    let entry_start = entry_char_start[current_entry_idx];
+                    let within = old_char_pos.saturating_sub(entry_start);
+                    let available = entry_len - within;
+                    let remaining = target_char_pos - old_char_pos;
+                    let take = remaining.min(available);
+                    old_char_pos += take;
+                    if within + take == entry_len {
+                        current_entry_idx += 1;
+                    }
+                }
             }
             TextDeltaOp::Insert { text } => {
                 pending_insert.push_str(text);
@@ -300,24 +334,11 @@ fn apply_text_delta_to_edition(
 
     flush_batched_insert(&mut pending_insert, &prov, &mut new_entries, &mut new_pos);
 
-    while old_char_pos < total_old_chars {
-        let entry_idx = find_entry_for_char(&entry_char_start, old_char_pos);
-        let entry = &old_entries[entry_idx];
-        let entry_start = entry_char_start[entry_idx];
-        let within = old_char_pos - entry_start;
-
-        if within == 0 {
-            new_entries.push((new_pos, entry.1.clone()));
-            new_pos += 1;
-            old_char_pos += entry.1.char_len();
-        } else {
-            let take = entry.1.char_len() - within;
-            if let Some(carrier) = split_text_carrier(&entry.1, within, within + take) {
-                new_entries.push((new_pos, Arc::new(carrier)));
-                new_pos += 1;
-            }
-            old_char_pos += take;
-        }
+    while current_entry_idx < old_entries.len() {
+        let entry = &old_entries[current_entry_idx];
+        new_entries.push((new_pos, entry.1.clone()));
+        new_pos += 1;
+        current_entry_idx += 1;
     }
 
     Edition::from_entries(new_entries).coalesce()
@@ -1324,7 +1345,7 @@ mod tests {
         }];
         let result = apply_text_delta_to_edition(&edition, &ops, None);
         assert_eq!(result.to_text(), "line1\nline2\nline3");
-        assert_eq!(result.count(), 3, "should create 3 line elements");
+        assert_eq!(result.count(), 1, "coalesce merges uniform-provenance inserts into 1 element");
     }
 
     #[test]
@@ -1372,7 +1393,7 @@ mod tests {
                     .map_or(false, |p| matches!(p.author_type, crate::edition::provenance::AuthorType::Llm))
             })
             .collect();
-        assert_eq!(llm_entries.len(), 2, "LLM text should be 2 line-batched elements");
+        assert_eq!(llm_entries.len(), 1, "coalesce merges uniform-provenance LLM elements into 1");
     }
 
     #[test]
@@ -1388,6 +1409,65 @@ mod tests {
     fn test_split_text_carrier_empty_returns_none() {
         let carrier = Carrier::new(RangeElement::text("hello".to_string()));
         assert!(split_text_carrier(&carrier, 3, 3).is_none());
+    }
+
+    #[test]
+    fn test_delta_with_zero_char_elements_retain() {
+        let mut entries = vec![];
+        let mut pos = 0i64;
+        entries.push((pos, Arc::new(Carrier::new(RangeElement::text("ab".to_string())))));
+        pos += 1;
+        entries.push((pos, Arc::new(Carrier::new(RangeElement::Data { bytes: vec![] }))));
+        pos += 1;
+        entries.push((pos, Arc::new(Carrier::new(RangeElement::text("cd".to_string())))));
+        pos += 1;
+        let edition = Edition::from_entries(entries);
+
+        let ops = vec![
+            TextDeltaOp::Retain { count: 4 },
+        ];
+        let result = apply_text_delta_to_edition(&edition, &ops, None);
+        assert_eq!(result.to_text(), "abcd");
+        assert_eq!(result.count(), 3, "placeholder should be preserved");
+    }
+
+    #[test]
+    fn test_delta_with_zero_char_elements_delete() {
+        let mut entries = vec![];
+        let mut pos = 0i64;
+        entries.push((pos, Arc::new(Carrier::new(RangeElement::text("ab".to_string())))));
+        pos += 1;
+        entries.push((pos, Arc::new(Carrier::new(RangeElement::Data { bytes: vec![] }))));
+        pos += 1;
+        entries.push((pos, Arc::new(Carrier::new(RangeElement::text("cd".to_string())))));
+        pos += 1;
+        let edition = Edition::from_entries(entries);
+
+        let ops = vec![
+            TextDeltaOp::Retain { count: 1 },
+            TextDeltaOp::Delete { count: 2 },
+            TextDeltaOp::Retain { count: 1 },
+        ];
+        let result = apply_text_delta_to_edition(&edition, &ops, None);
+        assert_eq!(result.to_text(), "ad");
+    }
+
+    #[test]
+    fn test_delta_trailing_zero_char_preserved() {
+        let mut entries = vec![];
+        let mut pos = 0i64;
+        entries.push((pos, Arc::new(Carrier::new(RangeElement::text("hello".to_string())))));
+        pos += 1;
+        entries.push((pos, Arc::new(Carrier::new(RangeElement::Data { bytes: vec![] }))));
+        pos += 1;
+        let edition = Edition::from_entries(entries);
+
+        let ops = vec![
+            TextDeltaOp::Retain { count: 5 },
+        ];
+        let result = apply_text_delta_to_edition(&edition, &ops, None);
+        assert_eq!(result.to_text(), "hello");
+        assert_eq!(result.count(), 2, "trailing placeholder preserved");
     }
 
     #[test]
