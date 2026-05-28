@@ -40,7 +40,8 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
 .tag-featured{background:rgba(63,185,80,0.12);color:#3fb950}
 
 /* Hero cards - the big standouts */
-.hero-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:32px}
+.hero-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+.hero-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px}
 .hero-card{
   background:#161b22;
   border:2px solid #30363d;
@@ -87,6 +88,16 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
 .hero-slides::before{background:linear-gradient(90deg,#d29922,#f85149)}
 .hero-slides:hover{border-color:#d29922;box-shadow:0 8px 24px rgba(210,153,34,0.15)}
 .hero-slides .hero-tag{background:rgba(210,153,34,0.15);color:#d29922}
+
+.hero-editions{border-color:#a371f7}
+.hero-editions::before{background:linear-gradient(90deg,#a371f7,#f778a1)}
+.hero-editions:hover{border-color:#a371f7;box-shadow:0 8px 24px rgba(163,113,247,0.15)}
+.hero-editions .hero-tag{background:rgba(163,113,247,0.15);color:#a371f7}
+
+.hero-notif{border-color:#f85149}
+.hero-notif::before{background:linear-gradient(90deg,#f85149,#d29922)}
+.hero-notif:hover{border-color:#f85149;box-shadow:0 8px 24px rgba(248,81,73,0.15)}
+.hero-notif .hero-tag{background:rgba(248,81,73,0.15);color:#f85149}
 
 .footer{margin-top:64px;padding-top:20px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
 
@@ -150,9 +161,19 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
       <span class="hero-tag">10 slides</span>
     </div>
   </div>
+  <div class="hero-grid-2">
+    <div class="hero-card hero-editions">
+      <h3><a href="editions-and-works.html">Editions &amp; Works</a></h3>
+      <p>How documents are structured as versioned editions with per-line attribution, three-way merge, and the O-tree data model. Essential reading for understanding Xudanu's core abstractions.</p>
+      <span class="hero-tag">10 sections &middot; 10 diagrams</span>
+    </div>
+    <div class="hero-card hero-notif">
+      <h3><a href="notification-system.html">Notification System</a></h3>
+      <p>Real-time notification and event system for collaborative editing sessions.</p>
+      <span class="hero-tag">interactive</span>
+    </div>
+  </div>
 </div>
-
-<!-- Architecture -->
 <div class="section">
   <h2>Architecture &amp; Design <span class="badge badge-blue">DEEP DIVES</span></h2>
   <div class="doc-grid">
