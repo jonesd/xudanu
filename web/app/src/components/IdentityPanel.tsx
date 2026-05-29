@@ -73,7 +73,9 @@ export function IdentityPanel({ identity, connected, onCreateIdentity, onLogin, 
     } catch (err) {
       let msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("already taken") || msg.includes("already exists")) {
-        msg = `Name "${mode === "create" ? displayName : clubName}" already exists. Use "Sign In" instead.`;
+        msg = `Name "${mode === "create" ? displayName : clubName}" already exists. Try "Sign In" instead.`;
+      } else if (msg.includes("club not found") || msg.includes("ClubNotFound")) {
+        msg = `Identity "${clubName}" not found. Create one first with "New Identity".`;
       }
       setError(msg);
     } finally {

@@ -1771,6 +1771,7 @@ mod tests {
             timestamp: 100,
             author_type: AuthorType::Human,
             llm_model: None,
+            historical_author_id: None,
         };
         let base = Edition::from_text_batched("hello\nworld\n");
         let mut a_entries: Vec<(i64, Arc<Carrier>)> = base.all_entries();

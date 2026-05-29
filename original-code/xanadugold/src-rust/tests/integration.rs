@@ -7388,12 +7388,12 @@ fn work_list_filters_by_read_permission() {
     let entries = srv.list_works_with_titles();
     let visible_ids: Vec<u64> = entries
         .iter()
-        .filter(|(id, _, _, _, _, _)| {
+        .filter(|(id, _, _, _, _, _, _, _, _, _, _)| {
             srv.work(*id)
                 .map(|w| srv.work_is_readable(sid2, w))
                 .unwrap_or(false)
         })
-        .map(|(id, _, _, _, _, _)| *id)
+        .map(|(id, _, _, _, _, _, _, _, _, _, _)| *id)
         .collect();
 
     assert!(

@@ -62,11 +62,15 @@ export function useCrdtSync(
       if (saved) {
         credentialsRef.current = JSON.parse(saved);
       }
-    } catch {}
+    } catch (e) {
+      console.warn("useCrdtSync: failed to parse saved credentials:", e);
+    }
   }, []);
 
   useEffect(() => {
     if (!wsUrl) return;
+
+    setTextState("");
 
     const client = new CrdtSyncClient(wsUrl, workBeId ?? 0);
     clientRef.current = client;
@@ -203,7 +207,7 @@ export function useCrdtSync(
     if (!client || !client.isConnected()) return;
     await client.createIdentity(displayName, password);
     credentialsRef.current = { name: displayName, password };
-    try { localStorage.setItem("xudanu_credentials", JSON.stringify(credentialsRef.current)); } catch {}
+    try { localStorage.setItem("xudanu_credentials", JSON.stringify(credentialsRef.current)); } catch (e) { console.error("useCrdtSync: CRITICAL - failed to persist credentials:", e); }
     setAuthenticated(true);
   }, []);
 
@@ -212,7 +216,7 @@ export function useCrdtSync(
     if (!client || !client.isConnected()) return;
     await client.loginByName(clubName, password);
     credentialsRef.current = { name: clubName, password };
-    try { localStorage.setItem("xudanu_credentials", JSON.stringify(credentialsRef.current)); } catch {}
+    try { localStorage.setItem("xudanu_credentials", JSON.stringify(credentialsRef.current)); } catch (e) { console.error("useCrdtSync: CRITICAL - failed to persist credentials:", e); }
     setAuthenticated(true);
   }, []);
 
@@ -324,7 +328,7 @@ export function useCrdtSync(
   const logout = useCallback(() => {
     credentialsRef.current = null;
     setAuthenticated(false);
-    try { localStorage.removeItem("xudanu_credentials"); } catch {}
+    try { localStorage.removeItem("xudanu_credentials"); } catch (e) { console.error("useCrdtSync: CRITICAL - failed to clear credentials on logout:", e); }
     const client = clientRef.current;
     if (client) {
       client.disconnect();

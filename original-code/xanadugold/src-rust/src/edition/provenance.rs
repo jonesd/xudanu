@@ -5,11 +5,13 @@ use super::backend::BeId;
 
 const PROVENANCE_DOMAIN: &[u8] = b"xudanu/v1/provenance";
 const ELEMENT_PROVENANCE_DOMAIN: &[u8] = b"xudanu/v1/element-provenance";
+const HISTORICAL_ATTESTATION_DOMAIN: &[u8] = b"xudanu/v1/historical-attestation";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthorType {
     Human,
     Llm,
+    Historical,
 }
 
 impl Default for AuthorType {
@@ -26,6 +28,7 @@ pub struct ElementProvenance {
     pub timestamp: u64,
     pub author_type: AuthorType,
     pub llm_model: Option<String>,
+    pub historical_author_id: Option<BeId>,
 }
 
 #[cfg(feature = "serde")]
@@ -41,6 +44,7 @@ mod element_serde_impl {
         timestamp: u64,
         author_type: Option<String>,
         llm_model: Option<String>,
+        historical_author_id: Option<u64>,
     }
 
     impl Serialize for ElementProvenance {
@@ -53,8 +57,10 @@ mod element_serde_impl {
                 author_type: Some(match self.author_type {
                     AuthorType::Human => "human".to_string(),
                     AuthorType::Llm => "llm".to_string(),
+                    AuthorType::Historical => "historical".to_string(),
                 }),
                 llm_model: self.llm_model.clone(),
+                historical_author_id: self.historical_author_id,
             }
             .serialize(s)
         }
@@ -69,6 +75,7 @@ mod element_serde_impl {
                 .map_err(|_| serde::de::Error::custom("author_public_key must be 32 bytes"))?;
             let author_type = match data.author_type.as_deref() {
                 Some("llm") => AuthorType::Llm,
+                Some("historical") => AuthorType::Historical,
                 _ => AuthorType::Human,
             };
             Ok(ElementProvenance {
@@ -78,6 +85,7 @@ mod element_serde_impl {
                 timestamp: data.timestamp,
                 author_type,
                 llm_model: data.llm_model,
+                historical_author_id: data.historical_author_id,
             })
         }
     }
@@ -270,6 +278,53 @@ pub fn verify_span_provenance_with_span_fp(
         provenance.timestamp,
         &provenance.server_id,
     );
+    let signature = Signature::from_bytes(&provenance.signature);
+    crate::crypto::sign::verify_signature(&verifying_key, &payload, &signature).is_ok()
+}
+
+pub fn sign_historical_attestation(
+    server_signing_key: &SigningKey,
+    element_fingerprints: &[[u8; 32]],
+    historical_author_id: BeId,
+    timestamp: u64,
+    server_id: &[u8; 32],
+) -> Provenance {
+    let span_fp = compute_span_fingerprint(element_fingerprints);
+    let mut hasher = Hasher::new();
+    hasher.update(HISTORICAL_ATTESTATION_DOMAIN);
+    hasher.update(&span_fp);
+    hasher.update(&server_signing_key.verifying_key().to_bytes());
+    hasher.update(&historical_author_id.to_le_bytes());
+    hasher.update(&timestamp.to_le_bytes());
+    hasher.update(server_id);
+    let payload: [u8; 32] = hasher.finalize().into();
+    let signature = crate::crypto::sign::sign_bytes(server_signing_key, &payload);
+    Provenance {
+        author_public_key: server_signing_key.verifying_key().to_bytes(),
+        signature: signature.to_bytes(),
+        timestamp,
+        server_id: *server_id,
+    }
+}
+
+pub fn verify_historical_attestation(
+    provenance: &Provenance,
+    element_fingerprints: &[[u8; 32]],
+    historical_author_id: BeId,
+) -> bool {
+    let verifying_key = match VerifyingKey::from_bytes(&provenance.author_public_key) {
+        Ok(vk) => vk,
+        Err(_) => return false,
+    };
+    let span_fp = compute_span_fingerprint(element_fingerprints);
+    let mut hasher = Hasher::new();
+    hasher.update(HISTORICAL_ATTESTATION_DOMAIN);
+    hasher.update(&span_fp);
+    hasher.update(&provenance.author_public_key);
+    hasher.update(&historical_author_id.to_le_bytes());
+    hasher.update(&provenance.timestamp.to_le_bytes());
+    hasher.update(&provenance.server_id);
+    let payload: [u8; 32] = hasher.finalize().into();
     let signature = Signature::from_bytes(&provenance.signature);
     crate::crypto::sign::verify_signature(&verifying_key, &payload, &signature).is_ok()
 }

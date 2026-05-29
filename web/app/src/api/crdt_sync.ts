@@ -8,6 +8,31 @@ export interface AwarenessState {
   is_typing: boolean;
 }
 
+export interface OutlineEntry {
+  level: number;
+  text: string;
+  line: number;
+  char_offset: number;
+}
+
+export interface SearchMatchItem {
+  char_offset: number;
+  line: number;
+  context: string;
+}
+
+export interface SearchResult {
+  matches: SearchMatchItem[];
+  totalMatches: number;
+}
+
+export interface GotoResult {
+  line: number;
+  charOffset: number;
+  context: string;
+  contextStartLine: number;
+}
+
 export interface ContentMatch {
   fossil_id: number;
   edition_be_id: number;
@@ -27,6 +52,7 @@ export interface AttributionSpan {
   server_id: number[];
   author_type: string | null;
   llm_model: string | null;
+  historical_author_id: number | null;
 }
 
 export interface AttributionLogStatus {
@@ -34,6 +60,38 @@ export interface AttributionLogStatus {
   chain_valid: boolean;
   last_sequence: number;
   has_log: boolean;
+}
+
+export interface HistoricalAuthor {
+  be_id: number;
+  name: string;
+  display_name: string;
+  birth_year: number | null;
+  death_year: number | null;
+  external_ids: Record<string, string>;
+  source_bibliography: string;
+}
+
+export interface HistoricalAuthorEntry {
+  be_id: number;
+  name: string;
+  display_name: string;
+  birth_year: number | null;
+  death_year: number | null;
+}
+
+export interface SourceDetectResult {
+  source_type: string;
+  detected: boolean;
+  content_start_line: number;
+  content_end_line: number;
+  total_lines: number;
+  metadata: Record<string, string>;
+}
+
+export interface SourcePatternEntry {
+  source_type: string;
+  display_name: string;
 }
 
 export interface WhoAmIEntry {
@@ -55,6 +113,11 @@ export interface WorkListEntry {
   is_grabbed: boolean;
   title: string;
   read_club: number | null;
+  is_source?: boolean;
+  content_start_line?: number;
+  content_end_line?: number;
+  source_author_id?: number;
+  source_edition_info?: string;
 }
 
 type IdentityListener = (identity: WhoAmIEntry | null) => void;
@@ -212,6 +275,60 @@ export class CrdtSyncClient {
     return (val.spans as AttributionSpan[]) || [];
   }
 
+  async textRange(
+    workId: number,
+    startChar: number,
+    endChar: number,
+  ): Promise<{ text: string; totalChars: number; startChar: number; endChar: number }> {
+    const resp = await this.sendRequest("work_text_range", {
+      work_id: workId,
+      start_char: startChar,
+      end_char: endChar,
+    });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      text: (val.text as string) || "",
+      totalChars: (val.total_chars as number) || 0,
+      startChar: (val.start_char as number) || 0,
+      endChar: (val.end_char as number) || 0,
+    };
+  }
+
+  async workOutline(workId: number): Promise<OutlineEntry[]> {
+    const resp = await this.sendRequest("work_outline", { work_id: workId });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.entries as OutlineEntry[]) || [];
+  }
+
+  async workSearch(workId: number, query: string, maxResults?: number): Promise<SearchResult> {
+    const resp = await this.sendRequest("work_search", {
+      work_id: workId,
+      query,
+      max_results: maxResults ?? null,
+    });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      matches: (val.matches as SearchMatchItem[]) || [],
+      totalMatches: (val.total_matches as number) || 0,
+    };
+  }
+
+  async workGoto(workId: number, line?: number, char?: number): Promise<GotoResult> {
+    const resp = await this.sendRequest("work_goto", {
+      work_id: workId,
+      line: line ?? null,
+      char: char ?? null,
+      context_lines: 10,
+    });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      line: (val.line as number) || 0,
+      charOffset: (val.char_offset as number) || 0,
+      context: (val.context as string) || "",
+      contextStartLine: (val.context_start_line as number) || 0,
+    };
+  }
+
   async diffNarration(workId: number): Promise<{ text: string; model: string; updatedText: string }> {
     const resp = await this.sendRequest("work_diff_narration", {
       work_id: workId,
@@ -248,12 +365,94 @@ export class CrdtSyncClient {
     return extractValue(resp) as AttributionLogStatus;
   }
 
+  async registerHistoricalAuthor(
+    name: string,
+    displayName: string,
+    birthYear: number | null,
+    deathYear: number | null,
+    externalIds: Record<string, string>,
+    sourceBibliography: string,
+  ): Promise<HistoricalAuthor> {
+    const resp = await this.sendRequest("historical_author_register", {
+      name,
+      display_name: displayName,
+      birth_year: birthYear,
+      death_year: deathYear,
+      external_ids: externalIds,
+      source_bibliography: sourceBibliography,
+    });
+    return extractValue(resp) as HistoricalAuthor;
+  }
+
+  async getHistoricalAuthor(authorId: number): Promise<HistoricalAuthor> {
+    const resp = await this.sendRequest("historical_author_get", {
+      author_id: authorId,
+    });
+    return extractValue(resp) as HistoricalAuthor;
+  }
+
+  async searchHistoricalAuthors(query: string): Promise<HistoricalAuthorEntry[]> {
+    const resp = await this.sendRequest("historical_author_search", { query });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.authors as HistoricalAuthorEntry[]) || [];
+  }
+
+  async listHistoricalAuthors(): Promise<HistoricalAuthorEntry[]> {
+    const resp = await this.sendRequest("historical_author_list");
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.authors as HistoricalAuthorEntry[]) || [];
+  }
+
+  async importSourceWork(
+    authorId: number,
+    title: string,
+    text: string,
+    editionInfo: string,
+    skipPrefixLines: number,
+    skipSuffixLines: number,
+  ): Promise<{ workId: number; authorId: number; title: string; textLength: number }> {
+    const resp = await this.sendRequest("import_source_work", {
+      author_id: authorId,
+      title,
+      text,
+      edition_info: editionInfo,
+      skip_prefix_lines: skipPrefixLines,
+      skip_suffix_lines: skipSuffixLines,
+    });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      workId: (val.work_id as number) || 0,
+      authorId: (val.author_id as number) || 0,
+      title: (val.title as string) || "",
+      textLength: (val.text_length as number) || 0,
+    };
+  }
+
+  async detectSource(text: string): Promise<SourceDetectResult> {
+    const resp = await this.sendRequest("source_detect", { text });
+    return extractValue(resp) as SourceDetectResult;
+  }
+
+  async listSourcePatterns(): Promise<SourcePatternEntry[]> {
+    const resp = await this.sendRequest("source_pattern_list");
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.patterns as SourcePatternEntry[]) || [];
+  }
+
   async fetchWorkList(): Promise<WorkListEntry[]> {
     const resp = await this.sendRequest("work_list");
     const val = extractValue(resp);
     if (Array.isArray(val)) return val as WorkListEntry[];
     const rec = val as Record<string, unknown>;
     return (rec.work_list as WorkListEntry[]) || (rec.value as WorkListEntry[]) || [];
+  }
+
+  async fetchWorksByAuthor(authorId: number): Promise<WorkListEntry[]> {
+    const resp = await this.sendRequest("work_list_by_author", { author_id: authorId });
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as WorkListEntry[];
+    const rec = val as Record<string, unknown>;
+    return (rec.work_list as WorkListEntry[]) || [];
   }
 
   async setReadClub(workId: number, clubId: number | null): Promise<void> {
@@ -438,7 +637,9 @@ export class CrdtSyncClient {
       if (this.currentIdentity) {
         try {
           await this.sendRequest("crdt_register_author", { work_id: this.workBeId });
-        } catch {}
+        } catch (e) {
+          console.warn("crdt_sync: register_author failed:", e);
+        }
       }
 
       this.crdtReady = true;
@@ -507,6 +708,22 @@ export class CrdtSyncClient {
         if (newText !== this.text) {
           this.text = newText;
           this.textListeners.forEach((cb) => cb(newText));
+        }
+      }
+    }
+
+    if (eventType === "crdt_text_delta") {
+      const payload = event.payload as Record<string, unknown> | undefined;
+      if (payload && payload.work_id === this.workBeId) {
+        const ops = payload.ops as Array<{ type: string; count?: number; text?: string }>;
+        try {
+          const newText = applyDeltaOps(this.text, ops);
+          if (newText !== this.text) {
+            this.text = newText;
+            this.textListeners.forEach((cb) => cb(newText));
+          }
+        } catch {
+          this.refreshText();
         }
       }
     }
@@ -606,4 +823,38 @@ function commonSuffix(a: string, b: string): number {
   const bLen = b.length;
   while (i < aLen && i < bLen && a.charCodeAt(aLen - 1 - i) === b.charCodeAt(bLen - 1 - i)) i++;
   return i;
+}
+
+function applyDeltaOps(
+  text: string,
+  ops: Array<{ type: string; count?: number; text?: string }>,
+): string {
+  let result = "";
+  let pos = 0;
+  for (const op of ops) {
+    switch (op.type) {
+      case "retain": {
+        const count = op.count ?? 0;
+        if (pos + count > text.length)
+          throw new Error(`delta retain out of bounds: pos=${pos} count=${count} len=${text.length}`);
+        result += text.slice(pos, pos + count);
+        pos += count;
+        break;
+      }
+      case "delete": {
+        const count = op.count ?? 0;
+        if (pos + count > text.length)
+          throw new Error(`delta delete out of bounds: pos=${pos} count=${count} len=${text.length}`);
+        pos += count;
+        break;
+      }
+      case "insert": {
+        result += op.text ?? "";
+        break;
+      }
+    }
+  }
+  if (pos !== text.length)
+    throw new Error(`delta did not consume full text: pos=${pos} len=${text.length}`);
+  return result;
 }

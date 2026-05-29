@@ -164,6 +164,7 @@ pub struct SyncStartResult {
 
 pub struct ApplyUpdateResult {
     pub relay_to: Vec<(SessionId, SyncSessionId)>,
+    pub was_merged: bool,
 }
 
 impl CrdtManager {
@@ -327,7 +328,7 @@ impl CrdtManager {
             .map(|(sid, sync_id)| (*sid, *sync_id))
             .collect();
 
-        Ok(ApplyUpdateResult { relay_to })
+        Ok(ApplyUpdateResult { relay_to, was_merged: false })
     }
 
     pub fn apply_update(
@@ -379,7 +380,7 @@ impl CrdtManager {
             .map(|(sid, sync_id)| (*sid, *sync_id))
             .collect();
 
-        Ok(ApplyUpdateResult { relay_to })
+        Ok(ApplyUpdateResult { relay_to, was_merged: false })
     }
 
     pub fn get_diff_since(&self, work_id: BeId, sv: &[u8]) -> Result<Vec<u8>, CrdtError> {
@@ -658,6 +659,29 @@ impl CrdtManager {
 
     pub fn is_active(&self, work_id: BeId) -> bool {
         self.docs.contains_key(&work_id)
+    }
+
+    pub fn pending_work_ids(&self) -> Vec<BeId> {
+        self.docs
+            .iter()
+            .filter(|(_, wd)| wd.pending_update.is_some())
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    pub fn works_for_session(&self, session_id: SessionId) -> Vec<BeId> {
+        self.docs
+            .iter()
+            .filter(|(_, wd)| wd.subscribers.contains_key(&session_id))
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    pub fn close_session(&mut self, work_id: BeId, session_id: SessionId) {
+        if let Some(wd) = self.docs.get_mut(&work_id) {
+            wd.subscribers.remove(&session_id);
+            wd.awareness.remove(&session_id);
+        }
     }
 
     pub fn is_subscriber(&self, work_id: BeId, session_id: SessionId) -> bool {

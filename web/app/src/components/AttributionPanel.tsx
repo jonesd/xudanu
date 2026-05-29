@@ -17,6 +17,8 @@ interface AuthorGroup {
   color: string;
   spans: AttributionSpan[];
   allValid: boolean;
+  authorType: string | null;
+  historicalAuthorId: number | null;
 }
 
 interface AttributionPanelProps {
@@ -34,15 +36,21 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
       const key = bytesToHex(span.author_public_key);
       if (!groups.has(key)) {
         const isLlm = span.author_type === "llm";
-        const displayName = isLlm
-          ? (span.llm_model || "LLM")
-          : (span.author_display_name || shortKey(span.author_public_key));
+        const isHistorical = span.author_type === "historical";
+        const displayName = isHistorical
+          ? (span.author_display_name || "Unknown Historical Author")
+          : isLlm
+            ? (span.llm_model || "LLM")
+            : (span.author_display_name || shortKey(span.author_public_key));
+        const color = isLlm ? "#7c4dff" : isHistorical ? "#c4a35a" : authorColor(displayName);
         groups.set(key, {
           key,
           displayName,
-          color: isLlm ? "#7c4dff" : authorColor(displayName),
+          color,
           spans: [],
           allValid: true,
+          authorType: span.author_type,
+          historicalAuthorId: span.historical_author_id,
         });
       }
       const group = groups.get(key)!;
@@ -107,11 +115,19 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
 
       <ul className="attribution-authors">
         {authors.map((author) => (
-          <li key={author.key} className="attribution-author">
+          <li key={author.key} className={`attribution-author${author.authorType === "historical" ? " historical-author" : ""}`}>
             <span className="author-color" style={{ backgroundColor: author.color }} />
-            <span className="author-name">{author.displayName}</span>
+            <span className={`author-name${author.authorType === "historical" ? " historical-name" : ""}${author.authorType === "llm" ? " llm-name" : ""}`}>
+              {author.displayName}
+            </span>
+            {author.authorType === "historical" && (
+              <span className="author-type-badge historical-badge">historical</span>
+            )}
+            {author.authorType === "llm" && (
+              <span className="author-type-badge llm-badge">LLM</span>
+            )}
             <span className={`author-sig ${author.allValid ? "sig-valid" : "sig-invalid"}`}>
-              {author.allValid ? "signed" : "unsigned"}
+              {author.authorType === "historical" ? "attested" : author.allValid ? "signed" : "unsigned"}
             </span>
             <span className="author-spans">{author.spans.length} span{author.spans.length !== 1 ? "s" : ""}</span>
             <span className="author-key" title={author.key}>{shortKey(author.spans[0].author_public_key)}</span>
