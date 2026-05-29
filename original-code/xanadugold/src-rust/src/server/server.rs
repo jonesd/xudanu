@@ -42,6 +42,12 @@ struct WorkState {
     status_detectors: DetectorList,
     revision_detectors: DetectorList,
     cached_title: String,
+    is_source: bool,
+    source_author_id: Option<BeId>,
+    source_edition_info: Option<String>,
+    imported_by: Option<BeId>,
+    content_start_line: Option<u64>,
+    content_end_line: Option<u64>,
 }
 
 impl WorkState {
@@ -109,6 +115,8 @@ pub struct Server {
     pub(crate) max_personal_clubs: usize,
     pub(crate) login_attempts: HashMap<BeId, crate::server::identity::ClubAttemptTracker>,
     attribution_log: Option<crate::server::transport::attribution_log::AttributionLog>,
+    pub(crate) historical_authors: crate::server::historical_author::HistoricalAuthorRegistry,
+    pub(crate) source_patterns: Vec<crate::server::source_matcher::SourcePattern>,
 }
 
 pub struct ServerHealth {
@@ -235,6 +243,8 @@ impl Server {
             max_personal_clubs: 10_000,
             login_attempts: HashMap::new(),
             attribution_log: None,
+            historical_authors: crate::server::historical_author::HistoricalAuthorRegistry::new(),
+            source_patterns: crate::server::source_matcher::builtin_patterns(),
         };
 
         let pub_club =
@@ -357,6 +367,22 @@ impl Server {
         if let Some(session) = self.sessions.get_mut(&session_id) {
             session.end();
         }
+
+        let crdt_works: Vec<BeId> = if self.use_otree_crdt {
+            self.otree_crdt.works_for_session(session_id)
+        } else {
+            self.crdt_manager.works_for_session(session_id)
+        };
+
+        for work_id in crdt_works {
+            let _ = self.crdt_remove_awareness(session_id, work_id);
+            if self.use_otree_crdt {
+                self.otree_crdt.close_session(work_id, session_id);
+            } else {
+                self.crdt_manager.close_session(work_id, session_id);
+            }
+        }
+
         Ok(())
     }
 
@@ -668,6 +694,12 @@ impl Server {
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
             cached_title: title,
+            is_source: false,
+            source_author_id: None,
+            source_edition_info: None,
+            imported_by: None,
+            content_start_line: None,
+            content_end_line: None,
         };
         self.works.insert(be_id, ws);
 
@@ -795,6 +827,9 @@ impl Server {
         new_edition: Edition,
     ) -> Result<u64, ServerError> {
         self.ensure_session(session_id)?;
+        if self.is_source_work(work_be_id) {
+            return Err(ServerError::InvalidArgument("source works are immutable".into()));
+        }
         self.ensure_grabbed_by(session_id, work_be_id)?;
 
         let author_club = self
@@ -812,6 +847,9 @@ impl Server {
         work_be_id: BeId,
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
+        if self.is_source_work(work_be_id) {
+            return Err(ServerError::InvalidArgument("source works are immutable".into()));
+        }
         self.ensure_can_edit(session_id, work_be_id)?;
 
         let ws = self
@@ -1412,15 +1450,26 @@ impl Server {
             let author_type_str = element_prov.map(|ep| match ep.author_type {
                 crate::edition::provenance::AuthorType::Human => "human".to_string(),
                 crate::edition::provenance::AuthorType::Llm => "llm".to_string(),
+                crate::edition::provenance::AuthorType::Historical => "historical".to_string(),
             });
             let llm_model = element_prov.and_then(|ep| ep.llm_model.clone());
+            let historical_author_id = element_prov.and_then(|ep| ep.historical_author_id);
             let is_llm = element_prov.is_some_and(|ep| {
                 matches!(ep.author_type, crate::edition::provenance::AuthorType::Llm)
+            });
+            let is_historical = element_prov.is_some_and(|ep| {
+                matches!(ep.author_type, crate::edition::provenance::AuthorType::Historical)
             });
 
             let (author_display_name, author_club_id) = if is_llm {
                 let model_name = llm_model.clone().unwrap_or_else(|| "llm".to_string());
                 (Some(model_name), None)
+            } else if is_historical {
+                let ha_name = historical_author_id
+                    .and_then(|id| self.historical_authors.get(id))
+                    .map(|a| a.display_name.clone())
+                    .unwrap_or_else(|| "Unknown Historical Author".to_string());
+                (Some(ha_name), historical_author_id)
             } else {
                 self.clubs
                     .iter()
@@ -1445,6 +1494,7 @@ impl Server {
                 server_id: sp.provenance.server_id.to_vec(),
                 author_type: author_type_str,
                 llm_model,
+                historical_author_id,
             });
         }
         Ok(spans)
@@ -1515,6 +1565,174 @@ impl Server {
             Err(_) => return false,
         };
         crate::server::transport::attribution_log::verify_attribution_log(&content, &seed).is_ok()
+    }
+
+    pub fn register_historical_author(
+        &mut self,
+        name: String,
+        display_name: String,
+        birth_year: Option<i32>,
+        death_year: Option<i32>,
+        external_ids: std::collections::HashMap<String, String>,
+        source_bibliography: String,
+        created_by: BeId,
+    ) -> Result<crate::server::historical_author::HistoricalAuthor, ServerError> {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.historical_authors
+            .register(name, display_name, birth_year, death_year, external_ids, source_bibliography, created_by, timestamp)
+            .map_err(ServerError::Internal)
+    }
+
+    pub fn get_historical_author(&self, be_id: BeId) -> Result<crate::server::historical_author::HistoricalAuthor, ServerError> {
+        self.historical_authors
+            .get(be_id)
+            .cloned()
+            .ok_or(ServerError::Internal(format!("historical author {} not found", be_id)))
+    }
+
+    pub fn search_historical_authors(&self, query: &str) -> Vec<crate::server::historical_author::HistoricalAuthor> {
+        self.historical_authors.search(query).into_iter().cloned().collect()
+    }
+
+    pub fn list_historical_authors(&self) -> Vec<crate::server::historical_author::HistoricalAuthor> {
+        self.historical_authors.list().into_iter().cloned().collect()
+    }
+
+    fn is_source_work(&self, work_be_id: BeId) -> bool {
+        self.works.get(&work_be_id).map_or(false, |ws| ws.is_source)
+    }
+
+    pub fn is_work_source(&self, work_be_id: BeId) -> Result<bool, ServerError> {
+        self.works.get(&work_be_id)
+            .map(|ws| ws.is_source)
+            .ok_or(ServerError::WorkNotFound(work_be_id))
+    }
+
+    pub fn detect_source(&self, text: &str) -> crate::server::source_matcher::SourceMatchResult {
+        crate::server::source_matcher::detect_source(text, &self.source_patterns)
+    }
+
+    pub fn list_source_patterns(&self) -> Vec<(String, String)> {
+        self.source_patterns.iter()
+            .map(|p| (p.source_type.clone(), p.display_name.clone()))
+            .collect()
+    }
+
+    pub fn import_source_work(
+        &mut self,
+        session_id: SessionId,
+        author_id: BeId,
+        title: String,
+        text: String,
+        edition_info: String,
+        skip_prefix_lines: u64,
+        skip_suffix_lines: u64,
+    ) -> Result<(BeId, BeId, u64, String), ServerError> {
+        self.ensure_logged_in(session_id)?;
+
+        self.historical_authors.get(author_id)
+            .ok_or_else(|| ServerError::Internal(format!("historical author {} not found", author_id)))?;
+
+        let total_lines = text.lines().count() as u64;
+        let content_start = skip_prefix_lines;
+        let content_end = total_lines.saturating_sub(skip_suffix_lines);
+
+        let mut edition = Edition::from_text_batched(&text);
+        let text_length = text.chars().count() as u64;
+
+        let (be_id, elem) = self.grand_map.new_work_element(None);
+        self.grand_map.assign_new_id(elem);
+
+        let importer = self.sessions.get(&session_id)
+            .and_then(|s| s._key_master())
+            .and_then(|km| km.login_authority().iter().next().copied());
+
+        let server_signing_key = &self.server_keypair.signing_key;
+        let server_id = self.server_keypair.signing_key.verifying_key().to_bytes();
+        let timestamp = Self::current_timestamp_secs();
+
+        let elem_provenance = crate::edition::provenance::ElementProvenance {
+            author_type: crate::edition::provenance::AuthorType::Historical,
+            author_public_key: server_id,
+            author_display_name: String::new(),
+            author_club_id: 0,
+            historical_author_id: Some(author_id),
+            llm_model: None,
+            timestamp,
+        };
+
+        {
+            let entries = edition.all_entries();
+            if !entries.is_empty() {
+                let fingerprints: Vec<[u8; 32]> = entries.iter()
+                    .map(|(_, c)| c.element.content_fingerprint())
+                    .collect();
+
+                let prov = crate::edition::provenance::sign_historical_attestation(
+                    server_signing_key,
+                    &fingerprints,
+                    author_id,
+                    timestamp,
+                    &server_id,
+                );
+
+                let span_prov = crate::edition::provenance::SpanProvenance {
+                    start: entries.first().map(|(p, _)| *p).unwrap_or(0),
+                    end: entries.last().map(|(p, _)| *p + 1).unwrap_or(0),
+                    provenance: prov,
+                };
+
+                let new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> = entries
+                    .into_iter()
+                    .map(|(pos, c)| {
+                        let mut carrier = (*c).clone();
+                        carrier.provenance = Some(elem_provenance.clone());
+                        (pos, std::sync::Arc::new(carrier))
+                    })
+                    .collect();
+
+                let n = new_entries.len();
+                let region = XnRegion::interval(0, n as i64);
+                edition = Edition {
+                    orgl: crate::edition::orgl::OrglRoot::from_bulk_entries(new_entries, None, region),
+                    endorsements: crate::edition::endorsement::EndorsementSet::new(),
+                    entries_cache: std::sync::Arc::new(std::sync::OnceLock::new()),
+                    span_provenance: vec![span_prov],
+                };
+            }
+        }
+
+        let mut work = Work::new_with_owner(be_id, importer, edition);
+        work.set_read_club(Some(self.system_clubs.public_club));
+
+        let auto_title = Self::extract_title(work.edition());
+        let final_title = if title.is_empty() { auto_title } else { title.clone() };
+        let ws = WorkState {
+            work,
+            chunk_ref: None,
+            grabber: None,
+            grabbed_at: None,
+            grab_waiters: Vec::new(),
+            last_revision_author: None,
+            status_detectors: DetectorList::new(),
+            revision_detectors: DetectorList::new(),
+            cached_title: final_title.clone(),
+            is_source: true,
+            source_author_id: Some(author_id),
+            source_edition_info: Some(edition_info),
+            imported_by: importer,
+            content_start_line: Some(content_start),
+            content_end_line: Some(content_end),
+        };
+        self.works.insert(be_id, ws);
+
+        let edition = self.works[&be_id].work.edition().clone();
+        self.content_address.intern_edition_elements(&edition);
+
+        Ok((be_id, author_id, text_length, final_title))
     }
 
     pub fn work_last_revision_author(&self, work_be_id: BeId) -> Result<Option<BeId>, ServerError> {
@@ -1702,7 +1920,11 @@ impl Server {
         work_be_id: BeId,
     ) -> Result<super::crdt_manager::SyncStartResult, ServerError> {
         self.ensure_session(session_id)?;
-        self.ensure_can_edit(session_id, work_be_id)?;
+        if self.is_source_work(work_be_id) {
+            self.ensure_can_read(session_id, work_be_id)?;
+        } else {
+            self.ensure_can_edit(session_id, work_be_id)?;
+        }
 
         if self.crdt_is_active(work_be_id) {
             let needs = self.crdt_needs_materialization(work_be_id);
@@ -1899,7 +2121,7 @@ impl Server {
                 None
             };
 
-            Ok((super::crdt_manager::ApplyUpdateResult { relay_to }, revision))
+            Ok((super::crdt_manager::ApplyUpdateResult { relay_to, was_merged: result.was_merged }, revision))
         } else {
             let result = self.crdt_manager
                 .apply_text_delta(work_be_id, session_id, ops)
@@ -1937,7 +2159,7 @@ impl Server {
                 .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
                 .collect();
             self.try_materialize(work_be_id, session_id)?;
-            Ok(super::crdt_manager::ApplyUpdateResult { relay_to })
+            Ok(super::crdt_manager::ApplyUpdateResult { relay_to, was_merged: false })
         } else {
             let result = self
                 .crdt_manager
@@ -2012,6 +2234,42 @@ impl Server {
         } else {
             self.crdt_manager.current_text(work_be_id).map_err(|e| ServerError::Internal(e.to_string()))
         }
+    }
+
+    pub fn crdt_text_range(&self, work_be_id: BeId, start_char: usize, end_char: usize) -> Result<super::otree_crdt::TextRangeResult, ServerError> {
+        if self.use_otree_crdt {
+            self.otree_crdt.text_range(work_be_id, start_char, end_char).map_err(|e| ServerError::Internal(e.to_string()))
+        } else {
+            let text = self.crdt_manager.current_text(work_be_id).map_err(|e| ServerError::Internal(e.to_string()))?;
+            let total = text.chars().count();
+            let start = start_char.min(total);
+            let end = end_char.min(total);
+            let range_text: String = text.chars().skip(start).take(end - start).collect();
+            Ok(super::otree_crdt::TextRangeResult {
+                text: range_text,
+                total_chars: total,
+                start_char: start,
+                end_char: end,
+            })
+        }
+    }
+
+    pub fn work_outline(&self, work_be_id: BeId) -> Result<Vec<crate::edition::edition::OutlineEntry>, ServerError> {
+        let text = self.crdt_current_text(work_be_id)?;
+        let ed = Edition::from_text(&text);
+        Ok(ed.extract_outline())
+    }
+
+    pub fn work_search(&self, work_be_id: BeId, query: &str, max_results: usize) -> Result<Vec<crate::edition::edition::SearchMatch>, ServerError> {
+        let text = self.crdt_current_text(work_be_id)?;
+        let ed = Edition::from_text(&text);
+        Ok(ed.search_text(query, max_results))
+    }
+
+    pub fn work_goto(&self, work_be_id: BeId, target_line: u64, context_lines: u64) -> Result<(u64, u64, String), ServerError> {
+        let text = self.crdt_current_text(work_be_id)?;
+        let ed = Edition::from_text(&text);
+        Ok(ed.get_context(target_line, context_lines))
     }
 
     fn try_materialize(
@@ -2103,6 +2361,25 @@ impl Server {
 
         let revision = self.revise_work(work_be_id, session_id, edition, author_club)?;
         Ok(revision)
+    }
+
+    pub fn materialize_all_pending(&mut self) -> usize {
+        let work_ids: Vec<BeId> = if self.use_otree_crdt {
+            self.otree_crdt.pending_work_ids()
+        } else {
+            self.crdt_manager.pending_work_ids()
+        };
+
+        let mut saved = 0;
+        for work_id in work_ids {
+            if let Ok(rev) = self.crdt_materialize_any_session(work_id) {
+                if rev > 0 {
+                    saved += 1;
+                    tracing::debug!("auto-save: materialized work {} rev {}", work_id, rev);
+                }
+            }
+        }
+        saved
     }
 
     pub fn crdt_update_awareness(
@@ -2323,7 +2600,7 @@ impl Server {
                 .into_iter()
                 .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
                 .collect();
-            Ok(super::crdt_manager::ApplyUpdateResult { relay_to })
+            Ok(super::crdt_manager::ApplyUpdateResult { relay_to, was_merged: false })
         } else {
             let mut known_keys = std::collections::HashMap::new();
             let server_vk = self.server_keypair.signing_key.verifying_key();
@@ -2349,7 +2626,7 @@ impl Server {
 
     pub fn list_works_with_titles(
         &self,
-    ) -> Vec<(BeId, Option<BeId>, u64, bool, String, Option<BeId>)> {
+    ) -> Vec<(BeId, Option<BeId>, u64, bool, String, Option<BeId>, bool, Option<u64>, Option<u64>, Option<BeId>, Option<String>)> {
         self.works
             .iter()
             .map(|(id, ws)| {
@@ -2364,6 +2641,11 @@ impl Server {
                     grabbed,
                     ws.cached_title.clone(),
                     read_club,
+                    ws.is_source,
+                    ws.content_start_line,
+                    ws.content_end_line,
+                    ws.source_author_id,
+                    ws.source_edition_info.clone(),
                 )
             })
             .collect()
@@ -2381,6 +2663,22 @@ impl Server {
                 let grabbed = ws.grabber.is_some();
                 let read_club = ws.work.read_club();
                 (*id, ws.work.owner(), rev_count, grabbed, read_club)
+            })
+            .collect()
+    }
+
+    pub fn list_works_by_historical_author(
+        &self,
+        author_id: BeId,
+    ) -> Vec<(BeId, Option<BeId>, u64, bool, String, Option<BeId>, Option<String>)> {
+        self.works
+            .iter()
+            .filter(|(_, ws)| ws.source_author_id == Some(author_id))
+            .map(|(id, ws)| {
+                let rev_count = ws.work.revision_count();
+                let grabbed = ws.grabber.is_some();
+                let read_club = ws.work.read_club();
+                (*id, ws.work.owner(), rev_count, grabbed, ws.cached_title.clone(), read_club, ws.source_edition_info.clone())
             })
             .collect()
     }
@@ -2702,6 +3000,12 @@ impl Server {
                 status_detectors: DetectorList::new(),
                 revision_detectors: DetectorList::new(),
                 cached_title: Self::extract_title(work.current_edition()),
+                is_source: false,
+                source_author_id: None,
+                source_edition_info: None,
+                imported_by: None,
+                content_start_line: None,
+                content_end_line: None,
             };
             self.works.insert(*id, ws);
         }
@@ -4838,6 +5142,12 @@ impl Server {
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
                     cached_title: title,
+                    is_source: false,
+                    source_author_id: None,
+                    source_edition_info: None,
+                    imported_by: None,
+                    content_start_line: None,
+                    content_end_line: None,
                 };
                 self.works.insert(be_id, ws);
                 imported += 1;
@@ -5781,6 +6091,16 @@ pub(crate) mod persist_snapshot {
         work: WorkSnapshot,
         grabber: Option<u64>,
         last_revision_author: Option<BeId>,
+        #[serde(default)]
+        is_source: bool,
+        #[serde(default)]
+        source_author_id: Option<BeId>,
+        #[serde(default)]
+        source_edition_info: Option<String>,
+        #[serde(default)]
+        content_start_line: Option<u64>,
+        #[serde(default)]
+        content_end_line: Option<u64>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -5845,6 +6165,8 @@ pub(crate) mod persist_snapshot {
         content_address: Option<crate::edition::ContentAddressIndex>,
         blob_metas: Vec<BlobMetaSnapshot>,
         key_history: Option<KeyHistorySnapshot>,
+        #[serde(default)]
+        historical_authors: Option<crate::server::historical_author::HistoricalAuthorRegistry>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -5877,6 +6199,11 @@ pub(crate) mod persist_snapshot {
                             work: WorkSnapshot::from_work(&ws.work),
                             grabber: ws.grabber.map(|s| s.0),
                             last_revision_author: ws.last_revision_author,
+                            is_source: ws.is_source,
+                            source_author_id: ws.source_author_id,
+                            source_edition_info: ws.source_edition_info.clone(),
+                            content_start_line: ws.content_start_line,
+                            content_end_line: ws.content_end_line,
                         },
                     )
                 })
@@ -5969,6 +6296,7 @@ pub(crate) mod persist_snapshot {
                 content_address: Some(self.content_address.clone()),
                 blob_metas,
                 key_history,
+                historical_authors: Some(self.historical_authors.clone()),
             }
         }
 
@@ -6034,6 +6362,8 @@ pub(crate) mod persist_snapshot {
                 max_personal_clubs: 10_000,
                 login_attempts: HashMap::new(),
                 attribution_log: None,
+                historical_authors: crate::server::historical_author::HistoricalAuthorRegistry::new(),
+                source_patterns: crate::server::source_matcher::builtin_patterns(),
             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap
@@ -6081,6 +6411,12 @@ pub(crate) mod persist_snapshot {
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
                     cached_title: Self::extract_title(work.current_edition()),
+                    is_source: ws_snap.is_source,
+                    source_author_id: ws_snap.source_author_id,
+                    source_edition_info: ws_snap.source_edition_info.clone(),
+                    imported_by: None,
+                    content_start_line: ws_snap.content_start_line,
+                    content_end_line: ws_snap.content_end_line,
                 };
                 server.works.insert(*id, ws);
             }
@@ -6150,6 +6486,10 @@ pub(crate) mod persist_snapshot {
                 .unwrap_or(0);
             if max_id >= server.grand_map.id_counter() {
                 server.grand_map.set_id_counter(max_id + 1);
+            }
+
+            if let Some(ha) = &snapshot.historical_authors {
+                server.historical_authors = ha.clone();
             }
 
             server
@@ -7920,9 +8260,11 @@ mod tests {
             span_provenance: vec![],
         }];
         let my_id = server.federation_server_id();
-        server.federation_import_works(&push, &my_id);
+        let (imported, already) = server.federation_import_works(&push, &my_id);
+        assert_eq!(imported, 1);
+        assert_eq!(already, 0);
 
-        let content = RangeElement::text("h".to_string());
+        let content = RangeElement::text("hi".to_string());
         let fed_results = server
             .backfollow
             .transclusion_index()
@@ -8922,7 +9264,7 @@ mod tests {
     fn work_private_by_default() {
         let (server, _) = setup_logged_in_server();
         let entries = server.list_works_with_titles();
-        for (_, _, _, _, _, read_club) in &entries {
+        for (_, _, _, _, _, read_club, _, _, _, _, _) in &entries {
             assert!(
                 read_club.is_some(),
                 "new works should have a read_club (owner club)"
@@ -10700,12 +11042,12 @@ mod tests {
         let works = server.list_works_with_titles();
         let pub_entry = works
             .iter()
-            .find(|(id, _, _, _, _, _)| *id == public_work)
+            .find(|(id, _, _, _, _, _, _, _, _, _, _)| *id == public_work)
             .unwrap();
         assert_eq!(pub_entry.5, Some(server.public_club_id()));
         let priv_entry = works
             .iter()
-            .find(|(id, _, _, _, _, _)| *id == private_work)
+            .find(|(id, _, _, _, _, _, _, _, _, _, _)| *id == private_work)
             .unwrap();
         assert_eq!(priv_entry.5, Some(read_club));
     }

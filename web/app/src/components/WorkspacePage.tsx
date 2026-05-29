@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useCrdtSync } from "../hooks/useCrdtSync";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
+import { VirtualizedEditor } from "../components/VirtualizedEditor";
 import { AwarenessIndicators } from "../components/AwarenessIndicators";
 import { DebugPanel } from "../components/DebugPanel";
 import { AttributionPanel } from "../components/AttributionPanel";
 import { IdentityPanel } from "../components/IdentityPanel";
-import type { WorkListEntry } from "../api/crdt_sync";
+import { ImportWizard } from "../components/ImportWizard";
+import type { WorkListEntry, HistoricalAuthorEntry } from "../api/crdt_sync";
 
 const WS_URL = `ws://${window.location.host}/xudanu`;
 
@@ -25,6 +27,11 @@ export function WorkspacePage() {
   const [isShared, setIsShared] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [llmMenuOpen, setLlmMenuOpen] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<"docs" | "authors">("docs");
+  const [authors, setAuthors] = useState<HistoricalAuthorEntry[]>([]);
+  const [expandedAuthorId, setExpandedAuthorId] = useState<number | null>(null);
+  const [authorWorks, setAuthorWorks] = useState<WorkListEntry[]>([]);
   const llmRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,16 +84,47 @@ export function WorkspacePage() {
     getEditClub,
     publicClubId,
     logout,
+    clientRef,
   } = useCrdtSync(WS_URL, workBeId);
+
+  const currentWorkMeta = works.find(w => w.work_id === workBeId);
 
   const loadWorks = useCallback(async () => {
     const list = await fetchWorkList();
     setWorks([...list].sort((a, b) => a.work_id - b.work_id));
   }, [fetchWorkList]);
 
+  const loadAuthors = useCallback(async () => {
+    if (!clientRef.current) return;
+    try {
+      const list = await clientRef.current.listHistoricalAuthors();
+      setAuthors(list);
+    } catch {}
+  }, [clientRef]);
+
+  const handleExpandAuthor = useCallback(async (authorId: number) => {
+    if (expandedAuthorId === authorId) {
+      setExpandedAuthorId(null);
+      setAuthorWorks([]);
+      return;
+    }
+    setExpandedAuthorId(authorId);
+    if (!clientRef.current) return;
+    try {
+      const list = await clientRef.current.fetchWorksByAuthor(authorId);
+      setAuthorWorks(list);
+    } catch {
+      setAuthorWorks([]);
+    }
+  }, [clientRef, expandedAuthorId]);
+
   useEffect(() => {
     if (connected && authenticated) loadWorks();
   }, [connected, authenticated, loadWorks]);
+
+  useEffect(() => {
+    if (connected && authenticated && sidebarTab === "authors") loadAuthors();
+  }, [connected, authenticated, sidebarTab, loadAuthors]);
 
   useEffect(() => {
     if (!connected || !authenticated) return;
@@ -132,21 +170,25 @@ export function WorkspacePage() {
     }
   }, [connected, workBeId, publicClubId, getReadClub, getEditClub]);
 
+  const prevTextRef = useRef(text);
+  useEffect(() => { prevTextRef.current = text; }, [text]);
+
   useEffect(() => {
-    if (workBeId !== null && connected && text === "") {
-      const timer = setTimeout(() => {
-        setWorkBeId((currentId) => {
-          if (currentId !== null) {
-            const url = new URL(window.location.href);
-            url.searchParams.delete("work");
-            window.history.replaceState({}, "", url.toString());
-          }
-          return null;
-        });
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [workBeId, connected, text]);
+    if (workBeId === null || !connected || !authenticated) return;
+    if (text !== "") return;
+    if (prevTextRef.current === "") return;
+    const timer = setTimeout(() => {
+      setWorkBeId((currentId) => {
+        if (currentId !== null) {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("work");
+          window.history.replaceState({}, "", url.toString());
+        }
+        return null;
+      });
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [workBeId, connected, authenticated, text]);
 
   useEffect(() => {
     if (showAttribution && connected && workBeId !== null && text.length > 0) {
@@ -311,75 +353,156 @@ export function WorkspacePage() {
 
       <div className="workspace-body">
         <aside className="document-sidebar">
-          <div className="sidebar-header">
-            <span>Documents</span>
-            <button onClick={handleCreate} type="button" disabled={!connected || !identity}>
-              + New
+          <div className="sidebar-tabs">
+            <button
+              className={`sidebar-tab ${sidebarTab === "docs" ? "active" : ""}`}
+              onClick={() => setSidebarTab("docs")}
+            >
+              Docs
+            </button>
+            <button
+              className={`sidebar-tab ${sidebarTab === "authors" ? "active" : ""}`}
+              onClick={() => setSidebarTab("authors")}
+            >
+              Authors
             </button>
           </div>
-          <div className="sidebar-search">
-            <input
-              type="text"
-              placeholder="Filter..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="sidebar-search-input"
-            />
-          </div>
-          <div className="work-list">
-            {(() => {
-              const q = searchQuery.toLowerCase();
-              const filtered = q
-                ? works.filter((w) =>
-                    (w.title || "").toLowerCase().includes(q) ||
-                    w.work_id.toString(16).includes(q)
-                  )
-                : works;
-              return filtered.length === 0 ? (
-                <div className="work-list-empty">{q ? "No matches" : "No documents yet"}</div>
+          {sidebarTab === "docs" && (
+            <>
+              <div className="sidebar-actions">
+                <button onClick={handleCreate} type="button" disabled={!connected || !identity}>
+                  + New
+                </button>
+                <button onClick={() => setShowImport(true)} type="button" disabled={!connected || !identity}>
+                  Import Source
+                </button>
+              </div>
+              <div className="sidebar-search">
+                <input
+                  type="text"
+                  placeholder="Filter..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="sidebar-search-input"
+                />
+              </div>
+              <div className="work-list">
+                {(() => {
+                  const q = searchQuery.toLowerCase();
+                  const filtered = q
+                    ? works.filter((w) =>
+                        (w.title || "").toLowerCase().includes(q) ||
+                        w.work_id.toString(16).includes(q)
+                      )
+                    : works;
+                  return filtered.length === 0 ? (
+                    <div className="work-list-empty">{q ? "No matches" : "No documents yet"}</div>
+                  ) : (
+                    filtered.map((w) => (
+                      <div
+                        key={w.work_id}
+                        className={`work-list-item ${w.work_id === workBeId ? "active" : ""}`}
+                        onClick={() => selectWork(w.work_id)}
+                      >
+                        <div className="work-list-meta">
+                          <span className="work-list-id">
+                            {w.work_id.toString(16).padStart(4, "0")}
+                          </span>
+                          <span className={`work-list-badge ${w.read_club === publicClubId ? "badge-public" : "badge-private"}`}>
+                            {w.read_club === publicClubId ? "pub" : "priv"}
+                          </span>
+                          <span className="work-list-rev">r{w.revision_count}</span>
+                        </div>
+                        <span className="work-list-title">
+                          {w.title
+                            ? w.title.length > 30
+                              ? w.title.slice(0, 30) + "..."
+                              : w.title
+                            : "Untitled"}
+                        </span>
+                      </div>
+                    ))
+                  );
+                })()}
+              </div>
+            </>
+          )}
+          {sidebarTab === "authors" && (
+            <div className="work-list">
+              {authors.length === 0 ? (
+                <div className="work-list-empty">No historical authors</div>
               ) : (
-                filtered.map((w) => (
-                  <div
-                    key={w.work_id}
-                    className={`work-list-item ${w.work_id === workBeId ? "active" : ""}`}
-                    onClick={() => selectWork(w.work_id)}
-                  >
-                    <div className="work-list-meta">
-                      <span className="work-list-id">
-                        {w.work_id.toString(16).padStart(4, "0")}
+                authors.map((a) => (
+                  <div key={a.be_id}>
+                    <div
+                      className={`author-list-item ${expandedAuthorId === a.be_id ? "active" : ""}`}
+                      onClick={() => handleExpandAuthor(a.be_id)}
+                    >
+                      <span className="author-list-name">{a.display_name || a.name}</span>
+                      <span className="author-list-dates">
+                        {a.birth_year != null || a.death_year != null
+                          ? `${a.birth_year != null ? a.birth_year : "?"}\u2013${a.death_year != null ? a.death_year : "?"}`
+                          : ""}
                       </span>
-                      <span className={`work-list-badge ${w.read_club === publicClubId ? "badge-public" : "badge-private"}`}>
-                        {w.read_club === publicClubId ? "pub" : "priv"}
-                      </span>
-                      <span className="work-list-rev">r{w.revision_count}</span>
                     </div>
-                    <span className="work-list-title">
-                      {w.title
-                        ? w.title.length > 30
-                          ? w.title.slice(0, 30) + "..."
-                          : w.title
-                        : "Untitled"}
-                    </span>
+                    {expandedAuthorId === a.be_id && (
+                      <div className="author-works">
+                        {authorWorks.length === 0 ? (
+                          <div className="author-work-empty">No imported works</div>
+                        ) : (
+                          authorWorks.map((w) => (
+                            <div
+                              key={w.work_id}
+                              className={`work-list-item author-work-item ${w.work_id === workBeId ? "active" : ""}`}
+                              onClick={() => selectWork(w.work_id)}
+                            >
+                              <span className="work-list-title">
+                                {w.title || "Untitled"}
+                              </span>
+                              {w.source_edition_info && (
+                                <span className="author-work-info">{w.source_edition_info}</span>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))
-              );
-            })()}
-          </div>
+              )}
+            </div>
+          )}
         </aside>
 
         <main className="document-area">
           {workBeId !== null ? (
             <>
               <AwarenessIndicators states={awareness} connected={connected} />
-              <CollaborativeEditor
-                text={text}
-                onTextChange={setText}
-                onCursorChange={sendCursor}
-                onSelectionChange={(s, e) => sendSelection(s, e)}
-                connected={connected}
-                attributionSpans={attributionSpans}
-                editable={identity !== null}
-              />
+              {text.length > 100_000 ? (
+                <VirtualizedEditor
+                  text={text}
+                  onTextChange={setText}
+                  onCursorChange={sendCursor}
+                  onSelectionChange={(s, e) => sendSelection(s, e)}
+                  connected={connected}
+                  attributionSpans={attributionSpans}
+                  editable={identity !== null}
+                  contentStartLine={currentWorkMeta?.content_start_line}
+                  contentEndLine={currentWorkMeta?.content_end_line}
+                />
+              ) : (
+                <CollaborativeEditor
+                  text={text}
+                  onTextChange={setText}
+                  onCursorChange={sendCursor}
+                  onSelectionChange={(s, e) => sendSelection(s, e)}
+                  connected={connected}
+                  attributionSpans={attributionSpans}
+                  editable={identity !== null}
+                  contentStartLine={currentWorkMeta?.content_start_line}
+                  contentEndLine={currentWorkMeta?.content_end_line}
+                />
+              )}
               {watchEnabled && contentMatches.length > 0 && (
                 <div className="watch-notifications">
                   <h3>Content Matches</h3>
@@ -432,6 +555,19 @@ export function WorkspacePage() {
         logStatus={attributionLogStatus}
         documentLength={text.length}
         visible={showAttribution && workBeId !== null}
+      />
+
+      <ImportWizard
+        clientRef={clientRef}
+        visible={showImport}
+        onClose={() => setShowImport(false)}
+        onImported={(workId) => {
+          setWorkBeId(workId);
+          const url = new URL(window.location.href);
+          url.searchParams.set("work", String(workId));
+          window.history.replaceState({}, "", url.toString());
+          loadWorks();
+        }}
       />
     </div>
   );

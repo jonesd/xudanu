@@ -1,6 +1,9 @@
-import { useRef, useEffect, useCallback, useMemo } from "react";
+import { useRef, useEffect, useCallback, useMemo, useState } from "react";
 import type { AttributionSpan } from "../api/crdt_sync";
 import { authorColor } from "../author-color";
+import { TextBuffer } from "../api/text_buffer";
+import { SearchPanel } from "./SearchPanel";
+import { OutlinePanel } from "./OutlinePanel";
 
 function bytesToHex(bytes: number[]): string {
   return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -9,6 +12,8 @@ function bytesToHex(bytes: number[]): string {
 interface AuthorStyle {
   color: string;
   name: string;
+  authorType: string | null;
+  historicalAuthorId: number | null;
 }
 
 interface CollaborativeEditorProps {
@@ -19,6 +24,8 @@ interface CollaborativeEditorProps {
   connected: boolean;
   attributionSpans: AttributionSpan[];
   editable: boolean;
+  contentStartLine?: number;
+  contentEndLine?: number;
 }
 
 const CHUNK_SIZE = 50_000;
@@ -96,13 +103,26 @@ function drawOverlay(
     }
 
     const rangeRects = range.getClientRects();
+    const isHistorical = style.authorType === "historical";
     for (const r of rangeRects) {
       const x = r.left - rect.left;
       const y = r.top - rect.top;
-      ctx.fillStyle = style.color + "25";
+      ctx.fillStyle = style.color + (isHistorical ? "18" : "25");
       ctx.fillRect(x, y, r.width, r.height);
-      ctx.fillStyle = style.color + "60";
-      ctx.fillRect(x, y + r.height - 2, r.width, 2);
+      if (isHistorical) {
+        ctx.save();
+        ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = style.color + "90";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x, y + r.height - 1);
+        ctx.lineTo(x + r.width, y + r.height - 1);
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        ctx.fillStyle = style.color + "60";
+        ctx.fillRect(x, y + r.height - 2, r.width, 2);
+      }
     }
   }
 }
@@ -129,21 +149,60 @@ export function CollaborativeEditor({
   connected,
   attributionSpans,
   editable,
+  contentStartLine,
+  contentEndLine,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const isComposing = useRef(false);
   const lastText = useRef(text);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [showBoilerplate, setShowBoilerplate] = useState(false);
+
+  const hasContentRange = (contentStartLine != null && contentStartLine > 0) || (contentEndLine != null);
+
+  const bodyRange = useMemo(() => {
+    if (!hasContentRange) return null;
+    const lines = text.split("\n");
+    const start = contentStartLine ?? 0;
+    const end = contentEndLine ?? lines.length;
+    let charStart = 0;
+    for (let i = 0; i < start && i < lines.length; i++) {
+      charStart += lines[i].length + 1;
+    }
+    let charEnd = charStart;
+    for (let i = start; i < end && i < lines.length; i++) {
+      charEnd += lines[i].length + 1;
+    }
+    if (charEnd > 0 && charEnd <= text.length && text[charEnd - 1] === "\n") charEnd--;
+    const prefixLines = start;
+    const suffixLines = Math.max(0, lines.length - end);
+    if (prefixLines === 0 && suffixLines === 0) return null;
+    return { charStart, charEnd, prefixLines, suffixLines };
+  }, [text, contentStartLine, contentEndLine, hasContentRange]);
+
+  const displayText = useMemo(() => {
+    if (!bodyRange || showBoilerplate) return text;
+    return text.slice(bodyRange.charStart, bodyRange.charEnd);
+  }, [text, showBoilerplate, bodyRange]);
+
+  const buffer = useMemo(() => new TextBuffer(displayText), [displayText]);
 
   const authorColorMap = useMemo(() => {
     const map = new Map<string, AuthorStyle>();
     for (const span of attributionSpans) {
       const key = bytesToHex(span.author_public_key);
       if (!map.has(key)) {
+        const isLlm = span.author_type === "llm";
+        const isHistorical = span.author_type === "historical";
         const name = span.author_display_name || "unknown";
+        const color = isLlm ? "#7c4dff" : isHistorical ? "#c4a35a" : authorColor(name);
         map.set(key, {
-          color: authorColor(name),
+          color,
           name,
+          authorType: span.author_type,
+          historicalAuthorId: span.historical_author_id,
         });
       }
     }
@@ -154,15 +213,15 @@ export function CollaborativeEditor({
     const el = editorRef.current;
     if (!el) return;
     const currentText = getTextContent(el);
-    if (currentText !== text) {
-      if (text.length > LARGE_DOC_THRESHOLD) {
-        chunkedSetTextContent(el, text);
+    if (currentText !== displayText) {
+      if (displayText.length > LARGE_DOC_THRESHOLD) {
+        chunkedSetTextContent(el, displayText);
       } else {
-        el.textContent = text;
+        el.textContent = displayText;
       }
     }
-    lastText.current = text;
-  }, [text]);
+    lastText.current = displayText;
+  }, [displayText]);
 
   useEffect(() => {
     const el = editorRef.current;
@@ -285,28 +344,104 @@ export function CollaborativeEditor({
     };
   }, [handleSelectionChange]);
 
+  const jumpToCharOffset = useCallback((charOffset: number) => {
+    const el = editorRef.current;
+    if (!el) return;
+    const container = el.parentElement;
+    if (!container) return;
+    const line = buffer.getLineForChar(charOffset);
+    const lineStart = buffer.getCharOffset(line);
+    const localOffset = charOffset - lineStart;
+    const textNode = el.firstChild;
+    if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+      try {
+        const range = document.createRange();
+        const clamped = Math.min(localOffset, (textNode as Text).length);
+        range.setStart(textNode as Text, clamped);
+        range.collapse(true);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        const span = document.createElement("span");
+        range.insertNode(span);
+        span.scrollIntoView({ behavior: "smooth", block: "center" });
+        span.remove();
+      } catch (e) {
+        console.warn("CollaborativeEditor: failed to jump to char offset:", e);
+      }
+    }
+  }, [buffer]);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, []);
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || text.length === 0) return;
+    let charOffset = -1;
+    if (hash.startsWith("#L")) {
+      const line = parseInt(hash.slice(2), 10);
+      if (!isNaN(line) && line >= 0) {
+        charOffset = buffer.getCharOffset(line);
+      }
+    } else if (hash.startsWith("#C")) {
+      const c = parseInt(hash.slice(2), 10);
+      if (!isNaN(c) && c >= 0) {
+        charOffset = c;
+      }
+    }
+    if (charOffset >= 0) {
+      setTimeout(() => jumpToCharOffset(charOffset), 100);
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }, [text, buffer, jumpToCharOffset]);
+
   return (
     <div className="collaborative-editor">
-      <div className="editor-container">
-        <canvas
-          ref={overlayRef}
-          className="attribution-overlay"
+      {searchOpen && (
+        <SearchPanel
+          buffer={buffer}
+          onJumpToMatch={jumpToCharOffset}
+          onClose={() => setSearchOpen(false)}
         />
-        <div
-          ref={editorRef}
-          className={`editor-content${!editable ? " editor-readonly" : ""}`}
-          contentEditable={editable}
-          suppressContentEditableWarning
-          onInput={handleInput}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          onCompositionStart={() => { isComposing.current = true; }}
-          onCompositionEnd={() => {
-            isComposing.current = false;
-            handleInput();
-          }}
-          spellCheck
-        />
+      )}
+      <div style={{ position: "relative", flex: 1, display: "flex", minHeight: 0 }}>
+        <div className="editor-container">
+          <canvas
+            ref={overlayRef}
+            className="attribution-overlay"
+          />
+          <div
+            ref={editorRef}
+            className={`editor-content${!editable ? " editor-readonly" : ""}`}
+            contentEditable={editable}
+            suppressContentEditableWarning
+            onInput={handleInput}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            onCompositionStart={() => { isComposing.current = true; }}
+            onCompositionEnd={() => {
+              isComposing.current = false;
+              handleInput();
+            }}
+            spellCheck
+          />
+        </div>
+        {outlineOpen && (
+          <OutlinePanel
+            buffer={buffer}
+            onJumpTo={jumpToCharOffset}
+            onClose={() => setOutlineOpen(false)}
+          />
+        )}
       </div>
       <div className="editor-status">
         <span className={`sync-indicator ${connected ? "sync-connected" : "sync-disconnected"}`}>
@@ -323,13 +458,37 @@ export function CollaborativeEditor({
               <span key={key} className="legend-item">
                 <span
                   className="legend-swatch"
-                  style={{ backgroundColor: style.color + "60", borderBottom: `2px solid ${style.color}` }}
+                  style={{
+                    backgroundColor: style.color + "60",
+                    borderBottom: style.authorType === "historical"
+                      ? `2px dashed ${style.color}`
+                      : `2px solid ${style.color}`,
+                  }}
                 />
-                <span className="legend-name">{style.name}</span>
+                <span className={`legend-name${style.authorType === "historical" ? " historical-name" : ""}${style.authorType === "llm" ? " llm-name" : ""}`}>
+                  {style.name}
+                </span>
               </span>
             ))}
           </div>
         )}
+        <span style={{ marginLeft: "auto" }} />
+        {hasContentRange && bodyRange && (
+          <button
+            className={`search-option${showBoilerplate ? " active" : ""}`}
+            onClick={() => setShowBoilerplate(!showBoilerplate)}
+            title={showBoilerplate ? "Hide boilerplate" : "Show boilerplate"}
+          >
+            {showBoilerplate ? "Hide Wrapper" : `Wrapper (${bodyRange.prefixLines}+${bodyRange.suffixLines} lines)`}
+          </button>
+        )}
+        <button
+          className={`search-option${outlineOpen ? " active" : ""}`}
+          onClick={() => setOutlineOpen(!outlineOpen)}
+          title="Document outline"
+        >
+          Outline
+        </button>
       </div>
     </div>
   );

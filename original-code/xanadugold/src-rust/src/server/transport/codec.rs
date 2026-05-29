@@ -594,6 +594,8 @@ impl JsonCodec {
             OperationCode::GovernanceStatus,
             OperationCode::ClubWhoAmI,
             OperationCode::AttributionLogStatus,
+            OperationCode::HistoricalAuthorList,
+            OperationCode::SourcePatternList,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -626,7 +628,9 @@ impl JsonCodec {
                 OperationCode::GovernanceLog => Ok(WireRequest::GovernanceLog),
                 OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
                 OperationCode::ClubWhoAmI => Ok(WireRequest::ClubWhoAmI),
-                OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
+            OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
+            OperationCode::HistoricalAuthorList => Ok(WireRequest::HistoricalAuthorList),
+            OperationCode::SourcePatternList => Ok(WireRequest::SourcePatternList),
                 _ => unreachable!(),
             };
         }
@@ -2186,6 +2190,84 @@ impl JsonCodec {
                     server_id: args.server_id,
                     span_fingerprint_hex: args.span_fingerprint_hex,
                 })
+            }
+            OperationCode::HistoricalAuthorRegister => {
+                #[derive(Deserialize)]
+                struct Args {
+                    name: String,
+                    display_name: String,
+                    birth_year: Option<i32>,
+                    death_year: Option<i32>,
+                    external_ids: std::collections::HashMap<String, String>,
+                    source_bibliography: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::HistoricalAuthorRegister {
+                    name: args.name,
+                    display_name: args.display_name,
+                    birth_year: args.birth_year,
+                    death_year: args.death_year,
+                    external_ids: args.external_ids,
+                    source_bibliography: args.source_bibliography,
+                })
+            }
+            OperationCode::HistoricalAuthorGet => {
+                #[derive(Deserialize)]
+                struct Args {
+                    author_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::HistoricalAuthorGet { author_id: args.author_id })
+            }
+            OperationCode::HistoricalAuthorSearch => {
+                #[derive(Deserialize)]
+                struct Args {
+                    query: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::HistoricalAuthorSearch { query: args.query })
+            }
+            OperationCode::ImportSourceWork => {
+                #[derive(Deserialize)]
+                struct Args {
+                    author_id: BeId,
+                    title: String,
+                    text: String,
+                    edition_info: String,
+                    skip_prefix_lines: u64,
+                    skip_suffix_lines: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ImportSourceWork {
+                    author_id: args.author_id,
+                    title: args.title,
+                    text: args.text,
+                    edition_info: args.edition_info,
+                    skip_prefix_lines: args.skip_prefix_lines,
+                    skip_suffix_lines: args.skip_suffix_lines,
+                })
+            }
+            OperationCode::SourceDetect => {
+                #[derive(Deserialize)]
+                struct Args {
+                    text: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::SourceDetect { text: args.text })
+            }
+            OperationCode::WorkListByAuthor => {
+                #[derive(Deserialize)]
+                struct Args {
+                    author_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkListByAuthor { author_id: args.author_id })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }

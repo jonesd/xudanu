@@ -566,6 +566,22 @@ async fn main() {
                 std::process::exit(0);
             });
 
+            {
+                let autosave_state = state.clone();
+                tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+                    loop {
+                        interval.tick().await;
+                        let saved = autosave_state.server.with_server(|srv| {
+                            srv.materialize_all_pending()
+                        });
+                        if saved > 0 {
+                            tracing::info!("auto-save: materialized {} work(s)", saved);
+                        }
+                    }
+                });
+            }
+
             if let (Some(cert_path), Some(key_path)) = (tls_cert, tls_key) {
                 rustls::crypto::ring::default_provider()
                     .install_default()

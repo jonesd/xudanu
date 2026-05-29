@@ -48,6 +48,19 @@ impl Edition {
     }
 }
 
+pub struct OutlineEntry {
+    pub level: u32,
+    pub text: String,
+    pub line: u64,
+    pub char_offset: u64,
+}
+
+pub struct SearchMatch {
+    pub char_offset: u64,
+    pub line: u64,
+    pub context: String,
+}
+
 impl PartialEq for Edition {
     fn eq(&self, other: &Self) -> bool {
         if self.orgl.count() != other.orgl.count() {
@@ -488,12 +501,161 @@ impl Edition {
         result
     }
 
+    pub fn to_text_range(&self, start_char: usize, end_char: usize) -> String {
+        let entries = self.cached_entries();
+        if entries.is_empty() || start_char >= end_char {
+            return String::new();
+        }
+        let mut cum = 0usize;
+        let mut result = String::new();
+        for (_, carrier) in entries.iter() {
+            let entry_char_len = carrier.char_len();
+            if cum >= end_char {
+                break;
+            }
+            if cum + entry_char_len <= start_char {
+                cum += entry_char_len;
+                continue;
+            }
+            if let Some(s) = carrier.element.as_text() {
+                let local_start = start_char.saturating_sub(cum);
+                let local_end = if cum + entry_char_len >= end_char {
+                    end_char.saturating_sub(cum)
+                } else {
+                    entry_char_len
+                };
+                let byte_start = s.char_indices().nth(local_start).map(|(i, _)| i).unwrap_or(s.len());
+                let byte_end = s.char_indices().nth(local_end).map(|(i, _)| i).unwrap_or(s.len());
+                result.push_str(&s[byte_start..byte_end]);
+            }
+            cum += entry_char_len;
+        }
+        result
+    }
+
     pub fn char_len(&self) -> usize {
         self.orgl
             .all_entries()
             .iter()
             .map(|(_, c)| c.char_len())
             .sum()
+    }
+
+    pub fn extract_outline(&self) -> Vec<OutlineEntry> {
+        let text = self.to_text();
+        let mut results = Vec::new();
+        let mut line = 0u64;
+        let mut char_offset = 0usize;
+        for text_line in text.split('\n') {
+            let trimmed = text_line.trim_start();
+            if !trimmed.is_empty() {
+                if let Some(entry) = Self::parse_heading(trimmed, line, char_offset) {
+                    results.push(entry);
+                }
+            }
+            char_offset += text_line.len() + 1;
+            line += 1;
+        }
+        results
+    }
+
+    fn parse_heading(line: &str, line_num: u64, char_offset: usize) -> Option<OutlineEntry> {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix('#') {
+            let level = 1 + rest.chars().take_while(|c| *c == '#').count();
+            let text = rest[level - 1..].trim();
+            if !text.is_empty() && level <= 6 {
+                return Some(OutlineEntry {
+                    level: level as u32,
+                    text: text.to_string(),
+                    line: line_num,
+                    char_offset: char_offset as u64,
+                });
+            }
+        }
+        let lower = trimmed.to_ascii_lowercase();
+        for (prefix, level) in [("part ", 1u32), ("chapter ", 2), ("section ", 3)] {
+            if lower.starts_with(prefix) {
+                return Some(OutlineEntry {
+                    level,
+                    text: trimmed.to_string(),
+                    line: line_num,
+                    char_offset: char_offset as u64,
+                });
+            }
+        }
+        None
+    }
+
+    pub fn search_text(&self, query: &str, max_results: usize) -> Vec<SearchMatch> {
+        let full_text = self.to_text();
+        let lower_text = full_text.to_ascii_lowercase();
+        let lower_query = query.to_ascii_lowercase();
+        let mut results = Vec::new();
+        let mut pos = 0;
+        while pos < lower_text.len() && results.len() < max_results {
+            if let Some(idx) = lower_text[pos..].find(&lower_query) {
+                let abs_idx = pos + idx;
+                let line = full_text[..abs_idx].matches('\n').count() as u64;
+                let ctx_start = abs_idx.saturating_sub(40);
+                let ctx_end = (abs_idx + query.len() + 40).min(full_text.len());
+                let context = full_text[ctx_start..ctx_end].to_string();
+                results.push(SearchMatch {
+                    char_offset: abs_idx as u64,
+                    line,
+                    context,
+                });
+                pos = abs_idx + 1;
+            } else {
+                break;
+            }
+        }
+        results
+    }
+
+    pub fn get_context(&self, target_line: u64, context_lines: u64) -> (u64, u64, String) {
+        let entries = self.cached_entries();
+        let mut cum = 0usize;
+        let mut line = 0u64;
+        let mut target_char = 0u64;
+        let mut found = false;
+        for (_, carrier) in entries.iter() {
+            if let Some(text) = carrier.element.as_text() {
+                for (i, _nl) in text.match_indices('\n') {
+                    if !found && line == target_line {
+                        target_char = (cum + i) as u64;
+                        found = true;
+                    }
+                    line += 1;
+                }
+                if !found && line == target_line {
+                    target_char = (cum + text.len()) as u64;
+                    found = true;
+                }
+            }
+            cum += carrier.char_len();
+        }
+        let start_line = target_line.saturating_sub(context_lines);
+        let text = self.to_text();
+        let mut lines_iter = text.lines().enumerate();
+        let mut result_lines = Vec::new();
+        let mut actual_start = start_line;
+        for (i, l) in lines_iter.by_ref() {
+            if i as u64 >= start_line {
+                actual_start = i as u64;
+                result_lines.push(l);
+                break;
+            }
+        }
+        let mut count = 1u64;
+        for (_, l) in lines_iter {
+            if count >= context_lines * 2 + 1 {
+                break;
+            }
+            result_lines.push(l);
+            count += 1;
+        }
+        (actual_start, target_char, result_lines.join("\n"))
     }
 
     pub fn coalesce(&self) -> Edition {
@@ -1971,6 +2133,7 @@ mod tests {
             timestamp: 100,
             author_type: AuthorType::Human,
             llm_model: None,
+            historical_author_id: None,
         };
         let prov_b = ElementProvenance {
             author_public_key: [2u8; 32],
@@ -1979,6 +2142,7 @@ mod tests {
             timestamp: 200,
             author_type: AuthorType::Human,
             llm_model: None,
+            historical_author_id: None,
         };
 
         let mut entries = Vec::new();
@@ -2019,6 +2183,7 @@ mod tests {
             timestamp: 100,
             author_type: AuthorType::Human,
             llm_model: None,
+            historical_author_id: None,
         };
 
         let mut entries = Vec::new();
@@ -2464,5 +2629,175 @@ mod tests {
         eprintln!("  Element recovery:    {:.1}% of fragmented count (ideal: back to {})",
             (1.0 - recovered_ratio) * 100.0, initial_count);
         eprintln!();
+    }
+
+    #[test]
+    fn to_text_range_basic() {
+        let ed = Edition::from_text("Hello, world!");
+        assert_eq!(ed.to_text_range(0, 5), "Hello");
+        assert_eq!(ed.to_text_range(7, 12), "world");
+        assert_eq!(ed.to_text_range(7, 13), "world!");
+        assert_eq!(ed.to_text_range(0, 13), "Hello, world!");
+    }
+
+    #[test]
+    fn to_text_range_batched() {
+        let text = "line one\nline two\nline three\n";
+        let ed = Edition::from_text_batched(text);
+        assert_eq!(ed.to_text_range(0, 8), "line one");
+        assert_eq!(ed.to_text_range(9, 13), "line");
+        assert_eq!(ed.to_text_range(10, 19), "ine two\nl");
+        assert_eq!(ed.to_text_range(0, text.len()), text);
+    }
+
+    #[test]
+    fn to_text_range_edge_cases() {
+        let ed = Edition::from_text("abc");
+        assert_eq!(ed.to_text_range(0, 0), "");
+        assert_eq!(ed.to_text_range(3, 3), "");
+        assert_eq!(ed.to_text_range(5, 10), "");
+    }
+
+    #[test]
+    fn to_text_range_empty() {
+        let ed = Edition::empty();
+        assert_eq!(ed.to_text_range(0, 10), "");
+    }
+
+    #[test]
+    fn to_text_range_unicode() {
+        let ed = Edition::from_text("Héllo wörld");
+        assert_eq!(ed.to_text_range(0, 5), "Héllo");
+        assert_eq!(ed.to_text_range(6, 11), "wörld");
+        assert_eq!(ed.to_text_range(2, 4), "ll");
+    }
+
+    #[test]
+    fn extract_outline_markdown() {
+        let text = "# Title\nSome text\n## Section 1\nMore text\n### Subsection\n## Section 2\n";
+        let ed = Edition::from_text_batched(text);
+        let outline = ed.extract_outline();
+        assert_eq!(outline.len(), 4);
+        assert_eq!(outline[0].level, 1);
+        assert_eq!(outline[0].text, "Title");
+        assert_eq!(outline[1].level, 2);
+        assert_eq!(outline[1].text, "Section 1");
+        assert_eq!(outline[2].level, 3);
+        assert_eq!(outline[2].text, "Subsection");
+        assert_eq!(outline[3].level, 2);
+        assert_eq!(outline[3].text, "Section 2");
+    }
+
+    #[test]
+    fn extract_outline_chapters() {
+        let text = "Chapter 1: Begin\nSome text\nPart One\nMore\nSection 2.1\n";
+        let ed = Edition::from_text(text);
+        let outline = ed.extract_outline();
+        assert_eq!(outline.len(), 3);
+        assert_eq!(outline[0].level, 2);
+        assert_eq!(outline[1].level, 1);
+        assert_eq!(outline[2].level, 3);
+    }
+
+    #[test]
+    fn extract_outline_empty() {
+        let ed = Edition::empty();
+        assert!(ed.extract_outline().is_empty());
+    }
+
+    #[test]
+    fn search_text_basic() {
+        let text = "hello world hello again";
+        let ed = Edition::from_text(text);
+        let results = ed.search_text("hello", 10);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].char_offset, 0);
+        assert_eq!(results[1].char_offset, 12);
+    }
+
+    #[test]
+    fn search_text_case_insensitive() {
+        let text = "Hello World";
+        let ed = Edition::from_text(text);
+        let results = ed.search_text("hello", 10);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].char_offset, 0);
+    }
+
+    #[test]
+    fn search_text_max_results() {
+        let text = "aaa aaa aaa aaa aaa";
+        let ed = Edition::from_text(text);
+        let results = ed.search_text("aaa", 2);
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn search_text_no_match() {
+        let ed = Edition::from_text("hello world");
+        let results = ed.search_text("xyz", 10);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn get_context_middle() {
+        let text = "line0\nline1\nline2\nline3\nline4\nline5\nline6";
+        let ed = Edition::from_text(text);
+        let (start, _char, ctx) = ed.get_context(3, 2);
+        assert_eq!(start, 1);
+        let lines: Vec<&str> = ctx.split('\n').collect();
+        assert_eq!(lines.len(), 5);
+        assert_eq!(lines[0], "line1");
+        assert_eq!(lines[2], "line3");
+        assert_eq!(lines[4], "line5");
+    }
+
+    #[test]
+    fn get_context_near_top() {
+        let text = "line0\nline1\nline2\nline3\nline4";
+        let ed = Edition::from_text(text);
+        let (start, _char, ctx) = ed.get_context(1, 2);
+        assert_eq!(start, 0);
+        let lines: Vec<&str> = ctx.split('\n').collect();
+        assert!(lines.len() <= 5);
+        assert_eq!(lines[0], "line0");
+        assert_eq!(lines[1], "line1");
+    }
+
+    #[test]
+    fn get_context_near_bottom() {
+        let text = "line0\nline1\nline2\nline3\nline4";
+        let ed = Edition::from_text(text);
+        let (start, _char, ctx) = ed.get_context(4, 2);
+        assert_eq!(start, 2);
+        let lines: Vec<&str> = ctx.split('\n').collect();
+        assert_eq!(lines[0], "line2");
+        assert_eq!(lines[2], "line4");
+    }
+
+    #[test]
+    fn get_context_single_line() {
+        let text = "only line";
+        let ed = Edition::from_text(text);
+        let (start, _char, ctx) = ed.get_context(0, 3);
+        assert_eq!(start, 0);
+        assert_eq!(ctx, "only line");
+    }
+
+    #[test]
+    fn get_context_empty() {
+        let ed = Edition::from_text("");
+        let (start, _char, ctx) = ed.get_context(0, 3);
+        assert_eq!(start, 0);
+        assert_eq!(ctx, "");
+    }
+
+    #[test]
+    fn get_context_zero_context_lines() {
+        let text = "line0\nline1\nline2";
+        let ed = Edition::from_text(text);
+        let (start, _char, ctx) = ed.get_context(1, 0);
+        assert_eq!(start, 1);
+        assert_eq!(ctx, "line1");
     }
 }

@@ -50,7 +50,7 @@ impl std::fmt::Display for ServerError {
             ServerError::LockFailed(s) => write!(f, "lock failed: {}", s),
             ServerError::SessionNotFound(id) => write!(f, "session not found: {:?}", id),
             ServerError::WorkNotFound(id) => write!(f, "work not found: {}", id),
-            ServerError::ClubNotFound(id) => write!(f, "club not found: {}", id),
+            ServerError::ClubNotFound(id) => write!(f, "identity not found (id {}). Create an identity first with 'New Identity'", id),
             ServerError::EditionNotFound(id) => write!(f, "edition not found: {}", id),
             ServerError::Internal(s) => write!(f, "internal error: {}", s),
             ServerError::AdminRequired => write!(f, "admin authority required"),

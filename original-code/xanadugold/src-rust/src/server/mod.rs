@@ -11,6 +11,8 @@ pub mod error;
 #[cfg(feature = "server")]
 pub mod federation;
 #[cfg(feature = "server")]
+pub mod historical_author;
+#[cfg(feature = "server")]
 pub mod identity;
 #[cfg(feature = "server")]
 pub mod keymaster;
@@ -25,6 +27,8 @@ pub mod ollama;
 pub mod server;
 #[cfg(feature = "server")]
 pub mod session;
+#[cfg(feature = "server")]
+pub mod source_matcher;
 
 #[cfg(feature = "server")]
 pub mod transport;

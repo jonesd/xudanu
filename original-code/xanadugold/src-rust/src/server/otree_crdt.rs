@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
@@ -99,6 +100,7 @@ struct OtreeWorkDoc {
     awareness: HashMap<SessionId, OtreeAwarenessState>,
     federated_provenance: Vec<SpanProvenance>,
     last_author_mapping: Option<Mapping>,
+    cached_text: RefCell<Option<String>>,
 }
 
 #[derive(Debug)]
@@ -135,6 +137,14 @@ pub struct OtreeSyncStartResult {
 
 pub struct OtreeApplyResult {
     pub relay_to: Vec<(SessionId, OtreeSyncSessionId)>,
+    pub was_merged: bool,
+}
+
+pub struct TextRangeResult {
+    pub text: String,
+    pub total_chars: usize,
+    pub start_char: usize,
+    pub end_char: usize,
 }
 
 pub struct OtreeCrdtManager {
@@ -241,6 +251,7 @@ fn apply_text_delta_to_edition(
         timestamp,
         author_type: crate::edition::provenance::AuthorType::Human,
         llm_model: None,
+        historical_author_id: None,
     });
 
     let old_entries = edition.all_entries();
@@ -360,6 +371,7 @@ fn append_text_with_llm_provenance(
         timestamp: current_timestamp_secs(),
         author_type: crate::edition::provenance::AuthorType::Llm,
         llm_model: Some(llm_model.to_string()),
+        historical_author_id: None,
     };
 
     let mut start = 0usize;
@@ -430,6 +442,7 @@ impl OtreeCrdtManager {
                     awareness: HashMap::new(),
                     federated_provenance: Vec::new(),
                     last_author_mapping: None,
+                    cached_text: RefCell::new(None),
                 },
             );
         }
@@ -440,7 +453,17 @@ impl OtreeCrdtManager {
             .expect("work doc must exist after insert");
         wd.subscribers.insert(session_id, sync_id);
 
-        let current_text = wd.current_edition.to_text();
+        let current_text = {
+            let cache = wd.cached_text.borrow();
+            if cache.is_some() {
+                cache.as_ref().unwrap().clone()
+            } else {
+                drop(cache);
+                let text = wd.current_edition.to_text();
+                *wd.cached_text.borrow_mut() = Some(text.clone());
+                text
+            }
+        };
 
         OtreeSyncStartResult {
             session_id: sync_id,
@@ -486,12 +509,12 @@ impl OtreeCrdtManager {
         let base = &wd.base_edition;
         let current = &wd.current_edition;
 
-        let merged = if base == current {
-            author_edition
+        let (merged, was_merged) = if base == current {
+            (author_edition, false)
         } else {
             match three_way_merge(base, current, &author_edition, MergeStrategy::LastWriterWins) {
-                Ok(result) => result.merged,
-                Err(_) => author_edition,
+                Ok(result) => (result.merged, true),
+                Err(_) => (author_edition, true),
             }
         };
 
@@ -499,6 +522,7 @@ impl OtreeCrdtManager {
             crate::edition::three_way::build_merge_mapping(&wd.current_edition, &merged),
         );
         wd.current_edition = merged;
+        *wd.cached_text.borrow_mut() = None;
         wd.last_change_timestamp = current_timestamp_secs();
         wd.pending_edition = Some(wd.current_edition.clone());
 
@@ -509,7 +533,7 @@ impl OtreeCrdtManager {
             .map(|(sid, sync_id)| (*sid, *sync_id))
             .collect();
 
-        Ok(OtreeApplyResult { relay_to })
+        Ok(OtreeApplyResult { relay_to, was_merged })
     }
 
     pub fn current_text(&self, work_id: BeId) -> Result<String, OtreeError> {
@@ -517,7 +541,15 @@ impl OtreeCrdtManager {
             .docs
             .get(&work_id)
             .ok_or(OtreeError::WorkNotFound(work_id))?;
-        Ok(wd.current_edition.to_text())
+        {
+            let cache = wd.cached_text.borrow();
+            if cache.is_some() {
+                return Ok(cache.as_ref().unwrap().clone());
+            }
+        }
+        let text = wd.current_edition.to_text();
+        *wd.cached_text.borrow_mut() = Some(text.clone());
+        Ok(text)
     }
 
     pub fn current_edition(&self, work_id: BeId) -> Result<Edition, OtreeError> {
@@ -526,6 +558,23 @@ impl OtreeCrdtManager {
             .get(&work_id)
             .ok_or(OtreeError::WorkNotFound(work_id))?;
         Ok(wd.current_edition.clone())
+    }
+
+    pub fn text_range(&self, work_id: BeId, start_char: usize, end_char: usize) -> Result<TextRangeResult, OtreeError> {
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(OtreeError::WorkNotFound(work_id))?;
+        let total_chars = wd.current_edition.char_len();
+        let clamped_end = end_char.min(total_chars);
+        let clamped_start = start_char.min(clamped_end);
+        let text = wd.current_edition.to_text_range(clamped_start, clamped_end);
+        Ok(TextRangeResult {
+            text,
+            total_chars,
+            start_char: clamped_start,
+            end_char: clamped_end,
+        })
     }
 
     pub fn materialize_edition(&mut self, work_id: BeId) -> Result<Edition, OtreeError> {
@@ -581,6 +630,7 @@ impl OtreeCrdtManager {
             llm_model,
             triggerer_club_id,
         );
+        wd.cached_text.borrow_mut().take();
         Ok(())
     }
 
@@ -746,6 +796,32 @@ impl OtreeCrdtManager {
         self.docs.contains_key(&work_id)
     }
 
+    pub fn pending_work_ids(&self) -> Vec<BeId> {
+        self.docs
+            .iter()
+            .filter(|(_, wd)| wd.pending_edition.is_some())
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    pub fn works_for_session(&self, session_id: SessionId) -> Vec<BeId> {
+        self.docs
+            .iter()
+            .filter(|(_, wd)| wd.subscribers.contains_key(&session_id))
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    pub fn close_session(&mut self, work_id: BeId, session_id: SessionId) {
+        if let Some(wd) = self.docs.get_mut(&work_id) {
+            wd.subscribers.remove(&session_id);
+            wd.awareness.remove(&session_id);
+            if wd.subscribers.is_empty() {
+                *wd.cached_text.borrow_mut() = None;
+            }
+        }
+    }
+
     pub fn is_subscriber(&self, work_id: BeId, session_id: SessionId) -> bool {
         self.docs
             .get(&work_id)
@@ -783,6 +859,7 @@ impl OtreeCrdtManager {
                 awareness: HashMap::new(),
                 federated_provenance: Vec::new(),
                 last_author_mapping: None,
+                cached_text: RefCell::new(None),
             },
         );
     }
@@ -982,6 +1059,7 @@ impl OtreeCrdtManager {
         };
 
         wd.current_edition = merged;
+        *wd.cached_text.borrow_mut() = None;
         wd.last_change_timestamp = current_timestamp_secs();
 
         let relay_to: Vec<(SessionId, OtreeSyncSessionId)> = wd
@@ -990,7 +1068,7 @@ impl OtreeCrdtManager {
             .map(|(sid, sync_id)| (*sid, *sync_id))
             .collect();
 
-        Ok(OtreeApplyResult { relay_to })
+        Ok(OtreeApplyResult { relay_to, was_merged: false })
     }
 
     pub fn sign_update(

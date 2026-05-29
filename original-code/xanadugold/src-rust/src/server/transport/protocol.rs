@@ -261,6 +261,21 @@ pub enum OperationCode {
     AttributionQuery,
     AttributionVerify,
     AttributionLogStatus,
+    WorkTextRange,
+    WorkOutline,
+    WorkSearch,
+    WorkGoto,
+
+    HistoricalAuthorRegister,
+    HistoricalAuthorGet,
+    HistoricalAuthorSearch,
+    HistoricalAuthorList,
+
+    ImportSourceWork,
+
+    SourceDetect,
+    SourcePatternList,
+    WorkListByAuthor,
 }
 
 impl OperationCode {
@@ -453,6 +468,21 @@ impl OperationCode {
             0x0D01 => Some(OperationCode::AttributionQuery),
             0x0D02 => Some(OperationCode::AttributionVerify),
             0x0D03 => Some(OperationCode::AttributionLogStatus),
+            0x0D04 => Some(OperationCode::WorkTextRange),
+            0x0D05 => Some(OperationCode::WorkOutline),
+            0x0D06 => Some(OperationCode::WorkSearch),
+            0x0D07 => Some(OperationCode::WorkGoto),
+
+            0x0D08 => Some(OperationCode::HistoricalAuthorRegister),
+            0x0D09 => Some(OperationCode::HistoricalAuthorGet),
+            0x0D0A => Some(OperationCode::HistoricalAuthorSearch),
+            0x0D0B => Some(OperationCode::HistoricalAuthorList),
+
+            0x0D0C => Some(OperationCode::ImportSourceWork),
+
+            0x0D0D => Some(OperationCode::SourceDetect),
+            0x0D0E => Some(OperationCode::SourcePatternList),
+            0x0D0F => Some(OperationCode::WorkListByAuthor),
 
             _ => None,
         }
@@ -648,6 +678,19 @@ impl OperationCode {
             OperationCode::AttributionQuery => 0x0D01,
             OperationCode::AttributionVerify => 0x0D02,
             OperationCode::AttributionLogStatus => 0x0D03,
+            OperationCode::WorkTextRange => 0x0D04,
+            OperationCode::WorkOutline => 0x0D05,
+            OperationCode::WorkSearch => 0x0D06,
+            OperationCode::WorkGoto => 0x0D07,
+
+            OperationCode::HistoricalAuthorRegister => 0x0D08,
+            OperationCode::HistoricalAuthorGet => 0x0D09,
+            OperationCode::HistoricalAuthorSearch => 0x0D0A,
+            OperationCode::HistoricalAuthorList => 0x0D0B,
+            OperationCode::ImportSourceWork => 0x0D0C,
+            OperationCode::SourceDetect => 0x0D0D,
+            OperationCode::SourcePatternList => 0x0D0E,
+            OperationCode::WorkListByAuthor => 0x0D0F,
         }
     }
 }
@@ -1244,6 +1287,63 @@ pub enum WireRequest {
         span_fingerprint_hex: String,
     },
     AttributionLogStatus,
+    WorkTextRange {
+        work_id: BeId,
+        start_char: u64,
+        end_char: u64,
+    },
+    WorkOutline {
+        work_id: BeId,
+    },
+    WorkSearch {
+        work_id: BeId,
+        query: String,
+        max_results: Option<u64>,
+    },
+    WorkGoto {
+        work_id: BeId,
+        line: Option<u64>,
+        char: Option<u64>,
+        context_lines: Option<u64>,
+    },
+
+    HistoricalAuthorRegister {
+        name: String,
+        display_name: String,
+        birth_year: Option<i32>,
+        death_year: Option<i32>,
+        external_ids: std::collections::HashMap<String, String>,
+        source_bibliography: String,
+    },
+
+    HistoricalAuthorGet {
+        author_id: BeId,
+    },
+
+    HistoricalAuthorSearch {
+        query: String,
+    },
+
+    HistoricalAuthorList,
+
+    ImportSourceWork {
+        author_id: BeId,
+        title: String,
+        text: String,
+        edition_info: String,
+        skip_prefix_lines: u64,
+        skip_suffix_lines: u64,
+    },
+
+    SourceDetect {
+        text: String,
+    },
+
+    SourcePatternList,
+
+    WorkListByAuthor {
+        author_id: BeId,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1587,6 +1687,25 @@ pub enum ResponseValue {
         last_sequence: u64,
         has_log: bool,
     },
+    WorkTextRangeResult {
+        text: String,
+        total_chars: u64,
+        start_char: u64,
+        end_char: u64,
+    },
+    WorkOutlineResult {
+        entries: Vec<OutlineEntryPayload>,
+    },
+    WorkSearchResult {
+        matches: Vec<SearchMatchPayload>,
+        total_matches: u64,
+    },
+    WorkGotoResult {
+        line: u64,
+        char_offset: u64,
+        context: String,
+        context_start_line: u64,
+    },
 
     NarrationResult {
         narration: String,
@@ -1597,6 +1716,55 @@ pub enum ResponseValue {
         feedback: String,
         llm_model: String,
     },
+
+    HistoricalAuthorResult {
+        be_id: BeId,
+        name: String,
+        display_name: String,
+        birth_year: Option<i32>,
+        death_year: Option<i32>,
+        external_ids: std::collections::HashMap<String, String>,
+        source_bibliography: String,
+    },
+
+    HistoricalAuthorListResult {
+        authors: Vec<HistoricalAuthorEntry>,
+    },
+
+    ImportSourceWorkResult {
+        work_id: BeId,
+        author_id: BeId,
+        title: String,
+        text_length: u64,
+    },
+
+    SourceDetectResult {
+        source_type: String,
+        detected: bool,
+        content_start_line: u64,
+        content_end_line: u64,
+        total_lines: u64,
+        metadata: std::collections::HashMap<String, String>,
+    },
+
+    SourcePatternListResult {
+        patterns: Vec<SourcePatternEntry>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourcePatternEntry {
+    pub source_type: String,
+    pub display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoricalAuthorEntry {
+    pub be_id: BeId,
+    pub name: String,
+    pub display_name: String,
+    pub birth_year: Option<i32>,
+    pub death_year: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1611,6 +1779,7 @@ pub struct AttributionSpanPayload {
     pub server_id: Vec<u8>,
     pub author_type: Option<String>,
     pub llm_model: Option<String>,
+    pub historical_author_id: Option<BeId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1618,6 +1787,21 @@ pub struct KeyHistoryEntryPayload {
     pub key_id: u64,
     pub not_before: u64,
     pub not_after: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutlineEntryPayload {
+    pub level: u32,
+    pub text: String,
+    pub line: u64,
+    pub char_offset: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchMatchPayload {
+    pub char_offset: u64,
+    pub line: u64,
+    pub context: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1678,6 +1862,16 @@ pub struct WorkListEntry {
     pub title: String,
     #[serde(default)]
     pub read_club: Option<BeId>,
+    #[serde(default)]
+    pub is_source: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_start_line: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_end_line: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_author_id: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_edition_info: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2061,6 +2255,10 @@ pub enum EventPayload {
     CrdtTextUpdate {
         work_id: BeId,
         text: String,
+    },
+    CrdtTextDelta {
+        work_id: BeId,
+        ops: Vec<TextDeltaOp>,
     },
 }
 

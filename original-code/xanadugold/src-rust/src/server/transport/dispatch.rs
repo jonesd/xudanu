@@ -312,16 +312,31 @@ fn dispatch_inner(
                 let rev = revision.unwrap_or_else(|| srv.work_revision_count(work_id).unwrap_or(0));
 
                 if !relay.relay_to.is_empty() {
-                    let current_text = srv.crdt_current_text(work_id).unwrap_or_default();
+                    let merged_text = if relay.was_merged {
+                        Some(srv.crdt_current_text(work_id)?)
+                    } else {
+                        None
+                    };
                     for (relay_sid, _) in &relay.relay_to {
                         use super::channel::EventMessage;
-                        let ev = EventMessage {
-                            session_id: *relay_sid,
-                            subscription_id: 0,
-                            event: EventPayload::CrdtTextUpdate {
-                                work_id,
-                                text: current_text.clone(),
-                            },
+                        let ev = if let Some(ref text) = merged_text {
+                            EventMessage {
+                                session_id: *relay_sid,
+                                subscription_id: 0,
+                                event: EventPayload::CrdtTextUpdate {
+                                    work_id,
+                                    text: text.clone(),
+                                },
+                            }
+                        } else {
+                            EventMessage {
+                                session_id: *relay_sid,
+                                subscription_id: 0,
+                                event: EventPayload::CrdtTextDelta {
+                                    work_id,
+                                    ops: ops.to_vec(),
+                                },
+                            }
                         };
                         state.send_to_session(relay_sid, ev);
                     }
@@ -645,13 +660,13 @@ fn dispatch_inner(
             let entries = srv
                 .list_works_with_titles()
                 .into_iter()
-                .filter(|(work_id, _, _, _, _, _)| {
+                .filter(|(work_id, _, _, _, _, _, _, _, _, _, _)| {
                     srv.work(*work_id)
                         .map(|w| srv.work_is_readable(session_id, w))
                         .unwrap_or(false)
                 })
                 .map(
-                    |(work_id, owner, revision_count, is_grabbed, title, read_club)| {
+                    |(work_id, owner, revision_count, is_grabbed, title, read_club, is_source, content_start_line, content_end_line, source_author_id, source_edition_info)| {
                         super::protocol::WorkListEntry {
                             work_id,
                             owner,
@@ -659,6 +674,11 @@ fn dispatch_inner(
                             is_grabbed,
                             title,
                             read_club,
+                            is_source,
+                            content_start_line,
+                            content_end_line,
+                            source_author_id,
+                            source_edition_info,
                         }
                     },
                 )
@@ -682,6 +702,11 @@ fn dispatch_inner(
                         is_grabbed,
                         title: String::new(),
                         read_club,
+                        is_source: false,
+                        content_start_line: None,
+                        content_end_line: None,
+                        source_author_id: None,
+                        source_edition_info: None,
                     }
                 })
                 .collect();
@@ -1871,8 +1896,202 @@ fn dispatch_inner(
         }
 
         WireRequest::AttributionLogStatus => Ok(srv.attribution_log_status()),
+        WireRequest::WorkTextRange { work_id, start_char, end_char } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let result = srv.crdt_text_range(work_id, start_char as usize, end_char as usize)?;
+            Ok(ResponseValue::WorkTextRangeResult {
+                text: result.text,
+                total_chars: result.total_chars as u64,
+                start_char: result.start_char as u64,
+                end_char: result.end_char as u64,
+            })
+        }
+        WireRequest::WorkOutline { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let entries = srv.work_outline(work_id)?;
+            let payload: Vec<super::protocol::OutlineEntryPayload> = entries
+                .into_iter()
+                .map(|e| super::protocol::OutlineEntryPayload {
+                    level: e.level,
+                    text: e.text,
+                    line: e.line,
+                    char_offset: e.char_offset,
+                })
+                .collect();
+            Ok(ResponseValue::WorkOutlineResult { entries: payload })
+        }
+        WireRequest::WorkSearch { work_id, query, max_results } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let max = max_results.unwrap_or(100) as usize;
+            let matches = srv.work_search(work_id, &query, max)?;
+            let payload: Vec<super::protocol::SearchMatchPayload> = matches
+                .into_iter()
+                .map(|m| super::protocol::SearchMatchPayload {
+                    char_offset: m.char_offset,
+                    line: m.line,
+                    context: m.context,
+                })
+                .collect();
+            let total = payload.len() as u64;
+            Ok(ResponseValue::WorkSearchResult { matches: payload, total_matches: total })
+        }
+        WireRequest::WorkGoto { work_id, line, char, context_lines } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let target_line = line.unwrap_or(0);
+            let ctx = context_lines.unwrap_or(10);
+            let (start_line, char_offset, context) = srv.work_goto(work_id, target_line, ctx)?;
+            let actual_char = char.unwrap_or(char_offset);
+            Ok(ResponseValue::WorkGotoResult {
+                line: start_line,
+                char_offset: actual_char,
+                context,
+                context_start_line: start_line,
+            })
+        }
         WireRequest::WorkDiffNarration { .. } => unreachable!("handled in dispatch_narration"),
         WireRequest::WorkWritingFeedback { .. } => unreachable!("handled in dispatch_writing_feedback"),
+
+        WireRequest::HistoricalAuthorRegister {
+            name,
+            display_name,
+            birth_year,
+            death_year,
+            external_ids,
+            source_bibliography,
+        } => {
+            srv.ensure_logged_in(session_id)?;
+            let session = srv.sessions.get(&session_id)
+                .ok_or(crate::server::ServerError::SessionRequired)?;
+            let created_by = session._key_master()
+                .and_then(|km| km.login_authority().iter().next().copied())
+                .ok_or(crate::server::ServerError::NotAuthorized)?;
+            let author = srv.register_historical_author(
+                name, display_name, birth_year, death_year, external_ids, source_bibliography, created_by,
+            )?;
+            Ok(ResponseValue::HistoricalAuthorResult {
+                be_id: author.be_id,
+                name: author.name,
+                display_name: author.display_name,
+                birth_year: author.birth_year,
+                death_year: author.death_year,
+                external_ids: author.external_ids,
+                source_bibliography: author.source_bibliography,
+            })
+        }
+
+        WireRequest::HistoricalAuthorGet { author_id } => {
+            let author = srv.get_historical_author(author_id)?;
+            Ok(ResponseValue::HistoricalAuthorResult {
+                be_id: author.be_id,
+                name: author.name,
+                display_name: author.display_name,
+                birth_year: author.birth_year,
+                death_year: author.death_year,
+                external_ids: author.external_ids,
+                source_bibliography: author.source_bibliography,
+            })
+        }
+
+        WireRequest::HistoricalAuthorSearch { query } => {
+            let authors = srv.search_historical_authors(&query);
+            let entries: Vec<super::protocol::HistoricalAuthorEntry> = authors
+                .into_iter()
+                .map(|a| super::protocol::HistoricalAuthorEntry {
+                    be_id: a.be_id,
+                    name: a.name,
+                    display_name: a.display_name,
+                    birth_year: a.birth_year,
+                    death_year: a.death_year,
+                })
+                .collect();
+            Ok(ResponseValue::HistoricalAuthorListResult { authors: entries })
+        }
+
+        WireRequest::HistoricalAuthorList => {
+            let authors = srv.list_historical_authors();
+            let entries: Vec<super::protocol::HistoricalAuthorEntry> = authors
+                .into_iter()
+                .map(|a| super::protocol::HistoricalAuthorEntry {
+                    be_id: a.be_id,
+                    name: a.name,
+                    display_name: a.display_name,
+                    birth_year: a.birth_year,
+                    death_year: a.death_year,
+                })
+                .collect();
+            Ok(ResponseValue::HistoricalAuthorListResult { authors: entries })
+        }
+
+        WireRequest::ImportSourceWork {
+            author_id,
+            title,
+            text,
+            edition_info,
+            skip_prefix_lines,
+            skip_suffix_lines,
+        } => {
+            let (work_id, auth_id, text_length, import_title) = srv.import_source_work(
+                session_id, author_id, title, text, edition_info,
+                skip_prefix_lines, skip_suffix_lines,
+            )?;
+            Ok(ResponseValue::ImportSourceWorkResult {
+                work_id,
+                author_id: auth_id,
+                title: import_title,
+                text_length,
+            })
+        }
+
+        WireRequest::SourceDetect { text } => {
+            let result = srv.detect_source(&text);
+            Ok(ResponseValue::SourceDetectResult {
+                source_type: result.source_type,
+                detected: result.detected,
+                content_start_line: result.content_start_line,
+                content_end_line: result.content_end_line,
+                total_lines: result.total_lines,
+                metadata: result.metadata,
+            })
+        }
+
+        WireRequest::SourcePatternList => {
+            let patterns = srv.list_source_patterns();
+            let entries: Vec<super::protocol::SourcePatternEntry> = patterns
+                .into_iter()
+                .map(|(source_type, display_name)| super::protocol::SourcePatternEntry {
+                    source_type,
+                    display_name,
+                })
+                .collect();
+            Ok(ResponseValue::SourcePatternListResult { patterns: entries })
+        }
+        WireRequest::WorkListByAuthor { author_id } => {
+            let entries = srv.list_works_by_historical_author(author_id);
+            let list: Vec<super::protocol::WorkListEntry> = entries
+                .into_iter()
+                .filter(|(work_id, _, _, _, _, _, _)| {
+                    srv.work(*work_id)
+                        .map(|w| srv.work_is_readable(session_id, w))
+                        .unwrap_or(false)
+                })
+                .map(|(work_id, owner, revision_count, is_grabbed, title, read_club, source_edition_info)| {
+                    super::protocol::WorkListEntry {
+                        work_id,
+                        owner,
+                        revision_count,
+                        is_grabbed,
+                        title,
+                        read_club,
+                        is_source: true,
+                        content_start_line: None,
+                        content_end_line: None,
+                        source_author_id: Some(author_id),
+                        source_edition_info,
+                    }
+                })
+                .collect();
+            Ok(ResponseValue::WorkList(list))
+        }
     }
 }
 
