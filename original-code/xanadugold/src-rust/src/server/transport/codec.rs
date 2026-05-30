@@ -1736,6 +1736,17 @@ impl JsonCodec {
                     work_id: args.work_id,
                 })
             }
+            OperationCode::CompoundResolve => {
+                #[derive(Deserialize)]
+                struct Args {
+                    compound: super::protocol::CompoundEditionPayload,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CompoundResolve {
+                    compound: args.compound,
+                })
+            }
             OperationCode::AdminRecorderCreate => {
                 #[derive(Deserialize)]
                 struct Args {

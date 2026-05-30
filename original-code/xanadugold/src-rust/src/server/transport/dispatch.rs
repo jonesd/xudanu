@@ -1274,6 +1274,14 @@ fn dispatch_inner(
                 .collect();
             Ok(ResponseValue::ProvenanceAncestryResult { chain: hops })
         }
+        WireRequest::CompoundResolve { compound } => {
+            let edition = compound.to_compound();
+            for work_id in edition.referenced_works() {
+                srv.ensure_can_read(session_id, work_id)?;
+            }
+            let text = srv.resolve_compound_edition(&edition)?;
+            Ok(ResponseValue::CompoundResolveResult { text })
+        }
         WireRequest::AdminRecorderCreate {
             kind,
             direct_only,

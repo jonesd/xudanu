@@ -119,6 +119,20 @@ export interface ProvenanceHop {
   link_id: number;
 }
 
+export interface CompoundSpanPayload {
+  source_work_id: number;
+  char_start: number;
+  char_end: number;
+}
+
+export type CompoundElementPayload =
+  | { type: "text"; content: string }
+  | { type: "span"; source_work_id: number; char_start: number; char_end: number };
+
+export interface CompoundEditionPayload {
+  elements: CompoundElementPayload[];
+}
+
 export interface HyperRefPayload {
   kind: string;
   work_context: number | null;
@@ -581,6 +595,12 @@ export class CrdtSyncClient {
     const resp = await this.sendRequest("provenance_ancestry", { work_id: workId });
     const val = extractValue(resp) as Record<string, unknown>;
     return (val.chain as ProvenanceHop[]) || [];
+  }
+
+  async compoundResolve(compound: CompoundEditionPayload): Promise<string> {
+    const resp = await this.sendRequest("compound_resolve", { compound });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.text as string) || "";
   }
 
   async rangeTranscluders(workId: number): Promise<{ edition_ids: number[]; work_ids: number[] }> {
