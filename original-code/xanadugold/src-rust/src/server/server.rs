@@ -11,6 +11,7 @@ use super::session::{Session, SessionId};
 use crate::edition::backfollow::BackfollowEngine;
 use crate::edition::blob_store::{BlobMeta, BlobStore, MemoryBackend};
 use crate::edition::links::{HyperLink, HyperRef};
+use crate::edition::props::BertProp;
 use crate::edition::transclusion::{TransclusionQuery, WorkQuery};
 use crate::edition::{
     hash_content, u64_from_hash, BeId, BeRangeElement, BeStorage, ContentAddressIndex, Edition,
@@ -706,14 +707,15 @@ impl Server {
         let edition = self.works[&be_id].work.edition().clone();
         self.content_address.intern_edition_elements(&edition);
         self.reconcile_record_local_revision(be_id, &edition, Self::current_timestamp_secs());
-        let bf_work = self.works[&be_id].work.clone();
+        let read_club = self.works[&be_id].work.read_club();
+        let edit_club = self.works[&be_id].work.edit_club();
         let prop = BackfollowEngine::make_work_prop(
-            &bf_work,
-            self.works[&be_id].work.read_club(),
-            self.works[&be_id].work.edit_club(),
+            &self.works[&be_id].work,
+            read_club,
+            edit_club,
         );
         self.backfollow
-            .register_work_with_prop(bf_work, be_id, None, prop);
+            .register_work_with_prop(&self.works[&be_id].work, be_id, None, prop);
         // Newly created works may share content with already-watched documents,
         // so planted recorders must be checked here just as they are in revise_work.
         self.trigger_planted_recorders(be_id);
@@ -791,6 +793,7 @@ impl Server {
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
 
+        let old_edition = ws.work.edition().clone();
         ws.last_revision_author = author_club;
         ws.chunk_ref = None;
         ws.work.revise(edition);
@@ -804,11 +807,11 @@ impl Server {
         });
 
         let updated_edition = ws.work.edition().clone();
-        let bf_work = ws.work.clone();
+        let new_work = ws.work.clone();
         self.content_address
             .intern_edition_elements(&updated_edition);
         self.backfollow
-            .update_work_with_parent(work_be_id, work_be_id, bf_work);
+            .update_work_with_parent(work_be_id, work_be_id, &old_edition, &new_work);
         self.trigger_planted_recorders(work_be_id);
         self.reconcile_record_local_revision(
             work_be_id,
@@ -2704,8 +2707,7 @@ impl Server {
             .clone();
         let edition_elem = RangeElement::edition(be_id);
         self.backfollow
-            .transclusion_index_mut()
-            .register_edition(&edition, &edition_elem, None);
+            .register_edition(&edition, be_id, BertProp::make());
         Ok(be_id)
     }
 
@@ -3085,15 +3087,13 @@ impl Server {
         }
 
         for (wid, ws) in &self.works {
-            let edition = ws.work.edition().clone();
-            let elem = crate::edition::range_element::RangeElement::work(*wid);
+            let prop = BackfollowEngine::make_work_prop(
+                &ws.work,
+                ws.work.read_club(),
+                ws.work.edit_club(),
+            );
             self.backfollow
-                .transclusion_index_mut()
-                .register_work(&edition, &elem);
-            for (_, carrier) in edition.all_entries() {
-                let fp = carrier.element.content_fingerprint();
-                self.backfollow.register_fingerprint_for_work(fp, *wid);
-            }
+                .register_work_with_prop(&ws.work, *wid, None, prop);
         }
 
         Ok(())
@@ -3472,17 +3472,7 @@ impl Server {
             .entry(destination)
             .or_default()
             .push(link_id);
-        let link_elem = RangeElement::work(link_id);
-        let origin_elem = RangeElement::work(origin);
-        let dest_elem = RangeElement::work(destination);
-        self.backfollow.transclusion_index_mut().register_work(
-            &crate::edition::Edition::from_one(0, origin_elem.clone()),
-            &link_elem,
-        );
-        self.backfollow.transclusion_index_mut().register_work(
-            &crate::edition::Edition::from_one(0, dest_elem.clone()),
-            &link_elem,
-        );
+        self.backfollow.register_link_content(&self.links[&link_id].link, link_id);
         Ok(link_id)
     }
 
@@ -4396,11 +4386,12 @@ impl Server {
                 .with(position, std::sync::Arc::new(new_carrier)),
             current.endorsements.clone(),
         );
+        let old_edition = ws.work.edition().clone();
         ws.work.revise(updated.clone());
         ws.chunk_ref = None;
-        let bf_work = ws.work.clone();
+        let new_work = ws.work.clone();
         self.backfollow
-            .update_work_with_parent(work_id, work_id, bf_work);
+            .update_work_with_parent(work_id, work_id, &old_edition, &new_work);
         self.reconcile_record_local_revision(work_id, &updated, Self::current_timestamp_secs());
         Ok(updated)
     }
@@ -6499,16 +6490,14 @@ pub(crate) mod persist_snapshot {
             }
 
             for (wid, ws) in &server.works {
-                let edition = ws.work.edition().clone();
-                let elem = RangeElement::work(*wid);
+                let prop = BackfollowEngine::make_work_prop(
+                    &ws.work,
+                    ws.work.read_club(),
+                    ws.work.edit_club(),
+                );
                 server
                     .backfollow
-                    .transclusion_index_mut()
-                    .register_work(&edition, &elem);
-                for (_, carrier) in edition.all_entries() {
-                    let fp = carrier.element.content_fingerprint();
-                    server.backfollow.register_fingerprint_for_work(fp, *wid);
-                }
+                    .register_work_with_prop(&ws.work, *wid, None, prop);
             }
 
             let max_id = server
