@@ -178,21 +178,34 @@ Replace client-side substring search with server-side position lookup, and fix r
 
 ---
 
+## Phase D: Reactive Recorder System (Already Complete)
+
+### Status
+
+Phase D was fully implemented in prior work. The entire reactive recorder pipeline exists and passes all tests.
+
+### What Exists
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| `RecorderSystem`, `Fossil`, `RecorderQuery` | Complete | Full lifecycle: create, accumulate, extinguish, dedup, ref counting |
+| `Matcher` / `RecorderTrigger` / `Agenda` | Complete | Deferred query execution with `process_agenda_with_engine` |
+| SensorCanopy integration | Complete | `plant_recorder` / `remove_planted_recorder` on sensor_crum with flag propagation |
+| Reactive trigger pipeline | Complete | `trigger_planted_recorders` called on every `create_work` / `revise_work` with Jaccard filtering |
+| Fossil-by-fingerprint index | Complete | `fossil_by_fingerprint` reverse index for O(1) content-to-fossil lookup |
+| Wire protocol | Complete | 4 admin opcodes (0x1101-0x1104) + Subscribe/Unsubscribe + ContentMatch event |
+| WebSocket real-time push | Complete | Subscribe/plant/drain/unsubscribe lifecycle, 200ms polling, cleanup on disconnect |
+| Test coverage | Complete | 20 recorder unit tests + 10 watch integration tests |
+
+### Known Gaps (low priority)
+
+- No fossil persistence across server restart (in-memory only)
+- `RecorderQuery.region` filtering not wired into `Fossil.matches_filters`
+- No federated recorder triggers (only local create/revise)
+
+---
+
 ## Remaining Phases
-
-### Phase D: Reactive Recorder System
-
-**Goal:** RecorderFossils that monitor for future matching content.
-
-- Implement `Matcher::step()` (H-tree northward walk)
-- Implement `RecorderTrigger::step()` (element matching)
-- Wire SensorCanopy for reactive notifications
-- RecorderFossil lifecycle (create, accumulate, extinguish)
-- Wire `on_prop_changed()` from all Server mutations
-- Add wire protocol operations for recorder lifecycle
-- Real-time push via WebSocket
-
-**Dependencies:** Phase B
 
 ### Phase E: ENT Version DAG Integration
 
@@ -250,7 +263,7 @@ Phase A (Unify Storage) ✅
     │                                     Phase F (Golden Thread)
     └── Phase B (H-Tree + Endorsements) ✅    │
           │                                    │
-          └── Phase D (Reactive Recorders)     │
+          └── Phase D (Reactive Recorders) ✅  │
                │                               │
                └── Phase E (Version DAG)       │
                                                    │
