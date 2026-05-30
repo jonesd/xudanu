@@ -540,9 +540,14 @@ impl BackfollowEngine {
 
     pub fn version_descendants(&self, work_id: u64) -> Vec<u64> {
         let mut result = Vec::new();
-        for (&child, parents) in &self.parent_of {
-            if parents.contains(&work_id) {
-                result.push(child);
+        let mut stack = vec![work_id];
+        let mut visited = HashSet::new();
+        while let Some(id) = stack.pop() {
+            for (&child, parents) in &self.parent_of {
+                if parents.contains(&id) && visited.insert(child) {
+                    result.push(child);
+                    stack.push(child);
+                }
             }
         }
         result

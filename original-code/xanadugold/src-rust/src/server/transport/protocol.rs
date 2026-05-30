@@ -1531,8 +1531,7 @@ pub enum ResponseValue {
         descendants: Vec<BeId>,
     },
     VersionTracePositionResult {
-        branch_id: u64,
-        position: u32,
+        trace_position: Option<TracePositionPayload>,
     },
     RecorderCreateResult {
         recorder_id: u64,
@@ -2045,6 +2044,12 @@ pub struct SharedRegionPayload {
 pub struct ExcerptPositionPayload {
     pub start: usize,
     pub end: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TracePositionPayload {
+    pub branch_id: u64,
+    pub position: u32,
 }
 
 pub mod u64_hex {

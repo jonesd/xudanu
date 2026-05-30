@@ -1226,24 +1226,31 @@ fn dispatch_inner(
         WireRequest::VersionAncestors { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
             let ancestors = srv.version_ancestors_transitive(work_id);
+            let ancestors: Vec<_> = ancestors
+                .into_iter()
+                .filter(|id| srv.work(*id).map(|w| srv.work_is_readable(session_id, w)).unwrap_or(false))
+                .collect();
             Ok(ResponseValue::VersionAncestorsResult { ancestors })
         }
         WireRequest::VersionDescendants { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
             let descendants = srv.version_descendants(work_id);
+            let descendants: Vec<_> = descendants
+                .into_iter()
+                .filter(|id| srv.work(*id).map(|w| srv.work_is_readable(session_id, w)).unwrap_or(false))
+                .collect();
             Ok(ResponseValue::VersionDescendantsResult { descendants })
         }
         WireRequest::VersionTracePosition { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
             let tp = srv.version_trace_position(work_id);
-            match tp {
-                Some(tp) => {
-                    let branch_id = tp.branch().to_u64();
-                    let position = tp.position();
-                    Ok(ResponseValue::VersionTracePositionResult { branch_id, position })
+            let trace_position = tp.map(|tp| {
+                super::protocol::TracePositionPayload {
+                    branch_id: tp.branch().to_u64(),
+                    position: tp.position(),
                 }
-                None => Ok(ResponseValue::VersionTracePositionResult { branch_id: 0, position: 0 }),
-            }
+            });
+            Ok(ResponseValue::VersionTracePositionResult { trace_position })
         }
         WireRequest::AdminRecorderCreate {
             kind,
