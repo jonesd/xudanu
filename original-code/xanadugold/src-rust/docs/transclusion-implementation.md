@@ -205,18 +205,44 @@ Phase D was fully implemented in prior work. The entire reactive recorder pipeli
 
 ---
 
+## Phase E: ENT Version DAG Integration (Complete)
+
+### Goal
+
+Version-aware transclusion queries via DagWood partial ordering, with wire protocol exposure.
+
+### What Already Existed
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| DagWood (version DAG) | Complete | Fork, extend, merge, `is_le()`, successors, TraceView |
+| TracePosition | Complete | Lightweight `(BranchId, u32)` identity |
+| HUpperCrumData (H-tree) | Complete | Parent links, canopy join, backfollow traversal |
+| Assertion system | Complete | 13 payload types, store, visibility, materialization |
+| `edition_to_assertions` bridge | Complete | Converts Edition to ENT assertions |
+| `version_is_le` / `version_ancestors` | Partial | Existed in backfollow but not exposed via wire protocol |
+| Work revision history | Complete | BTreeMap with count, fetch, range, persistence |
+
+### New Changes
+
+| Component | Details |
+|-----------|---------|
+| `version_ancestors_transitive()` | BFS walk through `parent_of` to find all ancestors, not just direct parents |
+| `version_descendants()` | Reverse lookup of children from `parent_of` |
+| Wire protocol opcodes | `0x1001` VersionIsBefore, `0x1002` VersionAncestors, `0x1003` VersionDescendants, `0x1004` VersionTracePosition |
+| Dispatch handlers | All 4 ops with read permission checks |
+| Frontend API methods | `versionIsBefore`, `versionAncestors`, `versionDescendants`, `versionTracePosition` |
+| `BranchId::to_u64()` | Public accessor for trace position wire serialization |
+
+### Result
+
+- Full version DAG ancestry and descendant queries exposed via wire protocol
+- Transitive ancestor traversal (not just flat parent list)
+- 1779 lib tests pass, frontend builds clean
+
+---
+
 ## Remaining Phases
-
-### Phase E: ENT Version DAG Integration
-
-**Goal:** Version-aware transclusion queries via DagWood partial ordering.
-
-- Set `trace_position` on EditionMeta during registration
-- Bridge Edition/Work to ENT content layer
-- `is_le(a, b)` for derivation ancestry
-- Version history UI
-
-**Dependencies:** Phases B + D
 
 ### Phase F: Provenance Chain (Golden Thread)
 
@@ -265,7 +291,7 @@ Phase A (Unify Storage) ✅
           │                                    │
           └── Phase D (Reactive Recorders) ✅  │
                │                               │
-               └── Phase E (Version DAG)       │
+               └── Phase E (Version DAG) ✅    │
                                                    │
                                Phase G (UI) ←──────┘
                                     │

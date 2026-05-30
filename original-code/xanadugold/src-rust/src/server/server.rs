@@ -4032,6 +4032,14 @@ impl Server {
         self.backfollow.version_ancestors(work_id)
     }
 
+    pub fn version_ancestors_transitive(&self, work_id: BeId) -> Vec<BeId> {
+        self.backfollow.version_ancestors_transitive(work_id)
+    }
+
+    pub fn version_descendants(&self, work_id: BeId) -> Vec<BeId> {
+        self.backfollow.version_descendants(work_id)
+    }
+
     pub fn version_trace_position(&self, work_id: BeId) -> Option<TracePosition> {
         self.backfollow.trace_position_of(work_id)
     }

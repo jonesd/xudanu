@@ -518,6 +518,36 @@ impl BackfollowEngine {
         self.parent_of.get(&work_id).cloned().unwrap_or_default()
     }
 
+    pub fn version_ancestors_transitive(&self, work_id: u64) -> Vec<u64> {
+        let mut result = Vec::new();
+        let mut stack = vec![work_id];
+        let mut visited = HashSet::new();
+        while let Some(id) = stack.pop() {
+            if !visited.insert(id) {
+                continue;
+            }
+            if let Some(parents) = self.parent_of.get(&id) {
+                for &parent in parents {
+                    if !visited.contains(&parent) {
+                        result.push(parent);
+                        stack.push(parent);
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    pub fn version_descendants(&self, work_id: u64) -> Vec<u64> {
+        let mut result = Vec::new();
+        for (&child, parents) in &self.parent_of {
+            if parents.contains(&work_id) {
+                result.push(child);
+            }
+        }
+        result
+    }
+
     pub fn trace_position_of(&self, work_id: u64) -> Option<TracePosition> {
         self.edition_metas
             .get(&work_id)
