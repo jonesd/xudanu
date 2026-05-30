@@ -707,6 +707,18 @@ impl BackfollowEngine {
         }
     }
 
+    pub fn unregister_link_content(&mut self, link: &HyperLink, link_id: u64) {
+        let content = link.all_referenced_content();
+        for element in content {
+            let link_elem = RangeElement::label(link_id, RangeElement::text("link"));
+            self.transclusion_index.unregister_edition(
+                &Edition::from_one(0, element),
+                &link_elem,
+                None,
+            );
+        }
+    }
+
     pub fn delayed_store_backfollow_for_edition(
         &self,
         edition_id: u64,
