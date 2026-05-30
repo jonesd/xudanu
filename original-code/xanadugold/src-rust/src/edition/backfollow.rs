@@ -12,7 +12,7 @@ use super::transclusion::{
     TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery,
 };
 use super::work::Work;
-use super::wrapper::{TEXT_TOKEN, WRAPPER_CLUB_ID};
+use super::wrapper::{WrapperRegistry, WRAPPER_CLUB_ID};
 use crate::ent::dagwood::DagWood;
 use crate::ent::htree::{HPart, HUpperCrumData};
 use crate::ent::trace::TracePosition;
@@ -282,7 +282,14 @@ impl BackfollowEngine {
             .get(&work_id)
             .map(|m| m.prop().clone())
             .unwrap_or_else(BertProp::make);
-        let flags = old_prop.flags();
+        let new_endorsements = Self::compute_work_endorsements(new_work);
+        let updated_prop = BertProp::new(
+            old_prop.permissions().to_vec(),
+            new_endorsements,
+            false,
+            false,
+        );
+        let flags = updated_prop.flags();
         let bert_crum = self.bert_canopy.make_crum(flags);
         let sensor_crum = self.sensor_canopy.make_crum(0);
 
@@ -298,7 +305,7 @@ impl BackfollowEngine {
                     work_id,
                     bert_crum.clone(),
                     sensor_crum.clone(),
-                    old_prop.clone(),
+                    updated_prop.clone(),
                 ))) as Arc<Mutex<dyn HPart>>,
                 tp,
                 self.bert_canopy.clone(),
@@ -309,7 +316,7 @@ impl BackfollowEngine {
             Arc::new(Mutex::new(h))
         };
 
-        let mut meta = EditionMeta::new(work_id, bert_crum, sensor_crum, old_prop);
+        let mut meta = EditionMeta::new(work_id, bert_crum, sensor_crum, updated_prop);
         meta.set_h_crum(h_crum);
         meta.set_trace_position(tp);
         self.parent_of.insert(work_id, vec![parent_work_id]);
@@ -343,19 +350,16 @@ impl BackfollowEngine {
 
     pub fn compute_work_endorsements(work: &Work) -> Vec<super::grandmap::Id> {
         use super::grandmap::Id;
-        let mut has_text = false;
-        for (_, carrier) in work.current_edition().all_entries() {
-            match &carrier.element {
-                RangeElement::Text { .. } | RangeElement::Data { .. } => has_text = true,
-                _ => {}
-            }
-        }
+        let registry = WrapperRegistry::new();
+        let edition = work.current_edition();
         let mut endorsements = Vec::new();
-        if has_text {
-            endorsements.push(Id::in_space(
-                super::grandmap::IdSpaceId(WRAPPER_CLUB_ID),
-                TEXT_TOKEN as i64,
-            ));
+        for spec in registry.all_specs() {
+            if spec.check(edition) {
+                endorsements.push(Id::in_space(
+                    super::grandmap::IdSpaceId(WRAPPER_CLUB_ID),
+                    spec.token_id() as i64,
+                ));
+            }
         }
         endorsements
     }
@@ -696,8 +700,9 @@ impl BackfollowEngine {
     }
 
     pub fn register_link_content(&mut self, link: &HyperLink, link_id: u64) {
+        use super::wrapper::{HYPERLINK_TOKEN, HYPERREF_TOKEN};
         let content = link.all_referenced_content();
-        for element in content {
+        for element in &content {
             let link_elem = RangeElement::label(link_id, RangeElement::text("link"));
             self.transclusion_index.register_edition(
                 &Edition::from_one(0, element.clone()),
@@ -705,6 +710,26 @@ impl BackfollowEngine {
                 None,
             );
         }
+        let mut endorsements = vec![
+            super::grandmap::Id::in_space(
+                super::grandmap::IdSpaceId(WRAPPER_CLUB_ID),
+                HYPERLINK_TOKEN as i64,
+            ),
+        ];
+        if !content.is_empty() {
+            endorsements.push(super::grandmap::Id::in_space(
+                super::grandmap::IdSpaceId(WRAPPER_CLUB_ID),
+                HYPERREF_TOKEN as i64,
+            ));
+        }
+        let prop = BertProp::new(Vec::new(), endorsements, false, false);
+        let flags = prop.flags();
+        let bert_crum = self.bert_canopy.make_crum(flags);
+        let sensor_crum = self.sensor_canopy.make_crum(0);
+        let mut meta = EditionMeta::new(link_id, bert_crum, sensor_crum, prop);
+        let tp = self.dagwood.new_position();
+        meta.set_trace_position(tp);
+        self.edition_metas.insert(link_id, meta);
     }
 
     pub fn unregister_link_content(&mut self, link: &HyperLink, link_id: u64) {
@@ -717,6 +742,7 @@ impl BackfollowEngine {
                 None,
             );
         }
+        self.edition_metas.remove(&link_id);
     }
 
     pub fn delayed_store_backfollow_for_edition(
@@ -860,6 +886,7 @@ mod tests {
     use crate::edition::grandmap::Id;
     use crate::edition::links::HyperRef;
     use crate::edition::props::PUBLIC_CLUB_FLAG;
+    use crate::edition::wrapper::TEXT_TOKEN;
 
     #[test]
     fn backfollow_engine_new() {
@@ -1361,8 +1388,12 @@ mod tests {
         let work = Work::new(1, Edition::empty());
         let endorsements = BackfollowEngine::compute_work_endorsements(&work);
         assert!(
-            endorsements.is_empty(),
-            "empty work should have no endorsements"
+            !endorsements.is_empty(),
+            "empty work should still have content-type endorsements"
+        );
+        assert!(
+            endorsements.iter().any(|id| id.number == TEXT_TOKEN as i64),
+            "empty work should have TEXT_TOKEN (empty text is valid text)"
         );
     }
 
@@ -1529,5 +1560,62 @@ mod tests {
             .iter()
             .any(|a| matches!(a.payload, AssertionPayload::SetSpanText { .. }));
         assert!(has_set_span, "should have SetSpanText assertion");
+    }
+
+    #[test]
+    fn register_link_content_creates_hyperlink_endorsement() {
+        crate::edition::init_endorsement_flags();
+        let mut engine = BackfollowEngine::new();
+        let o_ref = HyperRef::single(Some(Edition::from_text("excerpt")), None, None, None);
+        let d_ref = HyperRef::single(None, None, None, None);
+        let link = HyperLink::make(vec![], o_ref, d_ref);
+        engine.register_link_content(&link, 100);
+        let meta = engine.get_edition_meta(100);
+        assert!(meta.is_some(), "link should get an EditionMeta");
+        let prop = meta.unwrap().prop();
+        assert!(
+            !prop.endorsements().is_empty(),
+            "link should have HYPERLINK endorsement"
+        );
+    }
+
+    #[test]
+    fn unregister_link_content_removes_meta() {
+        crate::edition::init_endorsement_flags();
+        let mut engine = BackfollowEngine::new();
+        let o_ref = HyperRef::single(Some(Edition::from_text("excerpt")), None, None, None);
+        let d_ref = HyperRef::single(None, None, None, None);
+        let link = HyperLink::make(vec![], o_ref, d_ref);
+        engine.register_link_content(&link, 100);
+        assert!(engine.get_edition_meta(100).is_some());
+        engine.unregister_link_content(&link, 100);
+        assert!(
+            engine.get_edition_meta(100).is_none(),
+            "unregister should remove link EditionMeta"
+        );
+    }
+
+    #[test]
+    fn update_work_with_parent_recomputes_endorsements() {
+        crate::edition::init_endorsement_flags();
+        let mut engine = BackfollowEngine::new();
+        let ed1 = Edition::from_one(0, RangeElement::text("v1"));
+        let work = Work::new(1, ed1.clone());
+        let prop = BackfollowEngine::make_work_prop(&work, None, None);
+        engine.register_work_with_prop(&work, 1, None, prop);
+
+        let v2 = Work::new(1, Edition::from_one(0, RangeElement::text("v2")));
+        engine.update_work_with_parent(1, 1, &ed1, &v2);
+
+        let meta = engine.get_edition_meta(1).unwrap();
+        let endorsements = meta.prop().endorsements();
+        assert!(
+            !endorsements.is_empty(),
+            "updated work should have recomputed endorsements"
+        );
+        assert!(
+            endorsements.iter().any(|id| id.number == TEXT_TOKEN as i64),
+            "updated work should have TEXT_TOKEN"
+        );
     }
 }

@@ -116,20 +116,43 @@ was empty while `transclusion_index` was populated — inconsistent state.
 
 ---
 
+## Phase B: H-Tree Connection + Endorsement Stamps (Complete)
+
+### Goal
+
+Connect the H-tree for versioned ancestry queries with content-type endorsement stamps.
+
+### Changes
+
+| Component | Before | After |
+|-----------|--------|-------|
+| `compute_work_endorsements()` | Manual check for `TEXT_TOKEN` only | Uses `WrapperRegistry` to detect all content types (Text, Set, Path, HyperLink, HyperRef) |
+| `update_work_with_parent()` | Preserves old `BertProp` on revise | Re-computes endorsements from new work content, preserves permissions |
+| `register_link_content()` | Indexes content only | Creates `EditionMeta` with HYPERLINK_TOKEN + HYPERREF_TOKEN endorsements |
+| `unregister_link_content()` | Removes transclusion index entries | Also removes link's `EditionMeta` |
+| `find_transcluders()` | No endorsement-aware filtering of links | Links have `EditionMeta` and participate in canopy filtering |
+| `find_transcluders_with_backfollow()` | Already working with H-tree traversal | Now benefits from correct endorsement flags on all entities |
+
+### Endorsement Types (from `WrapperRegistry`)
+
+| Token | Constant | Check | When auto-stamped |
+|-------|----------|-------|-------------------|
+| 1 | `TEXT_TOKEN` | Contiguous zero-based edition | Works with text content, empty editions |
+| 2 | `SET_TOKEN` | Finite edition | Any finite edition |
+| 3 | `PATH_TOKEN` | Zero-based with only labels | Label-only editions |
+| 4 | `HYPERLINK_TOKEN` | Non-empty edition | All links on registration |
+| 5 | `HYPERREF_TOKEN` | Always true | Links with non-empty content |
+
+### Result
+
+- All entities (works, editions, links) carry endorsement stamps reflecting their content types
+- Endorsement flags flow into BertCanopy and H-tree, enabling filtered transclusion queries
+- Revising a work re-computes endorsement stamps from the new content
+- 1779 lib tests pass, 0 fail
+
+---
+
 ## Remaining Phases
-
-### Phase B: H-Tree Connection + Endorsement Stamps
-
-**Goal:** Connect the H-tree for versioned ancestry queries.
-
-- Define well-known endorsement types (TEXT, HYPERLINK, etc.)
-- Auto-endorse content on create/revise
-- Set `h_crum` during edition registration (parent-child edges)
-- Wire endorsement filtering into `find_transcluders()`
-- Fix `find_transcluders_with_backfollow` to use trail results
-- Add read permission filtering
-
-**Dependencies:** Phase A (done)
 
 ### Phase C: Fingerprint-Based Shared Regions
 
@@ -210,15 +233,15 @@ was empty while `transclusion_index` was populated — inconsistent state.
 Phase A (Unify Storage) ✅
     ├── Phase C (Fingerprint Matching)
     │                                     Phase F (Golden Thread)
-    └── Phase B (H-Tree + Endorsements)       │
-         │                                    │
-         └── Phase D (Reactive Recorders)     │
-              │                               │
-              └── Phase E (Version DAG)       │
-                                                  │
-                              Phase G (UI) ←──────┘
-                                   │
-                              Phase H (Compound Docs)
+    └── Phase B (H-Tree + Endorsements) ✅    │
+          │                                    │
+          └── Phase D (Reactive Recorders)     │
+               │                               │
+               └── Phase E (Version DAG)       │
+                                                   │
+                               Phase G (UI) ←──────┘
+                                    │
+                               Phase H (Compound Docs)
 ```
 
 ---
