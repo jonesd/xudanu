@@ -198,6 +198,11 @@ pub enum OperationCode {
     OrderedBundles,
     TransclusionDepth,
 
+    VersionIsBefore,
+    VersionAncestors,
+    VersionDescendants,
+    VersionTracePosition,
+
     AdminRecorderCreate,
     AdminRecorderRecord,
     AdminRecorderList,
@@ -403,6 +408,11 @@ impl OperationCode {
             0x0f02 => Some(OperationCode::RangeWorks),
             0x0f03 => Some(OperationCode::OrderedBundles),
             0x0f04 => Some(OperationCode::TransclusionDepth),
+
+            0x1001 => Some(OperationCode::VersionIsBefore),
+            0x1002 => Some(OperationCode::VersionAncestors),
+            0x1003 => Some(OperationCode::VersionDescendants),
+            0x1004 => Some(OperationCode::VersionTracePosition),
 
             0x1101 => Some(OperationCode::AdminRecorderCreate),
             0x1102 => Some(OperationCode::AdminRecorderRecord),
@@ -614,6 +624,11 @@ impl OperationCode {
             OperationCode::RangeWorks => 0x0f02,
             OperationCode::OrderedBundles => 0x0f03,
             OperationCode::TransclusionDepth => 0x0f04,
+
+            OperationCode::VersionIsBefore => 0x1001,
+            OperationCode::VersionAncestors => 0x1002,
+            OperationCode::VersionDescendants => 0x1003,
+            OperationCode::VersionTracePosition => 0x1004,
 
             OperationCode::AdminRecorderCreate => 0x1101,
             OperationCode::AdminRecorderRecord => 0x1102,
@@ -1122,6 +1137,19 @@ pub enum WireRequest {
         position: i64,
         max_depth: Option<usize>,
     },
+    VersionIsBefore {
+        work_a: BeId,
+        work_b: BeId,
+    },
+    VersionAncestors {
+        work_id: BeId,
+    },
+    VersionDescendants {
+        work_id: BeId,
+    },
+    VersionTracePosition {
+        work_id: BeId,
+    },
 
     AdminRecorderCreate {
         kind: String,
@@ -1492,6 +1520,19 @@ pub enum ResponseValue {
     },
     TransclusionDepthResult {
         depth: usize,
+    },
+    VersionIsBeforeResult {
+        is_before: Option<bool>,
+    },
+    VersionAncestorsResult {
+        ancestors: Vec<BeId>,
+    },
+    VersionDescendantsResult {
+        descendants: Vec<BeId>,
+    },
+    VersionTracePositionResult {
+        branch_id: u64,
+        position: u32,
     },
     RecorderCreateResult {
         recorder_id: u64,

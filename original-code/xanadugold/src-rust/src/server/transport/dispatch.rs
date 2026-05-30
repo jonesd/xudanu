@@ -1217,6 +1217,34 @@ fn dispatch_inner(
             let depth = srv.transclusion_depth(work_id, position, max_depth.unwrap_or(10))?;
             Ok(ResponseValue::TransclusionDepthResult { depth })
         }
+        WireRequest::VersionIsBefore { work_a, work_b } => {
+            srv.ensure_can_read(session_id, work_a)?;
+            srv.ensure_can_read(session_id, work_b)?;
+            let is_before = srv.version_is_before(work_a, work_b);
+            Ok(ResponseValue::VersionIsBeforeResult { is_before })
+        }
+        WireRequest::VersionAncestors { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let ancestors = srv.version_ancestors_transitive(work_id);
+            Ok(ResponseValue::VersionAncestorsResult { ancestors })
+        }
+        WireRequest::VersionDescendants { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let descendants = srv.version_descendants(work_id);
+            Ok(ResponseValue::VersionDescendantsResult { descendants })
+        }
+        WireRequest::VersionTracePosition { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let tp = srv.version_trace_position(work_id);
+            match tp {
+                Some(tp) => {
+                    let branch_id = tp.branch().to_u64();
+                    let position = tp.position();
+                    Ok(ResponseValue::VersionTracePositionResult { branch_id, position })
+                }
+                None => Ok(ResponseValue::VersionTracePositionResult { branch_id: 0, position: 0 }),
+            }
+        }
         WireRequest::AdminRecorderCreate {
             kind,
             direct_only,

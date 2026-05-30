@@ -11,10 +11,12 @@ use std::collections::HashMap;
 pub struct BranchId(pub(crate) u64);
 
 impl BranchId {
-    // [New Migration Comment] Exposes the raw value for hashing purposes only.
-    // The original used Heaper::takeOop() (a monotonic counter) as the hash basis.
     pub(crate) fn raw_for_hash(&self) -> u32 {
         self.0 as u32
+    }
+
+    pub fn to_u64(&self) -> u64 {
+        self.0
     }
 }
 
