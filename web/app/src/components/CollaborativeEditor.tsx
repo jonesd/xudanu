@@ -157,13 +157,25 @@ function drawOverlay(
     const rangeRects = range.getClientRects();
     if (rangeRects.length === 0) continue;
 
-    const barX = 0;
     const firstTop = rangeRects[0].top - rect.top;
     const lastRect = rangeRects[rangeRects.length - 1];
     const lastBottom = lastRect.bottom - rect.top;
+    const height = lastBottom - firstTop;
 
     ctx.fillStyle = marker.color + "60";
-    ctx.fillRect(barX, firstTop, 3, lastBottom - firstTop);
+    ctx.fillRect(0, firstTop, 3, height);
+
+    if (marker.provenanceChain && marker.provenanceChain.length > 0) {
+      const chainCount = marker.provenanceChain.length;
+      const stackWidth = 2;
+      const gap = 1;
+      const chainColor = "#c4a35a";
+      for (let i = 0; i < chainCount; i++) {
+        const stackX = 3 + gap + i * (stackWidth + gap);
+        ctx.fillStyle = chainColor + "80";
+        ctx.fillRect(stackX, firstTop, stackWidth, height);
+      }
+    }
   }
 }
 

@@ -242,18 +242,50 @@ Version-aware transclusion queries via DagWood partial ordering, with wire proto
 
 ---
 
+## Phase F: Provenance Chain (Golden Thread) (Complete)
+
+### Goal
+
+Full origin chain through transclusion hops — the "golden thread" that lets any content be traced back to its original source.
+
+### Changes
+
+| Component | Details |
+|-----------|---------|
+| `ProvenanceHop` | New struct: `{ source_work_id: u64, link_id: u64 }` |
+| `HyperRef.provenance_chain` | `Vec<ProvenanceHop>` — ordered oldest-to-newest, propagated through all `with_*` methods |
+| `create_link()` | Computes chain from incoming links to origin work |
+| `compute_provenance_chain()` | Server method: finds incoming links, merges their chains, adds new hop |
+| `provenance_ancestry()` | BFS walk of full ancestry for a work, with `visited_works` dedup |
+| `ProvenanceHopPayload` | Wire type with `source_work_id`, `link_id` |
+| `HyperRefPayload.provenance_chain` | `Vec<ProvenanceHopPayload>` — serde default, backward compatible |
+| `ProvenanceAncestry` wire op | `0x0805` — returns full ancestry chain for a work |
+| Stacked margin bars | Amber (historical) bars stacked beside primary marker, one per chain hop |
+| Links sidebar | Shows hop count badge with tooltip |
+| `provenanceAncestry()` | Frontend API client method |
+
+### Chain Propagation
+
+When creating a link from work B to work C:
+1. Find incoming links to B (links where B is the destination)
+2. For each incoming link IL (A→B), collect IL's chain + `ProvenanceHop(A, IL.id)`
+3. Set the merged chain on the new link's origin_ref
+
+Example: A→B→C→D
+- L1 (A→B): chain = []
+- L2 (B→C): chain = [Hop(A, L1)]
+- L3 (C→D): chain = [Hop(A, L1), Hop(B, L2)]
+
+### Result
+
+- 1790 lib tests pass (5 unit + 6 integration new)
+- Frontend builds clean
+- Stacked amber bars show provenance depth in margin
+- Links sidebar shows hop count with tooltip
+
+---
+
 ## Remaining Phases
-
-### Phase F: Provenance Chain (Golden Thread)
-
-**Goal:** Full origin chain through transclusion hops.
-
-- Store `Vec<ProvenanceHop>` in `HyperRef`
-- Stacked margin bars with chain tooltips
-- Links sidebar shows full ancestry
-- Attribution propagation through chain
-
-**Dependencies:** Phase C
 
 ### Phase G: UI Features
 
@@ -286,16 +318,16 @@ Version-aware transclusion queries via DagWood partial ordering, with wire proto
 ```
 Phase A (Unify Storage) ✅
     ├── Phase C (Server Excerpt Lookup) ✅
-    │                                     Phase F (Golden Thread)
-    └── Phase B (H-Tree + Endorsements) ✅    │
-          │                                    │
-          └── Phase D (Reactive Recorders) ✅  │
-               │                               │
-               └── Phase E (Version DAG) ✅    │
-                                                   │
-                               Phase G (UI) ←──────┘
-                                    │
-                               Phase H (Compound Docs)
+    │                                     Phase F (Golden Thread) ✅
+    └── Phase B (H-Tree + Endorsements) ✅
+          │
+          └── Phase D (Reactive Recorders) ✅
+               │
+               └── Phase E (Version DAG) ✅
+
+                Phase G (UI) ←── Phase F
+                     │
+                Phase H (Compound Docs)
 ```
 
 ---
@@ -308,7 +340,7 @@ Phase A (Unify Storage) ✅
 | 7. Visible bidirectional links | **Phase 1 done** | G: backlinks panel |
 | 9. Royalty at any granularity | Not started | Post-H |
 | 11. Secure access controls | Partial | B: permission filtering |
-| 16. Secure auditable transactions | Partial | F: provenance chain |
+| 16. Secure auditable transactions | **Phase F done** | F: provenance chain |
 
 ---
 

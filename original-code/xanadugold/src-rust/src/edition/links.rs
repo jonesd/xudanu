@@ -274,11 +274,35 @@ impl Path {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ProvenanceHop {
+    source_work_id: u64,
+    link_id: u64,
+}
+
+impl ProvenanceHop {
+    pub fn new(source_work_id: u64, link_id: u64) -> Self {
+        ProvenanceHop {
+            source_work_id,
+            link_id,
+        }
+    }
+
+    pub fn source_work_id(&self) -> u64 {
+        self.source_work_id
+    }
+
+    pub fn link_id(&self) -> u64 {
+        self.link_id
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct HyperRef {
     kind: HyperRefKind,
     work_context: Option<u64>,
     original_context: Option<u64>,
     path_context: Option<Path>,
+    provenance_chain: Vec<ProvenanceHop>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -299,6 +323,7 @@ impl HyperRef {
             work_context,
             original_context,
             path_context,
+            provenance_chain: Vec::new(),
         }
     }
 
@@ -313,6 +338,7 @@ impl HyperRef {
             work_context,
             original_context,
             path_context,
+            provenance_chain: Vec::new(),
         }
     }
 
@@ -354,6 +380,20 @@ impl HyperRef {
         self.path_context.as_ref()
     }
 
+    pub fn provenance_chain(&self) -> &[ProvenanceHop] {
+        &self.provenance_chain
+    }
+
+    pub fn with_provenance_chain(&self, chain: Vec<ProvenanceHop>) -> Self {
+        HyperRef {
+            kind: self.kind.clone(),
+            work_context: self.work_context,
+            original_context: self.original_context,
+            path_context: self.path_context.clone(),
+            provenance_chain: chain,
+        }
+    }
+
     pub fn with_excerpt(&self, excerpt: Edition) -> Self {
         HyperRef {
             kind: HyperRefKind::Single {
@@ -362,6 +402,7 @@ impl HyperRef {
             work_context: self.work_context,
             original_context: self.original_context,
             path_context: self.path_context.clone(),
+            provenance_chain: self.provenance_chain.clone(),
         }
     }
 
@@ -371,6 +412,7 @@ impl HyperRef {
             work_context: work_id,
             original_context: self.original_context,
             path_context: self.path_context.clone(),
+            provenance_chain: self.provenance_chain.clone(),
         }
     }
 
@@ -380,6 +422,7 @@ impl HyperRef {
             work_context: self.work_context,
             original_context: work_id,
             path_context: self.path_context.clone(),
+            provenance_chain: self.provenance_chain.clone(),
         }
     }
 
@@ -389,6 +432,7 @@ impl HyperRef {
             work_context: self.work_context,
             original_context: self.original_context,
             path_context: path,
+            provenance_chain: self.provenance_chain.clone(),
         }
     }
 
@@ -405,6 +449,7 @@ impl HyperRef {
                     work_context: self.work_context,
                     original_context: self.original_context,
                     path_context: self.path_context.clone(),
+                    provenance_chain: self.provenance_chain.clone(),
                 }
             }
             HyperRefKind::Single { .. } => self.clone(),
@@ -421,6 +466,7 @@ impl HyperRef {
                     work_context: self.work_context,
                     original_context: self.original_context,
                     path_context: self.path_context.clone(),
+                    provenance_chain: self.provenance_chain.clone(),
                 }
             }
             HyperRefKind::Single { .. } => self.clone(),
@@ -441,6 +487,7 @@ impl HyperRef {
                     work_context: self.work_context,
                     original_context: self.original_context,
                     path_context: self.path_context.clone(),
+                    provenance_chain: self.provenance_chain.clone(),
                 }
             }
             _ => self.clone(),
@@ -460,6 +507,7 @@ impl HyperRef {
                     work_context: self.work_context,
                     original_context: self.original_context,
                     path_context: self.path_context.clone(),
+                    provenance_chain: self.provenance_chain.clone(),
                 }
             }
             _ => self.clone(),
@@ -479,6 +527,7 @@ impl HyperRef {
                     work_context: self.work_context,
                     original_context: self.original_context,
                     path_context: self.path_context.clone(),
+                    provenance_chain: self.provenance_chain.clone(),
                 }
             }
             _ => self.clone(),
@@ -1164,5 +1213,49 @@ mod tests {
         resolver.insert(1, Edition::from_text("a"));
         assert!(resolver.resolve_edition(1).is_some());
         assert!(resolver.resolve_edition(2).is_none());
+    }
+
+    #[test]
+    fn provenance_hop_new() {
+        let hop = ProvenanceHop::new(10, 20);
+        assert_eq!(hop.source_work_id(), 10);
+        assert_eq!(hop.link_id(), 20);
+    }
+
+    #[test]
+    fn hyper_ref_default_empty_chain() {
+        let href = HyperRef::single(Some(Edition::from_text("x")), None, None, None);
+        assert!(href.provenance_chain().is_empty());
+    }
+
+    #[test]
+    fn hyper_ref_with_provenance_chain() {
+        let href = HyperRef::single(Some(Edition::from_text("x")), None, None, None);
+        let chain = vec![
+            ProvenanceHop::new(1, 10),
+            ProvenanceHop::new(2, 20),
+        ];
+        let with_chain = href.with_provenance_chain(chain.clone());
+        assert_eq!(with_chain.provenance_chain().len(), 2);
+        assert_eq!(with_chain.provenance_chain()[0].source_work_id(), 1);
+        assert_eq!(with_chain.provenance_chain()[1].link_id(), 20);
+        assert!(href.provenance_chain().is_empty());
+    }
+
+    #[test]
+    fn provenance_chain_survives_with_excerpt() {
+        let href = HyperRef::single(None, None, None, None)
+            .with_provenance_chain(vec![ProvenanceHop::new(5, 15)]);
+        let updated = href.with_excerpt(Edition::from_text("new"));
+        assert_eq!(updated.provenance_chain().len(), 1);
+        assert_eq!(updated.provenance_chain()[0].source_work_id(), 5);
+    }
+
+    #[test]
+    fn provenance_chain_survives_with_work_context() {
+        let href = HyperRef::single(None, None, None, None)
+            .with_provenance_chain(vec![ProvenanceHop::new(5, 15)]);
+        let updated = href.with_work_context(Some(42));
+        assert_eq!(updated.provenance_chain().len(), 1);
     }
 }

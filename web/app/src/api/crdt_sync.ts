@@ -114,11 +114,17 @@ export interface LinkEntry {
   destination_ref: HyperRefPayload | null;
 }
 
+export interface ProvenanceHop {
+  source_work_id: number;
+  link_id: number;
+}
+
 export interface HyperRefPayload {
   kind: string;
   work_context: number | null;
   original_context: number | null;
   excerpt: string | null;
+  provenance_chain?: ProvenanceHop[];
 }
 
 export interface SharedRegion {
@@ -139,6 +145,7 @@ export interface TransclusionMarker {
   otherWorkId: number;
   otherWorkTitle: string;
   color: string;
+  provenanceChain?: ProvenanceHop[];
 }
 
 export interface WorkListEntry {
@@ -568,6 +575,12 @@ export class CrdtSyncClient {
     const tp = val.trace_position as Record<string, unknown> | null;
     if (!tp) return null;
     return { branchId: tp.branch_id as number, position: tp.position as number };
+  }
+
+  async provenanceAncestry(workId: number): Promise<ProvenanceHop[]> {
+    const resp = await this.sendRequest("provenance_ancestry", { work_id: workId });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.chain as ProvenanceHop[]) || [];
   }
 
   async rangeTranscluders(workId: number): Promise<{ edition_ids: number[]; work_ids: number[] }> {

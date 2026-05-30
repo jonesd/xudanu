@@ -203,6 +203,8 @@ pub enum OperationCode {
     VersionDescendants,
     VersionTracePosition,
 
+    ProvenanceAncestry,
+
     AdminRecorderCreate,
     AdminRecorderRecord,
     AdminRecorderList,
@@ -374,6 +376,8 @@ impl OperationCode {
             0x0802 => Some(OperationCode::FindWorksForContent),
             0x0803 => Some(OperationCode::FindTextTranscluders),
             0x0804 => Some(OperationCode::FindSharedRegions),
+
+            0x0805 => Some(OperationCode::ProvenanceAncestry),
 
             0x0601 => Some(OperationCode::ServerStats),
 
@@ -629,6 +633,8 @@ impl OperationCode {
             OperationCode::VersionAncestors => 0x1002,
             OperationCode::VersionDescendants => 0x1003,
             OperationCode::VersionTracePosition => 0x1004,
+
+            OperationCode::ProvenanceAncestry => 0x0805,
 
             OperationCode::AdminRecorderCreate => 0x1101,
             OperationCode::AdminRecorderRecord => 0x1102,
@@ -1151,6 +1157,10 @@ pub enum WireRequest {
         work_id: BeId,
     },
 
+    ProvenanceAncestry {
+        work_id: BeId,
+    },
+
     AdminRecorderCreate {
         kind: String,
         direct_only: Option<bool>,
@@ -1532,6 +1542,9 @@ pub enum ResponseValue {
     },
     VersionTracePositionResult {
         trace_position: Option<TracePositionPayload>,
+    },
+    ProvenanceAncestryResult {
+        chain: Vec<ProvenanceHopPayload>,
     },
     RecorderCreateResult {
         recorder_id: u64,
@@ -1941,6 +1954,14 @@ pub struct HyperRefPayload {
     pub path_context: Option<Vec<RangeElementPayload>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub excerpt: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provenance_chain: Vec<ProvenanceHopPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProvenanceHopPayload {
+    pub source_work_id: BeId,
+    pub link_id: BeId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1995,6 +2016,14 @@ impl HyperRefPayload {
                 Some(text)
             }
         });
+        let provenance_chain = hr
+            .provenance_chain()
+            .iter()
+            .map(|hop| ProvenanceHopPayload {
+                source_work_id: hop.source_work_id(),
+                link_id: hop.link_id(),
+            })
+            .collect();
         HyperRefPayload {
             kind: if hr.is_single() {
                 "single".to_string()
@@ -2005,6 +2034,7 @@ impl HyperRefPayload {
             original_context: hr.original_context(),
             path_context,
             excerpt,
+            provenance_chain,
         }
     }
 }
