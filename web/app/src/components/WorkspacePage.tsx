@@ -211,9 +211,9 @@ export function WorkspacePage() {
 
   useEffect(() => {
     if (connected && workBeId !== null && clientRef.current) {
-      transclusion.loadLinks(clientRef.current, workBeId, works, text);
+      transclusion.loadLinks(clientRef.current, workBeId, works);
     }
-  }, [connected, workBeId, works, text]);
+  }, [connected, workBeId, works]);
 
   const handlePlaceTransclusion = useCallback(async (position: number) => {
     if (!clientRef.current || workBeId === null) return;
@@ -226,7 +226,7 @@ export function WorkspacePage() {
       setText(newText);
       if (clientRef.current) {
         await new Promise((r) => setTimeout(r, 500));
-        await transclusion.loadLinks(clientRef.current, workBeId, works, newText);
+        await transclusion.loadLinks(clientRef.current, workBeId, works);
       }
     }
   }, [clientRef, workBeId, transclusion, works, text, setText]);

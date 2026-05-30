@@ -16,7 +16,7 @@ export interface TransclusionState {
   holdSelection: (workId: number, workTitle: string, start: number, end: number, text: string) => void;
   clearPending: () => void;
   placeTransclusion: (client: CrdtSyncClient, targetWorkId: number, targetPosition: number) => Promise<number | null>;
-  loadLinks: (client: CrdtSyncClient, workId: number, works: WorkListEntry[], currentText: string) => Promise<void>;
+  loadLinks: (client: CrdtSyncClient, workId: number, works: WorkListEntry[]) => Promise<void>;
   deleteLink: (client: CrdtSyncClient, linkId: number) => Promise<void>;
 }
 
@@ -31,21 +31,6 @@ function markerColorForWork(workId: number): string {
   hash = ((hash << 5) - hash + (workId >> 8)) | 0;
   const idx = Math.abs(hash) % MARKER_COLORS.length;
   return MARKER_COLORS[idx];
-}
-
-function findExcerptPositions(text: string, excerpt: string): Array<{ start: number; end: number }> {
-  const positions: Array<{ start: number; end: number }> = [];
-  if (!excerpt || excerpt.length < 10) return positions;
-  const searchLen = Math.min(excerpt.length, 120);
-  const needle = excerpt.slice(0, searchLen);
-  let offset = 0;
-  while (offset < text.length) {
-    const idx = text.indexOf(needle, offset);
-    if (idx === -1) break;
-    positions.push({ start: idx, end: idx + excerpt.length });
-    offset = idx + searchLen;
-  }
-  return positions;
 }
 
 export function useTransclusion(): TransclusionState {
@@ -85,7 +70,7 @@ export function useTransclusion(): TransclusionState {
   );
 
   const loadLinks = useCallback(
-    async (client: CrdtSyncClient, workId: number, works: WorkListEntry[], currentText: string) => {
+    async (client: CrdtSyncClient, workId: number, works: WorkListEntry[]) => {
       try {
         const linkList = await client.linkListForWork(workId);
         setLinks(linkList);
@@ -106,8 +91,8 @@ export function useTransclusion(): TransclusionState {
           const remoteRef = isOrigin ? link.destination_ref : link.origin_ref;
           const excerpt = localRef?.excerpt || remoteRef?.excerpt || "";
 
-          if (excerpt.length >= 10 && currentText.length > 0) {
-            const positions = findExcerptPositions(currentText, excerpt);
+          if (excerpt.length >= 10) {
+            const positions = await client.findExcerptPositions(workId, excerpt);
             for (const pos of positions) {
               newMarkers.push({
                 start: pos.start,
