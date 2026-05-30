@@ -544,6 +544,33 @@ export class CrdtSyncClient {
     return [];
   }
 
+  async versionIsBefore(workA: number, workB: number): Promise<boolean | null> {
+    const resp = await this.sendRequest("version_is_before", { work_a: workA, work_b: workB });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.is_before as boolean | null) ?? null;
+  }
+
+  async versionAncestors(workId: number): Promise<number[]> {
+    const resp = await this.sendRequest("version_ancestors", { work_id: workId });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.ancestors as number[]) || [];
+  }
+
+  async versionDescendants(workId: number): Promise<number[]> {
+    const resp = await this.sendRequest("version_descendants", { work_id: workId });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.descendants as number[]) || [];
+  }
+
+  async versionTracePosition(workId: number): Promise<{ branchId: number; position: number } | null> {
+    const resp = await this.sendRequest("version_trace_position", { work_id: workId });
+    const val = extractValue(resp) as Record<string, unknown>;
+    const branchId = val.branch_id as number;
+    const position = val.position as number;
+    if (branchId === 0 && position === 0) return null;
+    return { branchId, position };
+  }
+
   async rangeTranscluders(workId: number): Promise<{ edition_ids: number[]; work_ids: number[] }> {
     const resp = await this.sendRequest("range_transcluders", { work_id: workId });
     const val = extractValue(resp) as Record<string, unknown>;
