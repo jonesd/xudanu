@@ -3492,6 +3492,17 @@ impl Server {
         destination_ref: Option<HyperRef>,
     ) -> Result<(), ServerError> {
         self.ensure_session(_session_id)?;
+        if origin_ref.is_none() && destination_ref.is_none() {
+            return Ok(());
+        }
+        let old_link = {
+            let ls = self
+                .links
+                .get(&link_id)
+                .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+            ls.link.clone()
+        };
+        self.backfollow.unregister_link_content(&old_link, link_id);
         let ls = self
             .links
             .get_mut(&link_id)
@@ -3502,6 +3513,7 @@ impl Server {
         if let Some(d_ref) = destination_ref {
             ls.link = ls.link.with_end("RightEnd", d_ref);
         }
+        self.backfollow.register_link_content(&ls.link, link_id);
         Ok(())
     }
 
@@ -3515,6 +3527,7 @@ impl Server {
             .links
             .remove(&link_id)
             .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+        self.backfollow.unregister_link_content(&ls.link, link_id);
         if let Some(ids) = self.work_to_links.get_mut(&ls.origin) {
             ids.retain(|id| *id != link_id);
         }
