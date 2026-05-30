@@ -722,7 +722,7 @@ mod tests {
         let work =
             crate::edition::Work::new(1, crate::edition::Edition::from_one(0, shared.clone()));
         let prop = crate::edition::backfollow::BackfollowEngine::make_work_prop(&work, None, None);
-        engine.register_work_with_prop(work, 1, None, prop);
+        engine.register_work_with_prop(&work, 1, None, prop);
 
         let mut matcher = Matcher::new(1, RecorderQuery::transcluders(), Some(1));
         let results = matcher.execute(|query, target| {
@@ -749,13 +749,13 @@ mod tests {
             crate::edition::Work::new(1, crate::edition::Edition::from_one(0, shared.clone()));
         let prop_a =
             crate::edition::backfollow::BackfollowEngine::make_work_prop(&work_a, None, None);
-        engine.register_work_with_prop(work_a, 1, None, prop_a);
+        engine.register_work_with_prop(&work_a, 1, None, prop_a);
 
         let work_b =
             crate::edition::Work::new(2, crate::edition::Edition::from_one(0, shared.clone()));
         let prop_b =
             crate::edition::backfollow::BackfollowEngine::make_work_prop(&work_b, None, None);
-        engine.register_work_with_prop(work_b, 2, None, prop_b);
+        engine.register_work_with_prop(&work_b, 2, None, prop_b);
 
         let mut sys = RecorderSystem::new();
         let fossil_id = sys.create_fossil(RecorderQuery::works());
