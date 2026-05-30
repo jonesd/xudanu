@@ -3096,6 +3096,16 @@ impl Server {
                 .register_work_with_prop(&ws.work, *wid, None, prop);
         }
 
+        for (se_id, edition) in &self.standalone_editions {
+            self.backfollow
+                .register_edition(edition, *se_id, crate::edition::props::BertProp::make());
+        }
+
+        for (link_id, ls) in &self.links {
+            self.backfollow
+                .register_link_content(&ls.link, *link_id);
+        }
+
         Ok(())
     }
 
@@ -3736,6 +3746,47 @@ impl Server {
             .into_iter()
             .filter(|(_, _, _, _, text)| text.contains(filter_text))
             .collect()
+    }
+
+    pub fn find_excerpt_positions(
+        &self,
+        work_id: BeId,
+        excerpt_text: &str,
+    ) -> Vec<(usize, usize)> {
+        if excerpt_text.is_empty() {
+            return Vec::new();
+        }
+        let text = match self.crdt_manager.current_text(work_id) {
+            Ok(t) => t,
+            Err(_) => {
+                if let Some(ws) = self.works.get(&work_id) {
+                    let edition = ws.work.current_edition();
+                    let mut t = String::new();
+                    for (_, carrier) in edition.all_entries() {
+                        if let Some(s) = carrier.element.as_text() {
+                            t.push_str(s);
+                        }
+                    }
+                    t
+                } else {
+                    return Vec::new();
+                }
+            }
+        };
+        let excerpt = if excerpt_text.len() > 120 {
+            &excerpt_text[..120]
+        } else {
+            excerpt_text
+        };
+        let mut positions = Vec::new();
+        let mut start = 0;
+        while let Some(idx) = text[start..].find(excerpt) {
+            let char_start = text[..start + idx].chars().count();
+            let char_end = text[..start + idx + excerpt_text.len()].chars().count();
+            positions.push((char_start, char_end));
+            start += idx + excerpt.len();
+        }
+        positions
     }
 
     pub fn content_address_lookup(&self, element: &RangeElement) -> Option<BeId> {
@@ -6511,6 +6562,18 @@ pub(crate) mod persist_snapshot {
                 server
                     .backfollow
                     .register_work_with_prop(&ws.work, *wid, None, prop);
+            }
+
+            for (se_id, edition) in &server.standalone_editions {
+                server.backfollow.register_edition(
+                    edition,
+                    *se_id,
+                    crate::edition::props::BertProp::make(),
+                );
+            }
+
+            for (link_id, ls) in &server.links {
+                server.backfollow.register_link_content(&ls.link, *link_id);
             }
 
             let max_id = server

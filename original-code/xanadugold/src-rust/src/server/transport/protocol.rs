@@ -158,6 +158,8 @@ pub enum OperationCode {
     LinkDelete,
     LinkListForWork,
 
+    FindExcerptPositions,
+
     FindTranscluders,
     FindWorksForContent,
     FindTextTranscluders,
@@ -361,6 +363,7 @@ impl OperationCode {
             0x0703 => Some(OperationCode::LinkUpdate),
             0x0704 => Some(OperationCode::LinkDelete),
             0x0705 => Some(OperationCode::LinkListForWork),
+            0x0706 => Some(OperationCode::FindExcerptPositions),
 
             0x0801 => Some(OperationCode::FindTranscluders),
             0x0802 => Some(OperationCode::FindWorksForContent),
@@ -571,6 +574,7 @@ impl OperationCode {
             OperationCode::LinkUpdate => 0x0703,
             OperationCode::LinkDelete => 0x0704,
             OperationCode::LinkListForWork => 0x0705,
+            OperationCode::FindExcerptPositions => 0x0706,
 
             OperationCode::FindTranscluders => 0x0801,
             OperationCode::FindWorksForContent => 0x0802,
@@ -968,6 +972,10 @@ pub enum WireRequest {
     },
     LinkListForWork {
         work_id: BeId,
+    },
+    FindExcerptPositions {
+        work_id: BeId,
+        excerpt: String,
     },
 
     FindTranscluders {
@@ -1423,6 +1431,7 @@ pub enum ResponseValue {
     WorkList(Vec<WorkListEntry>),
     LinkInfo(LinkPayload),
     LinkList(Vec<LinkPayload>),
+    ExcerptPositions(Vec<ExcerptPositionPayload>),
     TransclusionResults(Vec<TransclusionResultPayload>),
     WorkIds(Vec<BeId>),
     TextTransclusionResults(Vec<TextTransclusionResultPayload>),
@@ -1989,6 +1998,12 @@ pub struct SharedRegionPayload {
     pub start_b: i64,
     pub end_b: i64,
     pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExcerptPositionPayload {
+    pub start: usize,
+    pub end: usize,
 }
 
 pub mod u64_hex {

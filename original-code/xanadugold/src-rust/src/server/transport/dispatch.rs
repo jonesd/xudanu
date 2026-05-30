@@ -851,6 +851,15 @@ fn dispatch_inner(
                 .collect();
             Ok(ResponseValue::LinkList(links))
         }
+        WireRequest::FindExcerptPositions { work_id, excerpt } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let positions = srv.find_excerpt_positions(work_id, &excerpt);
+            let payloads = positions
+                .into_iter()
+                .map(|(start, end)| super::protocol::ExcerptPositionPayload { start, end })
+                .collect();
+            Ok(ResponseValue::ExcerptPositions(payloads))
+        }
 
         WireRequest::FindTranscluders { content_be_id } => {
             let results = srv
