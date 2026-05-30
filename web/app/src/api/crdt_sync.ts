@@ -565,10 +565,9 @@ export class CrdtSyncClient {
   async versionTracePosition(workId: number): Promise<{ branchId: number; position: number } | null> {
     const resp = await this.sendRequest("version_trace_position", { work_id: workId });
     const val = extractValue(resp) as Record<string, unknown>;
-    const branchId = val.branch_id as number;
-    const position = val.position as number;
-    if (branchId === 0 && position === 0) return null;
-    return { branchId, position };
+    const tp = val.trace_position as Record<string, unknown> | null;
+    if (!tp) return null;
+    return { branchId: tp.branch_id as number, position: tp.position as number };
   }
 
   async rangeTranscluders(workId: number): Promise<{ edition_ids: number[]; work_ids: number[] }> {
