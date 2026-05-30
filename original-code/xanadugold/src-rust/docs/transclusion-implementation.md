@@ -285,21 +285,31 @@ Example: A→B→C→D
 
 ---
 
-## Remaining Phases
+## Phase G: UI Features (Complete)
 
-### Phase G: UI Features
+### Goal
 
-**Goal:** User-facing features on unified infrastructure.
+User-facing transclusion interaction features on the unified infrastructure.
 
-- Hover tooltips on margin markers
-- Click marker to navigate to linked position
-- Backlinks panel ("Who transcludes this?")
+### Changes
+
+| Feature | Details |
+|---------|---------|
+| Hover tooltips | `MarkerHitZone` tracking during `drawOverlay`, mousemove hit-testing on canvas. Tooltip shows work title (colored), direction, provenance hop count |
+| Click-to-navigate | Canvas click handler checks hit zones, calls `onNavigateToWork` → `selectWork` |
+| Backlinks separation | Links sidebar split into "Transcluded to" (outgoing) and "Transcluded from" (incoming) sections with counts |
+| CSS | `.marker-tooltip`, `.marker-tooltip-title`, `.marker-tooltip-direction`, `.marker-tooltip-chain`, `.link-section-label` |
+
+### Deferred
+
 - Three-way visual comparison
 - Live transclusion rendering
 - Transclusion browser (graph visualization)
-- Inter-span links (range-level, not just work-level)
+- Inter-span links (range-level)
 
-**Dependencies:** Phases A, C, F
+---
+
+## Remaining Phases
 
 ### Phase H: Compound Documents
 
@@ -319,15 +329,11 @@ Example: A→B→C→D
 Phase A (Unify Storage) ✅
     ├── Phase C (Server Excerpt Lookup) ✅
     │                                     Phase F (Golden Thread) ✅
-    └── Phase B (H-Tree + Endorsements) ✅
-          │
-          └── Phase D (Reactive Recorders) ✅
-               │
+    └── Phase B (H-Tree + Endorsements) ✅    │
+          │                                    Phase G (UI) ✅
+          └── Phase D (Reactive Recorders) ✅       │
+               │                                   Phase H (Compound Docs)
                └── Phase E (Version DAG) ✅
-
-                Phase G (UI) ←── Phase F
-                     │
-                Phase H (Compound Docs)
 ```
 
 ---

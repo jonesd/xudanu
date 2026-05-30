@@ -527,44 +527,62 @@ export function WorkspacePage() {
               {transclusion.links.length === 0 ? (
                 <div className="work-list-empty">No transclusion links</div>
               ) : (
-                transclusion.links.map((link) => {
-                  const isOrigin = link.origin === workBeId;
-                  const otherId = isOrigin ? link.destination : link.origin;
-                  const otherWork = works.find((w) => w.work_id === otherId);
-                  const otherTitle = otherWork?.title || `Work ${otherId.toString(16).padStart(4, "0")}`;
-                   const ref = link.origin_ref || link.destination_ref;
-                  return (
-                    <div
-                      key={link.link_id}
-                      className="link-list-item"
-                      onClick={() => selectWork(otherId)}
-                    >
-                      <div className="link-list-header">
-                        <span className="link-list-direction">{isOrigin ? "\u2192" : "\u2190"}</span>
-                        <span className="link-list-title">{otherTitle}</span>
+                (() => {
+                  const outgoing = transclusion.links.filter((l) => l.origin === workBeId);
+                  const incoming = transclusion.links.filter((l) => l.destination === workBeId);
+                  const renderLinks = (links: typeof transclusion.links, label: string, arrow: string) => {
+                    if (links.length === 0) return null;
+                    return (
+                      <div key={label}>
+                        <div className="link-section-label">{label} ({links.length})</div>
+                        {links.map((link) => {
+                          const isOrigin = link.origin === workBeId;
+                          const otherId = isOrigin ? link.destination : link.origin;
+                          const otherWork = works.find((w) => w.work_id === otherId);
+                          const otherTitle = otherWork?.title || `Work ${otherId.toString(16).padStart(4, "0")}`;
+                          const ref = link.origin_ref || link.destination_ref;
+                          return (
+                            <div
+                              key={link.link_id}
+                              className="link-list-item"
+                              onClick={() => selectWork(otherId)}
+                            >
+                              <div className="link-list-header">
+                                <span className="link-list-direction">{arrow}</span>
+                                <span className="link-list-title">{otherTitle}</span>
+                              </div>
+                              {ref?.excerpt && (
+                                <span className="link-list-excerpt">
+                                  {ref.excerpt.length > 60 ? ref.excerpt.slice(0, 60) + "\u2026" : ref.excerpt}
+                                </span>
+                              )}
+                              {ref?.provenance_chain && ref.provenance_chain.length > 0 && (
+                                <span className="link-list-chain" title={ref.provenance_chain.map((h) => `Work ${h.source_work_id.toString(16).padStart(4, "0")} via link ${h.link_id.toString(16).padStart(4, "0")}`).join("\n")}>
+                                  {ref.provenance_chain.length} hop{ref.provenance_chain.length > 1 ? "s" : ""}
+                                </span>
+                              )}
+                              <button
+                                className="link-list-delete"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (clientRef.current) transclusion.deleteLink(clientRef.current, link.link_id);
+                                }}
+                              >
+                                \u00d7
+                              </button>
+                            </div>
+                          );
+                        })}
                       </div>
-                      {ref?.excerpt && (
-                        <span className="link-list-excerpt">
-                          {ref.excerpt.length > 60 ? ref.excerpt.slice(0, 60) + "\u2026" : ref.excerpt}
-                        </span>
-                      )}
-                      {ref?.provenance_chain && ref.provenance_chain.length > 0 && (
-                        <span className="link-list-chain" title={ref.provenance_chain.map((h) => `Work ${h.source_work_id.toString(16).padStart(4, "0")} via link ${h.link_id.toString(16).padStart(4, "0")}`).join("\n")}>
-                          {ref.provenance_chain.length} hop{ref.provenance_chain.length > 1 ? "s" : ""}
-                        </span>
-                      )}
-                      <button
-                        className="link-list-delete"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (clientRef.current) transclusion.deleteLink(clientRef.current, link.link_id);
-                        }}
-                      >
-                        \u00d7
-                      </button>
-                    </div>
+                    );
+                  };
+                  return (
+                    <>
+                      {renderLinks(outgoing, "Transcluded to", "\u2192")}
+                      {renderLinks(incoming, "Transcluded from", "\u2190")}
+                    </>
                   );
-                })
+                })()
               )}
             </div>
           )}
@@ -600,6 +618,7 @@ export function WorkspacePage() {
                   pendingTransclusion={transclusion.pending}
                   onPlaceTransclusion={handlePlaceTransclusion}
                   selectionRange={selectionRange}
+                  onNavigateToWork={selectWork}
                 />
               ) : (
                 <CollaborativeEditor
@@ -620,6 +639,7 @@ export function WorkspacePage() {
                   pendingTransclusion={transclusion.pending}
                   onPlaceTransclusion={handlePlaceTransclusion}
                   selectionRange={selectionRange}
+                  onNavigateToWork={selectWork}
                 />
               )}
               {watchEnabled && contentMatches.length > 0 && (
