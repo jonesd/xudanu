@@ -4,6 +4,8 @@ pub mod blob_store;
 pub mod bundle;
 pub mod bundle_stepper;
 pub mod canopy;
+#[cfg(feature = "serde")]
+pub mod compound;
 pub mod content_address;
 pub mod edition;
 pub mod endorsement;
@@ -44,6 +46,8 @@ pub use bundle_stepper::{
 };
 pub use canopy::{BertCanopy, CanopyCrumData, CanopyCrumKind, SensorCanopy};
 pub use content_address::ContentAddressIndex;
+#[cfg(feature = "serde")]
+pub use compound::{CompoundEdition, CompoundElement, CompoundSpan};
 pub use edition::{jaccard_similarity, Edition};
 pub use endorsement::{
     endorsement_ids_to_grandmap, endorsements_from_ids, Endorseable, Endorsement,

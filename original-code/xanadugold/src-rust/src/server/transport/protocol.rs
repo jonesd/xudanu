@@ -205,6 +205,8 @@ pub enum OperationCode {
 
     ProvenanceAncestry,
 
+    CompoundResolve,
+
     AdminRecorderCreate,
     AdminRecorderRecord,
     AdminRecorderList,
@@ -378,6 +380,8 @@ impl OperationCode {
             0x0804 => Some(OperationCode::FindSharedRegions),
 
             0x0805 => Some(OperationCode::ProvenanceAncestry),
+
+            0x0806 => Some(OperationCode::CompoundResolve),
 
             0x0601 => Some(OperationCode::ServerStats),
 
@@ -635,6 +639,7 @@ impl OperationCode {
             OperationCode::VersionTracePosition => 0x1004,
 
             OperationCode::ProvenanceAncestry => 0x0805,
+            OperationCode::CompoundResolve => 0x0806,
 
             OperationCode::AdminRecorderCreate => 0x1101,
             OperationCode::AdminRecorderRecord => 0x1102,
@@ -1161,6 +1166,10 @@ pub enum WireRequest {
         work_id: BeId,
     },
 
+    CompoundResolve {
+        compound: CompoundEditionPayload,
+    },
+
     AdminRecorderCreate {
         kind: String,
         direct_only: Option<bool>,
@@ -1545,6 +1554,9 @@ pub enum ResponseValue {
     },
     ProvenanceAncestryResult {
         chain: Vec<ProvenanceHopPayload>,
+    },
+    CompoundResolveResult {
+        text: String,
     },
     RecorderCreateResult {
         recorder_id: u64,
@@ -1962,6 +1974,56 @@ pub struct HyperRefPayload {
 pub struct ProvenanceHopPayload {
     pub source_work_id: BeId,
     pub link_id: BeId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompoundEditionPayload {
+    pub elements: Vec<CompoundElementPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CompoundElementPayload {
+    Text { content: String },
+    Span { source_work_id: BeId, char_start: usize, char_end: usize },
+}
+
+impl CompoundEditionPayload {
+    pub fn from_compound(compound: &crate::edition::compound::CompoundEdition) -> Self {
+        CompoundEditionPayload {
+            elements: compound
+                .elements()
+                .iter()
+                .map(|e| match e {
+                    crate::edition::compound::CompoundElement::Text { content } => {
+                        CompoundElementPayload::Text { content: content.clone() }
+                    }
+                    crate::edition::compound::CompoundElement::Span { span } => {
+                        CompoundElementPayload::Span {
+                            source_work_id: span.source_work_id(),
+                            char_start: span.char_start(),
+                            char_end: span.char_end(),
+                        }
+                    }
+                })
+                .collect(),
+        }
+    }
+
+    pub fn to_compound(&self) -> crate::edition::compound::CompoundEdition {
+        use crate::edition::compound::{CompoundElement, CompoundEdition};
+        let elements: Vec<CompoundElement> = self
+            .elements
+            .iter()
+            .map(|e| match e {
+                CompoundElementPayload::Text { content } => CompoundElement::text(content),
+                CompoundElementPayload::Span { source_work_id, char_start, char_end } => {
+                    CompoundElement::span(*source_work_id, *char_start, *char_end)
+                }
+            })
+            .collect();
+        CompoundEdition::new(elements)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -311,15 +311,36 @@ User-facing transclusion interaction features on the unified infrastructure.
 
 ## Remaining Phases
 
-### Phase H: Compound Documents
+### Phase H: Compound Documents (Complete)
 
-**Goal:** Documents assembled from live references to other documents' content.
+### Goal
 
-- `CompoundEdition` with `Vec<CompoundSpan>`
-- Live vs snapshot resolution
-- Composition UI
+Documents assembled from live references to other documents' content.
 
-**Dependencies:** All previous phases
+### Changes
+
+| Component | Details |
+|-----------|---------|
+| `CompoundSpan` | `{ source_work_id, char_start, char_end }` — live reference to a region of a work |
+| `CompoundElement` | `Text { content }` or `Span { span }` — literal text or live reference |
+| `CompoundEdition` | `Vec<CompoundElement>` — ordered sequence of text and spans |
+| `resolve_compound_edition()` | Server method: resolves each span from source work's current text (CRDT or persisted) |
+| `work_text()` | Helper: gets current text from CRDT manager or persisted edition |
+| Wire op `0x0806 CompoundResolve` | Takes `CompoundEditionPayload`, returns resolved text |
+| `CompoundEditionPayload` | Wire type with `CompoundElementPayload` (tagged union) |
+| Frontend types | `CompoundSpanPayload`, `CompoundElementPayload`, `CompoundEditionPayload` |
+| `compoundResolve()` | Frontend API client method |
+
+### Resolution
+
+- **Live**: Each span resolved from source work's current edition at call time
+- Character offsets converted to byte offsets safely for multi-byte UTF-8
+- Read permission checked on all referenced works before resolution
+
+### Result
+
+- 1799 lib tests pass (9 new from compound module)
+- Frontend builds clean
 
 ---
 
@@ -332,7 +353,7 @@ Phase A (Unify Storage) ✅
     └── Phase B (H-Tree + Endorsements) ✅    │
           │                                    Phase G (UI) ✅
           └── Phase D (Reactive Recorders) ✅       │
-               │                                   Phase H (Compound Docs)
+               │                                   Phase H (Compound Docs) ✅
                └── Phase E (Version DAG) ✅
 ```
 
@@ -344,7 +365,7 @@ Phase A (Unify Storage) ✅
 |------|--------|-------|
 | 6. Links + transclusions | **Phase 1 done** | — |
 | 7. Visible bidirectional links | **Phase 1 done** | G: backlinks panel |
-| 9. Royalty at any granularity | Not started | Post-H |
+| 9. Royalty at any granularity | Partial | H: compound span resolution |
 | 11. Secure access controls | Partial | B: permission filtering |
 | 16. Secure auditable transactions | **Phase F done** | F: provenance chain |
 

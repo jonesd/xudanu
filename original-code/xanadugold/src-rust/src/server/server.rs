@@ -3857,6 +3857,44 @@ impl Server {
         positions
     }
 
+    pub fn resolve_compound_edition(
+        &self,
+        compound: &crate::edition::compound::CompoundEdition,
+    ) -> Result<String, ServerError> {
+        let mut result = String::new();
+        for element in compound.elements() {
+            match element {
+                crate::edition::compound::CompoundElement::Text { content } => {
+                    result.push_str(content);
+                }
+                crate::edition::compound::CompoundElement::Span { span } => {
+                    let text = self.work_text(span.source_work_id())?;
+                    let char_count = text.chars().count();
+                    let start = span.char_start().min(char_count);
+                    let end = span.char_end().min(char_count);
+                    let byte_start = text.char_indices().nth(start).map(|(i, _)| i).unwrap_or(text.len());
+                    let byte_end = text.char_indices().nth(end).map(|(i, _)| i).unwrap_or(text.len());
+                    result.push_str(&text[byte_start..byte_end]);
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    fn work_text(&self, work_id: u64) -> Result<String, ServerError> {
+        if let Ok(text) = self.crdt_manager.current_text(work_id) {
+            return Ok(text);
+        }
+        let work = self.work(work_id)?;
+        let edition = work.current_edition();
+        let text: String = edition
+            .all_entries()
+            .iter()
+            .filter_map(|(_, c)| c.element.as_text())
+            .collect();
+        Ok(text)
+    }
+
     pub fn content_address_lookup(&self, element: &RangeElement) -> Option<BeId> {
         self.content_address.lookup(element)
     }
