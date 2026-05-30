@@ -3022,10 +3022,22 @@ impl Server {
         }
 
         for link in &manifest.links {
-            let o_ref =
-                crate::edition::links::HyperRef::single(None, Some(link.origin), None, None);
-            let d_ref =
-                crate::edition::links::HyperRef::single(None, Some(link.destination), None, None);
+            let o_ref = link.origin_ref.as_ref().map(|hr| {
+                let excerpt = hr.excerpt
+                    .as_deref()
+                    .map(crate::edition::Edition::from_text);
+                crate::edition::links::HyperRef::single(excerpt, hr.work_context, hr.original_context, None)
+            }).unwrap_or_else(|| {
+                crate::edition::links::HyperRef::single(None, Some(link.origin), None, None)
+            });
+            let d_ref = link.destination_ref.as_ref().map(|hr| {
+                let excerpt = hr.excerpt
+                    .as_deref()
+                    .map(crate::edition::Edition::from_text);
+                crate::edition::links::HyperRef::single(excerpt, hr.work_context, hr.original_context, None)
+            }).unwrap_or_else(|| {
+                crate::edition::links::HyperRef::single(None, Some(link.destination), None, None)
+            });
             let hyperlink = crate::edition::links::HyperLink::make(vec![], o_ref, d_ref);
             self.links.insert(
                 link.link_id,
@@ -6138,6 +6150,10 @@ pub(crate) mod persist_snapshot {
         link_id: BeId,
         origin: BeId,
         destination: BeId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        destination_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -6270,10 +6286,20 @@ pub(crate) mod persist_snapshot {
                 links: self
                     .links
                     .iter()
-                    .map(|(id, ls)| LinkSnapshot {
-                        link_id: *id,
-                        origin: ls.origin,
-                        destination: ls.destination,
+                    .map(|(id, ls)| {
+                        let o_ref = ls.link
+                            .end_at("LeftEnd")
+                            .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
+                        let d_ref = ls.link
+                            .end_at("RightEnd")
+                            .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
+                        LinkSnapshot {
+                            link_id: *id,
+                            origin: ls.origin,
+                            destination: ls.destination,
+                            origin_ref: o_ref,
+                            destination_ref: d_ref,
+                        }
                     })
                     .collect(),
                 link_counter: self.link_counter,
@@ -6439,8 +6465,18 @@ pub(crate) mod persist_snapshot {
             }
 
             for ls in &snapshot.links {
-                let o_ref = HyperRef::single(None, Some(ls.origin), None, None);
-                let d_ref = HyperRef::single(None, Some(ls.destination), None, None);
+                let o_ref = ls.origin_ref.as_ref().map(|hr| {
+                    let excerpt = hr.excerpt
+                        .as_deref()
+                        .map(crate::edition::Edition::from_text);
+                    HyperRef::single(excerpt, hr.work_context, hr.original_context, None)
+                }).unwrap_or_else(|| HyperRef::single(None, Some(ls.origin), None, None));
+                let d_ref = ls.destination_ref.as_ref().map(|hr| {
+                    let excerpt = hr.excerpt
+                        .as_deref()
+                        .map(crate::edition::Edition::from_text);
+                    HyperRef::single(excerpt, hr.work_context, hr.original_context, None)
+                }).unwrap_or_else(|| HyperRef::single(None, Some(ls.destination), None, None));
                 let link = HyperLink::make(vec![], o_ref, d_ref);
                 server.links.insert(
                     ls.link_id,
@@ -6613,10 +6649,20 @@ pub(crate) mod persist_snapshot {
             let links: Vec<_> = self
                 .links
                 .iter()
-                .map(|(id, ls)| crate::persist::manifest::LinkEntry {
-                    link_id: *id,
-                    origin: ls.origin,
-                    destination: ls.destination,
+                .map(|(id, ls)| {
+                    let o_ref = ls.link
+                        .end_at("LeftEnd")
+                        .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
+                    let d_ref = ls.link
+                        .end_at("RightEnd")
+                        .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
+                    crate::persist::manifest::LinkEntry {
+                        link_id: *id,
+                        origin: ls.origin,
+                        destination: ls.destination,
+                        origin_ref: o_ref,
+                        destination_ref: d_ref,
+                    }
                 })
                 .collect();
 

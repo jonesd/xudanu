@@ -723,16 +723,22 @@ fn dispatch_inner(
             srv.ensure_can_read(session_id, origin)?;
             srv.ensure_can_read(session_id, destination)?;
             let o_ref = origin_ref.map(|hr| {
+                let excerpt = hr.excerpt
+                    .as_deref()
+                    .map(|t| crate::edition::Edition::from_text(t));
                 crate::edition::links::HyperRef::single(
-                    None,
+                    excerpt,
                     hr.work_context,
                     hr.original_context,
                     None,
                 )
             });
             let d_ref = destination_ref.map(|hr| {
+                let excerpt = hr.excerpt
+                    .as_deref()
+                    .map(|t| crate::edition::Edition::from_text(t));
                 crate::edition::links::HyperRef::single(
-                    None,
+                    excerpt,
                     hr.work_context,
                     hr.original_context,
                     None,
@@ -779,16 +785,22 @@ fn dispatch_inner(
                 }
             }
             let o_ref = origin_ref.map(|hr| {
+                let excerpt = hr.excerpt
+                    .as_deref()
+                    .map(|t| crate::edition::Edition::from_text(t));
                 crate::edition::links::HyperRef::single(
-                    None,
+                    excerpt,
                     hr.work_context,
                     hr.original_context,
                     None,
                 )
             });
             let d_ref = destination_ref.map(|hr| {
+                let excerpt = hr.excerpt
+                    .as_deref()
+                    .map(|t| crate::edition::Edition::from_text(t));
                 crate::edition::links::HyperRef::single(
-                    None,
+                    excerpt,
                     hr.work_context,
                     hr.original_context,
                     None,
@@ -817,18 +829,25 @@ fn dispatch_inner(
         }
         WireRequest::LinkListForWork { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
-            let links = srv
-                .list_links_for_work(work_id)
+            let link_tuples = srv.list_links_for_work(work_id);
+            let links = link_tuples
                 .into_iter()
-                .map(
-                    |(link_id, origin, destination)| super::protocol::LinkPayload {
+                .filter_map(|(link_id, origin, destination)| {
+                    let (_, _, link) = srv.get_link(link_id).ok()?;
+                    let o_ref = link
+                        .end_at("LeftEnd")
+                        .map(super::protocol::HyperRefPayload::from_hyper_ref);
+                    let d_ref = link
+                        .end_at("RightEnd")
+                        .map(super::protocol::HyperRefPayload::from_hyper_ref);
+                    Some(super::protocol::LinkPayload {
                         link_id,
                         origin,
                         destination,
-                        origin_ref: None,
-                        destination_ref: None,
-                    },
-                )
+                        origin_ref: o_ref,
+                        destination_ref: d_ref,
+                    })
+                })
                 .collect();
             Ok(ResponseValue::LinkList(links))
         }

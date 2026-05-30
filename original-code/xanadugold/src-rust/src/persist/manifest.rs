@@ -42,6 +42,10 @@ pub struct LinkEntry {
     pub link_id: BeId,
     pub origin: BeId,
     pub destination: BeId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -380,6 +384,8 @@ mod tests {
             link_id: 50,
             origin: 10,
             destination: 11,
+            origin_ref: None,
+            destination_ref: None,
         });
         manifest.link_counter = 51;
 

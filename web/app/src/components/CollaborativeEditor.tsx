@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from "react";
-import type { AttributionSpan } from "../api/crdt_sync";
+import type { AttributionSpan, TransclusionMarker } from "../api/crdt_sync";
+import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { TextBuffer } from "../api/text_buffer";
 import { SearchPanel } from "./SearchPanel";
@@ -26,6 +27,10 @@ interface CollaborativeEditorProps {
   editable: boolean;
   contentStartLine?: number;
   contentEndLine?: number;
+  transclusionMarkers?: TransclusionMarker[];
+  pendingTransclusion?: PendingTransclusion | null;
+  onPlaceTransclusion?: (position: number) => void;
+  selectionRange?: { start: number; end: number } | null;
 }
 
 const CHUNK_SIZE = 50_000;
@@ -51,8 +56,10 @@ function drawOverlay(
   canvas: HTMLCanvasElement | null,
   spans: AttributionSpan[],
   colorMap: Map<string, AuthorStyle>,
+  markers: TransclusionMarker[] = [],
 ) {
-  if (!editor || !canvas || spans.length === 0) return;
+  if (!editor || !canvas) return;
+  if (spans.length === 0 && markers.length === 0) return;
 
   const container = editor.parentElement;
   if (!container) return;
@@ -125,6 +132,39 @@ function drawOverlay(
       }
     }
   }
+
+  for (const marker of markers) {
+    const drawStart = Math.max(marker.start, 0);
+    const drawEnd = Math.min(marker.end, textLen);
+    if (drawStart >= drawEnd) continue;
+
+    const range = document.createRange();
+    try {
+      if (singleNode) {
+        range.setStart(textNode as Text, drawStart);
+        range.setEnd(textNode as Text, drawEnd);
+      } else {
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
+        if (!sn || !en) continue;
+        range.setStart(sn.node, sn.offset);
+        range.setEnd(en.node, en.offset + 1);
+      }
+    } catch {
+      continue;
+    }
+
+    const rangeRects = range.getClientRects();
+    if (rangeRects.length === 0) continue;
+
+    const barX = 0;
+    const firstTop = rangeRects[0].top - rect.top;
+    const lastRect = rangeRects[rangeRects.length - 1];
+    const lastBottom = lastRect.bottom - rect.top;
+
+    ctx.fillStyle = marker.color + "60";
+    ctx.fillRect(barX, firstTop, 3, lastBottom - firstTop);
+  }
 }
 
 function findTextNodeAt(root: Node, targetOffset: number): { node: Text; offset: number } | null {
@@ -151,6 +191,9 @@ export function CollaborativeEditor({
   editable,
   contentStartLine,
   contentEndLine,
+  transclusionMarkers = [],
+  pendingTransclusion,
+  onPlaceTransclusion,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -234,11 +277,11 @@ export function CollaborativeEditor({
     const redraw = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        drawOverlay(el, canvas, attributionSpans, authorColorMap);
+        drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers);
       });
     };
 
-    drawOverlay(el, canvas, attributionSpans, authorColorMap);
+    drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers);
 
     const ro = new ResizeObserver(redraw);
     ro.observe(container);
@@ -249,7 +292,7 @@ export function CollaborativeEditor({
       container.removeEventListener("scroll", redraw);
       cancelAnimationFrame(rafId);
     };
-  }, [attributionSpans, authorColorMap]);
+  }, [attributionSpans, authorColorMap, transclusionMarkers]);
 
   const handleInput = useCallback(() => {
     if (isComposing.current || !editable) return;
@@ -337,6 +380,22 @@ export function CollaborativeEditor({
     }
   }, [onCursorChange, onSelectionChange]);
 
+  const handleEditorClick = useCallback((e: React.MouseEvent) => {
+    if (!pendingTransclusion || !onPlaceTransclusion) return;
+    const el = editorRef.current;
+    if (!el) return;
+    if (!el.contains(e.target as Node)) return;
+
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const pre = document.createRange();
+    pre.selectNodeContents(el);
+    pre.setEnd(range.startContainer, range.startOffset);
+    const pos = pre.toString().length;
+    onPlaceTransclusion(pos);
+  }, [pendingTransclusion, onPlaceTransclusion]);
+
   useEffect(() => {
     document.addEventListener("selectionchange", handleSelectionChange);
     return () => {
@@ -414,7 +473,7 @@ export function CollaborativeEditor({
         />
       )}
       <div style={{ position: "relative", flex: 1, display: "flex", minHeight: 0 }}>
-        <div className="editor-container">
+        <div className="editor-container" style={pendingTransclusion ? { cursor: "crosshair" } : undefined}>
           <canvas
             ref={overlayRef}
             className="attribution-overlay"
@@ -422,11 +481,12 @@ export function CollaborativeEditor({
           <div
             ref={editorRef}
             className={`editor-content${!editable ? " editor-readonly" : ""}`}
-            contentEditable={editable}
+            contentEditable={editable && !pendingTransclusion}
             suppressContentEditableWarning
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onClick={handleEditorClick}
             onCompositionStart={() => { isComposing.current = true; }}
             onCompositionEnd={() => {
               isComposing.current = false;

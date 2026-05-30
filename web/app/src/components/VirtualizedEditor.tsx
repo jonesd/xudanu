@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from "react";
 import { TextBuffer } from "../api/text_buffer";
-import type { AttributionSpan } from "../api/crdt_sync";
+import type { AttributionSpan, TransclusionMarker } from "../api/crdt_sync";
+import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { SearchPanel } from "./SearchPanel";
 import { OutlinePanel } from "./OutlinePanel";
@@ -26,6 +27,10 @@ interface VirtualizedEditorProps {
   editable: boolean;
   contentStartLine?: number;
   contentEndLine?: number;
+  transclusionMarkers?: TransclusionMarker[];
+  pendingTransclusion?: PendingTransclusion | null;
+  onPlaceTransclusion?: (position: number) => void;
+  selectionRange?: { start: number; end: number } | null;
 }
 
 const LINE_HEIGHT = 15 * 1.7;
@@ -43,6 +48,9 @@ export function VirtualizedEditor({
   editable,
   contentStartLine,
   contentEndLine,
+  transclusionMarkers = [],
+  pendingTransclusion,
+  onPlaceTransclusion,
 }: VirtualizedEditorProps) {
   const bufferRef = useRef<TextBuffer>(new TextBuffer(text));
   const containerRef = useRef<HTMLDivElement>(null);
@@ -346,7 +354,36 @@ export function VirtualizedEditor({
         }
       }
     }
-  }, [attributionSpans, authorColorMap, viewStart, viewEnd]);
+
+    for (const marker of transclusionMarkers) {
+      const drawStart = Math.max(marker.start, viewportCharStart) - viewportCharStart;
+      const drawEnd = Math.min(marker.end, viewportCharEnd) - viewportCharStart;
+      if (drawStart >= drawEnd || drawEnd <= 0 || drawStart >= viewportTextLen) continue;
+
+      const textNode = el.firstChild;
+      if (!textNode || textNode.nodeType !== Node.TEXT_NODE) continue;
+
+      const range = document.createRange();
+      try {
+        const cs = Math.max(0, Math.min(drawStart, viewportTextLen));
+        const ce = Math.max(0, Math.min(drawEnd, viewportTextLen));
+        range.setStart(textNode as Text, cs);
+        range.setEnd(textNode as Text, ce);
+      } catch {
+        continue;
+      }
+
+      const rangeRects = range.getClientRects();
+      if (rangeRects.length === 0) continue;
+
+      const firstTop = rangeRects[0].top - rect.top;
+      const lastRect = rangeRects[rangeRects.length - 1];
+      const lastBottom = lastRect.bottom - rect.top;
+
+      ctx.fillStyle = marker.color + "60";
+      ctx.fillRect(0, firstTop, 3, lastBottom - firstTop);
+    }
+  }, [attributionSpans, authorColorMap, viewStart, viewEnd, transclusionMarkers]);
 
   const handleInput = useCallback(() => {
     if (isComposing.current || !editable) return;
@@ -464,6 +501,27 @@ export function VirtualizedEditor({
     }
   }, [onCursorChange, onSelectionChange]);
 
+  const handleEditorClick = useCallback((e: React.MouseEvent) => {
+    if (!pendingTransclusion || !onPlaceTransclusion) return;
+    const el = editorRef.current;
+    if (!el) return;
+    if (!el.contains(e.target as Node)) return;
+
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const buf = bufferRef.current;
+    const { start: vs } = lastViewRange.current;
+    const viewportCharStart = buf.getCharOffset(vs);
+
+    const pre = document.createRange();
+    pre.selectNodeContents(el);
+    pre.setEnd(range.startContainer, range.startOffset);
+    const localPos = pre.toString().length;
+    const globalPos = viewportCharStart + localPos;
+    onPlaceTransclusion(globalPos);
+  }, [pendingTransclusion, onPlaceTransclusion]);
+
   useEffect(() => {
     document.addEventListener("selectionchange", handleSelectionChange);
     return () => {
@@ -504,17 +562,22 @@ export function VirtualizedEditor({
         />
       )}
       <div style={{ position: "relative", flex: 1, display: "flex", minHeight: 0 }}>
-        <div ref={containerRef} className="editor-container virtual-scroll-container">
+        <div
+          ref={containerRef}
+          className="editor-container virtual-scroll-container"
+          style={pendingTransclusion ? { cursor: "crosshair" } : undefined}
+        >
           <canvas ref={overlayRef} className="attribution-overlay" />
           <div ref={topSpacerRef} className="virtual-spacer" />
           <div
             ref={editorRef}
             className={`editor-content${!editable ? " editor-readonly" : ""}`}
-            contentEditable={editable}
+            contentEditable={editable && !pendingTransclusion}
             suppressContentEditableWarning
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onClick={handleEditorClick}
             onCompositionStart={() => {
               isComposing.current = true;
             }}
