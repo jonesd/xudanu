@@ -548,6 +548,11 @@ export function WorkspacePage() {
                           {ref.excerpt.length > 60 ? ref.excerpt.slice(0, 60) + "\u2026" : ref.excerpt}
                         </span>
                       )}
+                      {ref?.provenance_chain && ref.provenance_chain.length > 0 && (
+                        <span className="link-list-chain" title={ref.provenance_chain.map((h) => `Work ${h.source_work_id.toString(16).padStart(4, "0")} via link ${h.link_id.toString(16).padStart(4, "0")}`).join("\n")}>
+                          {ref.provenance_chain.length} hop{ref.provenance_chain.length > 1 ? "s" : ""}
+                        </span>
+                      )}
                       <button
                         className="link-list-delete"
                         onClick={(e) => {

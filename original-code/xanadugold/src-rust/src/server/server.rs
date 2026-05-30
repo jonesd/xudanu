@@ -3463,10 +3463,14 @@ impl Server {
         self.link_counter += 1;
         let link_id = self.link_counter;
 
+        let chain = self.compute_provenance_chain(origin);
+
         let link = if let (Some(o_ref), Some(d_ref)) = (origin_ref, destination_ref) {
-            HyperLink::make(vec![], o_ref, d_ref)
+            let o_with_chain = o_ref.with_provenance_chain(chain);
+            HyperLink::make(vec![], o_with_chain, d_ref)
         } else {
-            let o_ref = HyperRef::single(None, Some(origin), None, None);
+            let o_ref = HyperRef::single(None, Some(origin), None, None)
+                .with_provenance_chain(chain);
             let d_ref = HyperRef::single(None, Some(destination), None, None);
             HyperLink::make(vec![], o_ref, d_ref)
         };
@@ -3564,6 +3568,70 @@ impl Server {
 
     pub fn link_count(&self) -> usize {
         self.links.len()
+    }
+
+    fn compute_provenance_chain(&self, origin_work_id: BeId) -> Vec<crate::edition::links::ProvenanceHop> {
+        use crate::edition::links::ProvenanceHop;
+        let incoming = self.list_links_for_work(origin_work_id);
+        let mut chain = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for &(lid, orig, dest) in &incoming {
+            if dest != origin_work_id {
+                continue;
+            }
+            if !seen.insert((orig, lid)) {
+                continue;
+            }
+            if let Some(ls) = self.links.get(&lid) {
+                if let Some(o_ref) = ls.link.end_at("LeftEnd") {
+                    for hop in o_ref.provenance_chain() {
+                        let key = (hop.source_work_id(), hop.link_id());
+                        if seen.insert(key) {
+                            chain.push(hop.clone());
+                        }
+                    }
+                }
+            }
+            chain.push(ProvenanceHop::new(orig, lid));
+        }
+        chain.sort_by_key(|hop| hop.link_id());
+        chain
+    }
+
+    pub fn provenance_ancestry(&self, work_id: BeId) -> Vec<crate::edition::links::ProvenanceHop> {
+        use crate::edition::links::ProvenanceHop;
+        let mut chain = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut visited_works = std::collections::HashSet::new();
+        let mut queue = vec![work_id];
+        while let Some(current) = queue.pop() {
+            if !visited_works.insert(current) {
+                continue;
+            }
+            let incoming = self.list_links_for_work(current);
+            for &(lid, orig, dest) in &incoming {
+                if dest != current {
+                    continue;
+                }
+                if !seen.insert((orig, lid)) {
+                    continue;
+                }
+                if let Some(ls) = self.links.get(&lid) {
+                    if let Some(o_ref) = ls.link.end_at("LeftEnd") {
+                        for hop in o_ref.provenance_chain() {
+                            let key = (hop.source_work_id(), hop.link_id());
+                            if seen.insert(key) {
+                                chain.push(hop.clone());
+                            }
+                        }
+                    }
+                }
+                chain.push(ProvenanceHop::new(orig, lid));
+                queue.push(orig);
+            }
+        }
+        chain.sort_by_key(|hop| hop.link_id());
+        chain
     }
 
     pub fn blob_count(&self) -> usize {
@@ -11169,5 +11237,116 @@ mod tests {
             .find(|(id, _, _, _, _, _, _, _, _, _, _)| *id == private_work)
             .unwrap();
         assert_eq!(priv_entry.5, Some(read_club));
+    }
+
+    fn prov_setup() -> (Server, SessionId) {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        (server, sid)
+    }
+
+    #[test]
+    fn provenance_chain_empty_for_first_link() {
+        let (mut server, sid) = prov_setup();
+        let work_a = server.create_work(sid, Edition::from_text("original")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("copy")).unwrap();
+        let link_id = server.create_link(
+            sid, work_a, work_b, None, None,
+        ).unwrap();
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert!(
+            o_ref.provenance_chain().is_empty(),
+            "first link should have empty chain"
+        );
+    }
+
+    #[test]
+    fn provenance_chain_single_hop() {
+        let (mut server, sid) = prov_setup();
+        let work_a = server.create_work(sid, Edition::from_text("original")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("copy")).unwrap();
+        let work_c = server.create_work(sid, Edition::from_text("derived")).unwrap();
+
+        let _link1 = server.create_link(sid, work_a, work_b, None, None).unwrap();
+        let link2 = server.create_link(sid, work_b, work_c, None, None).unwrap();
+
+        let (_, _, link) = server.get_link(link2).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        let chain = o_ref.provenance_chain();
+        assert_eq!(chain.len(), 1, "chain should have one hop");
+        assert_eq!(chain[0].source_work_id(), work_a);
+        assert_eq!(chain[0].link_id(), _link1);
+    }
+
+    #[test]
+    fn provenance_chain_multi_hop() {
+        let (mut server, sid) = prov_setup();
+        let wa = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let wb = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let wc = server.create_work(sid, Edition::from_text("c")).unwrap();
+        let wd = server.create_work(sid, Edition::from_text("d")).unwrap();
+
+        let l1 = server.create_link(sid, wa, wb, None, None).unwrap();
+        let l2 = server.create_link(sid, wb, wc, None, None).unwrap();
+        let l3 = server.create_link(sid, wc, wd, None, None).unwrap();
+
+        let (_, _, link) = server.get_link(l3).unwrap();
+        let chain = link.end_at("LeftEnd").unwrap().provenance_chain();
+        assert_eq!(chain.len(), 2, "chain should have two hops");
+        assert_eq!(chain[0].source_work_id(), wa);
+        assert_eq!(chain[0].link_id(), l1);
+        assert_eq!(chain[1].source_work_id(), wb);
+        assert_eq!(chain[1].link_id(), l2);
+    }
+
+    #[test]
+    fn provenance_ancestry_walks_full_chain() {
+        let (mut server, sid) = prov_setup();
+        let wa = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let wb = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let wc = server.create_work(sid, Edition::from_text("c")).unwrap();
+
+        let _l1 = server.create_link(sid, wa, wb, None, None).unwrap();
+        let _l2 = server.create_link(sid, wb, wc, None, None).unwrap();
+
+        let ancestry = server.provenance_ancestry(wc);
+        assert_eq!(ancestry.len(), 2);
+        assert_eq!(ancestry[0].source_work_id(), wa);
+        assert_eq!(ancestry[1].source_work_id(), wb);
+    }
+
+    #[test]
+    fn provenance_chain_with_excerpt() {
+        let (mut server, sid) = prov_setup();
+        let wa = server.create_work(sid, Edition::from_text("source")).unwrap();
+        let wb = server.create_work(sid, Edition::from_text("target")).unwrap();
+        let wc = server.create_work(sid, Edition::from_text("final")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(
+            Some(Edition::from_text("excerpt text")),
+            Some(wa), None, None,
+        );
+        let d_ref = crate::edition::links::HyperRef::single(
+            None, Some(wb), None, None,
+        );
+        let l1 = server.create_link(sid, wa, wb, Some(o_ref), Some(d_ref)).unwrap();
+
+        let link2 = server.create_link(sid, wb, wc, None, None).unwrap();
+        let (_, _, link) = server.get_link(link2).unwrap();
+        let chain = link.end_at("LeftEnd").unwrap().provenance_chain();
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].source_work_id(), wa);
+        assert_eq!(chain[0].link_id(), l1);
+    }
+
+    #[test]
+    fn provenance_chain_no_incoming_links() {
+        let (mut server, sid) = prov_setup();
+        let wa = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let ancestry = server.provenance_ancestry(wa);
+        assert!(ancestry.is_empty(), "work with no incoming links has no ancestry");
     }
 }

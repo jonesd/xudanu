@@ -788,23 +788,33 @@ fn dispatch_inner(
                 let excerpt = hr.excerpt
                     .as_deref()
                     .map(|t| crate::edition::Edition::from_text(t));
+                let chain: Vec<crate::edition::links::ProvenanceHop> = hr
+                    .provenance_chain
+                    .into_iter()
+                    .map(|hop| crate::edition::links::ProvenanceHop::new(hop.source_work_id, hop.link_id))
+                    .collect();
                 crate::edition::links::HyperRef::single(
                     excerpt,
                     hr.work_context,
                     hr.original_context,
                     None,
-                )
+                ).with_provenance_chain(chain)
             });
             let d_ref = destination_ref.map(|hr| {
                 let excerpt = hr.excerpt
                     .as_deref()
                     .map(|t| crate::edition::Edition::from_text(t));
+                let chain: Vec<crate::edition::links::ProvenanceHop> = hr
+                    .provenance_chain
+                    .into_iter()
+                    .map(|hop| crate::edition::links::ProvenanceHop::new(hop.source_work_id, hop.link_id))
+                    .collect();
                 crate::edition::links::HyperRef::single(
                     excerpt,
                     hr.work_context,
                     hr.original_context,
                     None,
-                )
+                ).with_provenance_chain(chain)
             });
             srv.update_link(session_id, link_id, o_ref, d_ref)?;
             Ok(ResponseValue::Void)
@@ -1251,6 +1261,18 @@ fn dispatch_inner(
                 }
             });
             Ok(ResponseValue::VersionTracePositionResult { trace_position })
+        }
+        WireRequest::ProvenanceAncestry { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let chain = srv.provenance_ancestry(work_id);
+            let hops = chain
+                .into_iter()
+                .map(|hop| super::protocol::ProvenanceHopPayload {
+                    source_work_id: hop.source_work_id(),
+                    link_id: hop.link_id(),
+                })
+                .collect();
+            Ok(ResponseValue::ProvenanceAncestryResult { chain: hops })
         }
         WireRequest::AdminRecorderCreate {
             kind,

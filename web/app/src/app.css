@@ -2046,3 +2046,14 @@ body {
   color: #c62828;
   background: #fce4ec;
 }
+
+.link-list-chain {
+  display: inline-block;
+  font-size: 10px;
+  color: #c4a35a;
+  background: rgba(196, 163, 90, 0.12);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-top: 2px;
+  cursor: help;
+}

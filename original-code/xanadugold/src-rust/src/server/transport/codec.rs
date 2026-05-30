@@ -1725,6 +1725,17 @@ impl JsonCodec {
                     max_depth: args.max_depth,
                 })
             }
+            OperationCode::ProvenanceAncestry => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ProvenanceAncestry {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::AdminRecorderCreate => {
                 #[derive(Deserialize)]
                 struct Args {

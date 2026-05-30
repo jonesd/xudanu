@@ -93,6 +93,7 @@ export function useTransclusion(): TransclusionState {
 
           if (excerpt.length >= 10) {
             const positions = await client.findExcerptPositions(workId, excerpt);
+            const chain = localRef?.provenance_chain || remoteRef?.provenance_chain;
             for (const pos of positions) {
               newMarkers.push({
                 start: pos.start,
@@ -102,6 +103,7 @@ export function useTransclusion(): TransclusionState {
                 otherWorkId,
                 otherWorkTitle: title,
                 color,
+                provenanceChain: chain,
               });
             }
           }
