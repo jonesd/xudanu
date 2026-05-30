@@ -537,6 +537,13 @@ export class CrdtSyncClient {
     return [];
   }
 
+  async findExcerptPositions(workId: number, excerpt: string): Promise<Array<{ start: number; end: number }>> {
+    const resp = await this.sendRequest("find_excerpt_positions", { work_id: workId, excerpt });
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as Array<{ start: number; end: number }>;
+    return [];
+  }
+
   async rangeTranscluders(workId: number): Promise<{ edition_ids: number[]; work_ids: number[] }> {
     const resp = await this.sendRequest("range_transcluders", { work_id: workId });
     const val = extractValue(resp) as Record<string, unknown>;
