@@ -31,6 +31,7 @@ interface CollaborativeEditorProps {
   pendingTransclusion?: PendingTransclusion | null;
   onPlaceTransclusion?: (position: number) => void;
   selectionRange?: { start: number; end: number } | null;
+  onNavigateToWork?: (workId: number) => void;
 }
 
 const CHUNK_SIZE = 50_000;
@@ -51,21 +52,30 @@ function chunkedSetTextContent(el: HTMLElement, text: string): void {
   requestAnimationFrame(appendChunk);
 }
 
+interface MarkerHitZone {
+  marker: TransclusionMarker;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 function drawOverlay(
   editor: HTMLElement | null,
   canvas: HTMLCanvasElement | null,
   spans: AttributionSpan[],
   colorMap: Map<string, AuthorStyle>,
   markers: TransclusionMarker[] = [],
-) {
-  if (!editor || !canvas) return;
-  if (spans.length === 0 && markers.length === 0) return;
+): MarkerHitZone[] {
+  const hitZones: MarkerHitZone[] = [];
+  if (!editor || !canvas) return hitZones;
+  if (spans.length === 0 && markers.length === 0) return hitZones;
 
   const container = editor.parentElement;
-  if (!container) return;
+  if (!container) return hitZones;
 
   const rect = container.getBoundingClientRect();
-  if (rect.width === 0 || rect.height === 0) return;
+  if (rect.width === 0 || rect.height === 0) return hitZones;
 
   const dpr = window.devicePixelRatio || 1;
   canvas.width = rect.width * dpr;
@@ -74,12 +84,12 @@ function drawOverlay(
   canvas.style.height = rect.height + "px";
 
   const ctx = canvas.getContext("2d");
-  if (!ctx) return;
+  if (!ctx) return hitZones;
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, rect.width, rect.height);
 
   const textLen = editor.textContent?.length ?? 0;
-  if (textLen === 0) return;
+  if (textLen === 0) return hitZones;
 
   const textNode = editor.firstChild;
   const singleNode = textNode && textNode.nodeType === Node.TEXT_NODE && textNode === editor.lastChild;
@@ -162,6 +172,9 @@ function drawOverlay(
     const lastBottom = lastRect.bottom - rect.top;
     const height = lastBottom - firstTop;
 
+    const barWidth = 3 + (marker.provenanceChain && marker.provenanceChain.length > 0
+      ? 1 + marker.provenanceChain.length * 3 : 0);
+
     ctx.fillStyle = marker.color + "60";
     ctx.fillRect(0, firstTop, 3, height);
 
@@ -176,7 +189,17 @@ function drawOverlay(
         ctx.fillRect(stackX, firstTop, stackWidth, height);
       }
     }
+
+    hitZones.push({
+      marker,
+      x: 0,
+      y: firstTop,
+      width: Math.max(barWidth, 12),
+      height,
+    });
   }
+
+  return hitZones;
 }
 
 function findTextNodeAt(root: Node, targetOffset: number): { node: Text; offset: number } | null {
@@ -206,14 +229,18 @@ export function CollaborativeEditor({
   transclusionMarkers = [],
   pendingTransclusion,
   onPlaceTransclusion,
+  onNavigateToWork,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
+  const hitZonesRef = useRef<MarkerHitZone[]>([]);
   const isComposing = useRef(false);
   const lastText = useRef(text);
   const [searchOpen, setSearchOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [showBoilerplate, setShowBoilerplate] = useState(false);
+  const [hoveredMarker, setHoveredMarker] = useState<TransclusionMarker | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
   const hasContentRange = (contentStartLine != null && contentStartLine > 0) || (contentEndLine != null);
 
@@ -289,11 +316,11 @@ export function CollaborativeEditor({
     const redraw = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers);
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers);
       });
     };
 
-    drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers);
+    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers);
 
     const ro = new ResizeObserver(redraw);
     ro.observe(container);
@@ -305,6 +332,46 @@ export function CollaborativeEditor({
       cancelAnimationFrame(rafId);
     };
   }, [attributionSpans, authorColorMap, transclusionMarkers]);
+
+  const handleOverlayMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = overlayRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const hit = hitZonesRef.current.find((hz) =>
+      x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
+    );
+    if (hit) {
+      setHoveredMarker(hit.marker);
+      setTooltipPos({ x: e.clientX, y: e.clientY });
+      canvas.style.cursor = "pointer";
+    } else {
+      setHoveredMarker(null);
+      setTooltipPos(null);
+      canvas.style.cursor = "";
+    }
+  }, []);
+
+  const handleOverlayMouseLeave = useCallback(() => {
+    setHoveredMarker(null);
+    setTooltipPos(null);
+  }, []);
+
+  const handleOverlayClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onNavigateToWork) return;
+    const canvas = overlayRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const hit = hitZonesRef.current.find((hz) =>
+      x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
+    );
+    if (hit) {
+      onNavigateToWork(hit.marker.otherWorkId);
+    }
+  }, [onNavigateToWork]);
 
   const handleInput = useCallback(() => {
     if (isComposing.current || !editable) return;
@@ -489,7 +556,34 @@ export function CollaborativeEditor({
           <canvas
             ref={overlayRef}
             className="attribution-overlay"
+            onMouseMove={handleOverlayMouseMove}
+            onMouseLeave={handleOverlayMouseLeave}
+            onClick={handleOverlayClick}
           />
+          {hoveredMarker && tooltipPos && (
+            <div
+              className="marker-tooltip"
+              style={{
+                position: "fixed",
+                left: tooltipPos.x + 10,
+                top: tooltipPos.y - 10,
+                pointerEvents: "none",
+                zIndex: 100,
+              }}
+            >
+              <div className="marker-tooltip-title" style={{ color: hoveredMarker.color }}>
+                {hoveredMarker.otherWorkTitle}
+              </div>
+              <div className="marker-tooltip-direction">
+                {hoveredMarker.direction === "outgoing" ? "Transcluded to" : "Transcluded from"}
+              </div>
+              {hoveredMarker.provenanceChain && hoveredMarker.provenanceChain.length > 0 && (
+                <div className="marker-tooltip-chain">
+                  {hoveredMarker.provenanceChain.length} provenance hop{hoveredMarker.provenanceChain.length > 1 ? "s" : ""}
+                </div>
+              )}
+            </div>
+          )}
           <div
             ref={editorRef}
             className={`editor-content${!editable ? " editor-readonly" : ""}`}

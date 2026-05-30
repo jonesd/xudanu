@@ -31,6 +31,7 @@ interface VirtualizedEditorProps {
   pendingTransclusion?: PendingTransclusion | null;
   onPlaceTransclusion?: (position: number) => void;
   selectionRange?: { start: number; end: number } | null;
+  onNavigateToWork?: (workId: number) => void;
 }
 
 const LINE_HEIGHT = 15 * 1.7;
@@ -51,6 +52,7 @@ export function VirtualizedEditor({
   transclusionMarkers = [],
   pendingTransclusion,
   onPlaceTransclusion,
+  onNavigateToWork: _onNavigateToWork,
 }: VirtualizedEditorProps) {
   const bufferRef = useRef<TextBuffer>(new TextBuffer(text));
   const containerRef = useRef<HTMLDivElement>(null);
