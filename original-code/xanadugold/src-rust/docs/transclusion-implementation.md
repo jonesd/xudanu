@@ -152,18 +152,33 @@ Connect the H-tree for versioned ancestry queries with content-type endorsement 
 
 ---
 
+## Phase C: Server-Side Excerpt Position Lookup + Restore Fix (Complete)
+
+### Goal
+
+Replace client-side substring search with server-side position lookup, and fix restore-path gaps for standalone editions and links.
+
+### Changes
+
+| Component | Before | After |
+|-----------|--------|-------|
+| `find_excerpt_positions()` | N/A | New server method. Searches CRDT text or persisted edition, returns character offsets |
+| `FindExcerptPositions` wire op | N/A | `0x0706` opcode, returns `ExcerptPositionPayload[]` |
+| `useTransclusion.loadLinks()` | Client-side `findExcerptPositions()` substring search | Server API call via `client.findExcerptPositions()` |
+| `loadLinks` signature | `(client, workId, works, currentText)` | `(client, workId, works)` — no longer needs client-side text |
+| Manifest restore (`restore_from_store`) | Only works re-indexed in backfollow | Standalone editions and links also registered |
+| Snapshot restore (`from_snapshot`) | Same gap | Same fix |
+
+### Result
+
+- Marker positions computed by server using authoritative CRDT/persisted text
+- Server handles both CRDT-active and persisted-only works transparently
+- Restore paths fully re-index all entities (works, standalone editions, links)
+- 1779 lib tests pass, frontend builds clean
+
+---
+
 ## Remaining Phases
-
-### Phase C: Fingerprint-Based Shared Regions
-
-**Goal:** Replace client-side substring search with BLAKE3 fingerprint matching.
-
-- Replace `FindSharedRegions` handler with element-level comparison
-- Replace client-side `findExcerptPositions()` with server fingerprint lookup
-- Marker rendering uses element positions instead of char-offset search
-- Federation support (cross-server shared regions)
-
-**Dependencies:** Phase A (done). Can run in parallel with B.
 
 ### Phase D: Reactive Recorder System
 
@@ -231,7 +246,7 @@ Connect the H-tree for versioned ancestry queries with content-type endorsement 
 
 ```
 Phase A (Unify Storage) ✅
-    ├── Phase C (Fingerprint Matching)
+    ├── Phase C (Server Excerpt Lookup) ✅
     │                                     Phase F (Golden Thread)
     └── Phase B (H-Tree + Endorsements) ✅    │
           │                                    │
