@@ -106,6 +106,41 @@ export interface LlmUsageSummary {
   by_feature: Record<string, { count: number; prompt_chars: number; response_chars: number }>;
 }
 
+export interface LinkEntry {
+  link_id: number;
+  origin: number;
+  destination: number;
+  origin_ref: HyperRefPayload | null;
+  destination_ref: HyperRefPayload | null;
+}
+
+export interface HyperRefPayload {
+  kind: string;
+  work_context: number | null;
+  original_context: number | null;
+  excerpt: string | null;
+}
+
+export interface SharedRegion {
+  work_a: number;
+  start_a: number;
+  end_a: number;
+  work_b: number;
+  start_b: number;
+  end_b: number;
+  text: string;
+}
+
+export interface TransclusionMarker {
+  start: number;
+  end: number;
+  linkId: number;
+  direction: "outgoing" | "incoming";
+  otherWorkId: number;
+  otherWorkTitle: string;
+  color: string;
+}
+
 export interface WorkListEntry {
   work_id: number;
   owner: number | null;
@@ -445,6 +480,70 @@ export class CrdtSyncClient {
     if (Array.isArray(val)) return val as WorkListEntry[];
     const rec = val as Record<string, unknown>;
     return (rec.work_list as WorkListEntry[]) || (rec.value as WorkListEntry[]) || [];
+  }
+
+  async linkCreate(
+    origin: number,
+    destination: number,
+    originRef?: { excerpt: string; start: number; end: number },
+    destinationRef?: { excerpt: string; start: number; end: number },
+  ): Promise<number> {
+    const payload: Record<string, unknown> = { origin, destination };
+    if (originRef) {
+      payload.origin_ref = {
+        kind: "single",
+        work_context: origin,
+        original_context: null,
+        path_context: null,
+        excerpt: originRef.excerpt,
+      };
+    }
+    if (destinationRef) {
+      payload.destination_ref = {
+        kind: "single",
+        work_context: destination,
+        original_context: null,
+        path_context: null,
+        excerpt: destinationRef.excerpt,
+      };
+    }
+    const resp = await this.sendRequest("link_create", payload);
+    return extractValue(resp) as number;
+  }
+
+  async linkGet(linkId: number): Promise<LinkEntry> {
+    const resp = await this.sendRequest("link_get", { link_id: linkId });
+    return extractValue(resp) as LinkEntry;
+  }
+
+  async linkListForWork(workId: number): Promise<LinkEntry[]> {
+    const resp = await this.sendRequest("link_list_for_work", { work_id: workId });
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as LinkEntry[];
+    const rec = val as Record<string, unknown>;
+    return (rec.links as LinkEntry[]) || [];
+  }
+
+  async linkDelete(linkId: number): Promise<void> {
+    await this.sendRequest("link_delete", { link_id: linkId });
+  }
+
+  async findSharedRegions(workA: number, workB: number, filterText?: string): Promise<SharedRegion[]> {
+    const payload: Record<string, unknown> = { work_a: workA, work_b: workB };
+    if (filterText) payload.filter_text = filterText;
+    const resp = await this.sendRequest("find_shared_regions", payload);
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as SharedRegion[];
+    return [];
+  }
+
+  async rangeTranscluders(workId: number): Promise<{ edition_ids: number[]; work_ids: number[] }> {
+    const resp = await this.sendRequest("range_transcluders", { work_id: workId });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      edition_ids: (val.edition_ids as number[]) || [],
+      work_ids: (val.work_ids as number[]) || [],
+    };
   }
 
   async fetchWorksByAuthor(authorId: number): Promise<WorkListEntry[]> {

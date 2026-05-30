@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useCrdtSync } from "../hooks/useCrdtSync";
+import { useTransclusion } from "../hooks/useTransclusion";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
 import { VirtualizedEditor } from "../components/VirtualizedEditor";
 import { AwarenessIndicators } from "../components/AwarenessIndicators";
@@ -7,6 +8,7 @@ import { DebugPanel } from "../components/DebugPanel";
 import { AttributionPanel } from "../components/AttributionPanel";
 import { IdentityPanel } from "../components/IdentityPanel";
 import { ImportWizard } from "../components/ImportWizard";
+import { TransclusionBadge } from "../components/TransclusionBadge";
 import type { WorkListEntry, HistoricalAuthorEntry } from "../api/crdt_sync";
 
 const WS_URL = `ws://${window.location.host}/xudanu`;
@@ -28,11 +30,14 @@ export function WorkspacePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [llmMenuOpen, setLlmMenuOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<"docs" | "authors">("docs");
+  const [sidebarTab, setSidebarTab] = useState<"docs" | "authors" | "links">("docs");
   const [authors, setAuthors] = useState<HistoricalAuthorEntry[]>([]);
   const [expandedAuthorId, setExpandedAuthorId] = useState<number | null>(null);
   const [authorWorks, setAuthorWorks] = useState<WorkListEntry[]>([]);
+  const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const llmRef = useRef<HTMLDivElement>(null);
+
+  const transclusion = useTransclusion();
 
   useEffect(() => {
     if (!llmMenuOpen) return;
@@ -204,6 +209,35 @@ export function WorkspacePage() {
     }
   }, [connected, workBeId, awareness.length, refreshAwareness]);
 
+  useEffect(() => {
+    if (connected && workBeId !== null && clientRef.current) {
+      transclusion.loadLinks(clientRef.current, workBeId, works, text);
+    }
+  }, [connected, workBeId, works, text]);
+
+  const handlePlaceTransclusion = useCallback(async (position: number) => {
+    if (!clientRef.current || workBeId === null) return;
+    const pending = transclusion.pending;
+    if (!pending) return;
+    const excerpt = pending.text;
+    const linkId = await transclusion.placeTransclusion(clientRef.current, workBeId, position);
+      if (linkId !== null) {
+      const newText = text.slice(0, position) + excerpt + text.slice(position);
+      setText(newText);
+      if (clientRef.current) {
+        await new Promise((r) => setTimeout(r, 500));
+        await transclusion.loadLinks(clientRef.current, workBeId, works, newText);
+      }
+    }
+  }, [clientRef, workBeId, transclusion, works, text, setText]);
+
+  const handleTranscludeSelection = useCallback(() => {
+    if (!selectionRange || workBeId === null) return;
+    const selectedText = text.slice(selectionRange.start, selectionRange.end);
+    const title = currentWorkMeta?.title || `Work ${workBeId.toString(16).padStart(4, "0")}`;
+    transclusion.holdSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
+  }, [selectionRange, workBeId, text, currentWorkMeta, transclusion]);
+
   const workIdDisplay = workBeId !== null
     ? workBeId.toString(16).padStart(4, "0")
     : null;
@@ -286,6 +320,16 @@ export function WorkspacePage() {
             >
               Attribution
             </button>
+            {selectionRange && !transclusion.pending && (
+              <button
+                onClick={handleTranscludeSelection}
+                type="button"
+                className="transclude-btn"
+                title="Create transclusion link from selected text"
+              >
+                Transclude
+              </button>
+            )}
             {llmEnabled && (
               <div className="llm-dropdown" ref={llmRef}>
                 <button
@@ -365,6 +409,12 @@ export function WorkspacePage() {
               onClick={() => setSidebarTab("authors")}
             >
               Authors
+            </button>
+            <button
+              className={`sidebar-tab ${sidebarTab === "links" ? "active" : ""}`}
+              onClick={() => setSidebarTab("links")}
+            >
+              Links
             </button>
           </div>
           {sidebarTab === "docs" && (
@@ -472,35 +522,99 @@ export function WorkspacePage() {
               )}
             </div>
           )}
+          {sidebarTab === "links" && (
+            <div className="work-list">
+              {transclusion.links.length === 0 ? (
+                <div className="work-list-empty">No transclusion links</div>
+              ) : (
+                transclusion.links.map((link) => {
+                  const isOrigin = link.origin === workBeId;
+                  const otherId = isOrigin ? link.destination : link.origin;
+                  const otherWork = works.find((w) => w.work_id === otherId);
+                  const otherTitle = otherWork?.title || `Work ${otherId.toString(16).padStart(4, "0")}`;
+                   const ref = link.origin_ref || link.destination_ref;
+                  return (
+                    <div
+                      key={link.link_id}
+                      className="link-list-item"
+                      onClick={() => selectWork(otherId)}
+                    >
+                      <div className="link-list-header">
+                        <span className="link-list-direction">{isOrigin ? "\u2192" : "\u2190"}</span>
+                        <span className="link-list-title">{otherTitle}</span>
+                      </div>
+                      {ref?.excerpt && (
+                        <span className="link-list-excerpt">
+                          {ref.excerpt.length > 60 ? ref.excerpt.slice(0, 60) + "\u2026" : ref.excerpt}
+                        </span>
+                      )}
+                      <button
+                        className="link-list-delete"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (clientRef.current) transclusion.deleteLink(clientRef.current, link.link_id);
+                        }}
+                      >
+                        \u00d7
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
         </aside>
 
         <main className="document-area">
           {workBeId !== null ? (
             <>
               <AwarenessIndicators states={awareness} connected={connected} />
+              {transclusion.pending && (
+                <TransclusionBadge
+                  pending={transclusion.pending}
+                  onPlace={handlePlaceTransclusion}
+                  onCancel={transclusion.clearPending}
+                />
+              )}
               {text.length > 100_000 ? (
                 <VirtualizedEditor
                   text={text}
                   onTextChange={setText}
                   onCursorChange={sendCursor}
-                  onSelectionChange={(s, e) => sendSelection(s, e)}
+                  onSelectionChange={(s, e) => {
+                    sendSelection(s, e);
+                    if (s !== null && e !== null) setSelectionRange({ start: s, end: e });
+                    else setSelectionRange(null);
+                  }}
                   connected={connected}
                   attributionSpans={attributionSpans}
                   editable={identity !== null}
                   contentStartLine={currentWorkMeta?.content_start_line}
                   contentEndLine={currentWorkMeta?.content_end_line}
+                  transclusionMarkers={transclusion.markers}
+                  pendingTransclusion={transclusion.pending}
+                  onPlaceTransclusion={handlePlaceTransclusion}
+                  selectionRange={selectionRange}
                 />
               ) : (
                 <CollaborativeEditor
                   text={text}
                   onTextChange={setText}
                   onCursorChange={sendCursor}
-                  onSelectionChange={(s, e) => sendSelection(s, e)}
+                  onSelectionChange={(s, e) => {
+                    sendSelection(s, e);
+                    if (s !== null && e !== null) setSelectionRange({ start: s, end: e });
+                    else setSelectionRange(null);
+                  }}
                   connected={connected}
                   attributionSpans={attributionSpans}
                   editable={identity !== null}
                   contentStartLine={currentWorkMeta?.content_start_line}
                   contentEndLine={currentWorkMeta?.content_end_line}
+                  transclusionMarkers={transclusion.markers}
+                  pendingTransclusion={transclusion.pending}
+                  onPlaceTransclusion={handlePlaceTransclusion}
+                  selectionRange={selectionRange}
                 />
               )}
               {watchEnabled && contentMatches.length > 0 && (
