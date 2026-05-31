@@ -48,8 +48,8 @@ jobs:
         if: matrix.target == 'aarch64-unknown-linux-musl'
         run: |
           sudo apt-get install -y gcc-aarch64-linux-gnu
-          mkdir -p .cargo
-          printf '[target.aarch64-unknown-linux-musl]\nlinker = "aarch64-linux-gnu-gcc"\n' > .cargo/config.toml
+          mkdir -p original-code/xanadugold/src-rust/.cargo
+          printf '[target.aarch64-unknown-linux-musl]\nlinker = "aarch64-linux-gnu-gcc"\n' > original-code/xanadugold/src-rust/.cargo/config.toml
 
       - name: Test
         if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'x86_64-apple-darwin' || matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-pc-windows-msvc'
@@ -57,14 +57,16 @@ jobs:
 
       - name: Build
         run: cargo build --release --features server --target ${{ matrix.target }}
+        working-directory: original-code/xanadugold/src-rust
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/xudanu-server dist/
-          cp -r static dist/
-          cp README.md LICENSE NOTICE dist/
+          cp original-code/xanadugold/src-rust/target/${{ matrix.target }}/release/xudanu-server dist/
+          cp -r original-code/xanadugold/src-rust/static dist/
+          [ -f LICENSE ] && cp LICENSE dist/ || true
+          [ -f NOTICE ] && cp NOTICE dist/ || true
           tar -czf ${{ matrix.artifact }} -C dist .
 
       - name: Package (Windows)
@@ -72,11 +74,10 @@ jobs:
         shell: pwsh
         run: |
           mkdir dist
-          cp target/${{ matrix.target }}/release/xudanu-server.exe dist/
-          cp -r static dist/
-          cp README.md dist/
-          cp LICENSE dist/
-          cp NOTICE dist/
+          cp original-code/xanadugold/src-rust/target/${{ matrix.target }}/release/xudanu-server.exe dist/
+          cp -r original-code/xanadugold/src-rust/static dist/
+          if (Test-Path LICENSE) { cp LICENSE dist/ }
+          if (Test-Path NOTICE) { cp NOTICE dist/ }
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}
 
       - name: Upload artifact
