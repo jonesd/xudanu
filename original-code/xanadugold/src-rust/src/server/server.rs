@@ -7650,6 +7650,7 @@ mod tests {
     const TEST_MEMBER_CREDENTIAL: &[u8] = b"xudanu-test-member";
     const TEST_ALT_CREDENTIAL: &[u8] = b"xudanu-test-alt";
     const TEST_ADMIN_CREDENTIAL: &[u8] = b"xudanu-test-admin";
+    const TEST_CLUB_PASSWORD: &[u8] = b"xudanu-test-club-pass";
     use super::*;
     use crate::edition::RangeElement;
     use crate::server::crdt_manager::{AwarenessState, CursorPosition};
@@ -9927,11 +9928,11 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, b"testpass")
+            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
-            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .authenticate(sid, &*lock, &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()))
             .unwrap();
         let work_id = server
             .create_work(sid, Edition::from_text("pub test"))
@@ -9955,11 +9956,11 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, b"testpass")
+            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
-            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .authenticate(sid, &*lock, &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()))
             .unwrap();
         let work_id = server
             .create_work(sid, Edition::from_text("permanent"))
@@ -9986,11 +9987,11 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, b"testpass")
+            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
-            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .authenticate(sid, &*lock, &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()))
             .unwrap();
         let work_id = server
             .create_work(sid, Edition::from_text("secret doc"))
@@ -10008,14 +10009,14 @@ mod tests {
             .create_club(sid1, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid1, owner_club, b"testpass")
+            .club_set_password(sid1, owner_club, TEST_CLUB_PASSWORD)
             .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock,
-                &LockCredential::Password(b"testpass".to_vec()),
+                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -10037,14 +10038,14 @@ mod tests {
             .create_club(sid1, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid1, owner_club, b"testpass")
+            .club_set_password(sid1, owner_club, TEST_CLUB_PASSWORD)
             .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock,
-                &LockCredential::Password(b"testpass".to_vec()),
+                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -10067,14 +10068,14 @@ mod tests {
             .create_club(sid1, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid1, owner_club, b"testpass")
+            .club_set_password(sid1, owner_club, TEST_CLUB_PASSWORD)
             .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock,
-                &LockCredential::Password(b"testpass".to_vec()),
+                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -10109,10 +10110,10 @@ mod tests {
         let club_id = server
             .create_club(sid, Edition::from_text("snap club"))
             .unwrap();
-        server.club_set_password(sid, club_id, b"testpass").unwrap();
+        server.club_set_password(sid, club_id, TEST_CLUB_PASSWORD).unwrap();
         let lock = server.login(sid, club_id).unwrap();
         server
-            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .authenticate(sid, &*lock, &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()))
             .unwrap();
         let custom_club = server
             .create_club(sid, Edition::from_text("custom"))
@@ -10139,11 +10140,11 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, b"testpass")
+            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
-            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .authenticate(sid, &*lock, &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()))
             .unwrap();
         let work_id = server
             .create_work(sid, Edition::from_text("persist test"))
@@ -10167,14 +10168,14 @@ mod tests {
             .create_club(sid1, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid1, owner_club, b"testpass")
+            .club_set_password(sid1, owner_club, TEST_CLUB_PASSWORD)
             .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock,
-                &LockCredential::Password(b"testpass".to_vec()),
+                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -10197,11 +10198,11 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, b"testpass")
+            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
-            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .authenticate(sid, &*lock, &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()))
             .unwrap();
         let work_id = server.create_work(sid, Edition::from_text("mine")).unwrap();
 
@@ -10218,14 +10219,14 @@ mod tests {
             .create_club(sid1, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid1, owner_club, b"testpass")
+            .club_set_password(sid1, owner_club, TEST_CLUB_PASSWORD)
             .unwrap();
         let lock = server.login(sid1, owner_club).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock,
-                &LockCredential::Password(b"testpass".to_vec()),
+                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -10247,13 +10248,13 @@ mod tests {
         let club1 = server
             .create_club(sid1, Edition::from_text("owner club"))
             .unwrap();
-        server.club_set_password(sid1, club1, b"testpass").unwrap();
+        server.club_set_password(sid1, club1, TEST_CLUB_PASSWORD).unwrap();
         let lock = server.login(sid1, club1).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock,
-                &LockCredential::Password(b"testpass".to_vec()),
+                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
             )
             .unwrap();
         let work_id = server
@@ -10265,13 +10266,13 @@ mod tests {
         let club2 = server
             .create_club(sid2, Edition::from_text("editor club"))
             .unwrap();
-        server.club_set_password(sid2, club2, b"testpass").unwrap();
+        server.club_set_password(sid2, club2, TEST_CLUB_PASSWORD).unwrap();
         let lock2 = server.login(sid2, club2).unwrap();
         server
             .authenticate(
                 sid2,
                 &*lock2,
-                &LockCredential::Password(b"testpass".to_vec()),
+                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
             )
             .unwrap();
 
@@ -10299,11 +10300,11 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, b"testpass")
+            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
-            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .authenticate(sid, &*lock, &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()))
             .unwrap();
 
         let custom_club = server
@@ -10336,13 +10337,13 @@ mod tests {
         let club1 = server
             .create_club(sid1, Edition::from_text("club1"))
             .unwrap();
-        server.club_set_password(sid1, club1, b"testpass").unwrap();
+        server.club_set_password(sid1, club1, TEST_CLUB_PASSWORD).unwrap();
         let lock1 = server.login(sid1, club1).unwrap();
         server
             .authenticate(
                 sid1,
                 &*lock1,
-                &LockCredential::Password(b"testpass".to_vec()),
+                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
             )
             .unwrap();
 
@@ -10351,13 +10352,13 @@ mod tests {
         let club2 = server
             .create_club(sid2, Edition::from_text("club2"))
             .unwrap();
-        server.club_set_password(sid2, club2, b"testpass").unwrap();
+        server.club_set_password(sid2, club2, TEST_CLUB_PASSWORD).unwrap();
         let lock2 = server.login(sid2, club2).unwrap();
         server
             .authenticate(
                 sid2,
                 &*lock2,
-                &LockCredential::Password(b"testpass".to_vec()),
+                &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()),
             )
             .unwrap();
 
@@ -10380,11 +10381,11 @@ mod tests {
             .create_club(sid, Edition::from_text("owner club"))
             .unwrap();
         server
-            .club_set_password(sid, owner_club, b"testpass")
+            .club_set_password(sid, owner_club, TEST_CLUB_PASSWORD)
             .unwrap();
         let lock = server.login(sid, owner_club).unwrap();
         server
-            .authenticate(sid, &*lock, &LockCredential::Password(b"testpass".to_vec()))
+            .authenticate(sid, &*lock, &LockCredential::Password(TEST_CLUB_PASSWORD.to_vec()))
             .unwrap();
         let work_id = server.create_work(sid, Edition::from_text("gone")).unwrap();
 
