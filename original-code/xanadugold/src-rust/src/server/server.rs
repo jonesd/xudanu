@@ -100,6 +100,7 @@ pub struct Server {
     checkpoint_path: Option<std::path::PathBuf>,
     data_dir: Option<std::path::PathBuf>,
     chunk_store: Option<crate::persist::chunk_store::ChunkStore>,
+    manifest_sequence: u64,
     recorder_system: crate::edition::RecorderSystem,
     pending_content_notifications: Vec<ContentNotification>,
     start_time: u64,
@@ -222,6 +223,7 @@ impl Server {
             checkpoint_path: None,
             data_dir: None,
             chunk_store: None,
+            manifest_sequence: 0,
             recorder_system: crate::edition::RecorderSystem::new(),
             pending_content_notifications: Vec::new(),
             start_time: std::time::SystemTime::now()
@@ -2922,14 +2924,41 @@ impl Server {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
         let manifest = if manifest_path.exists() {
-            crate::persist::manifest::read_manifest(&manifest_path)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+            match crate::persist::manifest::read_manifest_with_fallback(&manifest_path, 3) {
+                Ok(m) => m,
+                Err(e) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "manifest.json and all backups are corrupt: {}. \
+                             Run 'xudanu-server rebuild-manifest {}' or delete the data directory to start fresh.",
+                            e, data_dir.display()
+                        ),
+                    ));
+                }
+            }
         } else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 format!("no manifest.json found in {}", data_dir.display()),
             ));
         };
+
+        let verify_report = crate::persist::verify::verify_store_with_manifest(
+            &manifest,
+            &chunk_store,
+        );
+        if !verify_report.is_ok() {
+            tracing::warn!(
+                "Data verification found issues: {} corrupt chunks, {} missing chunks, {} deserialization errors",
+                verify_report.chunks_corrupt.len(),
+                verify_report.chunks_missing.len(),
+                verify_report.deserialization_errors.len(),
+            );
+            for err in &verify_report.deserialization_errors {
+                tracing::warn!("  - {}", err);
+            }
+        }
 
         self.restore_keypair_from_dir(data_dir, passphrase)?;
         self.restore_blob_store_from_dir(data_dir)?;
@@ -2969,69 +2998,94 @@ impl Server {
         }
 
         for club_ref in &manifest.clubs {
-            let work = crate::persist::edition_chunks::work_from_chunks_current(
+            match crate::persist::edition_chunks::work_from_chunks_current(
                 &club_ref.work_root,
                 &chunk_store,
-            )
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            let mut club =
-                Club::new_with_owner(club_ref.be_id, work.owner(), work.edition().clone());
-            club.set_signature_club(club_ref.signature_club);
-            club.set_default_read_club(club_ref.default_read_club);
-            club.set_default_edit_club(club_ref.default_edit_club);
-            if let Some(ref name) = club_ref.name {
-                club.set_name(name.clone());
-                self.club_names.insert(name.clone(), club_ref.be_id);
+            ) {
+                Ok(work) => {
+                    let mut club =
+                        Club::new_with_owner(club_ref.be_id, work.owner(), work.edition().clone());
+                    club.set_signature_club(club_ref.signature_club);
+                    club.set_default_read_club(club_ref.default_read_club);
+                    club.set_default_edit_club(club_ref.default_edit_club);
+                    if let Some(ref name) = club_ref.name {
+                        club.set_name(name.clone());
+                        self.club_names.insert(name.clone(), club_ref.be_id);
+                    }
+                    club.set_is_personal(club_ref.is_personal);
+                    club.set_display_name(club_ref.display_name.clone());
+                    club.set_credential(club_ref.credential.clone());
+                    club.set_encrypted_signing_key(club_ref.encrypted_signing_key.clone());
+                    for member_id in &club_ref.members {
+                        club.add_member(*member_id);
+                    }
+                    for work_id in &club_ref.sponsored_works {
+                        club.add_sponsored_work(*work_id);
+                    }
+                    self.clubs.insert(club_ref.be_id, club);
+                    self.club_refs.insert(club_ref.be_id, club_ref.clone());
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Skipping corrupt club {} (chunk error: {}). \
+                         Recreate this identity if needed.",
+                        club_ref.be_id, e
+                    );
+                }
             }
-            club.set_is_personal(club_ref.is_personal);
-            club.set_display_name(club_ref.display_name.clone());
-            club.set_credential(club_ref.credential.clone());
-            club.set_encrypted_signing_key(club_ref.encrypted_signing_key.clone());
-            for member_id in &club_ref.members {
-                club.add_member(*member_id);
-            }
-            for work_id in &club_ref.sponsored_works {
-                club.add_sponsored_work(*work_id);
-            }
-            self.clubs.insert(club_ref.be_id, club);
-            self.club_refs.insert(club_ref.be_id, club_ref.clone());
         }
 
         self.personal_club_count = self.clubs.values().filter(|c| c.is_personal()).count();
 
         for (id, work_ref) in &manifest.works {
-            let work =
-                crate::persist::edition_chunks::work_from_chunks_current(work_ref, &chunk_store)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            let ws = WorkState {
-                work: work.clone(),
-                chunk_ref: Some(work_ref.clone()),
-                grabber: None,
-                grabbed_at: None,
-                grab_waiters: Vec::new(),
-                last_revision_author: None,
-                status_detectors: DetectorList::new(),
-                revision_detectors: DetectorList::new(),
-                cached_title: Self::extract_title(work.current_edition()),
-                is_source: false,
-                source_author_id: None,
-                source_edition_info: None,
-                imported_by: None,
-                content_start_line: None,
-                content_end_line: None,
-            };
-            self.works.insert(*id, ws);
+            match crate::persist::edition_chunks::work_from_chunks_current(work_ref, &chunk_store) {
+                Ok(work) => {
+                    let ws = WorkState {
+                        work: work.clone(),
+                        chunk_ref: Some(work_ref.clone()),
+                        grabber: None,
+                        grabbed_at: None,
+                        grab_waiters: Vec::new(),
+                        last_revision_author: None,
+                        status_detectors: DetectorList::new(),
+                        revision_detectors: DetectorList::new(),
+                        cached_title: Self::extract_title(work.current_edition()),
+                        is_source: false,
+                        source_author_id: None,
+                        source_edition_info: None,
+                        imported_by: None,
+                        content_start_line: None,
+                        content_end_line: None,
+                    };
+                    self.works.insert(*id, ws);
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Skipping corrupt work {} (chunk error: {}). \
+                         Data for this document is lost.",
+                        id, e
+                    );
+                }
+            }
         }
 
         for se_ref in &manifest.standalone_editions {
-            let edition = crate::persist::edition_chunks::edition_from_chunks(
+            match crate::persist::edition_chunks::edition_from_chunks(
                 &se_ref.edition_ref,
                 &chunk_store,
-            )
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            self.standalone_editions.insert(se_ref.be_id, edition);
-            self.standalone_edition_refs
-                .insert(se_ref.be_id, se_ref.edition_ref.clone());
+            ) {
+                Ok(edition) => {
+                    self.standalone_editions.insert(se_ref.be_id, edition);
+                    self.standalone_edition_refs
+                        .insert(se_ref.be_id, se_ref.edition_ref.clone());
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Skipping corrupt standalone edition {} (chunk error: {})",
+                        se_ref.be_id, e
+                    );
+                }
+            }
         }
 
         for link in &manifest.links {
@@ -3079,6 +3133,7 @@ impl Server {
         self.chunk_store = Some(chunk_store);
         self.data_dir = Some(data_dir.to_path_buf());
         self.checkpoint_path = Some(manifest_path);
+        self.manifest_sequence = manifest.sequence;
         self.attribution_log =
             crate::server::transport::attribution_log::AttributionLog::open(data_dir).ok();
 
@@ -3232,15 +3287,24 @@ impl Server {
             match serde_json::to_string_pretty(&file) {
                 Ok(json) => {
                     let tmp_path = kh_path.with_extension("tmp");
-                    match std::fs::write(&tmp_path, &json) {
-                        Ok(()) => {
-                            if let Err(e) = std::fs::rename(&tmp_path, &kh_path) {
-                                tracing::warn!("Failed to rename key history: {}", e);
-                                let _ = std::fs::remove_file(&tmp_path);
+                    match std::fs::File::create(&tmp_path) {
+                        Ok(mut f) => {
+                            match std::io::Write::write_all(&mut f, json.as_bytes()) {
+                                Ok(()) => {
+                                    let _ = f.sync_all();
+                                    if let Err(e) = std::fs::rename(&tmp_path, &kh_path) {
+                                        tracing::warn!("Failed to rename key history: {}", e);
+                                        let _ = std::fs::remove_file(&tmp_path);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to write key history: {}", e);
+                                    let _ = std::fs::remove_file(&tmp_path);
+                                }
                             }
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to write key history tmp: {}", e);
+                            tracing::warn!("Failed to create key history tmp: {}", e);
                         }
                     }
                 }
@@ -6551,6 +6615,7 @@ pub(crate) mod persist_snapshot {
                 checkpoint_path: None,
                 data_dir: None,
                 chunk_store: None,
+                manifest_sequence: 0,
                 recorder_system: crate::edition::RecorderSystem::new(),
                 pending_content_notifications: Vec::new(),
                 start_time: std::time::SystemTime::now()
@@ -6888,6 +6953,7 @@ pub(crate) mod persist_snapshot {
                 created_at: String::new(),
                 server_version: String::new(),
                 checksum: String::new(),
+                sequence: self.manifest_sequence,
                 grand_map_id_counter: self.grand_map.id_counter(),
                 session_counter: self.session_counter,
                 operation_counter: self.operation_counter,
@@ -6924,8 +6990,20 @@ pub(crate) mod persist_snapshot {
                 key_history,
             };
 
+            let data_dir = match self.data_dir.as_ref() {
+                Some(d) => d.as_path(),
+                None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "no data dir")),
+            };
+            crate::persist::manifest::rotate_manifest_backups(&manifest_path, 3);
             crate::persist::manifest::write_manifest(&mut manifest, &manifest_path)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            self.manifest_sequence = manifest.sequence;
+            {
+                let backup = crate::persist::manifest::backup_manifest_path(data_dir, manifest.sequence);
+                if let Err(e) = std::fs::copy(&manifest_path, &backup) {
+                    tracing::warn!("Failed to create versioned manifest backup: {}", e);
+                }
+            }
             self.save_key_history();
 
             if let Err(e) = self.gc_orphaned_chunks() {
@@ -6933,11 +7011,12 @@ pub(crate) mod persist_snapshot {
             }
 
             tracing::info!(
-                "Checkpoint saved in {:.2}ms (dirty: {}/{}/{} works/clubs/editions)",
+                "Checkpoint #{} saved in {:.2}ms (dirty: {}/{}/{} works/clubs/editions)",
                 start.elapsed().as_secs_f64() * 1000.0,
                 dirty_work_count,
                 dirty_club_count,
                 dirty_edition_count,
+                manifest.sequence,
             );
             Ok(())
         }
@@ -6978,6 +7057,55 @@ pub(crate) mod persist_snapshot {
             let all_chunks = chunk_store
                 .all_chunk_hashes()
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+            if let Some(ref data_dir) = self.data_dir {
+                let mut backup_manifests: Vec<std::path::PathBuf> = Vec::new();
+                if let Ok(entries) = std::fs::read_dir(data_dir) {
+                    for entry in entries.flatten() {
+                        let name = entry.file_name();
+                        let name_str = name.to_str().unwrap_or("");
+                        if name_str.starts_with("manifest_v") && name_str.ends_with(".json") {
+                            backup_manifests.push(entry.path());
+                        }
+                    }
+                }
+                for backup_path in &backup_manifests {
+                    if let Ok(backup_manifest) =
+                        crate::persist::manifest::read_manifest(backup_path)
+                    {
+                        for (_, work_ref) in &backup_manifest.works {
+                            if let Ok(hashes) =
+                                crate::persist::edition_chunks::collect_edition_hashes(
+                                    &work_ref.current_root,
+                                    chunk_store,
+                                )
+                            {
+                                referenced.extend(hashes);
+                            }
+                        }
+                        for club_ref in &backup_manifest.clubs {
+                            if let Ok(hashes) =
+                                crate::persist::edition_chunks::collect_edition_hashes(
+                                    &club_ref.work_root.current_root,
+                                    chunk_store,
+                                )
+                            {
+                                referenced.extend(hashes);
+                            }
+                        }
+                        for se_ref in &backup_manifest.standalone_editions {
+                            if let Ok(hashes) =
+                                crate::persist::edition_chunks::collect_edition_hashes(
+                                    &se_ref.edition_ref,
+                                    chunk_store,
+                                )
+                            {
+                                referenced.extend(hashes);
+                            }
+                        }
+                    }
+                }
+            }
 
             let mut removed = 0u64;
             for hash in &all_chunks {

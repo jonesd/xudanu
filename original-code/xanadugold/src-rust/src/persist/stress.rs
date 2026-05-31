@@ -8,8 +8,8 @@ mod tests {
     use crate::edition::RangeElement;
     use crate::persist::chunk_store::ChunkStore;
     use crate::persist::edition_chunks::{
-        edition_from_chunks, edition_to_chunks, work_from_chunks_current, work_load_revision,
-        work_to_chunks, EditionChunkRef, WorkChunkRef,
+        edition_from_chunks, edition_to_chunks_durable, work_from_chunks_current, work_load_revision,
+        work_to_chunks_durable, EditionChunkRef, WorkChunkRef,
     };
 
     #[derive(Debug, Clone, Copy)]
@@ -256,7 +256,7 @@ mod tests {
                 (i as u64).wrapping_mul(2654435761)
             );
             let t0 = Instant::now();
-            let hash = store.write_chunk(data.as_bytes()).unwrap();
+            let hash = store.write_chunk_durable(data.as_bytes(), false).unwrap();
             write_stats.record(t0.elapsed().as_micros() as f64);
             bytes_written += data.len() as u64;
             hashes.push(hash);
@@ -345,7 +345,7 @@ mod tests {
             let edition = Edition::from_text(text);
             for copy in 0..editions_per_shared_text {
                 let t0 = Instant::now();
-                let chunk_ref = edition_to_chunks(&edition, &store).unwrap();
+                let chunk_ref = edition_to_chunks_durable(&edition, &store, false).unwrap();
                 write_stats.record(t0.elapsed().as_micros() as f64);
                 all_refs.push(chunk_ref);
             }
@@ -442,7 +442,7 @@ mod tests {
                 (i as u64).wrapping_mul(11400714819323198549)
             );
             let t0 = Instant::now();
-            let hash = store.write_chunk(data.as_bytes()).unwrap();
+            let hash = store.write_chunk_durable(data.as_bytes(), false).unwrap();
             write_stats.record(t0.elapsed().as_micros() as f64);
             hashes.push(hash);
         }
@@ -536,7 +536,7 @@ mod tests {
         for i in 0..total_chunks {
             let data = format!("hotcold-{}-{:032x}", i, (i as u64).wrapping_mul(982451653));
             let t0 = Instant::now();
-            let hash = store.write_chunk(data.as_bytes()).unwrap();
+            let hash = store.write_chunk_durable(data.as_bytes(), false).unwrap();
             write_stats.record(t0.elapsed().as_micros() as f64);
             hashes.push(hash);
         }
@@ -653,7 +653,7 @@ mod tests {
         for i in 0..n {
             let data = format!("scan-{}-{:032x}", i, (i as u64).wrapping_mul(14035924003));
             let t0 = Instant::now();
-            let hash = store.write_chunk(data.as_bytes()).unwrap();
+            let hash = store.write_chunk_durable(data.as_bytes(), false).unwrap();
             write_stats.record(t0.elapsed().as_micros() as f64);
             hashes.push(hash);
         }
@@ -743,7 +743,7 @@ mod tests {
 
             let chunks_before = store.total_chunks_on_disk().unwrap();
             let t0 = Instant::now();
-            let chunk_ref = edition_to_chunks(&edition, &store).unwrap();
+            let chunk_ref = edition_to_chunks_durable(&edition, &store, false).unwrap();
             write_stats.record(t0.elapsed().as_micros() as f64);
             let chunks_after = store.total_chunks_on_disk().unwrap();
             chunk_counts.push(chunks_after - chunks_before);
@@ -864,7 +864,7 @@ mod tests {
             }
 
             let t0 = Instant::now();
-            let chunk_ref = work_to_chunks(&work, &store).unwrap();
+            let chunk_ref = work_to_chunks_durable(&work, &store, false).unwrap();
             write_stats.record(t0.elapsed().as_micros() as f64);
             work_refs.push(chunk_ref);
 
@@ -985,7 +985,7 @@ mod tests {
 
         for i in 0..n {
             let data = format!("mixed-{}-{:032x}", i, (i as u64).wrapping_mul(31415926535));
-            let hash = store.write_chunk(data.as_bytes()).unwrap();
+            let hash = store.write_chunk_durable(data.as_bytes(), false).unwrap();
             hashes.push(hash);
         }
 
@@ -1008,7 +1008,7 @@ mod tests {
                     (next_id as u64).wrapping_mul(27182818284)
                 );
                 let t0 = Instant::now();
-                let hash = store.write_chunk(data.as_bytes()).unwrap();
+                let hash = store.write_chunk_durable(data.as_bytes(), false).unwrap();
                 write_stats.record(t0.elapsed().as_micros() as f64);
                 hashes.push(hash);
                 next_id += 1;
@@ -1104,7 +1104,7 @@ mod tests {
                     ((cycle * per_cycle + i) as u64).wrapping_mul(16180339887)
                 );
                 let t0 = Instant::now();
-                let hash = store.write_chunk(data.as_bytes()).unwrap();
+                let hash = store.write_chunk_durable(data.as_bytes(), false).unwrap();
                 write_stats.record(t0.elapsed().as_micros() as f64);
                 alive.push(hash);
             }
@@ -1230,7 +1230,7 @@ mod tests {
                     work.revise(edition);
                 }
 
-                let chunk_ref = work_to_chunks(&work, &store).unwrap();
+                let chunk_ref = work_to_chunks_durable(&work, &store, false).unwrap();
                 work_refs.push(chunk_ref);
 
                 if w % (n_works.max(1) / 5).max(1) == 0 {
@@ -1362,7 +1362,7 @@ mod tests {
                 i,
                 (i as u64).wrapping_mul(987654321)
             );
-            seed_hashes.push(store.write_chunk(data.as_bytes()).unwrap());
+            seed_hashes.push(store.write_chunk_durable(data.as_bytes(), false).unwrap());
         }
 
         store.reset_stats();
@@ -1396,7 +1396,7 @@ mod tests {
                             local_writes,
                             local_writes.wrapping_mul(0x9e3779b97f4a7c15)
                         );
-                        match store.write_chunk(data.as_bytes()) {
+                        match store.write_chunk_durable(data.as_bytes(), false) {
                             Ok(hash) => {
                                 new_hashes_t
                                     .lock()
@@ -1566,7 +1566,7 @@ mod tests {
                 work.revise(edition);
             }
 
-            let chunk_ref = work_to_chunks(&work, &store).unwrap();
+            let chunk_ref = work_to_chunks_durable(&work, &store, false).unwrap();
             work_refs.push(chunk_ref);
         }
 

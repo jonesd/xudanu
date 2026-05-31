@@ -421,8 +421,14 @@ async fn main() {
                     tracing::info!("Restoring from {}", manifest_path.display());
                     let start = std::time::Instant::now();
                     let mut s = Server::new();
-                    s.restore_from_data_dir(&path, pass_bytes)
-                        .expect("failed to restore from data directory");
+                    if let Err(e) = s.restore_from_data_dir(&path, pass_bytes) {
+                        eprintln!("Error: Failed to restore from data directory: {}", e);
+                        eprintln!("Hints:");
+                        eprintln!("  - Run 'xudanu-server verify {}' to check data integrity", dir);
+                        eprintln!("  - Run 'xudanu-server rebuild-manifest {}' to rebuild the manifest", dir);
+                        eprintln!("  - Remove the data directory to start fresh (all data will be lost)");
+                        std::process::exit(1);
+                    }
                     let elapsed = start.elapsed();
                     tracing::info!(
                         "Restored in {:.2}ms: {}",

@@ -79,6 +79,8 @@ pub struct Manifest {
     pub created_at: String,
     pub server_version: String,
     pub checksum: String,
+    #[serde(default)]
+    pub sequence: u64,
 
     pub grand_map_id_counter: BeId,
     pub session_counter: u64,
@@ -189,19 +191,126 @@ fn server_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+pub fn rotate_manifest_backups(path: &Path, keep: usize) {
+    let data_dir = match path.parent() {
+        Some(d) => d,
+        None => return,
+    };
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("manifest");
+
+    let mut backups: Vec<(u64, std::path::PathBuf)> = Vec::new();
+    let entries = match std::fs::read_dir(data_dir) {
+        Ok(rd) => rd,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = match name.to_str() {
+            Some(s) => s,
+            None => continue,
+        };
+        if let Some(rest) = name_str.strip_prefix(stem).and_then(|s| s.strip_prefix("_v")) {
+            if let Some(seq_str) = rest.strip_suffix(".json") {
+                if let Ok(seq) = seq_str.parse::<u64>() {
+                    backups.push((seq, entry.path()));
+                }
+            }
+        }
+    }
+
+    backups.sort_by_key(|(seq, _)| *seq);
+
+    while backups.len() > keep {
+        let (_, oldest) = backups.remove(0);
+        if let Err(e) = std::fs::remove_file(&oldest) {
+            tracing::warn!("Failed to remove old backup {}: {}", oldest.display(), e);
+        }
+    }
+}
+
+pub fn backup_manifest_path(data_dir: &Path, sequence: u64) -> std::path::PathBuf {
+    data_dir.join(format!("manifest_v{}.json", sequence))
+}
+
+pub fn read_manifest_with_fallback(path: &Path, max_backups: usize) -> Result<Manifest, ManifestError> {
+    match read_manifest(path) {
+        Ok(m) => Ok(m),
+        Err(primary_err) => {
+            let data_dir = path.parent().unwrap_or(path);
+            let mut backups: Vec<(u64, std::path::PathBuf)> = Vec::new();
+            for entry in std::fs::read_dir(data_dir).unwrap_or_else(|_| std::fs::read_dir(".").unwrap()) {
+                if let Ok(entry) = entry {
+                    let name = entry.file_name();
+                    let name_str = name.to_str().unwrap_or("");
+                    if let Some(rest) = name_str.strip_prefix("manifest_v") {
+                        if let Some(seq_str) = rest.strip_suffix(".json") {
+                            if let Ok(seq) = seq_str.parse::<u64>() {
+                                backups.push((seq, entry.path()));
+                            }
+                        }
+                    }
+                }
+            }
+            backups.sort_by(|a, b| b.0.cmp(&a.0));
+
+            let mut checked = 0;
+            for (seq, backup_path) in &backups {
+                if checked >= max_backups {
+                    break;
+                }
+                checked += 1;
+                tracing::warn!("Primary manifest failed ({}), trying manifest_v{}.json", primary_err, seq);
+                match read_manifest(backup_path) {
+                    Ok(m) => {
+                        tracing::info!("Restored from manifest_v{}.json", seq);
+                        let _ = std::fs::copy(backup_path, path);
+                        tracing::info!("Promoted manifest_v{}.json to primary", seq);
+                        return Ok(m);
+                    }
+                    Err(e) => {
+                        tracing::warn!("manifest_v{}.json also failed: {}", seq, e);
+                        continue;
+                    }
+                }
+            }
+            Err(primary_err)
+        }
+    }
+}
+
 pub fn write_manifest(manifest: &mut Manifest, path: &Path) -> Result<(), ManifestError> {
     manifest.format_version = CURRENT_MANIFEST_VERSION;
     manifest.checksum = String::new();
     manifest.created_at = String::new();
     manifest.server_version = String::new();
+    if manifest.sequence == 0 {
+        if path.exists() {
+            if let Ok(existing) = read_manifest(path) {
+                manifest.sequence = existing.sequence;
+            }
+        }
+    }
+    manifest.sequence += 1;
     manifest.checksum = compute_manifest_checksum(manifest);
     manifest.created_at = iso_now();
     manifest.server_version = server_version();
 
     let json = serde_json::to_string_pretty(manifest)?;
     let tmp_path = path.with_extension("tmp");
-    std::fs::write(&tmp_path, json.as_bytes())?;
+    {
+        let mut f = std::fs::File::create(&tmp_path)?;
+        std::io::Write::write_all(&mut f, json.as_bytes())?;
+        f.sync_all()?;
+    }
     std::fs::rename(&tmp_path, path)?;
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = std::fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
     Ok(())
 }
 
@@ -241,6 +350,7 @@ pub fn create_empty_manifest(
         created_at: iso_now(),
         server_version: server_version(),
         checksum: String::new(),
+        sequence: 0,
         grand_map_id_counter,
         session_counter: 0,
         operation_counter: 0,
@@ -420,5 +530,258 @@ mod tests {
         assert!(manifest.works.is_empty());
         assert!(manifest.clubs.is_empty());
         assert!(manifest.federation.is_none());
+        assert_eq!(manifest.sequence, 0);
+    }
+
+    #[test]
+    fn sequence_increments_on_write() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+
+        write_manifest(&mut m, &path).unwrap();
+        assert_eq!(m.sequence, 1);
+
+        write_manifest(&mut m, &path).unwrap();
+        assert_eq!(m.sequence, 2);
+
+        write_manifest(&mut m, &path).unwrap();
+        assert_eq!(m.sequence, 3);
+
+        let restored = read_manifest(&path).unwrap();
+        assert_eq!(restored.sequence, 3);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sequence_survives_reload() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+
+        write_manifest(&mut m, &path).unwrap();
+        assert_eq!(m.sequence, 1);
+
+        let mut reloaded = read_manifest(&path).unwrap();
+        assert_eq!(reloaded.sequence, 1);
+
+        write_manifest(&mut reloaded, &path).unwrap();
+        assert_eq!(reloaded.sequence, 2);
+
+        let final_read = read_manifest(&path).unwrap();
+        assert_eq!(final_read.sequence, 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rotate_creates_backup_copies() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+
+        write_manifest(&mut m, &path).unwrap();
+        assert_eq!(m.sequence, 1);
+        let backup = backup_manifest_path(&dir, 1);
+        assert!(
+            !backup.exists(),
+            "versioned backup not yet created (created on next checkpoint)"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rotate_enforces_keep_limit() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        for seq in 1..=5 {
+            let backup = backup_manifest_path(&dir, seq);
+            std::fs::write(&backup, format!("{{\"sequence\":{}}}", seq)).unwrap();
+        }
+
+        let path = manifest_path(&dir);
+        let _ = std::fs::write(&path, "{}");
+
+        rotate_manifest_backups(&path, 3);
+
+        assert!(
+            !backup_manifest_path(&dir, 1).exists(),
+            "v1 should be removed (keep=3)"
+        );
+        assert!(
+            !backup_manifest_path(&dir, 2).exists(),
+            "v2 should be removed (keep=3)"
+        );
+        assert!(backup_manifest_path(&dir, 3).exists(), "v3 should survive");
+        assert!(backup_manifest_path(&dir, 4).exists(), "v4 should survive");
+        assert!(backup_manifest_path(&dir, 5).exists(), "v5 should survive");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn versioned_backups_named_by_sequence() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+
+        write_manifest(&mut m, &path).unwrap();
+        assert_eq!(m.sequence, 1);
+        let b1 = backup_manifest_path(&dir, 1);
+        std::fs::copy(&path, &b1).unwrap();
+
+        m.grand_map_id_counter = 200;
+        write_manifest(&mut m, &path).unwrap();
+        assert_eq!(m.sequence, 2);
+        let b2 = backup_manifest_path(&dir, 2);
+        std::fs::copy(&path, &b2).unwrap();
+
+        assert!(b1.exists());
+        assert!(b2.exists());
+        assert!(b1.file_name().unwrap().to_str().unwrap().contains("manifest_v1.json"));
+        assert!(b2.file_name().unwrap().to_str().unwrap().contains("manifest_v2.json"));
+
+        let r1 = read_manifest(&b1).unwrap();
+        assert_eq!(r1.sequence, 1);
+        assert_eq!(r1.grand_map_id_counter, 100);
+
+        let r2 = read_manifest(&b2).unwrap();
+        assert_eq!(r2.sequence, 2);
+        assert_eq!(r2.grand_map_id_counter, 200);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fallback_reads_primary_first() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let result = read_manifest_with_fallback(&path, 3).unwrap();
+        assert_eq!(result.sequence, m.sequence);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fallback_uses_backup_when_primary_corrupt() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let backup = backup_manifest_path(&dir, m.sequence);
+        std::fs::copy(&path, &backup).unwrap();
+
+        std::fs::write(&path, b"CORRUPTED!!!").unwrap();
+
+        let result = read_manifest_with_fallback(&path, 3).unwrap();
+        assert_eq!(result.sequence, m.sequence, "should read from versioned backup");
+
+        let primary = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !primary.starts_with("CORRUPTED"),
+            "primary should be restored from backup"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fallback_tries_multiple_backups() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m1 = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m1, &path).unwrap();
+        let b1 = backup_manifest_path(&dir, m1.sequence);
+        std::fs::copy(&path, &b1).unwrap();
+
+        let mut m2 = m1.clone();
+        m2.grand_map_id_counter = 200;
+        write_manifest(&mut m2, &path).unwrap();
+        let b2 = backup_manifest_path(&dir, m2.sequence);
+        std::fs::copy(&path, &b2).unwrap();
+
+        std::fs::write(&path, b"BAD").unwrap();
+        std::fs::write(&b2, b"ALSO BAD").unwrap();
+
+        let result = read_manifest_with_fallback(&path, 3).unwrap();
+        assert_eq!(result.grand_map_id_counter, 100, "should read from v1 backup");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fallback_returns_error_when_all_corrupt() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+        let b1 = backup_manifest_path(&dir, m.sequence);
+        std::fs::copy(&path, &b1).unwrap();
+
+        m.grand_map_id_counter = 200;
+        write_manifest(&mut m, &path).unwrap();
+        let b2 = backup_manifest_path(&dir, m.sequence);
+        std::fs::copy(&path, &b2).unwrap();
+
+        std::fs::write(&path, b"BAD1").unwrap();
+        std::fs::write(&b1, b"BAD2").unwrap();
+        std::fs::write(&b2, b"BAD3").unwrap();
+
+        let result = read_manifest_with_fallback(&path, 3);
+        assert!(result.is_err(), "should fail when all backups are corrupt");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_manifest_uses_fsync() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        assert!(!path.with_extension("tmp").exists(), "tmp file should be cleaned up");
+        assert!(path.exists(), "manifest should exist");
+
+        let restored = read_manifest(&path).unwrap();
+        assert_eq!(restored.sequence, 1);
+        assert!(!restored.checksum.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
