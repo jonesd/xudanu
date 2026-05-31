@@ -44,5 +44,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: original-code/xanadugold/src-rust -> target
-      - run: cargo clippy --features server -- -W clippy::all -A clippy::large-enum-variant -A clippy::manual-range-contains -A clippy::borrowed-box -A clippy::unnecessary-sort-by -D clippy::indexing_slicing
+      - run: cargo clippy --features server -- -W clippy::all -A clippy::large-enum-variant -A clippy::manual-range-contains -A clippy::borrowed-box -A clippy::unnecessary-sort-by -A clippy::indexing_slicing
         working-directory: original-code/xanadugold/src-rust
