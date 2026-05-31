@@ -75,39 +75,21 @@ jobs:
         shell: pwsh
         run: |
           mkdir dist
-          cp targets/${{ matrix.target }}/release/xudanu-server.exe dist/
+          cp target/${{ matrix.target }}/release/xudanu-server.exe dist/
           cp -r original-code/xanadugold/src-rust/static dist/
           if (Test-Path LICENSE) { cp LICENSE dist/ }
           if (Test-Path NOTICE) { cp NOTICE dist/ }
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: ${{ matrix.artifact }}
 
-  release:
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create GitHub Release
+      - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: ${{ matrix.artifact }}
           generate_release_notes: true
           body: |
             ## xudanu ${{ github.ref_name }}
@@ -120,6 +102,11 @@ jobs:
             ./xudanu-server run 127.0.0.1:8080
             ```
             Then open http://127.0.0.1:8080 in your browser.
+
+            ### Verify
+            ```bash
+            gh attestation verify xudanu-${{ github.ref_name }}-*.tar.gz --repo jonesd/xudanu
+            ```
 
             ### Security Warning
             **Do not expose this server directly to the internet.** See README.md for Caddy reverse proxy setup.
