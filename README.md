@@ -111,14 +111,14 @@ This builds the `xudanu-server` binary at `./target/debug/xudanu-server`.
 **In-memory (no persistence, good for trying it out):**
 
 ```bash
-./target/debug/xudanu-server run 127.0.0.1:8090
+./target/debug/xudanu-server run 127.0.0.1:8080
 ```
 
 **With persistent storage:**
 
 ```bash
 ./target/debug/xudanu-server init /tmp/xudanu-data
-./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data --static-dir original-code/xanadugold/src-rust/static
+./target/debug/xudanu-server run 127.0.0.1:8080 /tmp/xudanu-data --static-dir original-code/xanadugold/src-rust/static
 ```
 
 Data is saved to `server.json` on graceful shutdown (Ctrl-C) and restored on next start.
@@ -135,7 +135,7 @@ Or right-click the binary → Open → click Open again in the dialog.
 
 ### 4. Open in your browser
 
-Go to **http://127.0.0.1:8090** — you'll see the document editor.
+Go to **http://127.0.0.1:8080** — you'll see the document editor.
 
 ### Next steps
 

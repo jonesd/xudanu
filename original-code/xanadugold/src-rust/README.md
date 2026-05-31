@@ -24,10 +24,10 @@ The core data structure is a partially ordered trace history (DagWood) that pres
 git clone <repo-url> xudanu
 cd xudanu
 cargo build --features server -p xudanu
-./target/debug/xudanu-server run 127.0.0.1:8090
+./target/debug/xudanu-server run 127.0.0.1:8080
 ```
 
-Then open **http://127.0.0.1:8090** in your browser. Documents are stored in memory and lost on restart — see below for persistent storage options.
+Then open **http://127.0.0.1:8080** in your browser. Documents are stored in memory and lost on restart — see below for persistent storage options.
 
 ### Persistent Storage
 
@@ -36,7 +36,7 @@ Then open **http://127.0.0.1:8090** in your browser. Documents are stored in mem
 ./target/debug/xudanu-server init /tmp/xudanu-data
 
 # Run with persistent storage
-./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data --static-dir original-code/xanadugold/src-rust/static
+./target/debug/xudanu-server run 127.0.0.1:8080 /tmp/xudanu-data --static-dir original-code/xanadugold/src-rust/static
 ```
 
 Data is saved to `manifest.json` on graceful shutdown (Ctrl-C) and restored on next start. The server's identity key (`server.key`) is generated automatically on first init.
@@ -50,13 +50,13 @@ By default, the server key file (`server.key`) is stored as plaintext JSON. To e
 XUDANU_KEY_PASSPHRASE="your-secret" ./target/debug/xudanu-server init /tmp/xudanu-data
 
 # Run with the same passphrase to decrypt the key
-XUDANU_KEY_PASSPHRASE="your-secret" ./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data
+XUDANU_KEY_PASSPHRASE="your-secret" ./target/debug/xudanu-server run 127.0.0.1:8080 /tmp/xudanu-data
 ```
 
 Or use the CLI flag (note: visible in `ps aux`, prefer the env var for production):
 
 ```bash
-./target/debug/xudanu-server run 127.0.0.1:8090 /tmp/xudanu-data --key-passphrase "your-secret"
+./target/debug/xudanu-server run 127.0.0.1:8080 /tmp/xudanu-data --key-passphrase "your-secret"
 ```
 
 The encrypted key file uses Argon2id key derivation + ChaCha20-Poly1305 AEAD encryption with a BLAKE3 integrity check — the same scheme used for club keys. Old plaintext key files are still loaded for backward compatibility (a warning is logged).
@@ -97,7 +97,7 @@ The web interface has a document list on the left and an editor on the right:
 ### From the workspace root
 
 ```
-cargo run --features server --bin xudanu-server --manifest-path original-code/xanadugold/src-rust/Cargo.toml -- run 127.0.0.1:8090 /tmp/xudanu-data --static-dir original-code/xanadugold/src-rust/static
+cargo run --features server --bin xudanu-server --manifest-path original-code/xanadugold/src-rust/Cargo.toml -- run 127.0.0.1:8080 /tmp/xudanu-data --static-dir original-code/xanadugold/src-rust/static
 ```
 
 ### Presentations and Diagrams
