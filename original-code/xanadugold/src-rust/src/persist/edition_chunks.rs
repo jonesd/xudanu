@@ -102,6 +102,14 @@ pub fn edition_to_chunks(
     edition: &Edition,
     store: &ChunkStore,
 ) -> Result<EditionChunkRef, ChunkSerError> {
+    edition_to_chunks_durable(edition, store, true)
+}
+
+pub fn edition_to_chunks_durable(
+    edition: &Edition,
+    store: &ChunkStore,
+    durable: bool,
+) -> Result<EditionChunkRef, ChunkSerError> {
     let snapshot = EditionSnapshot::from_edition(edition);
 
     let mut entry_chunk_hashes = Vec::new();
@@ -110,7 +118,7 @@ pub fn edition_to_chunks(
             entries: chunk_entries.to_vec(),
         };
         let data = serialize_to_bytes(&entry_chunk)?;
-        let hash = store.write_chunk(&data)?;
+        let hash = store.write_chunk_durable(&data, durable)?;
         entry_chunk_hashes.push(hash);
     }
 
@@ -121,7 +129,7 @@ pub fn edition_to_chunks(
             spans: snapshot.span_provenance,
         };
         let prov_data = serialize_to_bytes(&prov_chunk)?;
-        Some(store.write_chunk(&prov_data)?)
+        Some(store.write_chunk_durable(&prov_data, durable)?)
     };
 
     let root_chunk = EditionRootChunk {
@@ -133,7 +141,7 @@ pub fn edition_to_chunks(
         provenance_hash,
     };
     let root_data = serialize_to_bytes(&root_chunk)?;
-    let root_hash = store.write_chunk(&root_data)?;
+    let root_hash = store.write_chunk_durable(&root_data, durable)?;
 
     Ok(EditionChunkRef {
         root_hash,
@@ -186,11 +194,19 @@ pub fn edition_from_chunks(
 }
 
 pub fn work_to_chunks(work: &Work, store: &ChunkStore) -> Result<WorkChunkRef, ChunkSerError> {
-    let current_root = edition_to_chunks(work.edition(), store)?;
+    work_to_chunks_durable(work, store, true)
+}
+
+pub fn work_to_chunks_durable(
+    work: &Work,
+    store: &ChunkStore,
+    durable: bool,
+) -> Result<WorkChunkRef, ChunkSerError> {
+    let current_root = edition_to_chunks_durable(work.edition(), store, durable)?;
 
     let mut history = BTreeMap::new();
     for (rev_num, edition) in work.revision_history() {
-        let chunk_ref = edition_to_chunks(edition, store)?;
+        let chunk_ref = edition_to_chunks_durable(edition, store, durable)?;
         history.insert(*rev_num, chunk_ref);
     }
 

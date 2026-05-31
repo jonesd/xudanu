@@ -5,7 +5,7 @@ use crate::persist::chunk_store::ChunkStore;
 use crate::persist::edition_chunks::{self, EditionChunkRef, WorkChunkRef};
 use crate::persist::manifest::{self, Manifest};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct VerifyReport {
     pub chunks_total: usize,
     pub chunks_verified: usize,
@@ -93,6 +93,28 @@ pub fn verify_store(data_dir: &Path) -> Result<VerifyReport, String> {
 
     let chunk_store =
         ChunkStore::open(data_dir).map_err(|e| format!("chunk store error: {}", e))?;
+
+    verify_store_with_manifest_data(&manifest, &chunk_store)
+}
+
+pub fn verify_store_with_manifest(
+    manifest: &Manifest,
+    chunk_store: &ChunkStore,
+) -> VerifyReport {
+    verify_store_with_manifest_data(manifest, chunk_store).unwrap_or_else(|e| {
+        let mut report = VerifyReport::default();
+        report.manifest_ok = false;
+        report
+            .deserialization_errors
+            .push(format!("internal verify error: {}", e));
+        report
+    })
+}
+
+fn verify_store_with_manifest_data(
+    manifest: &Manifest,
+    chunk_store: &ChunkStore,
+) -> Result<VerifyReport, String> {
 
     let mut report = VerifyReport {
         chunks_total: 0,
@@ -419,4 +441,258 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn verify_store_with_manifest_detects_missing_chunks() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let store = ChunkStore::open(&dir).unwrap();
+        let work = Work::new(42, Edition::from_text("verify with manifest test"));
+        let work_ref = crate::persist::edition_chunks::work_to_chunks(&work, &store).unwrap();
+        drop(store);
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        m.works.push((42, work_ref));
+
+        let report = verify_store_with_manifest(&m, &ChunkStore::open(&dir).unwrap());
+        assert!(report.is_ok());
+
+        let chunks_dir = dir.join("chunks");
+        if chunks_dir.exists() {
+            std::fs::remove_dir_all(&chunks_dir).unwrap();
+        }
+        std::fs::create_dir_all(&chunks_dir).unwrap();
+
+        let store2 = ChunkStore::open(&dir).unwrap();
+        let report2 = verify_store_with_manifest(&m, &store2);
+        assert!(!report2.is_ok());
+        assert!(!report2.chunks_missing.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn verify_store_with_manifest_ok_on_healthy_data() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let store = ChunkStore::open(&dir).unwrap();
+        let work = Work::new(1, Edition::from_text("healthy data"));
+        let work_ref = crate::persist::edition_chunks::work_to_chunks(&work, &store).unwrap();
+        drop(store);
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        m.works.push((1, work_ref));
+
+        let store2 = ChunkStore::open(&dir).unwrap();
+        let report = verify_store_with_manifest(&m, &store2);
+        assert!(report.is_ok());
+        assert_eq!(report.works_ok, 1);
+        assert_eq!(report.works_failed, 0);
+        assert!(report.manifest_ok);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn chunk_store_fsync_leaves_no_tmp() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let store = ChunkStore::open(&dir).unwrap();
+        let hash = store.write_chunk(b"fsync test data").unwrap();
+        assert!(store.chunk_exists(&hash));
+
+        let path = chunk_path_from_hash(&dir, &hash);
+        assert!(path.exists(), "chunk file should exist");
+        assert!(
+            !path.with_extension("tmp").exists(),
+            "tmp file should be cleaned up after rename"
+        );
+
+        let data = store.read_chunk(&hash).unwrap();
+        assert_eq!(data, b"fsync test data");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn chunk_store_cleanup_stale_tmp_on_open() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let chunks_dir = dir.join("chunks");
+        std::fs::create_dir_all(chunks_dir.join("ab")).unwrap();
+        std::fs::write(
+            chunks_dir.join("ab").join("abcdef123456.tmp"),
+            b"stale data",
+        ).unwrap();
+        std::fs::write(
+            chunks_dir.join("ab").join("other.tmp"),
+            b"another stale",
+        ).unwrap();
+
+        let store = ChunkStore::open(&dir).unwrap();
+
+        assert!(
+            !chunks_dir.join("ab").join("abcdef123456.tmp").exists(),
+            "stale tmp should be cleaned up on open"
+        );
+        assert!(
+            !chunks_dir.join("ab").join("other.tmp").exists(),
+            "stale tmp should be cleaned up on open"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn manifest_rotation_preserves_all_data() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let store = ChunkStore::open(&dir).unwrap();
+        let w1 = Work::new(1, Edition::from_text("doc one"));
+        let wr1 = crate::persist::edition_chunks::work_to_chunks(&w1, &store).unwrap();
+        drop(store);
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        m.works.push((1, wr1.clone()));
+        let path = manifest::manifest_path(&dir);
+
+        manifest::write_manifest(&mut m, &path).unwrap();
+        let b1 = manifest::backup_manifest_path(&dir, m.sequence);
+        std::fs::copy(&path, &b1).unwrap();
+        assert_eq!(m.sequence, 1);
+
+        let store2 = ChunkStore::open(&dir).unwrap();
+        let w2 = Work::new(2, Edition::from_text("doc two"));
+        let wr2 = crate::persist::edition_chunks::work_to_chunks(&w2, &store2).unwrap();
+        drop(store2);
+
+        m.works.push((2, wr2));
+        manifest::write_manifest(&mut m, &path).unwrap();
+        let b2 = manifest::backup_manifest_path(&dir, m.sequence);
+        std::fs::copy(&path, &b2).unwrap();
+        assert_eq!(m.sequence, 2);
+
+        assert!(b1.exists());
+        assert!(b2.exists());
+
+        let r1 = manifest::read_manifest(&b1).unwrap();
+        assert_eq!(r1.works.len(), 1, "backup v1 should have 1 work");
+        assert_eq!(r1.sequence, 1);
+
+        let r2 = manifest::read_manifest(&b2).unwrap();
+        assert_eq!(r2.works.len(), 2, "backup v2 should have 2 works");
+        assert_eq!(r2.sequence, 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recovery_from_corrupt_primary_with_backup() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let store = ChunkStore::open(&dir).unwrap();
+        let work = Work::new(5, Edition::from_text("recoverable data"));
+        let work_ref = crate::persist::edition_chunks::work_to_chunks(&work, &store).unwrap();
+        drop(store);
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        m.works.push((5, work_ref));
+        let path = manifest::manifest_path(&dir);
+        manifest::write_manifest(&mut m, &path).unwrap();
+
+        let backup = manifest::backup_manifest_path(&dir, m.sequence);
+        std::fs::copy(&path, &backup).unwrap();
+
+        let original_content = std::fs::read_to_string(&path).unwrap();
+
+        std::fs::write(&path, b"{{{{CORRUPTED JSON{{{{").unwrap();
+
+        let recovered = manifest::read_manifest_with_fallback(&path, 3).unwrap();
+        assert_eq!(recovered.works.len(), 1);
+        assert_eq!(recovered.works[0].0, 5);
+
+        let restored_primary = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            restored_primary, original_content,
+            "primary should be restored from backup"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gc_preserves_chunks_referenced_by_backups() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let store = ChunkStore::open(&dir).unwrap();
+        let w1 = Work::new(1, Edition::from_text("old document"));
+        let wr1 = crate::persist::edition_chunks::work_to_chunks(&w1, &store).unwrap();
+
+        let w2 = Work::new(2, Edition::from_text("new document"));
+        let wr2 = crate::persist::edition_chunks::work_to_chunks(&w2, &store).unwrap();
+        drop(store);
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        m.works.push((1, wr1));
+        let path = manifest::manifest_path(&dir);
+        manifest::write_manifest(&mut m, &path).unwrap();
+
+        let b1 = manifest::backup_manifest_path(&dir, m.sequence);
+        std::fs::copy(&path, &b1).unwrap();
+
+        m.works.retain(|(id, _)| *id != 1);
+        m.works.push((2, wr2.clone()));
+        manifest::write_manifest(&mut m, &path).unwrap();
+
+        let store2 = ChunkStore::open(&dir).unwrap();
+        let mut referenced = std::collections::HashSet::new();
+        if let Ok(hashes) = crate::persist::edition_chunks::collect_edition_hashes(
+            &wr2.current_root, &store2,
+        ) {
+            referenced.extend(hashes);
+        }
+
+        if let Ok(bm) = manifest::read_manifest(&b1) {
+            for (_, wr) in &bm.works {
+                if let Ok(hashes) = crate::persist::edition_chunks::collect_edition_hashes(
+                    &wr.current_root, &store2,
+                ) {
+                    referenced.extend(hashes);
+                }
+            }
+        }
+
+        let all = store2.all_chunk_hashes().unwrap();
+        for hash in &all {
+            if !referenced.contains(hash) {
+                panic!(
+                    "GC would delete chunk {} that exists on disk but is only in backup - \
+                     backup-aware GC should protect it",
+                    format_hash(hash)
+                );
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+fn chunk_path_from_hash(base: &std::path::Path, hash: &[u8; 32]) -> std::path::PathBuf {
+    let hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
+    let prefix = &hex[..2];
+    base.join("chunks").join(prefix).join(hex)
 }

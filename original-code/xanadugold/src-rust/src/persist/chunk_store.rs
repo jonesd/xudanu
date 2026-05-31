@@ -159,6 +159,10 @@ impl ChunkStore {
     }
 
     pub fn write_chunk(&self, data: &[u8]) -> Result<[u8; 32], ChunkError> {
+        self.write_chunk_durable(data, true)
+    }
+
+    pub fn write_chunk_durable(&self, data: &[u8], durable: bool) -> Result<[u8; 32], ChunkError> {
         let hash = compute_hash(data);
         let path = chunk_path(&self.base_dir, &hash);
         {
@@ -169,8 +173,21 @@ impl ChunkStore {
             let dir = chunk_dir(&self.base_dir, &hash);
             std::fs::create_dir_all(&dir).map_err(|e| ChunkError::Io(e.to_string()))?;
             let tmp_path = path.with_extension("tmp");
-            std::fs::write(&tmp_path, data).map_err(|e| ChunkError::Io(e.to_string()))?;
+            {
+                let mut f = std::fs::File::create(&tmp_path)
+                    .map_err(|e| ChunkError::Io(e.to_string()))?;
+                std::io::Write::write_all(&mut f, data)
+                    .map_err(|e| ChunkError::Io(e.to_string()))?;
+                if durable {
+                    f.sync_all().map_err(|e| ChunkError::Io(e.to_string()))?;
+                }
+            }
             std::fs::rename(&tmp_path, &path).map_err(|e| ChunkError::Io(e.to_string()))?;
+            if durable {
+                if let Ok(dir_file) = std::fs::File::open(&dir) {
+                    let _ = dir_file.sync_all();
+                }
+            }
             cache.insert(hash, data.to_vec());
         }
         Ok(hash)
