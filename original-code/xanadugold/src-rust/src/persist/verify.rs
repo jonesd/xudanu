@@ -97,10 +97,7 @@ pub fn verify_store(data_dir: &Path) -> Result<VerifyReport, String> {
     verify_store_with_manifest_data(&manifest, &chunk_store)
 }
 
-pub fn verify_store_with_manifest(
-    manifest: &Manifest,
-    chunk_store: &ChunkStore,
-) -> VerifyReport {
+pub fn verify_store_with_manifest(manifest: &Manifest, chunk_store: &ChunkStore) -> VerifyReport {
     verify_store_with_manifest_data(manifest, chunk_store).unwrap_or_else(|e| {
         let mut report = VerifyReport::default();
         report.manifest_ok = false;
@@ -115,7 +112,6 @@ fn verify_store_with_manifest_data(
     manifest: &Manifest,
     chunk_store: &ChunkStore,
 ) -> Result<VerifyReport, String> {
-
     let mut report = VerifyReport {
         chunks_total: 0,
         chunks_verified: 0,
@@ -531,11 +527,9 @@ mod tests {
         std::fs::write(
             chunks_dir.join("ab").join("abcdef123456.tmp"),
             b"stale data",
-        ).unwrap();
-        std::fs::write(
-            chunks_dir.join("ab").join("other.tmp"),
-            b"another stale",
-        ).unwrap();
+        )
+        .unwrap();
+        std::fs::write(chunks_dir.join("ab").join("other.tmp"), b"another stale").unwrap();
 
         let store = ChunkStore::open(&dir).unwrap();
 
@@ -660,16 +654,17 @@ mod tests {
 
         let store2 = ChunkStore::open(&dir).unwrap();
         let mut referenced = std::collections::HashSet::new();
-        if let Ok(hashes) = crate::persist::edition_chunks::collect_edition_hashes(
-            &wr2.current_root, &store2,
-        ) {
+        if let Ok(hashes) =
+            crate::persist::edition_chunks::collect_edition_hashes(&wr2.current_root, &store2)
+        {
             referenced.extend(hashes);
         }
 
         if let Ok(bm) = manifest::read_manifest(&b1) {
             for (_, wr) in &bm.works {
                 if let Ok(hashes) = crate::persist::edition_chunks::collect_edition_hashes(
-                    &wr.current_root, &store2,
+                    &wr.current_root,
+                    &store2,
                 ) {
                     referenced.extend(hashes);
                 }
@@ -694,5 +689,7 @@ mod tests {
 fn chunk_path_from_hash(base: &std::path::Path, hash: &[u8; 32]) -> std::path::PathBuf {
     let hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
     let prefix = &hex[..2];
-    base.join("chunks").join(prefix).join(hex)
+    base.join("chunks")
+        .join(prefix)
+        .join(format!("{}.xchunk", hex))
 }

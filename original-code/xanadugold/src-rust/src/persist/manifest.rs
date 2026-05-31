@@ -212,7 +212,10 @@ pub fn rotate_manifest_backups(path: &Path, keep: usize) {
             Some(s) => s,
             None => continue,
         };
-        if let Some(rest) = name_str.strip_prefix(stem).and_then(|s| s.strip_prefix("_v")) {
+        if let Some(rest) = name_str
+            .strip_prefix(stem)
+            .and_then(|s| s.strip_prefix("_v"))
+        {
             if let Some(seq_str) = rest.strip_suffix(".json") {
                 if let Ok(seq) = seq_str.parse::<u64>() {
                     backups.push((seq, entry.path()));
@@ -235,13 +238,18 @@ pub fn backup_manifest_path(data_dir: &Path, sequence: u64) -> std::path::PathBu
     data_dir.join(format!("manifest_v{}.json", sequence))
 }
 
-pub fn read_manifest_with_fallback(path: &Path, max_backups: usize) -> Result<Manifest, ManifestError> {
+pub fn read_manifest_with_fallback(
+    path: &Path,
+    max_backups: usize,
+) -> Result<Manifest, ManifestError> {
     match read_manifest(path) {
         Ok(m) => Ok(m),
         Err(primary_err) => {
             let data_dir = path.parent().unwrap_or(path);
             let mut backups: Vec<(u64, std::path::PathBuf)> = Vec::new();
-            for entry in std::fs::read_dir(data_dir).unwrap_or_else(|_| std::fs::read_dir(".").unwrap()) {
+            for entry in
+                std::fs::read_dir(data_dir).unwrap_or_else(|_| std::fs::read_dir(".").unwrap())
+            {
                 if let Ok(entry) = entry {
                     let name = entry.file_name();
                     let name_str = name.to_str().unwrap_or("");
@@ -262,7 +270,11 @@ pub fn read_manifest_with_fallback(path: &Path, max_backups: usize) -> Result<Ma
                     break;
                 }
                 checked += 1;
-                tracing::warn!("Primary manifest failed ({}), trying manifest_v{}.json", primary_err, seq);
+                tracing::warn!(
+                    "Primary manifest failed ({}), trying manifest_v{}.json",
+                    primary_err,
+                    seq
+                );
                 match read_manifest(backup_path) {
                     Ok(m) => {
                         tracing::info!("Restored from manifest_v{}.json", seq);
@@ -654,8 +666,18 @@ mod tests {
 
         assert!(b1.exists());
         assert!(b2.exists());
-        assert!(b1.file_name().unwrap().to_str().unwrap().contains("manifest_v1.json"));
-        assert!(b2.file_name().unwrap().to_str().unwrap().contains("manifest_v2.json"));
+        assert!(b1
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("manifest_v1.json"));
+        assert!(b2
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("manifest_v2.json"));
 
         let r1 = read_manifest(&b1).unwrap();
         assert_eq!(r1.sequence, 1);
@@ -700,7 +722,10 @@ mod tests {
         std::fs::write(&path, b"CORRUPTED!!!").unwrap();
 
         let result = read_manifest_with_fallback(&path, 3).unwrap();
-        assert_eq!(result.sequence, m.sequence, "should read from versioned backup");
+        assert_eq!(
+            result.sequence, m.sequence,
+            "should read from versioned backup"
+        );
 
         let primary = std::fs::read_to_string(&path).unwrap();
         assert!(
@@ -733,7 +758,10 @@ mod tests {
         std::fs::write(&b2, b"ALSO BAD").unwrap();
 
         let result = read_manifest_with_fallback(&path, 3).unwrap();
-        assert_eq!(result.grand_map_id_counter, 100, "should read from v1 backup");
+        assert_eq!(
+            result.grand_map_id_counter, 100,
+            "should read from v1 backup"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -775,7 +803,10 @@ mod tests {
         let path = manifest_path(&dir);
         write_manifest(&mut m, &path).unwrap();
 
-        assert!(!path.with_extension("tmp").exists(), "tmp file should be cleaned up");
+        assert!(
+            !path.with_extension("tmp").exists(),
+            "tmp file should be cleaned up"
+        );
         assert!(path.exists(), "manifest should exist");
 
         let restored = read_manifest(&path).unwrap();

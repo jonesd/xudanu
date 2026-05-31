@@ -1984,8 +1984,14 @@ pub struct CompoundEditionPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CompoundElementPayload {
-    Text { content: String },
-    Span { source_work_id: BeId, char_start: usize, char_end: usize },
+    Text {
+        content: String,
+    },
+    Span {
+        source_work_id: BeId,
+        char_start: usize,
+        char_end: usize,
+    },
 }
 
 impl CompoundEditionPayload {
@@ -1996,7 +2002,9 @@ impl CompoundEditionPayload {
                 .iter()
                 .map(|e| match e {
                     crate::edition::compound::CompoundElement::Text { content } => {
-                        CompoundElementPayload::Text { content: content.clone() }
+                        CompoundElementPayload::Text {
+                            content: content.clone(),
+                        }
                     }
                     crate::edition::compound::CompoundElement::Span { span } => {
                         CompoundElementPayload::Span {
@@ -2011,15 +2019,17 @@ impl CompoundEditionPayload {
     }
 
     pub fn to_compound(&self) -> crate::edition::compound::CompoundEdition {
-        use crate::edition::compound::{CompoundElement, CompoundEdition};
+        use crate::edition::compound::{CompoundEdition, CompoundElement};
         let elements: Vec<CompoundElement> = self
             .elements
             .iter()
             .map(|e| match e {
                 CompoundElementPayload::Text { content } => CompoundElement::text(content),
-                CompoundElementPayload::Span { source_work_id, char_start, char_end } => {
-                    CompoundElement::span(*source_work_id, *char_start, *char_end)
-                }
+                CompoundElementPayload::Span {
+                    source_work_id,
+                    char_start,
+                    char_end,
+                } => CompoundElement::span(*source_work_id, *char_start, *char_end),
             })
             .collect();
         CompoundEdition::new(elements)

@@ -244,9 +244,16 @@ impl BackfollowEngine {
         self.edition_metas.insert(work_id, meta);
     }
 
-    pub fn update_work_with_parent(&mut self, work_id: u64, parent_work_id: u64, old_edition: &Edition, new_work: &Work) {
+    pub fn update_work_with_parent(
+        &mut self,
+        work_id: u64,
+        parent_work_id: u64,
+        old_edition: &Edition,
+        new_work: &Work,
+    ) {
         let old_elem = RangeElement::work(work_id);
-        self.transclusion_index.unregister_work(old_edition, &old_elem);
+        self.transclusion_index
+            .unregister_work(old_edition, &old_elem);
         for (_, carrier) in old_edition.all_entries() {
             let fp = carrier.element.content_fingerprint();
             if let Some(set) = self.fingerprint_to_works.get_mut(&fp) {
@@ -325,7 +332,8 @@ impl BackfollowEngine {
 
     pub fn update_work(&mut self, work_id: u64, old_edition: &Edition, new_work: &Work) {
         let old_elem = RangeElement::work(work_id);
-        self.transclusion_index.unregister_work(old_edition, &old_elem);
+        self.transclusion_index
+            .unregister_work(old_edition, &old_elem);
         for (_, carrier) in old_edition.all_entries() {
             let fp = carrier.element.content_fingerprint();
             if let Some(set) = self.fingerprint_to_works.get_mut(&fp) {
@@ -745,12 +753,10 @@ impl BackfollowEngine {
                 None,
             );
         }
-        let mut endorsements = vec![
-            super::grandmap::Id::in_space(
-                super::grandmap::IdSpaceId(WRAPPER_CLUB_ID),
-                HYPERLINK_TOKEN as i64,
-            ),
-        ];
+        let mut endorsements = vec![super::grandmap::Id::in_space(
+            super::grandmap::IdSpaceId(WRAPPER_CLUB_ID),
+            HYPERLINK_TOKEN as i64,
+        )];
         if !content.is_empty() {
             endorsements.push(super::grandmap::Id::in_space(
                 super::grandmap::IdSpaceId(WRAPPER_CLUB_ID),

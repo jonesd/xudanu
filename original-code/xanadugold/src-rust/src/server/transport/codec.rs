@@ -628,9 +628,9 @@ impl JsonCodec {
                 OperationCode::GovernanceLog => Ok(WireRequest::GovernanceLog),
                 OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
                 OperationCode::ClubWhoAmI => Ok(WireRequest::ClubWhoAmI),
-            OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
-            OperationCode::HistoricalAuthorList => Ok(WireRequest::HistoricalAuthorList),
-            OperationCode::SourcePatternList => Ok(WireRequest::SourcePatternList),
+                OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
+                OperationCode::HistoricalAuthorList => Ok(WireRequest::HistoricalAuthorList),
+                OperationCode::SourcePatternList => Ok(WireRequest::SourcePatternList),
                 _ => unreachable!(),
             };
         }
@@ -2300,7 +2300,9 @@ impl JsonCodec {
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::HistoricalAuthorGet { author_id: args.author_id })
+                Ok(WireRequest::HistoricalAuthorGet {
+                    author_id: args.author_id,
+                })
             }
             OperationCode::HistoricalAuthorSearch => {
                 #[derive(Deserialize)]
@@ -2348,7 +2350,9 @@ impl JsonCodec {
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkListByAuthor { author_id: args.author_id })
+                Ok(WireRequest::WorkListByAuthor {
+                    author_id: args.author_id,
+                })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }

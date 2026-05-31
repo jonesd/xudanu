@@ -74,7 +74,8 @@ fn dispatch_narration(
 
         let base_text = if srv.crdt_is_active(work_id) {
             if srv.use_otree_crdt {
-                srv.otree_crdt.narration_snapshot(work_id)
+                srv.otree_crdt
+                    .narration_snapshot(work_id)
                     .map_err(|e| crate::server::ServerError::Internal(e.to_string()))?
                     .unwrap_or_default()
             } else {
@@ -91,7 +92,8 @@ fn dispatch_narration(
 
     tracing::info!(
         "narration diff: base_len={} new_len={} base={:?} new={:?}",
-        base_text.len(), new_text.len(),
+        base_text.len(),
+        new_text.len(),
         &base_text[..base_text.len().min(100)],
         &new_text[..new_text.len().min(100)],
     );
@@ -105,13 +107,14 @@ fn dispatch_narration(
         }),
     };
     let prompt = crate::server::ollama::build_narration_prompt(
-        &base_text, &new_text, last_author.as_deref(),
+        &base_text,
+        &new_text,
+        last_author.as_deref(),
     );
 
     let narration = match tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(
-            llm.generate_tracked(crate::server::ollama::LlmFeature::Narration, &prompt)
-        )
+        tokio::runtime::Handle::current()
+            .block_on(llm.generate_tracked(crate::server::ollama::LlmFeature::Narration, &prompt))
     }) {
         Ok(text) => text,
         Err(e) => format!("(LLM unavailable: {})", e),
@@ -119,23 +122,24 @@ fn dispatch_narration(
 
     let llm_model = format!("{}/{}", llm.backend_label(), llm.model_name());
 
-    let insert_text = format!("\n\n---\n**Change Summary**\n{}\n— via {}", narration, llm_model);
+    let insert_text = format!(
+        "\n\n---\n**Change Summary**\n{}\n— via {}",
+        narration, llm_model
+    );
 
     state.server.with_server(|srv| {
         if srv.crdt_is_active(work_id) && srv.use_otree_crdt {
             let _ = srv.otree_crdt.set_narration_snapshot(work_id);
-            let triggerer_club = srv.otree_crdt
+            let triggerer_club = srv
+                .otree_crdt
                 .get_author(work_id, session_id)
                 .ok()
                 .flatten()
                 .map(|a| a.club_be_id)
                 .unwrap_or(0);
-            let _ = srv.otree_crdt.append_llm_text(
-                work_id,
-                &insert_text,
-                &llm_model,
-                triggerer_club,
-            );
+            let _ =
+                srv.otree_crdt
+                    .append_llm_text(work_id, &insert_text, &llm_model, triggerer_club);
         }
     });
 
@@ -147,7 +151,11 @@ fn dispatch_narration(
         }
     });
 
-    Ok(ResponseValue::NarrationResult { narration, llm_model, updated_text })
+    Ok(ResponseValue::NarrationResult {
+        narration,
+        llm_model,
+        updated_text,
+    })
 }
 
 fn dispatch_writing_feedback(
@@ -189,7 +197,7 @@ fn dispatch_writing_feedback(
 
     let feedback = match tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(
-            llm.generate_tracked(crate::server::ollama::LlmFeature::WritingFeedback, &prompt)
+            llm.generate_tracked(crate::server::ollama::LlmFeature::WritingFeedback, &prompt),
         )
     }) {
         Ok(text) => text,
@@ -198,7 +206,10 @@ fn dispatch_writing_feedback(
 
     let llm_model = format!("{}/{}", llm.backend_label(), llm.model_name());
 
-    Ok(ResponseValue::WritingFeedbackResult { feedback, llm_model })
+    Ok(ResponseValue::WritingFeedbackResult {
+        feedback,
+        llm_model,
+    })
 }
 
 fn dispatch_inner(
@@ -658,21 +669,19 @@ fn dispatch_inner(
             ))
         }
 
-        WireRequest::ServerStats => {
-            Ok(ResponseValue::ServerInfo(
-                super::protocol::ServerInfoPayload {
-                    version: env!("CARGO_PKG_VERSION").to_string(),
-                    session_count: srv.session_count(),
-                    work_count: srv.work_count(),
-                    club_count: srv.club_count(),
-                    edition_count: srv.edition_count(),
-                    is_accepting_connections: srv.admin_is_accepting_connections(),
-                    public_club_id: srv.public_club_id(),
-                    llm_enabled: crate::server::ollama::llm_enabled(),
-                    llm_usage: crate::server::ollama::usage_tracker().summary(),
-                },
-            ))
-        }
+        WireRequest::ServerStats => Ok(ResponseValue::ServerInfo(
+            super::protocol::ServerInfoPayload {
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                session_count: srv.session_count(),
+                work_count: srv.work_count(),
+                club_count: srv.club_count(),
+                edition_count: srv.edition_count(),
+                is_accepting_connections: srv.admin_is_accepting_connections(),
+                public_club_id: srv.public_club_id(),
+                llm_enabled: crate::server::ollama::llm_enabled(),
+                llm_usage: crate::server::ollama::usage_tracker().summary(),
+            },
+        )),
 
         WireRequest::WorkList => {
             let entries = srv
@@ -684,7 +693,19 @@ fn dispatch_inner(
                         .unwrap_or(false)
                 })
                 .map(
-                    |(work_id, owner, revision_count, is_grabbed, title, read_club, is_source, content_start_line, content_end_line, source_author_id, source_edition_info)| {
+                    |(
+                        work_id,
+                        owner,
+                        revision_count,
+                        is_grabbed,
+                        title,
+                        read_club,
+                        is_source,
+                        content_start_line,
+                        content_end_line,
+                        source_author_id,
+                        source_edition_info,
+                    )| {
                         super::protocol::WorkListEntry {
                             work_id,
                             owner,
@@ -741,7 +762,8 @@ fn dispatch_inner(
             srv.ensure_can_read(session_id, origin)?;
             srv.ensure_can_read(session_id, destination)?;
             let o_ref = origin_ref.map(|hr| {
-                let excerpt = hr.excerpt
+                let excerpt = hr
+                    .excerpt
                     .as_deref()
                     .map(|t| crate::edition::Edition::from_text(t));
                 crate::edition::links::HyperRef::single(
@@ -752,7 +774,8 @@ fn dispatch_inner(
                 )
             });
             let d_ref = destination_ref.map(|hr| {
-                let excerpt = hr.excerpt
+                let excerpt = hr
+                    .excerpt
                     .as_deref()
                     .map(|t| crate::edition::Edition::from_text(t));
                 crate::edition::links::HyperRef::single(
@@ -803,36 +826,44 @@ fn dispatch_inner(
                 }
             }
             let o_ref = origin_ref.map(|hr| {
-                let excerpt = hr.excerpt
+                let excerpt = hr
+                    .excerpt
                     .as_deref()
                     .map(|t| crate::edition::Edition::from_text(t));
                 let chain: Vec<crate::edition::links::ProvenanceHop> = hr
                     .provenance_chain
                     .into_iter()
-                    .map(|hop| crate::edition::links::ProvenanceHop::new(hop.source_work_id, hop.link_id))
+                    .map(|hop| {
+                        crate::edition::links::ProvenanceHop::new(hop.source_work_id, hop.link_id)
+                    })
                     .collect();
                 crate::edition::links::HyperRef::single(
                     excerpt,
                     hr.work_context,
                     hr.original_context,
                     None,
-                ).with_provenance_chain(chain)
+                )
+                .with_provenance_chain(chain)
             });
             let d_ref = destination_ref.map(|hr| {
-                let excerpt = hr.excerpt
+                let excerpt = hr
+                    .excerpt
                     .as_deref()
                     .map(|t| crate::edition::Edition::from_text(t));
                 let chain: Vec<crate::edition::links::ProvenanceHop> = hr
                     .provenance_chain
                     .into_iter()
-                    .map(|hop| crate::edition::links::ProvenanceHop::new(hop.source_work_id, hop.link_id))
+                    .map(|hop| {
+                        crate::edition::links::ProvenanceHop::new(hop.source_work_id, hop.link_id)
+                    })
                     .collect();
                 crate::edition::links::HyperRef::single(
                     excerpt,
                     hr.work_context,
                     hr.original_context,
                     None,
-                ).with_provenance_chain(chain)
+                )
+                .with_provenance_chain(chain)
             });
             srv.update_link(session_id, link_id, o_ref, d_ref)?;
             Ok(ResponseValue::Void)
@@ -1256,7 +1287,11 @@ fn dispatch_inner(
             let ancestors = srv.version_ancestors_transitive(work_id);
             let ancestors: Vec<_> = ancestors
                 .into_iter()
-                .filter(|id| srv.work(*id).map(|w| srv.work_is_readable(session_id, w)).unwrap_or(false))
+                .filter(|id| {
+                    srv.work(*id)
+                        .map(|w| srv.work_is_readable(session_id, w))
+                        .unwrap_or(false)
+                })
                 .collect();
             Ok(ResponseValue::VersionAncestorsResult { ancestors })
         }
@@ -1265,18 +1300,20 @@ fn dispatch_inner(
             let descendants = srv.version_descendants(work_id);
             let descendants: Vec<_> = descendants
                 .into_iter()
-                .filter(|id| srv.work(*id).map(|w| srv.work_is_readable(session_id, w)).unwrap_or(false))
+                .filter(|id| {
+                    srv.work(*id)
+                        .map(|w| srv.work_is_readable(session_id, w))
+                        .unwrap_or(false)
+                })
                 .collect();
             Ok(ResponseValue::VersionDescendantsResult { descendants })
         }
         WireRequest::VersionTracePosition { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
             let tp = srv.version_trace_position(work_id);
-            let trace_position = tp.map(|tp| {
-                super::protocol::TracePositionPayload {
-                    branch_id: tp.branch().to_u64(),
-                    position: tp.position(),
-                }
+            let trace_position = tp.map(|tp| super::protocol::TracePositionPayload {
+                branch_id: tp.branch().to_u64(),
+                position: tp.position(),
             });
             Ok(ResponseValue::VersionTracePositionResult { trace_position })
         }
@@ -2007,7 +2044,11 @@ fn dispatch_inner(
         }
 
         WireRequest::AttributionLogStatus => Ok(srv.attribution_log_status()),
-        WireRequest::WorkTextRange { work_id, start_char, end_char } => {
+        WireRequest::WorkTextRange {
+            work_id,
+            start_char,
+            end_char,
+        } => {
             srv.ensure_can_read(session_id, work_id)?;
             let result = srv.crdt_text_range(work_id, start_char as usize, end_char as usize)?;
             Ok(ResponseValue::WorkTextRangeResult {
@@ -2031,7 +2072,11 @@ fn dispatch_inner(
                 .collect();
             Ok(ResponseValue::WorkOutlineResult { entries: payload })
         }
-        WireRequest::WorkSearch { work_id, query, max_results } => {
+        WireRequest::WorkSearch {
+            work_id,
+            query,
+            max_results,
+        } => {
             srv.ensure_can_read(session_id, work_id)?;
             let max = max_results.unwrap_or(100) as usize;
             let matches = srv.work_search(work_id, &query, max)?;
@@ -2044,9 +2089,17 @@ fn dispatch_inner(
                 })
                 .collect();
             let total = payload.len() as u64;
-            Ok(ResponseValue::WorkSearchResult { matches: payload, total_matches: total })
+            Ok(ResponseValue::WorkSearchResult {
+                matches: payload,
+                total_matches: total,
+            })
         }
-        WireRequest::WorkGoto { work_id, line, char, context_lines } => {
+        WireRequest::WorkGoto {
+            work_id,
+            line,
+            char,
+            context_lines,
+        } => {
             srv.ensure_can_read(session_id, work_id)?;
             let target_line = line.unwrap_or(0);
             let ctx = context_lines.unwrap_or(10);
@@ -2060,7 +2113,9 @@ fn dispatch_inner(
             })
         }
         WireRequest::WorkDiffNarration { .. } => unreachable!("handled in dispatch_narration"),
-        WireRequest::WorkWritingFeedback { .. } => unreachable!("handled in dispatch_writing_feedback"),
+        WireRequest::WorkWritingFeedback { .. } => {
+            unreachable!("handled in dispatch_writing_feedback")
+        }
 
         WireRequest::HistoricalAuthorRegister {
             name,
@@ -2071,13 +2126,22 @@ fn dispatch_inner(
             source_bibliography,
         } => {
             srv.ensure_logged_in(session_id)?;
-            let session = srv.sessions.get(&session_id)
+            let session = srv
+                .sessions
+                .get(&session_id)
                 .ok_or(crate::server::ServerError::SessionRequired)?;
-            let created_by = session._key_master()
+            let created_by = session
+                ._key_master()
                 .and_then(|km| km.login_authority().iter().next().copied())
                 .ok_or(crate::server::ServerError::NotAuthorized)?;
             let author = srv.register_historical_author(
-                name, display_name, birth_year, death_year, external_ids, source_bibliography, created_by,
+                name,
+                display_name,
+                birth_year,
+                death_year,
+                external_ids,
+                source_bibliography,
+                created_by,
             )?;
             Ok(ResponseValue::HistoricalAuthorResult {
                 be_id: author.be_id,
@@ -2142,8 +2206,13 @@ fn dispatch_inner(
             skip_suffix_lines,
         } => {
             let (work_id, auth_id, text_length, import_title) = srv.import_source_work(
-                session_id, author_id, title, text, edition_info,
-                skip_prefix_lines, skip_suffix_lines,
+                session_id,
+                author_id,
+                title,
+                text,
+                edition_info,
+                skip_prefix_lines,
+                skip_suffix_lines,
             )?;
             Ok(ResponseValue::ImportSourceWorkResult {
                 work_id,
@@ -2169,10 +2238,12 @@ fn dispatch_inner(
             let patterns = srv.list_source_patterns();
             let entries: Vec<super::protocol::SourcePatternEntry> = patterns
                 .into_iter()
-                .map(|(source_type, display_name)| super::protocol::SourcePatternEntry {
-                    source_type,
-                    display_name,
-                })
+                .map(
+                    |(source_type, display_name)| super::protocol::SourcePatternEntry {
+                        source_type,
+                        display_name,
+                    },
+                )
                 .collect();
             Ok(ResponseValue::SourcePatternListResult { patterns: entries })
         }
@@ -2185,21 +2256,31 @@ fn dispatch_inner(
                         .map(|w| srv.work_is_readable(session_id, w))
                         .unwrap_or(false)
                 })
-                .map(|(work_id, owner, revision_count, is_grabbed, title, read_club, source_edition_info)| {
-                    super::protocol::WorkListEntry {
+                .map(
+                    |(
                         work_id,
                         owner,
                         revision_count,
                         is_grabbed,
                         title,
                         read_club,
-                        is_source: true,
-                        content_start_line: None,
-                        content_end_line: None,
-                        source_author_id: Some(author_id),
                         source_edition_info,
-                    }
-                })
+                    )| {
+                        super::protocol::WorkListEntry {
+                            work_id,
+                            owner,
+                            revision_count,
+                            is_grabbed,
+                            title,
+                            read_club,
+                            is_source: true,
+                            content_start_line: None,
+                            content_end_line: None,
+                            source_author_id: Some(author_id),
+                            source_edition_info,
+                        }
+                    },
+                )
                 .collect();
             Ok(ResponseValue::WorkList(list))
         }
@@ -2220,9 +2301,9 @@ fn spawn_auto_title(state: &SharedState, work_id: u64) {
         None => return,
     };
 
-    let text = state.server.with_server(|srv| {
-        srv.crdt_current_text(work_id).unwrap_or_default()
-    });
+    let text = state
+        .server
+        .with_server(|srv| srv.crdt_current_text(work_id).unwrap_or_default());
 
     if text.len() < 20 {
         return;
@@ -2234,7 +2315,10 @@ fn spawn_auto_title(state: &SharedState, work_id: u64) {
     tracing::info!(work_id, "auto-title: requesting from LLM");
 
     tokio::spawn(async move {
-        match llm.generate_tracked(crate::server::ollama::LlmFeature::AutoTitle, &prompt).await {
+        match llm
+            .generate_tracked(crate::server::ollama::LlmFeature::AutoTitle, &prompt)
+            .await
+        {
             Ok(title) => {
                 let title = title.trim().trim_matches('"').to_string();
                 tracing::info!(work_id, %title, "auto-title: generated");

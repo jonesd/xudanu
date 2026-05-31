@@ -8,8 +8,8 @@ mod tests {
     use crate::edition::RangeElement;
     use crate::persist::chunk_store::ChunkStore;
     use crate::persist::edition_chunks::{
-        edition_from_chunks, edition_to_chunks_durable, work_from_chunks_current, work_load_revision,
-        work_to_chunks_durable, EditionChunkRef, WorkChunkRef,
+        edition_from_chunks, edition_to_chunks_durable, work_from_chunks_current,
+        work_load_revision, work_to_chunks_durable, EditionChunkRef, WorkChunkRef,
     };
 
     #[derive(Debug, Clone, Copy)]

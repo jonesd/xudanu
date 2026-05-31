@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::session::SessionId;
 use crate::crypto::sign::{sign_bytes, verify_signature};
-use crate::edition::provenance::{sign_span, sign_element, ElementProvenance, SpanProvenance};
+use crate::edition::provenance::{sign_element, sign_span, ElementProvenance, SpanProvenance};
 use crate::edition::three_way::{three_way_merge, MergeStrategy};
 use crate::edition::{BeId, Carrier, Edition, Mapping, RangeElement};
 use crate::server::transport::protocol::TextDeltaOp;
@@ -153,12 +153,11 @@ pub struct OtreeCrdtManager {
     debounce_secs: u64,
 }
 
-fn find_entry_for_char(
-    entry_char_start: &[usize],
-    char_pos: usize,
-) -> usize {
+fn find_entry_for_char(entry_char_start: &[usize], char_pos: usize) -> usize {
     let idx = entry_char_start.partition_point(|&start| start <= char_pos);
-    if idx == 0 { return 0; }
+    if idx == 0 {
+        return 0;
+    }
     idx - 1
 }
 
@@ -266,9 +265,8 @@ fn apply_text_delta_to_edition(
 
     let mut old_char_pos = 0usize;
     let mut current_entry_idx = 0usize;
-    let mut new_entries: Vec<(i64, Arc<Carrier>)> = Vec::with_capacity(
-        new_text.len().max(old_entries.len()),
-    );
+    let mut new_entries: Vec<(i64, Arc<Carrier>)> =
+        Vec::with_capacity(new_text.len().max(old_entries.len()));
     let mut new_pos = 0i64;
     let mut pending_insert = String::new();
 
@@ -356,13 +354,18 @@ fn apply_text_delta_to_edition(
         let ed = Edition::from_entries(new_entries).coalesce();
         tracing::debug!(
             "[apply_delta] old_entries={} result_entries={} ops={}",
-            old_entries.len(), ed.all_entries().len(), ops.len()
+            old_entries.len(),
+            ed.all_entries().len(),
+            ops.len()
         );
         for (i, (p, c)) in ed.all_entries().iter().take(8).enumerate() {
             let txt_len = c.element.as_text().map(|t| t.len()).unwrap_or(0);
             tracing::debug!(
                 "[apply_delta]   [{}] pos={} len={} prov={}",
-                i, p, txt_len, c.provenance.is_some()
+                i,
+                p,
+                txt_len,
+                c.provenance.is_some()
             );
         }
         ed
@@ -527,15 +530,21 @@ impl OtreeCrdtManager {
         let (merged, was_merged) = if base == current {
             (author_edition, false)
         } else {
-            match three_way_merge(base, current, &author_edition, MergeStrategy::LastWriterWins) {
+            match three_way_merge(
+                base,
+                current,
+                &author_edition,
+                MergeStrategy::LastWriterWins,
+            ) {
                 Ok(result) => (result.merged, true),
                 Err(_) => (author_edition, true),
             }
         };
 
-        wd.last_author_mapping = Some(
-            crate::edition::three_way::build_merge_mapping(&wd.current_edition, &merged),
-        );
+        wd.last_author_mapping = Some(crate::edition::three_way::build_merge_mapping(
+            &wd.current_edition,
+            &merged,
+        ));
         wd.current_edition = merged;
         *wd.cached_text.borrow_mut() = None;
         wd.last_change_timestamp = current_timestamp_secs();
@@ -548,7 +557,10 @@ impl OtreeCrdtManager {
             .map(|(sid, sync_id)| (*sid, *sync_id))
             .collect();
 
-        Ok(OtreeApplyResult { relay_to, was_merged })
+        Ok(OtreeApplyResult {
+            relay_to,
+            was_merged,
+        })
     }
 
     pub fn current_text(&self, work_id: BeId) -> Result<String, OtreeError> {
@@ -575,7 +587,12 @@ impl OtreeCrdtManager {
         Ok(wd.current_edition.clone())
     }
 
-    pub fn text_range(&self, work_id: BeId, start_char: usize, end_char: usize) -> Result<TextRangeResult, OtreeError> {
+    pub fn text_range(
+        &self,
+        work_id: BeId,
+        start_char: usize,
+        end_char: usize,
+    ) -> Result<TextRangeResult, OtreeError> {
         let wd = self
             .docs
             .get(&work_id)
@@ -711,7 +728,12 @@ impl OtreeCrdtManager {
             return vec![SpanProvenance {
                 start: first_pos,
                 end: last_pos + 1,
-                provenance: sign_span(fallback_signing_key, &fingerprints, timestamp, server_id_bytes),
+                provenance: sign_span(
+                    fallback_signing_key,
+                    &fingerprints,
+                    timestamp,
+                    server_id_bytes,
+                ),
             }];
         }
 
@@ -729,16 +751,14 @@ impl OtreeCrdtManager {
 
             let author_key = ep.author_club_id;
             let author_type = ep.author_type.clone();
-            let signing_key = if matches!(
-                ep.author_type,
-                crate::edition::provenance::AuthorType::Llm
-            ) {
-                fallback_signing_key
-            } else {
-                _author_signing_keys
-                    .get(&author_key)
-                    .unwrap_or(fallback_signing_key)
-            };
+            let signing_key =
+                if matches!(ep.author_type, crate::edition::provenance::AuthorType::Llm) {
+                    fallback_signing_key
+                } else {
+                    _author_signing_keys
+                        .get(&author_key)
+                        .unwrap_or(fallback_signing_key)
+                };
 
             let mut fingerprints = Vec::new();
             let mut end_pos = *start_pos;
@@ -748,10 +768,7 @@ impl OtreeCrdtManager {
             while j < entries.len() {
                 let (pos, c) = &entries[j];
                 match &c.provenance {
-                    Some(p)
-                        if p.author_club_id == author_key
-                            && p.author_type == author_type =>
-                    {
+                    Some(p) if p.author_club_id == author_key && p.author_type == author_type => {
                         fingerprints.push(c.element.content_fingerprint());
                         end_pos = *pos + 1;
                         last_ts = p.timestamp;
@@ -769,7 +786,11 @@ impl OtreeCrdtManager {
             if !fingerprints.is_empty() {
                 tracing::debug!(
                     "[build_prov] span {}..{} author_type={:?} author_key={:04x} fps={}",
-                    start_pos, end_pos, author_type, author_key, fingerprints.len()
+                    start_pos,
+                    end_pos,
+                    author_type,
+                    author_key,
+                    fingerprints.len()
                 );
                 spans.push(SpanProvenance {
                     start: *start_pos,
@@ -1010,29 +1031,19 @@ impl OtreeCrdtManager {
         Ok(wd.awareness.values().collect())
     }
 
-    pub fn store_federated_provenance(
-        &mut self,
-        work_id: BeId,
-        provenance: Vec<SpanProvenance>,
-    ) {
+    pub fn store_federated_provenance(&mut self, work_id: BeId, provenance: Vec<SpanProvenance>) {
         if let Some(wd) = self.docs.get_mut(&work_id) {
             wd.federated_provenance = provenance;
         }
     }
 
-    pub fn get_federated_provenance(
-        &self,
-        work_id: BeId,
-    ) -> Option<&[SpanProvenance]> {
+    pub fn get_federated_provenance(&self, work_id: BeId) -> Option<&[SpanProvenance]> {
         self.docs
             .get(&work_id)
             .map(|wd| wd.federated_provenance.as_slice())
     }
 
-    pub fn extract_update_for_federation(
-        &mut self,
-        work_id: BeId,
-    ) -> Result<String, OtreeError> {
+    pub fn extract_update_for_federation(&mut self, work_id: BeId) -> Result<String, OtreeError> {
         let wd = self
             .docs
             .get_mut(&work_id)
@@ -1055,7 +1066,9 @@ impl OtreeCrdtManager {
         let incoming_edition = Edition::from_text_batched(update_text);
 
         if !self.docs.contains_key(&work_id) {
-            let edition = initial_edition.cloned().unwrap_or_else(|| incoming_edition.clone());
+            let edition = initial_edition
+                .cloned()
+                .unwrap_or_else(|| incoming_edition.clone());
             self.initialize_from_edition(work_id, &edition);
         }
 
@@ -1070,8 +1083,12 @@ impl OtreeCrdtManager {
         let merged = if base == current {
             incoming_edition
         } else {
-            match three_way_merge(base, current, &incoming_edition, MergeStrategy::LastWriterWins)
-            {
+            match three_way_merge(
+                base,
+                current,
+                &incoming_edition,
+                MergeStrategy::LastWriterWins,
+            ) {
                 Ok(result) => result.merged,
                 Err(_) => incoming_edition,
             }
@@ -1087,14 +1104,13 @@ impl OtreeCrdtManager {
             .map(|(sid, sync_id)| (*sid, *sync_id))
             .collect();
 
-        Ok(OtreeApplyResult { relay_to, was_merged: false })
+        Ok(OtreeApplyResult {
+            relay_to,
+            was_merged: false,
+        })
     }
 
-    pub fn sign_update(
-        &self,
-        update_text: &str,
-        signing_key: &SigningKey,
-    ) -> OtreeSignedUpdate {
+    pub fn sign_update(&self, update_text: &str, signing_key: &SigningKey) -> OtreeSignedUpdate {
         let signature = sign_bytes(signing_key, update_text.as_bytes());
         let verifying_key = signing_key.verifying_key();
         OtreeSignedUpdate {
@@ -1363,7 +1379,8 @@ mod tests {
 
         let update_text = mgr1.extract_update_for_federation(work_id).unwrap();
 
-        mgr2.apply_federation_update(work_id, &update_text, None).unwrap();
+        mgr2.apply_federation_update(work_id, &update_text, None)
+            .unwrap();
 
         let text = mgr2.current_text(work_id).unwrap();
         assert_eq!(text, "hello world");
@@ -1377,7 +1394,11 @@ mod tests {
         }];
         let result = apply_text_delta_to_edition(&edition, &ops, None);
         assert_eq!(result.to_text(), "new line\nhello\nworld");
-        assert!(result.count() <= 4, "batched insert should create few elements, got {}", result.count());
+        assert!(
+            result.count() <= 4,
+            "batched insert should create few elements, got {}",
+            result.count()
+        );
     }
 
     #[test]
@@ -1442,7 +1463,11 @@ mod tests {
         }];
         let result = apply_text_delta_to_edition(&edition, &ops, None);
         assert_eq!(result.to_text(), "line1\nline2\nline3");
-        assert_eq!(result.count(), 1, "coalesce merges uniform-provenance inserts into 1 element");
+        assert_eq!(
+            result.count(),
+            1,
+            "coalesce merges uniform-provenance inserts into 1 element"
+        );
     }
 
     #[test]
@@ -1485,12 +1510,16 @@ mod tests {
         let llm_entries: Vec<_> = entries
             .iter()
             .filter(|(_, c)| {
-                c.provenance
-                    .as_ref()
-                    .map_or(false, |p| matches!(p.author_type, crate::edition::provenance::AuthorType::Llm))
+                c.provenance.as_ref().map_or(false, |p| {
+                    matches!(p.author_type, crate::edition::provenance::AuthorType::Llm)
+                })
             })
             .collect();
-        assert_eq!(llm_entries.len(), 1, "coalesce merges uniform-provenance LLM elements into 1");
+        assert_eq!(
+            llm_entries.len(),
+            1,
+            "coalesce merges uniform-provenance LLM elements into 1"
+        );
     }
 
     #[test]
@@ -1512,17 +1541,24 @@ mod tests {
     fn test_delta_with_zero_char_elements_retain() {
         let mut entries = vec![];
         let mut pos = 0i64;
-        entries.push((pos, Arc::new(Carrier::new(RangeElement::text("ab".to_string())))));
+        entries.push((
+            pos,
+            Arc::new(Carrier::new(RangeElement::text("ab".to_string()))),
+        ));
         pos += 1;
-        entries.push((pos, Arc::new(Carrier::new(RangeElement::Data { bytes: vec![] }))));
+        entries.push((
+            pos,
+            Arc::new(Carrier::new(RangeElement::Data { bytes: vec![] })),
+        ));
         pos += 1;
-        entries.push((pos, Arc::new(Carrier::new(RangeElement::text("cd".to_string())))));
+        entries.push((
+            pos,
+            Arc::new(Carrier::new(RangeElement::text("cd".to_string()))),
+        ));
         pos += 1;
         let edition = Edition::from_entries(entries);
 
-        let ops = vec![
-            TextDeltaOp::Retain { count: 4 },
-        ];
+        let ops = vec![TextDeltaOp::Retain { count: 4 }];
         let result = apply_text_delta_to_edition(&edition, &ops, None);
         assert_eq!(result.to_text(), "abcd");
         assert_eq!(result.count(), 3, "placeholder should be preserved");
@@ -1532,11 +1568,20 @@ mod tests {
     fn test_delta_with_zero_char_elements_delete() {
         let mut entries = vec![];
         let mut pos = 0i64;
-        entries.push((pos, Arc::new(Carrier::new(RangeElement::text("ab".to_string())))));
+        entries.push((
+            pos,
+            Arc::new(Carrier::new(RangeElement::text("ab".to_string()))),
+        ));
         pos += 1;
-        entries.push((pos, Arc::new(Carrier::new(RangeElement::Data { bytes: vec![] }))));
+        entries.push((
+            pos,
+            Arc::new(Carrier::new(RangeElement::Data { bytes: vec![] })),
+        ));
         pos += 1;
-        entries.push((pos, Arc::new(Carrier::new(RangeElement::text("cd".to_string())))));
+        entries.push((
+            pos,
+            Arc::new(Carrier::new(RangeElement::text("cd".to_string()))),
+        ));
         pos += 1;
         let edition = Edition::from_entries(entries);
 
@@ -1553,15 +1598,19 @@ mod tests {
     fn test_delta_trailing_zero_char_preserved() {
         let mut entries = vec![];
         let mut pos = 0i64;
-        entries.push((pos, Arc::new(Carrier::new(RangeElement::text("hello".to_string())))));
+        entries.push((
+            pos,
+            Arc::new(Carrier::new(RangeElement::text("hello".to_string()))),
+        ));
         pos += 1;
-        entries.push((pos, Arc::new(Carrier::new(RangeElement::Data { bytes: vec![] }))));
+        entries.push((
+            pos,
+            Arc::new(Carrier::new(RangeElement::Data { bytes: vec![] })),
+        ));
         pos += 1;
         let edition = Edition::from_entries(entries);
 
-        let ops = vec![
-            TextDeltaOp::Retain { count: 5 },
-        ];
+        let ops = vec![TextDeltaOp::Retain { count: 5 }];
         let result = apply_text_delta_to_edition(&edition, &ops, None);
         assert_eq!(result.to_text(), "hello");
         assert_eq!(result.count(), 2, "trailing placeholder preserved");
@@ -1573,7 +1622,11 @@ mod tests {
         let work_id: BeId = 42;
         let sid = make_session(1);
 
-        mgr.open_sync_session(work_id, sid, Some(&Edition::from_text_batched("line1\nline2\n")));
+        mgr.open_sync_session(
+            work_id,
+            sid,
+            Some(&Edition::from_text_batched("line1\nline2\n")),
+        );
 
         let ops = vec![
             TextDeltaOp::Retain { count: 6 },

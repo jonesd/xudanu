@@ -328,7 +328,10 @@ impl CrdtManager {
             .map(|(sid, sync_id)| (*sid, *sync_id))
             .collect();
 
-        Ok(ApplyUpdateResult { relay_to, was_merged: false })
+        Ok(ApplyUpdateResult {
+            relay_to,
+            was_merged: false,
+        })
     }
 
     pub fn apply_update(
@@ -380,7 +383,10 @@ impl CrdtManager {
             .map(|(sid, sync_id)| (*sid, *sync_id))
             .collect();
 
-        Ok(ApplyUpdateResult { relay_to, was_merged: false })
+        Ok(ApplyUpdateResult {
+            relay_to,
+            was_merged: false,
+        })
     }
 
     pub fn get_diff_since(&self, work_id: BeId, sv: &[u8]) -> Result<Vec<u8>, CrdtError> {

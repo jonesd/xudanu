@@ -446,8 +446,10 @@ impl Server {
                 .get_author_sessions(work_be_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-            let mut author_signing_keys: std::collections::HashMap<BeId, ed25519_dalek::SigningKey> =
-                std::collections::HashMap::new();
+            let mut author_signing_keys: std::collections::HashMap<
+                BeId,
+                ed25519_dalek::SigningKey,
+            > = std::collections::HashMap::new();
             for (sid, author_id) in &author_sessions {
                 if let Some(sk) = self
                     .sessions
@@ -491,8 +493,10 @@ impl Server {
                 .get_author_sessions(work_be_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-            let mut author_signing_keys: std::collections::HashMap<BeId, ed25519_dalek::SigningKey> =
-                std::collections::HashMap::new();
+            let mut author_signing_keys: std::collections::HashMap<
+                BeId,
+                ed25519_dalek::SigningKey,
+            > = std::collections::HashMap::new();
             for (sid, author_id) in &author_sessions {
                 if let Some(sk) = self
                     .sessions
@@ -711,11 +715,7 @@ impl Server {
         self.reconcile_record_local_revision(be_id, &edition, Self::current_timestamp_secs());
         let read_club = self.works[&be_id].work.read_club();
         let edit_club = self.works[&be_id].work.edit_club();
-        let prop = BackfollowEngine::make_work_prop(
-            &self.works[&be_id].work,
-            read_club,
-            edit_club,
-        );
+        let prop = BackfollowEngine::make_work_prop(&self.works[&be_id].work, read_club, edit_club);
         self.backfollow
             .register_work_with_prop(&self.works[&be_id].work, be_id, None, prop);
         // Newly created works may share content with already-watched documents,
@@ -833,7 +833,9 @@ impl Server {
     ) -> Result<u64, ServerError> {
         self.ensure_session(session_id)?;
         if self.is_source_work(work_be_id) {
-            return Err(ServerError::InvalidArgument("source works are immutable".into()));
+            return Err(ServerError::InvalidArgument(
+                "source works are immutable".into(),
+            ));
         }
         self.ensure_grabbed_by(session_id, work_be_id)?;
 
@@ -853,7 +855,9 @@ impl Server {
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
         if self.is_source_work(work_be_id) {
-            return Err(ServerError::InvalidArgument("source works are immutable".into()));
+            return Err(ServerError::InvalidArgument(
+                "source works are immutable".into(),
+            ));
         }
         self.ensure_can_edit(session_id, work_be_id)?;
 
@@ -1408,11 +1412,22 @@ impl Server {
             work_be_id,
             all_entries.len(),
             edition.span_provenance.len(),
-            all_entries.iter().take(10).map(|(p, c)| {
-                let txt = c.element.as_text().unwrap_or("").chars().take(20).collect::<String>();
-                let has_prov = c.provenance.is_some();
-                format!("{}:{}({})", p, txt.len(), if has_prov { "P" } else { "_" })
-            }).collect::<Vec<_>>().join(",")
+            all_entries
+                .iter()
+                .take(10)
+                .map(|(p, c)| {
+                    let txt = c
+                        .element
+                        .as_text()
+                        .unwrap_or("")
+                        .chars()
+                        .take(20)
+                        .collect::<String>();
+                    let has_prov = c.provenance.is_some();
+                    format!("{}:{}({})", p, txt.len(), if has_prov { "P" } else { "_" })
+                })
+                .collect::<Vec<_>>()
+                .join(",")
         );
 
         let mut elem_char_start: std::collections::HashMap<i64, usize> =
@@ -1474,7 +1489,10 @@ impl Server {
                 matches!(ep.author_type, crate::edition::provenance::AuthorType::Llm)
             });
             let is_historical = element_prov.is_some_and(|ep| {
-                matches!(ep.author_type, crate::edition::provenance::AuthorType::Historical)
+                matches!(
+                    ep.author_type,
+                    crate::edition::provenance::AuthorType::Historical
+                )
             });
 
             let (author_display_name, author_club_id) = if is_llm {
@@ -1598,23 +1616,51 @@ impl Server {
             .unwrap_or_default()
             .as_secs();
         self.historical_authors
-            .register(name, display_name, birth_year, death_year, external_ids, source_bibliography, created_by, timestamp)
+            .register(
+                name,
+                display_name,
+                birth_year,
+                death_year,
+                external_ids,
+                source_bibliography,
+                created_by,
+                timestamp,
+            )
             .map_err(ServerError::Internal)
     }
 
-    pub fn get_historical_author(&self, be_id: BeId) -> Result<crate::server::historical_author::HistoricalAuthor, ServerError> {
+    pub fn get_historical_author(
+        &self,
+        be_id: BeId,
+    ) -> Result<crate::server::historical_author::HistoricalAuthor, ServerError> {
         self.historical_authors
             .get(be_id)
             .cloned()
-            .ok_or(ServerError::Internal(format!("historical author {} not found", be_id)))
+            .ok_or(ServerError::Internal(format!(
+                "historical author {} not found",
+                be_id
+            )))
     }
 
-    pub fn search_historical_authors(&self, query: &str) -> Vec<crate::server::historical_author::HistoricalAuthor> {
-        self.historical_authors.search(query).into_iter().cloned().collect()
+    pub fn search_historical_authors(
+        &self,
+        query: &str,
+    ) -> Vec<crate::server::historical_author::HistoricalAuthor> {
+        self.historical_authors
+            .search(query)
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
-    pub fn list_historical_authors(&self) -> Vec<crate::server::historical_author::HistoricalAuthor> {
-        self.historical_authors.list().into_iter().cloned().collect()
+    pub fn list_historical_authors(
+        &self,
+    ) -> Vec<crate::server::historical_author::HistoricalAuthor> {
+        self.historical_authors
+            .list()
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     fn is_source_work(&self, work_be_id: BeId) -> bool {
@@ -1622,7 +1668,8 @@ impl Server {
     }
 
     pub fn is_work_source(&self, work_be_id: BeId) -> Result<bool, ServerError> {
-        self.works.get(&work_be_id)
+        self.works
+            .get(&work_be_id)
             .map(|ws| ws.is_source)
             .ok_or(ServerError::WorkNotFound(work_be_id))
     }
@@ -1632,7 +1679,8 @@ impl Server {
     }
 
     pub fn list_source_patterns(&self) -> Vec<(String, String)> {
-        self.source_patterns.iter()
+        self.source_patterns
+            .iter()
             .map(|p| (p.source_type.clone(), p.display_name.clone()))
             .collect()
     }
@@ -1649,8 +1697,9 @@ impl Server {
     ) -> Result<(BeId, BeId, u64, String), ServerError> {
         self.ensure_logged_in(session_id)?;
 
-        self.historical_authors.get(author_id)
-            .ok_or_else(|| ServerError::Internal(format!("historical author {} not found", author_id)))?;
+        self.historical_authors.get(author_id).ok_or_else(|| {
+            ServerError::Internal(format!("historical author {} not found", author_id))
+        })?;
 
         let total_lines = text.lines().count() as u64;
         let content_start = skip_prefix_lines;
@@ -1662,7 +1711,9 @@ impl Server {
         let (be_id, elem) = self.grand_map.new_work_element(None);
         self.grand_map.assign_new_id(elem);
 
-        let importer = self.sessions.get(&session_id)
+        let importer = self
+            .sessions
+            .get(&session_id)
             .and_then(|s| s._key_master())
             .and_then(|km| km.login_authority().iter().next().copied());
 
@@ -1683,7 +1734,8 @@ impl Server {
         {
             let entries = edition.all_entries();
             if !entries.is_empty() {
-                let fingerprints: Vec<[u8; 32]> = entries.iter()
+                let fingerprints: Vec<[u8; 32]> = entries
+                    .iter()
                     .map(|(_, c)| c.element.content_fingerprint())
                     .collect();
 
@@ -1701,7 +1753,10 @@ impl Server {
                     provenance: prov,
                 };
 
-                let new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> = entries
+                let new_entries: Vec<(
+                    i64,
+                    std::sync::Arc<crate::edition::range_element::Carrier>,
+                )> = entries
                     .into_iter()
                     .map(|(pos, c)| {
                         let mut carrier = (*c).clone();
@@ -1713,7 +1768,11 @@ impl Server {
                 let n = new_entries.len();
                 let region = XnRegion::interval(0, n as i64);
                 edition = Edition {
-                    orgl: crate::edition::orgl::OrglRoot::from_bulk_entries(new_entries, None, region),
+                    orgl: crate::edition::orgl::OrglRoot::from_bulk_entries(
+                        new_entries,
+                        None,
+                        region,
+                    ),
                     endorsements: crate::edition::endorsement::EndorsementSet::new(),
                     entries_cache: std::sync::Arc::new(std::sync::OnceLock::new()),
                     span_provenance: vec![span_prov],
@@ -1725,7 +1784,11 @@ impl Server {
         work.set_read_club(Some(self.system_clubs.public_club));
 
         let auto_title = Self::extract_title(work.edition());
-        let final_title = if title.is_empty() { auto_title } else { title.clone() };
+        let final_title = if title.is_empty() {
+            auto_title
+        } else {
+            title.clone()
+        };
         let ws = WorkState {
             work,
             chunk_ref: None,
@@ -1946,10 +2009,12 @@ impl Server {
             let needs = self.crdt_needs_materialization(work_be_id);
             if needs {
                 let edition = if self.use_otree_crdt {
-                    self.otree_crdt.materialize_edition(work_be_id)
+                    self.otree_crdt
+                        .materialize_edition(work_be_id)
                         .map_err(|e| ServerError::Internal(e.to_string()))?
                 } else {
-                    self.crdt_manager.materialize_edition(work_be_id)
+                    self.crdt_manager
+                        .materialize_edition(work_be_id)
                         .map_err(|e| ServerError::Internal(e.to_string()))?
                 };
 
@@ -1972,9 +2037,9 @@ impl Server {
                 None
             };
 
-            let result = self.otree_crdt.open_sync_session(
-                work_be_id, session_id, initial_edition.as_ref(),
-            );
+            let result =
+                self.otree_crdt
+                    .open_sync_session(work_be_id, session_id, initial_edition.as_ref());
 
             self.register_crdt_author(session_id, work_be_id)?;
 
@@ -1997,9 +2062,11 @@ impl Server {
                 None
             };
 
-            let result =
-                self.crdt_manager
-                    .open_sync_session(work_be_id, session_id, initial_text.as_deref());
+            let result = self.crdt_manager.open_sync_session(
+                work_be_id,
+                session_id,
+                initial_text.as_deref(),
+            );
 
             self.register_crdt_author(session_id, work_be_id)?;
 
@@ -2057,7 +2124,10 @@ impl Server {
                         display_name,
                         club_be_id: login_club,
                     };
-                    if let Err(e) = self.otree_crdt.register_author(work_be_id, session_id, author) {
+                    if let Err(e) = self
+                        .otree_crdt
+                        .register_author(work_be_id, session_id, author)
+                    {
                         tracing::warn!(target: "xudanu::security", work_id = work_be_id, session_id = session_id.as_u64(), error = %e, event = "SECURITY:author_register_failed", "failed to register CRDT author");
                     }
                 } else {
@@ -2066,7 +2136,10 @@ impl Server {
                         display_name,
                         club_be_id: login_club,
                     };
-                    if let Err(e) = self.crdt_manager.register_author(work_be_id, session_id, author) {
+                    if let Err(e) = self
+                        .crdt_manager
+                        .register_author(work_be_id, session_id, author)
+                    {
                         tracing::warn!(target: "xudanu::security", work_id = work_be_id, session_id = session_id.as_u64(), error = %e, event = "SECURITY:author_register_failed", "failed to register CRDT author");
                     }
                 }
@@ -2086,10 +2159,12 @@ impl Server {
 
         if needs {
             let edition = if self.use_otree_crdt {
-                self.otree_crdt.materialize_edition(work_be_id)
+                self.otree_crdt
+                    .materialize_edition(work_be_id)
                     .map_err(|e| ServerError::Internal(e.to_string()))?
             } else {
-                self.crdt_manager.materialize_edition(work_be_id)
+                self.crdt_manager
+                    .materialize_edition(work_be_id)
                     .map_err(|e| ServerError::Internal(e.to_string()))?
             };
 
@@ -2102,10 +2177,12 @@ impl Server {
         }
 
         if self.use_otree_crdt {
-            self.otree_crdt.close_sync_session(work_be_id, session_id)
+            self.otree_crdt
+                .close_sync_session(work_be_id, session_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))
         } else {
-            self.crdt_manager.close_sync_session(work_be_id, session_id)
+            self.crdt_manager
+                .close_sync_session(work_be_id, session_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))
         }
     }
@@ -2120,32 +2197,47 @@ impl Server {
         self.ensure_can_edit(session_id, work_be_id)?;
 
         if self.use_otree_crdt {
-            let result = self.otree_crdt
+            let result = self
+                .otree_crdt
                 .apply_text_delta(work_be_id, session_id, ops)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result.relay_to
+            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
+                .relay_to
                 .into_iter()
                 .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
                 .collect();
 
             let revision = if self.crdt_needs_materialization(work_be_id) {
                 let ed = self.materialize_with_provenance(work_be_id, session_id)?;
-                let author_club = self.sessions.get(&session_id).and_then(|s| s.initial_login());
+                let author_club = self
+                    .sessions
+                    .get(&session_id)
+                    .and_then(|s| s.initial_login());
                 Some(self.revise_work(work_be_id, session_id, ed, author_club)?)
             } else {
                 None
             };
 
-            Ok((super::crdt_manager::ApplyUpdateResult { relay_to, was_merged: result.was_merged }, revision))
+            Ok((
+                super::crdt_manager::ApplyUpdateResult {
+                    relay_to,
+                    was_merged: result.was_merged,
+                },
+                revision,
+            ))
         } else {
-            let result = self.crdt_manager
+            let result = self
+                .crdt_manager
                 .apply_text_delta(work_be_id, session_id, ops)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
             let revision = if self.crdt_needs_materialization(work_be_id) {
                 let ed = self.materialize_with_provenance(work_be_id, session_id)?;
-                let author_club = self.sessions.get(&session_id).and_then(|s| s.initial_login());
+                let author_club = self
+                    .sessions
+                    .get(&session_id)
+                    .and_then(|s| s.initial_login());
                 Some(self.revise_work(work_be_id, session_id, ed, author_club)?)
             } else {
                 None
@@ -2167,15 +2259,20 @@ impl Server {
         if self.use_otree_crdt {
             let text = String::from_utf8(update_bytes)
                 .map_err(|e| ServerError::Internal(format!("invalid utf8 update: {}", e)))?;
-            let result = self.otree_crdt
+            let result = self
+                .otree_crdt
                 .apply_federation_update(work_be_id, &text, None)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
-            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result.relay_to
+            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
+                .relay_to
                 .into_iter()
                 .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
                 .collect();
             self.try_materialize(work_be_id, session_id)?;
-            Ok(super::crdt_manager::ApplyUpdateResult { relay_to, was_merged: false })
+            Ok(super::crdt_manager::ApplyUpdateResult {
+                relay_to,
+                was_merged: false,
+            })
         } else {
             let result = self
                 .crdt_manager
@@ -2192,7 +2289,8 @@ impl Server {
         _state_vector: Vec<u8>,
     ) -> Result<Vec<u8>, ServerError> {
         if self.use_otree_crdt {
-            self.otree_crdt.current_text(work_be_id)
+            self.otree_crdt
+                .current_text(work_be_id)
                 .map(|t| t.into_bytes())
                 .map_err(|e| ServerError::Internal(e.to_string()))
         } else {
@@ -2204,7 +2302,8 @@ impl Server {
 
     pub fn crdt_get_full_state(&self, work_be_id: BeId) -> Result<Vec<u8>, ServerError> {
         if self.use_otree_crdt {
-            self.otree_crdt.current_text(work_be_id)
+            self.otree_crdt
+                .current_text(work_be_id)
                 .map(|t| t.into_bytes())
                 .map_err(|e| ServerError::Internal(e.to_string()))
         } else {
@@ -2232,9 +2331,13 @@ impl Server {
 
     pub fn crdt_needs_materialization(&self, work_be_id: BeId) -> bool {
         if self.use_otree_crdt {
-            self.otree_crdt.needs_materialization(work_be_id).unwrap_or(false)
+            self.otree_crdt
+                .needs_materialization(work_be_id)
+                .unwrap_or(false)
         } else {
-            self.crdt_manager.needs_materialization(work_be_id).unwrap_or(false)
+            self.crdt_manager
+                .needs_materialization(work_be_id)
+                .unwrap_or(false)
         }
     }
 
@@ -2246,17 +2349,31 @@ impl Server {
 
     pub fn crdt_current_text(&self, work_be_id: BeId) -> Result<String, ServerError> {
         if self.use_otree_crdt {
-            self.otree_crdt.current_text(work_be_id).map_err(|e| ServerError::Internal(e.to_string()))
+            self.otree_crdt
+                .current_text(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))
         } else {
-            self.crdt_manager.current_text(work_be_id).map_err(|e| ServerError::Internal(e.to_string()))
+            self.crdt_manager
+                .current_text(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))
         }
     }
 
-    pub fn crdt_text_range(&self, work_be_id: BeId, start_char: usize, end_char: usize) -> Result<super::otree_crdt::TextRangeResult, ServerError> {
+    pub fn crdt_text_range(
+        &self,
+        work_be_id: BeId,
+        start_char: usize,
+        end_char: usize,
+    ) -> Result<super::otree_crdt::TextRangeResult, ServerError> {
         if self.use_otree_crdt {
-            self.otree_crdt.text_range(work_be_id, start_char, end_char).map_err(|e| ServerError::Internal(e.to_string()))
+            self.otree_crdt
+                .text_range(work_be_id, start_char, end_char)
+                .map_err(|e| ServerError::Internal(e.to_string()))
         } else {
-            let text = self.crdt_manager.current_text(work_be_id).map_err(|e| ServerError::Internal(e.to_string()))?;
+            let text = self
+                .crdt_manager
+                .current_text(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?;
             let total = text.chars().count();
             let start = start_char.min(total);
             let end = end_char.min(total);
@@ -2270,19 +2387,32 @@ impl Server {
         }
     }
 
-    pub fn work_outline(&self, work_be_id: BeId) -> Result<Vec<crate::edition::edition::OutlineEntry>, ServerError> {
+    pub fn work_outline(
+        &self,
+        work_be_id: BeId,
+    ) -> Result<Vec<crate::edition::edition::OutlineEntry>, ServerError> {
         let text = self.crdt_current_text(work_be_id)?;
         let ed = Edition::from_text(&text);
         Ok(ed.extract_outline())
     }
 
-    pub fn work_search(&self, work_be_id: BeId, query: &str, max_results: usize) -> Result<Vec<crate::edition::edition::SearchMatch>, ServerError> {
+    pub fn work_search(
+        &self,
+        work_be_id: BeId,
+        query: &str,
+        max_results: usize,
+    ) -> Result<Vec<crate::edition::edition::SearchMatch>, ServerError> {
         let text = self.crdt_current_text(work_be_id)?;
         let ed = Edition::from_text(&text);
         Ok(ed.search_text(query, max_results))
     }
 
-    pub fn work_goto(&self, work_be_id: BeId, target_line: u64, context_lines: u64) -> Result<(u64, u64, String), ServerError> {
+    pub fn work_goto(
+        &self,
+        work_be_id: BeId,
+        target_line: u64,
+        context_lines: u64,
+    ) -> Result<(u64, u64, String), ServerError> {
         let text = self.crdt_current_text(work_be_id)?;
         let ed = Edition::from_text(&text);
         Ok(ed.get_context(target_line, context_lines))
@@ -2295,9 +2425,13 @@ impl Server {
     ) -> Result<(), ServerError> {
         let should = self.crdt_needs_materialization(work_be_id);
         let elapsed = if self.use_otree_crdt {
-            self.otree_crdt.debounce_elapsed(work_be_id).map_err(|e| ServerError::Internal(e.to_string()))?
+            self.otree_crdt
+                .debounce_elapsed(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?
         } else {
-            self.crdt_manager.debounce_elapsed(work_be_id).map_err(|e| ServerError::Internal(e.to_string()))?
+            self.crdt_manager
+                .debounce_elapsed(work_be_id)
+                .map_err(|e| ServerError::Internal(e.to_string()))?
         };
 
         if should && elapsed {
@@ -2344,10 +2478,12 @@ impl Server {
         }
 
         let sessions = if self.use_otree_crdt {
-            self.otree_crdt.get_subscribed_sessions(work_be_id)
+            self.otree_crdt
+                .get_subscribed_sessions(work_be_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))?
         } else {
-            self.crdt_manager.get_subscribed_sessions(work_be_id)
+            self.crdt_manager
+                .get_subscribed_sessions(work_be_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))?
         };
 
@@ -2361,9 +2497,17 @@ impl Server {
             })
             .or_else(|| {
                 if self.use_otree_crdt {
-                    self.otree_crdt.get_subscribed_sessions(work_be_id).ok()?.into_iter().next()
+                    self.otree_crdt
+                        .get_subscribed_sessions(work_be_id)
+                        .ok()?
+                        .into_iter()
+                        .next()
                 } else {
-                    self.crdt_manager.get_subscribed_sessions(work_be_id).ok()?.into_iter().next()
+                    self.crdt_manager
+                        .get_subscribed_sessions(work_be_id)
+                        .ok()?
+                        .into_iter()
+                        .next()
                 }
             })
             .ok_or(ServerError::Internal("no subscribed session".into()))?;
@@ -2409,19 +2553,30 @@ impl Server {
             let otree_state = super::otree_crdt::OtreeAwarenessState {
                 session_id: state.session_id,
                 user_name: state.user_name,
-                cursor: state.cursor.map(|c| super::otree_crdt::OtreeCursorPosition { index: c.index }),
-                selection: state.selection.map(|s| super::otree_crdt::OtreeSelectionRange { start: s.start, end: s.end }),
+                cursor: state
+                    .cursor
+                    .map(|c| super::otree_crdt::OtreeCursorPosition { index: c.index }),
+                selection: state
+                    .selection
+                    .map(|s| super::otree_crdt::OtreeSelectionRange {
+                        start: s.start,
+                        end: s.end,
+                    }),
                 is_typing: state.is_typing,
             };
-            let result = self.otree_crdt.update_awareness(work_be_id, session_id, otree_state)
+            let result = self
+                .otree_crdt
+                .update_awareness(work_be_id, session_id, otree_state)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
-            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result.relay_to
+            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
+                .relay_to
                 .into_iter()
                 .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
                 .collect();
             Ok(super::crdt_manager::AwarenessRelayResult { relay_to })
         } else {
-            self.crdt_manager.update_awareness(work_be_id, session_id, state)
+            self.crdt_manager
+                .update_awareness(work_be_id, session_id, state)
                 .map_err(|e| ServerError::Internal(e.to_string()))
         }
     }
@@ -2432,15 +2587,19 @@ impl Server {
         work_be_id: BeId,
     ) -> Result<super::crdt_manager::AwarenessRelayResult, ServerError> {
         if self.use_otree_crdt {
-            let result = self.otree_crdt.remove_awareness(work_be_id, session_id)
+            let result = self
+                .otree_crdt
+                .remove_awareness(work_be_id, session_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
-            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result.relay_to
+            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
+                .relay_to
                 .into_iter()
                 .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
                 .collect();
             Ok(super::crdt_manager::AwarenessRelayResult { relay_to })
         } else {
-            self.crdt_manager.remove_awareness(work_be_id, session_id)
+            self.crdt_manager
+                .remove_awareness(work_be_id, session_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))
         }
     }
@@ -2450,17 +2609,32 @@ impl Server {
         work_be_id: BeId,
     ) -> Result<Vec<super::crdt_manager::AwarenessState>, ServerError> {
         if self.use_otree_crdt {
-            let states = self.otree_crdt.get_awareness(work_be_id)
+            let states = self
+                .otree_crdt
+                .get_awareness(work_be_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
-            Ok(states.into_iter().map(|s| super::crdt_manager::AwarenessState {
-                session_id: s.session_id,
-                user_name: s.user_name.clone(),
-                cursor: s.cursor.as_ref().map(|c| super::crdt_manager::CursorPosition { index: c.index }),
-                selection: s.selection.as_ref().map(|sel| super::crdt_manager::SelectionRange { start: sel.start, end: sel.end }),
-                is_typing: s.is_typing,
-            }).collect())
+            Ok(states
+                .into_iter()
+                .map(|s| super::crdt_manager::AwarenessState {
+                    session_id: s.session_id,
+                    user_name: s.user_name.clone(),
+                    cursor: s
+                        .cursor
+                        .as_ref()
+                        .map(|c| super::crdt_manager::CursorPosition { index: c.index }),
+                    selection: s.selection.as_ref().map(|sel| {
+                        super::crdt_manager::SelectionRange {
+                            start: sel.start,
+                            end: sel.end,
+                        }
+                    }),
+                    is_typing: s.is_typing,
+                })
+                .collect())
         } else {
-            let states = self.crdt_manager.get_awareness(work_be_id)
+            let states = self
+                .crdt_manager
+                .get_awareness(work_be_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
             Ok(states.into_iter().cloned().collect())
         }
@@ -2479,10 +2653,12 @@ impl Server {
                 display_name: author.display_name,
                 club_be_id: author.club_be_id,
             };
-            self.otree_crdt.register_author(work_be_id, session_id, otree_author)
+            self.otree_crdt
+                .register_author(work_be_id, session_id, otree_author)
                 .map_err(|e| ServerError::Internal(e.to_string()))
         } else {
-            self.crdt_manager.register_author(work_be_id, session_id, author)
+            self.crdt_manager
+                .register_author(work_be_id, session_id, author)
                 .map_err(|e| ServerError::Internal(e.to_string()))
         }
     }
@@ -2534,7 +2710,8 @@ impl Server {
                 display_name,
                 club_be_id: login_club,
             };
-            self.otree_crdt.register_author(work_be_id, session_id, author)
+            self.otree_crdt
+                .register_author(work_be_id, session_id, author)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
         } else {
             let author = super::crdt_manager::AuthorIdentity {
@@ -2542,7 +2719,8 @@ impl Server {
                 display_name,
                 club_be_id: login_club,
             };
-            self.crdt_manager.register_author(work_be_id, session_id, author)
+            self.crdt_manager
+                .register_author(work_be_id, session_id, author)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
         }
 
@@ -2552,9 +2730,11 @@ impl Server {
             .and_then(|s| s.club_signing_key().cloned())
         {
             if self.use_otree_crdt {
-                self.otree_crdt.store_club_signing_key(work_be_id, login_club, sk);
+                self.otree_crdt
+                    .store_club_signing_key(work_be_id, login_club, sk);
             } else {
-                self.crdt_manager.store_club_signing_key(work_be_id, login_club, sk);
+                self.crdt_manager
+                    .store_club_signing_key(work_be_id, login_club, sk);
             }
         }
 
@@ -2564,7 +2744,9 @@ impl Server {
     pub fn crdt_sign_update(&self, update_bytes: &[u8]) -> super::crdt_manager::SignedUpdate {
         if self.use_otree_crdt {
             let text = String::from_utf8_lossy(update_bytes);
-            let signed = self.otree_crdt.sign_update(&text, &self.server_keypair.signing_key);
+            let signed = self
+                .otree_crdt
+                .sign_update(&text, &self.server_keypair.signing_key);
             super::crdt_manager::SignedUpdate {
                 update_bytes: signed.update_text.into_bytes(),
                 signature: signed.signature,
@@ -2581,7 +2763,8 @@ impl Server {
         work_be_id: BeId,
     ) -> Result<super::crdt_manager::SignedUpdate, ServerError> {
         if self.use_otree_crdt {
-            let signed = self.otree_crdt
+            let signed = self
+                .otree_crdt
                 .extract_signed_update_for_federation(work_be_id, &self.server_keypair.signing_key)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
             Ok(super::crdt_manager::SignedUpdate {
@@ -2609,14 +2792,24 @@ impl Server {
                 signer_public_key: signed.signer_public_key,
             };
             let initial_edition = initial_text.map(|t| Edition::from_text_batched(t));
-            let result = self.otree_crdt
-                .apply_signed_federation_update(work_be_id, &otree_signed, &std::collections::HashMap::new(), initial_edition.as_ref())
+            let result = self
+                .otree_crdt
+                .apply_signed_federation_update(
+                    work_be_id,
+                    &otree_signed,
+                    &std::collections::HashMap::new(),
+                    initial_edition.as_ref(),
+                )
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
-            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result.relay_to
+            let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
+                .relay_to
                 .into_iter()
                 .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
                 .collect();
-            Ok(super::crdt_manager::ApplyUpdateResult { relay_to, was_merged: false })
+            Ok(super::crdt_manager::ApplyUpdateResult {
+                relay_to,
+                was_merged: false,
+            })
         } else {
             let mut known_keys = std::collections::HashMap::new();
             let server_vk = self.server_keypair.signing_key.verifying_key();
@@ -2642,7 +2835,19 @@ impl Server {
 
     pub fn list_works_with_titles(
         &self,
-    ) -> Vec<(BeId, Option<BeId>, u64, bool, String, Option<BeId>, bool, Option<u64>, Option<u64>, Option<BeId>, Option<String>)> {
+    ) -> Vec<(
+        BeId,
+        Option<BeId>,
+        u64,
+        bool,
+        String,
+        Option<BeId>,
+        bool,
+        Option<u64>,
+        Option<u64>,
+        Option<BeId>,
+        Option<String>,
+    )> {
         self.works
             .iter()
             .map(|(id, ws)| {
@@ -2686,7 +2891,15 @@ impl Server {
     pub fn list_works_by_historical_author(
         &self,
         author_id: BeId,
-    ) -> Vec<(BeId, Option<BeId>, u64, bool, String, Option<BeId>, Option<String>)> {
+    ) -> Vec<(
+        BeId,
+        Option<BeId>,
+        u64,
+        bool,
+        String,
+        Option<BeId>,
+        Option<String>,
+    )> {
         self.works
             .iter()
             .filter(|(_, ws)| ws.source_author_id == Some(author_id))
@@ -2694,7 +2907,15 @@ impl Server {
                 let rev_count = ws.work.revision_count();
                 let grabbed = ws.grabber.is_some();
                 let read_club = ws.work.read_club();
-                (*id, ws.work.owner(), rev_count, grabbed, ws.cached_title.clone(), read_club, ws.source_edition_info.clone())
+                (
+                    *id,
+                    ws.work.owner(),
+                    rev_count,
+                    grabbed,
+                    ws.cached_title.clone(),
+                    read_club,
+                    ws.source_edition_info.clone(),
+                )
             })
             .collect()
     }
@@ -2944,10 +3165,8 @@ impl Server {
             ));
         };
 
-        let verify_report = crate::persist::verify::verify_store_with_manifest(
-            &manifest,
-            &chunk_store,
-        );
+        let verify_report =
+            crate::persist::verify::verify_store_with_manifest(&manifest, &chunk_store);
         if !verify_report.is_ok() {
             tracing::warn!(
                 "Data verification found issues: {} corrupt chunks, {} missing chunks, {} deserialization errors",
@@ -3029,7 +3248,8 @@ impl Server {
                     tracing::error!(
                         "Skipping corrupt club {} (chunk error: {}). \
                          Recreate this identity if needed.",
-                        club_ref.be_id, e
+                        club_ref.be_id,
+                        e
                     );
                 }
             }
@@ -3063,7 +3283,8 @@ impl Server {
                     tracing::error!(
                         "Skipping corrupt work {} (chunk error: {}). \
                          Data for this document is lost.",
-                        id, e
+                        id,
+                        e
                     );
                 }
             }
@@ -3082,29 +3303,55 @@ impl Server {
                 Err(e) => {
                     tracing::error!(
                         "Skipping corrupt standalone edition {} (chunk error: {})",
-                        se_ref.be_id, e
+                        se_ref.be_id,
+                        e
                     );
                 }
             }
         }
 
         for link in &manifest.links {
-            let o_ref = link.origin_ref.as_ref().map(|hr| {
-                let excerpt = hr.excerpt
-                    .as_deref()
-                    .map(crate::edition::Edition::from_text);
-                crate::edition::links::HyperRef::single(excerpt, hr.work_context, hr.original_context, None)
-            }).unwrap_or_else(|| {
-                crate::edition::links::HyperRef::single(None, Some(link.origin), None, None)
-            });
-            let d_ref = link.destination_ref.as_ref().map(|hr| {
-                let excerpt = hr.excerpt
-                    .as_deref()
-                    .map(crate::edition::Edition::from_text);
-                crate::edition::links::HyperRef::single(excerpt, hr.work_context, hr.original_context, None)
-            }).unwrap_or_else(|| {
-                crate::edition::links::HyperRef::single(None, Some(link.destination), None, None)
-            });
+            let o_ref = link
+                .origin_ref
+                .as_ref()
+                .map(|hr| {
+                    let excerpt = hr
+                        .excerpt
+                        .as_deref()
+                        .map(crate::edition::Edition::from_text);
+                    crate::edition::links::HyperRef::single(
+                        excerpt,
+                        hr.work_context,
+                        hr.original_context,
+                        None,
+                    )
+                })
+                .unwrap_or_else(|| {
+                    crate::edition::links::HyperRef::single(None, Some(link.origin), None, None)
+                });
+            let d_ref = link
+                .destination_ref
+                .as_ref()
+                .map(|hr| {
+                    let excerpt = hr
+                        .excerpt
+                        .as_deref()
+                        .map(crate::edition::Edition::from_text);
+                    crate::edition::links::HyperRef::single(
+                        excerpt,
+                        hr.work_context,
+                        hr.original_context,
+                        None,
+                    )
+                })
+                .unwrap_or_else(|| {
+                    crate::edition::links::HyperRef::single(
+                        None,
+                        Some(link.destination),
+                        None,
+                        None,
+                    )
+                });
             let hyperlink = crate::edition::links::HyperLink::make(vec![], o_ref, d_ref);
             self.links.insert(
                 link.link_id,
@@ -3163,13 +3410,15 @@ impl Server {
         }
 
         for (se_id, edition) in &self.standalone_editions {
-            self.backfollow
-                .register_edition(edition, *se_id, crate::edition::props::BertProp::make());
+            self.backfollow.register_edition(
+                edition,
+                *se_id,
+                crate::edition::props::BertProp::make(),
+            );
         }
 
         for (link_id, ls) in &self.links {
-            self.backfollow
-                .register_link_content(&ls.link, *link_id);
+            self.backfollow.register_link_content(&ls.link, *link_id);
         }
 
         Ok(())
@@ -3288,21 +3537,19 @@ impl Server {
                 Ok(json) => {
                     let tmp_path = kh_path.with_extension("tmp");
                     match std::fs::File::create(&tmp_path) {
-                        Ok(mut f) => {
-                            match std::io::Write::write_all(&mut f, json.as_bytes()) {
-                                Ok(()) => {
-                                    let _ = f.sync_all();
-                                    if let Err(e) = std::fs::rename(&tmp_path, &kh_path) {
-                                        tracing::warn!("Failed to rename key history: {}", e);
-                                        let _ = std::fs::remove_file(&tmp_path);
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::warn!("Failed to write key history: {}", e);
+                        Ok(mut f) => match std::io::Write::write_all(&mut f, json.as_bytes()) {
+                            Ok(()) => {
+                                let _ = f.sync_all();
+                                if let Err(e) = std::fs::rename(&tmp_path, &kh_path) {
+                                    tracing::warn!("Failed to rename key history: {}", e);
                                     let _ = std::fs::remove_file(&tmp_path);
                                 }
                             }
-                        }
+                            Err(e) => {
+                                tracing::warn!("Failed to write key history: {}", e);
+                                let _ = std::fs::remove_file(&tmp_path);
+                            }
+                        },
                         Err(e) => {
                             tracing::warn!("Failed to create key history tmp: {}", e);
                         }
@@ -3544,8 +3791,8 @@ impl Server {
             let o_with_chain = o_ref.with_provenance_chain(chain);
             HyperLink::make(vec![], o_with_chain, d_ref)
         } else {
-            let o_ref = HyperRef::single(None, Some(origin), None, None)
-                .with_provenance_chain(chain);
+            let o_ref =
+                HyperRef::single(None, Some(origin), None, None).with_provenance_chain(chain);
             let d_ref = HyperRef::single(None, Some(destination), None, None);
             HyperLink::make(vec![], o_ref, d_ref)
         };
@@ -3561,7 +3808,8 @@ impl Server {
             .entry(destination)
             .or_default()
             .push(link_id);
-        self.backfollow.register_link_content(&self.links[&link_id].link, link_id);
+        self.backfollow
+            .register_link_content(&self.links[&link_id].link, link_id);
         Ok(link_id)
     }
 
@@ -3645,7 +3893,10 @@ impl Server {
         self.links.len()
     }
 
-    fn compute_provenance_chain(&self, origin_work_id: BeId) -> Vec<crate::edition::links::ProvenanceHop> {
+    fn compute_provenance_chain(
+        &self,
+        origin_work_id: BeId,
+    ) -> Vec<crate::edition::links::ProvenanceHop> {
         use crate::edition::links::ProvenanceHop;
         let incoming = self.list_links_for_work(origin_work_id);
         let mut chain = Vec::new();
@@ -3891,11 +4142,7 @@ impl Server {
             .collect()
     }
 
-    pub fn find_excerpt_positions(
-        &self,
-        work_id: BeId,
-        excerpt_text: &str,
-    ) -> Vec<(usize, usize)> {
+    pub fn find_excerpt_positions(&self, work_id: BeId, excerpt_text: &str) -> Vec<(usize, usize)> {
         if excerpt_text.is_empty() {
             return Vec::new();
         }
@@ -3952,8 +4199,16 @@ impl Server {
                     let char_count = text.chars().count();
                     let start = span.char_start().min(char_count);
                     let end = span.char_end().min(char_count);
-                    let byte_start = text.char_indices().nth(start).map(|(i, _)| i).unwrap_or(text.len());
-                    let byte_end = text.char_indices().nth(end).map(|(i, _)| i).unwrap_or(text.len());
+                    let byte_start = text
+                        .char_indices()
+                        .nth(start)
+                        .map(|(i, _)| i)
+                        .unwrap_or(text.len());
+                    let byte_end = text
+                        .char_indices()
+                        .nth(end)
+                        .map(|(i, _)| i)
+                        .unwrap_or(text.len());
                     result.push_str(&text[byte_start..byte_end]);
                 }
             }
@@ -6536,12 +6791,12 @@ pub(crate) mod persist_snapshot {
                     .links
                     .iter()
                     .map(|(id, ls)| {
-                        let o_ref = ls.link
-                            .end_at("LeftEnd")
-                            .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
-                        let d_ref = ls.link
-                            .end_at("RightEnd")
-                            .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
+                        let o_ref = ls.link.end_at("LeftEnd").map(
+                            crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
+                        );
+                        let d_ref = ls.link.end_at("RightEnd").map(
+                            crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
+                        );
                         LinkSnapshot {
                             link_id: *id,
                             origin: ls.origin,
@@ -6631,14 +6886,15 @@ pub(crate) mod persist_snapshot {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
-            crdt_manager: CrdtManager::new(3),
-            otree_crdt: crate::server::otree_crdt::OtreeCrdtManager::new(3),
-            use_otree_crdt: false,
+                crdt_manager: CrdtManager::new(3),
+                otree_crdt: crate::server::otree_crdt::OtreeCrdtManager::new(3),
+                use_otree_crdt: false,
                 personal_club_count: 0,
                 max_personal_clubs: 10_000,
                 login_attempts: HashMap::new(),
                 attribution_log: None,
-                historical_authors: crate::server::historical_author::HistoricalAuthorRegistry::new(),
+                historical_authors: crate::server::historical_author::HistoricalAuthorRegistry::new(
+                ),
                 source_patterns: crate::server::source_matcher::builtin_patterns(),
             };
             for club_snap in &snapshot.clubs {
@@ -6715,18 +6971,28 @@ pub(crate) mod persist_snapshot {
             }
 
             for ls in &snapshot.links {
-                let o_ref = ls.origin_ref.as_ref().map(|hr| {
-                    let excerpt = hr.excerpt
-                        .as_deref()
-                        .map(crate::edition::Edition::from_text);
-                    HyperRef::single(excerpt, hr.work_context, hr.original_context, None)
-                }).unwrap_or_else(|| HyperRef::single(None, Some(ls.origin), None, None));
-                let d_ref = ls.destination_ref.as_ref().map(|hr| {
-                    let excerpt = hr.excerpt
-                        .as_deref()
-                        .map(crate::edition::Edition::from_text);
-                    HyperRef::single(excerpt, hr.work_context, hr.original_context, None)
-                }).unwrap_or_else(|| HyperRef::single(None, Some(ls.destination), None, None));
+                let o_ref = ls
+                    .origin_ref
+                    .as_ref()
+                    .map(|hr| {
+                        let excerpt = hr
+                            .excerpt
+                            .as_deref()
+                            .map(crate::edition::Edition::from_text);
+                        HyperRef::single(excerpt, hr.work_context, hr.original_context, None)
+                    })
+                    .unwrap_or_else(|| HyperRef::single(None, Some(ls.origin), None, None));
+                let d_ref = ls
+                    .destination_ref
+                    .as_ref()
+                    .map(|hr| {
+                        let excerpt = hr
+                            .excerpt
+                            .as_deref()
+                            .map(crate::edition::Edition::from_text);
+                        HyperRef::single(excerpt, hr.work_context, hr.original_context, None)
+                    })
+                    .unwrap_or_else(|| HyperRef::single(None, Some(ls.destination), None, None));
                 let link = HyperLink::make(vec![], o_ref, d_ref);
                 server.links.insert(
                     ls.link_id,
@@ -6906,25 +7172,25 @@ pub(crate) mod persist_snapshot {
                 self.standalone_edition_refs.insert(*id, ed_ref);
             }
 
-            let links: Vec<_> = self
-                .links
-                .iter()
-                .map(|(id, ls)| {
-                    let o_ref = ls.link
-                        .end_at("LeftEnd")
-                        .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
-                    let d_ref = ls.link
-                        .end_at("RightEnd")
-                        .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
-                    crate::persist::manifest::LinkEntry {
-                        link_id: *id,
-                        origin: ls.origin,
-                        destination: ls.destination,
-                        origin_ref: o_ref,
-                        destination_ref: d_ref,
-                    }
-                })
-                .collect();
+            let links: Vec<_> =
+                self.links
+                    .iter()
+                    .map(|(id, ls)| {
+                        let o_ref = ls.link.end_at("LeftEnd").map(
+                            crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
+                        );
+                        let d_ref = ls.link.end_at("RightEnd").map(
+                            crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
+                        );
+                        crate::persist::manifest::LinkEntry {
+                            link_id: *id,
+                            origin: ls.origin,
+                            destination: ls.destination,
+                            origin_ref: o_ref,
+                            destination_ref: d_ref,
+                        }
+                    })
+                    .collect();
 
             let blob_metas: Vec<_> = self
                 .blob_store
@@ -6992,14 +7258,20 @@ pub(crate) mod persist_snapshot {
 
             let data_dir = match self.data_dir.as_ref() {
                 Some(d) => d.as_path(),
-                None => return Err(std::io::Error::new(std::io::ErrorKind::Other, "no data dir")),
+                None => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "no data dir",
+                    ))
+                }
             };
             crate::persist::manifest::rotate_manifest_backups(&manifest_path, 3);
             crate::persist::manifest::write_manifest(&mut manifest, &manifest_path)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             self.manifest_sequence = manifest.sequence;
             {
-                let backup = crate::persist::manifest::backup_manifest_path(data_dir, manifest.sequence);
+                let backup =
+                    crate::persist::manifest::backup_manifest_path(data_dir, manifest.sequence);
                 if let Err(e) = std::fs::copy(&manifest_path, &backup) {
                     tracing::warn!("Failed to create versioned manifest backup: {}", e);
                 }
@@ -7373,6 +7645,11 @@ mod tests_find_text {
 
 #[cfg(test)]
 mod tests {
+    const TEST_OWNER_CREDENTIAL: &[u8] = b"xudanu-test-owner";
+    const TEST_OTHER_CREDENTIAL: &[u8] = b"xudanu-test-other";
+    const TEST_MEMBER_CREDENTIAL: &[u8] = b"xudanu-test-member";
+    const TEST_ALT_CREDENTIAL: &[u8] = b"xudanu-test-alt";
+    const TEST_ADMIN_CREDENTIAL: &[u8] = b"xudanu-test-admin";
     use super::*;
     use crate::edition::RangeElement;
     use crate::server::crdt_manager::{AwarenessState, CursorPosition};
@@ -10657,7 +10934,7 @@ mod tests {
     #[test]
     fn crdt_open_session_checks_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
         let edit_club = server
             .create_named_club(owner_sid, "priv_edit", Edition::empty())
             .unwrap();
@@ -10667,8 +10944,8 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", b"pass2");
-        let intruder_sid = ac_login_as(&mut server, user_club, b"pass2");
+        let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let intruder_sid = ac_login_as(&mut server, user_club, TEST_OTHER_CREDENTIAL);
         let result = server.crdt_open_session(intruder_sid, work_id);
         assert!(result.is_err(), "non-member should not open CRDT session");
     }
@@ -10676,7 +10953,7 @@ mod tests {
     #[test]
     fn crdt_open_session_allows_member() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
         let edit_club = server
             .create_named_club(owner_sid, "priv_edit", Edition::empty())
             .unwrap();
@@ -10686,11 +10963,11 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "member", b"pass2");
+        let (user_club, _user_sid) = ac_create_user(&mut server, "member", TEST_OTHER_CREDENTIAL);
         server
             .club_add_member(owner_sid, edit_club, user_club)
             .unwrap();
-        let member_sid = ac_login_as(&mut server, user_club, b"pass2");
+        let member_sid = ac_login_as(&mut server, user_club, TEST_OTHER_CREDENTIAL);
         let result = server.crdt_open_session(member_sid, work_id);
         assert!(result.is_ok(), "member should open CRDT session");
     }
@@ -10698,7 +10975,7 @@ mod tests {
     #[test]
     fn crdt_apply_text_delta_checks_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
         let edit_club = server
             .create_named_club(owner_sid, "priv_edit", Edition::empty())
             .unwrap();
@@ -10711,10 +10988,10 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let owner_sid2 = ac_login_as(&mut server, owner_club, b"pass1");
+        let owner_sid2 = ac_login_as(&mut server, owner_club, TEST_OWNER_CREDENTIAL);
         let _ = server.crdt_open_session(owner_sid2, work_id).unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", b"pass2");
-        let intruder_sid = ac_login_as(&mut server, user_club, b"pass2");
+        let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let intruder_sid = ac_login_as(&mut server, user_club, TEST_OTHER_CREDENTIAL);
         let ops = vec![TextDeltaOp::Insert {
             text: "hacked".to_string(),
         }];
@@ -10725,7 +11002,7 @@ mod tests {
     #[test]
     fn crdt_apply_update_checks_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
         let edit_club = server
             .create_named_club(owner_sid, "priv_edit", Edition::empty())
             .unwrap();
@@ -10738,10 +11015,10 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let owner_sid2 = ac_login_as(&mut server, owner_club, b"pass1");
+        let owner_sid2 = ac_login_as(&mut server, owner_club, TEST_OWNER_CREDENTIAL);
         let _ = server.crdt_open_session(owner_sid2, work_id).unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", b"pass2");
-        let intruder_sid = ac_login_as(&mut server, user_club, b"pass2");
+        let (user_club, _user_sid) = ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let intruder_sid = ac_login_as(&mut server, user_club, TEST_OTHER_CREDENTIAL);
         let result = server.crdt_apply_update(intruder_sid, work_id, vec![1, 2, 3]);
         assert!(result.is_err(), "non-member should not apply update");
     }
@@ -10792,7 +11069,7 @@ mod tests {
     #[test]
     fn work_set_edit_club_requires_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
         let edit_club = server
             .create_named_club(owner_sid, "edit_gate", Edition::empty())
             .unwrap();
@@ -10802,8 +11079,9 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
-        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let (stranger_club, _stranger_sid) =
+            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
         let result =
             server.work_set_edit_club(stranger_sid, work_id, Some(server.public_club_id()));
         assert!(result.is_err(), "stranger should not change edit club");
@@ -10812,7 +11090,7 @@ mod tests {
     #[test]
     fn work_set_read_club_requires_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
         let edit_club = server
             .create_named_club(owner_sid, "read_gate", Edition::empty())
             .unwrap();
@@ -10822,8 +11100,9 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
-        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let (stranger_club, _stranger_sid) =
+            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
         let result =
             server.work_set_read_club(stranger_sid, work_id, Some(server.public_club_id()));
         assert!(result.is_err(), "stranger should not change read club");
@@ -10832,12 +11111,13 @@ mod tests {
     #[test]
     fn work_publish_requires_owner() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
         let work_id = server
             .create_work(owner_sid, Edition::from_text("mine"))
             .unwrap();
-        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
-        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let (stranger_club, _stranger_sid) =
+            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
         let result = server.work_publish(stranger_sid, work_id);
         assert!(result.is_err(), "non-owner should not publish");
     }
@@ -10845,13 +11125,14 @@ mod tests {
     #[test]
     fn work_unpublish_requires_owner() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
         let work_id = server
             .create_work(owner_sid, Edition::from_text("mine"))
             .unwrap();
         server.work_publish(owner_sid, work_id).unwrap();
-        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
-        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let (stranger_club, _stranger_sid) =
+            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
         let result = server.work_unpublish(stranger_sid, work_id);
         assert!(result.is_err(), "non-owner should not unpublish");
     }
@@ -10859,12 +11140,13 @@ mod tests {
     #[test]
     fn work_irrevocably_unpublish_requires_owner() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
         let work_id = server
             .create_work(owner_sid, Edition::from_text("mine"))
             .unwrap();
-        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
-        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let (stranger_club, _stranger_sid) =
+            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
         let result = server.work_irrevocably_unpublish(stranger_sid, work_id);
         assert!(
             result.is_err(),
@@ -10875,7 +11157,7 @@ mod tests {
     #[test]
     fn work_sponsor_requires_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
         let edit_club = server
             .create_named_club(owner_sid, "sponsor_gate", Edition::empty())
             .unwrap();
@@ -10885,8 +11167,9 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
-        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let (stranger_club, _stranger_sid) =
+            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
         let result = server.work_sponsor(stranger_sid, work_id, server.public_club_id());
         assert!(
             result.is_err(),
@@ -11209,7 +11492,7 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (user_club, user_sid) = ac_create_user(&mut server, "invitee", b"password1");
+        let (user_club, user_sid) = ac_create_user(&mut server, "invitee", TEST_ALT_CREDENTIAL);
         assert!(
             !server.work_can_revise(user_sid, work_id).unwrap(),
             "before invite, user cannot edit"
@@ -11217,7 +11500,7 @@ mod tests {
         server
             .club_add_member(owner_sid, edit_club, user_club)
             .unwrap();
-        let user_sid2 = ac_login_as(&mut server, user_club, b"password1");
+        let user_sid2 = ac_login_as(&mut server, user_club, TEST_ALT_CREDENTIAL);
         assert!(
             server.work_can_revise(user_sid2, work_id).unwrap(),
             "after invite, user can edit"
@@ -11236,16 +11519,16 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "tempuser", b"password1");
+        let (user_club, _user_sid) = ac_create_user(&mut server, "tempuser", TEST_ALT_CREDENTIAL);
         server
             .club_add_member(owner_sid, edit_club, user_club)
             .unwrap();
-        let user_sid2 = ac_login_as(&mut server, user_club, b"password1");
+        let user_sid2 = ac_login_as(&mut server, user_club, TEST_ALT_CREDENTIAL);
         assert!(server.work_can_revise(user_sid2, work_id).unwrap());
         server
             .club_remove_member(owner_sid, edit_club, user_club)
             .unwrap();
-        let user_sid3 = ac_login_as(&mut server, user_club, b"password1");
+        let user_sid3 = ac_login_as(&mut server, user_club, TEST_ALT_CREDENTIAL);
         assert!(
             !server.work_can_revise(user_sid3, work_id).unwrap(),
             "removed member should not edit"
@@ -11255,7 +11538,7 @@ mod tests {
     #[test]
     fn read_club_restricts_visibility() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
         let read_club = server
             .create_named_club(owner_sid, "secret_readers", Edition::empty())
             .unwrap();
@@ -11265,8 +11548,9 @@ mod tests {
         server
             .work_set_read_club(owner_sid, work_id, Some(read_club))
             .unwrap();
-        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
-        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let (stranger_club, _stranger_sid) =
+            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
         let can_read = server.work_can_read(stranger_sid, work_id).unwrap();
         assert!(
             !can_read,
@@ -11289,14 +11573,15 @@ mod tests {
     #[test]
     fn unpublish_restricts_to_owner() {
         let (mut server, _pub_sid) = ac_setup();
-        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", b"pass1");
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
         let work_id = server
             .create_work(owner_sid, Edition::from_text("my doc"))
             .unwrap();
         server.work_publish(owner_sid, work_id).unwrap();
         server.work_unpublish(owner_sid, work_id).unwrap();
-        let (stranger_club, _stranger_sid) = ac_create_user(&mut server, "stranger", b"pass2");
-        let stranger_sid = ac_login_as(&mut server, stranger_club, b"pass2");
+        let (stranger_club, _stranger_sid) =
+            ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
         assert!(
             !server.work_can_read(stranger_sid, work_id).unwrap(),
             "unpublished work should not be readable by strangers"
@@ -11315,13 +11600,13 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "crdt_user", b"password1");
-        let user_sid = ac_login_as(&mut server, user_club, b"password1");
+        let (user_club, _user_sid) = ac_create_user(&mut server, "crdt_user", TEST_ALT_CREDENTIAL);
+        let user_sid = ac_login_as(&mut server, user_club, TEST_ALT_CREDENTIAL);
         assert!(server.crdt_open_session(user_sid, work_id).is_err());
         server
             .club_add_member(owner_sid, edit_club, user_club)
             .unwrap();
-        let user_sid2 = ac_login_as(&mut server, user_club, b"password1");
+        let user_sid2 = ac_login_as(&mut server, user_club, TEST_ALT_CREDENTIAL);
         assert!(server.crdt_open_session(user_sid2, work_id).is_ok());
     }
 
@@ -11337,11 +11622,11 @@ mod tests {
         server
             .work_set_edit_club(owner_sid, work_id, Some(edit_club))
             .unwrap();
-        let (user_club, _user_sid) = ac_create_user(&mut server, "revokee", b"password1");
+        let (user_club, _user_sid) = ac_create_user(&mut server, "revokee", TEST_ALT_CREDENTIAL);
         server
             .club_add_member(owner_sid, edit_club, user_club)
             .unwrap();
-        let user_sid = ac_login_as(&mut server, user_club, b"password1");
+        let user_sid = ac_login_as(&mut server, user_club, TEST_ALT_CREDENTIAL);
         let _r = server.crdt_open_session(user_sid, work_id).unwrap();
         server
             .crdt_apply_text_delta(
@@ -11432,11 +11717,11 @@ mod tests {
     #[test]
     fn provenance_chain_empty_for_first_link() {
         let (mut server, sid) = prov_setup();
-        let work_a = server.create_work(sid, Edition::from_text("original")).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("original"))
+            .unwrap();
         let work_b = server.create_work(sid, Edition::from_text("copy")).unwrap();
-        let link_id = server.create_link(
-            sid, work_a, work_b, None, None,
-        ).unwrap();
+        let link_id = server.create_link(sid, work_a, work_b, None, None).unwrap();
         let (_, _, link) = server.get_link(link_id).unwrap();
         let o_ref = link.end_at("LeftEnd").unwrap();
         assert!(
@@ -11448,9 +11733,13 @@ mod tests {
     #[test]
     fn provenance_chain_single_hop() {
         let (mut server, sid) = prov_setup();
-        let work_a = server.create_work(sid, Edition::from_text("original")).unwrap();
+        let work_a = server
+            .create_work(sid, Edition::from_text("original"))
+            .unwrap();
         let work_b = server.create_work(sid, Edition::from_text("copy")).unwrap();
-        let work_c = server.create_work(sid, Edition::from_text("derived")).unwrap();
+        let work_c = server
+            .create_work(sid, Edition::from_text("derived"))
+            .unwrap();
 
         let _link1 = server.create_link(sid, work_a, work_b, None, None).unwrap();
         let link2 = server.create_link(sid, work_b, work_c, None, None).unwrap();
@@ -11503,18 +11792,26 @@ mod tests {
     #[test]
     fn provenance_chain_with_excerpt() {
         let (mut server, sid) = prov_setup();
-        let wa = server.create_work(sid, Edition::from_text("source")).unwrap();
-        let wb = server.create_work(sid, Edition::from_text("target")).unwrap();
-        let wc = server.create_work(sid, Edition::from_text("final")).unwrap();
+        let wa = server
+            .create_work(sid, Edition::from_text("source"))
+            .unwrap();
+        let wb = server
+            .create_work(sid, Edition::from_text("target"))
+            .unwrap();
+        let wc = server
+            .create_work(sid, Edition::from_text("final"))
+            .unwrap();
 
         let o_ref = crate::edition::links::HyperRef::single(
             Some(Edition::from_text("excerpt text")),
-            Some(wa), None, None,
+            Some(wa),
+            None,
+            None,
         );
-        let d_ref = crate::edition::links::HyperRef::single(
-            None, Some(wb), None, None,
-        );
-        let l1 = server.create_link(sid, wa, wb, Some(o_ref), Some(d_ref)).unwrap();
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(wb), None, None);
+        let l1 = server
+            .create_link(sid, wa, wb, Some(o_ref), Some(d_ref))
+            .unwrap();
 
         let link2 = server.create_link(sid, wb, wc, None, None).unwrap();
         let (_, _, link) = server.get_link(link2).unwrap();
@@ -11529,6 +11826,9 @@ mod tests {
         let (mut server, sid) = prov_setup();
         let wa = server.create_work(sid, Edition::from_text("a")).unwrap();
         let ancestry = server.provenance_ancestry(wa);
-        assert!(ancestry.is_empty(), "work with no incoming links has no ancestry");
+        assert!(
+            ancestry.is_empty(),
+            "work with no incoming links has no ancestry"
+        );
     }
 }

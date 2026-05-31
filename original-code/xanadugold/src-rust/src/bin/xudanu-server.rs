@@ -78,7 +78,9 @@ fn usage() {
     eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
     eprintln!("  --key-passphrase <pw>   Passphrase for encrypted server key file");
     eprintln!("                         (can also set XUDANU_KEY_PASSPHRASE env var)");
-    eprintln!("  --otree-crdt             Use O-tree merge instead of yrs for collaborative editing");
+    eprintln!(
+        "  --otree-crdt             Use O-tree merge instead of yrs for collaborative editing"
+    );
     eprintln!();
     eprintln!("Flags:");
     eprintln!("  --version, -V            Print version");
@@ -390,12 +392,11 @@ async fn main() {
                     }
                     "--key-passphrase" => {
                         i += 1;
-                        key_passphrase = Some(
-                            args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
+                        key_passphrase =
+                            Some(args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
                                 eprintln!("Error: --key-passphrase requires a value");
                                 std::process::exit(1);
-                            }),
-                        );
+                            }));
                     }
                     "--otree-crdt" => {
                         use_otree_crdt = true;
@@ -424,9 +425,17 @@ async fn main() {
                     if let Err(e) = s.restore_from_data_dir(&path, pass_bytes) {
                         eprintln!("Error: Failed to restore from data directory: {}", e);
                         eprintln!("Hints:");
-                        eprintln!("  - Run 'xudanu-server verify {}' to check data integrity", dir);
-                        eprintln!("  - Run 'xudanu-server rebuild-manifest {}' to rebuild the manifest", dir);
-                        eprintln!("  - Remove the data directory to start fresh (all data will be lost)");
+                        eprintln!(
+                            "  - Run 'xudanu-server verify {}' to check data integrity",
+                            dir
+                        );
+                        eprintln!(
+                            "  - Run 'xudanu-server rebuild-manifest {}' to rebuild the manifest",
+                            dir
+                        );
+                        eprintln!(
+                            "  - Remove the data directory to start fresh (all data will be lost)"
+                        );
                         std::process::exit(1);
                     }
                     let elapsed = start.elapsed();
@@ -578,9 +587,9 @@ async fn main() {
                     let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
                     loop {
                         interval.tick().await;
-                        let saved = autosave_state.server.with_server(|srv| {
-                            srv.materialize_all_pending()
-                        });
+                        let saved = autosave_state
+                            .server
+                            .with_server(|srv| srv.materialize_all_pending());
                         if saved > 0 {
                             tracing::info!("auto-save: materialized {} work(s)", saved);
                         }
