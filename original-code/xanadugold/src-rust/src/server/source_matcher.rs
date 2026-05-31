@@ -23,8 +23,15 @@ pub struct SourcePattern {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MetadataExtractor {
-    LineContains { pattern: String, key: String },
-    RegexBetween { prefix: String, suffix: String, key: String },
+    LineContains {
+        pattern: String,
+        key: String,
+    },
+    RegexBetween {
+        prefix: String,
+        suffix: String,
+        key: String,
+    },
 }
 
 impl SourcePattern {
@@ -35,8 +42,16 @@ impl SourcePattern {
         let has_header = if self.header_patterns.is_empty() {
             true
         } else {
-            let top_text: String = lines.iter().take(50).copied().collect::<Vec<&str>>().join("\n").to_lowercase();
-            self.header_patterns.iter().all(|p| top_text.contains(&p.to_lowercase()))
+            let top_text: String = lines
+                .iter()
+                .take(50)
+                .copied()
+                .collect::<Vec<&str>>()
+                .join("\n")
+                .to_lowercase();
+            self.header_patterns
+                .iter()
+                .all(|p| top_text.contains(&p.to_lowercase()))
         };
 
         if !has_header {
@@ -61,7 +76,11 @@ impl SourcePattern {
                         }
                     }
                 }
-                MetadataExtractor::RegexBetween { prefix, suffix, key } => {
+                MetadataExtractor::RegexBetween {
+                    prefix,
+                    suffix,
+                    key,
+                } => {
                     for line in &lines {
                         if let Some(start) = line.find(prefix) {
                             let rest = &line[start + prefix.len()..];
@@ -187,19 +206,24 @@ mod tests {
     use super::*;
 
     fn gutenberg_sample() -> String {
-        let mut text = String::from("The Project Gutenberg eBook of The Ten Books on Architecture\n");
+        let mut text =
+            String::from("The Project Gutenberg eBook of The Ten Books on Architecture\n");
         text.push_str("by Vitruvius\n\n");
         text.push_str("Release Date: January 1, 2024 [eBook #20239]\n");
         text.push_str("Title: The Ten Books on Architecture\n");
         text.push_str("Author: Vitruvius\n");
         text.push_str("Language: English\n\n");
-        text.push_str("*** START OF THE PROJECT GUTENBERG EBOOK THE TEN BOOKS ON ARCHITECTURE ***\n\n");
+        text.push_str(
+            "*** START OF THE PROJECT GUTENBERG EBOOK THE TEN BOOKS ON ARCHITECTURE ***\n\n",
+        );
         text.push_str("Book I\n\n");
         text.push_str("The Education of the Architect\n\n");
         for _ in 0..50 {
             text.push_str("Lorem ipsum dolor sit amet.\n");
         }
-        text.push_str("\n*** END OF THE PROJECT GUTENBERG EBOOK THE TEN BOOKS ON ARCHITECTURE ***\n");
+        text.push_str(
+            "\n*** END OF THE PROJECT GUTENBERG EBOOK THE TEN BOOKS ON ARCHITECTURE ***\n",
+        );
         text.push_str("\nUpdated editions will replace the previous one.\n");
         text
     }
@@ -261,17 +285,18 @@ mod tests {
             start_marker: Some("--- BEGIN CONTENT ---".into()),
             end_marker: Some("--- END CONTENT ---".into()),
             header_patterns: vec!["JSTOR".into()],
-            metadata_extractors: vec![
-                MetadataExtractor::LineContains {
-                    pattern: "DOI:".into(),
-                    key: "doi".into(),
-                },
-            ],
+            metadata_extractors: vec![MetadataExtractor::LineContains {
+                pattern: "DOI:".into(),
+                key: "doi".into(),
+            }],
         };
         let text = "JSTOR Digital Library\nDOI: 10.1234/5678\n--- BEGIN CONTENT ---\nContent here.\n--- END CONTENT ---\nFooter";
         let result = pattern.detect(text);
         assert!(result.detected);
-        assert_eq!(result.metadata.get("doi").unwrap().trim(), "DOI: 10.1234/5678");
+        assert_eq!(
+            result.metadata.get("doi").unwrap().trim(),
+            "DOI: 10.1234/5678"
+        );
         assert_eq!(result.content_start_line, 3);
         assert_eq!(result.content_end_line, 4);
     }

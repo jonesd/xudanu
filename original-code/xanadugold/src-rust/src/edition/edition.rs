@@ -166,7 +166,10 @@ impl Edition {
         for (i, ch) in text.char_indices() {
             if ch == '\n' {
                 let line = &text[start..i + ch.len_utf8()];
-                entries.push((pos, Arc::new(Carrier::new(RangeElement::text(line.to_string())))));
+                entries.push((
+                    pos,
+                    Arc::new(Carrier::new(RangeElement::text(line.to_string()))),
+                ));
                 pos += 1;
                 start = i + ch.len_utf8();
             }
@@ -174,7 +177,10 @@ impl Edition {
 
         if start < text.len() {
             let remaining = &text[start..];
-            entries.push((pos, Arc::new(Carrier::new(RangeElement::text(remaining.to_string())))));
+            entries.push((
+                pos,
+                Arc::new(Carrier::new(RangeElement::text(remaining.to_string()))),
+            ));
         }
 
         if entries.is_empty() {
@@ -524,8 +530,16 @@ impl Edition {
                 } else {
                     entry_char_len
                 };
-                let byte_start = s.char_indices().nth(local_start).map(|(i, _)| i).unwrap_or(s.len());
-                let byte_end = s.char_indices().nth(local_end).map(|(i, _)| i).unwrap_or(s.len());
+                let byte_start = s
+                    .char_indices()
+                    .nth(local_start)
+                    .map(|(i, _)| i)
+                    .unwrap_or(s.len());
+                let byte_end = s
+                    .char_indices()
+                    .nth(local_end)
+                    .map(|(i, _)| i)
+                    .unwrap_or(s.len());
                 result.push_str(&s[byte_start..byte_end]);
             }
             cum += entry_char_len;
@@ -2051,14 +2065,7 @@ mod tests {
 
     #[test]
     fn char_len_matches_to_text_length() {
-        let texts = [
-            "",
-            "hello",
-            "hello\nworld",
-            "a\nb\nc\nd\ne",
-            "\n\n\n",
-            "x",
-        ];
+        let texts = ["", "hello", "hello\nworld", "a\nb\nc\nd\ne", "\n\n\n", "x"];
         for t in &texts {
             let batched = Edition::from_text_batched(t);
             assert_eq!(
@@ -2067,7 +2074,12 @@ mod tests {
                 "char_len mismatch for batched {:?}",
                 t
             );
-            assert_eq!(batched.to_text(), *t, "to_text mismatch for batched {:?}", t);
+            assert_eq!(
+                batched.to_text(),
+                *t,
+                "to_text mismatch for batched {:?}",
+                t
+            );
         }
         for t in &texts {
             let per_char = Edition::from_text(t);
@@ -2213,10 +2225,22 @@ mod tests {
         assert_eq!(ed.count(), 2);
 
         let mut rebuilt_entries = Vec::new();
-        rebuilt_entries.push((0i64, Arc::new(Carrier::new(RangeElement::text("hello".to_string())))));
-        rebuilt_entries.push((1i64, Arc::new(Carrier::new(RangeElement::text(" ".to_string())))));
-        rebuilt_entries.push((2i64, Arc::new(Carrier::new(RangeElement::text("world\n".to_string())))));
-        rebuilt_entries.push((3i64, Arc::new(Carrier::new(RangeElement::text("line two\n".to_string())))));
+        rebuilt_entries.push((
+            0i64,
+            Arc::new(Carrier::new(RangeElement::text("hello".to_string()))),
+        ));
+        rebuilt_entries.push((
+            1i64,
+            Arc::new(Carrier::new(RangeElement::text(" ".to_string()))),
+        ));
+        rebuilt_entries.push((
+            2i64,
+            Arc::new(Carrier::new(RangeElement::text("world\n".to_string()))),
+        ));
+        rebuilt_entries.push((
+            3i64,
+            Arc::new(Carrier::new(RangeElement::text("line two\n".to_string()))),
+        ));
 
         let rebuilt_ed = Edition::from_entries(rebuilt_entries);
         assert_eq!(rebuilt_ed.to_text(), "hello world\nline two\n");
@@ -2241,7 +2265,10 @@ mod tests {
         use crate::edition::range_element::RangeElementId;
 
         let mut entries = Vec::new();
-        let c1 = Carrier::labelled(RangeElementId::new(42), RangeElement::text("abc".to_string()));
+        let c1 = Carrier::labelled(
+            RangeElementId::new(42),
+            RangeElement::text("abc".to_string()),
+        );
         let c2 = Carrier::new(RangeElement::text("def".to_string()));
         entries.push((0i64, Arc::new(c1)));
         entries.push((1i64, Arc::new(c2)));
@@ -2294,7 +2321,10 @@ mod tests {
                     text.push_str(line);
                 }
                 text.truncate(target_bytes);
-                BenchmarkInput { label: label.to_string(), text }
+                BenchmarkInput {
+                    label: label.to_string(),
+                    text,
+                }
             }
 
             fn book(target_bytes: usize) -> Self {
@@ -2317,7 +2347,10 @@ mod tests {
                     i += 1;
                 }
                 text.truncate(target_bytes);
-                BenchmarkInput { label: format!("Book {}KB", target_bytes / 1024), text }
+                BenchmarkInput {
+                    label: format!("Book {}KB", target_bytes / 1024),
+                    text,
+                }
             }
         }
 
@@ -2329,12 +2362,17 @@ mod tests {
                 _ => 0,
             };
             let label_size = c.label.as_ref().map(|_| 8).unwrap_or(0);
-            let prov_size = c.provenance.as_ref().map(|p| {
-                32 + p.author_display_name.capacity()
-                    + 8 + 8
-                    + p.llm_model.as_ref().map(|m| m.capacity()).unwrap_or(0)
-                    + 4
-            }).unwrap_or(0);
+            let prov_size = c
+                .provenance
+                .as_ref()
+                .map(|p| {
+                    32 + p.author_display_name.capacity()
+                        + 8
+                        + 8
+                        + p.llm_model.as_ref().map(|m| m.capacity()).unwrap_or(0)
+                        + 4
+                })
+                .unwrap_or(0);
             std::mem::size_of::<Carrier>() + element_size + label_size + prov_size
         }
 
@@ -2352,9 +2390,13 @@ mod tests {
         }
 
         fn run_bench(input: &BenchmarkInput) -> BenchResult {
-            let runs = if input.text.len() <= 10_000 { 20 }
-                       else if input.text.len() <= 100_000 { 10 }
-                       else { 3 };
+            let runs = if input.text.len() <= 10_000 {
+                20
+            } else if input.text.len() <= 100_000 {
+                10
+            } else {
+                3
+            };
 
             let mut per_char_us: u64 = 0;
             let mut batched_us: u64 = 0;
@@ -2368,7 +2410,11 @@ mod tests {
                 let ed = Edition::from_text(&input.text);
                 per_char_us += t0.elapsed().as_micros() as u64;
                 per_char_elements = ed.count();
-                per_char_heap = ed.all_entries().iter().map(|(_, c)| carrier_heap_size(c)).sum();
+                per_char_heap = ed
+                    .all_entries()
+                    .iter()
+                    .map(|(_, c)| carrier_heap_size(c))
+                    .sum();
             }
 
             for _ in 0..runs {
@@ -2376,7 +2422,11 @@ mod tests {
                 let ed = Edition::from_text_batched(&input.text);
                 batched_us += t0.elapsed().as_micros() as u64;
                 batched_elements = ed.count();
-                batched_heap = ed.all_entries().iter().map(|(_, c)| carrier_heap_size(c)).sum();
+                batched_heap = ed
+                    .all_entries()
+                    .iter()
+                    .map(|(_, c)| carrier_heap_size(c))
+                    .sum();
             }
 
             per_char_us /= runs;
@@ -2417,13 +2467,26 @@ mod tests {
         let carrier_sz = std::mem::size_of::<Carrier>();
         let arc_sz = std::mem::size_of::<Arc<Carrier>>();
         let tuple_sz = std::mem::size_of::<(i64, Arc<Carrier>)>();
-        eprintln!("  Carrier struct: {} bytes   Arc<Carrier>: {} bytes   (i64, Arc<Carrier>): {} bytes",
-            carrier_sz, arc_sz, tuple_sz);
+        eprintln!(
+            "  Carrier struct: {} bytes   Arc<Carrier>: {} bytes   (i64, Arc<Carrier>): {} bytes",
+            carrier_sz, arc_sz, tuple_sz
+        );
         eprintln!("  ElementProvenance: ~{} bytes (32-byte key + display name + club_id + timestamp + type)", provenance_bytes);
         eprintln!();
-        eprintln!("{:<10} {:>8} {:>7} {:>5} {:>10} {:>10} {:>8} {:>10} {:>10} {:>10} {:>8}",
-            "Input", "Bytes", "Chars", "Lines", "Per-char μs", "Batched μs", "Speedup",
-            "PC elems", "BT elems", "Elem ratio", "Heap↓");
+        eprintln!(
+            "{:<10} {:>8} {:>7} {:>5} {:>10} {:>10} {:>8} {:>10} {:>10} {:>10} {:>8}",
+            "Input",
+            "Bytes",
+            "Chars",
+            "Lines",
+            "Per-char μs",
+            "Batched μs",
+            "Speedup",
+            "PC elems",
+            "BT elems",
+            "Elem ratio",
+            "Heap↓"
+        );
         eprintln!("{}", "─".repeat(112));
 
         for input in &inputs {
@@ -2432,7 +2495,8 @@ mod tests {
             let elem_ratio = r.per_char_elements as f64 / r.batched_elements as f64;
             let heap_saved_pct = (1.0 - r.batched_heap_kb / r.per_char_heap_kb) * 100.0;
 
-            eprintln!("{:<10} {:>8} {:>7} {:>5} {:>10} {:>10} {:>7.1}x {:>10} {:>10} {:>9.0}x {:>7.1}%",
+            eprintln!(
+                "{:<10} {:>8} {:>7} {:>5} {:>10} {:>10} {:>7.1}x {:>10} {:>10} {:>9.0}x {:>7.1}%",
                 r.label,
                 r.text_bytes,
                 r.text_chars,
@@ -2453,10 +2517,19 @@ mod tests {
 
         let all_results: Vec<BenchResult> = inputs.iter().map(|i| run_bench(i)).collect();
 
-        eprintln!("{:<10} {:>10} {:>10} {:>12} {:>12} {:>10} {:>10} {:>12} {:>12} {:>10}",
-            "Input", "Text KB", "Lines",
-            "PC heap KB", "BT heap KB", "Heap↓",
-            "PC×text", "PC+attr KB", "BT+attr KB", "Attr↓");
+        eprintln!(
+            "{:<10} {:>10} {:>10} {:>12} {:>12} {:>10} {:>10} {:>12} {:>12} {:>10}",
+            "Input",
+            "Text KB",
+            "Lines",
+            "PC heap KB",
+            "BT heap KB",
+            "Heap↓",
+            "PC×text",
+            "PC+attr KB",
+            "BT+attr KB",
+            "Attr↓"
+        );
         eprintln!("{}", "─".repeat(120));
 
         for r in &all_results {
@@ -2465,8 +2538,10 @@ mod tests {
             let bt_inflation = r.batched_heap_kb / text_kb;
             let heap_saved_pct = (1.0 - r.batched_heap_kb / r.per_char_heap_kb) * 100.0;
 
-            let pc_attr_kb = r.per_char_heap_kb + (r.per_char_elements as usize * provenance_bytes) as f64 / 1024.0;
-            let bt_attr_kb = r.batched_heap_kb + (r.batched_elements as usize * provenance_bytes) as f64 / 1024.0;
+            let pc_attr_kb = r.per_char_heap_kb
+                + (r.per_char_elements as usize * provenance_bytes) as f64 / 1024.0;
+            let bt_attr_kb = r.batched_heap_kb
+                + (r.batched_elements as usize * provenance_bytes) as f64 / 1024.0;
             let attr_saved_pct = (1.0 - bt_attr_kb / pc_attr_kb) * 100.0;
 
             eprintln!("{:<10} {:>10.1} {:>10} {:>12.1} {:>12.1} {:>9.1}% {:>9.1}x {:>12.1} {:>12.1} {:>9.1}%",
@@ -2487,46 +2562,82 @@ mod tests {
         eprintln!("─── Book-sized Text Deep Dive (~854 KB, prose paragraphs) ────────────────────────────────────────────────");
         eprintln!();
 
-        let book_result = all_results.iter().find(|r| r.label.starts_with("Book")).unwrap();
+        let book_result = all_results
+            .iter()
+            .find(|r| r.label.starts_with("Book"))
+            .unwrap();
 
-        eprintln!("  Raw text:             {:>8.1} KB  ({} bytes, {} chars, {} lines)",
-            book_result.text_bytes as f64 / 1024.0, book_result.text_bytes, book_result.text_chars, book_result.line_count);
+        eprintln!(
+            "  Raw text:             {:>8.1} KB  ({} bytes, {} chars, {} lines)",
+            book_result.text_bytes as f64 / 1024.0,
+            book_result.text_bytes,
+            book_result.text_chars,
+            book_result.line_count
+        );
         eprintln!();
-        eprintln!("  Per-char elements:    {:>8}    Batched: {:>8}    Reduction: {:.0}x fewer elements",
-            book_result.per_char_elements, book_result.batched_elements,
-            book_result.per_char_elements as f64 / book_result.batched_elements as f64);
+        eprintln!(
+            "  Per-char elements:    {:>8}    Batched: {:>8}    Reduction: {:.0}x fewer elements",
+            book_result.per_char_elements,
+            book_result.batched_elements,
+            book_result.per_char_elements as f64 / book_result.batched_elements as f64
+        );
         eprintln!();
-        eprintln!("  Per-char heap:        {:>8.1} KB  ({:.1}x text size)",
-            book_result.per_char_heap_kb, book_result.per_char_heap_kb / (book_result.text_bytes as f64 / 1024.0));
-        eprintln!("  Batched heap:         {:>8.1} KB  ({:.1}x text size)",
-            book_result.batched_heap_kb, book_result.batched_heap_kb / (book_result.text_bytes as f64 / 1024.0));
-        eprintln!("  Heap saved:           {:>8.1} KB  ({:.1}%)",
+        eprintln!(
+            "  Per-char heap:        {:>8.1} KB  ({:.1}x text size)",
+            book_result.per_char_heap_kb,
+            book_result.per_char_heap_kb / (book_result.text_bytes as f64 / 1024.0)
+        );
+        eprintln!(
+            "  Batched heap:         {:>8.1} KB  ({:.1}x text size)",
+            book_result.batched_heap_kb,
+            book_result.batched_heap_kb / (book_result.text_bytes as f64 / 1024.0)
+        );
+        eprintln!(
+            "  Heap saved:           {:>8.1} KB  ({:.1}%)",
             book_result.per_char_heap_kb - book_result.batched_heap_kb,
-            (1.0 - book_result.batched_heap_kb / book_result.per_char_heap_kb) * 100.0);
+            (1.0 - book_result.batched_heap_kb / book_result.per_char_heap_kb) * 100.0
+        );
         eprintln!();
-        let pc_provenance_kb = (book_result.per_char_elements as usize * provenance_bytes) as f64 / 1024.0;
-        let bt_provenance_kb = (book_result.batched_elements as usize * provenance_bytes) as f64 / 1024.0;
-        eprintln!("  Per-char provenance:  {:>8.1} KB  ({} elements × {} bytes)",
-            pc_provenance_kb, book_result.per_char_elements, provenance_bytes);
-        eprintln!("  Batched provenance:   {:>8.1} KB  ({} elements × {} bytes)",
-            bt_provenance_kb, book_result.batched_elements, provenance_bytes);
-        eprintln!("  Provenance saved:     {:>8.1} KB  ({:.1}%)",
+        let pc_provenance_kb =
+            (book_result.per_char_elements as usize * provenance_bytes) as f64 / 1024.0;
+        let bt_provenance_kb =
+            (book_result.batched_elements as usize * provenance_bytes) as f64 / 1024.0;
+        eprintln!(
+            "  Per-char provenance:  {:>8.1} KB  ({} elements × {} bytes)",
+            pc_provenance_kb, book_result.per_char_elements, provenance_bytes
+        );
+        eprintln!(
+            "  Batched provenance:   {:>8.1} KB  ({} elements × {} bytes)",
+            bt_provenance_kb, book_result.batched_elements, provenance_bytes
+        );
+        eprintln!(
+            "  Provenance saved:     {:>8.1} KB  ({:.1}%)",
             pc_provenance_kb - bt_provenance_kb,
-            (1.0 - bt_provenance_kb / pc_provenance_kb) * 100.0);
+            (1.0 - bt_provenance_kb / pc_provenance_kb) * 100.0
+        );
         eprintln!();
         let pc_total = book_result.per_char_heap_kb + pc_provenance_kb;
         let bt_total = book_result.batched_heap_kb + bt_provenance_kb;
-        eprintln!("  Per-char total:       {:>8.1} KB  (heap + attribution)",
-            pc_total);
-        eprintln!("  Batched total:        {:>8.1} KB  (heap + attribution)",
-            bt_total);
-        eprintln!("  Total saved:          {:>8.1} KB  ({:.1}%)",
+        eprintln!(
+            "  Per-char total:       {:>8.1} KB  (heap + attribution)",
+            pc_total
+        );
+        eprintln!(
+            "  Batched total:        {:>8.1} KB  (heap + attribution)",
+            bt_total
+        );
+        eprintln!(
+            "  Total saved:          {:>8.1} KB  ({:.1}%)",
             pc_total - bt_total,
-            (1.0 - bt_total / pc_total) * 100.0);
+            (1.0 - bt_total / pc_total) * 100.0
+        );
         eprintln!();
         eprintln!("  Per-char build time:  {:>8} μs", book_result.per_char_us);
         eprintln!("  Batched build time:   {:>8} μs", book_result.batched_us);
-        eprintln!("  Speedup:              {:>8.1}x", book_result.per_char_us as f64 / book_result.batched_us as f64);
+        eprintln!(
+            "  Speedup:              {:>8.1}x",
+            book_result.per_char_us as f64 / book_result.batched_us as f64
+        );
         eprintln!();
 
         eprintln!("─── Coalesce After Simulated Edits ────────────────────────────────────────────────────────────────────");
@@ -2534,7 +2645,12 @@ mod tests {
         eprintln!("  Simulates element fragmentation from character-level edits, then measures recovery via coalesce.");
         eprintln!();
 
-        let book_text = inputs.iter().find(|i| i.label.starts_with("Book")).unwrap().text.clone();
+        let book_text = inputs
+            .iter()
+            .find(|i| i.label.starts_with("Book"))
+            .unwrap()
+            .text
+            .clone();
         let ed = Edition::from_text_batched(&book_text);
         let initial_count = ed.count();
 
@@ -2601,39 +2717,67 @@ mod tests {
         let coalesced = fragmented.coalesce();
         let coalesce_us = t0.elapsed().as_micros();
 
-        let fragmented_heap: usize = fragmented.all_entries().iter()
+        let fragmented_heap: usize = fragmented
+            .all_entries()
+            .iter()
             .map(|(_, c)| {
                 let el = match &c.element {
                     RangeElement::Text { text } => text.capacity(),
                     _ => 0,
                 };
                 std::mem::size_of::<Carrier>() + el
-            }).sum();
-        let coalesced_heap: usize = coalesced.all_entries().iter()
+            })
+            .sum();
+        let coalesced_heap: usize = coalesced
+            .all_entries()
+            .iter()
             .map(|(_, c)| {
                 let el = match &c.element {
                     RangeElement::Text { text } => text.capacity(),
                     _ => 0,
                 };
                 std::mem::size_of::<Carrier>() + el
-            }).sum();
+            })
+            .sum();
 
         eprintln!("  Initial (batched):   {:>8} elements", initial_count);
-        eprintln!("  After fragmentation: {:>8} elements  (split every {} chars)", fragmented.count(), split_interval);
-        eprintln!("  After coalesce:      {:>8} elements  (recovered)", coalesced.count());
+        eprintln!(
+            "  After fragmentation: {:>8} elements  (split every {} chars)",
+            fragmented.count(),
+            split_interval
+        );
+        eprintln!(
+            "  After coalesce:      {:>8} elements  (recovered)",
+            coalesced.count()
+        );
         eprintln!("  Coalesce time:       {:>8} μs", coalesce_us);
         eprintln!();
-        eprintln!("  Fragmented heap:     {:>8.1} KB", fragmented_heap as f64 / 1024.0);
-        eprintln!("  Coalesced heap:      {:>8.1} KB", coalesced_heap as f64 / 1024.0);
-        eprintln!("  Heap recovered:      {:>8.1} KB  ({:.1}%)",
+        eprintln!(
+            "  Fragmented heap:     {:>8.1} KB",
+            fragmented_heap as f64 / 1024.0
+        );
+        eprintln!(
+            "  Coalesced heap:      {:>8.1} KB",
+            coalesced_heap as f64 / 1024.0
+        );
+        eprintln!(
+            "  Heap recovered:      {:>8.1} KB  ({:.1}%)",
             (fragmented_heap - coalesced_heap) as f64 / 1024.0,
-            (1.0 - coalesced_heap as f64 / fragmented_heap as f64) * 100.0);
+            (1.0 - coalesced_heap as f64 / fragmented_heap as f64) * 100.0
+        );
         eprintln!();
 
-        assert_eq!(coalesced.to_text(), fragmented.to_text(), "coalesce must preserve text content");
+        assert_eq!(
+            coalesced.to_text(),
+            fragmented.to_text(),
+            "coalesce must preserve text content"
+        );
         let recovered_ratio = coalesced.count() as f64 / fragmented.count() as f64;
-        eprintln!("  Element recovery:    {:.1}% of fragmented count (ideal: back to {})",
-            (1.0 - recovered_ratio) * 100.0, initial_count);
+        eprintln!(
+            "  Element recovery:    {:.1}% of fragmented count (ideal: back to {})",
+            (1.0 - recovered_ratio) * 100.0,
+            initial_count
+        );
         eprintln!();
     }
 

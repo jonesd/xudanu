@@ -297,7 +297,10 @@ impl RangeElement {
 pub struct Carrier {
     pub label: Option<RangeElementId>,
     pub element: RangeElement,
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
     pub provenance: Option<super::provenance::ElementProvenance>,
 }
 

@@ -221,10 +221,7 @@ fn compute_alignment(
     let mut target_by_fp: std::collections::HashMap<[u8; 32], Vec<usize>> =
         std::collections::HashMap::new();
     for (j, fp_val) in target_fps.iter().enumerate() {
-        target_by_fp
-            .entry(*fp_val)
-            .or_default()
-            .push(j);
+        target_by_fp.entry(*fp_val).or_default().push(j);
     }
 
     let mut seeds: Vec<(usize, usize, usize)> = Vec::new();
@@ -293,7 +290,11 @@ fn mark_claimed_indices(
 
     for seg in segments {
         match seg {
-            Segment::Unchanged { a_positions, b_positions, .. } => {
+            Segment::Unchanged {
+                a_positions,
+                b_positions,
+                ..
+            } => {
                 for (idx, (pos, _)) in a_e.iter().enumerate() {
                     if a_positions.contains(pos) {
                         a_matched.insert(idx);
@@ -311,7 +312,13 @@ fn mark_claimed_indices(
             Segment::OnlyB { b_start, b_end, .. } => {
                 mark_range(b_e, *b_start, *b_end, b_matched);
             }
-            Segment::Conflict { a_start, a_end, b_start, b_end, .. } => {
+            Segment::Conflict {
+                a_start,
+                a_end,
+                b_start,
+                b_end,
+                ..
+            } => {
                 mark_range(a_e, *a_start, *a_end, a_matched);
                 mark_range(b_e, *b_start, *b_end, b_matched);
             }
@@ -336,14 +343,10 @@ fn build_segments(
     let mut i = 0usize;
     let n = base_e.len();
 
-    let mut a_matched: std::collections::HashSet<usize> = base_to_a
-        .iter()
-        .filter_map(|&opt| opt)
-        .collect();
-    let mut b_matched: std::collections::HashSet<usize> = base_to_b
-        .iter()
-        .filter_map(|&opt| opt)
-        .collect();
+    let mut a_matched: std::collections::HashSet<usize> =
+        base_to_a.iter().filter_map(|&opt| opt).collect();
+    let mut b_matched: std::collections::HashSet<usize> =
+        base_to_b.iter().filter_map(|&opt| opt).collect();
 
     while i < n {
         let a_match = base_to_a.get(i).copied().flatten();
@@ -462,8 +465,10 @@ fn build_segments(
             let b_changed = b_match.is_none();
 
             if a_changed && b_changed {
-                let (a_s, a_e_pos) = unmatched_range_near(&a_matched, a_e, base_to_a, i, base_end_idx);
-                let (b_s, b_e_pos) = unmatched_range_near(&b_matched, b_e, base_to_b, i, base_end_idx);
+                let (a_s, a_e_pos) =
+                    unmatched_range_near(&a_matched, a_e, base_to_a, i, base_end_idx);
+                let (b_s, b_e_pos) =
+                    unmatched_range_near(&b_matched, b_e, base_to_b, i, base_end_idx);
 
                 segments.push(Segment::Conflict {
                     base_start,
@@ -474,7 +479,8 @@ fn build_segments(
                     b_end: b_e_pos,
                 });
             } else if a_changed {
-                let (a_s, a_e_pos) = unmatched_range_near(&a_matched, a_e, base_to_a, i, base_end_idx);
+                let (a_s, a_e_pos) =
+                    unmatched_range_near(&a_matched, a_e, base_to_a, i, base_end_idx);
                 segments.push(Segment::OnlyA {
                     base_start,
                     base_end: base_end_pos,
@@ -482,7 +488,8 @@ fn build_segments(
                     a_end: a_e_pos,
                 });
             } else {
-                let (b_s, b_e_pos) = unmatched_range_near(&b_matched, b_e, base_to_b, i, base_end_idx);
+                let (b_s, b_e_pos) =
+                    unmatched_range_near(&b_matched, b_e, base_to_b, i, base_end_idx);
                 segments.push(Segment::OnlyB {
                     base_start,
                     base_end: base_end_pos,
@@ -512,13 +519,17 @@ fn unmatched_range_near(
 ) -> (i64, i64) {
     let a_before = if base_start_idx > 0 {
         (0..base_start_idx).rev().find_map(|k| {
-            base_to_edition.get(k).and_then(|opt| opt.map(|ai| entries[ai].0))
+            base_to_edition
+                .get(k)
+                .and_then(|opt| opt.map(|ai| entries[ai].0))
         })
     } else {
         None
     };
     let a_after = (base_end_idx..base_to_edition.len()).find_map(|k| {
-        base_to_edition.get(k).and_then(|opt| opt.map(|ai| entries[ai].0))
+        base_to_edition
+            .get(k)
+            .and_then(|opt| opt.map(|ai| entries[ai].0))
     });
 
     let lo = a_before.map_or(0i64, |p| p);
@@ -788,7 +799,10 @@ fn assemble_merge_lww(
                         .map(|idx| b_entries[idx].1.clone());
                     let carrier = a_carrier.or(b_carrier).unwrap_or_else(|| {
                         let mut c = Carrier::new(RangeElement::text(""));
-                        if let Some(prev) = merged_entries.last().and_then(|(_, c)| c.provenance.clone()) {
+                        if let Some(prev) = merged_entries
+                            .last()
+                            .and_then(|(_, c)| c.provenance.clone())
+                        {
                             c = c.with_provenance(prev);
                         }
                         Arc::new(c)
@@ -1002,8 +1016,16 @@ mod tests {
 
         let diff = three_way_diff(&base, &a, &b);
 
-        assert!(diff.only_b.is_empty(), "only_b should be empty: {:?}", diff.only_b);
-        assert!(diff.conflict.is_empty(), "no conflicts expected: {:?}", diff.conflict);
+        assert!(
+            diff.only_b.is_empty(),
+            "only_b should be empty: {:?}",
+            diff.only_b
+        );
+        assert!(
+            diff.conflict.is_empty(),
+            "no conflicts expected: {:?}",
+            diff.conflict
+        );
         assert!(!diff.unchanged.is_empty() || !diff.only_a.is_empty());
     }
 
@@ -1015,8 +1037,16 @@ mod tests {
 
         let diff = three_way_diff(&base, &a, &b);
 
-        assert!(diff.only_a.is_empty(), "only_a should be empty: {:?}", diff.only_a);
-        assert!(diff.conflict.is_empty(), "no conflicts expected: {:?}", diff.conflict);
+        assert!(
+            diff.only_a.is_empty(),
+            "only_a should be empty: {:?}",
+            diff.only_a
+        );
+        assert!(
+            diff.conflict.is_empty(),
+            "no conflicts expected: {:?}",
+            diff.conflict
+        );
         assert!(!diff.unchanged.is_empty() || !diff.only_b.is_empty());
     }
 
@@ -1028,7 +1058,10 @@ mod tests {
 
         let diff = three_way_diff(&base, &a, &b);
 
-        assert!(diff.conflict.is_empty(), "non-overlapping changes should not conflict");
+        assert!(
+            diff.conflict.is_empty(),
+            "non-overlapping changes should not conflict"
+        );
         assert!(!diff.only_a.is_empty());
         assert!(!diff.only_b.is_empty());
     }
@@ -1086,7 +1119,10 @@ mod tests {
         let mr = result.expect("no conflicts expected");
         let text = mr.merged.to_text();
         assert!(
-            text.contains("AB") || text.contains("cd") || text.contains("CD") || text.contains("EF"),
+            text.contains("AB")
+                || text.contains("cd")
+                || text.contains("CD")
+                || text.contains("EF"),
             "should have elements from both branches: got {:?}",
             text
         );
@@ -1128,7 +1164,8 @@ mod tests {
         let result = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins);
         let mr = result.expect("no conflicts expected");
 
-        let has_data = mr.merged
+        let has_data = mr
+            .merged
             .all_entries()
             .iter()
             .any(|(_, c)| matches!(c.element, RangeElement::Data { .. }));
@@ -1148,7 +1185,8 @@ mod tests {
         let result = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins);
         let mr = result.expect("no conflicts expected");
 
-        let has_edition_ref = mr.merged
+        let has_edition_ref = mr
+            .merged
             .all_entries()
             .iter()
             .any(|(_, c)| matches!(c.element, RangeElement::Edition { .. }));
@@ -1336,7 +1374,12 @@ mod tests {
 
         assert!(mr.a_to_merged.of(0).is_some(), "a's 'a' should map");
         assert!(mr.a_to_merged.of(2).is_some(), "a's 'c' should map");
-        assert_eq!(mr.a_to_merged.of(1).map(|p| mr.merged.to_text().chars().nth(p as usize)), Some(Some('X')));
+        assert_eq!(
+            mr.a_to_merged
+                .of(1)
+                .map(|p| mr.merged.to_text().chars().nth(p as usize)),
+            Some(Some('X'))
+        );
 
         assert!(mr.b_to_merged.of(0).is_some(), "b's 'a' should map");
         assert!(mr.b_to_merged.of(2).is_some(), "b's 'c' should map");
@@ -1539,21 +1582,32 @@ mod tests {
         let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
         let text = mr.merged.to_text();
 
-        assert!(text.contains('X') || text.contains('Z'), "should have some edit");
+        assert!(
+            text.contains('X') || text.contains('Z'),
+            "should have some edit"
+        );
 
         let a_inv = mr.a_to_merged.inverse();
         for (src_pos, _) in a.cached_entries() {
             if let Some(merged_pos) = mr.a_to_merged.of(*src_pos) {
-                assert_eq!(a_inv.of(merged_pos), Some(*src_pos),
-                    "A inverse roundtrip failed for pos {}", src_pos);
+                assert_eq!(
+                    a_inv.of(merged_pos),
+                    Some(*src_pos),
+                    "A inverse roundtrip failed for pos {}",
+                    src_pos
+                );
             }
         }
 
         let b_inv = mr.b_to_merged.inverse();
         for (src_pos, _) in b.cached_entries() {
             if let Some(merged_pos) = mr.b_to_merged.of(*src_pos) {
-                assert_eq!(b_inv.of(merged_pos), Some(*src_pos),
-                    "B inverse roundtrip failed for pos {}", src_pos);
+                assert_eq!(
+                    b_inv.of(merged_pos),
+                    Some(*src_pos),
+                    "B inverse roundtrip failed for pos {}",
+                    src_pos
+                );
             }
         }
     }
@@ -1570,8 +1624,12 @@ mod tests {
         let a_roundtrip = mr.a_to_merged.combine(&a_inv);
         for (src_pos, _) in a.cached_entries() {
             if mr.a_to_merged.of(*src_pos).is_some() {
-                assert_eq!(a_roundtrip.of(*src_pos), Some(*src_pos),
-                    "compose(inv) should be identity at pos {}", src_pos);
+                assert_eq!(
+                    a_roundtrip.of(*src_pos),
+                    Some(*src_pos),
+                    "compose(inv) should be identity at pos {}",
+                    src_pos
+                );
             }
         }
     }
@@ -1593,9 +1651,14 @@ mod tests {
 
         for i in 0..a_mapped_positions.len() {
             for j in (i + 1)..a_mapped_positions.len() {
-                assert!(a_mapped_positions[i] < a_mapped_positions[j],
+                assert!(
+                    a_mapped_positions[i] < a_mapped_positions[j],
                     "A mapping should preserve order: {} !< {} (src {} vs {})",
-                    a_mapped_positions[i], a_mapped_positions[j], i, j);
+                    a_mapped_positions[i],
+                    a_mapped_positions[j],
+                    i,
+                    j
+                );
             }
         }
 
@@ -1608,9 +1671,14 @@ mod tests {
 
         for i in 0..b_mapped_positions.len() {
             for j in (i + 1)..b_mapped_positions.len() {
-                assert!(b_mapped_positions[i] < b_mapped_positions[j],
+                assert!(
+                    b_mapped_positions[i] < b_mapped_positions[j],
                     "B mapping should preserve order: {} !< {} (src {} vs {})",
-                    b_mapped_positions[i], b_mapped_positions[j], i, j);
+                    b_mapped_positions[i],
+                    b_mapped_positions[j],
+                    i,
+                    j
+                );
             }
         }
     }
@@ -1638,8 +1706,10 @@ mod tests {
         all_mapped.sort();
         all_mapped.dedup();
         let merged_len = mr.merged.cached_entries().len() as i64;
-        assert!(all_mapped.len() as i64 <= merged_len,
-            "mapped positions should not exceed merged edition length");
+        assert!(
+            all_mapped.len() as i64 <= merged_len,
+            "mapped positions should not exceed merged edition length"
+        );
     }
 
     #[test]
@@ -1673,16 +1743,24 @@ mod tests {
         let a_inv = mr.a_to_merged.inverse();
         for (src_pos, _) in a.cached_entries() {
             if let Some(merged_pos) = mr.a_to_merged.of(*src_pos) {
-                assert_eq!(a_inv.of(merged_pos), Some(*src_pos),
-                    "A inverse failed at pos {}", src_pos);
+                assert_eq!(
+                    a_inv.of(merged_pos),
+                    Some(*src_pos),
+                    "A inverse failed at pos {}",
+                    src_pos
+                );
             }
         }
 
         let b_inv = mr.b_to_merged.inverse();
         for (src_pos, _) in b.cached_entries() {
             if let Some(merged_pos) = mr.b_to_merged.of(*src_pos) {
-                assert_eq!(b_inv.of(merged_pos), Some(*src_pos),
-                    "B inverse failed at pos {}", src_pos);
+                assert_eq!(
+                    b_inv.of(merged_pos),
+                    Some(*src_pos),
+                    "B inverse failed at pos {}",
+                    src_pos
+                );
             }
         }
     }
@@ -1700,7 +1778,10 @@ mod tests {
     fn batched_three_way_merge_a_edits_one_line() {
         let base = Edition::from_text_batched("line1\nline2\nline3\n");
         let mut a_entries: Vec<(i64, Arc<Carrier>)> = base.all_entries();
-        a_entries[0] = (0, Arc::new(Carrier::new(RangeElement::text("LINE1\n".to_string()))));
+        a_entries[0] = (
+            0,
+            Arc::new(Carrier::new(RangeElement::text("LINE1\n".to_string()))),
+        );
         let a = Edition::from_entries(a_entries);
         let b = Edition::from_text_batched("line1\nline2\nline3\n");
         let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
@@ -1714,10 +1795,16 @@ mod tests {
     fn batched_three_way_merge_both_edit_different_lines() {
         let base = Edition::from_text_batched("aaa\nbbb\nccc\n");
         let mut a_entries: Vec<(i64, Arc<Carrier>)> = base.all_entries();
-        a_entries[0] = (0, Arc::new(Carrier::new(RangeElement::text("AAA\n".to_string()))));
+        a_entries[0] = (
+            0,
+            Arc::new(Carrier::new(RangeElement::text("AAA\n".to_string()))),
+        );
         let a = Edition::from_entries(a_entries);
         let mut b_entries: Vec<(i64, Arc<Carrier>)> = base.all_entries();
-        b_entries[2] = (2, Arc::new(Carrier::new(RangeElement::text("CCC\n".to_string()))));
+        b_entries[2] = (
+            2,
+            Arc::new(Carrier::new(RangeElement::text("CCC\n".to_string()))),
+        );
         let b = Edition::from_entries(b_entries);
         let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
         let text = mr.merged.to_text();
@@ -1730,8 +1817,14 @@ mod tests {
     fn batched_three_way_merge_delete_line() {
         let base = Edition::from_text_batched("keep\ndelete\nkeep2\n");
         let a_entries: Vec<(i64, Arc<Carrier>)> = vec![
-            (0, Arc::new(Carrier::new(RangeElement::text("keep\n".to_string())))),
-            (1, Arc::new(Carrier::new(RangeElement::text("keep2\n".to_string())))),
+            (
+                0,
+                Arc::new(Carrier::new(RangeElement::text("keep\n".to_string()))),
+            ),
+            (
+                1,
+                Arc::new(Carrier::new(RangeElement::text("keep2\n".to_string()))),
+            ),
         ];
         let a = Edition::from_entries(a_entries);
         let b = Edition::from_text_batched("keep\ndelete\nkeep2\n");
@@ -1775,11 +1868,21 @@ mod tests {
         };
         let base = Edition::from_text_batched("hello\nworld\n");
         let mut a_entries: Vec<(i64, Arc<Carrier>)> = base.all_entries();
-        a_entries[0] = (0, Arc::new(Carrier::new(RangeElement::text("HELLO\n".to_string())).with_provenance(prov.clone())));
+        a_entries[0] = (
+            0,
+            Arc::new(
+                Carrier::new(RangeElement::text("HELLO\n".to_string()))
+                    .with_provenance(prov.clone()),
+            ),
+        );
         let a = Edition::from_entries(a_entries);
         let b = Edition::from_text_batched("hello\nworld\n");
         let mr = three_way_merge(&base, &a, &b, MergeStrategy::LastWriterWins).unwrap();
-        let has_prov = mr.merged.all_entries().iter().any(|(_, c)| c.provenance.is_some());
+        let has_prov = mr
+            .merged
+            .all_entries()
+            .iter()
+            .any(|(_, c)| c.provenance.is_some());
         assert!(has_prov, "merged edition should carry A's provenance");
     }
 }

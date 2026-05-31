@@ -15,7 +15,6 @@ pub mod label;
 pub mod links;
 pub mod mapping;
 pub mod orgl;
-pub mod three_way;
 #[cfg(feature = "serde")]
 pub mod persistent;
 pub mod pool;
@@ -26,6 +25,7 @@ pub mod range_transclusion;
 pub mod recorder;
 pub mod shared_mapping;
 pub mod snapshot;
+pub mod three_way;
 pub mod transclusion;
 pub mod work;
 pub mod wrapper;
@@ -45,9 +45,9 @@ pub use bundle_stepper::{
     loaf_bundle_stepper, loaf_merge_stepper, BundleStepper, MergeBundleStepper,
 };
 pub use canopy::{BertCanopy, CanopyCrumData, CanopyCrumKind, SensorCanopy};
-pub use content_address::ContentAddressIndex;
 #[cfg(feature = "serde")]
 pub use compound::{CompoundEdition, CompoundElement, CompoundSpan};
+pub use content_address::ContentAddressIndex;
 pub use edition::{jaccard_similarity, Edition};
 pub use endorsement::{
     endorsement_ids_to_grandmap, endorsements_from_ids, Endorseable, Endorsement,
@@ -71,7 +71,9 @@ pub use props::{
     IS_PARTIAL_FLAG, IS_SENSOR_WAITING_FLAG, OTHER_CLUBS_FLAG, OTHER_ENDORSEMENTS_FLAG,
     PUBLIC_CLUB_FLAG,
 };
-pub use provenance::{sign_span, sign_element, verify_span_provenance, ElementProvenance, Provenance, SpanProvenance};
+pub use provenance::{
+    sign_element, sign_span, verify_span_provenance, ElementProvenance, Provenance, SpanProvenance,
+};
 pub use range_element::{Carrier, RangeElement};
 pub use range_transclusion::{
     collect_unique_elements, count_transclusion_depth, find_deeply_transcluded, range_transcluders,
@@ -85,13 +87,13 @@ pub use recorder::{
 pub use shared_mapping::{
     content_map_shared_onto, content_map_shared_to, content_shared_region, SharedMapping,
 };
-pub use three_way::{
-    three_way_diff, three_way_merge, build_merge_mapping, AlignedRun, ConflictRegion, DiffRegion,
-    MergeConflict, MergeResult, MergeStrategy, ThreeWayDiff,
-};
 pub use snapshot::{
     freeze_work, is_frozen, validate_frozen_for_context, validate_not_frozen_for_edit, Snapshot,
     SnapshotError, SnapshotStore,
+};
+pub use three_way::{
+    build_merge_mapping, three_way_diff, three_way_merge, AlignedRun, ConflictRegion, DiffRegion,
+    MergeConflict, MergeResult, MergeStrategy, ThreeWayDiff,
 };
 pub use transclusion::{
     TrailBlazer, TransclusionIndex, TransclusionQuery, TransclusionResult, WorkQuery,

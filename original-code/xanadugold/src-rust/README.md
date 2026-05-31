@@ -284,6 +284,56 @@ The three-plane model separates concerns:
 
 Pass `--static-dir <path>` to serve static files from a directory. The server serves `index.html` at `/` and other files at their relative paths. Connect to the server via WebSocket at `/xudanu?format=json&version=2`. See [docs/custom-frontend.md](docs/custom-frontend.md) for a complete guide and minimal example.
 
+## Backup
+
+The data directory contains everything needed to restore a Xudanu server:
+
+| Path | Contents |
+|---|---|
+| `chunks/` | Content-addressed storage (`.xchunk` files, BLAKE3-named) |
+| `manifest.json` | Current document/edition/chunk index |
+| `manifest_v*.json` | Versioned manifest backups (last 3 kept) |
+| `server.key` | Server identity key (encrypt with `--key-passphrase`) |
+| `blobs/` | Binary large objects (images, etc.) |
+
+### Off-site backup with rsync
+
+An example script is provided at [`examples/backup-chunks.sh`](examples/backup-chunks.sh):
+
+```bash
+# Sync chunks + manifest to a remote host
+./examples/backup-chunks.sh /path/to/data user@offsite:/backup/xudanu
+```
+
+Or run rsync directly:
+
+```bash
+# Chunks only (content-addressed, safe to --delete)
+rsync -avz --delete --include='*.xchunk' --include='*/' --exclude='*' \
+  /path/to/data/chunks/ user@offsite:/backup/xudanu/chunks/
+
+# Manifest + backups (small, sync every time)
+rsync -avz \
+  --include='manifest.json' --include='manifest_v*.json' --exclude='*' \
+  /path/to/data/ user@offsite:/backup/xudanu/
+```
+
+For automated backups, add a cron entry:
+
+```
+# Every 6 hours
+0 */6 * * * /path/to/examples/backup-chunks.sh /path/to/data user@offsite:/backup/xudanu
+```
+
+### Restoring from backup
+
+1. Stop the server
+2. Copy the backed-up `chunks/`, `manifest.json`, and `manifest_v*.json` into a new data directory
+3. Copy `server.key` (and `blobs/` if applicable)
+4. Start the server with the new data directory
+
+The server will auto-migrate any legacy extensionless chunk files to `.xchunk` on startup.
+
 ## License
 
 This Rust implementation is licensed under **Apache 2.0** (Copyright 2026 David G Jones and contributors).

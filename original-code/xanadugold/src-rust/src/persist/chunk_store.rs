@@ -31,12 +31,17 @@ fn hash_to_hex(hash: &[u8; 32]) -> String {
 }
 
 fn hex_to_hash(hex: &str) -> Option<[u8; 32]> {
-    if hex.len() != 64 {
+    let stem = if hex.ends_with(".xchunk") {
+        &hex[..hex.len() - 7]
+    } else {
+        hex
+    };
+    if stem.len() != 64 {
         return None;
     }
     let mut result = [0u8; 32];
     for i in 0..32 {
-        result[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+        result[i] = u8::from_str_radix(&stem[i * 2..i * 2 + 2], 16).ok()?;
     }
     Some(result)
 }
@@ -51,8 +56,26 @@ fn chunk_dir(base: &Path, hash: &[u8; 32]) -> PathBuf {
     base.join("chunks").join(prefix)
 }
 
+const CHUNK_EXTENSION: &str = "xchunk";
+
 fn chunk_path(base: &Path, hash: &[u8; 32]) -> PathBuf {
+    chunk_dir(base, hash).join(format!("{}.{}", hash_to_hex(hash), CHUNK_EXTENSION))
+}
+
+fn legacy_chunk_path(base: &Path, hash: &[u8; 32]) -> PathBuf {
     chunk_dir(base, hash).join(hash_to_hex(hash))
+}
+
+fn resolve_chunk_path(base: &Path, hash: &[u8; 32]) -> Option<PathBuf> {
+    let new_path = chunk_path(base, hash);
+    if new_path.exists() {
+        return Some(new_path);
+    }
+    let legacy = legacy_chunk_path(base, hash);
+    if legacy.exists() {
+        return Some(legacy);
+    }
+    None
 }
 
 struct Cache {
@@ -126,12 +149,89 @@ impl ChunkStore {
         let chunks_dir = base_dir.join("chunks");
         std::fs::create_dir_all(&chunks_dir).map_err(|e| ChunkError::Io(e.to_string()))?;
         Self::cleanup_tmp_files(&chunks_dir);
+        let migrated = Self::migrate_legacy_chunks(&chunks_dir);
+        if migrated > 0 {
+            tracing::info!(
+                "Migrated {} legacy chunks to .{} extension",
+                migrated,
+                CHUNK_EXTENSION
+            );
+        }
+        Self::write_chunks_readme(&chunks_dir);
         Ok(ChunkStore {
             base_dir: base_dir.to_path_buf(),
             cache: Mutex::new(Cache::new(CACHE_CAPACITY)),
             cache_hits: AtomicU64::new(0),
             cache_misses: AtomicU64::new(0),
         })
+    }
+
+    fn migrate_legacy_chunks(chunks_dir: &Path) -> u64 {
+        let mut migrated = 0u64;
+        let Ok(entries) = std::fs::read_dir(chunks_dir) else {
+            return 0;
+        };
+        for entry in entries.flatten() {
+            if !entry.path().is_dir() {
+                continue;
+            }
+            let Ok(sub_entries) = std::fs::read_dir(entry.path()) else {
+                continue;
+            };
+            for sub in sub_entries.flatten() {
+                let name = sub.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.contains('.') {
+                    continue;
+                }
+                if name_str.len() == 64 && hex_to_hash(&name_str).is_some() {
+                    let new_path = sub.path().with_extension(CHUNK_EXTENSION);
+                    if !new_path.exists() {
+                        if std::fs::rename(sub.path(), &new_path).is_ok() {
+                            migrated += 1;
+                        }
+                    }
+                }
+            }
+        }
+        migrated
+    }
+
+    fn write_chunks_readme(chunks_dir: &Path) {
+        let readme_path = chunks_dir.join("README.md");
+        if readme_path.exists() {
+            return;
+        }
+        let content = concat!(
+            "# Xudanu Chunk Store\n",
+            "\n",
+            "This directory contains content-addressed storage chunks.\n",
+            "\n",
+            "## File Format\n",
+            "\n",
+            "- **Extension:** `.xchunk`\n",
+            "- **Filename:** 64-character BLAKE3 hash (hex-encoded)\n",
+            "- **Directory layout:** `chunks/{first-2-hex-chars}/{full-hash}.xchunk`\n",
+            "- **Example:** `chunks/a3/a3f7b2...e1c4.xchunk`\n",
+            "\n",
+            "## Do Not Modify\n",
+            "\n",
+            "Chunk files are write-once and integrity-checked via BLAKE3 hash.\n",
+            "Renaming, editing, or deleting chunks will corrupt the data store.\n",
+            "\n",
+            "## Backup\n",
+            "\n",
+            "Use rsync or similar to back up the `chunks/` directory:\n",
+            "\n",
+            "```bash\n",
+            "rsync -avz --delete \\\n",
+            "  /path/to/data/chunks/ user@offsite:/backup/xudanu/chunks/\n",
+            "```\n",
+            "\n",
+            "Also back up `manifest.json` and `manifest_v*.json` from the data directory.\n",
+            "See `examples/backup-chunks.sh` in the source tree for a complete script.\n",
+        );
+        let _ = std::fs::write(&readme_path, content);
     }
 
     fn cleanup_tmp_files(chunks_dir: &Path) {
@@ -167,15 +267,18 @@ impl ChunkStore {
         let path = chunk_path(&self.base_dir, &hash);
         {
             let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-            if cache.get(&hash).is_some() || path.exists() {
+            if cache.get(&hash).is_some()
+                || path.exists()
+                || legacy_chunk_path(&self.base_dir, &hash).exists()
+            {
                 return Ok(hash);
             }
             let dir = chunk_dir(&self.base_dir, &hash);
             std::fs::create_dir_all(&dir).map_err(|e| ChunkError::Io(e.to_string()))?;
             let tmp_path = path.with_extension("tmp");
             {
-                let mut f = std::fs::File::create(&tmp_path)
-                    .map_err(|e| ChunkError::Io(e.to_string()))?;
+                let mut f =
+                    std::fs::File::create(&tmp_path).map_err(|e| ChunkError::Io(e.to_string()))?;
                 std::io::Write::write_all(&mut f, data)
                     .map_err(|e| ChunkError::Io(e.to_string()))?;
                 if durable {
@@ -202,13 +305,15 @@ impl ChunkStore {
             }
         }
         self.cache_misses.fetch_add(1, AtomicOrdering::Relaxed);
-        let path = chunk_path(&self.base_dir, hash);
-        if !path.exists() {
-            return Err(ChunkError::CorruptData(format!(
-                "chunk not found: {}",
-                hash_to_hex(hash)
-            )));
-        }
+        let path = match resolve_chunk_path(&self.base_dir, hash) {
+            Some(p) => p,
+            None => {
+                return Err(ChunkError::CorruptData(format!(
+                    "chunk not found: {}",
+                    hash_to_hex(hash)
+                )));
+            }
+        };
         let data = std::fs::read(&path).map_err(|e| ChunkError::Io(e.to_string()))?;
         let actual = compute_hash(&data);
         if &actual != hash {
@@ -226,12 +331,17 @@ impl ChunkStore {
 
     pub fn chunk_exists(&self, hash: &[u8; 32]) -> bool {
         chunk_path(&self.base_dir, hash).exists()
+            || legacy_chunk_path(&self.base_dir, hash).exists()
     }
 
     pub fn delete_chunk(&self, hash: &[u8; 32]) -> Result<(), ChunkError> {
-        let path = chunk_path(&self.base_dir, hash);
-        if path.exists() {
-            std::fs::remove_file(&path).map_err(|e| ChunkError::Io(e.to_string()))?;
+        for path in [
+            chunk_path(&self.base_dir, hash),
+            legacy_chunk_path(&self.base_dir, hash),
+        ] {
+            if path.exists() {
+                std::fs::remove_file(&path).map_err(|e| ChunkError::Io(e.to_string()))?;
+            }
         }
         {
             let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
@@ -242,8 +352,10 @@ impl ChunkStore {
     }
 
     pub fn verify_chunk(&self, hash: &[u8; 32]) -> Result<(), ChunkError> {
-        let data = std::fs::read(chunk_path(&self.base_dir, hash))
-            .map_err(|e| ChunkError::Io(e.to_string()))?;
+        let path = resolve_chunk_path(&self.base_dir, hash).ok_or_else(|| {
+            ChunkError::CorruptData(format!("chunk not found: {}", hash_to_hex(hash)))
+        })?;
+        let data = std::fs::read(&path).map_err(|e| ChunkError::Io(e.to_string()))?;
         let actual = compute_hash(&data);
         if &actual != hash {
             return Err(ChunkError::HashMismatch {

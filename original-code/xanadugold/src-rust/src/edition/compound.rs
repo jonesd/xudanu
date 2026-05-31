@@ -84,7 +84,9 @@ impl CompoundEdition {
     }
 
     pub fn empty() -> Self {
-        CompoundEdition { elements: Vec::new() }
+        CompoundEdition {
+            elements: Vec::new(),
+        }
     }
 
     pub fn elements(&self) -> &[CompoundElement] {

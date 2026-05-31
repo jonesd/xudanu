@@ -53,17 +53,16 @@ jobs:
 
       - name: Test
         if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'x86_64-apple-darwin' || matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-pc-windows-msvc'
-        run: cargo test --features server --lib --release --target ${{ matrix.target }}
+        run: cargo test --features server --lib --release --target ${{ matrix.target }} --manifest-path original-code/xanadugold/src-rust/Cargo.toml
 
       - name: Build
-        run: cargo build --release --features server --target ${{ matrix.target }}
-        working-directory: original-code/xanadugold/src-rust
+        run: cargo build --release --features server --target ${{ matrix.target }} --manifest-path original-code/xanadugold/src-rust/Cargo.toml
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          cp original-code/xanadugold/src-rust/target/${{ matrix.target }}/release/xudanu-server dist/
+          cp target/${{ matrix.target }}/release/xudanu-server dist/
           cp -r original-code/xanadugold/src-rust/static dist/
           [ -f LICENSE ] && cp LICENSE dist/ || true
           [ -f NOTICE ] && cp NOTICE dist/ || true
@@ -74,7 +73,7 @@ jobs:
         shell: pwsh
         run: |
           mkdir dist
-          cp original-code/xanadugold/src-rust/target/${{ matrix.target }}/release/xudanu-server.exe dist/
+          cp targets/${{ matrix.target }}/release/xudanu-server.exe dist/
           cp -r original-code/xanadugold/src-rust/static dist/
           if (Test-Path LICENSE) { cp LICENSE dist/ }
           if (Test-Path NOTICE) { cp NOTICE dist/ }

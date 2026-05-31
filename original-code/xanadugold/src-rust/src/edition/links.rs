@@ -1231,10 +1231,7 @@ mod tests {
     #[test]
     fn hyper_ref_with_provenance_chain() {
         let href = HyperRef::single(Some(Edition::from_text("x")), None, None, None);
-        let chain = vec![
-            ProvenanceHop::new(1, 10),
-            ProvenanceHop::new(2, 20),
-        ];
+        let chain = vec![ProvenanceHop::new(1, 10), ProvenanceHop::new(2, 20)];
         let with_chain = href.with_provenance_chain(chain.clone());
         assert_eq!(with_chain.provenance_chain().len(), 2);
         assert_eq!(with_chain.provenance_chain()[0].source_work_id(), 1);

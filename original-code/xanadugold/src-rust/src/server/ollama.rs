@@ -55,8 +55,10 @@ struct LlmUsageTrackerInner {
 impl LlmUsageTracker {
     pub fn record(&self, feature: LlmFeature, prompt_chars: u64, response_chars: u64) {
         self.total_requests.fetch_add(1, Ordering::Relaxed);
-        self.total_prompt_chars.fetch_add(prompt_chars, Ordering::Relaxed);
-        self.total_response_chars.fetch_add(response_chars, Ordering::Relaxed);
+        self.total_prompt_chars
+            .fetch_add(prompt_chars, Ordering::Relaxed);
+        self.total_response_chars
+            .fetch_add(response_chars, Ordering::Relaxed);
 
         let entry = LlmUsageEntry {
             feature,
@@ -168,18 +170,9 @@ pub fn get_client() -> Option<&'static LlmClient> {
 
 #[derive(Debug, Clone)]
 pub enum LlmBackend {
-    OpenRouter {
-        api_key: String,
-        model: String,
-    },
-    GitHub {
-        api_key: String,
-        model: String,
-    },
-    Ollama {
-        base_url: String,
-        model: String,
-    },
+    OpenRouter { api_key: String, model: String },
+    GitHub { api_key: String, model: String },
+    Ollama { base_url: String, model: String },
 }
 
 #[derive(Debug, Clone)]
@@ -259,7 +252,8 @@ impl LlmClient {
                     prompt,
                     "openrouter",
                     30,
-                ).await
+                )
+                .await
             }
             LlmBackend::GitHub { api_key, model } => {
                 self.chat_completions(
@@ -269,7 +263,8 @@ impl LlmClient {
                     prompt,
                     "github-models",
                     30,
-                ).await
+                )
+                .await
             }
             LlmBackend::Ollama { base_url, model } => {
                 let url = format!("{}/api/generate", base_url.trim_end_matches('/'));
@@ -323,7 +318,9 @@ impl LlmClient {
 
         tracing::info!(
             "{} request model={} prompt_len={}",
-            label, model, prompt.len()
+            label,
+            model,
+            prompt.len()
         );
 
         let client = reqwest::Client::new();
@@ -343,7 +340,9 @@ impl LlmClient {
             return Err(LlmError::Api(format!("{}: {}", status, text)));
         }
 
-        let raw = resp.text().await
+        let raw = resp
+            .text()
+            .await
             .map_err(|e| LlmError::Parse(e.to_string()))?;
         tracing::info!("{} response body_len={}", label, raw.len());
 
@@ -359,7 +358,11 @@ impl LlmClient {
             .ok_or_else(|| LlmError::Parse("no choices in response".to_string()))
     }
 
-    pub async fn generate_tracked(&self, feature: LlmFeature, prompt: &str) -> Result<String, LlmError> {
+    pub async fn generate_tracked(
+        &self,
+        feature: LlmFeature,
+        prompt: &str,
+    ) -> Result<String, LlmError> {
         let prompt_len = prompt.len() as u64;
         let result = self.generate(prompt).await;
         let response_len = result.as_ref().map(|r| r.len() as u64).unwrap_or(0);
@@ -404,11 +407,7 @@ impl std::fmt::Display for LlmError {
     }
 }
 
-pub fn build_narration_prompt(
-    old_text: &str,
-    new_text: &str,
-    author_name: Option<&str>,
-) -> String {
+pub fn build_narration_prompt(old_text: &str, new_text: &str, author_name: Option<&str>) -> String {
     let author_line = author_name
         .map(|n| format!("The last author was {}.", n))
         .unwrap_or_default();
