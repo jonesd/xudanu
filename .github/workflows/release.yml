@@ -51,6 +51,10 @@ jobs:
           mkdir -p .cargo
           printf '[target.aarch64-unknown-linux-musl]\nlinker = "aarch64-linux-gnu-gcc"\n' > .cargo/config.toml
 
+      - name: Test
+        if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'x86_64-apple-darwin' || matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-pc-windows-msvc'
+        run: cargo test --features server --lib --release --target ${{ matrix.target }}
+
       - name: Build
         run: cargo build --release --features server --target ${{ matrix.target }}
 
