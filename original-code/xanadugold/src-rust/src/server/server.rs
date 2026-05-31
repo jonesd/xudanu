@@ -1401,6 +1401,17 @@ impl Server {
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         let edition = ws.work.current_edition();
         let all_entries = edition.all_entries();
+        tracing::debug!(
+            "[attribution_query] work={:04x} entries={} span_prov={} entry_details={}",
+            work_be_id,
+            all_entries.len(),
+            edition.span_provenance.len(),
+            all_entries.iter().take(10).map(|(p, c)| {
+                let txt = c.element.as_text().unwrap_or("").chars().take(20).collect::<String>();
+                let has_prov = c.provenance.is_some();
+                format!("{}:{}({})", p, txt.len(), if has_prov { "P" } else { "_" })
+            }).collect::<Vec<_>>().join(",")
+        );
 
         let mut elem_char_start: std::collections::HashMap<i64, usize> =
             std::collections::HashMap::with_capacity(all_entries.len());
@@ -3764,7 +3775,7 @@ impl Server {
                 let char_start = text[..abs_byte].chars().count() as i64;
                 let char_end = char_start + search_text.chars().count() as i64;
                 matches.push((char_start, char_end));
-                byte_start = abs_byte + 1;
+                byte_start = abs_byte + search_text.len();
                 if byte_start >= text.len() {
                     break;
                 }
@@ -3842,15 +3853,20 @@ impl Server {
             }
         };
         let excerpt = if excerpt_text.len() > 120 {
-            &excerpt_text[..120]
+            let mut end = 120;
+            while !excerpt_text.is_char_boundary(end) && end < excerpt_text.len() {
+                end += 1;
+            }
+            &excerpt_text[..end]
         } else {
             excerpt_text
         };
         let mut positions = Vec::new();
         let mut start = 0;
         while let Some(idx) = text[start..].find(excerpt) {
+            let match_end = (start + idx + excerpt.len()).min(text.len());
             let char_start = text[..start + idx].chars().count();
-            let char_end = text[..start + idx + excerpt_text.len()].chars().count();
+            let char_end = text[..match_end].chars().count();
             positions.push((char_start, char_end));
             start += idx + excerpt.len();
         }

@@ -90,8 +90,7 @@ export function useTransclusion(): TransclusionState {
           const localRef = isOrigin ? link.origin_ref : link.destination_ref;
           const remoteRef = isOrigin ? link.destination_ref : link.origin_ref;
           const excerpt = localRef?.excerpt || remoteRef?.excerpt || "";
-
-          if (excerpt.length >= 10) {
+          if (excerpt.length >= 3) {
             const positions = await client.findExcerptPositions(workId, excerpt);
             const chain = localRef?.provenance_chain || remoteRef?.provenance_chain;
             for (const pos of positions) {

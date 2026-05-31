@@ -597,15 +597,21 @@ impl Edition {
             if let Some(idx) = lower_text[pos..].find(&lower_query) {
                 let abs_idx = pos + idx;
                 let line = full_text[..abs_idx].matches('\n').count() as u64;
-                let ctx_start = abs_idx.saturating_sub(40);
-                let ctx_end = (abs_idx + query.len() + 40).min(full_text.len());
+                let mut ctx_start = abs_idx.saturating_sub(40);
+                while ctx_start < abs_idx && !full_text.is_char_boundary(ctx_start) {
+                    ctx_start += 1;
+                }
+                let mut ctx_end = (abs_idx + lower_query.len() + 40).min(full_text.len());
+                while ctx_end > ctx_start && !full_text.is_char_boundary(ctx_end) {
+                    ctx_end -= 1;
+                }
                 let context = full_text[ctx_start..ctx_end].to_string();
                 results.push(SearchMatch {
                     char_offset: abs_idx as u64,
                     line,
                     context,
                 });
-                pos = abs_idx + 1;
+                pos = abs_idx + lower_query.len();
             } else {
                 break;
             }

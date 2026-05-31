@@ -689,7 +689,13 @@ async fn handle_socket(
                                     };
                                     let fossil_id = srv.recorder_create_for_content(query.clone(), target_id);
                                     srv.recorder_plant(target_id, fossil_id, &query.watched_content);
-                                    let fossil = srv.recorder_get(fossil_id).unwrap();
+                                    let fossil = match srv.recorder_get(fossil_id) {
+                                        Some(f) => f,
+                                        None => {
+                                            tracing::warn!("fossil {} not found after creation", fossil_id);
+                                            return (fossil_id, Vec::new(), content_elements, watched_words);
+                                        }
+                                    };
                                     let results = fossil.results.clone();
                                     tracing::debug!(target: "xudanu::content_watch",
                                         fossil_id, result_count = results.len(), "Initial results");

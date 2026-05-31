@@ -46,15 +46,15 @@ impl AppState {
     }
 
     pub fn register_session_sender(&self, session_id: SessionId, sender: tokio::sync::mpsc::UnboundedSender<EventMessage>) {
-        self.session_senders.lock().unwrap().insert(session_id, sender);
+        self.session_senders.lock().unwrap_or_else(|e| e.into_inner()).insert(session_id, sender);
     }
 
     pub fn unregister_session_sender(&self, session_id: &SessionId) {
-        self.session_senders.lock().unwrap().remove(session_id);
+        self.session_senders.lock().unwrap_or_else(|e| e.into_inner()).remove(session_id);
     }
 
     pub fn send_to_session(&self, session_id: &SessionId, event: EventMessage) -> bool {
-        let senders = self.session_senders.lock().unwrap();
+        let senders = self.session_senders.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(sender) = senders.get(session_id) {
             sender.send(event).is_ok()
         } else {
