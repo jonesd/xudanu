@@ -352,7 +352,22 @@ fn apply_text_delta_to_edition(
         current_entry_idx += 1;
     }
 
-    Edition::from_entries(new_entries).coalesce()
+    let result = {
+        let ed = Edition::from_entries(new_entries).coalesce();
+        tracing::debug!(
+            "[apply_delta] old_entries={} result_entries={} ops={}",
+            old_entries.len(), ed.all_entries().len(), ops.len()
+        );
+        for (i, (p, c)) in ed.all_entries().iter().take(8).enumerate() {
+            let txt_len = c.element.as_text().map(|t| t.len()).unwrap_or(0);
+            tracing::debug!(
+                "[apply_delta]   [{}] pos={} len={} prov={}",
+                i, p, txt_len, c.provenance.is_some()
+            );
+        }
+        ed
+    };
+    result
 }
 
 fn append_text_with_llm_provenance(
@@ -752,6 +767,10 @@ impl OtreeCrdtManager {
             }
 
             if !fingerprints.is_empty() {
+                tracing::debug!(
+                    "[build_prov] span {}..{} author_type={:?} author_key={:04x} fps={}",
+                    start_pos, end_pos, author_type, author_key, fingerprints.len()
+                );
                 spans.push(SpanProvenance {
                     start: *start_pos,
                     end: end_pos,

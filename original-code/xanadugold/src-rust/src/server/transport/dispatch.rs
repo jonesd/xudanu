@@ -22,10 +22,28 @@ pub fn dispatch(
         return dispatch_writing_feedback(state, session_id, request);
     }
 
-    let result = state.server.with_server(|srv| {
-        srv.bump_operation();
-        dispatch_inner(srv, session_id, request, state)
-    });
+    let result = {
+        let guard_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            state.server.with_server(|srv| {
+                srv.bump_operation();
+                dispatch_inner(srv, session_id, request, state)
+            })
+        }));
+        match guard_result {
+            Ok(r) => r,
+            Err(panic_info) => {
+                let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown panic".to_string()
+                };
+                tracing::error!("Caught panic in dispatch: {}", msg);
+                Err(crate::server::ServerError::Internal(msg))
+            }
+        }
+    };
 
     if let Ok(ResponseValue::Id(work_id)) = &result {
         spawn_auto_title(state, *work_id);

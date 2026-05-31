@@ -90,7 +90,6 @@ function drawOverlay(
 
   const textLen = editor.textContent?.length ?? 0;
   if (textLen === 0) return hitZones;
-
   const textNode = editor.firstChild;
   const singleNode = textNode && textNode.nodeType === Node.TEXT_NODE && textNode === editor.lastChild;
 

@@ -106,7 +106,7 @@ impl CollectorAuditLog {
     pub fn events_of_kind(&self, kind: AuditEventKind) -> Vec<AuditEvent> {
         self.events
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .iter()
             .filter(|e| e.kind == kind)
             .cloned()

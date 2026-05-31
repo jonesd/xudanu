@@ -210,10 +210,10 @@ export function WorkspacePage() {
   }, [connected, workBeId, awareness.length, refreshAwareness]);
 
   useEffect(() => {
-    if (connected && workBeId !== null && clientRef.current) {
+    if (connected && workBeId !== null && clientRef.current && identity !== null) {
       transclusion.loadLinks(clientRef.current, workBeId, works);
     }
-  }, [connected, workBeId, works]);
+  }, [connected, workBeId, works, identity]);
 
   const handlePlaceTransclusion = useCallback(async (position: number) => {
     if (!clientRef.current || workBeId === null) return;
@@ -278,7 +278,6 @@ export function WorkspacePage() {
                 if (workBeId === null) return;
                 const nextPublic = !isPublic;
                 const targetClub = nextPublic ? publicClubId : identity?.club_id ?? null;
-                console.log("[visibility] toggle:", { isPublic, nextPublic, targetClub, publicClubId, identityClub: identity?.club_id });
                 if (!targetClub && !nextPublic) return;
                 await setVisibility(workBeId, targetClub);
                 setIsPublic(nextPublic);

@@ -1725,6 +1725,65 @@ impl JsonCodec {
                     max_depth: args.max_depth,
                 })
             }
+            OperationCode::FindExcerptPositions => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    excerpt: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::FindExcerptPositions {
+                    work_id: args.work_id,
+                    excerpt: args.excerpt,
+                })
+            }
+            OperationCode::VersionIsBefore => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_a: BeId,
+                    work_b: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::VersionIsBefore {
+                    work_a: args.work_a,
+                    work_b: args.work_b,
+                })
+            }
+            OperationCode::VersionAncestors => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::VersionAncestors {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::VersionDescendants => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::VersionDescendants {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::VersionTracePosition => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::VersionTracePosition {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::ProvenanceAncestry => {
                 #[derive(Deserialize)]
                 struct Args {
