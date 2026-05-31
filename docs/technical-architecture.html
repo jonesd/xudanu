@@ -888,8 +888,8 @@ The GrandMap's deduplication is the foundation for everything else:
   <li><strong>Storage</strong> grows with unique content, not total content. Documents that share lots of text use proportionally less disk</li>
 </ul>
 
-<div class="warning">
-  <strong>Scalability note:</strong> The current implementation stores everything in memory via <code>HashMap</code>s and serializes to a single JSON file (<code>server.json</code>). For large deployments (millions of documents), this file can grow very large. The v0.2 roadmap includes a chunked storage backend to address this.
+<div class="note">
+  <strong>Chunked storage:</strong> Since v0.3.5, Xudanu uses a chunked storage backend that writes only changed portions to disk. Documents are stored as individually addressable chunks rather than a single monolithic JSON file. See the <a href="storage-system.html">Storage System</a> documentation for details.
 </div>
 
 <div class="note">
@@ -1747,8 +1747,8 @@ The most critical errors:
   <strong>Atomic write via temp file + rename:</strong> If the server crashes during checkpoint, the worst case is a stale <code>server.tmp</code> file left behind. The <code>server.json</code> file is always either the previous complete state or the new complete state &mdash; never a partial write. The rename operation is atomic on POSIX filesystems.
 </div>
 
-<div class="warning">
-  <strong>Current limitation:</strong> The entire server state is serialized as a single JSON file. For servers with many large documents, this file can grow to hundreds of megabytes. The v0.2 roadmap includes <strong>atomic chunked checkpoints</strong> that write only the changed portions, reducing both write time and disk usage.
+<div class="note">
+  <strong>Chunked storage:</strong> Since v0.3.5, checkpoints write changed chunks individually rather than rewriting the entire manifest. This keeps write time proportional to changes, not total data size. See the <a href="storage-system.html">Storage System</a> documentation for the full design.
 </div>
 
 <div class="note">
