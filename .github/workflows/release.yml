@@ -37,6 +37,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build React frontend
+        run: |
+          cd web/app
+          npm ci
+          npm run build
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -65,7 +76,7 @@ jobs:
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/xudanu-server dist/
-          cp -r original-code/xanadugold/src-rust/static dist/
+          cp -r web/app/dist dist/
           [ -f LICENSE ] && cp LICENSE dist/ || true
           [ -f NOTICE ] && cp NOTICE dist/ || true
           tar -czf ${{ matrix.artifact }} -C dist .
@@ -76,7 +87,7 @@ jobs:
         run: |
           mkdir dist
           cp target/${{ matrix.target }}/release/xudanu-server.exe dist/
-          cp -r original-code/xanadugold/src-rust/static dist/
+          cp -r web/app/dist dist/
           if (Test-Path LICENSE) { cp LICENSE dist/ }
           if (Test-Path NOTICE) { cp NOTICE dist/ }
           Compress-Archive -Path dist/* -DestinationPath ${{ matrix.artifact }}
@@ -99,7 +110,7 @@ jobs:
             ### Quick Start
             ```bash
             tar -xzf xudanu-${{ github.ref_name }}-*.tar.gz
-            ./xudanu-server run 127.0.0.1:8080
+            ./xudanu-server run 127.0.0.1:8080 --static-dir dist
             ```
             Then open http://127.0.0.1:8080 in your browser.
 
