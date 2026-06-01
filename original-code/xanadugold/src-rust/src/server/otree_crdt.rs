@@ -25,6 +25,10 @@ impl OtreeSyncSessionId {
 pub struct OtreeAwarenessState {
     pub session_id: u64,
     pub user_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub club_id: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author_public_key: Option<Vec<u8>>,
     pub cursor: Option<OtreeCursorPosition>,
     pub selection: Option<OtreeSelectionRange>,
     pub is_typing: bool,
@@ -1349,6 +1353,8 @@ mod tests {
         let state = OtreeAwarenessState {
             session_id: 1,
             user_name: "Alice".to_string(),
+            club_id: None,
+            author_public_key: None,
             cursor: Some(OtreeCursorPosition { index: 5 }),
             selection: None,
             is_typing: true,

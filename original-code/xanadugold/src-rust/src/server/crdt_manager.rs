@@ -29,6 +29,10 @@ impl SyncSessionId {
 pub struct AwarenessState {
     pub session_id: u64,
     pub user_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub club_id: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author_public_key: Option<Vec<u8>>,
     pub cursor: Option<CursorPosition>,
     pub selection: Option<SelectionRange>,
     pub is_typing: bool,

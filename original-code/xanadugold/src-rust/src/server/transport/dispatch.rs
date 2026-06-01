@@ -303,14 +303,23 @@ fn dispatch_inner(
                 .ok_or_else(|| crate::server::ServerError::ClubNotFound(club_id))?;
             Ok(ResponseValue::String(name))
         }
-        WireRequest::ClubNames => {
+        WireRequest::ClubNames { offset, limit } => {
             srv.ensure_session(session_id)?;
-            let names = srv
+            let all: Vec<_> = srv
                 .club_names_list()
                 .into_iter()
                 .map(|(n, id)| (n.to_string(), id))
                 .collect();
-            Ok(ResponseValue::ClubNames(names))
+            let total_count = all.len() as u64;
+            let limit_val = limit.unwrap_or(100).min(1000) as usize;
+            let offset_val = offset.unwrap_or(0) as usize;
+            let has_more = offset_val + limit_val < all.len();
+            let entries: Vec<_> = all.into_iter().skip(offset_val).take(limit_val).collect();
+            Ok(ResponseValue::PaginatedClubNames {
+                entries,
+                total_count,
+                has_more,
+            })
         }
 
         WireRequest::WorkCreate { edition } => {
@@ -683,8 +692,8 @@ fn dispatch_inner(
             },
         )),
 
-        WireRequest::WorkList => {
-            let entries = srv
+        WireRequest::WorkList { offset, limit } => {
+            let all: Vec<_> = srv
                 .list_works_with_titles()
                 .into_iter()
                 .filter(|(work_id, _, _, _, _, _, _, _, _, _, _)| {
@@ -722,10 +731,23 @@ fn dispatch_inner(
                     },
                 )
                 .collect();
-            Ok(ResponseValue::WorkList(entries))
+            let total_count = all.len() as u64;
+            let limit_val = limit.unwrap_or(100).min(1000) as usize;
+            let offset_val = offset.unwrap_or(0) as usize;
+            let has_more = offset_val + limit_val < all.len();
+            let entries: Vec<_> = all.into_iter().skip(offset_val).take(limit_val).collect();
+            Ok(ResponseValue::PaginatedWorkList {
+                entries,
+                total_count,
+                has_more,
+            })
         }
-        WireRequest::WorkListByOwner { owner } => {
-            let entries = srv
+        WireRequest::WorkListByOwner {
+            owner,
+            offset,
+            limit,
+        } => {
+            let all: Vec<_> = srv
                 .list_works_by_owner(owner)
                 .into_iter()
                 .filter(|(work_id, _, _, _, _)| {
@@ -749,7 +771,16 @@ fn dispatch_inner(
                     }
                 })
                 .collect();
-            Ok(ResponseValue::WorkList(entries))
+            let total_count = all.len() as u64;
+            let limit_val = limit.unwrap_or(100).min(1000) as usize;
+            let offset_val = offset.unwrap_or(0) as usize;
+            let has_more = offset_val + limit_val < all.len();
+            let entries: Vec<_> = all.into_iter().skip(offset_val).take(limit_val).collect();
+            Ok(ResponseValue::PaginatedWorkList {
+                entries,
+                total_count,
+                has_more,
+            })
         }
 
         WireRequest::LinkCreate {
@@ -766,11 +797,19 @@ fn dispatch_inner(
                     .excerpt
                     .as_deref()
                     .map(|t| crate::edition::Edition::from_text(t));
+                let path = hr.path_context.map(|labels| {
+                    crate::edition::links::Path::new(
+                        labels
+                            .iter()
+                            .filter_map(|l| l.to_range_element())
+                            .collect(),
+                    )
+                });
                 crate::edition::links::HyperRef::single(
                     excerpt,
                     hr.work_context,
                     hr.original_context,
-                    None,
+                    path,
                 )
             });
             let d_ref = destination_ref.map(|hr| {
@@ -778,11 +817,19 @@ fn dispatch_inner(
                     .excerpt
                     .as_deref()
                     .map(|t| crate::edition::Edition::from_text(t));
+                let path = hr.path_context.map(|labels| {
+                    crate::edition::links::Path::new(
+                        labels
+                            .iter()
+                            .filter_map(|l| l.to_range_element())
+                            .collect(),
+                    )
+                });
                 crate::edition::links::HyperRef::single(
                     excerpt,
                     hr.work_context,
                     hr.original_context,
-                    None,
+                    path,
                 )
             });
             let link_id = srv.create_link(session_id, origin, destination, o_ref, d_ref)?;
@@ -886,10 +933,14 @@ fn dispatch_inner(
             srv.delete_link(session_id, link_id)?;
             Ok(ResponseValue::Void)
         }
-        WireRequest::LinkListForWork { work_id } => {
+        WireRequest::LinkListForWork {
+            work_id,
+            offset,
+            limit,
+        } => {
             srv.ensure_can_read(session_id, work_id)?;
-            let link_tuples = srv.list_links_for_work(work_id);
-            let links = link_tuples
+            let all: Vec<_> = srv
+                .list_links_for_work(work_id)
                 .into_iter()
                 .filter_map(|(link_id, origin, destination)| {
                     let (_, _, link) = srv.get_link(link_id).ok()?;
@@ -908,7 +959,16 @@ fn dispatch_inner(
                     })
                 })
                 .collect();
-            Ok(ResponseValue::LinkList(links))
+            let total_count = all.len() as u64;
+            let limit_val = limit.unwrap_or(100).min(1000) as usize;
+            let offset_val = offset.unwrap_or(0) as usize;
+            let has_more = offset_val + limit_val < all.len();
+            let entries: Vec<_> = all.into_iter().skip(offset_val).take(limit_val).collect();
+            Ok(ResponseValue::PaginatedLinkList {
+                entries,
+                total_count,
+                has_more,
+            })
         }
         WireRequest::FindExcerptPositions { work_id, excerpt } => {
             srv.ensure_can_read(session_id, work_id)?;
@@ -1980,10 +2040,26 @@ fn dispatch_inner(
             Ok(ResponseValue::CrdtSyncTextResult { text })
         }
 
-        WireRequest::CrdtAwarenessUpdate { work_id, mut state } => {
+        WireRequest::CrdtAwarenessUpdate { work_id, mut awareness } => {
             srv.ensure_logged_in(session_id)?;
-            state.user_name = srv.display_name_for_session(session_id);
-            let result = srv.crdt_update_awareness(session_id, work_id, state)?;
+            let (display_name, club_id, pub_key) = srv.identity_for_session(session_id);
+            awareness.user_name = display_name;
+            awareness.club_id = club_id;
+            awareness.author_public_key = pub_key;
+            awareness.session_id = session_id.as_u64();
+            let result = srv.crdt_update_awareness(session_id, work_id, awareness.clone())?;
+            for (relay_sid, _) in &result.relay_to {
+                use super::channel::EventMessage;
+                let ev = EventMessage {
+                    session_id: *relay_sid,
+                    subscription_id: 0,
+                    event: EventPayload::CrdtAwarenessUpdate {
+                        work_id,
+                        state: awareness.clone(),
+                    },
+                };
+                state.send_to_session(relay_sid, ev);
+            }
             Ok(ResponseValue::CrdtAwarenessUpdateResult {
                 relay_count: result.relay_to.len(),
             })
@@ -2115,6 +2191,62 @@ fn dispatch_inner(
         WireRequest::WorkDiffNarration { .. } => unreachable!("handled in dispatch_narration"),
         WireRequest::WorkWritingFeedback { .. } => {
             unreachable!("handled in dispatch_writing_feedback")
+        }
+
+        WireRequest::WorkBacklinks { work_id } => {
+            srv.ensure_session(session_id)?;
+            let backlinks = srv.find_backlinks(session_id, work_id)?;
+            Ok(ResponseValue::WorkBacklinksResult(backlinks))
+        }
+
+        WireRequest::AnnotationCreate {
+            work_id,
+            annotation_id,
+            kind,
+            payload,
+        } => {
+            srv.annotation_create(session_id, work_id, annotation_id, kind, payload)?;
+            Ok(ResponseValue::Id(annotation_id))
+        }
+        WireRequest::AnnotationDelete {
+            work_id,
+            annotation_id,
+        } => {
+            srv.annotation_delete(session_id, work_id, annotation_id)?;
+            Ok(ResponseValue::Boolean(true))
+        }
+        WireRequest::AnnotationAttachNode {
+            work_id,
+            annotation_id,
+            node_id,
+        } => {
+            srv.annotation_attach_node(session_id, work_id, annotation_id, node_id)?;
+            Ok(ResponseValue::Boolean(true))
+        }
+        WireRequest::AnnotationAttachSpan {
+            work_id,
+            annotation_id,
+            span_id,
+        } => {
+            srv.annotation_attach_span(session_id, work_id, annotation_id, span_id)?;
+            Ok(ResponseValue::Boolean(true))
+        }
+        WireRequest::AnnotationGet {
+            work_id,
+            annotation_id,
+        } => {
+            let result = srv.annotation_get(session_id, work_id, annotation_id)?;
+            match result {
+                Some(ann) => Ok(ResponseValue::AnnotationResult(ann)),
+                None => Err(crate::server::ServerError::NotFound(format!(
+                    "annotation {} on work {}",
+                    annotation_id, work_id
+                ))),
+            }
+        }
+        WireRequest::AnnotationList { work_id } => {
+            let annotations = srv.annotation_list(session_id, work_id)?;
+            Ok(ResponseValue::AnnotationListResult(annotations))
         }
 
         WireRequest::HistoricalAuthorRegister {
