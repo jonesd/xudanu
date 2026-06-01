@@ -455,7 +455,7 @@ Two cross-cutting concerns span all three layers:
 </p>
 
 <ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
-  <li><strong>Persistence</strong> (right side of diagram) &mdash; the entire server state is serialized to a versioned JSON snapshot with SHA-256 checksums, atomic writes, and automatic migration between format versions.</li>
+  <li><strong>Persistence</strong> (right side of diagram) &mdash; a small <code>manifest.json</code> holds metadata and references, while document content is stored as BLAKE3-content-addressed chunks in a dedicated chunk store. Atomic writes, versioned migration, and crash safety are built in. See the <a href="storage-system.html">Storage System</a> documentation for the full design.</li>
   <li><strong>Federation</strong> (left side of diagram) &mdash; CRDTs (OrSet, LwwRegister) handle multi-server content replication with eventual consistency. PBFT governance coordinates trust decisions.</li>
 </ul>
 
@@ -1632,84 +1632,111 @@ Xudanu implements bidirectional hyperlinks via the <code>HyperLink</code> and <c
 <h2 id="s11">11. Persistence: Snapshots and Crash Safety</h2>
 
 <p>
-Xudanu persists the entire server state as a single JSON snapshot file (<code>server.json</code>). The persistence layer handles versioning, checksums, atomic writes, migration, and backup management.
+Xudanu uses a two-layer persistence architecture: a small <code>manifest.json</code> file holds metadata and chunk references, while document content is stored as BLAKE3-content-addressed chunks in a dedicated chunk store (<code>ChunkStore</code>). This keeps writes proportional to changes, not total data size. The persistence layer handles versioning, checksums, atomic writes, migration, and backup management.
 </p>
 
-<h3>The Versioned Snapshot Format</h3>
+<p>
+For the full design rationale, chunk format, and performance analysis, see the <a href="storage-system.html"><strong>Storage System</strong></a> documentation.
+</p>
 
-<pre>
-pub struct VersionedSnapshot {
-    format_version: u32,          // current: 1
-    created_at: String,           // ISO 8601 timestamp
-    server_version: String,       // e.g. "0.1.1"
-    checksum: String,             // SHA-256 of the data field
-    data: serde_json::Value,      // the actual server state
-}
-</pre>
-
-<h3>Write Process: Atomic Checkpoint</h3>
+<h3>The Manifest and Chunk Store</h3>
 
 <p>
-When the server checkpoints (triggered by each save operation), the following steps occur:
+On checkpoint, the server separates metadata from content:
+</p>
+
+<ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
+  <li><strong>Manifest</strong> (<code>manifest.json</code>) &mdash; a small JSON file containing server metadata, counters, system clubs, and <em>references</em> (chunk hashes) pointing to where works, editions, and clubs are stored in the chunk store.</li>
+  <li><strong>Chunk store</strong> (<code>chunks/</code> directory) &mdash; document content is serialized into individual chunks, each addressed by its BLAKE3 hash. Chunks are stored as <code>.xchunk</code> files in a sharded directory layout (<code>chunks/&lt;prefix&gt;/&lt;hash&gt;.xchunk</code>). Only changed chunks are written on each checkpoint.</li>
+</ul>
+
+<div class="example-block">
+  <div class="example-label">Data directory layout</div>
+  <pre>
+data/
+├── manifest.json          # small metadata + chunk references
+├── manifest.json.v2.bak   # backup from version migration
+├── key_history.json       # server keypair history
+├── chunks/                # content-addressed chunk store
+│   ├── a4/
+│   │   └── a4f7c2e8....xchunk
+│   ├── 3b/
+│   │   └── 3b91d0fe....xchunk
+│   └── ...
+├── blobs/                 # large binary objects
+└── attribution/           # attribution records
+  </pre>
+</div>
+
+<h3>Write Process: Chunked Checkpoint</h3>
+
+<p>
+When the server checkpoints (triggered automatically after mutations), the following steps occur:
 </p>
 
 <ol style="margin-left:24px;margin-bottom:16px">
-  <li><strong>Serialize</strong> &mdash; the entire <code>Server</code> struct is serialized to a <code>ServerSnapshot</code> via <code>to_snapshot()</code></li>
-  <li><strong>Checksum</strong> &mdash; SHA-256 hash of the serialized data is computed</li>
-  <li><strong>Wrap</strong> &mdash; data, checksum, timestamp, and version are combined into a <code>VersionedSnapshot</code></li>
-  <li><strong>Write temp</strong> &mdash; the JSON is written to <code>server.tmp</code></li>
-  <li><strong>Atomic rename</strong> &mdash; <code>server.tmp</code> is renamed to <code>server.json</code></li>
+  <li><strong>Serialize works to chunks</strong> &mdash; each work's content is serialized into content-addressed chunks via <code>work_to_chunks()</code>. Only changed chunks are written.</li>
+  <li><strong>Serialize clubs to chunks</strong> &mdash; club data (including their work trees) is similarly chunked.</li>
+  <li><strong>Serialize standalone editions</strong> &mdash; editions not attached to a work are chunked individually.</li>
+  <li><strong>Build manifest</strong> &mdash; collect all chunk references into a <code>Manifest</code> struct with metadata, counters, links, blob references, and federation state.</li>
+  <li><strong>Write manifest</strong> &mdash; the manifest JSON is written atomically (temp file + rename) to <code>manifest.json</code>.</li>
 </ol>
 
 <div class="example-block">
   <div class="example-label">Checkpoint trace</div>
   <pre>
-1. to_snapshot()     → ServerSnapshot { works: [...], clubs: [...], links: [...], ... }
-2. SHA-256(data)     → "a4f7c2e8..."
-3. VersionedSnapshot  → { format_version: 1, checksum: "a4f7c2e8...", data: {...} }
-4. write("server.tmp")  → 847 KB written
-5. rename("server.tmp", "server.json")  → atomic on POSIX, nearly atomic on Windows
+1. work_to_chunks()      → write changed .xchunk files for each work
+2. edition_to_chunks()   → write changed .xchunk files for standalone editions
+3. Build Manifest {
+     format_version: 3,
+     works: [(be_id, WorkChunkRef { root_hash, ... }), ...],
+     clubs: [ClubChunkRef { work_root: WorkChunkRef, ... }, ...],
+     links: [...], blob_metas: [...], ...
+   }
+4. BLAKE3(manifest_data) → checksum
+5. write("manifest.json.tmp") → atomic rename to manifest.json
   </pre>
 </div>
 
 <h3>Read Process: Restore and Migrate</h3>
 
 <p>
-On startup, the server reads the snapshot with full validation:
+On startup, the server restores from the manifest and chunk store with full validation:
 </p>
 
 <ol style="margin-left:24px;margin-bottom:16px">
-  <li><strong>Detect version</strong> &mdash; check for <code>format_version</code> field (v0 = raw JSON, v1 = versioned wrapper)</li>
-  <li><strong>Migrate</strong> &mdash; if v0, wrap in v1 format. If future version, apply migration chain</li>
-  <li><strong>Verify checksum</strong> &mdash; SHA-256 of the data must match the stored checksum. <code>ChecksumMismatch</code> error if not</li>
-  <li><strong>Validate structure</strong> &mdash; check for required fields (<code>grand_map_id_counter</code>, <code>works</code>, etc.)</li>
-  <li><strong>Check disk space</strong> &mdash; ensure 3&times; current file size + 1MB is available before restoring</li>
-  <li><strong>Deserialize</strong> &mdash; reconstruct the <code>Server</code> struct via <code>from_snapshot()</code></li>
+  <li><strong>Read manifest</strong> &mdash; load <code>manifest.json</code> with fallback to backups if corrupted (tries up to 3 backups)</li>
+  <li><strong>Verify checksum</strong> &mdash; BLAKE3 of the manifest data must match the stored checksum</li>
+  <li><strong>Validate version</strong> &mdash; check <code>format_version</code> matches expected version (currently 3). Apply migration chain if older.</li>
+  <li><strong>Verify chunks</strong> &mdash; cross-reference manifest entries against the chunk store to detect missing or corrupt chunks</li>
+  <li><strong>Restore works</strong> &mdash; for each work, load chunks via <code>work_from_chunks()</code> and reconstruct the in-memory work tree</li>
+  <li><strong>Restore clubs, editions, links</strong> &mdash; similarly reconstruct from chunk references</li>
+  <li><strong>Restore federation, blobs, keys</strong> &mdash; load remaining state from manifest fields</li>
 </ol>
 
-<h3>What Gets Snapshotted</h3>
+<h3>What Gets Persisted</h3>
 
 <table>
-  <tr><th>Component</th><th>What's Saved</th></tr>
-  <tr><td>Works</td><td>All documents: current edition, revision count, edit/read clubs, sponsors, full history</td></tr>
-  <tr><td>Clubs</td><td>Permission groups: public, admin, server clubs, and user-created clubs</td></tr>
-  <tr><td>Links</td><td>All hyperlinks with source/destination references</td></tr>
-  <tr><td>Standalone editions</td><td>Editions not yet attached to a work (templates, drafts)</td></tr>
-  <tr><td>Content address index</td><td>The full fingerprint &harr; BeId mapping</td></tr>
-  <tr><td>Federation state</td><td>Peers, membership, governance, royalty ledger</td></tr>
-  <tr><td>Admin state</td><td>Connection acceptance, shutdown flag, access grants</td></tr>
-  <tr><td>Key history</td><td>Server keypair history for TLS</td></tr>
-  <tr><td>Blob metadata</td><td>References to large binary objects stored on disk</td></tr>
+  <tr><th>Component</th><th>Manifest Entry</th><th>Chunk Store</th></tr>
+  <tr><td>Works</td><td><code>WorkChunkRef</code> (root hash + metadata)</td><td>Document content, editions, revision history</td></tr>
+  <tr><td>Clubs</td><td><code>ClubChunkRef</code> (work root hash + permissions)</td><td>Club work tree content</td></tr>
+  <tr><td>Standalone editions</td><td><code>StandaloneEditionChunkRef</code></td><td>Edition content</td></tr>
+  <tr><td>Links</td><td>Inline in manifest</td><td>&mdash;</td></tr>
+  <tr><td>Content address index</td><td>Inline in manifest</td><td>&mdash;</td></tr>
+  <tr><td>Federation state</td><td>Inline in manifest</td><td>&mdash;</td></tr>
+  <tr><td>Admin state</td><td>Inline in manifest</td><td>&mdash;</td></tr>
+  <tr><td>Key history</td><td>Inline in manifest</td><td>&mdash;</td></tr>
+  <tr><td>Blob metadata</td><td>Inline in manifest</td><td>Blob files in <code>blobs/</code></td></tr>
 </table>
 
 <h3>Backup Management</h3>
 
 <p>
-When a migration occurs (e.g., v0 &rarr; v1), the system automatically:
+When a manifest version migration occurs, the system automatically:
 </p>
 
 <ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
-  <li>Creates a backup with the version suffix: <code>server.json.v0.bak</code></li>
+  <li>Creates a backup with the version suffix: <code>manifest.json.v2.bak</code></li>
   <li>Keeps at least 2 backup versions</li>
   <li>Prunes older backups automatically via <code>cleanup_old_backups()</code></li>
 </ul>
@@ -1717,17 +1744,21 @@ When a migration occurs (e.g., v0 &rarr; v1), the system automatically:
 <h3>Error Handling</h3>
 
 <p>
-The snapshot layer defines a comprehensive error enum:
+The persistence layer defines comprehensive error types for both the manifest and chunk store:
 </p>
 
 <pre>
-pub enum SnapshotError {
+pub enum ManifestError {
     Io(std::io::Error),
     Json(serde_json::Error),
-    Migration { from_version: u32, to_version: u32, reason: String },
-    Validation(ValidationReport),
-    InsufficientDiskSpace { required_bytes: u64, available_bytes: u64 },
     ChecksumMismatch { expected: String, actual: String },
+    InvalidVersion { found: u32, expected: u32 },
+}
+
+pub enum ChunkError {
+    Io(String),
+    HashMismatch { expected: String, actual: String },
+    CorruptData(String),
 }
 </pre>
 
@@ -1744,15 +1775,15 @@ The most critical errors:
 <h3>Crash Safety Guarantees</h3>
 
 <div class="note">
-  <strong>Atomic write via temp file + rename:</strong> If the server crashes during checkpoint, the worst case is a stale <code>server.tmp</code> file left behind. The <code>server.json</code> file is always either the previous complete state or the new complete state &mdash; never a partial write. The rename operation is atomic on POSIX filesystems.
+  <strong>Atomic manifest write:</strong> The manifest is written via temp file + atomic rename. If the server crashes during checkpoint, the worst case is a stale temp file left behind. The <code>manifest.json</code> is always either the previous complete state or the new complete state &mdash; never a partial write.
 </div>
 
 <div class="note">
-  <strong>Chunked storage:</strong> Since v0.3.5, checkpoints write changed chunks individually rather than rewriting the entire manifest. This keeps write time proportional to changes, not total data size. See the <a href="storage-system.html">Storage System</a> documentation for the full design.
+  <strong>Chunk-level durability:</strong> Each chunk is written independently and verified by BLAKE3 hash. A crash mid-checkpoint leaves some new chunks on disk but the old manifest still points to valid chunks. The next checkpoint can reuse or replace them. Write time is proportional to changes, not total data size.
 </div>
 
 <div class="note">
-  <strong>Source:</strong> Snapshot versioning and I/O is in <code>src/server/transport/snapshot.rs</code>. <code>VersionedSnapshot</code> at line 7, <code>write_versioned_snapshot()</code> at line 278, <code>full_restore()</code> at line 326. The <code>ServerSnapshot</code> type and <code>to_snapshot()</code>/<code>from_snapshot()</code> are in <code>src/server/server.rs</code> (module <code>persist_snapshot</code> at line 3476).
+  <strong>Source:</strong> Manifest I/O is in <code>src/persist/manifest.rs</code>. Chunk store is in <code>src/persist/chunk_store.rs</code>. Edition chunk serialization is in <code>src/persist/edition_chunks.rs</code>. The checkpoint orchestration (<code>checkpoint_to_store</code>) is in <code>src/server/server.rs</code> at the <code>persist_snapshot</code> module. For the full storage design, see <a href="storage-system.html">Storage System</a>.
 </div>
 
 <!-- ============================================================ -->
