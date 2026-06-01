@@ -500,7 +500,7 @@ export class CrdtSyncClient {
     const val = extractValue(resp);
     if (Array.isArray(val)) return val as WorkListEntry[];
     const rec = val as Record<string, unknown>;
-    return (rec.work_list as WorkListEntry[]) || (rec.value as WorkListEntry[]) || [];
+    return (rec.entries as WorkListEntry[]) || (rec.work_list as WorkListEntry[]) || (rec.value as WorkListEntry[]) || [];
   }
 
   async linkCreate(
@@ -542,7 +542,7 @@ export class CrdtSyncClient {
     const val = extractValue(resp);
     if (Array.isArray(val)) return val as LinkEntry[];
     const rec = val as Record<string, unknown>;
-    return (rec.links as LinkEntry[]) || [];
+    return (rec.entries as LinkEntry[]) || (rec.links as LinkEntry[]) || [];
   }
 
   async linkDelete(linkId: number): Promise<void> {
