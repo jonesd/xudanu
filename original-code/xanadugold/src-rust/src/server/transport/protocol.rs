@@ -152,6 +152,8 @@ pub enum OperationCode {
     WorkDiffNarration,
     WorkWritingFeedback,
 
+    WorkBacklinks,
+
     LinkCreate,
     LinkGet,
     LinkUpdate,
@@ -187,6 +189,13 @@ pub enum OperationCode {
 
     EditionRetrieve,
     EditionCost,
+
+    AnnotationCreate,
+    AnnotationDelete,
+    AnnotationAttachNode,
+    AnnotationAttachSpan,
+    AnnotationGet,
+    AnnotationList,
 
     ContentSharedRegion,
     ContentMapSharedTo,
@@ -344,6 +353,7 @@ impl OperationCode {
             0x0316 => Some(OperationCode::WorkReviseDelta),
             0x031C => Some(OperationCode::WorkDiffNarration),
             0x031D => Some(OperationCode::WorkWritingFeedback),
+            0x031E => Some(OperationCode::WorkBacklinks),
 
             0x0208 => Some(OperationCode::ClubSetDefaultReadClub),
             0x0209 => Some(OperationCode::ClubSetDefaultEditClub),
@@ -406,6 +416,12 @@ impl OperationCode {
 
             0x0c01 => Some(OperationCode::EditionRetrieve),
             0x0c02 => Some(OperationCode::EditionCost),
+            0x0c03 => Some(OperationCode::AnnotationCreate),
+            0x0c04 => Some(OperationCode::AnnotationDelete),
+            0x0c05 => Some(OperationCode::AnnotationAttachNode),
+            0x0c06 => Some(OperationCode::AnnotationAttachSpan),
+            0x0c09 => Some(OperationCode::AnnotationGet),
+            0x0c0A => Some(OperationCode::AnnotationList),
 
             0x0e01 => Some(OperationCode::ContentSharedRegion),
             0x0e02 => Some(OperationCode::ContentMapSharedTo),
@@ -586,6 +602,7 @@ impl OperationCode {
             OperationCode::WorkReviseDelta => 0x0316,
             OperationCode::WorkDiffNarration => 0x031C,
             OperationCode::WorkWritingFeedback => 0x031D,
+            OperationCode::WorkBacklinks => 0x031E,
 
             OperationCode::LinkCreate => 0x0701,
             OperationCode::LinkGet => 0x0702,
@@ -622,6 +639,12 @@ impl OperationCode {
 
             OperationCode::EditionRetrieve => 0x0c01,
             OperationCode::EditionCost => 0x0c02,
+            OperationCode::AnnotationCreate => 0x0c03,
+            OperationCode::AnnotationDelete => 0x0c04,
+            OperationCode::AnnotationAttachNode => 0x0c05,
+            OperationCode::AnnotationAttachSpan => 0x0c06,
+            OperationCode::AnnotationGet => 0x0c09,
+            OperationCode::AnnotationList => 0x0c0A,
 
             OperationCode::ContentSharedRegion => 0x0e01,
             OperationCode::ContentMapSharedTo => 0x0e02,
@@ -804,7 +827,12 @@ pub enum WireRequest {
     ClubNameById {
         club_id: BeId,
     },
-    ClubNames,
+    ClubNames {
+        #[serde(default)]
+        offset: Option<u32>,
+        #[serde(default)]
+        limit: Option<u32>,
+    },
 
     WorkCreate {
         edition: EditionPayload,
@@ -960,9 +988,18 @@ pub enum WireRequest {
     AdminGrants,
     AdminServerInfo,
 
-    WorkList,
+    WorkList {
+        #[serde(default)]
+        offset: Option<u32>,
+        #[serde(default)]
+        limit: Option<u32>,
+    },
     WorkListByOwner {
         owner: BeId,
+        #[serde(default)]
+        offset: Option<u32>,
+        #[serde(default)]
+        limit: Option<u32>,
     },
 
     WorkReviseDelta {
@@ -976,6 +1013,10 @@ pub enum WireRequest {
     },
 
     WorkWritingFeedback {
+        work_id: BeId,
+    },
+
+    WorkBacklinks {
         work_id: BeId,
     },
 
@@ -998,6 +1039,10 @@ pub enum WireRequest {
     },
     LinkListForWork {
         work_id: BeId,
+        #[serde(default)]
+        offset: Option<u32>,
+        #[serde(default)]
+        limit: Option<u32>,
     },
     FindExcerptPositions {
         work_id: BeId,
@@ -1111,6 +1156,34 @@ pub enum WireRequest {
     EditionCost {
         work_id: BeId,
         method: Option<String>,
+    },
+
+    AnnotationCreate {
+        work_id: BeId,
+        annotation_id: u64,
+        kind: String,
+        payload: String,
+    },
+    AnnotationDelete {
+        work_id: BeId,
+        annotation_id: u64,
+    },
+    AnnotationAttachNode {
+        work_id: BeId,
+        annotation_id: u64,
+        node_id: u64,
+    },
+    AnnotationAttachSpan {
+        work_id: BeId,
+        annotation_id: u64,
+        span_id: u64,
+    },
+    AnnotationGet {
+        work_id: BeId,
+        annotation_id: u64,
+    },
+    AnnotationList {
+        work_id: BeId,
     },
 
     ContentSharedRegion {
@@ -1315,7 +1388,7 @@ pub enum WireRequest {
 
     CrdtAwarenessUpdate {
         work_id: BeId,
-        state: crate::server::crdt_manager::AwarenessState,
+        awareness: crate::server::crdt_manager::AwarenessState,
     },
     CrdtAwarenessGet {
         work_id: BeId,
@@ -1476,6 +1549,24 @@ pub enum ResponseValue {
     ServerInfo(ServerInfoPayload),
     Grants(Vec<GrantPayload>),
     WorkList(Vec<WorkListEntry>),
+    WorkBacklinksResult(Vec<BacklinkEntryPayload>),
+    PaginatedWorkList {
+        entries: Vec<WorkListEntry>,
+        total_count: u64,
+        has_more: bool,
+    },
+    PaginatedClubNames {
+        entries: Vec<(String, BeId)>,
+        total_count: u64,
+        has_more: bool,
+    },
+    PaginatedLinkList {
+        entries: Vec<LinkPayload>,
+        total_count: u64,
+        has_more: bool,
+    },
+    AnnotationResult(AnnotationPayload),
+    AnnotationListResult(Vec<AnnotationPayload>),
     LinkInfo(LinkPayload),
     LinkList(Vec<LinkPayload>),
     ExcerptPositions(Vec<ExcerptPositionPayload>),
@@ -1958,6 +2049,28 @@ pub struct LinkPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BacklinkEntryPayload {
+    pub source_work_id: BeId,
+    pub link_id: BeId,
+    pub link_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub excerpt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnnotationPayload {
+    pub annotation_id: u64,
+    pub kind: String,
+    pub payload: String,
+    #[serde(default)]
+    pub attached_nodes: Vec<u64>,
+    #[serde(default)]
+    pub attached_spans: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HyperRefPayload {
     pub kind: String,
     pub work_context: Option<BeId>,
@@ -2047,6 +2160,19 @@ pub struct RangeElementPayload {
 }
 
 impl RangeElementPayload {
+    pub fn to_range_element(&self) -> Option<crate::edition::RangeElement> {
+        match self.elem_type.as_str() {
+            "text" => self.text.as_ref().map(|t| crate::edition::RangeElement::text(t)),
+            "label" => self.label_id.map(|id| {
+                crate::edition::RangeElement::label(
+                    id,
+                    crate::edition::RangeElement::text(self.text.as_deref().unwrap_or("")),
+                )
+            }),
+            _ => None,
+        }
+    }
+
     pub fn from_range_element(re: &crate::edition::RangeElement) -> Self {
         match re {
             crate::edition::RangeElement::Text { text } => RangeElementPayload {
@@ -2422,6 +2548,10 @@ pub enum EventPayload {
     CrdtTextDelta {
         work_id: BeId,
         ops: Vec<TextDeltaOp>,
+    },
+    CrdtAwarenessUpdate {
+        work_id: BeId,
+        state: crate::server::crdt_manager::AwarenessState,
     },
 }
 

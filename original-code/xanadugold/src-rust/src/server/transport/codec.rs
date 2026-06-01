@@ -344,7 +344,10 @@ impl BinaryCodec {
             OperationCode::SessionConnect => Ok(WireRequest::SessionConnect),
             OperationCode::SessionDisconnect => Ok(WireRequest::SessionDisconnect),
             OperationCode::SessionLoginPublic => Ok(WireRequest::SessionLoginPublic),
-            OperationCode::ClubNames => Ok(WireRequest::ClubNames),
+            OperationCode::ClubNames => Ok(WireRequest::ClubNames {
+                offset: None,
+                limit: None,
+            }),
             OperationCode::AdminRecorderList => Ok(WireRequest::AdminRecorderList),
             OperationCode::AdminServerHealth => Ok(WireRequest::AdminServerHealth),
             OperationCode::CryptoGetPublicKey => Ok(WireRequest::CryptoGetPublicKey),
@@ -367,7 +370,10 @@ impl BinaryCodec {
             OperationCode::AdminGrants => Ok(WireRequest::AdminGrants),
             OperationCode::AdminServerInfo => Ok(WireRequest::AdminServerInfo),
             OperationCode::ServerStats => Ok(WireRequest::ServerStats),
-            OperationCode::WorkList => Ok(WireRequest::WorkList),
+            OperationCode::WorkList => Ok(WireRequest::WorkList {
+                offset: None,
+                limit: None,
+            }),
             OperationCode::BlobStats => Ok(WireRequest::BlobStats),
             OperationCode::LabelCreate => Ok(WireRequest::LabelCreate),
             _ => Err(FrameParseError::MissingPayload.into()),
@@ -569,14 +575,12 @@ impl JsonCodec {
             OperationCode::SessionConnect,
             OperationCode::SessionDisconnect,
             OperationCode::SessionLoginPublic,
-            OperationCode::ClubNames,
             OperationCode::AdminIsAcceptingConnections,
             OperationCode::AdminActiveSessions,
             OperationCode::AdminShutdown,
             OperationCode::AdminGrants,
             OperationCode::AdminServerInfo,
             OperationCode::ServerStats,
-            OperationCode::WorkList,
             OperationCode::BlobStats,
             OperationCode::LabelCreate,
             OperationCode::AdminRecorderList,
@@ -602,7 +606,6 @@ impl JsonCodec {
                 OperationCode::SessionConnect => Ok(WireRequest::SessionConnect),
                 OperationCode::SessionDisconnect => Ok(WireRequest::SessionDisconnect),
                 OperationCode::SessionLoginPublic => Ok(WireRequest::SessionLoginPublic),
-                OperationCode::ClubNames => Ok(WireRequest::ClubNames),
                 OperationCode::AdminIsAcceptingConnections => {
                     Ok(WireRequest::AdminIsAcceptingConnections)
                 }
@@ -611,7 +614,6 @@ impl JsonCodec {
                 OperationCode::AdminGrants => Ok(WireRequest::AdminGrants),
                 OperationCode::AdminServerInfo => Ok(WireRequest::AdminServerInfo),
                 OperationCode::ServerStats => Ok(WireRequest::ServerStats),
-                OperationCode::WorkList => Ok(WireRequest::WorkList),
                 OperationCode::BlobStats => Ok(WireRequest::BlobStats),
                 OperationCode::LabelCreate => Ok(WireRequest::LabelCreate),
                 OperationCode::AdminRecorderList => Ok(WireRequest::AdminRecorderList),
@@ -978,6 +980,17 @@ impl JsonCodec {
                     work_id: args.work_id,
                 })
             }
+            OperationCode::WorkBacklinks => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkBacklinks {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::WorkUnpublish => {
                 #[derive(Deserialize)]
                 struct Args {
@@ -1285,14 +1298,52 @@ impl JsonCodec {
             OperationCode::AdminGrants => Ok(WireRequest::AdminGrants),
             OperationCode::AdminServerInfo => Ok(WireRequest::AdminServerInfo),
             OperationCode::ServerStats => Ok(WireRequest::ServerStats),
+            OperationCode::WorkList => {
+                #[derive(Deserialize)]
+                struct Args {
+                    #[serde(default)]
+                    offset: Option<u32>,
+                    #[serde(default)]
+                    limit: Option<u32>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkList {
+                    offset: args.offset,
+                    limit: args.limit,
+                })
+            }
+            OperationCode::ClubNames => {
+                #[derive(Deserialize)]
+                struct Args {
+                    #[serde(default)]
+                    offset: Option<u32>,
+                    #[serde(default)]
+                    limit: Option<u32>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ClubNames {
+                    offset: args.offset,
+                    limit: args.limit,
+                })
+            }
             OperationCode::WorkListByOwner => {
                 #[derive(Deserialize)]
                 struct Args {
                     owner: BeId,
+                    #[serde(default)]
+                    offset: Option<u32>,
+                    #[serde(default)]
+                    limit: Option<u32>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkListByOwner { owner: args.owner })
+                Ok(WireRequest::WorkListByOwner {
+                    owner: args.owner,
+                    offset: args.offset,
+                    limit: args.limit,
+                })
             }
             OperationCode::LinkCreate => {
                 #[derive(Deserialize)]
@@ -1352,11 +1403,17 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     work_id: BeId,
+                    #[serde(default)]
+                    offset: Option<u32>,
+                    #[serde(default)]
+                    limit: Option<u32>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::LinkListForWork {
                     work_id: args.work_id,
+                    offset: args.offset,
+                    limit: args.limit,
                 })
             }
             OperationCode::FindTranscluders => {
@@ -1615,6 +1672,90 @@ impl JsonCodec {
                 Ok(WireRequest::EditionCost {
                     work_id: args.work_id,
                     method: args.method,
+                })
+            }
+            OperationCode::AnnotationCreate => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    annotation_id: u64,
+                    kind: String,
+                    payload: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AnnotationCreate {
+                    work_id: args.work_id,
+                    annotation_id: args.annotation_id,
+                    kind: args.kind,
+                    payload: args.payload,
+                })
+            }
+            OperationCode::AnnotationDelete => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    annotation_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AnnotationDelete {
+                    work_id: args.work_id,
+                    annotation_id: args.annotation_id,
+                })
+            }
+            OperationCode::AnnotationAttachNode => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    annotation_id: u64,
+                    node_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AnnotationAttachNode {
+                    work_id: args.work_id,
+                    annotation_id: args.annotation_id,
+                    node_id: args.node_id,
+                })
+            }
+            OperationCode::AnnotationAttachSpan => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    annotation_id: u64,
+                    span_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AnnotationAttachSpan {
+                    work_id: args.work_id,
+                    annotation_id: args.annotation_id,
+                    span_id: args.span_id,
+                })
+            }
+            OperationCode::AnnotationGet => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    annotation_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AnnotationGet {
+                    work_id: args.work_id,
+                    annotation_id: args.annotation_id,
+                })
+            }
+            OperationCode::AnnotationList => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AnnotationList {
+                    work_id: args.work_id,
                 })
             }
             OperationCode::ContentSharedRegion => {
@@ -2216,13 +2357,26 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     work_id: BeId,
-                    state: crate::server::crdt_manager::AwarenessState,
+                    #[serde(default)]
+                    state: Option<crate::server::crdt_manager::AwarenessState>,
+                    awareness: Option<crate::server::crdt_manager::AwarenessState>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                let awareness = args.awareness.or(args.state).unwrap_or_else(|| {
+                    crate::server::crdt_manager::AwarenessState {
+                        session_id: 0,
+                        user_name: String::new(),
+                        club_id: None,
+                        author_public_key: None,
+                        cursor: None,
+                        selection: None,
+                        is_typing: false,
+                    }
+                });
                 Ok(WireRequest::CrdtAwarenessUpdate {
                     work_id: args.work_id,
-                    state: args.state,
+                    awareness,
                 })
             }
             OperationCode::CrdtRegisterAuthor => {

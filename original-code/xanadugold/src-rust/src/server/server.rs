@@ -119,6 +119,7 @@ pub struct Server {
     attribution_log: Option<crate::server::transport::attribution_log::AttributionLog>,
     pub(crate) historical_authors: crate::server::historical_author::HistoricalAuthorRegistry,
     pub(crate) source_patterns: Vec<crate::server::source_matcher::SourcePattern>,
+    annotations: HashMap<BeId, HashMap<u64, AnnotationState>>,
 }
 
 pub struct ServerHealth {
@@ -135,6 +136,15 @@ struct LinkState {
     link: HyperLink,
     origin: BeId,
     destination: BeId,
+}
+
+#[derive(Debug, Clone)]
+struct AnnotationState {
+    kind: String,
+    payload: String,
+    attached_nodes: Vec<u64>,
+    attached_spans: Vec<u64>,
+    created_by: Option<BeId>,
 }
 
 impl Default for Server {
@@ -248,6 +258,11 @@ impl Server {
             attribution_log: None,
             historical_authors: crate::server::historical_author::HistoricalAuthorRegistry::new(),
             source_patterns: crate::server::source_matcher::builtin_patterns(),
+
+            // TODO: Annotations use a simple HashMap for pragmatic first implementation.
+            // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
+            // transclusion survival, and materialize_annotation_indexed support.
+            annotations: HashMap::new(),
         };
 
         let pub_club =
@@ -400,9 +415,17 @@ impl Server {
     }
 
     pub fn display_name_for_session(&self, session_id: SessionId) -> String {
+        let (name, _, _) = self.identity_for_session(session_id);
+        name
+    }
+
+    pub fn identity_for_session(
+        &self,
+        session_id: SessionId,
+    ) -> (String, Option<BeId>, Option<Vec<u8>>) {
         let session = match self.sessions.get(&session_id) {
             Some(s) => s,
-            None => return "anonymous".to_string(),
+            None => return ("anonymous".to_string(), None, None),
         };
         let author_club = session
             .initial_login()
@@ -419,12 +442,18 @@ impl Server {
             })
             .or(session.initial_login());
         match author_club {
-            Some(club_id) => self
-                .clubs
-                .get(&club_id)
-                .and_then(|c| c.display_name().map(|s| s.to_string()))
-                .unwrap_or_else(|| format!("club-{}", club_id)),
-            None => "anonymous".to_string(),
+            Some(club_id) => {
+                let name = self
+                    .clubs
+                    .get(&club_id)
+                    .and_then(|c| c.display_name().map(|s| s.to_string()))
+                    .unwrap_or_else(|| format!("club-{}", club_id));
+                let pub_key = session
+                    .club_signing_key()
+                    .map(|k| k.verifying_key().to_bytes().to_vec());
+                (name, Some(club_id), pub_key)
+            }
+            None => ("anonymous".to_string(), None, None),
         }
     }
 
@@ -2553,6 +2582,8 @@ impl Server {
             let otree_state = super::otree_crdt::OtreeAwarenessState {
                 session_id: state.session_id,
                 user_name: state.user_name,
+                club_id: state.club_id,
+                author_public_key: state.author_public_key,
                 cursor: state
                     .cursor
                     .map(|c| super::otree_crdt::OtreeCursorPosition { index: c.index }),
@@ -2618,6 +2649,8 @@ impl Server {
                 .map(|s| super::crdt_manager::AwarenessState {
                     session_id: s.session_id,
                     user_name: s.user_name.clone(),
+                    club_id: s.club_id,
+                    author_public_key: s.author_public_key.clone(),
                     cursor: s
                         .cursor
                         .as_ref()
@@ -3887,6 +3920,219 @@ impl Server {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    pub fn find_backlinks(
+        &self,
+        session_id: SessionId,
+        work_id: BeId,
+    ) -> Result<Vec<super::transport::protocol::BacklinkEntryPayload>, ServerError> {
+        self.ensure_session(session_id)?;
+        let link_ids = self.work_to_links.get(&work_id).cloned().unwrap_or_default();
+        let mut results = Vec::new();
+        let mut seen_works = std::collections::HashSet::new();
+        seen_works.insert(work_id);
+        for lid in link_ids {
+            let ls = match self.links.get(&lid) {
+                Some(ls) => ls,
+                None => continue,
+            };
+            let source_work_id = if ls.destination == work_id {
+                ls.origin
+            } else if ls.origin == work_id {
+                ls.destination
+            } else {
+                continue;
+            };
+            if seen_works.contains(&source_work_id) {
+                continue;
+            }
+            if !self
+                .work(source_work_id)
+                .map(|w| self.work_is_readable(session_id, w))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            seen_works.insert(source_work_id);
+            let excerpt = ls.link.end_at("LeftEnd").and_then(|hr| hr.excerpt()).and_then(
+                |ed| {
+                    let text: String = ed
+                        .all_entries()
+                        .iter()
+                        .filter_map(|(_, c)| c.element.as_text())
+                        .collect();
+                    if text.is_empty() { None } else { Some(text) }
+                },
+            );
+            let title = self.works.get(&source_work_id).map(|ws| ws.cached_title.clone()).filter(|t| !t.is_empty());
+            let direction = if ls.destination == work_id {
+                "incoming"
+            } else {
+                "outgoing"
+            };
+            results.push(super::transport::protocol::BacklinkEntryPayload {
+                source_work_id,
+                link_id: lid,
+                link_type: format!("hyperlink_{}", direction),
+                excerpt,
+                title,
+            });
+        }
+        Ok(results)
+    }
+
+    pub fn annotation_create(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        annotation_id: u64,
+        kind: String,
+        payload: String,
+    ) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+        let ws = self.works.get(&work_id).ok_or_else(|| {
+            ServerError::NotFound(format!("work {}", work_id))
+        })?;
+        if ws.grabber != Some(session_id) {
+            return Err(ServerError::NotAuthorized);
+        }
+        let work_anns = self.annotations.entry(work_id).or_default();
+        let session = self.sessions.get(&session_id);
+        let created_by = session.and_then(|s| s.initial_login());
+        work_anns.insert(
+            annotation_id,
+            AnnotationState {
+                kind,
+                payload,
+                attached_nodes: Vec::new(),
+                attached_spans: Vec::new(),
+                created_by,
+            },
+        );
+        Ok(())
+    }
+
+    pub fn annotation_delete(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        annotation_id: u64,
+    ) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+        let ws = self.works.get(&work_id).ok_or_else(|| {
+            ServerError::NotFound(format!("work {}", work_id))
+        })?;
+        if ws.grabber != Some(session_id) {
+            return Err(ServerError::NotAuthorized);
+        }
+        if let Some(work_anns) = self.annotations.get_mut(&work_id) {
+            work_anns.remove(&annotation_id);
+        }
+        Ok(())
+    }
+
+    pub fn annotation_attach_node(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        annotation_id: u64,
+        node_id: u64,
+    ) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+        let ws = self.works.get(&work_id).ok_or_else(|| {
+            ServerError::NotFound(format!("work {}", work_id))
+        })?;
+        if ws.grabber != Some(session_id) {
+            return Err(ServerError::NotAuthorized);
+        }
+        if let Some(work_anns) = self.annotations.get_mut(&work_id) {
+            if let Some(ann) = work_anns.get_mut(&annotation_id) {
+                if !ann.attached_nodes.contains(&node_id) {
+                    ann.attached_nodes.push(node_id);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn annotation_attach_span(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        annotation_id: u64,
+        span_id: u64,
+    ) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+        let ws = self.works.get(&work_id).ok_or_else(|| {
+            ServerError::NotFound(format!("work {}", work_id))
+        })?;
+        if ws.grabber != Some(session_id) {
+            return Err(ServerError::NotAuthorized);
+        }
+        if let Some(work_anns) = self.annotations.get_mut(&work_id) {
+            if let Some(ann) = work_anns.get_mut(&annotation_id) {
+                if !ann.attached_spans.contains(&span_id) {
+                    ann.attached_spans.push(span_id);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn annotation_get(
+        &self,
+        session_id: SessionId,
+        work_id: BeId,
+        annotation_id: u64,
+    ) -> Result<Option<super::transport::protocol::AnnotationPayload>, ServerError> {
+        self.ensure_session(session_id)?;
+        let ws = self.works.get(&work_id).ok_or_else(|| {
+            ServerError::NotFound(format!("work {}", work_id))
+        })?;
+        if !self.work_is_readable(session_id, &ws.work) {
+            return Err(ServerError::NotAuthorized);
+        }
+        Ok(self
+            .annotations
+            .get(&work_id)
+            .and_then(|m| m.get(&annotation_id))
+            .map(|a| super::transport::protocol::AnnotationPayload {
+                annotation_id,
+                kind: a.kind.clone(),
+                payload: a.payload.clone(),
+                attached_nodes: a.attached_nodes.clone(),
+                attached_spans: a.attached_spans.clone(),
+            }))
+    }
+
+    pub fn annotation_list(
+        &self,
+        session_id: SessionId,
+        work_id: BeId,
+    ) -> Result<Vec<super::transport::protocol::AnnotationPayload>, ServerError> {
+        self.ensure_session(session_id)?;
+        let ws = self.works.get(&work_id).ok_or_else(|| {
+            ServerError::NotFound(format!("work {}", work_id))
+        })?;
+        if !self.work_is_readable(session_id, &ws.work) {
+            return Err(ServerError::NotAuthorized);
+        }
+        Ok(self
+            .annotations
+            .get(&work_id)
+            .map(|m| {
+                m.iter()
+                    .map(|(&id, a)| super::transport::protocol::AnnotationPayload {
+                        annotation_id: id,
+                        kind: a.kind.clone(),
+                        payload: a.payload.clone(),
+                        attached_nodes: a.attached_nodes.clone(),
+                        attached_spans: a.attached_spans.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     pub fn link_count(&self) -> usize {
@@ -6896,6 +7142,7 @@ pub(crate) mod persist_snapshot {
                 historical_authors: crate::server::historical_author::HistoricalAuthorRegistry::new(
                 ),
                 source_patterns: crate::server::source_matcher::builtin_patterns(),
+                annotations: HashMap::new(),
             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap
@@ -11089,6 +11336,8 @@ mod tests {
         let state = AwarenessState {
             session_id: stranger_sid.as_u64(),
             user_name: "stranger".to_string(),
+            club_id: None,
+            author_public_key: None,
             cursor: None,
             selection: None,
             is_typing: false,
@@ -11467,6 +11716,8 @@ mod tests {
         let state1 = AwarenessState {
             session_id: sid1.as_u64(),
             user_name: "alice".to_string(),
+            club_id: None,
+            author_public_key: None,
             cursor: Some(CursorPosition { index: 0 }),
             selection: None,
             is_typing: false,
@@ -11476,6 +11727,8 @@ mod tests {
         let state2 = AwarenessState {
             session_id: sid2.as_u64(),
             user_name: "bob".to_string(),
+            club_id: None,
+            author_public_key: None,
             cursor: Some(CursorPosition { index: 5 }),
             selection: None,
             is_typing: false,

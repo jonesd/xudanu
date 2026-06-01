@@ -492,8 +492,8 @@ async fn json_club_operations() {
     .await;
     assert_eq!(resp["value"]["value"], "editors");
 
-    let resp = send_recv_json(&mut s, &mut r, json_req(14, "club_names", None)).await;
-    assert!(resp["value"]["value"].as_array().unwrap().len() >= 4);
+    let resp = send_recv_json(&mut s, &mut r, json_req(14, "club_names", Some(serde_json::json!({})))).await;
+    assert!(resp["value"]["value"]["entries"].as_array().unwrap().len() >= 4);
 }
 
 #[tokio::test]
@@ -2270,9 +2270,9 @@ async fn revision_history_preserves_all_edits() {
 async fn work_list_empty() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r, json_req(50, "work_list", None)).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(50, "work_list", Some(serde_json::json!({})))).await;
     assert_eq!(resp["type"], "response");
-    assert!(resp["value"]["value"].as_array().unwrap().is_empty());
+    assert!(resp["value"]["value"]["entries"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -2301,8 +2301,8 @@ async fn work_list_after_create() {
     )
     .await;
 
-    let resp = send_recv_json(&mut s, &mut r, json_req(50, "work_list", None)).await;
-    let entries = resp["value"]["value"].as_array().unwrap();
+    let resp = send_recv_json(&mut s, &mut r, json_req(50, "work_list", Some(serde_json::json!({})))).await;
+    let entries = resp["value"]["value"]["entries"].as_array().unwrap();
     assert_eq!(entries.len(), 2);
     assert!(entries[0]["work_id"].as_u64().unwrap() > 0);
     assert!(entries[0]["revision_count"].as_u64().unwrap() >= 0);
@@ -2479,7 +2479,7 @@ async fn link_list_for_work() {
     )
     .await;
     assert_eq!(resp["type"], "response");
-    let links = resp["value"]["value"].as_array().unwrap();
+    let links = resp["value"]["value"]["entries"].as_array().unwrap();
     assert_eq!(links.len(), 1);
     assert_eq!(links[0]["origin"], work_a);
     assert_eq!(links[0]["destination"], work_b);
@@ -5057,9 +5057,9 @@ async fn federation_content_replication_between_two_servers() {
     )
     .await;
 
-    let resp = send_recv_json(&mut s_b, &mut r_b, json_req(10, "work_list", None)).await;
+    let resp = send_recv_json(&mut s_b, &mut r_b, json_req(10, "work_list", Some(serde_json::json!({})))).await;
     assert_eq!(resp["type"], "response");
-    let initial_b_count = resp["value"]["value"].as_array().unwrap().len();
+    let initial_b_count = resp["value"]["value"]["entries"].as_array().unwrap().len();
 
     let (mut fed_a, _) = tokio_tungstenite::connect_async(srv_a.federation_url())
         .await
@@ -5142,9 +5142,9 @@ async fn federation_content_replication_between_two_servers() {
             .with_server(|srv| srv.federation_import_works(&push, &my_id));
         assert!(imported >= 1);
 
-        let resp = send_recv_json(&mut s_b, &mut r_b, json_req(11, "work_list", None)).await;
+        let resp = send_recv_json(&mut s_b, &mut r_b, json_req(11, "work_list", Some(serde_json::json!({})))).await;
         assert_eq!(resp["type"], "response");
-        let after_b_count = resp["value"]["value"].as_array().unwrap().len();
+        let after_b_count = resp["value"]["value"]["entries"].as_array().unwrap().len();
         assert!(
             after_b_count > initial_b_count,
             "server B should have more works after import"
@@ -7815,8 +7815,8 @@ async fn work_list_filters_private_from_other_session() {
     .await;
 
     let (mut s2, mut r2, _sid2) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s2, &mut r2, json_req(50, "work_list", None)).await;
-    let entries = resp["value"]["value"].as_array().unwrap();
+    let resp = send_recv_json(&mut s2, &mut r2, json_req(50, "work_list", Some(serde_json::json!({})))).await;
+    let entries = resp["value"]["value"]["entries"].as_array().unwrap();
     let visible_ids: Vec<u64> = entries
         .iter()
         .map(|e| e["work_id"].as_u64().unwrap())
@@ -9330,4 +9330,584 @@ fn gc_removes_orphaned_chunks_after_work_changes() {
     assert_eq!(rev0.to_text(), "temp work");
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ============================================================
+// Tier A: #3 Backlinks
+// ============================================================
+
+#[tokio::test]
+async fn backlinks_empty_for_new_work() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "hello"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "work_backlinks",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(
+        resp["value"]["type"],
+        "work_backlinks_result"
+    );
+    let entries = resp["value"]["value"].as_array().unwrap();
+    assert!(entries.is_empty());
+}
+
+#[tokio::test]
+async fn backlinks_returns_link_to_work() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "source"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let work_b = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "target"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "link_create",
+            Some(serde_json::json!({
+                "origin": work_a, "destination": work_b
+            })),
+        ),
+    )
+    .await;
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            30,
+            "work_backlinks",
+            Some(serde_json::json!({"work_id": work_b})),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    let entries = resp["value"]["value"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["source_work_id"], work_a);
+    assert!(entries[0]["link_id"].as_u64().unwrap() > 0);
+}
+
+// ============================================================
+// Tier A: #4 Annotations
+// ============================================================
+
+#[tokio::test]
+async fn annotation_create_and_get() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "hello"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id}))),
+    )
+    .await;
+
+    let ann_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "annotation_create",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 1,
+                "kind": "comment",
+                "payload": "a note"
+            })),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    assert_eq!(ann_id, 1);
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "annotation_get",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 1
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"]["kind"], "comment");
+    assert_eq!(resp["value"]["value"]["payload"], "a note");
+}
+
+#[tokio::test]
+async fn annotation_delete() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "hello"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id}))),
+    )
+    .await;
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "annotation_create",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 1,
+                "kind": "note",
+                "payload": "temp"
+            })),
+        ),
+    )
+    .await;
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "annotation_delete",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 1
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"], true);
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(22, "work_release", Some(serde_json::json!({"work_id": work_id}))),
+    )
+    .await;
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            23,
+            "annotation_get",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 1
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn annotation_list() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "doc"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id}))),
+    )
+    .await;
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "annotation_create",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 1,
+                "kind": "highlight",
+                "payload": "h1"
+            })),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "annotation_create",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 2,
+                "kind": "comment",
+                "payload": "c1"
+            })),
+        ),
+    )
+    .await;
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(22, "work_release", Some(serde_json::json!({"work_id": work_id}))),
+    )
+    .await;
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            30,
+            "annotation_list",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    let list = resp["value"]["value"].as_array().unwrap();
+    assert_eq!(list.len(), 2);
+}
+
+#[tokio::test]
+async fn annotation_attach_node_and_span() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_id = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "hello"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id}))),
+    )
+    .await;
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "annotation_create",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 1,
+                "kind": "note",
+                "payload": "attached"
+            })),
+        ),
+    )
+    .await;
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "annotation_attach_node",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 1,
+                "node_id": 42
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"], true);
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            22,
+            "annotation_attach_span",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 1,
+                "span_id": 99
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["value"], true);
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(23, "work_release", Some(serde_json::json!({"work_id": work_id}))),
+    )
+    .await;
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            24,
+            "annotation_get",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 1
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    let nodes = resp["value"]["value"]["attached_nodes"].as_array().unwrap();
+    assert!(nodes.contains(&serde_json::json!(42)));
+    let spans = resp["value"]["value"]["attached_spans"].as_array().unwrap();
+    assert!(spans.contains(&serde_json::json!(99)));
+}
+
+// ============================================================
+// Tier A: #6 Pagination
+// ============================================================
+
+#[tokio::test]
+async fn paginated_work_list_with_offset_limit() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    for i in 0..5 {
+        send_recv_json(
+            &mut s,
+            &mut r,
+            json_req(
+                10 + i,
+                "work_create",
+                Some(serde_json::json!({"edition": {"text": format!("doc_{}", i)}})),
+            ),
+        )
+        .await;
+    }
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            50,
+            "work_list",
+            Some(serde_json::json!({"offset": 0, "limit": 2})),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    let entries = resp["value"]["value"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(resp["value"]["value"]["total_count"], 5);
+    assert_eq!(resp["value"]["value"]["has_more"], true);
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            51,
+            "work_list",
+            Some(serde_json::json!({"offset": 4, "limit": 2})),
+        ),
+    )
+    .await;
+    let entries = resp["value"]["value"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(resp["value"]["value"]["has_more"], false);
+}
+
+#[tokio::test]
+async fn paginated_club_names_with_limit() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "club_create_named",
+            Some(serde_json::json!({"name": "alpha", "description": "empty"})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "club_create_named",
+            Some(serde_json::json!({"name": "beta", "description": "empty"})),
+        ),
+    )
+    .await;
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            50,
+            "club_names",
+            Some(serde_json::json!({"limit": 1})),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    let entries = resp["value"]["value"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert!(resp["value"]["value"]["total_count"].as_u64().unwrap() >= 2);
+    assert_eq!(resp["value"]["value"]["has_more"], true);
+}
+
+#[tokio::test]
+async fn paginated_link_list_for_work() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+
+    let work_a = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "a"}}))),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let work_b = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "b"}}))),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let work_c = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(12, "work_create", Some(serde_json::json!({"edition": {"text": "c"}}))),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(20, "link_create", Some(serde_json::json!({"origin": work_a, "destination": work_b}))),
+    )
+    .await;
+    send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(21, "link_create", Some(serde_json::json!({"origin": work_a, "destination": work_c}))),
+    )
+    .await;
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(30, "link_list_for_work",
+            Some(serde_json::json!({"work_id": work_a, "offset": 0, "limit": 1}))),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    let entries = resp["value"]["value"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(resp["value"]["value"]["total_count"], 2);
+    assert_eq!(resp["value"]["value"]["has_more"], true);
 }

@@ -67,3 +67,35 @@ Replace the single `server.json` file with a proper storage engine:
 
 - ARM Linux musl: use `cross` tool or different approach for `aws-lc-sys` cross-compilation
 - Windows: verify the PowerShell fix works for the packaging step
+
+### Tiered key management for production
+
+Design doc: `docs/key-management-design.md`
+
+**Phase A: Server Lock/Unlock State** (2-3 days)
+- Add `Locked`/`Unlocked` server state
+- Gate signing operations behind unlock
+- Add `server_unlock`/`server_lock` wire operations
+- Auto-lock timeout (default: 1 hour)
+- `/health` endpoint reports lock state
+
+**Phase B: Data Encryption at Rest** (3-5 days)
+- Generate Data Encryption Key (DEK) at `init`
+- `EncryptedChunkStore` wrapper: XChaCha20-Poly1305 per chunk
+- Encrypt manifest and blobs
+- Password-derived fallback for environments without TPM
+
+**Phase C: TPM 2.0 Binding** (5-7 days)
+- Bind Storage Master Key to TPM via `tss-esapi`
+- Auto-unwrap DEK at startup (no passphrase needed for storage)
+- Fallback to password mode if TPM unavailable
+- Platform: Linux (TPM), macOS (Secure Enclave), Windows (TBS)
+
+**Phase D: Multi-Admin Unlock** (3-5 days)
+- Shamir's Secret Sharing for signing key encryption
+- N-of-M admin passphrases required to unlock signing keys
+- Share rotation on admin change
+
+**Phase E: Cloud KMS Support** (3-5 days)
+- AWS KMS, GCP KMS, Azure Key Vault for DEK wrapping
+- Auto-detected via environment variables
