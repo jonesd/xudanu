@@ -11,7 +11,7 @@ import { ImportWizard } from "../components/ImportWizard";
 import { TransclusionBadge } from "../components/TransclusionBadge";
 import type { WorkListEntry, HistoricalAuthorEntry } from "../api/crdt_sync";
 
-const WS_URL = `ws://${window.location.host}/xudanu`;
+const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
 
 export function WorkspacePage() {
   const [showDebug, setShowDebug] = useState(false);
