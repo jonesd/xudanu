@@ -858,6 +858,29 @@ body {
   flex-shrink: 0;
 }
 
+.outline-entry.dragging {
+  opacity: 0.4;
+}
+
+.outline-entry.drop-target {
+  background: #dde8f0;
+}
+
+.outline-drop-indicator {
+  height: 2px;
+  background: #3498db;
+  margin: 1px 10px;
+  border-radius: 1px;
+}
+
+.outline-drop-hint {
+  font-size: 10px;
+  color: #888;
+  text-align: center;
+  padding: 4px;
+  font-style: italic;
+}
+
 .author-highlight {
   border-radius: 2px;
   transition: background-color 0.15s;

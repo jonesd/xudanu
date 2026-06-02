@@ -168,6 +168,63 @@ export class TextBuffer {
     }
     return entries;
   }
+
+  getSectionRange(headingLine: number): { startLine: number; endLine: number } {
+    const outline = this.extractOutline();
+    const entryIdx = outline.findIndex((e) => e.line === headingLine);
+    if (entryIdx === -1) return { startLine: headingLine, endLine: headingLine + 1 };
+
+    const entry = outline[entryIdx];
+    let endLine = this.getLineCount();
+    for (let i = entryIdx + 1; i < outline.length; i++) {
+      if (outline[i].level <= entry.level) {
+        endLine = outline[i].line;
+        break;
+      }
+    }
+    return { startLine: headingLine, endLine };
+  }
+
+  moveSection(fromHeadingLine: number, toHeadingLine: number): string {
+    const section = this.getSectionRange(fromHeadingLine);
+    const sectionText = this.getLinesRange(section.startLine, section.endLine);
+
+    let insertChar: number;
+    if (toHeadingLine === -1) {
+      insertChar = 0;
+    } else {
+      const targetSection = this.getSectionRange(toHeadingLine);
+      insertChar = this.getCharOffset(targetSection.endLine);
+    }
+
+    const startChar = this.getCharOffset(section.startLine);
+    const endChar = this.getCharOffset(section.endLine);
+
+    if (toHeadingLine === -1) {
+      if (insertChar === startChar) return this.text;
+      return sectionText + this.text.slice(0, startChar) + this.text.slice(endChar);
+    }
+
+    const targetStartChar = this.getCharOffset(toHeadingLine);
+    const targetSection = this.getSectionRange(toHeadingLine);
+    const targetEndChar = this.getCharOffset(targetSection.endLine);
+
+    if (targetEndChar <= startChar) {
+      return (
+        this.text.slice(0, targetEndChar) +
+        sectionText +
+        this.text.slice(targetEndChar, startChar) +
+        this.text.slice(endChar)
+      );
+    } else if (startChar < targetStartChar) {
+      return (
+        this.text.slice(0, startChar) +
+        this.text.slice(endChar, targetEndChar) +
+        sectionText
+      );
+    }
+    return this.text;
+  }
 }
 
 export interface SearchMatch {

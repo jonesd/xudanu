@@ -487,26 +487,8 @@ export function CollaborativeEditor({
     const container = el.parentElement;
     if (!container) return;
     const line = buffer.getLineForChar(charOffset);
-    const lineStart = buffer.getCharOffset(line);
-    const localOffset = charOffset - lineStart;
-    const textNode = el.firstChild;
-    if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-      try {
-        const range = document.createRange();
-        const clamped = Math.min(localOffset, (textNode as Text).length);
-        range.setStart(textNode as Text, clamped);
-        range.collapse(true);
-        const sel = window.getSelection();
-        sel?.removeAllRanges();
-        sel?.addRange(range);
-        const span = document.createElement("span");
-        range.insertNode(span);
-        span.scrollIntoView({ behavior: "smooth", block: "center" });
-        span.remove();
-      } catch (e) {
-        console.warn("CollaborativeEditor: failed to jump to char offset:", e);
-      }
-    }
+    const targetScroll = line * parseFloat(getComputedStyle(el).lineHeight || "20");
+    container.scrollTo({ top: Math.max(0, targetScroll - container.clientHeight / 3), behavior: "smooth" });
   }, [buffer]);
 
   useEffect(() => {
@@ -604,6 +586,7 @@ export function CollaborativeEditor({
           <OutlinePanel
             buffer={buffer}
             onJumpTo={jumpToCharOffset}
+            onMoveSection={(newText) => onTextChange(newText)}
             onClose={() => setOutlineOpen(false)}
           />
         )}

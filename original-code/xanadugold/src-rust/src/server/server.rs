@@ -1644,7 +1644,8 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        self.historical_authors
+        let author = self
+            .historical_authors
             .register(
                 name,
                 display_name,
@@ -1655,7 +1656,9 @@ impl Server {
                 created_by,
                 timestamp,
             )
-            .map_err(ServerError::Internal)
+            .map_err(ServerError::Internal)?;
+        self.auto_checkpoint();
+        Ok(author)
     }
 
     pub fn get_historical_author(
@@ -12126,5 +12129,156 @@ mod tests {
             ancestry.is_empty(),
             "work with no incoming links has no ancestry"
         );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn historical_author_checkpoint_restore() {
+        let dir = TempDir::new("ha_persist");
+
+        let author_id;
+        {
+            let mut server = Server::new();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            let author = server
+                .register_historical_author(
+                    "Vitruvius".into(),
+                    "Vitruvius (c. 80\u{2013}15 BC)".into(),
+                    Some(-80),
+                    Some(-15),
+                    HashMap::new(),
+                    "De Architectura".into(),
+                    1,
+                )
+                .unwrap();
+            author_id = author.be_id;
+
+            let got = server.get_historical_author(author_id).unwrap();
+            assert_eq!(got.name, "Vitruvius");
+            assert_eq!(got.display_name, "Vitruvius (c. 80\u{2013}15 BC)");
+            assert_eq!(got.birth_year, Some(-80));
+            assert_eq!(got.death_year, Some(-15));
+
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+        }
+
+        {
+            let server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+            let got = server.get_historical_author(author_id).unwrap();
+            assert_eq!(got.name, "Vitruvius");
+            assert_eq!(got.birth_year, Some(-80));
+            assert_eq!(got.death_year, Some(-15));
+
+            let list = server.list_historical_authors();
+            assert_eq!(list.len(), 1);
+            assert_eq!(list[0].name, "Vitruvius");
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn historical_author_sorted_by_name() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        server
+            .register_historical_author(
+                "Shakespeare".into(),
+                "William Shakespeare".into(),
+                Some(1564),
+                Some(1616),
+                HashMap::new(),
+                String::new(),
+                1,
+            )
+            .unwrap();
+        server
+            .register_historical_author(
+                "Austen".into(),
+                "Jane Austen".into(),
+                Some(1775),
+                Some(1817),
+                HashMap::new(),
+                String::new(),
+                1,
+            )
+            .unwrap();
+        server
+            .register_historical_author(
+                "Melville".into(),
+                "Herman Melville".into(),
+                Some(1819),
+                Some(1891),
+                HashMap::new(),
+                String::new(),
+                1,
+            )
+            .unwrap();
+
+        let list = server.list_historical_authors();
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].name, "Austen");
+        assert_eq!(list[1].name, "Melville");
+        assert_eq!(list[2].name, "Shakespeare");
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn historical_author_works_by_author() {
+        let dir = TempDir::new("ha_works");
+
+        let author_id;
+        let work_id;
+        {
+            let mut server = Server::new();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            let author = server
+                .register_historical_author(
+                    "Vitruvius".into(),
+                    "Vitruvius".into(),
+                    None,
+                    None,
+                    HashMap::new(),
+                    String::new(),
+                    1,
+                )
+                .unwrap();
+            author_id = author.be_id;
+
+            work_id = server
+                .import_source_work(
+                    sid,
+                    author_id,
+                    "De Architectura".into(),
+                    "Book I chapter 1".into(),
+                    "De Architectura, Book I".into(),
+                    0,
+                    0,
+                )
+                .unwrap()
+                .0;
+
+            let works = server.list_works_by_historical_author(author_id);
+            assert_eq!(works.len(), 1);
+            assert_eq!(works[0].0, work_id);
+
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+        }
+
+        {
+            let server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+
+            let restored_author = server.get_historical_author(author_id).unwrap();
+            assert_eq!(restored_author.name, "Vitruvius");
+
+            let works = server.list_works_by_historical_author(author_id);
+            assert_eq!(works.len(), 1);
+            assert_eq!(works[0].0, work_id);
+        }
     }
 }

@@ -595,6 +595,7 @@ export function VirtualizedEditor({
           <OutlinePanel
             buffer={buf}
             onJumpTo={jumpToCharOffset}
+            onMoveSection={(newText) => onTextChange(newText)}
             onClose={() => setOutlineOpen(false)}
           />
         )}
