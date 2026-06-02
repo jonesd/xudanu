@@ -4409,8 +4409,8 @@ impl Server {
                 }
             }
         };
-        let excerpt = if excerpt_text.len() > 120 {
-            let mut end = 120;
+        let excerpt = if excerpt_text.len() > 4096 {
+            let mut end = 4096;
             while !excerpt_text.is_char_boundary(end) && end < excerpt_text.len() {
                 end += 1;
             }
