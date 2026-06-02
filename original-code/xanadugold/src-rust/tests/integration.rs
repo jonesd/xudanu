@@ -9911,3 +9911,237 @@ async fn paginated_link_list_for_work() {
     assert_eq!(resp["value"]["value"]["total_count"], 2);
     assert_eq!(resp["value"]["value"]["has_more"], true);
 }
+
+#[tokio::test]
+async fn historical_author_register_and_list() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_public_setup(&srv).await;
+
+    let vitruvius = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "historical_author_register",
+            Some(serde_json::json!({
+                "name": "Vitruvius",
+                "display_name": "Vitruvius (c. 80\u{2013}15 BC)",
+                "birth_year": -80,
+                "death_year": -15,
+                "external_ids": {},
+                "source_bibliography": "De Architectura"
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(vitruvius["type"], "response");
+    let vit_id = vitruvius["value"]["value"]["be_id"].as_u64().unwrap();
+
+    let melville = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "historical_author_register",
+            Some(serde_json::json!({
+                "name": "Melville",
+                "display_name": "Herman Melville",
+                "birth_year": 1819,
+                "death_year": 1891,
+                "external_ids": {},
+                "source_bibliography": ""
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(melville["type"], "response");
+    let mel_id = melville["value"]["value"]["be_id"].as_u64().unwrap();
+
+    let austen = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            12,
+            "historical_author_register",
+            Some(serde_json::json!({
+                "name": "Austen",
+                "display_name": "Jane Austen",
+                "birth_year": 1775,
+                "death_year": 1817,
+                "external_ids": {},
+                "source_bibliography": ""
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(austen["type"], "response");
+    let aus_id = austen["value"]["value"]["be_id"].as_u64().unwrap();
+
+    let list_resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(20, "historical_author_list", None),
+    )
+    .await;
+    assert_eq!(list_resp["type"], "response");
+    let authors = list_resp["value"]["value"]["authors"].as_array().unwrap();
+    assert_eq!(authors.len(), 3);
+    assert_eq!(authors[0]["name"].as_str().unwrap(), "Austen");
+    assert_eq!(authors[1]["name"].as_str().unwrap(), "Melville");
+    assert_eq!(authors[2]["name"].as_str().unwrap(), "Vitruvius");
+
+    let search_resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            30,
+            "historical_author_search",
+            Some(serde_json::json!({"query": "ruv"})),
+        ),
+    )
+    .await;
+    assert_eq!(search_resp["type"], "response");
+    let results = search_resp["value"]["value"]["authors"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["name"].as_str().unwrap(), "Vitruvius");
+
+    let get_resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            40,
+            "historical_author_get",
+            Some(serde_json::json!({"author_id": aus_id})),
+        ),
+    )
+    .await;
+    assert_eq!(get_resp["type"], "response");
+    assert_eq!(get_resp["value"]["value"]["name"].as_str().unwrap(), "Austen");
+    assert_eq!(get_resp["value"]["value"]["birth_year"].as_i64().unwrap(), 1775);
+
+    let _ = (vit_id, mel_id, aus_id);
+}
+
+#[tokio::test]
+async fn historical_author_works_by_author() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_public_setup(&srv).await;
+
+    let author = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "historical_author_register",
+            Some(serde_json::json!({
+                "name": "Vitruvius",
+                "display_name": "Vitruvius",
+                "external_ids": {},
+                "source_bibliography": ""
+            })),
+        ),
+    )
+    .await;
+    let author_id = author["value"]["value"]["be_id"].as_u64().unwrap();
+
+    let import1 = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            20,
+            "import_source_work",
+            Some(serde_json::json!({
+                "author_id": author_id,
+                "title": "De Architectura Book I",
+                "text": "Chapter 1 content here",
+                "edition_info": "De Architectura, Book I",
+                "skip_prefix_lines": 0,
+                "skip_suffix_lines": 0,
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(import1["type"], "response");
+    let work_id_1 = import1["value"]["value"]["work_id"].as_u64().unwrap();
+
+    let import2 = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            21,
+            "import_source_work",
+            Some(serde_json::json!({
+                "author_id": author_id,
+                "title": "De Architectura Book II",
+                "text": "Book two content",
+                "edition_info": "De Architectura, Book II",
+                "skip_prefix_lines": 0,
+                "skip_suffix_lines": 0,
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(import2["type"], "response");
+    let work_id_2 = import2["value"]["value"]["work_id"].as_u64().unwrap();
+
+    let works_resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            30,
+            "work_list_by_author",
+            Some(serde_json::json!({"author_id": author_id})),
+        ),
+    )
+    .await;
+    assert_eq!(works_resp["type"], "response");
+    let work_list = works_resp["value"]["value"].as_array().unwrap();
+    assert_eq!(work_list.len(), 2);
+
+    let returned_ids: Vec<u64> = work_list
+        .iter()
+        .map(|w| w["work_id"].as_u64().unwrap())
+        .collect();
+    assert!(returned_ids.contains(&work_id_1));
+    assert!(returned_ids.contains(&work_id_2));
+}
+
+#[tokio::test]
+async fn historical_author_duplicate_rejected() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_public_setup(&srv).await;
+
+    let resp1 = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            10,
+            "historical_author_register",
+            Some(serde_json::json!({
+                "name": "Shakespeare",
+                "display_name": "William Shakespeare",
+                "external_ids": {},
+                "source_bibliography": ""
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(resp1["type"], "response");
+
+    let resp2 = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            11,
+            "historical_author_register",
+            Some(serde_json::json!({
+                "name": "shakespeare",
+                "display_name": "Duplicate",
+                "external_ids": {},
+                "source_bibliography": ""
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(resp2["type"], "error");
+}

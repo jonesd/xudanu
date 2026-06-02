@@ -696,6 +696,14 @@ export class CrdtSyncClient {
       this.sendAwareness(null, null, false);
     }
 
+    if (!this.crdtReady && this.workBeId) {
+      try {
+        await this.tryOpenWork();
+      } catch (e) {
+        console.error("[loginByName] tryOpenWork failed:", e);
+      }
+    }
+
     this.identityListeners.forEach((cb) => cb(this.currentIdentity));
   }
 
@@ -786,7 +794,7 @@ export class CrdtSyncClient {
 
       await this.tryOpenWork();
     } catch (e) {
-      console.error("CRDT session setup failed:", e);
+      console.warn("CRDT session setup (will retry after auth):", e);
     }
   }
 
