@@ -496,7 +496,7 @@ export class CrdtSyncClient {
   }
 
   async fetchWorkList(): Promise<WorkListEntry[]> {
-    const resp = await this.sendRequest("work_list");
+    const resp = await this.sendRequest("work_list", {});
     const val = extractValue(resp);
     if (Array.isArray(val)) return val as WorkListEntry[];
     const rec = val as Record<string, unknown>;
