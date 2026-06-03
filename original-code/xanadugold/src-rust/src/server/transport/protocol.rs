@@ -296,6 +296,8 @@ pub enum OperationCode {
     SourceDetect,
     SourcePatternList,
     WorkListByAuthor,
+    ContentMatch,
+    WorkApplySourceAttribution,
 }
 
 impl OperationCode {
@@ -520,6 +522,8 @@ impl OperationCode {
             0x0D0D => Some(OperationCode::SourceDetect),
             0x0D0E => Some(OperationCode::SourcePatternList),
             0x0D0F => Some(OperationCode::WorkListByAuthor),
+            0x0D10 => Some(OperationCode::ContentMatch),
+            0x0D11 => Some(OperationCode::WorkApplySourceAttribution),
 
             _ => None,
         }
@@ -744,6 +748,8 @@ impl OperationCode {
             OperationCode::SourceDetect => 0x0D0D,
             OperationCode::SourcePatternList => 0x0D0E,
             OperationCode::WorkListByAuthor => 0x0D0F,
+            OperationCode::ContentMatch => 0x0D10,
+            OperationCode::WorkApplySourceAttribution => 0x0D11,
         }
     }
 }
@@ -1472,6 +1478,15 @@ pub enum WireRequest {
     WorkListByAuthor {
         author_id: BeId,
     },
+
+    ContentMatch {
+        text: String,
+    },
+
+    WorkApplySourceAttribution {
+        work_id: BeId,
+        historical_author_id: BeId,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1914,6 +1929,13 @@ pub enum ResponseValue {
 
     SourcePatternListResult {
         patterns: Vec<SourcePatternEntry>,
+    },
+
+    ContentMatchResult {
+        matched: bool,
+        work_id: Option<BeId>,
+        author_id: Option<BeId>,
+        score: Option<f64>,
     },
 }
 

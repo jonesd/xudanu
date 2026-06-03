@@ -489,6 +489,18 @@ export class CrdtSyncClient {
     return extractValue(resp) as SourceDetectResult;
   }
 
+  async matchContent(text: string): Promise<{ matched: boolean; work_id?: number; author_id?: number; score?: number }> {
+    const resp = await this.sendRequest("content_match", { text });
+    return extractValue(resp) as { matched: boolean; work_id?: number; author_id?: number; score?: number };
+  }
+
+  async applySourceAttribution(workId: number, historicalAuthorId: number): Promise<void> {
+    await this.sendRequest("work_apply_source_attribution", {
+      work_id: workId,
+      historical_author_id: historicalAuthorId,
+    });
+  }
+
   async listSourcePatterns(): Promise<SourcePatternEntry[]> {
     const resp = await this.sendRequest("source_pattern_list");
     const val = extractValue(resp) as Record<string, unknown>;

@@ -32,6 +32,7 @@ interface CollaborativeEditorProps {
   onPlaceTransclusion?: (position: number) => void;
   selectionRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
+  onPasteText?: (text: string) => void;
 }
 
 const CHUNK_SIZE = 50_000;
@@ -229,6 +230,7 @@ export function CollaborativeEditor({
   pendingTransclusion,
   onPlaceTransclusion,
   onNavigateToWork,
+  onPasteText,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -430,7 +432,8 @@ export function CollaborativeEditor({
     sel.removeAllRanges();
     sel.addRange(range);
     handleInput();
-  }, [handleInput]);
+    if (onPasteText && pasteText.length > 200) onPasteText(pasteText);
+  }, [handleInput, editable, onPasteText]);
 
   const handleSelectionChange = useCallback(() => {
     const sel = window.getSelection();

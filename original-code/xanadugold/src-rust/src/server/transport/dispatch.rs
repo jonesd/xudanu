@@ -2416,6 +2416,33 @@ fn dispatch_inner(
                 .collect();
             Ok(ResponseValue::WorkList(list))
         }
+
+        WireRequest::ContentMatch { text } => {
+            match srv.match_content(&text) {
+                Some((work_id, author_id, score)) => {
+                    Ok(ResponseValue::ContentMatchResult {
+                        matched: true,
+                        work_id: Some(work_id),
+                        author_id: Some(author_id),
+                        score: Some(score),
+                    })
+                }
+                None => Ok(ResponseValue::ContentMatchResult {
+                    matched: false,
+                    work_id: None,
+                    author_id: None,
+                    score: None,
+                }),
+            }
+        }
+
+        WireRequest::WorkApplySourceAttribution {
+            work_id,
+            historical_author_id,
+        } => {
+            srv.apply_source_attribution(session_id, work_id, historical_author_id)?;
+            Ok(ResponseValue::Void)
+        }
     }
 }
 
