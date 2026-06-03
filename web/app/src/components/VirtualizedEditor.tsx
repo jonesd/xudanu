@@ -32,6 +32,7 @@ interface VirtualizedEditorProps {
   onPlaceTransclusion?: (position: number) => void;
   selectionRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
+  onPasteText?: (text: string) => void;
 }
 
 const LINE_HEIGHT = 15 * 1.7;
@@ -53,6 +54,7 @@ export function VirtualizedEditor({
   pendingTransclusion,
   onPlaceTransclusion,
   onNavigateToWork: _onNavigateToWork,
+  onPasteText,
 }: VirtualizedEditorProps) {
   const bufferRef = useRef<TextBuffer>(new TextBuffer(text));
   const containerRef = useRef<HTMLDivElement>(null);
@@ -469,8 +471,9 @@ export function VirtualizedEditor({
       sel.removeAllRanges();
       sel.addRange(range);
       handleInput();
+      if (onPasteText && pasteText.length > 200) onPasteText(pasteText);
     },
-    [handleInput, editable],
+    [handleInput, editable, onPasteText],
   );
 
   const handleSelectionChange = useCallback(() => {

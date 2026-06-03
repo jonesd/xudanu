@@ -49,6 +49,7 @@ struct WorkState {
     imported_by: Option<BeId>,
     content_start_line: Option<u64>,
     content_end_line: Option<u64>,
+    source_fingerprint: Option<crate::server::source_matcher::MinHashSignature>,
 }
 
 impl WorkState {
@@ -736,6 +737,7 @@ impl Server {
             imported_by: None,
             content_start_line: None,
             content_end_line: None,
+            source_fingerprint: None,
         };
         self.works.insert(be_id, ws);
 
@@ -1710,6 +1712,121 @@ impl Server {
         crate::server::source_matcher::detect_source(text, &self.source_patterns)
     }
 
+    pub fn match_content(
+        &self,
+        text: &str,
+    ) -> Option<(BeId, BeId, f64)> {
+        let sources: Vec<(BeId, crate::server::source_matcher::MinHashSignature)> = self
+            .works
+            .iter()
+            .filter(|(_, ws)| ws.is_source && ws.source_fingerprint.is_some())
+            .map(|(id, ws)| (*id, ws.source_fingerprint.unwrap()))
+            .collect();
+
+        let (work_id, score) =
+            crate::server::source_matcher::best_content_match(text, &sources)?;
+
+        let author_id = self
+            .works
+            .get(&work_id)
+            .and_then(|ws| ws.source_author_id)?;
+
+        Some((work_id, author_id, score))
+    }
+
+    pub fn apply_source_attribution(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        historical_author_id: BeId,
+    ) -> Result<(), ServerError> {
+        self.ensure_can_edit(session_id, work_be_id)?;
+
+        let author = self
+            .historical_authors
+            .get(historical_author_id)
+            .ok_or_else(|| {
+                ServerError::Internal(format!(
+                    "historical author {} not found",
+                    historical_author_id
+                ))
+            })?;
+
+        let server_signing_key = &self.server_keypair.signing_key;
+        let server_id = self.server_keypair.signing_key.verifying_key().to_bytes();
+        let timestamp = Self::current_timestamp_secs();
+        let display_name = author.display_name.clone();
+
+        let current_edition = {
+            let ws = self
+                .works
+                .get(&work_be_id)
+                .ok_or(ServerError::WorkNotFound(work_be_id))?;
+            ws.work.current_edition().clone()
+        };
+
+        let elem_provenance = crate::edition::provenance::ElementProvenance {
+            author_type: crate::edition::provenance::AuthorType::Historical,
+            author_public_key: server_id,
+            author_display_name: display_name,
+            author_club_id: 0,
+            historical_author_id: Some(historical_author_id),
+            llm_model: None,
+            timestamp,
+        };
+
+        let entries = current_edition.all_entries();
+
+        let mut new_edition = if !entries.is_empty() {
+            let fingerprints: Vec<[u8; 32]> = entries
+                .iter()
+                .map(|(_, c)| c.element.content_fingerprint())
+                .collect();
+
+            let prov = crate::edition::provenance::sign_historical_attestation(
+                server_signing_key,
+                &fingerprints,
+                historical_author_id,
+                timestamp,
+                &server_id,
+            );
+
+            let span_prov = crate::edition::provenance::SpanProvenance {
+                start: entries.first().map(|(p, _)| *p).unwrap_or(0),
+                end: entries.last().map(|(p, _)| *p + 1).unwrap_or(0),
+                provenance: prov,
+            };
+
+            let new_entries: Vec<(
+                i64,
+                std::sync::Arc<crate::edition::range_element::Carrier>,
+            )> = entries
+                .into_iter()
+                .map(|(pos, c)| {
+                    let mut carrier = (*c).clone();
+                    carrier.provenance = Some(elem_provenance.clone());
+                    (pos, std::sync::Arc::new(carrier))
+                })
+                .collect();
+
+            let mut edition = crate::edition::Edition::from_entries(new_entries);
+            edition.span_provenance = current_edition.span_provenance.clone();
+            edition.span_provenance.push(span_prov);
+            edition
+        } else {
+            current_edition
+        };
+
+        let ws = self
+            .works
+            .get_mut(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        ws.work.revise(new_edition);
+        ws.source_author_id = Some(historical_author_id);
+        self.auto_checkpoint();
+        Ok(())
+    }
+
     pub fn list_source_patterns(&self) -> Vec<(String, String)> {
         self.source_patterns
             .iter()
@@ -1837,6 +1954,7 @@ impl Server {
             imported_by: importer,
             content_start_line: Some(content_start),
             content_end_line: Some(content_end),
+            source_fingerprint: Some(crate::server::source_matcher::compute_minhash(&text)),
         };
         self.works.insert(be_id, ws);
 
@@ -3312,6 +3430,7 @@ impl Server {
                         imported_by: None,
                         content_start_line: None,
                         content_end_line: None,
+                        source_fingerprint: None,
                     };
                     self.works.insert(*id, ws);
                 }
@@ -5913,6 +6032,7 @@ impl Server {
                     imported_by: None,
                     content_start_line: None,
                     content_end_line: None,
+                    source_fingerprint: None,
                 };
                 self.works.insert(be_id, ws);
                 imported += 1;
@@ -7199,6 +7319,12 @@ pub(crate) mod persist_snapshot {
                     imported_by: None,
                     content_start_line: ws_snap.content_start_line,
                     content_end_line: ws_snap.content_end_line,
+                    source_fingerprint: if ws_snap.is_source {
+                        let text = work.current_edition().to_text();
+                        Some(crate::server::source_matcher::compute_minhash(&text))
+                    } else {
+                        None
+                    },
                 };
                 server.works.insert(*id, ws);
             }

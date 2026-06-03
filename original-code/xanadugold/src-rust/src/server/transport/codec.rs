@@ -2508,6 +2508,28 @@ impl JsonCodec {
                     author_id: args.author_id,
                 })
             }
+            OperationCode::ContentMatch => {
+                #[derive(Deserialize)]
+                struct Args {
+                    text: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ContentMatch { text: args.text })
+            }
+            OperationCode::WorkApplySourceAttribution => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: u64,
+                    historical_author_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkApplySourceAttribution {
+                    work_id: args.work_id,
+                    historical_author_id: args.historical_author_id,
+                })
+            }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }

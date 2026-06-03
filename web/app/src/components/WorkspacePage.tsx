@@ -238,6 +238,16 @@ export function WorkspacePage() {
     transclusion.holdSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
   }, [selectionRange, workBeId, text, currentWorkMeta, transclusion]);
 
+  const handlePasteText = useCallback(async (pasteText: string) => {
+    if (!clientRef.current || workBeId === null) return;
+    try {
+      const match = await clientRef.current.matchContent(pasteText);
+      if (match.matched && match.author_id != null) {
+        await clientRef.current.applySourceAttribution(workBeId, match.author_id);
+      }
+    } catch {}
+  }, [clientRef, workBeId]);
+
   const workIdDisplay = workBeId !== null
     ? workBeId.toString(16).padStart(4, "0")
     : null;
@@ -618,6 +628,7 @@ export function WorkspacePage() {
                   onPlaceTransclusion={handlePlaceTransclusion}
                   selectionRange={selectionRange}
                   onNavigateToWork={selectWork}
+                  onPasteText={handlePasteText}
                 />
               ) : (
                 <CollaborativeEditor
@@ -639,6 +650,7 @@ export function WorkspacePage() {
                   onPlaceTransclusion={handlePlaceTransclusion}
                   selectionRange={selectionRange}
                   onNavigateToWork={selectWork}
+                  onPasteText={handlePasteText}
                 />
               )}
               {watchEnabled && contentMatches.length > 0 && (

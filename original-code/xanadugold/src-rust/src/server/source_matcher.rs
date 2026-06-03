@@ -1,4 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use blake3::Hasher;
+
+use crate::edition::BeId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -201,6 +205,101 @@ pub fn detect_source(text: &str, patterns: &[SourcePattern]) -> SourceMatchResul
     }
 }
 
+const SHINGLE_SIZE: usize = 5;
+const SAMPLE_STEP: usize = 3;
+const MINHASH_SIZE: usize = 128;
+
+// MinHash chosen over plain shingle fingerprinting (storing all shingle hashes
+// in a HashSet) because it compresses each document to a fixed-size 128-element
+// signature (~1KB) regardless of text length, vs ~425KB for a full shingle set
+// on a book like Dracula. Comparison is O(128) instead of O(shingle_count).
+// Jaccard similarity estimate from MinHash is accurate enough for our threshold
+// (>=30% overlap) and is the industry standard for near-duplicate detection.
+
+pub type MinHashSignature = [u64; MINHASH_SIZE];
+
+fn shingle_hashes(text: &str) -> Vec<u64> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.len() < SHINGLE_SIZE {
+        let mut hasher = Hasher::new();
+        hasher.update(text.to_lowercase().as_bytes());
+        let hash: [u8; 32] = hasher.finalize().into();
+        let fp = u64::from_le_bytes(hash[..8].try_into().unwrap_or([0u8; 8]));
+        if text.trim().is_empty() {
+            return vec![];
+        }
+        return vec![fp];
+    }
+
+    let mut hashes = Vec::new();
+    let lower_words: Vec<String> = words.iter().map(|w| w.to_lowercase()).collect();
+    let mut i = 0;
+    while i + SHINGLE_SIZE <= lower_words.len() {
+        let shingle: String = lower_words[i..i + SHINGLE_SIZE].join(" ");
+        let mut hasher = Hasher::new();
+        hasher.update(shingle.as_bytes());
+        let hash: [u8; 32] = hasher.finalize().into();
+        let fp = u64::from_le_bytes(hash[..8].try_into().unwrap_or([0u8; 8]));
+        hashes.push(fp);
+        i += SAMPLE_STEP;
+    }
+    hashes
+}
+
+fn minhash_from_shingles(shingles: &[u64]) -> MinHashSignature {
+    let mut sig = [u64::MAX; MINHASH_SIZE];
+    for shingle in shingles {
+        for band in 0..MINHASH_SIZE {
+            let mut hasher = Hasher::new();
+            hasher.update(&(band as u64).to_le_bytes());
+            hasher.update(&shingle.to_le_bytes());
+            let hash: [u8; 32] = hasher.finalize().into();
+            let h = u64::from_le_bytes(hash[..8].try_into().unwrap_or([0u8; 8]));
+            if h < sig[band] {
+                sig[band] = h;
+            }
+        }
+    }
+    sig
+}
+
+pub fn compute_minhash(text: &str) -> MinHashSignature {
+    let shingles = shingle_hashes(text);
+    minhash_from_shingles(&shingles)
+}
+
+pub fn minhash_similarity(a: &MinHashSignature, b: &MinHashSignature) -> f64 {
+    let matches = a.iter().zip(b.iter()).filter(|(x, y)| x == y).count();
+    matches as f64 / MINHASH_SIZE as f64
+}
+
+pub fn best_content_match(
+    query_text: &str,
+    source_signatures: &[(BeId, MinHashSignature)],
+) -> Option<(BeId, f64)> {
+    let query_sig = compute_minhash(query_text);
+    let query_shingles = shingle_hashes(query_text);
+    if query_shingles.len() < 3 {
+        return None;
+    }
+
+    let mut best_id = 0u64;
+    let mut best_score = 0.0f64;
+    for (work_id, source_sig) in source_signatures {
+        let score = minhash_similarity(&query_sig, source_sig);
+        if score > best_score {
+            best_score = score;
+            best_id = *work_id;
+        }
+    }
+
+    if best_score >= 0.3 {
+        Some((best_id, best_score))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,5 +398,47 @@ mod tests {
         );
         assert_eq!(result.content_start_line, 3);
         assert_eq!(result.content_end_line, 4);
+    }
+
+    #[test]
+    fn minhash_identical_text_high_similarity() {
+        let text = "The quick brown fox jumps over the lazy dog. ".repeat(20);
+        let sig_a = compute_minhash(&text);
+        let sig_b = compute_minhash(&text);
+        assert_eq!(sig_a, sig_b);
+        assert!(minhash_similarity(&sig_a, &sig_b) > 0.99);
+    }
+
+    #[test]
+    fn minhash_subset_high_similarity() {
+        let full = "The quick brown fox jumps over the lazy dog. ".repeat(50);
+        let excerpt: String = full.chars().take(full.len() / 2).collect();
+        let sig_full = compute_minhash(&full);
+        let sig_excerpt = compute_minhash(&excerpt);
+        let sim = minhash_similarity(&sig_full, &sig_excerpt);
+        assert!(sim > 0.4, "expected >0.4, got {}", sim);
+    }
+
+    #[test]
+    fn minhash_unrelated_text_low_similarity() {
+        let a = "The quick brown fox jumps over the lazy dog. ".repeat(20);
+        let b = "In a hole in the ground there lived a hobbit. ".repeat(20);
+        let sig_a = compute_minhash(&a);
+        let sig_b = compute_minhash(&b);
+        let sim = minhash_similarity(&sig_a, &sig_b);
+        assert!(sim < 0.3, "expected <0.3, got {}", sim);
+    }
+
+    #[test]
+    fn best_content_match_finds_source() {
+        let source = "It was the best of times it was the worst of times. ".repeat(30);
+        let query: String = source.chars().take(source.len() / 3).collect();
+        let sig = compute_minhash(&source);
+        let sources: Vec<(BeId, MinHashSignature)> = vec![(42u64, sig)];
+        let result = best_content_match(&query, &sources);
+        assert!(result.is_some());
+        let (id, score) = result.unwrap();
+        assert_eq!(id, 42);
+        assert!(score > 0.3, "expected >0.3, got {}", score);
     }
 }
