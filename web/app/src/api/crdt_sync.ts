@@ -53,6 +53,8 @@ export interface AttributionSpan {
   author_type: string | null;
   llm_model: string | null;
   historical_author_id: number | null;
+  source_work_id?: number | null;
+  provenance_chain?: ProvenanceHop[] | null;
 }
 
 export interface AttributionLogStatus {
@@ -197,10 +199,15 @@ export class CrdtSyncClient {
   private sessionId: number | null = null;
   private crdtReady = false;
   private currentIdentity: WhoAmIEntry | null = null;
+  private skipCrdt = false;
 
   constructor(url: string, workBeId: number) {
     this.url = url;
     this.workBeId = workBeId;
+  }
+
+  setSkipCrdt(skip: boolean): void {
+    this.skipCrdt = skip;
   }
 
   connect(): void {
@@ -494,10 +501,26 @@ export class CrdtSyncClient {
     return extractValue(resp) as { matched: boolean; work_id?: number; author_id?: number; score?: number };
   }
 
-  async applySourceAttribution(workId: number, historicalAuthorId: number): Promise<void> {
-    await this.sendRequest("work_apply_source_attribution", {
+  async applySourceAttribution(
+    workId: number,
+    historicalAuthorId: number,
+    sourceWorkId?: number,
+    pasteStart?: number,
+    pasteEnd?: number,
+  ): Promise<void> {
+    const params: Record<string, unknown> = {
       work_id: workId,
       historical_author_id: historicalAuthorId,
+    };
+    if (sourceWorkId != null) params.source_work_id = sourceWorkId;
+    if (pasteStart != null) params.paste_start = pasteStart;
+    if (pasteEnd != null) params.paste_end = pasteEnd;
+    await this.sendRequest("work_apply_source_attribution", params);
+  }
+
+  async applyTransclusionAttribution(linkId: number): Promise<void> {
+    await this.sendRequest("work_apply_transclusion_attribution", {
+      link_id: linkId,
     });
   }
 
@@ -671,29 +694,21 @@ export class CrdtSyncClient {
   }
 
   async loginByName(clubName: string, password: string): Promise<void> {
-    console.log("[loginByName] step 1: session_login_by_name", clubName);
     const loginResp = await this.sendRequest("session_login_by_name", { club_name: clubName });
-    console.log("[loginByName] step 1 response:", JSON.stringify(loginResp));
     const pwBytes = Array.from(new TextEncoder().encode(password));
-    console.log("[loginByName] step 2: session_authenticate (pw len:", pwBytes.length, ")");
     try {
-      const authResp = await Promise.race([
+      await Promise.race([
         this.sendRequest("session_authenticate", {
           credential: { password: Array.from(pwBytes) },
         }),
         new Promise((_, reject) => setTimeout(() => reject(new Error("session_authenticate timed out after 10s")), 10000)),
       ]);
-      console.log("[loginByName] step 2 response:", JSON.stringify(authResp));
     } catch (e) {
-      console.error("[loginByName] step 2 FAILED:", e);
       throw e;
     }
-    console.log("[loginByName] step 3: club_who_am_i");
     const whoResp = await this.sendRequest("club_who_am_i");
-    console.log("[loginByName] step 3 response:", JSON.stringify(whoResp));
     const val = extractValue(whoResp) as { clubs: [number, string][] };
     const clubs = val.clubs || [];
-    console.log("[loginByName] clubs:", clubs);
     if (clubs.length > 0) {
       const [clubId, name] = clubs[0];
       this.currentIdentity = { club_id: clubId, display_name: name };
@@ -708,7 +723,7 @@ export class CrdtSyncClient {
       this.sendAwareness(null, null, false);
     }
 
-    if (!this.crdtReady && this.workBeId) {
+    if (!this.crdtReady && this.workBeId && !this.skipCrdt) {
       try {
         await this.tryOpenWork();
       } catch (e) {
@@ -804,14 +819,33 @@ export class CrdtSyncClient {
 
       this.checkWhoAmI();
 
+      await this.checkSourceWork();
       await this.tryOpenWork();
     } catch (e) {
       console.warn("CRDT session setup (will retry after auth):", e);
     }
   }
 
+  private async checkSourceWork(): Promise<void> {
+    if (!this.workBeId) return;
+    try {
+      const resp = await this.sendRequest("work_list", {});
+      let val = extractValue(resp);
+      const r = val as Record<string, unknown>;
+      if (r && typeof r === "object" && "value" in r) val = r.value;
+      const entries = ((val as Record<string, unknown>).entries as WorkListEntry[]) || [];
+      console.log("[checkSource] entries:", entries.length, "is_source:", entries.find(e => e.work_id === this.workBeId)?.is_source);
+      const entry = entries.find((e: WorkListEntry) => e.work_id === this.workBeId);
+      if (entry?.is_source) this.skipCrdt = true;
+    } catch (e) {
+      console.warn("[checkSource] failed:", e);
+      // ignore — will try CRDT open as fallback
+    }
+  }
+
   async tryOpenWork(): Promise<void> {
     if (!this.workBeId || !this.ws?.OPEN) return;
+    if (this.skipCrdt) return;
     try {
       const openResp = await this.sendRequest("crdt_sync_open", {
         work_id: this.workBeId,
@@ -882,13 +916,13 @@ export class CrdtSyncClient {
     if (eventType === "work_revised") {
       const payload = event.payload as Record<string, unknown> | undefined;
       if (payload && payload.work_be_id === this.workBeId) {
-        this.refreshText();
+        if (!this.skipCrdt) this.refreshText();
       }
     }
 
     if (eventType === "crdt_text_update") {
       const payload = event.payload as Record<string, unknown> | undefined;
-      if (payload && payload.work_id === this.workBeId) {
+      if (payload && payload.work_id === this.workBeId && !this.skipCrdt) {
         const newText = payload.text as string;
         if (newText !== this.text) {
           this.text = newText;
@@ -899,7 +933,7 @@ export class CrdtSyncClient {
 
     if (eventType === "crdt_text_delta") {
       const payload = event.payload as Record<string, unknown> | undefined;
-      if (payload && payload.work_id === this.workBeId) {
+      if (payload && payload.work_id === this.workBeId && !this.skipCrdt) {
         const ops = payload.ops as Array<{ type: string; count?: number; text?: string }>;
         try {
           const newText = applyDeltaOps(this.text, ops);

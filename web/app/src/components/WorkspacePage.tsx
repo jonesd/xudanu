@@ -34,6 +34,7 @@ export function WorkspacePage() {
   const [authors, setAuthors] = useState<HistoricalAuthorEntry[]>([]);
   const [expandedAuthorId, setExpandedAuthorId] = useState<number | null>(null);
   const [authorWorks, setAuthorWorks] = useState<WorkListEntry[]>([]);
+  const [sourceText, setSourceText] = useState<string | null>(null);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const llmRef = useRef<HTMLDivElement>(null);
 
@@ -93,6 +94,38 @@ export function WorkspacePage() {
   } = useCrdtSync(WS_URL, workBeId);
 
   const currentWorkMeta = works.find(w => w.work_id === workBeId);
+  const isSourceWork = currentWorkMeta?.is_source === true;
+  const displayText = isSourceWork && sourceText !== null ? sourceText : text;
+
+  useEffect(() => {
+    if (clientRef.current) clientRef.current.setSkipCrdt(!!isSourceWork);
+  }, [isSourceWork, clientRef]);
+
+  useEffect(() => {
+    if (!isSourceWork || workBeId === null || !connected || !clientRef.current) {
+      if (!isSourceWork && sourceText !== null) setSourceText(null);
+      return;
+    }
+    let cancelled = false;
+    const CHUNK = 100_000;
+    (async () => {
+      try {
+        const first = await clientRef.current!.textRange(workBeId!, 0, CHUNK);
+        if (cancelled) return;
+        let loaded = first.text;
+        const total = first.totalChars;
+        while (loaded.length < total && !cancelled) {
+          const next = await clientRef.current!.textRange(workBeId!, loaded.length, Math.min(loaded.length + CHUNK, total));
+          if (cancelled) return;
+          loaded += next.text;
+        }
+        if (!cancelled) setSourceText(loaded);
+      } catch (e) {
+        console.error("[src] source work text load failed:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isSourceWork, workBeId, connected, clientRef]);
 
   const loadWorks = useCallback(async () => {
     const list = await fetchWorkList();
@@ -124,18 +157,22 @@ export function WorkspacePage() {
   }, [clientRef, expandedAuthorId]);
 
   useEffect(() => {
+    if (connected) loadWorks();
+  }, [connected, loadWorks]);
+
+  useEffect(() => {
     if (connected && authenticated) loadWorks();
   }, [connected, authenticated, loadWorks]);
 
   useEffect(() => {
-    if (connected && authenticated && sidebarTab === "authors") loadAuthors();
+    if (connected && sidebarTab === "authors") loadAuthors();
   }, [connected, authenticated, sidebarTab, loadAuthors]);
 
   useEffect(() => {
-    if (!connected || !authenticated) return;
+    if (!connected) return;
     const interval = setInterval(loadWorks, 5000);
     return () => clearInterval(interval);
-  }, [connected, authenticated, loadWorks]);
+  }, [connected, loadWorks]);
 
   const handleCreate = useCallback(async () => {
     setError(null);
@@ -238,14 +275,26 @@ export function WorkspacePage() {
     transclusion.holdSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
   }, [selectionRange, workBeId, text, currentWorkMeta, transclusion]);
 
-  const handlePasteText = useCallback(async (pasteText: string) => {
+  const handlePasteText = useCallback(async (pasteText: string, pasteStart: number) => {
     if (!clientRef.current || workBeId === null) return;
     try {
+      console.log("[paste-detect] checking paste, length:", pasteText.length, "start:", pasteStart);
       const match = await clientRef.current.matchContent(pasteText);
-      if (match.matched && match.author_id != null) {
-        await clientRef.current.applySourceAttribution(workBeId, match.author_id);
+      console.log("[paste-detect] match result:", match);
+      if (match.matched && match.author_id != null && match.work_id != null) {
+        const pasteEnd = pasteStart + pasteText.length;
+        await clientRef.current.applySourceAttribution(
+          workBeId,
+          match.author_id,
+          match.work_id,
+          pasteStart,
+          pasteEnd,
+        );
+        console.log("[paste-detect] attribution applied");
       }
-    } catch {}
+    } catch (e) {
+      console.error("[paste-detect] error:", e);
+    }
   }, [clientRef, workBeId]);
 
   const workIdDisplay = workBeId !== null
@@ -454,33 +503,75 @@ export function WorkspacePage() {
                         w.work_id.toString(16).includes(q)
                       )
                     : works;
+                  const docs = filtered.filter((w) => !w.is_source);
+                  const sources = filtered.filter((w) => w.is_source);
+
+                  const renderWork = (w: WorkListEntry) => (
+                    <div
+                      key={w.work_id}
+                      className={`work-list-item ${w.work_id === workBeId ? "active" : ""}`}
+                      onClick={() => selectWork(w.work_id)}
+                    >
+                      <div className="work-list-meta">
+                        <span className="work-list-id">
+                          {w.work_id.toString(16).padStart(4, "0")}
+                        </span>
+                        <span className={`work-list-badge ${w.read_club === publicClubId ? "badge-public" : "badge-private"}`}>
+                          {w.read_club === publicClubId ? "pub" : "priv"}
+                        </span>
+                        <span className="work-list-rev">r{w.revision_count}</span>
+                      </div>
+                      <span className="work-list-title">
+                        {w.title
+                          ? w.title.length > 30
+                            ? w.title.slice(0, 30) + "..."
+                            : w.title
+                          : "Untitled"}
+                      </span>
+                    </div>
+                  );
+
                   return filtered.length === 0 ? (
                     <div className="work-list-empty">{q ? "No matches" : "No documents yet"}</div>
                   ) : (
-                    filtered.map((w) => (
-                      <div
-                        key={w.work_id}
-                        className={`work-list-item ${w.work_id === workBeId ? "active" : ""}`}
-                        onClick={() => selectWork(w.work_id)}
-                      >
-                        <div className="work-list-meta">
-                          <span className="work-list-id">
-                            {w.work_id.toString(16).padStart(4, "0")}
-                          </span>
-                          <span className={`work-list-badge ${w.read_club === publicClubId ? "badge-public" : "badge-private"}`}>
-                            {w.read_club === publicClubId ? "pub" : "priv"}
-                          </span>
-                          <span className="work-list-rev">r{w.revision_count}</span>
-                        </div>
-                        <span className="work-list-title">
-                          {w.title
-                            ? w.title.length > 30
-                              ? w.title.slice(0, 30) + "..."
-                              : w.title
-                            : "Untitled"}
-                        </span>
-                      </div>
-                    ))
+                    <>
+                      {docs.length > 0 && (
+                        <>
+                          <div className="link-section-label">Documents ({docs.length})</div>
+                          {docs.map(renderWork)}
+                        </>
+                      )}
+                      {sources.length > 0 && (
+                        <>
+                          <div className="link-section-label">Source Works ({sources.length})</div>
+                          {sources.map((w) => (
+                            <div
+                              key={w.work_id}
+                              className={`work-list-item source-work-item ${w.work_id === workBeId ? "active" : ""}`}
+                              onClick={() => selectWork(w.work_id)}
+                            >
+                              <div className="work-list-meta">
+                                <span className="work-list-id">
+                                  {w.work_id.toString(16).padStart(4, "0")}
+                                </span>
+                                <span className="work-list-badge badge-source">src</span>
+                                <span className="work-list-rev">r{w.revision_count}</span>
+                              </div>
+                              <span className="work-list-title">
+                                {w.title
+                                  ? w.title.length > 30
+                                    ? w.title.slice(0, 30) + "..."
+                                    : w.title
+                                  : "Untitled"}
+                              </span>
+                              {w.source_edition_info && (
+                                <span className="author-work-info">{w.source_edition_info}</span>
+                              )}
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </>
                   );
                 })()}
               </div>
@@ -608,10 +699,32 @@ export function WorkspacePage() {
                   onCancel={transclusion.clearPending}
                 />
               )}
-              {text.length > 100_000 ? (
-                <VirtualizedEditor
-                  text={text}
-                  onTextChange={setText}
+                {displayText.length > 100_000 ? (
+                  <VirtualizedEditor
+                    text={displayText}
+                   onTextChange={isSourceWork ? undefined : setText}
+                   onCursorChange={sendCursor}
+                   onSelectionChange={(s, e) => {
+                     sendSelection(s, e);
+                     if (s !== null && e !== null) setSelectionRange({ start: s, end: e });
+                     else setSelectionRange(null);
+                   }}
+                    connected={connected}
+                    attributionSpans={attributionSpans}
+                   editable={!isSourceWork && identity !== null}
+                    contentStartLine={isSourceWork ? undefined : currentWorkMeta?.content_start_line}
+                    contentEndLine={isSourceWork ? undefined : currentWorkMeta?.content_end_line}
+                   transclusionMarkers={transclusion.markers}
+                   pendingTransclusion={transclusion.pending}
+                   onPlaceTransclusion={handlePlaceTransclusion}
+                   selectionRange={selectionRange}
+                   onNavigateToWork={selectWork}
+                  onPasteText={isSourceWork ? undefined : handlePasteText}
+                 />
+               ) : (
+                  <CollaborativeEditor
+                    text={displayText}
+                   onTextChange={isSourceWork ? undefined : setText}
                   onCursorChange={sendCursor}
                   onSelectionChange={(s, e) => {
                     sendSelection(s, e);
@@ -620,39 +733,17 @@ export function WorkspacePage() {
                   }}
                   connected={connected}
                   attributionSpans={attributionSpans}
-                  editable={identity !== null}
-                  contentStartLine={currentWorkMeta?.content_start_line}
-                  contentEndLine={currentWorkMeta?.content_end_line}
-                  transclusionMarkers={transclusion.markers}
-                  pendingTransclusion={transclusion.pending}
-                  onPlaceTransclusion={handlePlaceTransclusion}
-                  selectionRange={selectionRange}
-                  onNavigateToWork={selectWork}
-                  onPasteText={handlePasteText}
-                />
-              ) : (
-                <CollaborativeEditor
-                  text={text}
-                  onTextChange={setText}
-                  onCursorChange={sendCursor}
-                  onSelectionChange={(s, e) => {
-                    sendSelection(s, e);
-                    if (s !== null && e !== null) setSelectionRange({ start: s, end: e });
-                    else setSelectionRange(null);
-                  }}
-                  connected={connected}
-                  attributionSpans={attributionSpans}
-                  editable={identity !== null}
-                  contentStartLine={currentWorkMeta?.content_start_line}
-                  contentEndLine={currentWorkMeta?.content_end_line}
-                  transclusionMarkers={transclusion.markers}
-                  pendingTransclusion={transclusion.pending}
-                  onPlaceTransclusion={handlePlaceTransclusion}
-                  selectionRange={selectionRange}
-                  onNavigateToWork={selectWork}
-                  onPasteText={handlePasteText}
-                />
-              )}
+                   editable={!isSourceWork && identity !== null}
+                   contentStartLine={currentWorkMeta?.content_start_line}
+                   contentEndLine={currentWorkMeta?.content_end_line}
+                   transclusionMarkers={transclusion.markers}
+                   pendingTransclusion={transclusion.pending}
+                   onPlaceTransclusion={handlePlaceTransclusion}
+                   selectionRange={selectionRange}
+                   onNavigateToWork={selectWork}
+                  onPasteText={isSourceWork ? undefined : handlePasteText}
+                 />
+               )}
               {watchEnabled && contentMatches.length > 0 && (
                 <div className="watch-notifications">
                   <h3>Content Matches</h3>
@@ -703,7 +794,7 @@ export function WorkspacePage() {
       <AttributionPanel
         spans={attributionSpans}
         logStatus={attributionLogStatus}
-        documentLength={text.length}
+        documentLength={displayText.length}
         visible={showAttribution && workBeId !== null}
       />
 

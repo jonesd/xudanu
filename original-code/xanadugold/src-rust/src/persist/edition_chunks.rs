@@ -33,6 +33,8 @@ pub struct WorkChunkRef {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct EntryChunk {
     entries: Vec<(i64, crate::edition::range_element::RangeElement)>,
+    #[serde(default)]
+    provenances: Vec<Option<crate::edition::provenance::ElementProvenance>>,
 }
 
 #[derive(Debug, Clone)]
@@ -113,9 +115,19 @@ pub fn edition_to_chunks_durable(
     let snapshot = EditionSnapshot::from_edition(edition);
 
     let mut entry_chunk_hashes = Vec::new();
-    for chunk_entries in snapshot.entries.chunks(ENTRIES_PER_CHUNK) {
+    for chunk_range in (0..snapshot.entries.len()).step_by(ENTRIES_PER_CHUNK).map(|start| {
+        let end = (start + ENTRIES_PER_CHUNK).min(snapshot.entries.len());
+        start..end
+    }) {
+        let entries = snapshot.entries[chunk_range.clone()].to_vec();
+        let provenances = if snapshot.provenances.len() >= chunk_range.end {
+            snapshot.provenances[chunk_range.clone()].to_vec()
+        } else {
+            vec![None; chunk_range.len()]
+        };
         let entry_chunk = EntryChunk {
-            entries: chunk_entries.to_vec(),
+            entries,
+            provenances,
         };
         let data = serialize_to_bytes(&entry_chunk)?;
         let hash = store.write_chunk_durable(&data, durable)?;
@@ -157,10 +169,12 @@ pub fn edition_from_chunks(
     let root: EditionRootChunk = deserialize_from_bytes(&root_data)?;
 
     let mut all_entries = Vec::with_capacity(root.entry_count as usize);
+    let mut all_provenances = Vec::with_capacity(root.entry_count as usize);
     for hash in &root.entry_chunk_hashes {
         let chunk_data = store.read_chunk(hash)?;
         let entry_chunk: EntryChunk = deserialize_from_bytes(&chunk_data)?;
         all_entries.extend(entry_chunk.entries);
+        all_provenances.extend(entry_chunk.provenances);
     }
 
     let span_provenance = match root.provenance_hash {
@@ -185,6 +199,7 @@ pub fn edition_from_chunks(
 
     let snapshot = EditionSnapshot {
         entries: all_entries,
+        provenances: all_provenances,
         default: root.default,
         domain_start: root.domain_start,
         domain_infinite_above: root.domain_infinite_above,

@@ -48,6 +48,41 @@ pub struct LinkEntry {
     pub destination_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
 }
 
+/// On-disk representation of a work entry in the manifest.
+///
+/// ## Persistence invariant
+///
+/// Every field on `WorkState` that must survive a server restart must have a
+/// corresponding field here, and must be written in `Server::checkpoint_to_store()`
+/// and read back in `Server::restore_from_data_dir()`.
+///
+/// If you add a field to `WorkState` that should be persisted, you **must**:
+/// 1. Add it to this struct (with `#[serde(default)]` for backward compat)
+/// 2. Write it in `Server::checkpoint_to_store()` (the `WorkEntry { … }` literal)
+/// 3. Read it in `Server::restore_from_data_dir()` (the `WorkState { … }` literal)
+/// 4. Add a test in `server::server::tests` that proves it survives a
+///    `checkpoint_to_store()` → `restore_from_data_dir()` round-trip
+///
+/// The `source_fingerprint` field is intentionally **not** stored here — it is
+/// recomputed from the edition text on restore (see `restore_from_data_dir`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WorkEntry {
+    pub be_id: BeId,
+    pub work_ref: WorkChunkRef,
+    #[serde(default)]
+    pub is_source: bool,
+    #[serde(default)]
+    pub source_author_id: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_edition_info: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_start_line: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_end_line: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_fingerprint: Option<Vec<u64>>,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AdminEntry {
     pub accepting_connections: bool,
@@ -73,6 +108,25 @@ pub struct KeyHistoryEntry {
     pub current_key_id: crate::crypto::keys::KeyId,
 }
 
+/// The manifest is the primary persistence artifact for the chunk-based data
+/// directory. It is written by `Server::checkpoint_to_store()` and read by
+/// `Server::restore_from_data_dir()`.
+///
+/// ## Persistence invariant
+///
+/// Runtime state that must survive a restart lives in one of three places:
+///
+/// 1. **Chunk store** — edition content (the actual text), stored as hashed
+///    chunks referenced by `WorkChunkRef` / `EditionChunkRef`.
+/// 2. **This manifest** — metadata that doesn't live in chunks: work source
+///    flags, authorship, links, clubs, historical authors, etc.
+/// 3. **Sidecar files** — key material (`server.key`), blob data (`blobs/`),
+///    attribution log.
+///
+/// If you add persistable state to `Server`, `WorkState`, or any other runtime
+/// struct, you must also add it here (with `#[serde(default)]` for backward
+/// compat) and wire it through `checkpoint_to_store()` / `restore_from_data_dir()`.
+/// See `WorkEntry` for the per-field checklist.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Manifest {
     pub format_version: u32,
@@ -87,9 +141,12 @@ pub struct Manifest {
     pub operation_counter: u64,
     pub system_clubs: crate::server::SystemClubs,
 
-    pub works: Vec<(BeId, WorkChunkRef)>,
+    pub works: Vec<WorkEntry>,
     pub clubs: Vec<ClubChunkRef>,
     pub standalone_editions: Vec<StandaloneEditionChunkRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub links_hash: Option<[u8; 32]>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<LinkEntry>,
     pub link_counter: BeId,
 
@@ -99,9 +156,23 @@ pub struct Manifest {
     pub reconcile_counter: u64,
     pub federation: Option<crate::server::federation::FederationSnapshot>,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_address_hash: Option<[u8; 32]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_address: Option<crate::edition::ContentAddressIndex>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blob_metas_hash: Option<[u8; 32]>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blob_metas: Vec<BlobMetaEntry>,
     pub key_history: Option<KeyHistoryEntry>,
+    /// Hash of the historical author registry chunk in the chunk store.
+    /// Used on restore to load authors from the chunk store.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub historical_authors_hash: Option<[u8; 32]>,
+    /// Legacy inline historical author registry. Kept for backward compat with
+    /// old manifests. New checkpoints use `historical_authors_hash` instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub historical_authors: Option<crate::server::historical_author::HistoricalAuthorRegistry>,
 }
 
 #[derive(Debug)]
@@ -370,6 +441,7 @@ pub fn create_empty_manifest(
         works: Vec::new(),
         clubs: Vec::new(),
         standalone_editions: Vec::new(),
+        links_hash: None,
         links: Vec::new(),
         link_counter: 0,
         admin: AdminEntry {
@@ -380,9 +452,13 @@ pub fn create_empty_manifest(
         reconcile_store: crate::server::federation::ReconcileStore::new(),
         reconcile_counter: 0,
         federation: None,
+        content_address_hash: None,
         content_address: None,
+        blob_metas_hash: None,
         blob_metas: Vec::new(),
         key_history: None,
+        historical_authors_hash: None,
+        historical_authors: None,
     }
 }
 
@@ -501,7 +577,16 @@ mod tests {
         let work_ref = crate::persist::edition_chunks::work_to_chunks(&work, &store).unwrap();
 
         let mut manifest = create_empty_manifest(test_system_clubs(), 200);
-        manifest.works.push((10, work_ref));
+        manifest.works.push(WorkEntry {
+            be_id: 10,
+            work_ref: work_ref,
+            is_source: false,
+            source_author_id: None,
+            source_edition_info: None,
+            content_start_line: None,
+            content_end_line: None,
+            source_fingerprint: None,
+        });
         manifest.links.push(LinkEntry {
             link_id: 50,
             origin: 10,
@@ -516,7 +601,7 @@ mod tests {
 
         let restored = read_manifest(&path).unwrap();
         assert_eq!(restored.works.len(), 1);
-        assert_eq!(restored.works[0].0, 10);
+        assert_eq!(restored.works[0].be_id, 10);
         assert_eq!(restored.links.len(), 1);
         assert_eq!(restored.links[0].origin, 10);
         assert_eq!(restored.link_counter, 51);

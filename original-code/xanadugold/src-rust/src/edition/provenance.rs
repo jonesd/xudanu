@@ -29,6 +29,7 @@ pub struct ElementProvenance {
     pub author_type: AuthorType,
     pub llm_model: Option<String>,
     pub historical_author_id: Option<BeId>,
+    pub source_work_id: Option<BeId>,
 }
 
 #[cfg(feature = "serde")]
@@ -45,6 +46,7 @@ mod element_serde_impl {
         author_type: Option<String>,
         llm_model: Option<String>,
         historical_author_id: Option<u64>,
+        source_work_id: Option<u64>,
     }
 
     impl Serialize for ElementProvenance {
@@ -61,6 +63,7 @@ mod element_serde_impl {
                 }),
                 llm_model: self.llm_model.clone(),
                 historical_author_id: self.historical_author_id,
+                source_work_id: self.source_work_id,
             }
             .serialize(s)
         }
@@ -86,6 +89,7 @@ mod element_serde_impl {
                 author_type,
                 llm_model: data.llm_model,
                 historical_author_id: data.historical_author_id,
+                source_work_id: data.source_work_id,
             })
         }
     }

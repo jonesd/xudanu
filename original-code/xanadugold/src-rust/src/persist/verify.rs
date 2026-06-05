@@ -5,6 +5,19 @@ use crate::persist::chunk_store::ChunkStore;
 use crate::persist::edition_chunks::{self, EditionChunkRef, WorkChunkRef};
 use crate::persist::manifest::{self, Manifest};
 
+fn make_work_entry(be_id: crate::edition::backend::BeId, work_ref: WorkChunkRef) -> manifest::WorkEntry {
+    manifest::WorkEntry {
+        be_id,
+        work_ref,
+        is_source: false,
+        source_author_id: None,
+        source_edition_info: None,
+        content_start_line: None,
+        content_end_line: None,
+        source_fingerprint: None,
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct VerifyReport {
     pub chunks_total: usize,
@@ -38,8 +51,8 @@ impl VerifyReport {
 fn collect_referenced_hashes(manifest: &Manifest, store: &ChunkStore) -> HashSet<[u8; 32]> {
     let mut hashes = HashSet::new();
 
-    for (_, work_ref) in &manifest.works {
-        collect_work_ref_hashes(work_ref, store, &mut hashes);
+    for entry in &manifest.works {
+        collect_work_ref_hashes(&entry.work_ref, store, &mut hashes);
     }
     for club_ref in &manifest.clubs {
         collect_work_ref_hashes(&club_ref.work_root, store, &mut hashes);
@@ -158,14 +171,14 @@ fn verify_store_with_manifest_data(
         }
     }
 
-    for (id, work_ref) in &manifest.works {
-        match edition_chunks::work_from_chunks_current(work_ref, &chunk_store) {
+    for entry in &manifest.works {
+        match edition_chunks::work_from_chunks_current(&entry.work_ref, &chunk_store) {
             Ok(_) => report.works_ok += 1,
             Err(e) => {
                 report.works_failed += 1;
                 report
                     .deserialization_errors
-                    .push(format!("work {}: {}", id, e));
+                    .push(format!("work {}: {}", entry.be_id, e));
             }
         }
     }
@@ -298,7 +311,7 @@ mod tests {
         let work_ref = crate::persist::edition_chunks::work_to_chunks(&work, &store).unwrap();
 
         let mut m = create_empty_manifest(test_system_clubs(), 100);
-        m.works.push((10, work_ref));
+        m.works.push(make_work_entry(10, work_ref));
         drop(store);
 
         let path = manifest::manifest_path(&dir);
@@ -324,7 +337,7 @@ mod tests {
         drop(store);
 
         let mut m = create_empty_manifest(test_system_clubs(), 100);
-        m.works.push((10, work_ref));
+        m.works.push(make_work_entry(10, work_ref));
 
         let path = manifest::manifest_path(&dir);
         manifest::write_manifest(&mut m, &path).unwrap();
@@ -393,7 +406,7 @@ mod tests {
         let work_ref = crate::persist::edition_chunks::work_to_chunks(&work, &store).unwrap();
 
         let mut m = create_empty_manifest(test_system_clubs(), 100);
-        m.works.push((1, work_ref));
+        m.works.push(make_work_entry(1, work_ref));
         drop(store);
 
         let path = manifest::manifest_path(&dir);
@@ -418,7 +431,7 @@ mod tests {
         drop(store);
 
         let mut m = create_empty_manifest(test_system_clubs(), 100);
-        m.works.push((10, work_ref));
+        m.works.push(make_work_entry(10, work_ref));
         let path = manifest::manifest_path(&dir);
         manifest::write_manifest(&mut m, &path).unwrap();
 
@@ -450,7 +463,7 @@ mod tests {
         drop(store);
 
         let mut m = create_empty_manifest(test_system_clubs(), 100);
-        m.works.push((42, work_ref));
+        m.works.push(make_work_entry(42, work_ref));
 
         let report = verify_store_with_manifest(&m, &ChunkStore::open(&dir).unwrap());
         assert!(report.is_ok());
@@ -481,7 +494,7 @@ mod tests {
         drop(store);
 
         let mut m = create_empty_manifest(test_system_clubs(), 100);
-        m.works.push((1, work_ref));
+        m.works.push(make_work_entry(1, work_ref));
 
         let store2 = ChunkStore::open(&dir).unwrap();
         let report = verify_store_with_manifest(&m, &store2);
@@ -557,7 +570,16 @@ mod tests {
         drop(store);
 
         let mut m = create_empty_manifest(test_system_clubs(), 100);
-        m.works.push((1, wr1.clone()));
+        m.works.push(crate::persist::manifest::WorkEntry {
+            be_id: 1,
+            work_ref: wr1.clone(),
+            is_source: false,
+            source_author_id: None,
+            source_edition_info: None,
+            content_start_line: None,
+            content_end_line: None,
+            source_fingerprint: None,
+        });
         let path = manifest::manifest_path(&dir);
 
         manifest::write_manifest(&mut m, &path).unwrap();
@@ -570,7 +592,16 @@ mod tests {
         let wr2 = crate::persist::edition_chunks::work_to_chunks(&w2, &store2).unwrap();
         drop(store2);
 
-        m.works.push((2, wr2));
+        m.works.push(crate::persist::manifest::WorkEntry {
+            be_id: 2,
+            work_ref: wr2,
+            is_source: false,
+            source_author_id: None,
+            source_edition_info: None,
+            content_start_line: None,
+            content_end_line: None,
+            source_fingerprint: None,
+        });
         manifest::write_manifest(&mut m, &path).unwrap();
         let b2 = manifest::backup_manifest_path(&dir, m.sequence);
         std::fs::copy(&path, &b2).unwrap();
@@ -602,7 +633,16 @@ mod tests {
         drop(store);
 
         let mut m = create_empty_manifest(test_system_clubs(), 100);
-        m.works.push((5, work_ref));
+        m.works.push(crate::persist::manifest::WorkEntry {
+            be_id: 5,
+            work_ref: work_ref,
+            is_source: false,
+            source_author_id: None,
+            source_edition_info: None,
+            content_start_line: None,
+            content_end_line: None,
+            source_fingerprint: None,
+        });
         let path = manifest::manifest_path(&dir);
         manifest::write_manifest(&mut m, &path).unwrap();
 
@@ -615,7 +655,7 @@ mod tests {
 
         let recovered = manifest::read_manifest_with_fallback(&path, 3).unwrap();
         assert_eq!(recovered.works.len(), 1);
-        assert_eq!(recovered.works[0].0, 5);
+        assert_eq!(recovered.works[0].be_id, 5);
 
         let restored_primary = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
@@ -641,15 +681,33 @@ mod tests {
         drop(store);
 
         let mut m = create_empty_manifest(test_system_clubs(), 100);
-        m.works.push((1, wr1));
+        m.works.push(crate::persist::manifest::WorkEntry {
+            be_id: 1,
+            work_ref: wr1,
+            is_source: false,
+            source_author_id: None,
+            source_edition_info: None,
+            content_start_line: None,
+            content_end_line: None,
+            source_fingerprint: None,
+        });
         let path = manifest::manifest_path(&dir);
         manifest::write_manifest(&mut m, &path).unwrap();
 
         let b1 = manifest::backup_manifest_path(&dir, m.sequence);
         std::fs::copy(&path, &b1).unwrap();
 
-        m.works.retain(|(id, _)| *id != 1);
-        m.works.push((2, wr2.clone()));
+        m.works.retain(|e| e.be_id != 1);
+        m.works.push(crate::persist::manifest::WorkEntry {
+            be_id: 2,
+            work_ref: wr2.clone(),
+            is_source: false,
+            source_author_id: None,
+            source_edition_info: None,
+            content_start_line: None,
+            content_end_line: None,
+            source_fingerprint: None,
+        });
         manifest::write_manifest(&mut m, &path).unwrap();
 
         let store2 = ChunkStore::open(&dir).unwrap();
@@ -661,9 +719,9 @@ mod tests {
         }
 
         if let Ok(bm) = manifest::read_manifest(&b1) {
-            for (_, wr) in &bm.works {
+            for entry in &bm.works {
                 if let Ok(hashes) = crate::persist::edition_chunks::collect_edition_hashes(
-                    &wr.current_root,
+                    &entry.work_ref.current_root,
                     &store2,
                 ) {
                     referenced.extend(hashes);

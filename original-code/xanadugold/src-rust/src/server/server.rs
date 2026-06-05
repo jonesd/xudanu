@@ -1548,6 +1548,8 @@ impl Server {
 
             let (char_start, char_end) = elem_to_char(sp.start, sp.end);
 
+            let source_work_id = element_prov.and_then(|ep| ep.source_work_id);
+
             spans.push(super::transport::protocol::AttributionSpanPayload {
                 start: char_start,
                 end: char_end,
@@ -1560,6 +1562,8 @@ impl Server {
                 author_type: author_type_str,
                 llm_model,
                 historical_author_id,
+                source_work_id,
+                provenance_chain: None,
             });
         }
         Ok(spans)
@@ -1723,8 +1727,20 @@ impl Server {
             .map(|(id, ws)| (*id, ws.source_fingerprint.unwrap()))
             .collect();
 
+        tracing::info!(
+            "[match_content] query_len={} source_count={} works_total={}",
+            text.len(),
+            sources.len(),
+            self.works.len(),
+        );
+        for (id, _) in &sources {
+            tracing::info!("[match_content] source_work={:04x}", id);
+        }
+
         let (work_id, score) =
             crate::server::source_matcher::best_content_match(text, &sources)?;
+
+        tracing::info!("[match_content] matched work={:04x} score={:.3}", work_id, score);
 
         let author_id = self
             .works
@@ -1739,6 +1755,9 @@ impl Server {
         session_id: SessionId,
         work_be_id: BeId,
         historical_author_id: BeId,
+        source_work_id: Option<BeId>,
+        paste_start: Option<usize>,
+        paste_end: Option<usize>,
     ) -> Result<(), ServerError> {
         self.ensure_can_edit(session_id, work_be_id)?;
 
@@ -1765,6 +1784,22 @@ impl Server {
             ws.work.current_edition().clone()
         };
 
+        // TODO(Phase 2 — Priority): Use source_fingerprint_set to gate attribution.
+        // Currently all entries in range get attributed regardless of whether their
+        // content actually matches the source work. Wire this up to only attribute
+        // entries whose content_fingerprint() appears in the source's fingerprint set,
+        // enabling verified (not assumed) attribution.
+        let source_fingerprint_set = source_work_id.and_then(|sid| {
+            self.works.get(&sid).map(|ws| {
+                let entries = ws.work.current_edition().all_entries();
+                let mut set = std::collections::HashSet::new();
+                for (_, c) in &entries {
+                    set.insert(c.element.content_fingerprint());
+                }
+                set
+            })
+        });
+
         let elem_provenance = crate::edition::provenance::ElementProvenance {
             author_type: crate::edition::provenance::AuthorType::Historical,
             author_public_key: server_id,
@@ -1773,12 +1808,66 @@ impl Server {
             historical_author_id: Some(historical_author_id),
             llm_model: None,
             timestamp,
+            source_work_id,
         };
 
         let entries = current_edition.all_entries();
 
-        let mut new_edition = if !entries.is_empty() {
-            let fingerprints: Vec<[u8; 32]> = entries
+        let use_range = paste_start.is_some() && paste_end.is_some();
+        let range_start = paste_start.unwrap_or(0);
+        let range_end = paste_end.unwrap_or(usize::MAX);
+
+        let mut new_entries: Vec<(
+            i64,
+            std::sync::Arc<crate::edition::range_element::Carrier>,
+        )> = Vec::with_capacity(entries.len());
+        let mut cum = 0usize;
+        let mut attributed_positions: Vec<i64> = Vec::new();
+
+        for (pos, c) in &entries {
+            let entry_start = cum;
+            let entry_end = cum + c.char_len();
+
+            let should_attrib = if use_range {
+                let in_range = entry_end > range_start && entry_start < range_end;
+                if !in_range {
+                    false
+                } else {
+                    true
+                }
+            } else {
+                true
+            };
+
+            if should_attrib {
+                let mut carrier = (**c).clone();
+                carrier.provenance = Some(elem_provenance.clone());
+                new_entries.push((*pos, std::sync::Arc::new(carrier)));
+                attributed_positions.push(*pos);
+            } else {
+                new_entries.push((*pos, c.clone()));
+            }
+
+            cum = entry_end;
+        }
+
+        let mut new_edition = crate::edition::Edition::from_entries(new_entries);
+        new_edition.span_provenance = current_edition.span_provenance.clone();
+
+        if !attributed_positions.is_empty() {
+            let attributed_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> = entries
+                .iter()
+                .zip(attributed_positions.iter())
+                .filter_map(|((_, c), &pos)| {
+                    if attributed_positions.contains(&pos) {
+                        Some((pos, c.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let fingerprints: Vec<[u8; 32]> = attributed_entries
                 .iter()
                 .map(|(_, c)| c.element.content_fingerprint())
                 .collect();
@@ -1792,37 +1881,21 @@ impl Server {
             );
 
             let span_prov = crate::edition::provenance::SpanProvenance {
-                start: entries.first().map(|(p, _)| *p).unwrap_or(0),
-                end: entries.last().map(|(p, _)| *p + 1).unwrap_or(0),
+                start: *attributed_positions.first().unwrap_or(&0),
+                end: *attributed_positions.last().unwrap_or(&0) + 1,
                 provenance: prov,
             };
-
-            let new_entries: Vec<(
-                i64,
-                std::sync::Arc<crate::edition::range_element::Carrier>,
-            )> = entries
-                .into_iter()
-                .map(|(pos, c)| {
-                    let mut carrier = (*c).clone();
-                    carrier.provenance = Some(elem_provenance.clone());
-                    (pos, std::sync::Arc::new(carrier))
-                })
-                .collect();
-
-            let mut edition = crate::edition::Edition::from_entries(new_entries);
-            edition.span_provenance = current_edition.span_provenance.clone();
-            edition.span_provenance.push(span_prov);
-            edition
-        } else {
-            current_edition
-        };
+            new_edition.span_provenance.push(span_prov);
+        }
 
         let ws = self
             .works
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.revise(new_edition);
-        ws.source_author_id = Some(historical_author_id);
+        if !use_range {
+            ws.source_author_id = Some(historical_author_id);
+        }
         self.auto_checkpoint();
         Ok(())
     }
@@ -1878,6 +1951,7 @@ impl Server {
             historical_author_id: Some(author_id),
             llm_model: None,
             timestamp,
+            source_work_id: None,
         };
 
         {
@@ -2520,10 +2594,24 @@ impl Server {
                 .text_range(work_be_id, start_char, end_char)
                 .map_err(|e| ServerError::Internal(e.to_string()))
         } else {
-            let text = self
-                .crdt_manager
-                .current_text(work_be_id)
-                .map_err(|e| ServerError::Internal(e.to_string()))?;
+            let crdt_result = self.crdt_manager.current_text(work_be_id);
+            let text = match crdt_result {
+                Ok(t) => t,
+                Err(_) => {
+                    let ws = self.works.get(&work_be_id)
+                        .ok_or(ServerError::WorkNotFound(work_be_id))?;
+                    let ed = ws.work.current_edition();
+                    let total: usize = ed.cached_entries().iter().map(|(_, c)| c.char_len()).sum();
+                    let start = start_char.min(total);
+                    let end = end_char.min(total);
+                    return Ok(super::otree_crdt::TextRangeResult {
+                        text: ed.to_text_range(start, end),
+                        total_chars: total,
+                        start_char: start,
+                        end_char: end,
+                    });
+                }
+            };
             let total = text.chars().count();
             let start = start_char.min(total);
             let end = end_char.min(total);
@@ -3336,6 +3424,45 @@ impl Server {
         self.restore_keypair_from_dir(data_dir, passphrase)?;
         self.restore_blob_store_from_dir(data_dir)?;
 
+        let historical_authors_from_chunk = if let Some(hash) = manifest.historical_authors_hash {
+            match chunk_store.read_chunk(&hash) {
+                Ok(data) => {
+                    match postcard::from_bytes::<
+                        crate::server::historical_author::HistoricalAuthorRegistry,
+                    >(&data)
+                    {
+                        Ok(registry) => Some(registry),
+                        Err(e) => {
+                            tracing::warn!("historical authors chunk deserialization failed: {}", e);
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("historical authors chunk read failed: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let blob_metas_from_chunk: Vec<crate::persist::manifest::BlobMetaEntry> =
+            if let Some(hash) = manifest.blob_metas_hash {
+                match chunk_store.read_chunk(&hash) {
+                    Ok(data) => postcard::from_bytes(&data).unwrap_or_else(|e| {
+                        tracing::warn!("blob_metas chunk deserialization failed: {}", e);
+                        manifest.blob_metas.clone()
+                    }),
+                    Err(e) => {
+                        tracing::warn!("blob_metas chunk read failed: {}", e);
+                        manifest.blob_metas.clone()
+                    }
+                }
+            } else {
+                manifest.blob_metas.clone()
+            };
+
         self.grand_map.set_id_counter(manifest.grand_map_id_counter);
         self.session_counter = manifest.session_counter;
         self.operation_counter = manifest.operation_counter;
@@ -3343,9 +3470,24 @@ impl Server {
         self.link_counter = manifest.link_counter;
         self.reconcile_store = manifest.reconcile_store;
         self.reconcile_counter = manifest.reconcile_counter;
-        self.content_address = manifest
-            .content_address
-            .unwrap_or_else(|| ContentAddressIndex::new(1_000_000));
+        self.content_address = if let Some(hash) = manifest.content_address_hash {
+            match chunk_store.read_chunk(&hash) {
+                Ok(data) => postcard::from_bytes::<ContentAddressIndex>(&data)
+                    .unwrap_or_else(|e| {
+                        tracing::warn!("content_address chunk deserialization failed: {}", e);
+                        manifest.content_address.clone()
+                            .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
+                    }),
+                Err(e) => {
+                    tracing::warn!("content_address chunk read failed: {}", e);
+                    manifest.content_address.clone()
+                        .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
+                }
+            }
+        } else {
+            manifest.content_address.clone()
+                .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
+        };
 
         if let Some(ref kh) = manifest.key_history {
             let kh_file = crate::crypto::keys::KeyHistoryFile {
@@ -3411,12 +3553,21 @@ impl Server {
 
         self.personal_club_count = self.clubs.values().filter(|c| c.is_personal()).count();
 
-        for (id, work_ref) in &manifest.works {
-            match crate::persist::edition_chunks::work_from_chunks_current(work_ref, &chunk_store) {
+        for work_entry in &manifest.works {
+            match crate::persist::edition_chunks::work_from_chunks_current(&work_entry.work_ref, &chunk_store) {
                 Ok(work) => {
+                    let source_fingerprint = work_entry.source_fingerprint.as_ref().and_then(|fp| {
+                        if fp.len() == crate::server::source_matcher::MINHASH_SIZE {
+                            let mut arr = [0u64; crate::server::source_matcher::MINHASH_SIZE];
+                            arr.copy_from_slice(fp);
+                            Some(arr)
+                        } else {
+                            None
+                        }
+                    });
                     let ws = WorkState {
                         work: work.clone(),
-                        chunk_ref: Some(work_ref.clone()),
+                        chunk_ref: Some(work_entry.work_ref.clone()),
                         grabber: None,
                         grabbed_at: None,
                         grab_waiters: Vec::new(),
@@ -3424,21 +3575,21 @@ impl Server {
                         status_detectors: DetectorList::new(),
                         revision_detectors: DetectorList::new(),
                         cached_title: Self::extract_title(work.current_edition()),
-                        is_source: false,
-                        source_author_id: None,
-                        source_edition_info: None,
+                        is_source: work_entry.is_source,
+                        source_author_id: work_entry.source_author_id,
+                        source_edition_info: work_entry.source_edition_info.clone(),
                         imported_by: None,
-                        content_start_line: None,
-                        content_end_line: None,
-                        source_fingerprint: None,
+                        content_start_line: work_entry.content_start_line,
+                        content_end_line: work_entry.content_end_line,
+                        source_fingerprint,
                     };
-                    self.works.insert(*id, ws);
+                    self.works.insert(work_entry.be_id, ws);
                 }
                 Err(e) => {
                     tracing::error!(
                         "Skipping corrupt work {} (chunk error: {}). \
                          Data for this document is lost.",
-                        id,
+                        work_entry.be_id,
                         e
                     );
                 }
@@ -3465,7 +3616,23 @@ impl Server {
             }
         }
 
-        for link in &manifest.links {
+        let links_from_chunk: Vec<crate::persist::manifest::LinkEntry> =
+            if let Some(hash) = manifest.links_hash {
+                match chunk_store.read_chunk(&hash) {
+                    Ok(data) => postcard::from_bytes(&data).unwrap_or_else(|e| {
+                        tracing::warn!("links chunk deserialization failed: {}", e);
+                        manifest.links.clone()
+                    }),
+                    Err(e) => {
+                        tracing::warn!("links chunk read failed: {}", e);
+                        manifest.links.clone()
+                    }
+                }
+            } else {
+                manifest.links.clone()
+            };
+
+        for link in &links_from_chunk {
             let o_ref = link
                 .origin_ref
                 .as_ref()
@@ -3539,7 +3706,7 @@ impl Server {
         self.attribution_log =
             crate::server::transport::attribution_log::AttributionLog::open(data_dir).ok();
 
-        self.restore_blob_metas(manifest.blob_metas);
+        self.restore_blob_metas(blob_metas_from_chunk);
 
         let max_id = self
             .works
@@ -3574,6 +3741,12 @@ impl Server {
 
         for (link_id, ls) in &self.links {
             self.backfollow.register_link_content(&ls.link, *link_id);
+        }
+
+        if let Some(ha) = historical_authors_from_chunk {
+            self.historical_authors = ha;
+        } else if let Some(ha) = manifest.historical_authors {
+            self.historical_authors = ha;
         }
 
         Ok(())
@@ -3966,6 +4139,99 @@ impl Server {
         self.backfollow
             .register_link_content(&self.links[&link_id].link, link_id);
         Ok(link_id)
+    }
+
+    pub fn apply_transclusion_attribution(
+        &mut self,
+        session_id: SessionId,
+        link_id: BeId,
+    ) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+
+        let (origin_work_id, dest_work_id, excerpt_text) = {
+            let ls = self.links.get(&link_id).ok_or_else(|| {
+                ServerError::NotFound(format!("link {}", link_id))
+            })?;
+            let excerpt = ls.link.end_at("LeftEnd")
+                .and_then(|r| r.excerpt())
+                .map(|e| e.to_text())
+                .unwrap_or_default();
+            if excerpt.is_empty() {
+                return Err(ServerError::Internal(
+                    "link has no origin excerpt for transclusion attribution".into(),
+                ));
+            }
+            (ls.origin, ls.destination, excerpt.to_string())
+        };
+
+        let source_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> = {
+            let ws = self.works.get(&origin_work_id)
+                .ok_or(ServerError::WorkNotFound(origin_work_id))?;
+            ws.work.current_edition().all_entries()
+        };
+
+        let source_prov: Option<crate::edition::provenance::ElementProvenance> = source_entries
+            .iter()
+            .find_map(|(_, c)| c.provenance.clone());
+
+        let mut source_prov: crate::edition::provenance::ElementProvenance = match source_prov {
+            Some(p) => p,
+            None => return Ok(()),
+        };
+        source_prov.source_work_id = Some(origin_work_id);
+
+        let dest_edition = {
+            let ws = self.works.get(&dest_work_id)
+                .ok_or(ServerError::WorkNotFound(dest_work_id))?;
+            ws.work.current_edition().clone()
+        };
+
+        let dest_entries = dest_edition.all_entries();
+        let dest_text = dest_edition.to_text();
+        let excerpt_lower = excerpt_text.to_lowercase();
+        let dest_lower = dest_text.to_lowercase();
+
+        let char_start = match dest_lower.find(&excerpt_lower) {
+            Some(pos) => pos,
+            None => return Ok(()),
+        };
+        let char_end = char_start + excerpt_text.len();
+
+        let mut any_applied = false;
+        let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
+            Vec::with_capacity(dest_entries.len());
+        let mut cum = 0usize;
+        let mut attributed_positions: Vec<i64> = Vec::new();
+
+        for (pos, c) in &dest_entries {
+            let entry_start = cum;
+            let entry_end = cum + c.char_len();
+            let in_range = entry_end > char_start && entry_start < char_end;
+
+            if in_range {
+                let mut carrier = (**c).clone();
+                carrier.provenance = Some(source_prov.clone());
+                new_entries.push((*pos, std::sync::Arc::new(carrier)));
+                attributed_positions.push(*pos);
+                any_applied = true;
+                cum = entry_end;
+                continue;
+            }
+            new_entries.push((*pos, c.clone()));
+            cum = entry_end;
+        }
+
+        if any_applied {
+            let mut new_edition = crate::edition::Edition::from_entries(new_entries);
+            new_edition.span_provenance = dest_edition.span_provenance.clone();
+
+            let ws = self.works.get_mut(&dest_work_id)
+                .ok_or(ServerError::WorkNotFound(dest_work_id))?;
+            ws.work.revise(new_edition);
+            self.auto_checkpoint();
+        }
+
+        Ok(())
     }
 
     pub fn get_link(&self, link_id: BeId) -> Result<(BeId, BeId, &HyperLink), ServerError> {
@@ -7470,24 +7736,32 @@ pub(crate) mod persist_snapshot {
             let chunk_store = self.chunk_store.as_ref().unwrap();
 
             let mut dirty_work_count = 0u64;
-            let mut work_refs: Vec<(BeId, crate::persist::edition_chunks::WorkChunkRef)> =
+            let mut work_entries: Vec<crate::persist::manifest::WorkEntry> =
                 Vec::new();
             for (id, ws) in &self.works {
-                if let Some(ref existing_ref) = ws.chunk_ref {
-                    work_refs.push((*id, existing_ref.clone()));
+                let work_ref = if let Some(ref existing_ref) = ws.chunk_ref {
+                    existing_ref.clone()
                 } else {
                     dirty_work_count += 1;
-                    let work_ref =
-                        crate::persist::edition_chunks::work_to_chunks(&ws.work, chunk_store)
-                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-                    work_refs.push((*id, work_ref));
-                }
+                    crate::persist::edition_chunks::work_to_chunks(&ws.work, chunk_store)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+                };
+                work_entries.push(crate::persist::manifest::WorkEntry {
+                    be_id: *id,
+                    work_ref: work_ref.clone(),
+                    is_source: ws.is_source,
+                    source_author_id: ws.source_author_id,
+                    source_edition_info: ws.source_edition_info.clone(),
+                    content_start_line: ws.content_start_line,
+                    content_end_line: ws.content_end_line,
+                    source_fingerprint: ws.source_fingerprint.map(|fp| fp.to_vec()),
+                });
             }
 
-            for (id, work_ref) in &work_refs {
-                if let Some(ws) = self.works.get_mut(id) {
+            for entry in &work_entries {
+                if let Some(ws) = self.works.get_mut(&entry.be_id) {
                     if ws.chunk_ref.is_none() {
-                        ws.chunk_ref = Some(work_ref.clone());
+                        ws.chunk_ref = Some(entry.work_ref.clone());
                     }
                 }
             }
@@ -7600,10 +7874,17 @@ pub(crate) mod persist_snapshot {
                 session_counter: self.session_counter,
                 operation_counter: self.operation_counter,
                 system_clubs: self.system_clubs,
-                works: work_refs,
+                works: work_entries,
                 clubs: club_refs,
                 standalone_editions: standalone_refs,
-                links,
+                links_hash: {
+                    let lk_data = postcard::to_allocvec(&links)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let hash = chunk_store.write_chunk(&lk_data)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    Some(hash)
+                },
+                links: Vec::new(),
                 link_counter: self.link_counter,
                 admin: crate::persist::manifest::AdminEntry {
                     accepting_connections: self.admin.is_accepting_connections(),
@@ -7627,9 +7908,31 @@ pub(crate) mod persist_snapshot {
                 reconcile_store: self.reconcile_store.clone(),
                 reconcile_counter: self.reconcile_counter,
                 federation: Some(self.federation.to_snapshot()),
-                content_address: Some(self.content_address.clone()),
-                blob_metas,
+                content_address_hash: {
+                    let ca_data = postcard::to_allocvec(&self.content_address)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let hash = chunk_store.write_chunk(&ca_data)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    Some(hash)
+                },
+                content_address: None,
+                blob_metas_hash: {
+                    let bm_data = postcard::to_allocvec(&blob_metas)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let hash = chunk_store.write_chunk(&bm_data)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    Some(hash)
+                },
+                blob_metas: Vec::new(),
                 key_history,
+                historical_authors_hash: {
+                    let ha_data = postcard::to_allocvec(&self.historical_authors)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let hash = chunk_store.write_chunk(&ha_data)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    Some(hash)
+                },
+                historical_authors: None,
             };
 
             let data_dir = match self.data_dir.as_ref() {
@@ -7686,6 +7989,34 @@ pub(crate) mod persist_snapshot {
                     }
                 }
             }
+
+            {
+                let manifest_path = match self.checkpoint_path.as_ref() {
+                    Some(p) => p,
+                    None => {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            "no checkpoint path",
+                        ))
+                    }
+                };
+                if let Ok(manifest) =
+                    crate::persist::manifest::read_manifest(manifest_path)
+                {
+                    if let Some(hash) = manifest.historical_authors_hash {
+                        referenced.insert(hash);
+                    }
+                    if let Some(hash) = manifest.blob_metas_hash {
+                        referenced.insert(hash);
+                    }
+                    if let Some(hash) = manifest.content_address_hash {
+                        referenced.insert(hash);
+                    }
+                    if let Some(hash) = manifest.links_hash {
+                        referenced.insert(hash);
+                    }
+                }
+            }
             for club_ref in self.club_refs.values() {
                 if let Ok(hashes) = crate::persist::edition_chunks::collect_work_hashes(
                     &club_ref.work_root,
@@ -7721,10 +8052,10 @@ pub(crate) mod persist_snapshot {
                     if let Ok(backup_manifest) =
                         crate::persist::manifest::read_manifest(backup_path)
                     {
-                        for (_, work_ref) in &backup_manifest.works {
+                        for work_entry in &backup_manifest.works {
                             if let Ok(hashes) =
                                 crate::persist::edition_chunks::collect_edition_hashes(
-                                    &work_ref.current_root,
+                                    &work_entry.work_ref.current_root,
                                     chunk_store,
                                 )
                             {
@@ -8056,14 +8387,6 @@ mod tests {
         let sid = server.connect();
         assert!(server.session(sid).unwrap().is_connected());
         assert_eq!(server.session_count(), 1);
-    }
-
-    #[test]
-    fn server_disconnect_ends_session() {
-        let mut server = Server::new();
-        let sid = server.connect();
-        server.disconnect(sid).unwrap();
-        assert_eq!(server.session_count(), 0);
     }
 
     #[test]
@@ -12405,6 +12728,625 @@ mod tests {
             let works = server.list_works_by_historical_author(author_id);
             assert_eq!(works.len(), 1);
             assert_eq!(works[0].0, work_id);
+        }
+    }
+
+    #[test]
+    fn transclusion_attribution_propagates_historical_provenance() {
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        server.grant_admin_authority(session).unwrap();
+        let club_id = server.session(session).unwrap().authority_clubs().iter().next().copied().unwrap();
+        let public_club = server.public_club_id();
+
+        let author = server
+            .register_historical_author(
+                "Bram Stoker".into(),
+                "Bram Stoker".into(),
+                Some(1847),
+                Some(1912),
+                std::collections::HashMap::new(),
+                "Dracula".into(),
+                club_id,
+            )
+            .unwrap();
+
+        let dracula_text = "It was the best of times it was the worst of times. ".repeat(10);
+        let (dracula_id, _, _, _) = server
+            .import_source_work(
+                session,
+                author.be_id,
+                "Dracula".into(),
+                dracula_text.clone(),
+                "test edition".into(),
+                0,
+                0,
+            )
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&dracula_id) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+
+        server
+            .apply_source_attribution(
+                session,
+                dracula_id,
+                author.be_id,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let excerpt = "It was the best of times it was the worst of times.";
+        let target_id = server
+            .create_work(session, Edition::from_text("prefix"))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&target_id) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+
+        let target_text = format!("prefix{}", excerpt);
+        let revised = Edition::from_text(&target_text);
+        server
+            .revise_work(target_id, session, revised, Some(club_id))
+            .unwrap();
+
+        let link_id = server
+            .create_link(
+                session,
+                dracula_id,
+                target_id,
+                Some(
+                    crate::edition::links::HyperRef::single(
+                        Some(Edition::from_text(excerpt)),
+                        Some(dracula_id),
+                        None,
+                        None,
+                    ),
+                ),
+                Some(
+                    crate::edition::links::HyperRef::single(
+                        None,
+                        Some(target_id),
+                        None,
+                        None,
+                    ),
+                ),
+            )
+            .unwrap();
+
+        server
+            .apply_transclusion_attribution(session, link_id)
+            .unwrap();
+
+        let target_edition = server.work(target_id).unwrap().current_edition().clone();
+        let target_entries = target_edition.all_entries();
+
+        let mut historical_count = 0;
+        let mut other_count = 0;
+        for (_, carrier) in &target_entries {
+            if let Some(ref prov) = carrier.provenance {
+                if matches!(
+                    prov.author_type,
+                    crate::edition::provenance::AuthorType::Historical
+                ) {
+                    historical_count += 1;
+                } else {
+                    other_count += 1;
+                }
+            } else {
+                other_count += 1;
+            }
+        }
+
+        assert!(
+            historical_count > 0,
+            "expected some entries to have historical provenance, got {} historical, {} other",
+            historical_count,
+            other_count,
+        );
+
+        let mut source_work_id_set = 0;
+        for (_, carrier) in &target_entries {
+            if let Some(ref prov) = carrier.provenance {
+                if matches!(
+                    prov.author_type,
+                    crate::edition::provenance::AuthorType::Historical
+                ) && prov.source_work_id == Some(dracula_id)
+                {
+                    source_work_id_set += 1;
+                }
+            }
+        }
+        assert!(
+            source_work_id_set > 0,
+            "expected historical entries to have source_work_id set to dracula work"
+        );
+    }
+
+    #[test]
+    fn range_attribution_only_affects_pasted_range() {
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        server.grant_admin_authority(session).unwrap();
+        let club_id = server.session(session).unwrap().authority_clubs().iter().next().copied().unwrap();
+        let public_club = server.public_club_id();
+
+        let author = server
+            .register_historical_author(
+                "Bram Stoker".into(),
+                "Bram Stoker".into(),
+                None,
+                None,
+                std::collections::HashMap::new(),
+                "Dracula".into(),
+                club_id,
+            )
+            .unwrap();
+
+        let source_text = "HELLO WORLD ".repeat(30);
+        let (source_id, _, _, _) = server
+            .import_source_work(
+                session,
+                author.be_id,
+                "Source".into(),
+                source_text.clone(),
+                "test".into(),
+                0,
+                0,
+            )
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&source_id) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+
+        server
+            .apply_source_attribution(session, source_id, author.be_id, None, None, None)
+            .unwrap();
+
+        let paste_text = "HELLO WORLD HELLO WORLD";
+        let target_text = format!("my_text{}my_text", paste_text);
+        let target_id = server
+            .create_work(session, Edition::from_text(&target_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&target_id) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+
+        let paste_start = 7;
+        let paste_end = paste_start + paste_text.len();
+
+        server
+            .apply_source_attribution(
+                session,
+                target_id,
+                author.be_id,
+                Some(source_id),
+                Some(paste_start),
+                Some(paste_end),
+            )
+            .unwrap();
+
+        let target_edition = server.work(target_id).unwrap().current_edition().clone();
+        let target_entries = target_edition.all_entries();
+
+        let mut cum = 0usize;
+        let mut in_range_historical = 0;
+        let mut out_range_historical = 0;
+
+        for (_, carrier) in &target_entries {
+            let entry_start = cum;
+            let entry_end = cum + carrier.char_len();
+            let in_range = entry_end > paste_start && entry_start < paste_end;
+
+            let is_historical = carrier
+                .provenance
+                .as_ref()
+                .is_some_and(|p| {
+                    matches!(
+                        p.author_type,
+                        crate::edition::provenance::AuthorType::Historical
+                    )
+                });
+
+            if in_range && is_historical {
+                in_range_historical += 1;
+            } else if !in_range && is_historical {
+                out_range_historical += 1;
+            }
+            cum = entry_end;
+        }
+
+        assert!(
+            in_range_historical > 0,
+            "entries in paste range should have historical attribution"
+        );
+        assert_eq!(
+            out_range_historical, 0,
+            "entries outside paste range should NOT have historical attribution"
+        );
+    }
+
+    #[test]
+    fn attribution_query_returns_source_work_id() {
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        server.grant_admin_authority(session).unwrap();
+        let club_id = server.session(session).unwrap().authority_clubs().iter().next().copied().unwrap();
+        let public_club = server.public_club_id();
+
+        let author = server
+            .register_historical_author(
+                "Jane Austen".into(),
+                "Jane Austen".into(),
+                Some(1775),
+                Some(1817),
+                std::collections::HashMap::new(),
+                "Pride and Prejudice".into(),
+                club_id,
+            )
+            .unwrap();
+
+        let source_text = "It is a truth universally acknowledged ".repeat(10);
+        let (source_id, _, _, _) = server
+            .import_source_work(
+                session,
+                author.be_id,
+                "Pride".into(),
+                source_text.clone(),
+                "test edition".into(),
+                0,
+                0,
+            )
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&source_id) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+
+        server
+            .apply_source_attribution(session, source_id, author.be_id, None, None, None)
+            .unwrap();
+
+        let excerpt = "It is a truth universally acknowledged";
+        let target_id = server
+            .create_work(session, Edition::from_text(&format!("intro{}", excerpt)))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&target_id) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+
+        let intro_len = 5;
+        let paste_end = intro_len + excerpt.len();
+        server
+            .apply_source_attribution(
+                session,
+                target_id,
+                author.be_id,
+                Some(source_id),
+                Some(intro_len),
+                Some(paste_end),
+            )
+            .unwrap();
+
+        let spans = server.attribution_query(target_id, None, None).unwrap();
+        assert!(!spans.is_empty(), "expected attribution spans");
+
+        let historical_spans: Vec<_> = spans
+            .iter()
+            .filter(|s| s.author_type.as_deref() == Some("historical"))
+            .collect();
+        assert!(
+            !historical_spans.is_empty(),
+            "expected at least one historical span"
+        );
+
+        for span in &historical_spans {
+            assert_eq!(
+                span.source_work_id,
+                Some(source_id),
+                "historical span should have source_work_id pointing to source work"
+            );
+        }
+
+        let non_historical_spans: Vec<_> = spans
+            .iter()
+            .filter(|s| s.author_type.as_deref() != Some("historical"))
+            .collect();
+        for span in &non_historical_spans {
+            assert_eq!(
+                span.source_work_id, None,
+                "non-historical span should not have source_work_id"
+            );
+        }
+    }
+
+    #[test]
+    fn element_provenance_source_work_id_serde_roundtrip() {
+        let mut key = [0u8; 32];
+        key[..4].copy_from_slice(b"test");
+        let prov = crate::edition::provenance::ElementProvenance {
+            author_public_key: key,
+            author_display_name: "Bram Stoker".to_string(),
+            author_club_id: 42,
+            timestamp: 1234567890,
+            author_type: crate::edition::provenance::AuthorType::Historical,
+            llm_model: None,
+            historical_author_id: Some(99),
+            source_work_id: Some(0xABCD),
+        };
+
+        let json = serde_json::to_string(&prov).unwrap();
+        let restored: crate::edition::provenance::ElementProvenance =
+            serde_json::from_str(&json).unwrap();
+        assert_eq!(prov, restored);
+        assert_eq!(restored.source_work_id, Some(0xABCD));
+    }
+
+    #[test]
+    fn element_provenance_source_work_id_none_serde_roundtrip() {
+        let mut key = [0u8; 32];
+        key[..4].copy_from_slice(b"test");
+        let prov = crate::edition::provenance::ElementProvenance {
+            author_public_key: key,
+            author_display_name: "Alice".to_string(),
+            author_club_id: 1,
+            timestamp: 100,
+            author_type: crate::edition::provenance::AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: None,
+        };
+
+        let json = serde_json::to_string(&prov).unwrap();
+        let restored: crate::edition::provenance::ElementProvenance =
+            serde_json::from_str(&json).unwrap();
+        assert_eq!(prov, restored);
+        assert_eq!(restored.source_work_id, None);
+    }
+
+    #[test]
+    fn element_provenance_source_work_id_deserializes_without_field() {
+        let json = r#"{
+            "author_public_key":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            "author_display_name":"Alice",
+            "author_club_id":1,
+            "timestamp":100,
+            "author_type":"human",
+            "llm_model":null,
+            "historical_author_id":null
+        }"#;
+        let prov: crate::edition::provenance::ElementProvenance =
+            serde_json::from_str(json).unwrap();
+        assert_eq!(prov.source_work_id, None);
+    }
+
+    #[test]
+    fn range_attribution_sets_source_work_id() {
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        server.grant_admin_authority(session).unwrap();
+        let club_id = server.session(session).unwrap().authority_clubs().iter().next().copied().unwrap();
+        let public_club = server.public_club_id();
+
+        let author = server
+            .register_historical_author(
+                "Mary Shelley".into(),
+                "Mary Shelley".into(),
+                Some(1797),
+                Some(1851),
+                std::collections::HashMap::new(),
+                "Frankenstein".into(),
+                club_id,
+            )
+            .unwrap();
+
+        let source_text = "I saw the pale student of unhallowed arts ".repeat(10);
+        let (source_id, _, _, _) = server
+            .import_source_work(
+                session,
+                author.be_id,
+                "Frankenstein".into(),
+                source_text.clone(),
+                "test edition".into(),
+                0,
+                0,
+            )
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&source_id) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+
+        server
+            .apply_source_attribution(session, source_id, author.be_id, None, None, None)
+            .unwrap();
+
+        let paste_text = "I saw the pale student of unhallowed arts";
+        let target_text = format!("prefix{}suffix", paste_text);
+        let target_id = server
+            .create_work(session, Edition::from_text(&target_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&target_id) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+
+        let paste_start = 6;
+        let paste_end = paste_start + paste_text.len();
+
+        server
+            .apply_source_attribution(
+                session,
+                target_id,
+                author.be_id,
+                Some(source_id),
+                Some(paste_start),
+                Some(paste_end),
+            )
+            .unwrap();
+
+        let target_edition = server.work(target_id).unwrap().current_edition().clone();
+        let target_entries = target_edition.all_entries();
+
+        let mut cum = 0usize;
+        let mut in_range_with_source = 0;
+        let mut out_range_with_source = 0;
+
+        for (_, carrier) in &target_entries {
+            let entry_start = cum;
+            let entry_end = cum + carrier.char_len();
+            let in_range = entry_end > paste_start && entry_start < paste_end;
+
+            if let Some(ref prov) = carrier.provenance {
+                if matches!(
+                    prov.author_type,
+                    crate::edition::provenance::AuthorType::Historical
+                ) {
+                    if in_range {
+                        assert_eq!(
+                            prov.source_work_id,
+                            Some(source_id),
+                            "historical entries in paste range should have source_work_id"
+                        );
+                        in_range_with_source += 1;
+                    } else {
+                        out_range_with_source += 1;
+                    }
+                }
+            }
+            cum = entry_end;
+        }
+
+        assert!(
+            in_range_with_source > 0,
+            "entries in paste range should have historical attribution with source_work_id"
+        );
+        assert_eq!(
+            out_range_with_source, 0,
+            "entries outside paste range should NOT have historical attribution"
+        );
+    }
+
+    #[test]
+    fn match_content_finds_imported_source_work() {
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        server.grant_admin_authority(session).unwrap();
+        let club_id = server.session(session).unwrap().authority_clubs().iter().next().copied().unwrap();
+
+        let author = server
+            .register_historical_author(
+                "Leo Tolstoy".into(),
+                "Leo Tolstoy".into(),
+                Some(1828),
+                Some(1910),
+                std::collections::HashMap::new(),
+                "War and Peace".into(),
+                club_id,
+            )
+            .unwrap();
+
+        let text = "It was the best of times it was the worst of times. ".repeat(30);
+        let (source_id, _, _, _) = server
+            .import_source_work(
+                session,
+                author.be_id,
+                "War and Peace".into(),
+                text.clone(),
+                "test".into(),
+                0,
+                0,
+            )
+            .unwrap();
+
+        let ws = server.works.get(&source_id).unwrap();
+        assert!(ws.is_source, "imported work should have is_source=true");
+        assert!(ws.source_fingerprint.is_some(), "imported work should have source_fingerprint");
+
+        let query: String = text.chars().take(text.len() / 3).collect();
+        let result = server.match_content(&query);
+        assert!(result.is_some(), "match_content should find the source work");
+        let (found_work_id, found_author_id, score) = result.unwrap();
+        assert_eq!(found_work_id, source_id);
+        assert_eq!(found_author_id, author.be_id);
+        assert!(score > 0.3, "score should be >0.3, got {}", score);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn source_work_and_historical_author_survive_chunk_persistence() {
+        let dir = TempDir::new("chunk_persist");
+        let data_dir = dir.snapshot_path().parent().unwrap().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let source_id;
+        let author_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            server.grant_admin_authority(sid);
+
+            let author = server
+                .register_historical_author(
+                    "Bram Stoker".into(),
+                    "Bram Stoker (1847\u{2013}1912)".into(),
+                    Some(1847),
+                    Some(1912),
+                    HashMap::new(),
+                    "Dracula".into(),
+                    1,
+                )
+                .unwrap();
+            author_id = author.be_id;
+
+            let (s_id, _, _, _) = server
+                .import_source_work(
+                    sid,
+                    author.be_id,
+                    "Dracula".into(),
+                    "Chapter 1\nJonathan Harker's Journal.\nLeft Munich at 8:35 P.M.".into(),
+                    "1897 edition".into(),
+                    0,
+                    0,
+                )
+                .unwrap();
+            source_id = s_id;
+
+            let ws = server.works.get(&source_id).unwrap();
+            assert!(ws.is_source);
+            assert_eq!(ws.source_author_id, Some(author_id));
+
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let got = server.get_historical_author(author_id).unwrap();
+            assert_eq!(got.name, "Bram Stoker");
+            assert_eq!(got.birth_year, Some(1847));
+
+            let list = server.list_historical_authors();
+            assert_eq!(list.len(), 1);
+
+            let ws = server.works.get(&source_id).unwrap();
+            assert!(ws.is_source, "source work should be restored as source");
+            assert_eq!(ws.source_author_id, Some(author_id));
+            assert_eq!(
+                ws.source_edition_info.as_deref(),
+                Some("1897 edition")
+            );
+            assert!(
+                ws.source_fingerprint.is_some(),
+                "source fingerprint should be recomputed on restore"
+            );
         }
     }
 }

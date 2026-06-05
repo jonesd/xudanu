@@ -255,6 +255,7 @@ fn apply_text_delta_to_edition(
         author_type: crate::edition::provenance::AuthorType::Human,
         llm_model: None,
         historical_author_id: None,
+        source_work_id: None,
     });
 
     let old_entries = edition.all_entries();
@@ -394,6 +395,7 @@ fn append_text_with_llm_provenance(
         author_type: crate::edition::provenance::AuthorType::Llm,
         llm_model: Some(llm_model.to_string()),
         historical_author_id: None,
+        source_work_id: None,
     };
 
     let mut start = 0usize;

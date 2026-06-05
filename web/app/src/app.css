@@ -337,6 +337,11 @@ body {
   color: #e65100;
 }
 
+.badge-source {
+  background: #faf3e0;
+  color: #8b7340;
+}
+
 .branch-panel {
   width: 220px;
   border-right: 1px solid #e0e0e0;
@@ -1464,6 +1469,20 @@ body {
   background: #f5f0ff;
   padding: 1px 4px;
   border-radius: 3px;
+}
+
+.author-source-work {
+  font-size: 11px;
+  color: #8b7340;
+  background: #faf3e0;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.timeline-via {
+  font-size: 11px;
+  color: #8b7340;
+  margin-left: 4px;
 }
 
 .attribution-timeline {

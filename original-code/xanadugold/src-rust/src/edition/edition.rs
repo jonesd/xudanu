@@ -2152,6 +2152,7 @@ mod tests {
             author_type: AuthorType::Human,
             llm_model: None,
             historical_author_id: None,
+            source_work_id: None,
         };
         let prov_b = ElementProvenance {
             author_public_key: [2u8; 32],
@@ -2161,6 +2162,7 @@ mod tests {
             author_type: AuthorType::Human,
             llm_model: None,
             historical_author_id: None,
+            source_work_id: None,
         };
 
         let mut entries = Vec::new();
@@ -2202,6 +2204,7 @@ mod tests {
             author_type: AuthorType::Human,
             llm_model: None,
             historical_author_id: None,
+            source_work_id: None,
         };
 
         let mut entries = Vec::new();

@@ -2522,12 +2522,91 @@ impl JsonCodec {
                 struct Args {
                     work_id: u64,
                     historical_author_id: u64,
+                    source_work_id: Option<u64>,
+                    paste_start: Option<usize>,
+                    paste_end: Option<usize>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::WorkApplySourceAttribution {
                     work_id: args.work_id,
                     historical_author_id: args.historical_author_id,
+                    source_work_id: args.source_work_id,
+                    paste_start: args.paste_start,
+                    paste_end: args.paste_end,
+                })
+            }
+            OperationCode::WorkApplyTransclusionAttribution => {
+                #[derive(Deserialize)]
+                struct Args {
+                    link_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkApplyTransclusionAttribution {
+                    link_id: args.link_id,
+                })
+            }
+            OperationCode::WorkTextRange => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: u64,
+                    start_char: u64,
+                    end_char: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkTextRange {
+                    work_id: args.work_id,
+                    start_char: args.start_char,
+                    end_char: args.end_char,
+                })
+            }
+            OperationCode::WorkOutline => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkOutline {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::WorkSearch => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: u64,
+                    query: String,
+                    #[serde(default)]
+                    max_results: Option<u64>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkSearch {
+                    work_id: args.work_id,
+                    query: args.query,
+                    max_results: args.max_results,
+                })
+            }
+            OperationCode::WorkGoto => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: u64,
+                    #[serde(default)]
+                    line: Option<u64>,
+                    #[serde(default, alias = "target_line")]
+                    char: Option<u64>,
+                    #[serde(default)]
+                    context_lines: Option<u64>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkGoto {
+                    work_id: args.work_id,
+                    line: args.line,
+                    char: args.char,
+                    context_lines: args.context_lines,
                 })
             }
             _ => Err(FrameParseError::MissingPayload.into()),

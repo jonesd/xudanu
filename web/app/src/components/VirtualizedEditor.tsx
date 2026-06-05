@@ -32,7 +32,7 @@ interface VirtualizedEditorProps {
   onPlaceTransclusion?: (position: number) => void;
   selectionRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
-  onPasteText?: (text: string) => void;
+  onPasteText?: (text: string, pasteStart: number) => void;
 }
 
 const LINE_HEIGHT = 15 * 1.7;
@@ -462,7 +462,18 @@ export function VirtualizedEditor({
       if (!pasteText) return;
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
+      const el = editorRef.current;
       const range = sel.getRangeAt(0);
+
+      const buf = bufferRef.current;
+      const { start: vs } = lastViewRange.current;
+      const viewportCharStart = buf.getCharOffset(vs);
+      const pre = document.createRange();
+      pre.selectNodeContents(el);
+      pre.setEnd(range.startContainer, range.startOffset);
+      const localStart = pre.toString().length;
+      const pasteStart = viewportCharStart + localStart;
+
       range.deleteContents();
       const textNode = document.createTextNode(pasteText);
       range.insertNode(textNode);
@@ -471,7 +482,7 @@ export function VirtualizedEditor({
       sel.removeAllRanges();
       sel.addRange(range);
       handleInput();
-      if (onPasteText && pasteText.length > 200) onPasteText(pasteText);
+      if (onPasteText && pasteText.length > 50) onPasteText(pasteText, pasteStart);
     },
     [handleInput, editable, onPasteText],
   );
