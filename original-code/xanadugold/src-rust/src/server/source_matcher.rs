@@ -207,7 +207,7 @@ pub fn detect_source(text: &str, patterns: &[SourcePattern]) -> SourceMatchResul
 
 const SHINGLE_SIZE: usize = 5;
 const SAMPLE_STEP: usize = 3;
-const MINHASH_SIZE: usize = 128;
+pub const MINHASH_SIZE: usize = 128;
 
 // MinHash chosen over plain shingle fingerprinting (storing all shingle hashes
 // in a HashSet) because it compresses each document to a fixed-size 128-element

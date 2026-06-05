@@ -2439,8 +2439,23 @@ fn dispatch_inner(
         WireRequest::WorkApplySourceAttribution {
             work_id,
             historical_author_id,
+            source_work_id,
+            paste_start,
+            paste_end,
         } => {
-            srv.apply_source_attribution(session_id, work_id, historical_author_id)?;
+            srv.apply_source_attribution(
+                session_id,
+                work_id,
+                historical_author_id,
+                source_work_id,
+                paste_start,
+                paste_end,
+            )?;
+            Ok(ResponseValue::Void)
+        }
+
+        WireRequest::WorkApplyTransclusionAttribution { link_id } => {
+            srv.apply_transclusion_attribution(session_id, link_id)?;
             Ok(ResponseValue::Void)
         }
     }

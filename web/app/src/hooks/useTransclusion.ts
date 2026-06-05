@@ -59,6 +59,11 @@ export function useTransclusion(): TransclusionState {
           { excerpt: pending.text, start: pending.start, end: pending.end },
           { excerpt: "", start: targetPosition, end: targetPosition },
         );
+        try {
+          await client.applyTransclusionAttribution(linkId);
+        } catch (e) {
+          console.error("Failed to apply transclusion attribution:", e);
+        }
         setPending(null);
         return linkId;
       } catch (e) {

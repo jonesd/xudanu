@@ -298,6 +298,7 @@ pub enum OperationCode {
     WorkListByAuthor,
     ContentMatch,
     WorkApplySourceAttribution,
+    WorkApplyTransclusionAttribution,
 }
 
 impl OperationCode {
@@ -524,6 +525,7 @@ impl OperationCode {
             0x0D0F => Some(OperationCode::WorkListByAuthor),
             0x0D10 => Some(OperationCode::ContentMatch),
             0x0D11 => Some(OperationCode::WorkApplySourceAttribution),
+            0x0D12 => Some(OperationCode::WorkApplyTransclusionAttribution),
 
             _ => None,
         }
@@ -750,6 +752,7 @@ impl OperationCode {
             OperationCode::WorkListByAuthor => 0x0D0F,
             OperationCode::ContentMatch => 0x0D10,
             OperationCode::WorkApplySourceAttribution => 0x0D11,
+            OperationCode::WorkApplyTransclusionAttribution => 0x0D12,
         }
     }
 }
@@ -1486,6 +1489,13 @@ pub enum WireRequest {
     WorkApplySourceAttribution {
         work_id: BeId,
         historical_author_id: BeId,
+        source_work_id: Option<BeId>,
+        paste_start: Option<usize>,
+        paste_end: Option<usize>,
+    },
+
+    WorkApplyTransclusionAttribution {
+        link_id: BeId,
     },
 }
 
@@ -1967,6 +1977,10 @@ pub struct AttributionSpanPayload {
     pub author_type: Option<String>,
     pub llm_model: Option<String>,
     pub historical_author_id: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_work_id: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance_chain: Option<Vec<ProvenanceHopPayload>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

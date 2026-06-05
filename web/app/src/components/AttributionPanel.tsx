@@ -19,6 +19,7 @@ interface AuthorGroup {
   allValid: boolean;
   authorType: string | null;
   historicalAuthorId: number | null;
+  sourceWorkId: number | null;
 }
 
 interface AttributionPanelProps {
@@ -51,6 +52,7 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
           allValid: true,
           authorType: span.author_type,
           historicalAuthorId: span.historical_author_id,
+          sourceWorkId: span.source_work_id ?? null,
         });
       }
       const group = groups.get(key)!;
@@ -126,6 +128,9 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
             {author.authorType === "llm" && (
               <span className="author-type-badge llm-badge">LLM</span>
             )}
+            {author.sourceWorkId != null && (
+              <span className="author-source-work">via work:{author.sourceWorkId.toString(16).padStart(4, "0")}</span>
+            )}
             <span className={`author-sig ${author.allValid ? "sig-valid" : "sig-invalid"}`}>
               {author.authorType === "historical" ? "attested" : author.allValid ? "signed" : "unsigned"}
             </span>
@@ -153,6 +158,9 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
                   <span className="timeline-author" style={{ color: author?.color }}>
                     {author?.displayName || "unknown"}
                   </span>
+                  {span.source_work_id != null && (
+                    <span className="timeline-via">via work:{span.source_work_id.toString(16).padStart(4, "0")}</span>
+                  )}
                   {!span.signature_valid && <span className="timeline-unsigned">(unsigned)</span>}
                 </li>
               );

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::edition::backend::BeId;
 use crate::edition::edition::Edition;
 use crate::edition::orgl::OrglRoot;
-use crate::edition::provenance::SpanProvenance;
+use crate::edition::provenance::{ElementProvenance, SpanProvenance};
 use crate::edition::range_element::{Carrier, RangeElement};
 use crate::edition::work::Work;
 use crate::edition::xn_region::XnRegion;
@@ -17,6 +17,8 @@ use crate::persist::traits::Persistent;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EditionSnapshot {
     pub entries: Vec<(i64, RangeElement)>,
+    #[serde(default)]
+    pub provenances: Vec<Option<ElementProvenance>>,
     pub default: Option<RangeElement>,
     pub domain_start: Option<i64>,
     pub domain_infinite_above: bool,
@@ -26,7 +28,7 @@ pub struct EditionSnapshot {
 
 impl EditionSnapshot {
     pub fn from_edition(edition: &Edition) -> Self {
-        let entries: Vec<(i64, RangeElement)> = edition
+        let filtered: Vec<_> = edition
             .all_entries()
             .into_iter()
             .filter(|(_pos, c)| {
@@ -37,14 +39,19 @@ impl EditionSnapshot {
                 }
                 true
             })
-            .map(|(pos, c)| (pos, c.element.clone()))
             .collect();
+
+        let entries: Vec<(i64, RangeElement)> =
+            filtered.iter().map(|(pos, c)| (*pos, c.element.clone())).collect();
+        let provenances: Vec<Option<ElementProvenance>> =
+            filtered.iter().map(|(_, c)| c.provenance.clone()).collect();
 
         let default = edition.default_value();
         let domain = edition.domain();
 
         EditionSnapshot {
             entries,
+            provenances,
             default,
             domain_start: None,
             domain_infinite_above: !domain.is_finite(),
@@ -62,7 +69,14 @@ impl EditionSnapshot {
             let carriers: Vec<(i64, Arc<Carrier>)> = self
                 .entries
                 .iter()
-                .map(|(pos, elem)| (*pos, Arc::new(Carrier::new(elem.clone()))))
+                .enumerate()
+                .map(|(i, (pos, elem))| {
+                    let mut carrier = Carrier::new(elem.clone());
+                    if i < self.provenances.len() {
+                        carrier.provenance = self.provenances[i].clone();
+                    }
+                    (*pos, Arc::new(carrier))
+                })
                 .collect();
             Edition::new_inner_with_provenance(
                 OrglRoot::from_bulk_entries(
@@ -77,7 +91,14 @@ impl EditionSnapshot {
             let carriers: Vec<(i64, Arc<Carrier>)> = self
                 .entries
                 .iter()
-                .map(|(pos, elem)| (*pos, Arc::new(Carrier::new(elem.clone()))))
+                .enumerate()
+                .map(|(i, (pos, elem))| {
+                    let mut carrier = Carrier::new(elem.clone());
+                    if i < self.provenances.len() {
+                        carrier.provenance = self.provenances[i].clone();
+                    }
+                    (*pos, Arc::new(carrier))
+                })
                 .collect();
             let n = carriers.len();
             let region = if n > 0 {
