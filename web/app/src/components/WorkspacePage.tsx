@@ -699,7 +699,25 @@ export function WorkspacePage() {
                   onCancel={transclusion.clearPending}
                 />
               )}
-                {displayText.length > 100_000 ? (
+                {isSourceWork ? (
+                  <div
+                    className="source-work-viewer"
+                    style={{
+                      padding: "16px 20px",
+                      fontSize: "15px",
+                      lineHeight: "1.7",
+                      whiteSpace: "pre-wrap",
+                      wordWrap: "break-word",
+                      overflowY: "auto",
+                      flex: 1,
+                      minHeight: 0,
+                      background: "#fafafa",
+                      userSelect: "text",
+                    }}
+                  >
+                    {displayText}
+                  </div>
+                ) : displayText.length > 100_000 ? (
                   <VirtualizedEditor
                     text={displayText}
                    onTextChange={isSourceWork ? undefined : setText}

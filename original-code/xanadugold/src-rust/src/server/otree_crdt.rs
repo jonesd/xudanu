@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::sync::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -104,7 +104,7 @@ struct OtreeWorkDoc {
     awareness: HashMap<SessionId, OtreeAwarenessState>,
     federated_provenance: Vec<SpanProvenance>,
     last_author_mapping: Option<Mapping>,
-    cached_text: RefCell<Option<String>>,
+    cached_text: Mutex<Option<String>>,
 }
 
 #[derive(Debug)]
@@ -466,7 +466,7 @@ impl OtreeCrdtManager {
                     awareness: HashMap::new(),
                     federated_provenance: Vec::new(),
                     last_author_mapping: None,
-                    cached_text: RefCell::new(None),
+                    cached_text: Mutex::new(None),
                 },
             );
         }
@@ -478,13 +478,13 @@ impl OtreeCrdtManager {
         wd.subscribers.insert(session_id, sync_id);
 
         let current_text = {
-            let cache = wd.cached_text.borrow();
+            let cache = wd.cached_text.lock().unwrap_or_else(|e| e.into_inner());
             if cache.is_some() {
                 cache.as_ref().unwrap().clone()
             } else {
                 drop(cache);
                 let text = wd.current_edition.to_text();
-                *wd.cached_text.borrow_mut() = Some(text.clone());
+                *wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()) = Some(text.clone());
                 text
             }
         };
@@ -552,7 +552,7 @@ impl OtreeCrdtManager {
             &merged,
         ));
         wd.current_edition = merged;
-        *wd.cached_text.borrow_mut() = None;
+        *wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()) = None;
         wd.last_change_timestamp = current_timestamp_secs();
         wd.pending_edition = Some(wd.current_edition.clone());
 
@@ -575,13 +575,13 @@ impl OtreeCrdtManager {
             .get(&work_id)
             .ok_or(OtreeError::WorkNotFound(work_id))?;
         {
-            let cache = wd.cached_text.borrow();
+            let cache = wd.cached_text.lock().unwrap_or_else(|e| e.into_inner());
             if cache.is_some() {
                 return Ok(cache.as_ref().unwrap().clone());
             }
         }
         let text = wd.current_edition.to_text();
-        *wd.cached_text.borrow_mut() = Some(text.clone());
+        *wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()) = Some(text.clone());
         Ok(text)
     }
 
@@ -668,7 +668,7 @@ impl OtreeCrdtManager {
             llm_model,
             triggerer_club_id,
         );
-        wd.cached_text.borrow_mut().take();
+        wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()).take();
         Ok(())
     }
 
@@ -863,7 +863,7 @@ impl OtreeCrdtManager {
             wd.subscribers.remove(&session_id);
             wd.awareness.remove(&session_id);
             if wd.subscribers.is_empty() {
-                *wd.cached_text.borrow_mut() = None;
+        *wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()) = None;
             }
         }
     }
@@ -905,7 +905,7 @@ impl OtreeCrdtManager {
                 awareness: HashMap::new(),
                 federated_provenance: Vec::new(),
                 last_author_mapping: None,
-                cached_text: RefCell::new(None),
+                cached_text: Mutex::new(None),
             },
         );
     }
@@ -1101,7 +1101,7 @@ impl OtreeCrdtManager {
         };
 
         wd.current_edition = merged;
-        *wd.cached_text.borrow_mut() = None;
+        *wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()) = None;
         wd.last_change_timestamp = current_timestamp_secs();
 
         let relay_to: Vec<(SessionId, OtreeSyncSessionId)> = wd

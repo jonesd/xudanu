@@ -161,14 +161,25 @@ export function VirtualizedEditor({
   }, [text]);
 
   const updateSpacers = useCallback((buf: TextBuffer, vs: number, ve: number) => {
-    const lh = lineHeightRef.current;
+    const el = editorRef.current;
+    const totalLines = buf.getLineCount();
+    const visibleCount = ve - vs;
+
+    let avgLineHeight = lineHeightRef.current;
+    if (el && visibleCount > 0) {
+      const actualHeight = el.getBoundingClientRect().height;
+      if (actualHeight > 0) {
+        avgLineHeight = actualHeight / visibleCount;
+      }
+    }
+
     if (topSpacerRef.current) {
-      topSpacerRef.current.style.height = `${PADDING_TOP + vs * lh}px`;
+      topSpacerRef.current.style.height = `${PADDING_TOP + vs * avgLineHeight}px`;
     }
     if (bottomSpacerRef.current) {
-      const totalHeight = PADDING_TOP + buf.getLineCount() * lh + PADDING_BOTTOM;
-      const visibleHeight = (ve - vs) * lh;
-      bottomSpacerRef.current.style.height = `${Math.max(0, totalHeight - PADDING_TOP - vs * lh - visibleHeight)}px`;
+      const totalHeight = PADDING_TOP + totalLines * avgLineHeight + PADDING_BOTTOM;
+      const visibleHeight = visibleCount * avgLineHeight;
+      bottomSpacerRef.current.style.height = `${Math.max(0, totalHeight - PADDING_TOP - vs * avgLineHeight - visibleHeight)}px`;
     }
   }, []);
 
