@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use super::audit::SecurityMonitor;
 use super::channel::EventMessage;
@@ -98,27 +98,27 @@ impl AppState {
 
 #[derive(Clone)]
 pub struct ServerHandle {
-    inner: Arc<Mutex<Server>>,
+    inner: Arc<RwLock<Server>>,
 }
 
 impl ServerHandle {
     pub fn new(server: Server) -> Self {
         ServerHandle {
-            inner: Arc::new(Mutex::new(server)),
+            inner: Arc::new(RwLock::new(server)),
         }
     }
 
     pub fn with_server<R>(&self, f: impl FnOnce(&mut Server) -> R) -> R {
-        let mut guard = self.inner.lock().unwrap_or_else(|e| {
-            tracing::error!("Server mutex poisoned, recovering: {}", e);
+        let mut guard = self.inner.write().unwrap_or_else(|e| {
+            tracing::error!("Server rwlock poisoned, recovering: {}", e);
             e.into_inner()
         });
         f(&mut guard)
     }
 
     pub fn with_server_ref<R>(&self, f: impl FnOnce(&Server) -> R) -> R {
-        let guard = self.inner.lock().unwrap_or_else(|e| {
-            tracing::error!("Server mutex poisoned, recovering: {}", e);
+        let guard = self.inner.read().unwrap_or_else(|e| {
+            tracing::error!("Server rwlock poisoned, recovering: {}", e);
             e.into_inner()
         });
         f(&guard)
