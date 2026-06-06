@@ -562,19 +562,9 @@ fn dispatch_inner(
             display_name,
             password,
         } => {
-            use crate::server::club::Credential;
-            let (credential, raw_password) = match password {
-                Some(pw) => {
-                    let phc_hash = crate::crypto::password::hash_password(&pw).map_err(|e| {
-                        crate::server::ServerError::Internal(format!("password hash failed: {}", e))
-                    })?;
-                    (Some(Credential::Password { phc_hash }), Some(pw))
-                }
-                None => (None, None),
-            };
-            let id =
-                srv.create_personal_club(session_id, display_name, credential, raw_password)?;
-            Ok(ResponseValue::Id(id))
+            return Err(crate::server::ServerError::InvalidArgument(
+                "Direct identity creation is disabled. Sign in with GitHub or Google instead.".into()
+            ));
         }
         WireRequest::ClubWhoAmI => {
             let clubs = srv.who_am_i(session_id)?;
@@ -2457,6 +2447,25 @@ fn dispatch_inner(
         WireRequest::WorkApplyTransclusionAttribution { link_id } => {
             srv.apply_transclusion_attribution(session_id, link_id)?;
             Ok(ResponseValue::Void)
+        }
+
+        WireRequest::WorkSummary { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            srv.work_summary(work_id)
+        }
+
+        WireRequest::WorkVersionTimeline { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            srv.work_version_timeline(work_id)
+        }
+
+        WireRequest::PassageComposition {
+            work_id,
+            start,
+            end,
+        } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            srv.passage_composition(work_id, start, end)
         }
     }
 }

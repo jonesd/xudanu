@@ -228,6 +228,72 @@ impl Server {
         Ok(be_id)
     }
 
+    pub fn create_personal_club_from_oauth(
+        &mut self,
+        session_id: SessionId,
+        display_name: String,
+    ) -> Result<BeId, ServerError> {
+        self.ensure_logged_in(session_id)?;
+
+        if self.personal_club_count >= self.max_personal_clubs {
+            return Err(ServerError::InvalidArgument(format!(
+                "personal club limit reached (max {})",
+                self.max_personal_clubs
+            )));
+        }
+
+        let mut name = display_name.clone();
+        let mut suffix: u32 = 0;
+        while self.club_names.contains_key(&name) {
+            suffix += 1;
+            name = format!("{}-{}", display_name, suffix);
+        }
+
+        let (be_id, elem) = self.grand_map.new_work_element(None);
+        self.grand_map.assign_new_id(elem);
+
+        let owner = self.session(session_id)?.initial_login();
+        let description = Edition::from_text(&format!("personal club: {}", name));
+        let mut club = Club::new_personal(
+            be_id,
+            owner,
+            description,
+            Some(name.clone()),
+            None,
+        );
+        club.set_name(name.clone());
+        club.set_read_club(Some(be_id));
+        club.set_edit_club(Some(be_id));
+
+        self.clubs.insert(be_id, club);
+        self.dirty_clubs.insert(be_id);
+        self.club_names.insert(name, be_id);
+        self.personal_club_count += 1;
+
+        let session = self
+            .sessions
+            .get_mut(&session_id)
+            .ok_or(ServerError::SessionNotFound(session_id))?;
+        let km = KeyMaster::make(be_id);
+        session.incorporate_authority(&km);
+
+        Ok(be_id)
+    }
+
+    pub fn authenticate_session_from_oauth(
+        &mut self,
+        session_id: SessionId,
+        club_id: BeId,
+    ) -> Result<(), ServerError> {
+        let session = self
+            .sessions
+            .get_mut(&session_id)
+            .ok_or(ServerError::SessionNotFound(session_id))?;
+        let km = KeyMaster::make(club_id);
+        session.set_key_master(km);
+        Ok(())
+    }
+
     pub fn who_am_i(&self, session_id: SessionId) -> Result<Vec<(BeId, String)>, ServerError> {
         self.ensure_logged_in(session_id)?;
         let session = self.session(session_id)?;

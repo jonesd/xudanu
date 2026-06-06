@@ -3162,6 +3162,250 @@ impl Server {
             .collect()
     }
 
+    pub fn work_summary(
+        &self,
+        work_be_id: BeId,
+    ) -> Result<super::transport::protocol::ResponseValue, ServerError> {
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+
+        let edition = ws.work.current_edition();
+        let all_entries = edition.all_entries();
+
+        let total_chars: u64 = all_entries
+            .iter()
+            .map(|(_, c)| c.char_len() as u64)
+            .sum();
+
+        let version_count = ws.work.revision_count();
+
+        let mut source_work_ids: HashSet<BeId> = HashSet::new();
+        let mut author_chars: HashMap<BeId, u64> = HashMap::new();
+        let mut author_names: HashMap<BeId, String> = HashMap::new();
+
+        for sp in &edition.span_provenance {
+            let span_entries: Vec<_> = all_entries
+                .iter()
+                .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
+                .collect();
+
+            let span_char_count: u64 = span_entries
+                .iter()
+                .map(|(_, c)| c.char_len() as u64)
+                .sum();
+
+            let element_prov = span_entries
+                .iter()
+                .find(|(_, c)| c.provenance.is_some())
+                .and_then(|(_, c)| c.provenance.as_ref());
+
+            let sw_id = element_prov.and_then(|ep| ep.source_work_id);
+            if let Some(sw) = sw_id {
+                source_work_ids.insert(sw);
+            }
+
+            let club_id = self
+                .clubs
+                .iter()
+                .find(|(_, club)| match club.encrypted_signing_key() {
+                    Some(ek) => ek.verifying_key == sp.provenance.author_public_key,
+                    None => false,
+                })
+                .map(|(id, _)| *id);
+
+            if let Some(cid) = club_id {
+                *author_chars.entry(cid).or_insert(0) += span_char_count;
+                if !author_names.contains_key(&cid) {
+                    let name = self
+                        .clubs
+                        .get(&cid)
+                        .and_then(|c| c.display_name().map(|s| s.to_string()))
+                        .unwrap_or_else(|| format!("club:{:04x}", cid));
+                    author_names.insert(cid, name);
+                }
+            }
+        }
+
+        let mut author_contributions: Vec<super::transport::protocol::AuthorContributionEntry> =
+            author_chars
+                .into_iter()
+                .map(|(cid, chars)| {
+                    let pct = if total_chars > 0 {
+                        (chars as f64 / total_chars as f64) * 100.0
+                    } else {
+                        0.0
+                    };
+                    let name = author_names
+                        .get(&cid)
+                        .cloned()
+                        .unwrap_or_else(|| format!("club:{:04x}", cid));
+                    super::transport::protocol::AuthorContributionEntry {
+                        club_id: cid,
+                        display_name: name,
+                        char_count: chars,
+                        percentage: pct,
+                    }
+                })
+                .collect();
+        author_contributions.sort_by(|a, b| b.percentage.partial_cmp(&a.percentage).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut reused_in_count: u64 = 0;
+        for other_id in self.works.keys() {
+            if *other_id == work_be_id {
+                continue;
+            }
+            let shared = self.find_shared_regions(work_be_id, *other_id);
+            if !shared.is_empty() {
+                reused_in_count += 1;
+            }
+        }
+
+        Ok(super::transport::protocol::ResponseValue::WorkSummaryResult {
+            unique_sources: source_work_ids.len() as u64,
+            unique_authors: author_names.len() as u64,
+            version_count,
+            char_count: total_chars,
+            author_contributions,
+            reused_in_count,
+        })
+    }
+
+    pub fn work_version_timeline(
+        &self,
+        work_be_id: BeId,
+    ) -> Result<super::transport::protocol::ResponseValue, ServerError> {
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+
+        let rev_count = ws.work.revision_count();
+        let mut revisions = Vec::new();
+
+        for rev_num in 0..=rev_count {
+            let ed = match ws.work.fetch_revision(rev_num) {
+                Some(ed) => ed.clone(),
+                None => continue,
+            };
+            let char_count: u64 = ed
+                .all_entries()
+                .iter()
+                .map(|(_, c)| c.char_len() as u64)
+                .sum();
+
+            let author_club_id = if rev_num == rev_count {
+                ws.last_revision_author
+            } else {
+                None
+            };
+
+            let author_display_name = author_club_id
+                .and_then(|cid| {
+                    self.clubs
+                        .get(&cid)
+                        .and_then(|c| c.display_name().map(|s| s.to_string()))
+                });
+
+            revisions.push(super::transport::protocol::RevisionMetaEntry {
+                revision: rev_num,
+                char_count,
+                author_club_id,
+                author_display_name,
+            });
+        }
+
+        Ok(super::transport::protocol::ResponseValue::WorkVersionTimelineResult { revisions })
+    }
+
+    pub fn passage_composition(
+        &self,
+        work_be_id: BeId,
+        start: u64,
+        end: u64,
+    ) -> Result<super::transport::protocol::ResponseValue, ServerError> {
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+
+        let rev_count = ws.work.revision_count();
+        let mut layers = Vec::new();
+
+        let mut prev_text: Option<String> = None;
+
+        for rev_num in 0..=rev_count {
+            let ed = match ws.work.fetch_revision(rev_num) {
+                Some(ed) => ed.clone(),
+                None => continue,
+            };
+
+            let full_text: String = ed
+                .all_entries()
+                .iter()
+                .map(|(_, c)| c.element.as_text().unwrap_or(""))
+                .collect();
+
+            let start_usize = start as usize;
+            let end_usize = (end as usize).min(full_text.len());
+
+            if start_usize >= full_text.len() {
+                prev_text = Some(full_text);
+                continue;
+            }
+
+            let passage = &full_text[start_usize..end_usize];
+
+            let operation = match &prev_text {
+                Some(pt) => {
+                    let pt_start = start as usize;
+                    let pt_end = (end as usize).min(pt.len());
+                    if pt_start >= pt.len() {
+                        "added".to_string()
+                    } else {
+                        let prev_passage = &pt[pt_start..pt_end];
+                        if passage == prev_passage {
+                            continue;
+                        } else if passage.contains(prev_passage) {
+                            "expanded".to_string()
+                        } else if prev_passage.contains(passage) {
+                            "reduced".to_string()
+                        } else {
+                            "modified".to_string()
+                        }
+                    }
+                }
+                None => "added".to_string(),
+            };
+
+            let author_club_id = if rev_num == rev_count {
+                ws.last_revision_author
+            } else {
+                None
+            };
+
+            let author_display_name = author_club_id
+                .and_then(|cid| {
+                    self.clubs
+                        .get(&cid)
+                        .and_then(|c| c.display_name().map(|s| s.to_string()))
+                });
+
+            layers.push(super::transport::protocol::CompositionLayerEntry {
+                revision: rev_num,
+                author_club_id,
+                author_display_name,
+                text: passage.to_string(),
+                operation,
+            });
+
+            prev_text = Some(full_text);
+        }
+
+        Ok(super::transport::protocol::ResponseValue::PassageCompositionResult { layers })
+    }
+
     // === Edition operations ===
 
     pub fn store_edition(
@@ -3871,8 +4115,8 @@ impl Server {
                                 if let Err(e) = std::fs::rename(&tmp_path, &kh_path) {
                                     tracing::warn!("Failed to rename key history: {}", e);
                                     let _ = std::fs::remove_file(&tmp_path);
-                                }
-                            }
+    }
+}
                             Err(e) => {
                                 tracing::warn!("Failed to write key history: {}", e);
                                 let _ = std::fs::remove_file(&tmp_path);
@@ -13348,5 +13592,135 @@ mod tests {
                 "source fingerprint should be recomputed on restore"
             );
         }
+    }
+
+    #[test]
+    fn work_summary_basic() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let edition = Edition::from_text("Hello world, this is a test document.");
+        let work_id = server.create_work(sid, edition).unwrap();
+
+        let result = server.work_summary(work_id).unwrap();
+        match result {
+            crate::server::transport::protocol::ResponseValue::WorkSummaryResult {
+                unique_sources,
+                unique_authors,
+                version_count,
+                char_count,
+                author_contributions,
+                reused_in_count,
+            } => {
+                assert_eq!(version_count, 0);
+                assert!(char_count > 0, "char_count should be positive");
+                assert_eq!(unique_sources, 0);
+                assert_eq!(unique_authors, 0);
+                assert!(author_contributions.is_empty());
+                assert_eq!(reused_in_count, 0);
+            }
+            _ => panic!("expected WorkSummaryResult"),
+        }
+    }
+
+    #[test]
+    fn work_summary_not_found() {
+        let server = Server::new();
+        let result = server.work_summary(99999);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn work_version_timeline_basic() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let edition = Edition::from_text("Version one");
+        let work_id = server.create_work(sid, edition).unwrap();
+        server.work_grab(sid, work_id).unwrap();
+
+        let edition2 = Edition::from_text("Version two is longer");
+        server.work_revise(sid, work_id, edition2).unwrap();
+        server.work_release(sid, work_id).unwrap();
+
+        let result = server.work_version_timeline(work_id).unwrap();
+        match result {
+            crate::server::transport::protocol::ResponseValue::WorkVersionTimelineResult { revisions } => {
+                assert_eq!(revisions.len(), 2, "initial + 1 revise = 2 entries");
+                assert_eq!(revisions[0].revision, 0);
+                assert_eq!(revisions[0].char_count, 11);
+                assert_eq!(revisions[1].revision, 1);
+                assert!(revisions[1].char_count > revisions[0].char_count);
+            }
+            _ => panic!("expected WorkVersionTimelineResult"),
+        }
+    }
+
+    #[test]
+    fn work_version_timeline_not_found() {
+        let server = Server::new();
+        let result = server.work_version_timeline(99999);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn passage_composition_basic() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let edition = Edition::from_text("Hello world");
+        let work_id = server.create_work(sid, edition).unwrap();
+        server.work_grab(sid, work_id).unwrap();
+
+        let edition2 = Edition::from_text("Hello world, more text");
+        server.work_revise(sid, work_id, edition2).unwrap();
+        server.work_release(sid, work_id).unwrap();
+
+        let result = server.passage_composition(work_id, 0, 11).unwrap();
+        match result {
+            crate::server::transport::protocol::ResponseValue::PassageCompositionResult { layers } => {
+                assert_eq!(layers.len(), 1, "only the initial addition, no change after");
+                assert_eq!(layers[0].text, "Hello world");
+                assert_eq!(layers[0].operation, "added");
+            }
+            _ => panic!("expected PassageCompositionResult"),
+        }
+    }
+
+    #[test]
+    fn passage_composition_detects_modification() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let edition = Edition::from_text("Hello world");
+        let work_id = server.create_work(sid, edition).unwrap();
+        server.work_grab(sid, work_id).unwrap();
+
+        let edition2 = Edition::from_text("Goodbye world");
+        server.work_revise(sid, work_id, edition2).unwrap();
+        server.work_release(sid, work_id).unwrap();
+
+        let result = server.passage_composition(work_id, 0, 6).unwrap();
+        match result {
+            crate::server::transport::protocol::ResponseValue::PassageCompositionResult { layers } => {
+                assert_eq!(layers.len(), 2);
+                assert_eq!(layers[0].text, "Hello ");
+                assert_eq!(layers[0].operation, "added");
+                assert_eq!(layers[1].text, "Goodby");
+                assert_eq!(layers[1].operation, "modified");
+            }
+            _ => panic!("expected PassageCompositionResult"),
+        }
+    }
+
+    #[test]
+    fn passage_composition_not_found() {
+        let server = Server::new();
+        let result = server.passage_composition(99999, 0, 10);
+        assert!(result.is_err());
     }
 }

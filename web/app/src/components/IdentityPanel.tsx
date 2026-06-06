@@ -4,14 +4,12 @@ import type { WhoAmIEntry } from "../api/crdt_sync";
 interface IdentityPanelProps {
   identity: WhoAmIEntry | null;
   connected: boolean;
-  onCreateIdentity: (displayName: string, password: string) => Promise<void>;
   onLogin: (clubName: string, password: string) => Promise<void>;
   onLogout: () => void;
 }
 
-export function IdentityPanel({ identity, connected, onCreateIdentity, onLogin, onLogout }: IdentityPanelProps) {
-  const [mode, setMode] = useState<"closed" | "create" | "login">("closed");
-  const [displayName, setDisplayName] = useState("");
+export function IdentityPanel({ identity, connected, onLogin, onLogout }: IdentityPanelProps) {
+  const [mode, setMode] = useState<"closed" | "login">("closed");
   const [clubName, setClubName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -32,21 +30,25 @@ export function IdentityPanel({ identity, connected, onCreateIdentity, onLogin, 
   if (mode === "closed") {
     return (
       <div className="identity-panel identity-actions">
+        <a
+          href="/auth/github"
+          className="identity-btn identity-btn-oauth"
+        >
+          Sign in with GitHub
+        </a>
+        <a
+          href="/auth/google"
+          className="identity-btn identity-btn-oauth"
+        >
+          Sign in with Google
+        </a>
         <button
           type="button"
           className="identity-btn identity-btn-secondary"
           disabled={!connected}
           onClick={() => { setMode("login"); setError(null); setLoading(false); }}
         >
-          Sign In
-        </button>
-        <button
-          type="button"
-          className="identity-btn"
-          disabled={!connected}
-          onClick={() => { setMode("create"); setError(null); setLoading(false); }}
-        >
-          New Identity
+          Password Sign In
         </button>
       </div>
     );
@@ -57,25 +59,16 @@ export function IdentityPanel({ identity, connected, onCreateIdentity, onLogin, 
     setError(null);
     setLoading(true);
     try {
-      if (mode === "create") {
-        if (!displayName.trim()) { setError("Display name required"); return; }
-        if (password.length < 8) { setError("Password must be at least 8 characters"); return; }
-        await onCreateIdentity(displayName.trim(), password);
-      } else {
-        if (!clubName.trim()) { setError("Identity name required"); return; }
-        if (!password) { setError("Password required"); return; }
-        await onLogin(clubName.trim(), password);
-      }
+      if (!clubName.trim()) { setError("Identity name required"); return; }
+      if (!password) { setError("Password required"); return; }
+      await onLogin(clubName.trim(), password);
       setMode("closed");
-      setDisplayName("");
       setClubName("");
       setPassword("");
     } catch (err) {
       let msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("already taken") || msg.includes("already exists")) {
-        msg = `Name "${mode === "create" ? displayName : clubName}" already exists. Try "Sign In" instead.`;
-      } else if (msg.includes("club not found") || msg.includes("ClubNotFound")) {
-        msg = `Identity "${clubName}" not found. Create one first with "New Identity".`;
+      if (msg.includes("club not found") || msg.includes("ClubNotFound")) {
+        msg = `Identity "${clubName}" not found. Use GitHub or Google sign-in to create one.`;
       }
       setError(msg);
     } finally {
@@ -87,35 +80,20 @@ export function IdentityPanel({ identity, connected, onCreateIdentity, onLogin, 
     <div className="identity-panel identity-form-container">
       <form onSubmit={handleSubmit} className="identity-form">
         <div className="identity-form-header">
-          <span className="identity-form-title">
-            {mode === "create" ? "Create Identity" : "Login"}
-          </span>
+          <span className="identity-form-title">Password Sign In</span>
           <button type="button" className="identity-form-close" onClick={() => setMode("closed")}>
             x
           </button>
         </div>
-        {mode === "create" && (
-          <input
-            type="text"
-            placeholder="Display name"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            className="identity-input"
-            disabled={loading}
-            autoFocus
-          />
-        )}
-        {mode === "login" && (
-          <input
-            type="text"
-            placeholder="Identity name"
-            value={clubName}
-            onChange={(e) => setClubName(e.target.value)}
-            className="identity-input"
-            disabled={loading}
-            autoFocus
-          />
-        )}
+        <input
+          type="text"
+          placeholder="Identity name"
+          value={clubName}
+          onChange={(e) => setClubName(e.target.value)}
+          className="identity-input"
+          disabled={loading}
+          autoFocus
+        />
         <input
           type="password"
           placeholder="Password"
@@ -126,14 +104,11 @@ export function IdentityPanel({ identity, connected, onCreateIdentity, onLogin, 
         />
         {error && <div className="identity-error">{error}</div>}
         <button type="submit" className="identity-submit" disabled={loading || !connected}>
-          {loading ? "..." : mode === "create" ? "Create" : "Login"}
+          {loading ? "..." : "Login"}
         </button>
-        {mode === "create" && (
-          <p className="identity-hint">
-            Creates a cryptographic identity with Ed25519 signing key.
-            Your edits will be signed and attributed to you.
-          </p>
-        )}
+        <p className="identity-hint">
+          For existing password-based accounts only. New users: use GitHub or Google above.
+        </p>
       </form>
     </div>
   );

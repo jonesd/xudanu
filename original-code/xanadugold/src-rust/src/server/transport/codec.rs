@@ -276,7 +276,9 @@ impl BinaryCodec {
             | OperationCode::CrdtSyncMaterialize
             | OperationCode::CrdtSyncSubscriberCount
             | OperationCode::CrdtSyncOpen
-            | OperationCode::CrdtAwarenessGet => {
+            | OperationCode::CrdtAwarenessGet
+            | OperationCode::WorkSummary
+            | OperationCode::WorkVersionTimeline => {
                 let id: BeId = postcard::from_bytes(payload_data)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 self.work_id_request(op, id)
@@ -416,6 +418,10 @@ impl BinaryCodec {
             }
             OperationCode::CrdtSyncText => Ok(WireRequest::CrdtSyncText { work_id: id }),
             OperationCode::CrdtAwarenessGet => Ok(WireRequest::CrdtAwarenessGet { work_id: id }),
+            OperationCode::WorkSummary => Ok(WireRequest::WorkSummary { work_id: id }),
+            OperationCode::WorkVersionTimeline => {
+                Ok(WireRequest::WorkVersionTimeline { work_id: id })
+            }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
@@ -2607,6 +2613,43 @@ impl JsonCodec {
                     line: args.line,
                     char: args.char,
                     context_lines: args.context_lines,
+                })
+            }
+            OperationCode::WorkSummary => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkSummary {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::WorkVersionTimeline => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkVersionTimeline {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::PassageComposition => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: u64,
+                    start: u64,
+                    end: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::PassageComposition {
+                    work_id: args.work_id,
+                    start: args.start,
+                    end: args.end,
                 })
             }
             _ => Err(FrameParseError::MissingPayload.into()),

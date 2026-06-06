@@ -19,7 +19,6 @@ export interface CrdtSyncState {
   refreshAttribution: () => void;
   refreshAwareness: () => void;
   identity: WhoAmIEntry | null;
-  createIdentity: (displayName: string, password: string) => Promise<void>;
   login: (clubName: string, password: string) => Promise<void>;
   createWork: () => Promise<number | null>;
   shareWork: () => Promise<void>;
@@ -202,15 +201,6 @@ export function useCrdtSync(
     client.refreshAwareness().then(setAwareness).catch(() => {});
   }, [workBeId]);
 
-  const createIdentity = useCallback(async (displayName: string, password: string) => {
-    const client = clientRef.current;
-    if (!client || !client.isConnected()) return;
-    await client.createIdentity(displayName, password);
-    credentialsRef.current = { name: displayName, password };
-    try { localStorage.setItem("xudanu_credentials", JSON.stringify(credentialsRef.current)); } catch (e) { console.error("useCrdtSync: CRITICAL - failed to persist credentials:", e); }
-    setAuthenticated(true);
-  }, []);
-
   const login = useCallback(async (clubName: string, password: string) => {
     const client = clientRef.current;
     if (!client || !client.isConnected()) return;
@@ -341,7 +331,7 @@ export function useCrdtSync(
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
-    identity, createIdentity, login,     createWork, shareWork, unshareWork, narrateDiff,
+    identity, login,     createWork, shareWork, unshareWork, narrateDiff,
     getWritingFeedback, llmEnabled, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
   };
 }

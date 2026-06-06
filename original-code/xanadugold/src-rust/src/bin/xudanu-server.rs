@@ -81,6 +81,11 @@ fn usage() {
     eprintln!(
         "  --otree-crdt             Use O-tree merge instead of yrs for collaborative editing"
     );
+    eprintln!("  --github-client-id <id>      GitHub OAuth app client ID");
+    eprintln!("  --github-client-secret <key> GitHub OAuth app client secret");
+    eprintln!("  --google-client-id <id>      Google OAuth app client ID");
+    eprintln!("  --google-client-secret <key> Google OAuth app client secret");
+    eprintln!("  --oauth-redirect-base <url>  Base URL for OAuth callbacks (default: https://xudanu.com)");
     eprintln!();
     eprintln!("Flags:");
     eprintln!("  --version, -V            Print version");
@@ -334,6 +339,11 @@ async fn main() {
             let mut csrf_enabled = false;
             let mut key_passphrase: Option<String> = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
             let mut use_otree_crdt = false;
+            let mut github_client_id: Option<String> = std::env::var("XUDANU_GITHUB_CLIENT_ID").ok();
+            let mut github_client_secret: Option<String> = std::env::var("XUDANU_GITHUB_CLIENT_SECRET").ok();
+            let mut google_client_id: Option<String> = std::env::var("XUDANU_GOOGLE_CLIENT_ID").ok();
+            let mut google_client_secret: Option<String> = std::env::var("XUDANU_GOOGLE_CLIENT_SECRET").ok();
+            let mut oauth_redirect_base: Option<String> = std::env::var("XUDANU_OAUTH_REDIRECT_BASE").ok();
             let mut i = 2;
             while i < args.len() {
                 match args[i].as_str() {
@@ -400,6 +410,41 @@ async fn main() {
                     }
                     "--otree-crdt" => {
                         use_otree_crdt = true;
+                    }
+                    "--github-client-id" => {
+                        i += 1;
+                        github_client_id = Some(args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
+                            eprintln!("Error: --github-client-id requires a value");
+                            std::process::exit(1);
+                        }));
+                    }
+                    "--github-client-secret" => {
+                        i += 1;
+                        github_client_secret = Some(args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
+                            eprintln!("Error: --github-client-secret requires a value");
+                            std::process::exit(1);
+                        }));
+                    }
+                    "--google-client-id" => {
+                        i += 1;
+                        google_client_id = Some(args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
+                            eprintln!("Error: --google-client-id requires a value");
+                            std::process::exit(1);
+                        }));
+                    }
+                    "--google-client-secret" => {
+                        i += 1;
+                        google_client_secret = Some(args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
+                            eprintln!("Error: --google-client-secret requires a value");
+                            std::process::exit(1);
+                        }));
+                    }
+                    "--oauth-redirect-base" => {
+                        i += 1;
+                        oauth_redirect_base = Some(args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
+                            eprintln!("Error: --oauth-redirect-base requires a URL");
+                            std::process::exit(1);
+                        }));
                     }
                     s if s.contains(':') => {
                         addr = s.to_string();
@@ -527,6 +572,26 @@ async fn main() {
                 let app = if csrf_enabled {
                     tracing::info!("CSRF token protection enabled for WebSocket");
                     app.with_csrf(true)
+                } else {
+                    app
+                };
+                let has_oauth = github_client_id.is_some() || google_client_id.is_some();
+                let app = if has_oauth {
+                    let oauth_config = xudanu::server::transport::oauth::OAuthConfig {
+                        github_client_id,
+                        github_client_secret,
+                        google_client_id,
+                        google_client_secret,
+                        redirect_base: oauth_redirect_base
+                            .unwrap_or_else(|| "https://xudanu.com".to_string()),
+                    };
+                    tracing::info!(
+                        "OAuth enabled: github={}, google={}, redirect_base={}",
+                        oauth_config.github_client_id.is_some(),
+                        oauth_config.google_client_id.is_some(),
+                        oauth_config.redirect_base,
+                    );
+                    app.with_oauth(oauth_config)
                 } else {
                     app
                 };
