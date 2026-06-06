@@ -41,6 +41,10 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/blobs/{hash}/preview", get(blob_preview_handler))
         .route("/health", get(health_handler))
         .route("/csrf-token", get(csrf_token_handler))
+        .route("/auth/github", get(super::oauth::github_redirect_handler))
+        .route("/auth/github/callback", get(super::oauth::github_callback_handler))
+        .route("/auth/google", get(super::oauth::google_redirect_handler))
+        .route("/auth/google/callback", get(super::oauth::google_callback_handler))
         .route("/", get(index_handler))
         .fallback(get(static_fallback_handler))
         .with_state(state)
@@ -201,9 +205,20 @@ async fn ws_handler(
 
     let format = query.format.as_deref().unwrap_or("binary").to_string();
     let client_version = query.version.unwrap_or(PROTOCOL_VERSION);
+    let oauth_club = headers
+        .get(axum::http::header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|cookies| {
+            cookies
+                .split(';')
+                .find_map(|c| c.trim().strip_prefix("xudanu_session="))
+        })
+        .and_then(|token| state.oauth_state.validate_session(token));
     ws.max_frame_size(16 * 1024 * 1024)
         .max_message_size(64 * 1024 * 1024)
-        .on_upgrade(move |socket| handle_socket(socket, state, format, Some(addr), client_version))
+        .on_upgrade(move |socket| {
+            handle_socket(socket, state, format, Some(addr), client_version, oauth_club)
+        })
         .into_response()
 }
 
@@ -326,6 +341,7 @@ async fn handle_socket(
     format: String,
     remote_addr: Option<SocketAddr>,
     client_version: u8,
+    oauth_club: Option<(u64, String)>,
 ) {
     let is_text = format == "json";
     let codec: Box<dyn WireCodec> = if is_text {
@@ -378,6 +394,20 @@ async fn handle_socket(
     }
 
     let session_id = state.server.with_server(|srv| srv.connect());
+
+    if let Some((club_id, _display_name)) = oauth_club {
+        state.server.with_server(|srv| {
+            if let Err(e) = srv.authenticate_session_from_oauth(session_id, club_id) {
+                tracing::warn!(
+                    target: "xudanu::security",
+                    club_id = club_id,
+                    error = %e,
+                    event = "OAUTH:ws_auto_auth_failed",
+                    "Failed to auto-authenticate WS session from OAuth cookie"
+                );
+            }
+        });
+    }
 
     {
         let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());

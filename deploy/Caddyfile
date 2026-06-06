@@ -1,0 +1,20 @@
+xudanu.com {
+    @auth path /auth/*
+    handle @auth {
+        reverse_proxy localhost:8080
+    }
+
+    @ws path /xudanu
+    handle @ws {
+        reverse_proxy localhost:8080
+    }
+
+    @api path /health /csrf-token /blobs/*
+    handle @api {
+        reverse_proxy localhost:8080
+    }
+
+    handle {
+        reverse_proxy localhost:8080
+    }
+}

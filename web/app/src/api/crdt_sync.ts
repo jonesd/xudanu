@@ -593,6 +593,27 @@ export class CrdtSyncClient {
     return [];
   }
 
+  async fetchRevision(workId: number, revision: number): Promise<string> {
+    const resp = await this.sendRequest("work_fetch_revision", { work_id: workId, number: revision });
+    const val = extractValue(resp);
+    if (typeof val === "string") return val;
+    if (val && typeof val === "object") {
+      const v = val as Record<string, unknown>;
+      if (typeof v.Text === "string") return v.Text;
+      if (typeof v.text === "string") return v.text;
+      if (v.value && typeof (v.value as any).Text === "string") return (v.value as any).Text;
+      if (v.value && typeof (v.value as any).text === "string") return (v.value as any).text;
+    }
+    return "";
+  }
+
+  async revisionCount(workId: number): Promise<number> {
+    const resp = await this.sendRequest("work_revision_count", { work_id: workId });
+    const val = extractValue(resp);
+    if (typeof val === "number") return val;
+    return 0;
+  }
+
   async findExcerptPositions(workId: number, excerpt: string): Promise<Array<{ start: number; end: number }>> {
     const resp = await this.sendRequest("find_excerpt_positions", { work_id: workId, excerpt });
     const val = extractValue(resp);

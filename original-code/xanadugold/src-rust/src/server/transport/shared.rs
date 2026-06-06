@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use super::audit::SecurityMonitor;
 use super::channel::EventMessage;
+use super::oauth::{OAuthConfig, OAuthState};
 use crate::server::session::SessionId;
 use crate::server::Server;
 
@@ -21,6 +22,8 @@ pub struct AppState {
     pub allowed_origins: Option<HashSet<String>>,
     pub csrf_enabled: bool,
     pub csrf_tokens: Arc<Mutex<VecDeque<String>>>,
+    pub oauth_config: OAuthConfig,
+    pub oauth_state: OAuthState,
 }
 
 impl AppState {
@@ -43,6 +46,8 @@ impl AppState {
             allowed_origins: None,
             csrf_enabled: false,
             csrf_tokens: Arc::new(Mutex::new(VecDeque::new())),
+            oauth_config: OAuthConfig::default(),
+            oauth_state: OAuthState::new(),
         }
     }
 
@@ -88,6 +93,12 @@ impl AppState {
 
     pub fn with_csrf(mut self, enabled: bool) -> Self {
         self.csrf_enabled = enabled;
+        self
+    }
+
+    pub fn with_oauth(mut self, config: OAuthConfig) -> Self {
+        self.oauth_config = config;
+        self.oauth_state = OAuthState::new();
         self
     }
 

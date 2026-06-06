@@ -299,6 +299,10 @@ pub enum OperationCode {
     ContentMatch,
     WorkApplySourceAttribution,
     WorkApplyTransclusionAttribution,
+
+    WorkSummary,
+    WorkVersionTimeline,
+    PassageComposition,
 }
 
 impl OperationCode {
@@ -527,6 +531,10 @@ impl OperationCode {
             0x0D11 => Some(OperationCode::WorkApplySourceAttribution),
             0x0D12 => Some(OperationCode::WorkApplyTransclusionAttribution),
 
+            0x0D13 => Some(OperationCode::WorkSummary),
+            0x0D14 => Some(OperationCode::WorkVersionTimeline),
+            0x0D15 => Some(OperationCode::PassageComposition),
+
             _ => None,
         }
     }
@@ -753,6 +761,9 @@ impl OperationCode {
             OperationCode::ContentMatch => 0x0D10,
             OperationCode::WorkApplySourceAttribution => 0x0D11,
             OperationCode::WorkApplyTransclusionAttribution => 0x0D12,
+            OperationCode::WorkSummary => 0x0D13,
+            OperationCode::WorkVersionTimeline => 0x0D14,
+            OperationCode::PassageComposition => 0x0D15,
         }
     }
 }
@@ -1497,6 +1508,20 @@ pub enum WireRequest {
     WorkApplyTransclusionAttribution {
         link_id: BeId,
     },
+
+    WorkSummary {
+        work_id: BeId,
+    },
+
+    WorkVersionTimeline {
+        work_id: BeId,
+    },
+
+    PassageComposition {
+        work_id: BeId,
+        start: u64,
+        end: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1946,6 +1971,23 @@ pub enum ResponseValue {
         work_id: Option<BeId>,
         author_id: Option<BeId>,
         score: Option<f64>,
+    },
+
+    WorkSummaryResult {
+        unique_sources: u64,
+        unique_authors: u64,
+        version_count: u64,
+        char_count: u64,
+        author_contributions: Vec<AuthorContributionEntry>,
+        reused_in_count: u64,
+    },
+
+    WorkVersionTimelineResult {
+        revisions: Vec<RevisionMetaEntry>,
+    },
+
+    PassageCompositionResult {
+        layers: Vec<CompositionLayerEntry>,
     },
 }
 
@@ -2652,6 +2694,31 @@ pub struct WireFrame {
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event: Option<EventPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthorContributionEntry {
+    pub club_id: BeId,
+    pub display_name: String,
+    pub char_count: u64,
+    pub percentage: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RevisionMetaEntry {
+    pub revision: u64,
+    pub char_count: u64,
+    pub author_club_id: Option<BeId>,
+    pub author_display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompositionLayerEntry {
+    pub revision: u64,
+    pub author_club_id: Option<BeId>,
+    pub author_display_name: Option<String>,
+    pub text: String,
+    pub operation: String,
 }
 
 #[derive(Debug, Clone)]

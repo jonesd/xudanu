@@ -6,6 +6,7 @@ pub mod codec;
 pub mod dispatch;
 pub mod federation_handler;
 pub mod handler;
+pub mod oauth;
 pub mod protocol;
 pub mod shared;
 pub mod snapshot;

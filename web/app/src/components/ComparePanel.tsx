@@ -1,0 +1,411 @@
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import type { CrdtSyncClient, SharedRegion, WorkListEntry } from "../api/crdt_sync";
+
+const BRIDGE_COLORS = [
+  "#d29922", "#56b4e9", "#009e73", "#cc79a7",
+  "#f0e442", "#e69f00", "#0072b2", "#d55e00",
+];
+
+type CompareMode = "document" | "revision";
+
+interface TextRegion {
+  start: number;
+  end: number;
+  cidx: number;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export function highlightRegions(
+  text: string,
+  regions: TextRegion[],
+  highlightCls: string,
+  uniqueCls?: string
+): string {
+  if (!regions.length) {
+    if (uniqueCls) return `<span class="${uniqueCls}">${escapeHtml(text)}</span>`;
+    return escapeHtml(text);
+  }
+  const sorted = [...regions].sort((a, b) => a.start - b.start);
+  let html = "";
+  let pos = 0;
+  for (const r of sorted) {
+    if (r.end <= pos) continue;
+    const start = Math.max(r.start, pos);
+    if (start > pos) {
+      if (uniqueCls)
+        html += `<span class="${uniqueCls}">${escapeHtml(text.slice(pos, start))}</span>`;
+      else html += escapeHtml(text.slice(pos, start));
+    }
+    const cidx = r.cidx !== undefined ? r.cidx : 0;
+    html += `<span class="${highlightCls}" data-cidx="${cidx}" style="background:${BRIDGE_COLORS[cidx]}30;border-bottom:2px solid ${BRIDGE_COLORS[cidx]}">`;
+    html += escapeHtml(text.slice(start, r.end));
+    html += "</span>";
+    pos = r.end;
+  }
+  if (pos < text.length) {
+    if (uniqueCls) html += `<span class="${uniqueCls}">${escapeHtml(text.slice(pos))}</span>`;
+    else html += escapeHtml(text.slice(pos));
+  }
+  return html;
+}
+
+function findParagraphMatches(
+  leftText: string,
+  rightText: string
+): { leftRegions: TextRegion[]; rightRegions: TextRegion[] } {
+  const leftParas = leftText.split(/\n\s*\n/);
+  const rightParas = rightText.split(/\n\s*\n/);
+  const rightUsed = new Set<number>();
+  const leftRegions: TextRegion[] = [];
+  const rightRegions: TextRegion[] = [];
+
+  let leftOffset = 0;
+  for (let li = 0; li < leftParas.length; li++) {
+    const lTrim = leftParas[li].trim();
+    if (lTrim.length < 10) { leftOffset += leftParas[li].length + (li < leftParas.length - 1 ? 1 : 0); continue; }
+    let rightOffset = 0;
+    for (let ri = 0; ri < rightParas.length; ri++) {
+      if (rightUsed.has(ri)) { rightOffset += rightParas[ri].length + (ri < rightParas.length - 1 ? 1 : 0); continue; }
+      const rTrim = rightParas[ri].trim();
+      if (rTrim === lTrim) {
+        rightUsed.add(ri);
+        const cidx = leftRegions.length % 8;
+        leftRegions.push({ start: leftOffset, end: leftOffset + leftParas[li].length, cidx });
+        rightRegions.push({ start: rightOffset, end: rightOffset + rightParas[ri].length, cidx });
+        break;
+      }
+      rightOffset += rightParas[ri].length + (ri < rightParas.length - 1 ? 1 : 0);
+    }
+    leftOffset += leftParas[li].length + (li < leftParas.length - 1 ? 1 : 0);
+  }
+  return { leftRegions, rightRegions };
+}
+
+export interface CompareState {
+  mode: CompareMode;
+  setMode: (m: CompareMode) => void;
+  targetText: string;
+  targetLabel: string;
+  hasTarget: boolean;
+  leftRegions: TextRegion[];
+  rightRegions: TextRegion[];
+  loading: boolean;
+  regionCount: number;
+  clearTarget: () => void;
+}
+
+export function useCompare(
+  visible: boolean,
+  currentWorkId: number | null,
+  currentText: string,
+  client: CrdtSyncClient | null,
+): CompareState {
+  const [mode, setModeRaw] = useState<CompareMode>("document");
+  const [targetText, setTargetText] = useState("");
+  const [targetLabel, setTargetLabel] = useState("");
+  const [leftRegions, setLeftRegions] = useState<TextRegion[]>([]);
+  const [rightRegions, setRightRegions] = useState<TextRegion[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const setMode = useCallback((m: CompareMode) => {
+    setModeRaw(m);
+    setTargetText("");
+    setLeftRegions([]);
+    setRightRegions([]);
+    setTargetLabel("");
+  }, []);
+
+  const clearTarget = useCallback(() => {
+    setTargetText("");
+    setLeftRegions([]);
+    setRightRegions([]);
+    setTargetLabel("");
+  }, []);
+
+  useEffect(() => {
+    if (!visible) {
+      setTargetText("");
+      setLeftRegions([]);
+      setRightRegions([]);
+      setTargetLabel("");
+    }
+  }, [visible]);
+
+  const openDocumentCompare = useCallback(
+    async (wid: number) => {
+      if (!client || !currentWorkId || wid === currentWorkId) return;
+      setTargetLabel(`Document ${wid}`);
+      setLoading(true);
+      try {
+        const regions = await client.findSharedRegions(currentWorkId, wid);
+        setLeftRegions(regions.map((r, i) => ({ start: r.start_a, end: r.end_a, cidx: i % 8 })));
+        setRightRegions(regions.map((r, i) => ({ start: r.start_b, end: r.end_b, cidx: i % 8 })));
+      } catch (e) {
+        console.error("Compare failed:", e);
+        setLeftRegions([]);
+        setRightRegions([]);
+      }
+      try {
+        const resp = await (client as any).sendRequest("work_get_edition", { work_id: wid });
+        const val = (resp as any)?.value;
+        const text = val?.Text || val?.text || (typeof val === "string" ? val : "");
+        setTargetText(text);
+      } catch {
+        setTargetText("");
+      }
+      setLoading(false);
+    },
+    [client, currentWorkId]
+  );
+
+  const openRevisionCompare = useCallback(
+    async (revision: number) => {
+      if (!client || !currentWorkId) return;
+      setTargetLabel(`Revision ${revision}`);
+      setLoading(true);
+      try {
+        const text = await client.fetchRevision(currentWorkId, revision);
+        setTargetText(text || "");
+        const { leftRegions: lr, rightRegions: rr } = findParagraphMatches(currentText, text || "");
+        setLeftRegions(lr);
+        setRightRegions(rr);
+      } catch (e) {
+        console.error("Revision compare failed:", e);
+        setTargetText("");
+        setLeftRegions([]);
+        setRightRegions([]);
+      }
+      setLoading(false);
+    },
+    [client, currentWorkId, currentText]
+  );
+
+  (useCompare as any)._openDocument = openDocumentCompare;
+  (useCompare as any)._openRevision = openRevisionCompare;
+
+  return {
+    mode,
+    setMode,
+    targetText,
+    targetLabel,
+    hasTarget: targetText !== "",
+    leftRegions,
+    rightRegions,
+    loading,
+    regionCount: Math.max(leftRegions.length, rightRegions.length),
+    clearTarget,
+  };
+}
+
+interface CompareHeaderProps {
+  visible: boolean;
+  state: CompareState;
+  currentWorkId: number | null;
+  works: WorkListEntry[];
+  revisionCount: number;
+  onClose: () => void;
+}
+
+export function CompareHeader({ visible, state, currentWorkId, works, revisionCount, onClose }: CompareHeaderProps) {
+  if (!visible) return null;
+
+  const otherWorks = works.filter((w) => w.work_id !== currentWorkId);
+  const openDoc = (useCompare as any)._openDocument as ((wid: number) => Promise<void>) | undefined;
+  const openRev = (useCompare as any)._openRevision as ((rev: number) => Promise<void>) | undefined;
+
+  return (
+    <div className="compare-header">
+      <span className="compare-title">Compare</span>
+      <div className="compare-mode-tabs">
+        <button
+          type="button"
+          className={`compare-mode-tab ${state.mode === "document" ? "active" : ""}`}
+          onClick={() => state.setMode("document")}
+        >
+          vs Document
+        </button>
+        <button
+          type="button"
+          className={`compare-mode-tab ${state.mode === "revision" ? "active" : ""}`}
+          onClick={() => state.setMode("revision")}
+        >
+          vs Revision
+        </button>
+      </div>
+      {state.mode === "document" && !state.hasTarget && (
+        <select
+          value=""
+          onChange={(e) => {
+            const v = parseInt(e.target.value);
+            if (v && openDoc) openDoc(v);
+          }}
+          className="compare-select"
+        >
+          <option value="">— select document —</option>
+          {otherWorks.map((w) => (
+            <option key={w.work_id} value={String(w.work_id)}>
+              {w.work_id}
+              {w.title ? ` (${w.title.length > 30 ? w.title.slice(0, 30) + "..." : w.title})` : ""}
+            </option>
+          ))}
+        </select>
+      )}
+      {state.mode === "revision" && !state.hasTarget && (
+        <select
+          value=""
+          onChange={(e) => {
+            const v = parseInt(e.target.value);
+            if (v && openRev) openRev(v);
+          }}
+          className="compare-select"
+        >
+          <option value="">— select revision —</option>
+          {Array.from({ length: revisionCount }, (_, i) => i + 1)
+            .reverse()
+            .map((r) => (
+              <option key={r} value={String(r)}>
+                Revision {r}
+              </option>
+            ))}
+        </select>
+      )}
+      {state.hasTarget && (
+        <span className="compare-target-label">
+          vs {state.targetLabel}
+          <button type="button" className="compare-close-target" onClick={state.clearTarget}>
+            x
+          </button>
+        </span>
+      )}
+      <div className="compare-legend">
+        {state.regionCount > 0 && (
+          <>
+            <span className="compare-legend-item">
+              <span className="compare-swatch" style={{ background: BRIDGE_COLORS[0] + "30", borderBottom: `2px solid ${BRIDGE_COLORS[0]}` }} />
+              Shared ({state.regionCount})
+            </span>
+            <span className="compare-legend-item">
+              <span className="compare-swatch unique-left-swatch" />
+              Left only
+            </span>
+            <span className="compare-legend-item">
+              <span className="compare-swatch unique-right-swatch" />
+              Right only
+            </span>
+          </>
+        )}
+      </div>
+      <button type="button" className="compare-close" onClick={onClose}>x</button>
+    </div>
+  );
+}
+
+interface CompareSplitViewProps {
+  currentText: string;
+  state: CompareState;
+}
+
+export function CompareSplitView({ currentText, state }: CompareSplitViewProps) {
+  const leftWrapRef = useRef<HTMLDivElement>(null);
+  const rightWrapRef = useRef<HTMLDivElement>(null);
+  const areaRef = useRef<HTMLDivElement>(null);
+
+  const leftHtml = useMemo(() => {
+    if (!currentText) return "";
+    return highlightRegions(currentText, state.leftRegions, "compare-hl", "compare-unique-left");
+  }, [currentText, state.leftRegions]);
+
+  const rightHtml = useMemo(() => {
+    if (!state.targetText) return '<span style="color:#888">Loading...</span>';
+    return highlightRegions(state.targetText, state.rightRegions, "compare-hl", "compare-unique-right");
+  }, [state.targetText, state.rightRegions]);
+
+  useEffect(() => {
+    if (!state.leftRegions.length && !state.rightRegions.length) return;
+
+    function computeBridges() {
+      const lc = leftWrapRef.current?.querySelectorAll(".compare-hl");
+      const rc = rightWrapRef.current?.querySelectorAll(".compare-hl");
+      const area = areaRef.current;
+      const lw = leftWrapRef.current;
+      const rw = rightWrapRef.current;
+      if (!lc?.length || !rc?.length || !area || !lw || !rw) return;
+
+      const areaRect = area.getBoundingClientRect();
+      const lwRect = lw.getBoundingClientRect();
+      const rwRect = rw.getBoundingClientRect();
+      const n = Math.min(lc.length, rc.length);
+
+      const canvas = area.querySelector("canvas._bridge") as HTMLCanvasElement;
+      if (!canvas) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(areaRect.width) * dpr;
+      canvas.height = Math.round(areaRect.height) * dpr;
+      canvas.style.width = Math.round(areaRect.width) + "px";
+      canvas.style.height = Math.round(areaRect.height) + "px";
+      const ctx = canvas.getContext("2d")!;
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, areaRect.width, areaRect.height);
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.globalAlpha = 0.7;
+
+      for (let i = 0; i < n; i++) {
+        const lr = lc[i].getBoundingClientRect();
+        const rr = rc[i].getBoundingClientRect();
+        if (lr.bottom < lwRect.top || lr.top > lwRect.bottom) continue;
+        if (rr.bottom < rwRect.top || rr.top > rwRect.bottom) continue;
+
+        const ly = (lr.top + lr.bottom) / 2 - areaRect.top;
+        const ry = (rr.top + rr.bottom) / 2 - areaRect.top;
+        const lEdge = lwRect.right - areaRect.left;
+        const rEdge = rwRect.left - areaRect.left;
+
+        ctx.strokeStyle = BRIDGE_COLORS[i % 8];
+        ctx.beginPath();
+        ctx.moveTo(lEdge, ly);
+        ctx.bezierCurveTo(lEdge + 20, ly, rEdge - 20, ry, rEdge, ry);
+        ctx.stroke();
+      }
+    }
+
+    const timer = setTimeout(computeBridges, 100);
+    const lw = leftWrapRef.current;
+    const rw = rightWrapRef.current;
+    if (lw) lw.addEventListener("scroll", computeBridges);
+    if (rw) rw.addEventListener("scroll", computeBridges);
+    window.addEventListener("resize", computeBridges);
+    return () => {
+      clearTimeout(timer);
+      if (lw) lw.removeEventListener("scroll", computeBridges);
+      if (rw) rw.removeEventListener("scroll", computeBridges);
+      window.removeEventListener("resize", computeBridges);
+    };
+  }, [state.leftRegions, state.rightRegions, leftHtml, rightHtml]);
+
+  return (
+    <div className="compare-split" ref={areaRef}>
+      <div className="compare-pane" ref={leftWrapRef}>
+        <div className="compare-pane-label">Current</div>
+        <div className="compare-content" dangerouslySetInnerHTML={{ __html: leftHtml }} />
+      </div>
+      <canvas className="_bridge" />
+      <div className="compare-pane" ref={rightWrapRef}>
+        <div className="compare-pane-label">{state.targetLabel}</div>
+        {state.loading ? (
+          <div className="compare-loading">Loading...</div>
+        ) : (
+          <div className="compare-content" dangerouslySetInnerHTML={{ __html: rightHtml }} />
+        )}
+      </div>
+    </div>
+  );
+}

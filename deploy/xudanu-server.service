@@ -1,0 +1,14 @@
+[Unit]
+Description=Xudanu Server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu
+ExecStart=/home/ubuntu/xudanu-server run 127.0.0.1:8080 /home/ubuntu/xudanu-data --static-dir /home/ubuntu/xudanu-src/web/app/dist --allowed-origin https://example.com --allowed-origin https://www.example.com
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

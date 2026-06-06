@@ -6,6 +6,7 @@ import { VirtualizedEditor } from "../components/VirtualizedEditor";
 import { AwarenessIndicators } from "../components/AwarenessIndicators";
 import { DebugPanel } from "../components/DebugPanel";
 import { AttributionPanel } from "../components/AttributionPanel";
+import { CompareHeader, CompareSplitView, useCompare } from "../components/ComparePanel";
 import { IdentityPanel } from "../components/IdentityPanel";
 import { ImportWizard } from "../components/ImportWizard";
 import { TransclusionBadge } from "../components/TransclusionBadge";
@@ -30,6 +31,7 @@ export function WorkspacePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [llmMenuOpen, setLlmMenuOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showCompare, setShowCompare] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<"docs" | "authors" | "links">("docs");
   const [authors, setAuthors] = useState<HistoricalAuthorEntry[]>([]);
   const [expandedAuthorId, setExpandedAuthorId] = useState<number | null>(null);
@@ -75,7 +77,6 @@ export function WorkspacePage() {
     refreshAttribution,
     refreshAwareness,
     identity,
-    createIdentity,
     login,
     createWork,
     shareWork,
@@ -93,9 +94,18 @@ export function WorkspacePage() {
     clientRef,
   } = useCrdtSync(WS_URL, workBeId);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("auth") === "1") {
+      window.history.replaceState({}, "", "/");
+    }
+  }, []);
+
   const currentWorkMeta = works.find(w => w.work_id === workBeId);
   const isSourceWork = currentWorkMeta?.is_source === true;
   const displayText = isSourceWork && sourceText !== null ? sourceText : text;
+
+  const compare = useCompare(showCompare, workBeId, displayText, clientRef.current);
 
   useEffect(() => {
     if (clientRef.current) clientRef.current.setSkipCrdt(!!isSourceWork);
@@ -354,6 +364,7 @@ export function WorkspacePage() {
               type="button"
               className={watchEnabled ? "watch-toggle-active" : ""}
               disabled={!connected}
+              title="Watch — monitors for documents with similar content and lists them above the editor"
             >
               {watchEnabled ? "Watching" : "Watch"}
             </button>
@@ -361,6 +372,7 @@ export function WorkspacePage() {
               onClick={() => setShowDebug((d) => !d)}
               type="button"
               className={showDebug ? "debug-toggle-active" : ""}
+              title="Debug — show raw protocol messages"
             >
               Debug
             </button>
@@ -375,9 +387,27 @@ export function WorkspacePage() {
               type="button"
               className={showAttribution ? "attribution-toggle-active" : ""}
               disabled={!connected}
+              title="Attribution — show content source and author attribution for each span"
             >
               Attribution
             </button>
+            <button
+              onClick={() => setShowCompare((c) => !c)}
+              type="button"
+              className={showCompare ? "debug-toggle-active" : ""}
+              disabled={!connected || workBeId === null || works.length < 2}
+              title="Compare — show differences side-by-side against another document or a past revision"
+            >
+              Compare
+            </button>
+            <CompareHeader
+              visible={showCompare}
+              state={compare}
+              currentWorkId={workBeId}
+              works={works}
+              revisionCount={currentWorkMeta?.revision_count ?? 0}
+              onClose={() => setShowCompare(false)}
+            />
             {selectionRange && !transclusion.pending && (
               <button
                 onClick={handleTranscludeSelection}
@@ -445,7 +475,6 @@ export function WorkspacePage() {
         <IdentityPanel
           identity={identity}
           connected={connected}
-          onCreateIdentity={createIdentity}
           onLogin={login}
           onLogout={logout}
         />
@@ -699,7 +728,9 @@ export function WorkspacePage() {
                   onCancel={transclusion.clearPending}
                 />
               )}
-                {isSourceWork ? (
+              {showCompare && compare.hasTarget ? (
+                <CompareSplitView currentText={displayText} state={compare} />
+              ) : isSourceWork ? (
                   <div
                     className="source-work-viewer"
                     style={{
