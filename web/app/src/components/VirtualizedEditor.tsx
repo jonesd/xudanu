@@ -6,6 +6,15 @@ import { authorColor } from "../author-color";
 import { SearchPanel } from "./SearchPanel";
 import { OutlinePanel } from "./OutlinePanel";
 
+interface UndoEntry {
+  text: string;
+  selStart: number;
+  selEnd: number;
+}
+
+const MAX_UNDO = 200;
+const UNDO_DEBOUNCE_MS = 400;
+
 function bytesToHex(bytes: number[]): string {
   return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -33,9 +42,12 @@ interface VirtualizedEditorProps {
   selectionRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
   onPasteText?: (text: string, pasteStart: number) => void;
+  fontSize?: number;
+  lineHeight?: number;
 }
 
-const LINE_HEIGHT = 15 * 1.7;
+const DEFAULT_FONT_SIZE = 15;
+const DEFAULT_LINE_HEIGHT = 1.7;
 const PADDING_TOP = 16;
 const PADDING_BOTTOM = 16;
 const OVERSCAN = 15;
@@ -55,8 +67,11 @@ export function VirtualizedEditor({
   onPlaceTransclusion,
   onNavigateToWork: _onNavigateToWork,
   onPasteText,
+  fontSize = DEFAULT_FONT_SIZE,
+  lineHeight = DEFAULT_LINE_HEIGHT,
 }: VirtualizedEditorProps) {
   const bufferRef = useRef<TextBuffer>(new TextBuffer(text));
+  const LINE_HEIGHT = fontSize * lineHeight;
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -66,6 +81,10 @@ export function VirtualizedEditor({
   const skipNextTextProp = useRef(false);
   const lineHeightRef = useRef(LINE_HEIGHT);
   const lastViewRange = useRef({ start: 0, end: 60 });
+  const undoStack = useRef<UndoEntry[]>([]);
+  const redoStack = useRef<UndoEntry[]>([]);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isUndoRedoing = useRef(false);
 
   const [viewStart, setViewStart] = useState(0);
   const [viewEnd, setViewEnd] = useState(60);
@@ -121,12 +140,31 @@ export function VirtualizedEditor({
   }, [attributionSpans]);
 
   useEffect(() => {
+    if (text === "") {
+      undoStack.current = [];
+      redoStack.current = [];
+      if (undoTimer.current !== null) {
+        clearTimeout(undoTimer.current);
+        undoTimer.current = null;
+      }
+    }
+  }, [text]);
+
+  useEffect(() => {
+    if (isUndoRedoing.current) return;
     if (skipNextTextProp.current) {
       skipNextTextProp.current = false;
       return;
     }
     const buf = bufferRef.current;
     if (buf.getText() !== displayText) {
+      if (undoTimer.current !== null) {
+        clearTimeout(undoTimer.current);
+        undoTimer.current = null;
+        undoStack.current.push({ text: buf.getText(), selStart: 0, selEnd: 0 });
+        if (undoStack.current.length > MAX_UNDO) undoStack.current.shift();
+      }
+      redoStack.current = [];
       bufferRef.current = new TextBuffer(displayText);
     }
   }, [displayText]);
@@ -400,6 +438,33 @@ export function VirtualizedEditor({
     }
   }, [attributionSpans, authorColorMap, viewStart, viewEnd, transclusionMarkers]);
 
+  const pushUndo = useCallback((prevText: string) => {
+    if (isUndoRedoing.current) return;
+    redoStack.current = [];
+    if (undoTimer.current !== null) {
+      clearTimeout(undoTimer.current);
+    }
+    undoTimer.current = setTimeout(() => {
+      undoStack.current.push({ text: prevText, selStart: 0, selEnd: 0 });
+      if (undoStack.current.length > MAX_UNDO) {
+        undoStack.current.shift();
+      }
+      undoTimer.current = null;
+    }, UNDO_DEBOUNCE_MS);
+  }, []);
+
+  const restoreUndoEntry = useCallback((entry: UndoEntry, stack: "undo" | "redo") => {
+    isUndoRedoing.current = true;
+    const prevText = bufferRef.current.getText();
+    bufferRef.current = new TextBuffer(entry.text);
+    skipNextTextProp.current = true;
+    onTextChange(entry.text);
+    const target = stack === "undo" ? redoStack : undoStack;
+    target.current.push({ text: prevText, selStart: 0, selEnd: 0 });
+    if (target.current.length > MAX_UNDO) target.current.shift();
+    setTimeout(() => { isUndoRedoing.current = false; }, 0);
+  }, [onTextChange]);
+
   const handleInput = useCallback(() => {
     if (isComposing.current || !editable) return;
     const el = editorRef.current;
@@ -419,16 +484,37 @@ export function VirtualizedEditor({
       oldFullText.slice(viewportCharEnd);
 
     if (newFullText !== oldFullText) {
+      pushUndo(oldFullText);
       bufferRef.current = new TextBuffer(newFullText);
       skipNextTextProp.current = true;
       onTextChange(newFullText);
     }
-  }, [onTextChange, editable]);
+  }, [onTextChange, editable, pushUndo]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (!editable) {
         e.preventDefault();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        if (undoTimer.current !== null) {
+          clearTimeout(undoTimer.current);
+          undoTimer.current = null;
+        }
+        const entry = undoStack.current.pop();
+        if (entry) restoreUndoEntry(entry, "undo");
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "Z" || e.key === "y")) {
+        e.preventDefault();
+        if (undoTimer.current !== null) {
+          clearTimeout(undoTimer.current);
+          undoTimer.current = null;
+        }
+        const entry = redoStack.current.pop();
+        if (entry) restoreUndoEntry(entry, "redo");
         return;
       }
       if (e.key === "Enter") {

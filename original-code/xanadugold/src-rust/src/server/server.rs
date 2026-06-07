@@ -121,6 +121,15 @@ pub struct Server {
     pub(crate) historical_authors: crate::server::historical_author::HistoricalAuthorRegistry,
     pub(crate) source_patterns: Vec<crate::server::source_matcher::SourcePattern>,
     annotations: HashMap<BeId, HashMap<u64, AnnotationState>>,
+    pub(crate) pending_attributions: Vec<PendingAttribution>,
+}
+
+#[derive(Clone)]
+pub struct PendingAttribution {
+    pub link_id: BeId,
+    pub origin_work_id: BeId,
+    pub dest_work_id: BeId,
+    pub excerpt: String,
 }
 
 pub struct ServerHealth {
@@ -259,6 +268,7 @@ impl Server {
             attribution_log: None,
             historical_authors: crate::server::historical_author::HistoricalAuthorRegistry::new(),
             source_patterns: crate::server::source_matcher::builtin_patterns(),
+            pending_attributions: Vec::new(),
 
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
@@ -1438,11 +1448,12 @@ impl Server {
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         let edition = ws.work.current_edition();
         let all_entries = edition.all_entries();
-        tracing::debug!(
-            "[attribution_query] work={:04x} entries={} span_prov={} entry_details={}",
+        tracing::info!(
+            "[attribution_query] work={:04x} entries={} span_prov={} prov_entries={} entry_details={}",
             work_be_id,
             all_entries.len(),
             edition.span_provenance.len(),
+            all_entries.iter().filter(|(_, c)| c.provenance.is_some()).count(),
             all_entries
                 .iter()
                 .take(10)
@@ -1566,6 +1577,155 @@ impl Server {
                 provenance_chain: None,
             });
         }
+
+        let pending_for_work: Vec<&PendingAttribution> = self
+            .pending_attributions
+            .iter()
+            .filter(|p| p.dest_work_id == work_be_id)
+            .collect();
+
+        if !pending_for_work.is_empty() {
+            let edition_text = edition.to_text();
+            let text_lower = edition_text.to_lowercase();
+
+            for pa in &pending_for_work {
+                let excerpt_lower = pa.excerpt.to_lowercase();
+                let char_start = match text_lower.find(&excerpt_lower) {
+                    Some(pos) => pos,
+                    None => continue,
+                };
+                let char_end = char_start + pa.excerpt.len();
+
+                let origin_ws = match self.works.get(&pa.origin_work_id) {
+                    Some(ws) => ws,
+                    None => continue,
+                };
+
+                let origin_edition = origin_ws.work.current_edition();
+                let origin_entries = origin_edition.all_entries();
+
+                let entry_prov = origin_entries
+                    .iter()
+                    .find_map(|(_, c)| c.provenance.as_ref());
+
+                let (author_name, author_type_str, historical_id) =
+                    if let Some(ha_id) = origin_ws.source_author_id {
+                        let name = self.historical_authors.get(ha_id)
+                            .map(|a| if a.display_name.is_empty() { a.name.clone() } else { a.display_name.clone() })
+                            .unwrap_or_else(|| "Unknown Historical Author".to_string());
+                        tracing::info!(
+                            "[attribution_overlay] PA link={:04x} origin={:04x} author_id={} name={}",
+                            pa.link_id, pa.origin_work_id, ha_id, name
+                        );
+                        (name, "historical".to_string(), Some(ha_id))
+                    } else if let Some(ep) = entry_prov {
+                        let name = if ep.author_display_name.is_empty() {
+                            "Unknown".to_string()
+                        } else {
+                            ep.author_display_name.clone()
+                        };
+                        let at = match ep.author_type {
+                            crate::edition::provenance::AuthorType::Human => "human",
+                            crate::edition::provenance::AuthorType::Llm => "llm",
+                            crate::edition::provenance::AuthorType::Historical => "historical",
+                        };
+                        (name, at.to_string(), ep.historical_author_id)
+                    } else if let Some(club_id) = origin_ws.work.current_edition().all_entries()
+                        .iter()
+                        .find_map(|(_, c)| c.provenance.as_ref())
+                        .map(|ep| ep.author_club_id)
+                        .or(origin_ws.last_revision_author)
+                    {
+                        let name = self.clubs.get(&club_id)
+                            .and_then(|c| c.display_name().map(|s| s.to_string()))
+                            .unwrap_or_else(|| format!("Club {:04x}", club_id));
+                        (name, "human".to_string(), None)
+                    } else {
+                        ("Unknown".to_string(), "human".to_string(), None)
+                    };
+
+                let existing: std::collections::HashSet<(i64, i64)> = spans
+                    .iter()
+                    .map(|s| (s.start, s.end))
+                    .collect();
+
+                if !existing.contains(&(char_start as i64, char_end as i64)) {
+                    tracing::info!(
+                        "[attribution_overlay] adding span [{},{}] author={} origin={:04x}",
+                        char_start, char_end, author_name, pa.origin_work_id
+                    );
+                    spans.push(super::transport::protocol::AttributionSpanPayload {
+                        start: char_start as i64,
+                        end: char_end as i64,
+                        author_public_key: entry_prov.map(|ep| ep.author_public_key.to_vec()).unwrap_or_default(),
+                        author_display_name: Some(author_name),
+                        author_club_id: entry_prov.map(|ep| ep.author_club_id)
+                            .or(origin_ws.last_revision_author)
+                            .or(origin_ws.source_author_id),
+                        signature_valid: true,
+                        timestamp: entry_prov.map(|ep| ep.timestamp).unwrap_or_else(|| {
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs()
+                        }),
+                        server_id: vec![0u8; 32],
+                        author_type: Some(author_type_str),
+                        llm_model: entry_prov.and_then(|ep| ep.llm_model.clone()),
+                        historical_author_id: historical_id,
+                        source_work_id: Some(pa.origin_work_id),
+                        provenance_chain: None,
+                    });
+                } else {
+                    tracing::info!(
+                        "[attribution_overlay] DEDUP skipped span [{},{}] for origin={:04x} author={}",
+                        char_start, char_end, pa.origin_work_id, author_name
+                    );
+                }
+            }
+        }
+
+        let historical_ranges: Vec<(i64, i64)> = spans
+            .iter()
+            .filter(|s| s.author_type.as_deref() == Some("historical"))
+            .map(|s| (s.start, s.end))
+            .collect();
+
+        if !historical_ranges.is_empty() {
+            let mut trimmed = Vec::with_capacity(spans.len() + historical_ranges.len() * 2);
+            for span in spans {
+                if span.author_type.as_deref() == Some("historical") {
+                    trimmed.push(span);
+                    continue;
+                }
+                let mut pieces = vec![(span.start, span.end)];
+                for &(hs, he) in &historical_ranges {
+                    let mut next = Vec::new();
+                    for (ps, pe) in pieces {
+                        if he <= ps || hs >= pe {
+                            next.push((ps, pe));
+                        } else {
+                            if hs > ps {
+                                next.push((ps, hs));
+                            }
+                            if he < pe {
+                                next.push((he, pe));
+                            }
+                        }
+                    }
+                    pieces = next;
+                }
+                for (ps, pe) in pieces {
+                    if pe <= ps { continue; }
+                    let mut s = span.clone();
+                    s.start = ps;
+                    s.end = pe;
+                    trimmed.push(s);
+                }
+            }
+            spans = trimmed;
+        }
+
         Ok(spans)
     }
 
@@ -2673,7 +2833,9 @@ impl Server {
         };
 
         if should && elapsed {
-            let edition = self.materialize_with_provenance(work_be_id, session_id)?;
+            let mut edition = self.materialize_with_provenance(work_be_id, session_id)?;
+
+            self.apply_pending_provenance_to_edition(work_be_id, &mut edition);
 
             let author_club = self
                 .sessions
@@ -2699,7 +2861,9 @@ impl Server {
             ));
         }
 
-        let edition = self.materialize_with_provenance(work_be_id, session_id)?;
+        let mut edition = self.materialize_with_provenance(work_be_id, session_id)?;
+
+        self.apply_pending_provenance_to_edition(work_be_id, &mut edition);
 
         let author_club = self
             .sessions
@@ -2750,7 +2914,9 @@ impl Server {
             })
             .ok_or(ServerError::Internal("no subscribed session".into()))?;
 
-        let edition = self.materialize_with_provenance(work_be_id, session_id)?;
+        let mut edition = self.materialize_with_provenance(work_be_id, session_id)?;
+
+        self.apply_pending_provenance_to_edition(work_be_id, &mut edition);
 
         let author_club = self
             .sessions
@@ -3671,15 +3837,20 @@ impl Server {
         let historical_authors_from_chunk = if let Some(hash) = manifest.historical_authors_hash {
             match chunk_store.read_chunk(&hash) {
                 Ok(data) => {
-                    match postcard::from_bytes::<
+                    if let Ok(registry) = serde_json::from_slice::<
                         crate::server::historical_author::HistoricalAuthorRegistry,
                     >(&data)
                     {
-                        Ok(registry) => Some(registry),
-                        Err(e) => {
-                            tracing::warn!("historical authors chunk deserialization failed: {}", e);
-                            None
-                        }
+                        Some(registry)
+                    } else if let Ok(registry) = postcard::from_bytes::<
+                        crate::server::historical_author::HistoricalAuthorRegistry,
+                    >(&data)
+                    {
+                        tracing::info!("historical_authors: migrated from postcard to json");
+                        Some(registry)
+                    } else {
+                        tracing::warn!("historical authors chunk deserialization failed");
+                        None
                     }
                 }
                 Err(e) => {
@@ -3694,10 +3865,17 @@ impl Server {
         let blob_metas_from_chunk: Vec<crate::persist::manifest::BlobMetaEntry> =
             if let Some(hash) = manifest.blob_metas_hash {
                 match chunk_store.read_chunk(&hash) {
-                    Ok(data) => postcard::from_bytes(&data).unwrap_or_else(|e| {
-                        tracing::warn!("blob_metas chunk deserialization failed: {}", e);
-                        manifest.blob_metas.clone()
-                    }),
+                    Ok(data) => {
+                        if let Ok(parsed) = serde_json::from_slice(&data) {
+                            parsed
+                        } else if let Ok(parsed) = postcard::from_bytes(&data) {
+                            tracing::info!("blob_metas: migrated from postcard to json");
+                            parsed
+                        } else {
+                            tracing::warn!("blob_metas chunk deserialization failed");
+                            manifest.blob_metas.clone()
+                        }
+                    }
                     Err(e) => {
                         tracing::warn!("blob_metas chunk read failed: {}", e);
                         manifest.blob_metas.clone()
@@ -3716,12 +3894,18 @@ impl Server {
         self.reconcile_counter = manifest.reconcile_counter;
         self.content_address = if let Some(hash) = manifest.content_address_hash {
             match chunk_store.read_chunk(&hash) {
-                Ok(data) => postcard::from_bytes::<ContentAddressIndex>(&data)
-                    .unwrap_or_else(|e| {
-                        tracing::warn!("content_address chunk deserialization failed: {}", e);
+                Ok(data) => {
+                    if let Ok(parsed) = serde_json::from_slice::<ContentAddressIndex>(&data) {
+                        parsed
+                    } else if let Ok(parsed) = postcard::from_bytes::<ContentAddressIndex>(&data) {
+                        tracing::info!("content_address: migrated from postcard to json");
+                        parsed
+                    } else {
+                        tracing::warn!("content_address chunk deserialization failed");
                         manifest.content_address.clone()
                             .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
-                    }),
+                    }
+                }
                 Err(e) => {
                     tracing::warn!("content_address chunk read failed: {}", e);
                     manifest.content_address.clone()
@@ -3863,10 +4047,17 @@ impl Server {
         let links_from_chunk: Vec<crate::persist::manifest::LinkEntry> =
             if let Some(hash) = manifest.links_hash {
                 match chunk_store.read_chunk(&hash) {
-                    Ok(data) => postcard::from_bytes(&data).unwrap_or_else(|e| {
-                        tracing::warn!("links chunk deserialization failed: {}", e);
-                        manifest.links.clone()
-                    }),
+                    Ok(data) => {
+                        if let Ok(parsed) = serde_json::from_slice(&data) {
+                            parsed
+                        } else if let Ok(parsed) = postcard::from_bytes(&data) {
+                            tracing::info!("links chunk: migrated from postcard to json format");
+                            parsed
+                        } else {
+                            tracing::warn!("links chunk deserialization failed (tried json and postcard)");
+                            manifest.links.clone()
+                        }
+                    }
                     Err(e) => {
                         tracing::warn!("links chunk read failed: {}", e);
                         manifest.links.clone()
@@ -3992,6 +4183,8 @@ impl Server {
         } else if let Some(ha) = manifest.historical_authors {
             self.historical_authors = ha;
         }
+
+        self.rebuild_pending_attributions();
 
         Ok(())
     }
@@ -4382,6 +4575,7 @@ impl Server {
             .push(link_id);
         self.backfollow
             .register_link_content(&self.links[&link_id].link, link_id);
+        self.auto_checkpoint();
         Ok(link_id)
     }
 
@@ -4408,6 +4602,142 @@ impl Server {
             (ls.origin, ls.destination, excerpt.to_string())
         };
 
+        tracing::info!(
+            "[apply_transclusion_attribution] link={:04x} origin={:04x} dest={:04x} excerpt_len={}",
+            link_id, origin_work_id, dest_work_id, excerpt_text.len()
+        );
+
+        let result = self.apply_transclusion_attribution_internal(link_id, origin_work_id, dest_work_id, &excerpt_text);
+
+        let already_pending = self.pending_attributions.iter().any(|pa| pa.link_id == link_id);
+        if !already_pending {
+            self.pending_attributions.push(PendingAttribution {
+                link_id,
+                origin_work_id,
+                dest_work_id,
+                excerpt: excerpt_text,
+            });
+            tracing::info!(
+                "[apply_transclusion_attribution] stored pending attribution for link={:04x}",
+                link_id
+            );
+        }
+
+        result
+    }
+
+    fn rebuild_pending_attributions(&mut self) {
+        let mut rebuilt = Vec::new();
+        for (&link_id, ls) in &self.links {
+            let excerpt = match ls.link.end_at("LeftEnd").and_then(|r| r.excerpt()).map(|e| e.to_text()) {
+                Some(t) if !t.is_empty() => t.to_string(),
+                _ => continue,
+            };
+            if self.works.contains_key(&ls.origin) && self.works.contains_key(&ls.destination) {
+                rebuilt.push(PendingAttribution {
+                    link_id,
+                    origin_work_id: ls.origin,
+                    dest_work_id: ls.destination,
+                    excerpt,
+                });
+            }
+        }
+        if !rebuilt.is_empty() {
+            tracing::info!("[rebuild_pending_attributions] rebuilt {} pending attributions from existing links", rebuilt.len());
+        }
+        self.pending_attributions = rebuilt;
+    }
+
+    fn apply_pending_provenance_to_edition(&self, work_id: BeId, edition: &mut Edition) {
+        let pending: Vec<&PendingAttribution> = self
+            .pending_attributions
+            .iter()
+            .filter(|p| p.dest_work_id == work_id)
+            .collect();
+        if pending.is_empty() {
+            return;
+        }
+
+        let dest_text = edition.to_text();
+        let dest_lower = dest_text.to_lowercase();
+
+        for pa in &pending {
+            let origin_ws = match self.works.get(&pa.origin_work_id) {
+                Some(ws) => ws,
+                None => continue,
+            };
+
+            let source_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
+                origin_ws.work.current_edition().all_entries();
+
+            let source_prov: Option<crate::edition::provenance::ElementProvenance> = source_entries
+                .iter()
+                .find_map(|(_, c)| c.provenance.clone());
+
+            let prov = match source_prov {
+                Some(p) => crate::edition::provenance::ElementProvenance {
+                    source_work_id: Some(pa.origin_work_id),
+                    ..p
+                },
+                None => {
+                    let author_name = origin_ws.source_author_id
+                        .and_then(|aid| self.historical_authors.get(aid))
+                        .map(|a| if a.display_name.is_empty() { a.name.clone() } else { a.display_name.clone() })
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    crate::edition::provenance::ElementProvenance {
+                        author_public_key: [0u8; 32],
+                        author_display_name: author_name,
+                        author_club_id: 0,
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
+                        author_type: crate::edition::provenance::AuthorType::Historical,
+                        llm_model: None,
+                        historical_author_id: origin_ws.source_author_id,
+                        source_work_id: Some(pa.origin_work_id),
+                    }
+                }
+            };
+
+            let excerpt_lower = pa.excerpt.to_lowercase();
+            let char_start = match dest_lower.find(&excerpt_lower) {
+                Some(pos) => pos,
+                None => continue,
+            };
+            let char_end = char_start + pa.excerpt.len();
+
+            let entries = edition.all_entries();
+            let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
+                Vec::with_capacity(entries.len());
+            let mut cum = 0usize;
+
+            for (pos, c) in &entries {
+                let entry_start = cum;
+                let entry_end = cum + c.char_len();
+                if entry_end > char_start && entry_start < char_end {
+                    let mut carrier = (**c).clone();
+                    carrier.provenance = Some(prov.clone());
+                    new_entries.push((*pos, std::sync::Arc::new(carrier)));
+                } else {
+                    new_entries.push((*pos, c.clone()));
+                }
+                cum = entry_end;
+            }
+
+            let span_prov = std::mem::take(&mut edition.span_provenance);
+            *edition = Edition::from_entries(new_entries);
+            edition.span_provenance = span_prov;
+        }
+    }
+
+    fn apply_transclusion_attribution_internal(
+        &mut self,
+        link_id: BeId,
+        origin_work_id: BeId,
+        dest_work_id: BeId,
+        excerpt_text: &str,
+    ) -> Result<(), ServerError> {
         let source_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> = {
             let ws = self.works.get(&origin_work_id)
                 .ok_or(ServerError::WorkNotFound(origin_work_id))?;
@@ -4418,11 +4748,35 @@ impl Server {
             .iter()
             .find_map(|(_, c)| c.provenance.clone());
 
-        let mut source_prov: crate::edition::provenance::ElementProvenance = match source_prov {
+        let source_ws = self.works.get(&origin_work_id)
+            .ok_or(ServerError::WorkNotFound(origin_work_id))?;
+
+        let source_prov: crate::edition::provenance::ElementProvenance = match source_prov {
             Some(p) => p,
-            None => return Ok(()),
+            None => {
+                let author_name = source_ws.source_author_id
+                    .and_then(|aid| self.historical_authors.get(aid))
+                    .map(|a| if a.display_name.is_empty() { a.name.clone() } else { a.display_name.clone() })
+                    .unwrap_or_else(|| "Unknown".to_string());
+                crate::edition::provenance::ElementProvenance {
+                    author_public_key: [0u8; 32],
+                    author_display_name: author_name,
+                    author_club_id: 0,
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                    author_type: crate::edition::provenance::AuthorType::Historical,
+                    llm_model: None,
+                    historical_author_id: source_ws.source_author_id,
+                    source_work_id: None,
+                }
+            }
         };
-        source_prov.source_work_id = Some(origin_work_id);
+        let source_prov = crate::edition::provenance::ElementProvenance {
+            source_work_id: Some(origin_work_id),
+            ..source_prov
+        };
 
         let dest_edition = {
             let ws = self.works.get(&dest_work_id)
@@ -4444,9 +4798,8 @@ impl Server {
         let mut any_applied = false;
         let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
             Vec::with_capacity(dest_entries.len());
-        let mut cum = 0usize;
-        let mut attributed_positions: Vec<i64> = Vec::new();
 
+        let mut cum = 0usize;
         for (pos, c) in &dest_entries {
             let entry_start = cum;
             let entry_end = cum + c.char_len();
@@ -4456,7 +4809,6 @@ impl Server {
                 let mut carrier = (**c).clone();
                 carrier.provenance = Some(source_prov.clone());
                 new_entries.push((*pos, std::sync::Arc::new(carrier)));
-                attributed_positions.push(*pos);
                 any_applied = true;
                 cum = entry_end;
                 continue;
@@ -4468,11 +4820,11 @@ impl Server {
         if any_applied {
             let mut new_edition = crate::edition::Edition::from_entries(new_entries);
             new_edition.span_provenance = dest_edition.span_provenance.clone();
-
             let ws = self.works.get_mut(&dest_work_id)
                 .ok_or(ServerError::WorkNotFound(dest_work_id))?;
             ws.work.revise(new_edition);
             self.auto_checkpoint();
+            tracing::info!("[pending_attribution] applied for link {:04x}", link_id);
         }
 
         Ok(())
@@ -4993,7 +5345,114 @@ impl Server {
             Ok(ed) => ed,
             Err(_) => return Vec::new(),
         };
-        ed_a.find_content_shared_regions(&ed_b, 2)
+        let mut results = ed_a.find_content_shared_regions(&ed_b, 2);
+        let text_results = self.find_text_shared_regions(work_a, work_b);
+        let mut seen_a = std::collections::HashSet::new();
+        let mut seen_b = std::collections::HashSet::new();
+        for (sa, ea, sb, eb, _) in &results {
+            seen_a.insert((*sa, *ea));
+            seen_b.insert((*sb, *eb));
+        }
+        for (sa, ea, sb, eb, text) in text_results {
+            if !seen_a.contains(&(sa, ea)) || !seen_b.contains(&(sb, eb)) {
+                results.push((sa, ea, sb, eb, text));
+            }
+        }
+        results
+    }
+
+    pub fn find_text_shared_regions(
+        &self,
+        work_a: BeId,
+        work_b: BeId,
+    ) -> Vec<(i64, i64, i64, i64, String)> {
+        let text_a = match self.crdt_manager.current_text(work_a) {
+            Ok(t) => t,
+            Err(_) => match self.works.get(&work_a) {
+                Some(ws) => ws.work.current_edition().to_text(),
+                None => return Vec::new(),
+            },
+        };
+        let text_b = match self.crdt_manager.current_text(work_b) {
+            Ok(t) => t,
+            Err(_) => match self.works.get(&work_b) {
+                Some(ws) => ws.work.current_edition().to_text(),
+                None => return Vec::new(),
+            },
+        };
+        if text_a.is_empty() || text_b.is_empty() {
+            return Vec::new();
+        }
+
+        let min_len = 20;
+        let mut results: Vec<(i64, i64, i64, i64, String)> = Vec::new();
+        let mut claimed_a: Vec<std::ops::Range<usize>> = Vec::new();
+        let mut claimed_b: Vec<std::ops::Range<usize>> = Vec::new();
+
+        let paras_a: Vec<&str> = text_a.split('\n').filter(|p| p.trim().len() >= min_len).collect();
+        let mut para_offsets_a: Vec<usize> = Vec::new();
+        {
+            let mut off = 0;
+            for line in text_a.split('\n') {
+                para_offsets_a.push(off);
+                off += line.len() + 1;
+            }
+        }
+
+        let lines_a: Vec<(usize, &str)> = text_a
+            .split('\n')
+            .enumerate()
+            .filter(|(_, l)| l.trim().len() >= min_len)
+            .map(|(i, l)| (para_offsets_a.get(i).copied().unwrap_or(0), l))
+            .collect();
+
+        let mut line_offsets_b: Vec<usize> = Vec::new();
+        {
+            let mut off = 0;
+            for line in text_b.split('\n') {
+                line_offsets_b.push(off);
+                off += line.len() + 1;
+            }
+        }
+
+        let mut seeds: Vec<(usize, usize, usize, usize)> = Vec::new();
+
+        for (off_a, line_a) in &lines_a {
+            let trimmed_a = line_a.trim();
+            let trim_start = line_a.len() - line_a.trim_start().len();
+            let abs_off_a = off_a + trim_start;
+            let abs_end_a = abs_off_a + trimmed_a.len();
+            let search_len = trimmed_a.len();
+            let mut start = 0;
+            while start + search_len <= text_b.len() {
+                if let Some(pos) = text_b[start..].find(trimmed_a) {
+                    let abs_pos = start + pos;
+                    let match_end = abs_pos + trimmed_a.len();
+                    seeds.push((abs_off_a, abs_end_a, abs_pos, match_end));
+                    start = match_end;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        seeds.sort_by(|a, b| (b.1 - b.0).cmp(&(a.1 - a.0)));
+
+        for (sa, ea, sb, eb) in seeds {
+            let range_a = sa..ea;
+            let range_b = sb..eb;
+            let conflicts_a = claimed_a.iter().any(|r| r.start < range_a.end && r.end > range_a.start);
+            let conflicts_b = claimed_b.iter().any(|r| r.start < range_b.end && r.end > range_b.start);
+            if conflicts_a || conflicts_b {
+                continue;
+            }
+            let text = text_a[sa..ea].to_string();
+            results.push((sa as i64, ea as i64, sb as i64, eb as i64, text));
+            claimed_a.push(range_a);
+            claimed_b.push(range_b);
+        }
+
+        results
     }
 
     pub fn find_shared_regions_filtered(
@@ -5002,15 +5461,7 @@ impl Server {
         work_b: BeId,
         filter_text: &str,
     ) -> Vec<(i64, i64, i64, i64, String)> {
-        let ed_a = match self.work_edition(work_a) {
-            Ok(ed) => ed,
-            Err(_) => return Vec::new(),
-        };
-        let ed_b = match self.work_edition(work_b) {
-            Ok(ed) => ed,
-            Err(_) => return Vec::new(),
-        };
-        let shared = ed_a.find_content_shared_regions(&ed_b, 2);
+        let shared = self.find_shared_regions(work_a, work_b);
         if filter_text.is_empty() {
             return shared;
         }
@@ -7775,6 +8226,7 @@ pub(crate) mod persist_snapshot {
                 historical_authors: crate::server::historical_author::HistoricalAuthorRegistry::new(
                 ),
                 source_patterns: crate::server::source_matcher::builtin_patterns(),
+                pending_attributions: Vec::new(),
                 annotations: HashMap::new(),
             };
             for club_snap in &snapshot.clubs {
@@ -7939,6 +8391,8 @@ pub(crate) mod persist_snapshot {
             if let Some(ha) = &snapshot.historical_authors {
                 server.historical_authors = ha.clone();
             }
+
+            server.rebuild_pending_attributions();
 
             server
         }
@@ -8122,7 +8576,7 @@ pub(crate) mod persist_snapshot {
                 clubs: club_refs,
                 standalone_editions: standalone_refs,
                 links_hash: {
-                    let lk_data = postcard::to_allocvec(&links)
+                    let lk_data = serde_json::to_vec(&links)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     let hash = chunk_store.write_chunk(&lk_data)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -8153,7 +8607,7 @@ pub(crate) mod persist_snapshot {
                 reconcile_counter: self.reconcile_counter,
                 federation: Some(self.federation.to_snapshot()),
                 content_address_hash: {
-                    let ca_data = postcard::to_allocvec(&self.content_address)
+                    let ca_data = serde_json::to_vec(&self.content_address)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     let hash = chunk_store.write_chunk(&ca_data)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -8161,7 +8615,7 @@ pub(crate) mod persist_snapshot {
                 },
                 content_address: None,
                 blob_metas_hash: {
-                    let bm_data = postcard::to_allocvec(&blob_metas)
+                    let bm_data = serde_json::to_vec(&blob_metas)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     let hash = chunk_store.write_chunk(&bm_data)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -8170,7 +8624,7 @@ pub(crate) mod persist_snapshot {
                 blob_metas: Vec::new(),
                 key_history,
                 historical_authors_hash: {
-                    let ha_data = postcard::to_allocvec(&self.historical_authors)
+                    let ha_data = serde_json::to_vec(&self.historical_authors)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     let hash = chunk_store.write_chunk(&ha_data)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;

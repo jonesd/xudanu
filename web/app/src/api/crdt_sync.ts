@@ -135,6 +135,45 @@ export interface CompoundEditionPayload {
   elements: CompoundElementPayload[];
 }
 
+export interface AuthorContribution {
+  club_id: number;
+  display_name: string;
+  char_count: number;
+  percentage: number;
+}
+
+export interface WorkSummary {
+  unique_sources: number;
+  unique_authors: number;
+  version_count: number;
+  char_count: number;
+  author_contributions: AuthorContribution[];
+  reused_in_count: number;
+}
+
+export interface RevisionMeta {
+  revision: number;
+  char_count: number;
+  author_club_id: number | null;
+  author_display_name: string | null;
+}
+
+export interface WorkVersionTimeline {
+  revisions: RevisionMeta[];
+}
+
+export interface CompositionLayer {
+  revision: number;
+  author_club_id: number | null;
+  author_display_name: string | null;
+  text: string;
+  operation: string;
+}
+
+export interface PassageComposition {
+  layers: CompositionLayer[];
+}
+
 export interface HyperRefPayload {
   kind: string;
   work_context: number | null;
@@ -674,6 +713,25 @@ export class CrdtSyncClient {
     if (Array.isArray(val)) return val as WorkListEntry[];
     const rec = val as Record<string, unknown>;
     return (rec.work_list as WorkListEntry[]) || [];
+  }
+
+  async workSummary(workId: number): Promise<WorkSummary> {
+    const resp = await this.sendRequest("work_summary", { work_id: workId });
+    return extractValue(resp) as WorkSummary;
+  }
+
+  async workVersionTimeline(workId: number): Promise<WorkVersionTimeline> {
+    const resp = await this.sendRequest("work_version_timeline", { work_id: workId });
+    return extractValue(resp) as WorkVersionTimeline;
+  }
+
+  async passageComposition(workId: number, start: number, end: number): Promise<PassageComposition> {
+    const resp = await this.sendRequest("passage_composition", {
+      work_id: workId,
+      start,
+      end,
+    });
+    return extractValue(resp) as PassageComposition;
   }
 
   async setReadClub(workId: number, clubId: number | null): Promise<void> {

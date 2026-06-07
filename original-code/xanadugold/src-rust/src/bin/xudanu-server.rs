@@ -616,11 +616,23 @@ async fn main() {
             let shutdown_state = state.clone();
             let shutdown_data_dir = data_dir.clone();
             let shutdown_handler = tokio::spawn(async move {
-                tokio::signal::ctrl_c()
-                    .await
-                    .expect("failed to listen for ctrl-c");
-                tracing::info!("Shutting down...");
-                if let Some(ref dir) = shutdown_data_dir {
+                let sigint = async {
+                    tokio::signal::ctrl_c().await.expect("failed to listen for ctrl-c");
+                    "SIGINT"
+                };
+                let sigterm = async {
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                        .expect("failed to listen for SIGTERM")
+                        .recv()
+                        .await;
+                    "SIGTERM"
+                };
+                let which = tokio::select! {
+                    s = sigint => s,
+                    s = sigterm => s,
+                };
+                tracing::info!("Received {}, shutting down...", which);
+                if let Some(ref _dir) = shutdown_data_dir {
                     shutdown_state.server.with_server(|server| {
                         let start = std::time::Instant::now();
                         if server.chunk_store().is_some() {

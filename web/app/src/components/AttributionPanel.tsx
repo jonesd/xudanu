@@ -2,6 +2,36 @@ import { useMemo } from "react";
 import type { AttributionSpan, AttributionLogStatus } from "../api/crdt_sync";
 import { authorColor } from "../author-color";
 
+const HISTORICAL_COLORS = [
+  "#8b6914", "#2e7d32", "#6a1b9a", "#c62828", "#00695c",
+  "#e65100", "#1565c0", "#4e342e", "#37474f", "#ad1457",
+];
+
+function hslToHex(h: number, s: number, l: number): string {
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const c = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * c).toString(16).padStart(2, "0");
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+function seedFromBytes(bytes: number[]): number {
+  let h = 0;
+  for (const b of bytes) h = ((h << 5) - h + b) | 0;
+  return Math.abs(h);
+}
+
+function authorStripeColors(seed: number): [string, string] {
+  const hue1 = (seed * 137) % 360;
+  const hue2 = (hue1 + 40) % 360;
+  return [
+    hslToHex(hue1, 0.45, 0.38),
+    hslToHex(hue2, 0.35, 0.42),
+  ];
+}
+
 function bytesToHex(bytes: number[]): string {
   return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -15,6 +45,7 @@ interface AuthorGroup {
   key: string;
   displayName: string;
   color: string;
+  stripeColors: [string, string] | null;
   spans: AttributionSpan[];
   allValid: boolean;
   authorType: string | null;
@@ -34,20 +65,29 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
     const groups = new Map<string, AuthorGroup>();
 
     for (const span of spans) {
-      const key = bytesToHex(span.author_public_key);
+      const isHistorical = span.author_type === "historical";
+      const isLlm = span.author_type === "llm";
+      const key = isHistorical && span.historical_author_id != null
+        ? `ha:${span.historical_author_id}`
+        : isHistorical && span.source_work_id != null
+          ? `sw:${span.source_work_id}`
+          : bytesToHex(span.author_public_key);
       if (!groups.has(key)) {
-        const isLlm = span.author_type === "llm";
-        const isHistorical = span.author_type === "historical";
         const displayName = isHistorical
           ? (span.author_display_name || "Unknown Historical Author")
           : isLlm
             ? (span.llm_model || "LLM")
             : (span.author_display_name || shortKey(span.author_public_key));
-        const color = isLlm ? "#7c4dff" : isHistorical ? "#c4a35a" : authorColor(displayName);
+        const stripeSeed = isHistorical
+          ? (span.historical_author_id ?? span.source_work_id ?? 0)
+          : seedFromBytes(span.author_public_key);
+        const stripeColors = authorStripeColors(stripeSeed);
+        const color = isLlm ? "#7c4dff" : stripeColors[0];
         groups.set(key, {
           key,
           displayName,
           color,
+          stripeColors,
           spans: [],
           allValid: true,
           authorType: span.author_type,
@@ -68,8 +108,16 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
   const effectiveLength = spans.length > 0
     ? Math.max(documentLength, spans.reduce((max, s) => Math.max(max, s.end), 0))
     : documentLength;
-  const totalAttributed = spans.reduce((sum, s) => sum + (s.end - s.start), 0);
-  const coverage = effectiveLength > 0 ? Math.round((totalAttributed / effectiveLength) * 100) : 0;
+  const sortedSpans = [...spans].sort((a, b) => a.start - b.start);
+  let unionLength = 0;
+  let prevEnd = -1;
+  for (const s of sortedSpans) {
+    if (s.end <= prevEnd) continue;
+    const start = Math.max(s.start, prevEnd);
+    unionLength += s.end - start;
+    prevEnd = s.end;
+  }
+  const coverage = effectiveLength > 0 ? Math.round((unionLength / effectiveLength) * 100) : 0;
 
   return (
     <div className="attribution-panel">
@@ -96,8 +144,14 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
           {spans.map((span, i) => {
             const leftPct = (span.start / effectiveLength) * 100;
             const widthPct = ((span.end - span.start) / effectiveLength) * 100;
-            const key = bytesToHex(span.author_public_key);
+            const isH = span.author_type === "historical";
+            const key = isH && span.historical_author_id != null
+              ? `ha:${span.historical_author_id}`
+              : isH && span.source_work_id != null
+                ? `sw:${span.source_work_id}`
+                : bytesToHex(span.author_public_key);
             const author = authors.find((a) => a.key === key);
+            const bg = `repeating-linear-gradient(45deg, ${author.stripeColors[0]}, ${author.stripeColors[0]} 3px, ${author.stripeColors[1]} 3px, ${author.stripeColors[1]} 6px)`;
             return (
               <div
                 key={i}
@@ -105,7 +159,7 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
                 style={{
                   left: `${leftPct}%`,
                   width: `${widthPct}%`,
-                  backgroundColor: author?.color || "#666",
+                  background: bg,
                   opacity: span.signature_valid ? 0.7 : 0.35,
                 }}
                 title={`${author?.displayName || "unknown"} [${span.start}..${span.end}]${span.signature_valid ? "" : " (unsigned)"}`}
@@ -118,7 +172,9 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
       <ul className="attribution-authors">
         {authors.map((author) => (
           <li key={author.key} className={`attribution-author${author.authorType === "historical" ? " historical-author" : ""}`}>
-            <span className="author-color" style={{ backgroundColor: author.color }} />
+            <span className="author-color" style={author.stripeColors
+              ? { background: `repeating-linear-gradient(45deg, ${author.stripeColors[0]}, ${author.stripeColors[0]} 3px, ${author.stripeColors[1]} 3px, ${author.stripeColors[1]} 6px)` }
+              : { backgroundColor: author.color }} />
             <span className={`author-name${author.authorType === "historical" ? " historical-name" : ""}${author.authorType === "llm" ? " llm-name" : ""}`}>
               {author.displayName}
             </span>
@@ -147,8 +203,13 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
         <div className="attribution-timeline">
           <h4>Timeline</h4>
           <ul>
-            {spans.map((span, i) => {
-              const key = bytesToHex(span.author_public_key);
+            {[...spans].sort((a, b) => a.start - b.start).map((span, i) => {
+              const isHistorical = span.author_type === "historical";
+              const key = isHistorical && span.historical_author_id != null
+                ? `ha:${span.historical_author_id}`
+                : isHistorical && span.source_work_id != null
+                  ? `sw:${span.source_work_id}`
+                  : bytesToHex(span.author_public_key);
               const author = authors.find((a) => a.key === key);
               const time = new Date(Number(BigInt(span.timestamp) / 1000000n));
               return (

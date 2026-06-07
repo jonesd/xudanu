@@ -562,9 +562,17 @@ fn dispatch_inner(
             display_name,
             password,
         } => {
-            return Err(crate::server::ServerError::InvalidArgument(
-                "Direct identity creation is disabled. Sign in with GitHub or Google instead.".into()
-            ));
+            use crate::server::club::Credential;
+            let credential = match password {
+                Some(ref pw) if !pw.is_empty() => {
+                    let phc_hash = crate::crypto::password::hash_password(pw)
+                        .map_err(|e| crate::server::ServerError::Internal(format!("password hash failed: {}", e)))?;
+                    Some(Credential::Password { phc_hash })
+                }
+                _ => None,
+            };
+            let id = srv.create_personal_club(session_id, display_name, credential, password)?;
+            Ok(ResponseValue::Id(id))
         }
         WireRequest::ClubWhoAmI => {
             let clubs = srv.who_am_i(session_id)?;
@@ -783,6 +791,7 @@ fn dispatch_inner(
             srv.ensure_can_read(session_id, origin)?;
             srv.ensure_can_read(session_id, destination)?;
             let o_ref = origin_ref.map(|hr| {
+                tracing::info!("[link_create] origin_ref excerpt present={}, len={}", hr.excerpt.is_some(), hr.excerpt.as_deref().map(|s| s.len()).unwrap_or(0));
                 let excerpt = hr
                     .excerpt
                     .as_deref()

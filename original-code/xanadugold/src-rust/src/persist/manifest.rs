@@ -5,7 +5,7 @@ use crate::edition::backend::BeId;
 use crate::persist::chunk_store::ChunkStore;
 use crate::persist::edition_chunks::{EditionChunkRef, WorkChunkRef};
 
-const CURRENT_MANIFEST_VERSION: u32 = 3;
+const CURRENT_MANIFEST_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ClubChunkRef {
@@ -401,11 +401,18 @@ pub fn read_manifest(path: &Path) -> Result<Manifest, ManifestError> {
     let content = std::fs::read_to_string(path)?;
     let manifest: Manifest = serde_json::from_str(&content)?;
 
-    if manifest.format_version != CURRENT_MANIFEST_VERSION {
+    if manifest.format_version > CURRENT_MANIFEST_VERSION {
         return Err(ManifestError::InvalidVersion {
             found: manifest.format_version,
             expected: CURRENT_MANIFEST_VERSION,
         });
+    }
+    if manifest.format_version < CURRENT_MANIFEST_VERSION {
+        tracing::info!(
+            "Manifest version {} → {} (will upgrade on next checkpoint)",
+            manifest.format_version,
+            CURRENT_MANIFEST_VERSION,
+        );
     }
 
     let stored_checksum = manifest.checksum.clone();
