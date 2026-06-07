@@ -42,14 +42,12 @@ export function ReadingView({
       try {
         const s = await clientRef.current!.workSummary(workId);
         if (!cancelled) setSummary(s);
-      } catch (e) {
-        console.warn("[reading] workSummary failed:", e);
+      } catch (_e) {
       }
       try {
         const t = await clientRef.current!.workVersionTimeline(workId);
         if (!cancelled) setTimeline(t);
-      } catch (e) {
-        console.warn("[reading] workVersionTimeline failed:", e);
+      } catch (_e) {
       }
     })();
     return () => { cancelled = true; };

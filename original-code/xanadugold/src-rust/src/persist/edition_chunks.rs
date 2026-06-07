@@ -27,6 +27,8 @@ pub struct WorkChunkRef {
     pub read_club: Option<BeId>,
     pub edit_club: Option<BeId>,
     pub sponsors: Vec<BeId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub endorsements: Vec<(u64, u64)>,
 }
 
 #[derive(Debug, Clone)]
@@ -234,6 +236,7 @@ pub fn work_to_chunks_durable(
         read_club: work.read_club(),
         edit_club: work.edit_club(),
         sponsors: work.sponsors().to_vec(),
+        endorsements: work.endorsements().iter().map(|e| (e.club_id(), e.token_id())).collect(),
     })
 }
 
@@ -248,6 +251,13 @@ pub fn work_from_chunks_current(
     work.set_edit_club(chunk_ref.edit_club);
     for s in &chunk_ref.sponsors {
         work.add_sponsor(*s);
+    }
+    if !chunk_ref.endorsements.is_empty() {
+        let es = crate::edition::endorsement::EndorsementSet::from_endorsements(
+            chunk_ref.endorsements.iter().map(|&(c, t)| crate::edition::endorsement::Endorsement::new(c, t)).collect()
+        );
+        tracing::info!("[restore] restoring {} endorsements for work {}", es.len(), chunk_ref.be_id);
+        work.endorse(&es);
     }
     work.set_revision_count(chunk_ref.revision_count);
     Ok(work)

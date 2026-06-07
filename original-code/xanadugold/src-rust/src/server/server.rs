@@ -6596,8 +6596,16 @@ impl Server {
             .sessions
             .get(&session_id)
             .ok_or(ServerError::SessionNotFound(session_id))?;
-        let km = session._key_master().ok_or(ServerError::NotAuthorized)?;
         for club_id in endorsements.club_ids() {
+            if session.has_authority(club_id) {
+                continue;
+            }
+            let km = match session._key_master() {
+                Some(km) => km,
+                None => return Err(ServerError::Unauthorized(format!(
+                    "no authority for club {}", club_id
+                ))),
+            };
             if !km.has_signature_authority(club_id, &self.clubs) {
                 return Err(ServerError::Unauthorized(format!(
                     "no signature authority for club {}",
@@ -6621,6 +6629,11 @@ impl Server {
             .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
         ws.work.endorse(&endorsements);
         ws.chunk_ref = None;
+        drop(ws);
+        tracing::info!("[work_endorse] calling checkpoint_to_store for work {}", work_id);
+        if let Err(e) = self.checkpoint_to_store() {
+            tracing::warn!("[work_endorse] checkpoint failed: {}", e);
+        }
         Ok(())
     }
 
@@ -6637,6 +6650,8 @@ impl Server {
             .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
         ws.work.retract(&endorsements);
         ws.chunk_ref = None;
+        drop(ws);
+        let _ = self.checkpoint_to_store();
         Ok(())
     }
 
