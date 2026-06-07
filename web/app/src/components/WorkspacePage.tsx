@@ -3,6 +3,7 @@ import { useCrdtSync } from "../hooks/useCrdtSync";
 import { useTransclusion } from "../hooks/useTransclusion";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
 import { VirtualizedEditor } from "../components/VirtualizedEditor";
+import { DropdownMenu, DropdownItem, DropdownSeparator, DropdownLabel } from "../components/DropdownMenu";
 import { AwarenessIndicators } from "../components/AwarenessIndicators";
 import { DebugPanel } from "../components/DebugPanel";
 import { AttributionPanel } from "../components/AttributionPanel";
@@ -10,7 +11,27 @@ import { CompareHeader, CompareSplitView, useCompare } from "../components/Compa
 import { IdentityPanel } from "../components/IdentityPanel";
 import { ImportWizard } from "../components/ImportWizard";
 import { TransclusionBadge } from "../components/TransclusionBadge";
+import { ReadingView } from "./reading/ReadingView";
+import { DocumentSettings, loadDocPreferences, saveDocPreferences } from "../components/DocumentSettings";
+import type { DocPreferences } from "../components/DocumentSettings";
 import type { WorkListEntry, HistoricalAuthorEntry } from "../api/crdt_sync";
+
+function SidebarSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="sidebar-collapsible">
+      <button
+        type="button"
+        className="sidebar-collapsible-toggle"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="sidebar-collapsible-arrow">{open ? "▾" : "▸"}</span>
+        {title}
+      </button>
+      {open && <div className="sidebar-collapsible-content">{children}</div>}
+    </div>
+  );
+}
 
 const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
 
@@ -29,35 +50,28 @@ export function WorkspacePage() {
   const [isPublic, setIsPublic] = useState(false);
   const [isShared, setIsShared] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [llmMenuOpen, setLlmMenuOpen] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<"docs" | "authors" | "links">("docs");
+  const [showSettings, setShowSettings] = useState(false);
+  const [docPrefs, setDocPrefs] = useState<DocPreferences>(loadDocPreferences);
+  const [viewMode, setViewMode] = useState<"editing" | "reading">(
+    () => (localStorage.getItem("xudanu-view-mode") as "editing" | "reading") || "editing"
+  );
   const [authors, setAuthors] = useState<HistoricalAuthorEntry[]>([]);
   const [expandedAuthorId, setExpandedAuthorId] = useState<number | null>(null);
   const [authorWorks, setAuthorWorks] = useState<WorkListEntry[]>([]);
   const [sourceText, setSourceText] = useState<string | null>(null);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
-  const llmRef = useRef<HTMLDivElement>(null);
+  const sourceViewerRef = useRef<HTMLDivElement>(null);
 
   const transclusion = useTransclusion();
-
-  useEffect(() => {
-    if (!llmMenuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (llmRef.current && !llmRef.current.contains(e.target as Node)) {
-        setLlmMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [llmMenuOpen]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const wid = params.get("work");
     if (wid) {
-      setWorkBeId(parseInt(wid, 10));
+      const parsed = wid.startsWith("0x") ? parseInt(wid, 16) : parseInt(wid, 10);
+      if (!isNaN(parsed)) setWorkBeId(parsed);
     }
   }, []);
 
@@ -91,6 +105,7 @@ export function WorkspacePage() {
     getEditClub,
     publicClubId,
     logout,
+    createIdentity,
     clientRef,
   } = useCrdtSync(WS_URL, workBeId);
 
@@ -175,9 +190,9 @@ export function WorkspacePage() {
   }, [connected, authenticated, loadWorks]);
 
   useEffect(() => {
-    if (connected && sidebarTab === "authors") loadAuthors();
-  }, [connected, authenticated, sidebarTab, loadAuthors]);
+    if (connected) loadAuthors();
 
+  }, [connected, authenticated, loadAuthors]);
   useEffect(() => {
     if (!connected) return;
     const interval = setInterval(loadWorks, 5000);
@@ -267,10 +282,10 @@ export function WorkspacePage() {
     const pending = transclusion.pending;
     if (!pending) return;
     const excerpt = pending.text;
+    const newText = text.slice(0, position) + excerpt + text.slice(position);
+    setText(newText);
     const linkId = await transclusion.placeTransclusion(clientRef.current, workBeId, position);
-      if (linkId !== null) {
-      const newText = text.slice(0, position) + excerpt + text.slice(position);
-      setText(newText);
+    if (linkId !== null) {
       if (clientRef.current) {
         await new Promise((r) => setTimeout(r, 500));
         await transclusion.loadLinks(clientRef.current, workBeId, works);
@@ -278,12 +293,41 @@ export function WorkspacePage() {
     }
   }, [clientRef, workBeId, transclusion, works, text, setText]);
 
+  useEffect(() => {
+    if (!isSourceWork) return;
+    const el = sourceViewerRef.current;
+    if (!el) return;
+    const handler = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0 || !el.contains(sel.anchorNode)) {
+        setSelectionRange(null);
+        return;
+      }
+      if (sel.isCollapsed) {
+        setSelectionRange(null);
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      const pre = document.createRange();
+      pre.selectNodeContents(el);
+      pre.setEnd(range.startContainer, range.startOffset);
+      const start = pre.toString().length;
+      const preEnd = document.createRange();
+      preEnd.selectNodeContents(el);
+      preEnd.setEnd(range.endContainer, range.endOffset);
+      const end = preEnd.toString().length;
+      setSelectionRange({ start, end });
+    };
+    document.addEventListener("selectionchange", handler);
+    return () => document.removeEventListener("selectionchange", handler);
+  }, [isSourceWork]);
+
   const handleTranscludeSelection = useCallback(() => {
     if (!selectionRange || workBeId === null) return;
-    const selectedText = text.slice(selectionRange.start, selectionRange.end);
+    const selectedText = displayText.slice(selectionRange.start, selectionRange.end);
     const title = currentWorkMeta?.title || `Work ${workBeId.toString(16).padStart(4, "0")}`;
     transclusion.holdSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
-  }, [selectionRange, workBeId, text, currentWorkMeta, transclusion]);
+  }, [selectionRange, workBeId, displayText, currentWorkMeta, transclusion]);
 
   const handlePasteText = useCallback(async (pasteText: string, pasteStart: number) => {
     if (!clientRef.current || workBeId === null) return;
@@ -318,88 +362,174 @@ export function WorkspacePage() {
         <span className={`sync-status ${connected ? "sync-connected" : "sync-disconnected"}`}>
           {connected ? "Live" : "Offline"}
         </span>
-        <div className="header-spacer" />
+
         {workIdDisplay && (
-          <span className="work-id-label">Work {workIdDisplay}</span>
+          <>
+            <div className="header-separator" />
+            <span className="work-id-label">{workIdDisplay}</span>
+            <span className="work-title-label">
+              {currentWorkMeta?.title || "Untitled"}
+              {isSourceWork ? " SRC" : ""}
+            </span>
+          </>
         )}
+
+        <div className="header-spacer" />
+
         {workBeId !== null && (
           <>
             <button
-              onClick={async () => {
-                if (isShared) {
-                  await unshareWork();
-                  setIsShared(false);
-                } else {
-                  await shareWork();
-                  setIsPublic(true);
-                  setIsShared(true);
-                }
-              }}
-              type="button"
-              className={isShared ? "share-active" : ""}
-              disabled={!connected || !identity}
-              title={isShared ? "Anyone can edit. Click to restrict to owner." : "Click to let anyone read and edit."}
-            >
-              {isShared ? "Shared" : "Share"}
-            </button>
-            <button
-              onClick={async () => {
-                if (workBeId === null) return;
-                const nextPublic = !isPublic;
-                const targetClub = nextPublic ? publicClubId : identity?.club_id ?? null;
-                if (!targetClub && !nextPublic) return;
-                await setVisibility(workBeId, targetClub);
-                setIsPublic(nextPublic);
-                loadWorks();
-              }}
-              type="button"
-              className={isPublic ? "visibility-public" : "visibility-private"}
-              disabled={!connected || !identity}
-              title={isPublic ? "Public — anyone can read. Click to make private." : "Private — only you can read. Click to make public."}
-            >
-              {isPublic ? "Public" : "Private"}
-            </button>
-            <button
-              onClick={toggleWatch}
-              type="button"
-              className={watchEnabled ? "watch-toggle-active" : ""}
-              disabled={!connected}
-              title="Watch — monitors for documents with similar content and lists them above the editor"
-            >
-              {watchEnabled ? "Watching" : "Watch"}
-            </button>
-            <button
-              onClick={() => setShowDebug((d) => !d)}
-              type="button"
-              className={showDebug ? "debug-toggle-active" : ""}
-              title="Debug — show raw protocol messages"
-            >
-              Debug
-            </button>
-            <button
               onClick={() => {
-                setShowAttribution((a) => {
-                  const next = !a;
-                  if (next) refreshAttribution();
-                  return next;
-                });
+                const next = viewMode === "editing" ? "reading" : "editing";
+                setViewMode(next);
+                localStorage.setItem("xudanu-view-mode", next);
               }}
               type="button"
-              className={showAttribution ? "attribution-toggle-active" : ""}
-              disabled={!connected}
-              title="Attribution — show content source and author attribution for each span"
+              className={`mode-toggle-btn ${viewMode === "reading" ? "mode-reading" : ""}`}
+              title={viewMode === "reading" ? "Switch to Editing mode" : "Switch to Reading mode"}
             >
-              Attribution
+              {viewMode === "reading" ? "✏️ Edit" : "👁 View"}
             </button>
-            <button
-              onClick={() => setShowCompare((c) => !c)}
-              type="button"
-              className={showCompare ? "debug-toggle-active" : ""}
-              disabled={!connected || workBeId === null || works.length < 2}
-              title="Compare — show differences side-by-side against another document or a past revision"
-            >
-              Compare
-            </button>
+
+            {identity && (
+              <DropdownMenu
+                label={isShared ? "Shared ▾" : isPublic ? "Public ▾" : "Share ▾"}
+                active={isShared || isPublic}
+              >
+                {(close) => (
+                  <>
+                    <DropdownLabel>Visibility</DropdownLabel>
+                    <DropdownItem
+                      checked={isPublic}
+                      onClick={async () => {
+                        if (!isPublic && workBeId !== null) {
+                          const targetClub = publicClubId;
+                          if (targetClub) {
+                            await setVisibility(workBeId, targetClub);
+                            setIsPublic(true);
+                            loadWorks();
+                          }
+                        }
+                        close();
+                      }}
+                    >
+                      Public — anyone can read
+                    </DropdownItem>
+                    <DropdownItem
+                      checked={!isPublic}
+                      onClick={async () => {
+                        if (isPublic && workBeId !== null) {
+                          const targetClub = identity?.club_id ?? null;
+                          if (targetClub) {
+                            await setVisibility(workBeId, targetClub);
+                            setIsPublic(false);
+                            loadWorks();
+                          }
+                        }
+                        close();
+                      }}
+                    >
+                      Private — only you
+                    </DropdownItem>
+                    <DropdownSeparator />
+                    <DropdownLabel>Editing</DropdownLabel>
+                    <DropdownItem
+                      checked={isShared}
+                      onClick={async () => {
+                        if (isShared) {
+                          await unshareWork();
+                          setIsShared(false);
+                        } else {
+                          await shareWork();
+                          setIsPublic(true);
+                          setIsShared(true);
+                        }
+                        close();
+                      }}
+                    >
+                      {isShared ? "Restrict to owner" : "Anyone can edit"}
+                    </DropdownItem>
+                  </>
+                )}
+              </DropdownMenu>
+            )}
+
+            <DropdownMenu label="More ▾">
+              {(close) => (
+                <>
+                  <DropdownItem
+                    checked={watchEnabled}
+                    onClick={() => { toggleWatch(); }}
+                  >
+                    Watch for matches
+                  </DropdownItem>
+                  <DropdownItem
+                    checked={showAttribution}
+                    onClick={() => {
+                      setShowAttribution((a) => {
+                        const next = !a;
+                        if (next) refreshAttribution();
+                        return next;
+                      });
+                    }}
+                  >
+                    Show attribution
+                  </DropdownItem>
+                  <DropdownItem
+                    disabled={!connected || works.length < 2}
+                    onClick={() => { setShowCompare((c) => !c); }}
+                  >
+                    Compare
+                  </DropdownItem>
+                  <DropdownSeparator />
+                  <DropdownItem
+                    onClick={async () => {
+                      setLlmMenuOpen(false);
+                      setNarrating(true);
+                      setNarration(null);
+                      setNarrationModel("");
+                      const result = await narrateDiff();
+                      setNarration(result.text);
+                      setNarrationModel(result.model);
+                      if (result.updatedText) {
+                        setTextLocal(result.updatedText);
+                        setTimeout(() => refreshAttribution(), 300);
+                      }
+                      setNarrating(false);
+                    }}
+                    disabled={!llmEnabled || narrating}
+                  >
+                    {narrating ? "Summarizing..." : "Summarize Changes"}
+                  </DropdownItem>
+                  <DropdownItem
+                    onClick={async () => {
+                      setLoadingFeedback(true);
+                      setFeedback(null);
+                      setFeedbackModel("");
+                      const result = await getWritingFeedback();
+                      setFeedback(result.text);
+                      setFeedbackModel(result.model);
+                      setLoadingFeedback(false);
+                    }}
+                    disabled={!llmEnabled || loadingFeedback}
+                  >
+                    {loadingFeedback ? "Reviewing..." : "Writing Feedback"}
+                  </DropdownItem>
+                  <DropdownSeparator />
+                  <DropdownItem
+                    checked={showDebug}
+                    onClick={() => { setShowDebug((d) => !d); }}
+                  >
+                    Debug panel
+                  </DropdownItem>
+                  <DropdownSeparator />
+                  <DropdownItem onClick={() => { setShowSettings(true); }}>
+                    Settings
+                  </DropdownItem>
+                </>
+              )}
+            </DropdownMenu>
+
             <CompareHeader
               visible={showCompare}
               state={compare}
@@ -415,60 +545,8 @@ export function WorkspacePage() {
                 className="transclude-btn"
                 title="Create transclusion link from selected text"
               >
-                Transclude
+                Transclude ({selectionRange.start}-{selectionRange.end})
               </button>
-            )}
-            {llmEnabled && (
-              <div className="llm-dropdown" ref={llmRef}>
-                <button
-                  type="button"
-                  className="llm-dropdown-toggle"
-                  disabled={!connected}
-                  onClick={() => setLlmMenuOpen((o) => !o)}
-                >
-                  AI &#9662;
-                </button>
-                {llmMenuOpen && (
-                  <div className="llm-dropdown-menu">
-                    <button
-                      type="button"
-                      disabled={narrating}
-                      onClick={async () => {
-                        setLlmMenuOpen(false);
-                        setNarrating(true);
-                        setNarration(null);
-                        setNarrationModel("");
-                        const result = await narrateDiff();
-                        setNarration(result.text);
-                        setNarrationModel(result.model);
-                        if (result.updatedText) {
-                          setTextLocal(result.updatedText);
-                          setTimeout(() => refreshAttribution(), 300);
-                        }
-                        setNarrating(false);
-                      }}
-                    >
-                      {narrating ? "Summarizing..." : "Summarize Changes"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={loadingFeedback}
-                      onClick={async () => {
-                        setLlmMenuOpen(false);
-                        setLoadingFeedback(true);
-                        setFeedback(null);
-                        setFeedbackModel("");
-                        const result = await getWritingFeedback();
-                        setFeedback(result.text);
-                        setFeedbackModel(result.model);
-                        setLoadingFeedback(false);
-                      }}
-                    >
-                      {loadingFeedback ? "Reviewing..." : "Writing Feedback"}
-                    </button>
-                  </div>
-                )}
-              </div>
             )}
           </>
         )}
@@ -476,6 +554,7 @@ export function WorkspacePage() {
           identity={identity}
           connected={connected}
           onLogin={login}
+          onCreateIdentity={createIdentity}
           onLogout={logout}
         />
       </header>
@@ -484,242 +563,234 @@ export function WorkspacePage() {
 
       <div className="workspace-body">
         <aside className="document-sidebar">
-          <div className="sidebar-tabs">
-            <button
-              className={`sidebar-tab ${sidebarTab === "docs" ? "active" : ""}`}
-              onClick={() => setSidebarTab("docs")}
-            >
-              Docs
+          <div className="sidebar-actions">
+            <button onClick={handleCreate} type="button" disabled={!connected || !identity}>
+              + New
             </button>
-            <button
-              className={`sidebar-tab ${sidebarTab === "authors" ? "active" : ""}`}
-              onClick={() => setSidebarTab("authors")}
-            >
-              Authors
-            </button>
-            <button
-              className={`sidebar-tab ${sidebarTab === "links" ? "active" : ""}`}
-              onClick={() => setSidebarTab("links")}
-            >
-              Links
+            <button onClick={() => setShowImport(true)} type="button" disabled={!connected || !identity}>
+              Import Source
             </button>
           </div>
-          {sidebarTab === "docs" && (
-            <>
-              <div className="sidebar-actions">
-                <button onClick={handleCreate} type="button" disabled={!connected || !identity}>
-                  + New
-                </button>
-                <button onClick={() => setShowImport(true)} type="button" disabled={!connected || !identity}>
-                  Import Source
-                </button>
-              </div>
-              <div className="sidebar-search">
-                <input
-                  type="text"
-                  placeholder="Filter..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="sidebar-search-input"
-                />
-              </div>
-              <div className="work-list">
-                {(() => {
-                  const q = searchQuery.toLowerCase();
-                  const filtered = q
-                    ? works.filter((w) =>
-                        (w.title || "").toLowerCase().includes(q) ||
-                        w.work_id.toString(16).includes(q)
-                      )
-                    : works;
-                  const docs = filtered.filter((w) => !w.is_source);
-                  const sources = filtered.filter((w) => w.is_source);
+          <div className="sidebar-search">
+            <input
+              type="text"
+              placeholder="Search documents, authors..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="sidebar-search-input"
+            />
+          </div>
+          <div className="work-list">
+            {(() => {
+              const q = searchQuery.toLowerCase();
+              const filtered = q
+                ? works.filter((w) =>
+                    (w.title || "").toLowerCase().includes(q) ||
+                    w.work_id.toString(16).includes(q)
+                  )
+                : works;
+              const docs = filtered.filter((w) => !w.is_source);
+              const sources = filtered.filter((w) => w.is_source);
+              const filteredAuthors = q
+                ? authors.filter((a) =>
+                    (a.display_name || a.name || "").toLowerCase().includes(q)
+                  )
+                : authors;
+              const outgoing = transclusion.links.filter((l) => l.origin === workBeId);
+              const incoming = transclusion.links.filter((l) => l.destination === workBeId);
 
-                  const renderWork = (w: WorkListEntry) => (
-                    <div
-                      key={w.work_id}
-                      className={`work-list-item ${w.work_id === workBeId ? "active" : ""}`}
-                      onClick={() => selectWork(w.work_id)}
-                    >
-                      <div className="work-list-meta">
-                        <span className="work-list-id">
-                          {w.work_id.toString(16).padStart(4, "0")}
-                        </span>
-                        <span className={`work-list-badge ${w.read_club === publicClubId ? "badge-public" : "badge-private"}`}>
-                          {w.read_club === publicClubId ? "pub" : "priv"}
-                        </span>
-                        <span className="work-list-rev">r{w.revision_count}</span>
-                      </div>
-                      <span className="work-list-title">
-                        {w.title
-                          ? w.title.length > 30
-                            ? w.title.slice(0, 30) + "..."
-                            : w.title
-                          : "Untitled"}
-                      </span>
-                    </div>
-                  );
-
-                  return filtered.length === 0 ? (
-                    <div className="work-list-empty">{q ? "No matches" : "No documents yet"}</div>
-                  ) : (
-                    <>
-                      {docs.length > 0 && (
-                        <>
-                          <div className="link-section-label">Documents ({docs.length})</div>
-                          {docs.map(renderWork)}
-                        </>
-                      )}
-                      {sources.length > 0 && (
-                        <>
-                          <div className="link-section-label">Source Works ({sources.length})</div>
-                          {sources.map((w) => (
-                            <div
-                              key={w.work_id}
-                              className={`work-list-item source-work-item ${w.work_id === workBeId ? "active" : ""}`}
-                              onClick={() => selectWork(w.work_id)}
-                            >
-                              <div className="work-list-meta">
-                                <span className="work-list-id">
-                                  {w.work_id.toString(16).padStart(4, "0")}
-                                </span>
-                                <span className="work-list-badge badge-source">src</span>
-                                <span className="work-list-rev">r{w.revision_count}</span>
-                              </div>
-                              <span className="work-list-title">
-                                {w.title
-                                  ? w.title.length > 30
-                                    ? w.title.slice(0, 30) + "..."
-                                    : w.title
-                                  : "Untitled"}
-                              </span>
-                              {w.source_edition_info && (
-                                <span className="author-work-info">{w.source_edition_info}</span>
-                              )}
-                            </div>
-                          ))}
-                        </>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-            </>
-          )}
-          {sidebarTab === "authors" && (
-            <div className="work-list">
-              {authors.length === 0 ? (
-                <div className="work-list-empty">No historical authors</div>
-              ) : (
-                authors.map((a) => (
-                  <div key={a.be_id}>
-                    <div
-                      className={`author-list-item ${expandedAuthorId === a.be_id ? "active" : ""}`}
-                      onClick={() => handleExpandAuthor(a.be_id)}
-                    >
-                      <span className="author-list-name">{a.display_name || a.name}</span>
-                      <span className="author-list-dates">
-                        {a.birth_year != null || a.death_year != null
-                          ? `${a.birth_year != null ? a.birth_year : "?"}\u2013${a.death_year != null ? a.death_year : "?"}`
-                          : ""}
-                      </span>
-                    </div>
-                    {expandedAuthorId === a.be_id && (
-                      <div className="author-works">
-                        {authorWorks.length === 0 ? (
-                          <div className="author-work-empty">No imported works</div>
-                        ) : (
-                          authorWorks.map((w) => (
-                            <div
-                              key={w.work_id}
-                              className={`work-list-item author-work-item ${w.work_id === workBeId ? "active" : ""}`}
-                              onClick={() => selectWork(w.work_id)}
-                            >
-                              <span className="work-list-title">
-                                {w.title || "Untitled"}
-                              </span>
-                              {w.source_edition_info && (
-                                <span className="author-work-info">{w.source_edition_info}</span>
-                              )}
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )}
+              const renderWork = (w: WorkListEntry) => (
+                <div
+                  key={w.work_id}
+                  className={`work-list-item ${w.work_id === workBeId ? "active" : ""}`}
+                  onClick={() => selectWork(w.work_id)}
+                >
+                  <div className="work-list-meta">
+                    <span className="work-list-id">
+                      {w.work_id.toString(16).padStart(4, "0")}
+                    </span>
+                    <span className={`work-list-badge ${w.read_club === publicClubId ? "badge-public" : "badge-private"}`}>
+                      {w.read_club === publicClubId ? "pub" : "priv"}
+                    </span>
+                    <span className="work-list-rev">r{w.revision_count}</span>
                   </div>
-                ))
-              )}
-            </div>
-          )}
-          {sidebarTab === "links" && (
-            <div className="work-list">
-              {transclusion.links.length === 0 ? (
-                <div className="work-list-empty">No transclusion links</div>
-              ) : (
-                (() => {
-                  const outgoing = transclusion.links.filter((l) => l.origin === workBeId);
-                  const incoming = transclusion.links.filter((l) => l.destination === workBeId);
-                  const renderLinks = (links: typeof transclusion.links, label: string, arrow: string) => {
-                    if (links.length === 0) return null;
-                    return (
-                      <div key={label}>
-                        <div className="link-section-label">{label} ({links.length})</div>
-                        {links.map((link) => {
-                          const isOrigin = link.origin === workBeId;
-                          const otherId = isOrigin ? link.destination : link.origin;
-                          const otherWork = works.find((w) => w.work_id === otherId);
-                          const otherTitle = otherWork?.title || `Work ${otherId.toString(16).padStart(4, "0")}`;
-                          const ref = link.origin_ref || link.destination_ref;
-                          return (
-                            <div
-                              key={link.link_id}
-                              className="link-list-item"
-                              onClick={() => selectWork(otherId)}
-                            >
-                              <div className="link-list-header">
-                                <span className="link-list-direction">{arrow}</span>
-                                <span className="link-list-title">{otherTitle}</span>
-                              </div>
-                              {ref?.excerpt && (
-                                <span className="link-list-excerpt">
-                                  {ref.excerpt.length > 60 ? ref.excerpt.slice(0, 60) + "\u2026" : ref.excerpt}
-                                </span>
+                  <span className="work-list-title">
+                    {w.title
+                      ? w.title.length > 30
+                        ? w.title.slice(0, 30) + "..."
+                        : w.title
+                      : "Untitled"}
+                  </span>
+                </div>
+              );
+
+              const renderSourceWork = (w: WorkListEntry) => (
+                <div
+                  key={w.work_id}
+                  className={`work-list-item source-work-item ${w.work_id === workBeId ? "active" : ""}`}
+                  onClick={() => selectWork(w.work_id)}
+                >
+                  <div className="work-list-meta">
+                    <span className="work-list-id">
+                      {w.work_id.toString(16).padStart(4, "0")}
+                    </span>
+                    <span className="work-list-badge badge-source">src</span>
+                    <span className="work-list-rev">r{w.revision_count}</span>
+                  </div>
+                  <span className="work-list-title">
+                    {w.title
+                      ? w.title.length > 30
+                        ? w.title.slice(0, 30) + "..."
+                        : w.title
+                      : "Untitled"}
+                  </span>
+                  {w.source_edition_info && (
+                    <span className="author-work-info">{w.source_edition_info}</span>
+                  )}
+                </div>
+              );
+
+              const renderLinkItem = (link: typeof transclusion.links[0], arrow: string) => {
+                const isOrigin = link.origin === workBeId;
+                const otherId = isOrigin ? link.destination : link.origin;
+                const otherWork = works.find((w) => w.work_id === otherId);
+                const otherTitle = otherWork?.title || `Work ${otherId.toString(16).padStart(4, "0")}`;
+                const ref = link.origin_ref || link.destination_ref;
+                return (
+                  <div
+                    key={link.link_id}
+                    className="link-list-item"
+                    onClick={() => selectWork(otherId)}
+                    title={ref?.excerpt || otherTitle}
+                  >
+                    <div className="link-list-header">
+                      <span className="link-list-direction">{arrow}</span>
+                      <span className="link-list-title">{otherTitle}</span>
+                    </div>
+                    {ref?.excerpt && (
+                      <span className="link-list-excerpt" title={ref.excerpt}>
+                        {ref.excerpt.length > 60 ? ref.excerpt.slice(0, 60) + "\u2026" : ref.excerpt}
+                      </span>
+                    )}
+                    {ref?.provenance_chain && ref.provenance_chain.length > 0 && (
+                      <span className="link-list-chain" title={ref.provenance_chain.map((h) => `Work ${h.source_work_id.toString(16).padStart(4, "0")} via link ${h.link_id.toString(16).padStart(4, "0")}`).join("\n")}>
+                        {ref.provenance_chain.length} hop{ref.provenance_chain.length > 1 ? "s" : ""}
+                      </span>
+                    )}
+                    <button
+                      className="link-list-delete"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (clientRef.current) transclusion.deleteLink(clientRef.current, link.link_id);
+                      }}
+                    >
+                      {"\u00d7"}
+                    </button>
+                  </div>
+                );
+              };
+
+              const hasContent = docs.length > 0 || sources.length > 0 || filteredAuthors.length > 0 || outgoing.length > 0 || incoming.length > 0;
+
+              if (!hasContent && !q) {
+                return <div className="work-list-empty">No documents yet</div>;
+              }
+              if (!hasContent && q) {
+                return <div className="work-list-empty">No matches</div>;
+              }
+
+              return (
+                <>
+                  {docs.length > 0 && (
+                    <div className="sidebar-section">
+                      <div className="link-section-label">Documents ({docs.length})</div>
+                      {docs.map(renderWork)}
+                    </div>
+                  )}
+                  {sources.length > 0 && (
+                    <div className="sidebar-section">
+                      <div className="link-section-label">Source Works ({sources.length})</div>
+                      {sources.map(renderSourceWork)}
+                    </div>
+                  )}
+                  {(outgoing.length > 0 || incoming.length > 0) && (
+                    <SidebarSection title={`Links (${outgoing.length + incoming.length})`} defaultOpen={false}>
+                      {outgoing.length > 0 && (
+                        <div className="sidebar-section">
+                          <div className="link-section-label">Transcluded to ({outgoing.length})</div>
+                          {outgoing.map((l) => renderLinkItem(l, "\u2192"))}
+                        </div>
+                      )}
+                      {incoming.length > 0 && (
+                        <div className="sidebar-section">
+                          <div className="link-section-label">Transcluded from ({incoming.length})</div>
+                          {incoming.map((l) => renderLinkItem(l, "\u2190"))}
+                        </div>
+                      )}
+                    </SidebarSection>
+                  )}
+                  {filteredAuthors.length > 0 && (
+                    <SidebarSection title={`Authors (${filteredAuthors.length})`} defaultOpen={authors.length <= 5}>
+                      {filteredAuthors.map((a) => (
+                        <div key={a.be_id}>
+                          <div
+                            className={`author-list-item ${expandedAuthorId === a.be_id ? "active" : ""}`}
+                            onClick={() => handleExpandAuthor(a.be_id)}
+                          >
+                            <span className="author-list-name">{a.display_name || a.name}</span>
+                            <span className="author-list-dates">
+                              {a.birth_year != null || a.death_year != null
+                                ? `${a.birth_year != null ? a.birth_year : "?"}\u2013${a.death_year != null ? a.death_year : "?"}`
+                                : ""}
+                            </span>
+                          </div>
+                          {expandedAuthorId === a.be_id && (
+                            <div className="author-works">
+                              {authorWorks.length === 0 ? (
+                                <div className="author-work-empty">No imported works</div>
+                              ) : (
+                                authorWorks.map((w) => (
+                                  <div
+                                    key={w.work_id}
+                                    className={`work-list-item author-work-item ${w.work_id === workBeId ? "active" : ""}`}
+                                    onClick={() => selectWork(w.work_id)}
+                                  >
+                                    <span className="work-list-title">
+                                      {w.title || "Untitled"}
+                                    </span>
+                                    {w.source_edition_info && (
+                                      <span className="author-work-info">{w.source_edition_info}</span>
+                                    )}
+                                  </div>
+                                ))
                               )}
-                              {ref?.provenance_chain && ref.provenance_chain.length > 0 && (
-                                <span className="link-list-chain" title={ref.provenance_chain.map((h) => `Work ${h.source_work_id.toString(16).padStart(4, "0")} via link ${h.link_id.toString(16).padStart(4, "0")}`).join("\n")}>
-                                  {ref.provenance_chain.length} hop{ref.provenance_chain.length > 1 ? "s" : ""}
-                                </span>
-                              )}
-                              <button
-                                className="link-list-delete"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (clientRef.current) transclusion.deleteLink(clientRef.current, link.link_id);
-                                }}
-                              >
-                                \u00d7
-                              </button>
                             </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  };
-                  return (
-                    <>
-                      {renderLinks(outgoing, "Transcluded to", "\u2192")}
-                      {renderLinks(incoming, "Transcluded from", "\u2190")}
-                    </>
-                  );
-                })()
-              )}
-            </div>
-          )}
+                          )}
+                        </div>
+                      ))}
+                    </SidebarSection>
+                  )}
+                </>
+              );
+            })()}
+          </div>
         </aside>
 
         <main className="document-area">
           {workBeId !== null ? (
             <>
+              {viewMode === "reading" && !showCompare ? (
+                <ReadingView
+                  workId={workBeId}
+                  text={displayText}
+                  title={currentWorkMeta?.title || `Work ${workIdDisplay}`}
+                  attributionSpans={attributionSpans}
+                  isSource={isSourceWork}
+                  clientRef={clientRef}
+                  connected={connected}
+                />
+              ) : (
+              <>
               <AwarenessIndicators states={awareness} connected={connected} />
               {transclusion.pending && (
                 <TransclusionBadge
@@ -730,13 +801,14 @@ export function WorkspacePage() {
               )}
               {showCompare && compare.hasTarget ? (
                 <CompareSplitView currentText={displayText} state={compare} />
-              ) : isSourceWork ? (
+                ) : isSourceWork ? (
                   <div
+                    ref={sourceViewerRef}
                     className="source-work-viewer"
                     style={{
                       padding: "16px 20px",
-                      fontSize: "15px",
-                      lineHeight: "1.7",
+                      fontSize: `${docPrefs.fontSize}px`,
+                      lineHeight: `${docPrefs.lineHeight}`,
                       whiteSpace: "pre-wrap",
                       wordWrap: "break-word",
                       overflowY: "auto",
@@ -768,10 +840,12 @@ export function WorkspacePage() {
                    onPlaceTransclusion={handlePlaceTransclusion}
                    selectionRange={selectionRange}
                    onNavigateToWork={selectWork}
-                  onPasteText={isSourceWork ? undefined : handlePasteText}
-                 />
-               ) : (
-                  <CollaborativeEditor
+                   onPasteText={isSourceWork ? undefined : handlePasteText}
+                   fontSize={docPrefs.fontSize}
+                   lineHeight={docPrefs.lineHeight}
+                  />
+                ) : (
+                   <CollaborativeEditor
                     text={displayText}
                    onTextChange={isSourceWork ? undefined : setText}
                   onCursorChange={sendCursor}
@@ -790,10 +864,12 @@ export function WorkspacePage() {
                    onPlaceTransclusion={handlePlaceTransclusion}
                    selectionRange={selectionRange}
                    onNavigateToWork={selectWork}
-                  onPasteText={isSourceWork ? undefined : handlePasteText}
-                 />
-               )}
-              {watchEnabled && contentMatches.length > 0 && (
+                   onPasteText={isSourceWork ? undefined : handlePasteText}
+                   fontSize={docPrefs.fontSize}
+                   lineHeight={docPrefs.lineHeight}
+                  />
+                )}
+               {watchEnabled && contentMatches.length > 0 && (
                 <div className="watch-notifications">
                   <h3>Content Matches</h3>
                   <ul>
@@ -822,6 +898,8 @@ export function WorkspacePage() {
                     <p className="llm-provenance">&mdash; via {feedbackModel}</p>
                   )}
                 </div>
+              )}
+              </>
               )}
             </>
           ) : (
@@ -858,6 +936,13 @@ export function WorkspacePage() {
           window.history.replaceState({}, "", url.toString());
           loadWorks();
         }}
+      />
+
+      <DocumentSettings
+        visible={showSettings}
+        onClose={() => setShowSettings(false)}
+        prefs={docPrefs}
+        onPrefsChange={setDocPrefs}
       />
     </div>
   );

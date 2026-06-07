@@ -6,6 +6,15 @@ import { TextBuffer } from "../api/text_buffer";
 import { SearchPanel } from "./SearchPanel";
 import { OutlinePanel } from "./OutlinePanel";
 
+interface UndoEntry {
+  text: string;
+  selStart: number;
+  selEnd: number;
+}
+
+const MAX_UNDO = 200;
+const UNDO_DEBOUNCE_MS = 400;
+
 function bytesToHex(bytes: number[]): string {
   return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -32,7 +41,10 @@ interface CollaborativeEditorProps {
   onPlaceTransclusion?: (position: number) => void;
   selectionRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
+  onShowBacklinks?: (workId: number, excerpt: string) => void;
   onPasteText?: (text: string, pasteStart: number) => void;
+  fontSize?: number;
+  lineHeight?: number;
 }
 
 const CHUNK_SIZE = 50_000;
@@ -230,13 +242,20 @@ export function CollaborativeEditor({
   pendingTransclusion,
   onPlaceTransclusion,
   onNavigateToWork,
+  onShowBacklinks,
   onPasteText,
+  fontSize,
+  lineHeight,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const hitZonesRef = useRef<MarkerHitZone[]>([]);
   const isComposing = useRef(false);
   const lastText = useRef(text);
+  const undoStack = useRef<UndoEntry[]>([]);
+  const redoStack = useRef<UndoEntry[]>([]);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isUndoRedoing = useRef(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [showBoilerplate, setShowBoilerplate] = useState(false);
@@ -295,7 +314,18 @@ export function CollaborativeEditor({
   useEffect(() => {
     const el = editorRef.current;
     if (!el) return;
+    if (isUndoRedoing.current) return;
     const currentText = getTextContent(el);
+    const isRemote = displayText !== lastText.current && displayText !== currentText;
+    if (isRemote) {
+      if (undoTimer.current !== null) {
+        clearTimeout(undoTimer.current);
+        undoTimer.current = null;
+        undoStack.current.push({ text: lastText.current, selStart: 0, selEnd: 0 });
+        if (undoStack.current.length > MAX_UNDO) undoStack.current.shift();
+      }
+      redoStack.current = [];
+    }
     if (currentText !== displayText) {
       if (displayText.length > LARGE_DOC_THRESHOLD) {
         chunkedSetTextContent(el, displayText);
@@ -305,6 +335,17 @@ export function CollaborativeEditor({
     }
     lastText.current = displayText;
   }, [displayText]);
+
+  useEffect(() => {
+    if (text === "") {
+      undoStack.current = [];
+      redoStack.current = [];
+      if (undoTimer.current !== null) {
+        clearTimeout(undoTimer.current);
+        undoTimer.current = null;
+      }
+    }
+  }, [text]);
 
   useEffect(() => {
     const el = editorRef.current;
@@ -360,7 +401,6 @@ export function CollaborativeEditor({
   }, []);
 
   const handleOverlayClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!onNavigateToWork) return;
     const canvas = overlayRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -369,10 +409,76 @@ export function CollaborativeEditor({
     const hit = hitZonesRef.current.find((hz) =>
       x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
     );
-    if (hit) {
+    if (!hit) return;
+    if (e.detail === 2 && onShowBacklinks) {
+      const excerpt = hit.marker.excerpt || "";
+      onShowBacklinks(hit.marker.otherWorkId, excerpt);
+    } else if (e.detail === 1 && onNavigateToWork) {
       onNavigateToWork(hit.marker.otherWorkId);
     }
-  }, [onNavigateToWork]);
+  }, [onNavigateToWork, onShowBacklinks]);
+
+  const getSelectionInEditor = useCallback((): { start: number; end: number } => {
+    const el = editorRef.current;
+    const sel = window.getSelection();
+    if (!el || !sel || sel.rangeCount === 0 || !el.contains(sel.anchorNode)) {
+      return { start: 0, end: 0 };
+    }
+    const range = sel.getRangeAt(0);
+    const pre = document.createRange();
+    pre.selectNodeContents(el);
+    pre.setEnd(range.startContainer, range.startOffset);
+    const start = pre.toString().length;
+    pre.setEnd(range.endContainer, range.endOffset);
+    const end = pre.toString().length;
+    return { start, end };
+  }, []);
+
+  const pushUndo = useCallback((prevText: string) => {
+    if (isUndoRedoing.current) return;
+    redoStack.current = [];
+    const { start, end } = getSelectionInEditor();
+    if (undoTimer.current !== null) {
+      clearTimeout(undoTimer.current);
+    }
+    undoTimer.current = setTimeout(() => {
+      undoStack.current.push({ text: prevText, selStart: start, selEnd: end });
+      if (undoStack.current.length > MAX_UNDO) {
+        undoStack.current.shift();
+      }
+      undoTimer.current = null;
+    }, UNDO_DEBOUNCE_MS);
+  }, [getSelectionInEditor]);
+
+  const restoreUndoEntry = useCallback((entry: UndoEntry, stack: "undo" | "redo") => {
+    isUndoRedoing.current = true;
+    const el = editorRef.current;
+    if (!el) { isUndoRedoing.current = false; return; }
+    const prevText = lastText.current;
+    const { start: prevStart, end: prevEnd } = getSelectionInEditor();
+    if (el.textContent !== entry.text) {
+      el.textContent = entry.text;
+    }
+    lastText.current = entry.text;
+    onTextChange(entry.text);
+    const textNode = el.firstChild;
+    if (textNode) {
+      try {
+        const clampedStart = Math.min(entry.selStart, entry.text.length);
+        const clampedEnd = Math.min(entry.selEnd, entry.text.length);
+        const range = document.createRange();
+        range.setStart(textNode, clampedStart);
+        range.setEnd(textNode, clampedEnd);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      } catch { /* ignore cursor restore errors */ }
+    }
+    const target = stack === "undo" ? redoStack : undoStack;
+    target.current.push({ text: prevText, selStart: prevStart, selEnd: prevEnd });
+    if (target.current.length > MAX_UNDO) target.current.shift();
+    setTimeout(() => { isUndoRedoing.current = false; }, 0);
+  }, [onTextChange, getSelectionInEditor]);
 
   const handleInput = useCallback(() => {
     if (isComposing.current || !editable) return;
@@ -380,13 +486,34 @@ export function CollaborativeEditor({
     if (!el) return;
     const newText = getTextContent(el);
     if (newText !== lastText.current) {
+      pushUndo(lastText.current);
       lastText.current = newText;
       onTextChange(newText);
     }
-  }, [onTextChange, editable]);
+  }, [onTextChange, editable, pushUndo]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!editable) { e.preventDefault(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+      e.preventDefault();
+      if (undoTimer.current !== null) {
+        clearTimeout(undoTimer.current);
+        undoTimer.current = null;
+      }
+      const entry = undoStack.current.pop();
+      if (entry) restoreUndoEntry(entry, "undo");
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === "Z" || e.key === "y")) {
+      e.preventDefault();
+      if (undoTimer.current !== null) {
+        clearTimeout(undoTimer.current);
+        undoTimer.current = null;
+      }
+      const entry = redoStack.current.pop();
+      if (entry) restoreUndoEntry(entry, "redo");
+      return;
+    }
     if (e.key === "Enter") {
       e.preventDefault();
       const sel = window.getSelection();
@@ -590,6 +717,10 @@ export function CollaborativeEditor({
               handleInput();
             }}
             spellCheck
+            style={{
+              fontSize: fontSize ? `${fontSize}px` : undefined,
+              lineHeight: lineHeight ? `${lineHeight}` : undefined,
+            }}
           />
         </div>
         {outlineOpen && (
