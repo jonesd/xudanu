@@ -729,7 +729,7 @@ mod tests {
         let _result = server.crdt_open_session(sid, work_id).unwrap();
 
         let author = server
-            .crdt_manager
+            .otree_crdt
             .get_author(work_id, sid)
             .unwrap()
             .unwrap();
@@ -751,7 +751,7 @@ mod tests {
         let _result = server.crdt_open_session(sid, work_id).unwrap();
 
         let author = server
-            .crdt_manager
+            .otree_crdt
             .get_author(work_id, sid)
             .unwrap()
             .unwrap();

@@ -78,9 +78,6 @@ fn usage() {
     eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
     eprintln!("  --key-passphrase <pw>   Passphrase for encrypted server key file");
     eprintln!("                         (can also set XUDANU_KEY_PASSPHRASE env var)");
-    eprintln!(
-        "  --otree-crdt             Use O-tree merge instead of yrs for collaborative editing"
-    );
     eprintln!("  --github-client-id <id>      GitHub OAuth app client ID");
     eprintln!("  --github-client-secret <key> GitHub OAuth app client secret");
     eprintln!("  --google-client-id <id>      Google OAuth app client ID");
@@ -338,7 +335,6 @@ async fn main() {
                 std::collections::HashSet::new();
             let mut csrf_enabled = false;
             let mut key_passphrase: Option<String> = std::env::var("XUDANU_KEY_PASSPHRASE").ok();
-            let mut use_otree_crdt = false;
             let mut github_client_id: Option<String> = std::env::var("XUDANU_GITHUB_CLIENT_ID").ok();
             let mut github_client_secret: Option<String> = std::env::var("XUDANU_GITHUB_CLIENT_SECRET").ok();
             let mut google_client_id: Option<String> = std::env::var("XUDANU_GOOGLE_CLIENT_ID").ok();
@@ -407,9 +403,6 @@ async fn main() {
                                 eprintln!("Error: --key-passphrase requires a value");
                                 std::process::exit(1);
                             }));
-                    }
-                    "--otree-crdt" => {
-                        use_otree_crdt = true;
                     }
                     "--github-client-id" => {
                         i += 1;
@@ -505,11 +498,6 @@ async fn main() {
             } else {
                 Server::new()
             };
-
-            if use_otree_crdt {
-                server.use_otree_crdt = true;
-                tracing::info!("Using O-tree merge for collaborative editing");
-            }
 
             if !federation_peers.is_empty() {
                 let peers: Vec<xudanu::server::federation::PeerAddress> = federation_peers
