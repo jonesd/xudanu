@@ -3440,7 +3440,7 @@ dependencies = [
 
 [[package]]
 name = "xudanu"
-version = "0.4.3"
+version = "0.5.0"
 dependencies = [
  "argon2",
  "axum",
@@ -3480,7 +3480,6 @@ dependencies = [
  "tracing-subscriber",
  "wasm-bindgen",
  "x25519-dalek",
- "yrs",
  "zeroize",
 ]
 
