@@ -192,6 +192,22 @@ export interface SharedRegion {
   text: string;
 }
 
+export interface BacklinkEntry {
+  source_work_id: number;
+  link_id: number;
+  link_type: string;
+  excerpt?: string;
+  title?: string;
+}
+
+export interface AnnotationEntry {
+  annotation_id: number;
+  kind: string;
+  payload: string;
+  attached_nodes: number[];
+  attached_spans: number[];
+}
+
 export interface TransclusionMarker {
   start: number;
   end: number;
@@ -1097,6 +1113,83 @@ export class CrdtSyncClient {
     }).catch((e) => {
       console.error("Failed to send text delta:", e);
     });
+  }
+
+  async findBacklinks(workId: number): Promise<BacklinkEntry[]> {
+    const resp = await this.sendRequest("work_backlinks", { work_id: workId });
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as BacklinkEntry[];
+    return [];
+  }
+
+  async workEndorse(workId: number, endorsements: Array<[number, number]>): Promise<void> {
+    await this.sendRequest("work_endorse", { work_id: workId, endorsements });
+  }
+
+  async workRetractEndorsement(workId: number, endorsements: Array<[number, number]>): Promise<void> {
+    await this.sendRequest("work_retract", { work_id: workId, endorsements });
+  }
+
+  async workEndorsements(workId: number): Promise<Array<[number, number]>> {
+    const resp = await this.sendRequest("work_endorsements", { work_id: workId });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.endorsements as Array<[number, number]>) || [];
+  }
+
+  async fetchRevisionRange(workId: number, from: number, to: number): Promise<string[]> {
+    const resp = await this.sendRequest("work_fetch_revision_range", { work_id: workId, from, to });
+    const val = extractValue(resp) as Record<string, unknown>;
+    const revisions = (val.revisions as Array<[number, Record<string, unknown>]>) || [];
+    return revisions.map(([, ed]) => {
+      if (typeof ed === "string") return ed;
+      const entries = (ed as Record<string, unknown>).entries;
+      if (Array.isArray(entries)) {
+        return entries.map((e: Record<string, unknown>) => {
+          const el = e.element as Record<string, unknown> | undefined;
+          return el?.Text || el?.text || "";
+        }).join("");
+      }
+      return ed?.Text || ed?.text || JSON.stringify(ed);
+    });
+  }
+
+  async findTranscluders(text: string): Promise<number[]> {
+    const resp = await this.sendRequest("find_text_transcluders", { text });
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as number[];
+    const rec = val as Record<string, unknown>;
+    return (rec.work_ids as number[]) || [];
+  }
+
+  async findWorksForContent(text: string): Promise<number[]> {
+    const resp = await this.sendRequest("find_works_for_content", { text });
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as number[];
+    const rec = val as Record<string, unknown>;
+    return (rec.work_ids as number[]) || [];
+  }
+
+  async annotationCreate(workId: number, annotationId: number, kind: string, payload: string): Promise<void> {
+    await this.sendRequest("annotation_create", {
+      work_id: workId,
+      annotation_id: annotationId,
+      kind,
+      payload,
+    });
+  }
+
+  async annotationDelete(workId: number, annotationId: number): Promise<void> {
+    await this.sendRequest("annotation_delete", {
+      work_id: workId,
+      annotation_id: annotationId,
+    });
+  }
+
+  async annotationList(workId: number): Promise<AnnotationEntry[]> {
+    const resp = await this.sendRequest("annotation_list", { work_id: workId });
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as AnnotationEntry[];
+    return [];
   }
 }
 

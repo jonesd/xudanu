@@ -3,6 +3,7 @@ import { useCrdtSync } from "../hooks/useCrdtSync";
 import { useTransclusion } from "../hooks/useTransclusion";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
 import { VirtualizedEditor } from "../components/VirtualizedEditor";
+import type { BacklinkEntry, AttributionSpan as AttribSpan } from "../api/crdt_sync";
 import { DropdownMenu, DropdownItem, DropdownSeparator, DropdownLabel } from "../components/DropdownMenu";
 import { AwarenessIndicators } from "../components/AwarenessIndicators";
 import { DebugPanel } from "../components/DebugPanel";
@@ -53,6 +54,10 @@ export function WorkspacePage() {
   const [showImport, setShowImport] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showRevisions, setShowRevisions] = useState(false);
+  const [revisionList, setRevisionList] = useState<string[]>([]);
+  const [revisionIndex, setRevisionIndex] = useState(0);
+  const [similarWorks, setSimilarWorks] = useState<{ query: string; workIds: number[] } | null>(null);
   const [docPrefs, setDocPrefs] = useState<DocPreferences>(loadDocPreferences);
   const [viewMode, setViewMode] = useState<"editing" | "reading">(
     () => (localStorage.getItem("xudanu-view-mode") as "editing" | "reading") || "editing"
@@ -65,6 +70,9 @@ export function WorkspacePage() {
   const sourceViewerRef = useRef<HTMLDivElement>(null);
 
   const transclusion = useTransclusion();
+  const [backlinks, setBacklinks] = useState<BacklinkEntry[]>([]);
+  const [endorsementCount, setEndorsementCount] = useState(0);
+  const [hasEndorsed, setHasEndorsed] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -115,6 +123,20 @@ export function WorkspacePage() {
       window.history.replaceState({}, "", "/");
     }
   }, []);
+
+  useEffect(() => {
+    if (!clientRef.current || !workBeId) { setBacklinks([]); return; }
+    clientRef.current.findBacklinks(workBeId).then(setBacklinks).catch(() => setBacklinks([]));
+  }, [workBeId, connected]);
+
+  useEffect(() => {
+    if (!clientRef.current || !workBeId || !authenticated) return;
+    clientRef.current.workEndorsements(workBeId).then((es) => {
+      setEndorsementCount(es.length);
+      const myClub = clientRef.current?.currentIdentity?.club_id;
+      setHasEndorsed(myClub ? es.some((e) => e[0] === myClub) : false);
+    }).catch(() => {});
+  }, [workBeId, connected, authenticated]);
 
   const currentWorkMeta = works.find(w => w.work_id === workBeId);
   const isSourceWork = currentWorkMeta?.is_source === true;
@@ -351,6 +373,28 @@ export function WorkspacePage() {
     }
   }, [clientRef, workBeId]);
 
+  const toggleEndorse = useCallback(async () => {
+    if (!clientRef.current || !workBeId || !identity) {
+      console.warn("Endorse: missing client/work/identity", { workBeId, identity: !!identity });
+      return;
+    }
+    const myClub = identity.club_id;
+    const pair: [number, number] = [myClub, 1];
+    try {
+      if (hasEndorsed) {
+        await clientRef.current.workRetractEndorsement(workBeId, [pair]);
+        setHasEndorsed(false);
+        setEndorsementCount((c) => Math.max(0, c - 1));
+      } else {
+        await clientRef.current.workEndorse(workBeId, [pair]);
+        setHasEndorsed(true);
+        setEndorsementCount((c) => c + 1);
+      }
+    } catch (e) {
+      console.error("Endorse failed:", e);
+    }
+  }, [clientRef, workBeId, identity, hasEndorsed]);
+
   const workIdDisplay = workBeId !== null
     ? workBeId.toString(16).padStart(4, "0")
     : null;
@@ -521,6 +565,57 @@ export function WorkspacePage() {
                     onClick={() => { setShowDebug((d) => !d); }}
                   >
                     Debug panel
+                  </DropdownItem>
+                  <DropdownSeparator />
+                  <DropdownItem
+                    disabled={!authenticated || !workBeId}
+                    checked={hasEndorsed}
+                    onClick={() => { toggleEndorse(); }}
+                  >
+                    {hasEndorsed ? "Endorsed" : "Endorse"}{endorsementCount > 0 ? ` (${endorsementCount})` : ""}
+                  </DropdownItem>
+                  <DropdownItem
+                    disabled={!workBeId || (currentWorkMeta?.revision_count ?? 0) < 2}
+                    onClick={async () => {
+                      if (!clientRef.current || !workBeId) return;
+                      const count = currentWorkMeta?.revision_count ?? 0;
+                      if (count < 2) return;
+                      setShowRevisions(true);
+                      try {
+                        const batchSize = 5;
+                        const revs: string[] = [];
+                        for (let batch = 0; batch < count; batch += batchSize) {
+                          const promises: Promise<string>[] = [];
+                          for (let i = batch + 1; i <= Math.min(batch + batchSize, count); i++) {
+                            promises.push(clientRef.current!.fetchRevision(workBeId, i).then(t => t || ""));
+                          }
+                          const batchResults = await Promise.all(promises);
+                          revs.push(...batchResults);
+                        }
+                        setRevisionList(revs);
+                        setRevisionIndex(count - 1);
+                      } catch (e) {
+                        console.error("Failed to load revisions:", e);
+                      }
+                    }}
+                  >
+                    Revisions ({currentWorkMeta?.revision_count ?? 0})
+                  </DropdownItem>
+                  <DropdownItem
+                    disabled={!selectionRange || !clientRef.current}
+                    onClick={async () => {
+                      if (!selectionRange || !clientRef.current) return;
+                      const selText = displayText.slice(selectionRange.start, selectionRange.end);
+                      if (selText.trim().length < 10) return;
+                      try {
+                        const workIds = await clientRef.current.findWorksForContent(selText.trim());
+                        setSimilarWorks({ query: selText.trim(), workIds });
+                      } catch (e) {
+                        console.error("Find similar failed:", e);
+                      }
+                    }}
+                  >
+                    Find Similar
                   </DropdownItem>
                   <DropdownSeparator />
                   <DropdownItem onClick={() => { setShowSettings(true); }}>
@@ -727,6 +822,32 @@ export function WorkspacePage() {
                           {incoming.map((l) => renderLinkItem(l, "\u2190"))}
                         </div>
                       )}
+                    </SidebarSection>
+                  )}
+                  {backlinks.length > 0 && (
+                    <SidebarSection title={`Referenced by (${backlinks.length})`} defaultOpen={false}>
+                      {backlinks.map((bl) => {
+                        const blWork = works.find((w) => w.work_id === bl.source_work_id);
+                        const blTitle = bl.title || blWork?.title || `Work ${bl.source_work_id.toString(16).padStart(4, "0")}`;
+                        return (
+                          <div
+                            key={bl.link_id}
+                            className="link-list-item"
+                            onClick={() => selectWork(bl.source_work_id)}
+                            title={bl.excerpt || blTitle}
+                          >
+                            <div className="link-list-header">
+                              <span className="link-list-direction">←</span>
+                              <span className="link-list-title">{blTitle}</span>
+                            </div>
+                            {bl.excerpt && (
+                              <span className="link-list-excerpt" title={bl.excerpt}>
+                                {bl.excerpt.length > 60 ? bl.excerpt.slice(0, 60) + "\u2026" : bl.excerpt}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </SidebarSection>
                   )}
                   {filteredAuthors.length > 0 && (
@@ -944,6 +1065,61 @@ export function WorkspacePage() {
         prefs={docPrefs}
         onPrefsChange={setDocPrefs}
       />
+      {showRevisions && (
+        <div className="modal-overlay" onClick={() => setShowRevisions(false)}>
+          <div className="modal-content revision-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Revision History</h3>
+              <button type="button" className="modal-close" onClick={() => setShowRevisions(false)}>x</button>
+            </div>
+            {revisionList.length === 0 ? (
+              <div className="revision-text" style={{ textAlign: "center", color: "#888" }}>Loading...</div>
+            ) : (
+              <>
+                <div className="revision-slider">
+                  <input
+                    type="range"
+                    min={0}
+                    max={revisionList.length - 1}
+                    value={revisionIndex}
+                    onChange={(e) => setRevisionIndex(Number(e.target.value))}
+                  />
+                  <span className="revision-label">
+                    Revision {revisionIndex + 1} / {revisionList.length}
+                  </span>
+                </div>
+                <pre className="revision-text">{revisionList[revisionIndex]}</pre>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      {similarWorks && (
+        <div className="modal-overlay" onClick={() => setSimilarWorks(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Similar Works</h3>
+              <button type="button" className="modal-close" onClick={() => setSimilarWorks(null)}>x</button>
+            </div>
+            <p className="similar-query">&ldquo;{similarWorks.query.length > 100 ? similarWorks.query.slice(0, 100) + "\u2026" : similarWorks.query}&rdquo;</p>
+            {similarWorks.workIds.length === 0 ? (
+              <p className="similar-empty">No similar works found.</p>
+            ) : (
+              <ul className="similar-results">
+                {similarWorks.workIds.map((wid) => {
+                  const w = works.find((x) => x.work_id === wid);
+                  return (
+                    <li key={wid} className="similar-item" onClick={() => { setSimilarWorks(null); selectWork(wid); }}>
+                      <span className="similar-id">{wid.toString(16).padStart(4, "0")}</span>
+                      <span className="similar-title">{w?.title || "Untitled"}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
