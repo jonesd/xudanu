@@ -594,13 +594,13 @@ mod tests {
             .create_personal_club(sid, "alice".to_string(), None, None)
             .unwrap();
         server
-            .club_set_password(sid, club_id, b"secret123")
+            .club_set_password(sid, club_id, b"secret1234")
             .unwrap();
 
         let sid2 = server.connect();
         let _lock = server.login(sid2, club_id).unwrap();
         let km = server
-            .authenticate_with_pending(sid2, &LockCredential::Password(b"secret123".to_vec()))
+            .authenticate_with_pending(sid2, &LockCredential::Password(b"secret1234".to_vec()))
             .unwrap();
         assert!(km.has_authority(club_id));
     }
@@ -612,7 +612,7 @@ mod tests {
             .create_personal_club(sid, "alice".to_string(), None, None)
             .unwrap();
         server
-            .club_set_password(sid, club_id, b"secret123")
+            .club_set_password(sid, club_id, b"secret1234")
             .unwrap();
 
         let sid2 = server.connect();
@@ -647,7 +647,7 @@ mod tests {
                 sid,
                 "bob".to_string(),
                 Some(Credential::Password { phc_hash }),
-                Some(b"secret123".to_vec()),
+                Some(b"secret1234".to_vec()),
             )
             .unwrap();
 
@@ -682,7 +682,7 @@ mod tests {
         let club_id = server
             .create_personal_club(sid, "charlie".to_string(), None, None)
             .unwrap();
-        server.club_set_password(sid, club_id, b"password").unwrap();
+        server.club_set_password(sid, club_id, b"password1").unwrap();
         assert!(server.club(club_id).unwrap().credential().is_some());
 
         server.club_clear_credential(sid, club_id).unwrap();
@@ -696,13 +696,13 @@ mod tests {
             .create_personal_club(sid, "alice".to_string(), None, None)
             .unwrap();
         server
-            .club_set_password(sid, alice_id, b"alicepass")
+            .club_set_password(sid, alice_id, b"alicepass1")
             .unwrap();
 
         let sid_alice = server.connect();
         let _lock = server.login(sid_alice, alice_id).unwrap();
         server
-            .authenticate_with_pending(sid_alice, &LockCredential::Password(b"alicepass".to_vec()))
+            .authenticate_with_pending(sid_alice, &LockCredential::Password(b"alicepass1".to_vec()))
             .unwrap();
         let club_id = server
             .create_club(sid_alice, Edition::from_text("target"))
@@ -710,7 +710,7 @@ mod tests {
 
         let sid2 = server.connect();
         server.login_public(sid2).unwrap();
-        let result = server.club_set_password(sid2, club_id, b"hacked");
+        let result = server.club_set_password(sid2, club_id, b"hacked1234");
         assert!(result.is_err());
     }
 
@@ -845,7 +845,7 @@ mod tests {
         let club_id = server
             .create_personal_club(sid, "alice".to_string(), None, None)
             .unwrap();
-        server.club_set_password(sid, club_id, b"secret12").unwrap();
+        server.club_set_password(sid, club_id, b"secret12345").unwrap();
 
         let sid2 = server.connect();
         for _ in 0..10 {
@@ -856,7 +856,7 @@ mod tests {
 
         let _lock = server.login(sid2, club_id).unwrap();
         let result =
-            server.authenticate_with_pending(sid2, &LockCredential::Password(b"secret12".to_vec()));
+            server.authenticate_with_pending(sid2, &LockCredential::Password(b"secret12345".to_vec()));
         assert!(result.is_err(), "11th attempt should be rate limited");
     }
 
@@ -866,7 +866,7 @@ mod tests {
         let club_id = server
             .create_personal_club(sid, "alice".to_string(), None, None)
             .unwrap();
-        server.club_set_password(sid, club_id, b"secret12").unwrap();
+        server.club_set_password(sid, club_id, b"secret12345").unwrap();
 
         for i in 0..10 {
             let fresh_sid = server.connect();
@@ -883,7 +883,7 @@ mod tests {
         let fresh_sid = server.connect();
         let _lock = server.login(fresh_sid, club_id).unwrap();
         let result = server
-            .authenticate_with_pending(fresh_sid, &LockCredential::Password(b"secret12".to_vec()));
+            .authenticate_with_pending(fresh_sid, &LockCredential::Password(b"secret12345".to_vec()));
         assert!(
             result.is_err(),
             "rate limit should persist across new sessions"
@@ -896,7 +896,7 @@ mod tests {
         let club_id = server
             .create_personal_club(sid, "alice".to_string(), None, None)
             .unwrap();
-        server.club_set_password(sid, club_id, b"secret12").unwrap();
+        server.club_set_password(sid, club_id, b"secret12345").unwrap();
 
         let sid2 = server.connect();
         for _ in 0..9 {
@@ -907,7 +907,7 @@ mod tests {
 
         let _lock = server.login(sid2, club_id).unwrap();
         let result =
-            server.authenticate_with_pending(sid2, &LockCredential::Password(b"secret12".to_vec()));
+            server.authenticate_with_pending(sid2, &LockCredential::Password(b"secret12345".to_vec()));
         assert!(
             result.is_ok(),
             "10th attempt with correct password should succeed and reset"
@@ -1005,7 +1005,7 @@ mod tests {
         );
 
         server
-            .club_set_password(sid, club_id, b"newpass12")
+            .club_set_password(sid, club_id, b"newpass1234")
             .unwrap();
 
         let club = server.club(club_id).unwrap();
@@ -1031,13 +1031,13 @@ mod tests {
         let club_id = server
             .create_personal_club(sid, "tiny-pw-test".to_string(), None, None)
             .unwrap();
-        server.club_set_password(sid, club_id, b"12345678").unwrap();
+        server.club_set_password(sid, club_id, b"1234567890").unwrap();
 
         let sid2 = server.connect();
         let _lock = server.login(sid2, club_id).unwrap();
         let result =
-            server.authenticate_with_pending(sid2, &LockCredential::Password(b"12345678".to_vec()));
-        assert!(result.is_ok(), "8-byte password should authenticate");
+            server.authenticate_with_pending(sid2, &LockCredential::Password(b"1234567890".to_vec()));
+        assert!(result.is_ok(), "10-byte password should authenticate");
     }
 
     #[test]
@@ -1083,17 +1083,17 @@ mod tests {
             .create_personal_club(sid, "pw-change-invalid".to_string(), None, None)
             .unwrap();
         server
-            .club_set_password(sid, club_id, b"oldpass12")
+            .club_set_password(sid, club_id, b"oldpass1234")
             .unwrap();
 
         server
-            .club_set_password(sid, club_id, b"newpass12")
+            .club_set_password(sid, club_id, b"newpass1234")
             .unwrap();
 
         let sid2 = server.connect();
         let _lock = server.login(sid2, club_id).unwrap();
         let old_result = server
-            .authenticate_with_pending(sid2, &LockCredential::Password(b"oldpass12".to_vec()));
+            .authenticate_with_pending(sid2, &LockCredential::Password(b"oldpass1234".to_vec()));
         assert!(
             old_result.is_err(),
             "old password should not work after change"
@@ -1107,17 +1107,17 @@ mod tests {
             .create_personal_club(sid, "pw-change-valid".to_string(), None, None)
             .unwrap();
         server
-            .club_set_password(sid, club_id, b"oldpass12")
+            .club_set_password(sid, club_id, b"oldpass1234")
             .unwrap();
 
         server
-            .club_set_password(sid, club_id, b"newpass12")
+            .club_set_password(sid, club_id, b"newpass1234")
             .unwrap();
 
         let sid2 = server.connect();
         let _lock = server.login(sid2, club_id).unwrap();
         let new_result = server
-            .authenticate_with_pending(sid2, &LockCredential::Password(b"newpass12".to_vec()));
+            .authenticate_with_pending(sid2, &LockCredential::Password(b"newpass1234".to_vec()));
         assert!(new_result.is_ok(), "new password should work after change");
     }
 

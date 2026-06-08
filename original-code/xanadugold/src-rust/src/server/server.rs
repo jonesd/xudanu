@@ -13969,14 +13969,14 @@ mod tests {
             .create_club(sid, Edition::from_text("test club"))
             .unwrap();
         server
-            .club_set_password(sid, club, b"test-pass")
+            .club_set_password(sid, club, b"test-pass1")
             .unwrap();
         let lock = server.login(sid, club).unwrap();
         server
             .authenticate(
                 sid,
                 &*lock,
-                &LockCredential::Password(b"test-pass".to_vec()),
+                &LockCredential::Password(b"test-pass1".to_vec()),
             )
             .unwrap();
         (server, sid, club)
@@ -14069,14 +14069,14 @@ mod tests {
                 .create_club(sid, Edition::from_text("club"))
                 .unwrap();
             server
-                .club_set_password(sid, club, b"test-pass")
+                .club_set_password(sid, club, b"test-pass1")
                 .unwrap();
             let lock = server.login(sid, club).unwrap();
             server
                 .authenticate(
                     sid,
                     &*lock,
-                    &LockCredential::Password(b"test-pass".to_vec()),
+                    &LockCredential::Password(b"test-pass1".to_vec()),
                 )
                 .unwrap();
 

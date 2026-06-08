@@ -1,11 +1,5 @@
 import { useMemo } from "react";
 import type { AttributionSpan, AttributionLogStatus } from "../api/crdt_sync";
-import { authorColor } from "../author-color";
-
-const HISTORICAL_COLORS = [
-  "#8b6914", "#2e7d32", "#6a1b9a", "#c62828", "#00695c",
-  "#e65100", "#1565c0", "#4e342e", "#37474f", "#ad1457",
-];
 
 function hslToHex(h: number, s: number, l: number): string {
   const a = s * Math.min(l, 1 - l);
@@ -151,7 +145,9 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
                 ? `sw:${span.source_work_id}`
                 : bytesToHex(span.author_public_key);
             const author = authors.find((a) => a.key === key);
-            const bg = `repeating-linear-gradient(45deg, ${author.stripeColors[0]}, ${author.stripeColors[0]} 3px, ${author.stripeColors[1]} 3px, ${author.stripeColors[1]} 6px)`;
+            const c0 = author?.stripeColors?.[0] || "#888";
+            const c1 = author?.stripeColors?.[1] || "#666";
+            const bg = `repeating-linear-gradient(45deg, ${c0}, ${c0} 3px, ${c1}, ${c1} 6px)`;
             return (
               <div
                 key={i}
