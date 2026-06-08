@@ -677,7 +677,7 @@ mod tests {
             .create_personal_club(sid, "charlie".to_string(), None, None)
             .unwrap();
         server
-            .club_set_password(sid, club_id, b"password1")
+            .club_set_password(sid, club_id, b"password12")
             .unwrap();
         assert!(server.club(club_id).unwrap().credential().is_some());
 
