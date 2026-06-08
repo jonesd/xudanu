@@ -791,7 +791,7 @@ export class CrdtSyncClient {
   }
 
   async loginByName(clubName: string, password: string): Promise<void> {
-    const loginResp = await this.sendRequest("session_login_by_name", { club_name: clubName });
+    await this.sendRequest("session_login_by_name", { club_name: clubName });
     const pwBytes = Array.from(new TextEncoder().encode(password));
     try {
       await Promise.race([
@@ -1144,7 +1144,7 @@ export class CrdtSyncClient {
     const resp = await this.sendRequest("work_fetch_revision_range", { work_id: workId, from, to });
     const val = extractValue(resp) as Record<string, unknown>;
     const revisions = (val.revisions as Array<[number, Record<string, unknown>]>) || [];
-    return revisions.map(([, ed]) => {
+    return revisions.map(([, ed]): string => {
       if (typeof ed === "string") return ed;
       const entries = (ed as Record<string, unknown>).entries;
       if (Array.isArray(entries)) {

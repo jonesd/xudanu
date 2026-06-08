@@ -46,7 +46,6 @@ export function AnnotationPanel({ annotations, onDelete, onNavigate, currentClub
       {expanded && (
         <div className="sidebar-collapsible-content">
           {annotations.map((ann) => {
-            const isOwn = ann.created_by != null && ann.created_by === currentClubId;
             const authorLabel = ann.created_by_name
               || (ann.created_by != null ? `0x${ann.created_by.toString(16)}` : null)
               || "anonymous";
