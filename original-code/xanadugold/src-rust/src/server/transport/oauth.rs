@@ -115,10 +115,7 @@ impl OAuthState {
         self.links
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(
-                (link.provider.clone(), link.provider_user_id.clone()),
-                link,
-            );
+            .insert((link.provider.clone(), link.provider_user_id.clone()), link);
     }
 
     pub fn create_session(
@@ -159,7 +156,11 @@ impl OAuthState {
             .as_secs();
         sessions.get(token).and_then(|s| {
             if s.expires_at > now {
-                Some((s.club_id, s.display_name.clone(), s.signing_key_bytes.clone()))
+                Some((
+                    s.club_id,
+                    s.display_name.clone(),
+                    s.signing_key_bytes.clone(),
+                ))
             } else {
                 None
             }
@@ -176,10 +177,7 @@ impl OAuthState {
     pub fn restore_links(&self, links: Vec<OAuthLink>) {
         let mut map = self.links.lock().unwrap_or_else(|e| e.into_inner());
         for link in links {
-            map.insert(
-                (link.provider.clone(), link.provider_user_id.clone()),
-                link,
-            );
+            map.insert((link.provider.clone(), link.provider_user_id.clone()), link);
         }
     }
 
@@ -208,8 +206,10 @@ pub struct CallbackQuery {
 pub async fn github_redirect_handler(State(state): State<SharedState>) -> axum::response::Response {
     let config = &state.oauth_config;
     if !config.github_enabled() {
-        return Html::<String>("<html><body><h1>GitHub sign-in is not configured</h1></body></html>".into())
-            .into_response();
+        return Html::<String>(
+            "<html><body><h1>GitHub sign-in is not configured</h1></body></html>".into(),
+        )
+        .into_response();
     }
     let state_token = state.oauth_state.generate_state();
     let client_id = config.github_client_id.as_ref().unwrap();
@@ -274,16 +274,28 @@ pub async fn github_callback_handler(
 
     let provider_id = user_info.id.to_string();
     let display_name = user_info.login.clone();
-    let provider_username = user_info.name.clone().unwrap_or_else(|| user_info.login.clone());
+    let provider_username = user_info
+        .name
+        .clone()
+        .unwrap_or_else(|| user_info.login.clone());
 
-    handle_oauth_success(&state, "github", &provider_id, &display_name, &provider_username).await
+    handle_oauth_success(
+        &state,
+        "github",
+        &provider_id,
+        &display_name,
+        &provider_username,
+    )
+    .await
 }
 
 pub async fn google_redirect_handler(State(state): State<SharedState>) -> axum::response::Response {
     let config = &state.oauth_config;
     if !config.google_enabled() {
-        return Html::<String>("<html><body><h1>Google sign-in is not configured</h1></body></html>".into())
-            .into_response();
+        return Html::<String>(
+            "<html><body><h1>Google sign-in is not configured</h1></body></html>".into(),
+        )
+        .into_response();
     }
     let state_token = state.oauth_state.generate_state();
     let client_id = config.google_client_id.as_ref().unwrap();
@@ -348,9 +360,19 @@ pub async fn google_callback_handler(
 
     let provider_id = user_info.sub.clone();
     let display_name = user_info.name.clone();
-    let provider_username = user_info.email.clone().unwrap_or_else(|| user_info.name.clone());
+    let provider_username = user_info
+        .email
+        .clone()
+        .unwrap_or_else(|| user_info.name.clone());
 
-    handle_oauth_success(&state, "google", &provider_id, &display_name, &provider_username).await
+    handle_oauth_success(
+        &state,
+        "google",
+        &provider_id,
+        &display_name,
+        &provider_username,
+    )
+    .await
 }
 
 async fn handle_oauth_success(
@@ -367,10 +389,7 @@ async fn handle_oauth_success(
         None => {
             let club_id = state.server.with_server(|srv| {
                 let session_id = srv.connect();
-                srv.create_personal_club_from_oauth(
-                    session_id,
-                    display_name.to_string(),
-                )
+                srv.create_personal_club_from_oauth(session_id, display_name.to_string())
             });
             match club_id {
                 Ok(id) => {
@@ -536,7 +555,10 @@ async fn fetch_github_user(access_token: &str) -> Result<GitHubUser, String> {
             .and_then(|v| v.as_str())
             .ok_or("Missing login in GitHub user response")?
             .to_string(),
-        name: json.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        name: json
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
     })
 }
 
@@ -617,6 +639,9 @@ async fn fetch_google_user(access_token: &str) -> Result<GoogleUser, String> {
             .and_then(|v| v.as_str())
             .unwrap_or("Unknown")
             .to_string(),
-        email: json.get("email").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        email: json
+            .get("email")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
     })
 }

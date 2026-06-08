@@ -41,8 +41,10 @@ impl EditionSnapshot {
             })
             .collect();
 
-        let entries: Vec<(i64, RangeElement)> =
-            filtered.iter().map(|(pos, c)| (*pos, c.element.clone())).collect();
+        let entries: Vec<(i64, RangeElement)> = filtered
+            .iter()
+            .map(|(pos, c)| (*pos, c.element.clone()))
+            .collect();
         let provenances: Vec<Option<ElementProvenance>> =
             filtered.iter().map(|(_, c)| c.provenance.clone()).collect();
 

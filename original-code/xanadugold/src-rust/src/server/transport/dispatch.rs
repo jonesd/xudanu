@@ -560,8 +560,9 @@ fn dispatch_inner(
             use crate::server::club::Credential;
             let credential = match password {
                 Some(ref pw) if !pw.is_empty() => {
-                    let phc_hash = crate::crypto::password::hash_password(pw)
-                        .map_err(|e| crate::server::ServerError::Internal(format!("password hash failed: {}", e)))?;
+                    let phc_hash = crate::crypto::password::hash_password(pw).map_err(|e| {
+                        crate::server::ServerError::Internal(format!("password hash failed: {}", e))
+                    })?;
                     Some(Credential::Password { phc_hash })
                 }
                 _ => None,
@@ -786,17 +787,18 @@ fn dispatch_inner(
             srv.ensure_can_read(session_id, origin)?;
             srv.ensure_can_read(session_id, destination)?;
             let o_ref = origin_ref.map(|hr| {
-                tracing::info!("[link_create] origin_ref excerpt present={}, len={}", hr.excerpt.is_some(), hr.excerpt.as_deref().map(|s| s.len()).unwrap_or(0));
+                tracing::info!(
+                    "[link_create] origin_ref excerpt present={}, len={}",
+                    hr.excerpt.is_some(),
+                    hr.excerpt.as_deref().map(|s| s.len()).unwrap_or(0)
+                );
                 let excerpt = hr
                     .excerpt
                     .as_deref()
                     .map(|t| crate::edition::Edition::from_text(t));
                 let path = hr.path_context.map(|labels| {
                     crate::edition::links::Path::new(
-                        labels
-                            .iter()
-                            .filter_map(|l| l.to_range_element())
-                            .collect(),
+                        labels.iter().filter_map(|l| l.to_range_element()).collect(),
                     )
                 });
                 crate::edition::links::HyperRef::single(
@@ -813,10 +815,7 @@ fn dispatch_inner(
                     .map(|t| crate::edition::Edition::from_text(t));
                 let path = hr.path_context.map(|labels| {
                     crate::edition::links::Path::new(
-                        labels
-                            .iter()
-                            .filter_map(|l| l.to_range_element())
-                            .collect(),
+                        labels.iter().filter_map(|l| l.to_range_element()).collect(),
                     )
                 });
                 crate::edition::links::HyperRef::single(
@@ -2034,7 +2033,10 @@ fn dispatch_inner(
             Ok(ResponseValue::CrdtSyncTextResult { text })
         }
 
-        WireRequest::CrdtAwarenessUpdate { work_id, mut awareness } => {
+        WireRequest::CrdtAwarenessUpdate {
+            work_id,
+            mut awareness,
+        } => {
             srv.ensure_logged_in(session_id)?;
             let (display_name, club_id, pub_key) = srv.identity_for_session(session_id);
             awareness.user_name = display_name;
@@ -2201,7 +2203,15 @@ fn dispatch_inner(
             char_start,
             char_end,
         } => {
-            srv.annotation_create(session_id, work_id, annotation_id, kind, payload, char_start, char_end)?;
+            srv.annotation_create(
+                session_id,
+                work_id,
+                annotation_id,
+                kind,
+                payload,
+                char_start,
+                char_end,
+            )?;
             Ok(ResponseValue::Id(annotation_id))
         }
         WireRequest::AnnotationDelete {
@@ -2413,24 +2423,20 @@ fn dispatch_inner(
             Ok(ResponseValue::WorkList(list))
         }
 
-        WireRequest::ContentMatch { text } => {
-            match srv.match_content(&text) {
-                Some((work_id, author_id, score)) => {
-                    Ok(ResponseValue::ContentMatchResult {
-                        matched: true,
-                        work_id: Some(work_id),
-                        author_id: Some(author_id),
-                        score: Some(score),
-                    })
-                }
-                None => Ok(ResponseValue::ContentMatchResult {
-                    matched: false,
-                    work_id: None,
-                    author_id: None,
-                    score: None,
-                }),
-            }
-        }
+        WireRequest::ContentMatch { text } => match srv.match_content(&text) {
+            Some((work_id, author_id, score)) => Ok(ResponseValue::ContentMatchResult {
+                matched: true,
+                work_id: Some(work_id),
+                author_id: Some(author_id),
+                score: Some(score),
+            }),
+            None => Ok(ResponseValue::ContentMatchResult {
+                matched: false,
+                work_id: None,
+                author_id: None,
+                score: None,
+            }),
+        },
 
         WireRequest::WorkApplySourceAttribution {
             work_id,

@@ -254,13 +254,7 @@ impl Server {
 
         let owner = self.session(session_id)?.initial_login();
         let description = Edition::from_text(&format!("personal club: {}", name));
-        let mut club = Club::new_personal(
-            be_id,
-            owner,
-            description,
-            Some(name.clone()),
-            None,
-        );
+        let mut club = Club::new_personal(be_id, owner, description, Some(name.clone()), None);
         club.set_name(name.clone());
         club.set_read_club(Some(be_id));
         club.set_edit_club(Some(be_id));
@@ -682,7 +676,9 @@ mod tests {
         let club_id = server
             .create_personal_club(sid, "charlie".to_string(), None, None)
             .unwrap();
-        server.club_set_password(sid, club_id, b"password1").unwrap();
+        server
+            .club_set_password(sid, club_id, b"password1")
+            .unwrap();
         assert!(server.club(club_id).unwrap().credential().is_some());
 
         server.club_clear_credential(sid, club_id).unwrap();
@@ -736,11 +732,7 @@ mod tests {
             .unwrap();
         let _result = server.crdt_open_session(sid, work_id).unwrap();
 
-        let author = server
-            .otree_crdt
-            .get_author(work_id, sid)
-            .unwrap()
-            .unwrap();
+        let author = server.otree_crdt.get_author(work_id, sid).unwrap().unwrap();
         let mut expected_key = [0u8; 32];
         expected_key[..8].copy_from_slice(&club_id.to_le_bytes());
         assert_eq!(author.public_key, expected_key);
@@ -758,11 +750,7 @@ mod tests {
             .unwrap();
         let _result = server.crdt_open_session(sid, work_id).unwrap();
 
-        let author = server
-            .otree_crdt
-            .get_author(work_id, sid)
-            .unwrap()
-            .unwrap();
+        let author = server.otree_crdt.get_author(work_id, sid).unwrap().unwrap();
         let public_id = server.public_club_id();
         let mut expected_key = [0u8; 32];
         expected_key[..8].copy_from_slice(&public_id.to_le_bytes());
@@ -845,7 +833,9 @@ mod tests {
         let club_id = server
             .create_personal_club(sid, "alice".to_string(), None, None)
             .unwrap();
-        server.club_set_password(sid, club_id, b"secret12345").unwrap();
+        server
+            .club_set_password(sid, club_id, b"secret12345")
+            .unwrap();
 
         let sid2 = server.connect();
         for _ in 0..10 {
@@ -855,8 +845,8 @@ mod tests {
         }
 
         let _lock = server.login(sid2, club_id).unwrap();
-        let result =
-            server.authenticate_with_pending(sid2, &LockCredential::Password(b"secret12345".to_vec()));
+        let result = server
+            .authenticate_with_pending(sid2, &LockCredential::Password(b"secret12345".to_vec()));
         assert!(result.is_err(), "11th attempt should be rate limited");
     }
 
@@ -866,7 +856,9 @@ mod tests {
         let club_id = server
             .create_personal_club(sid, "alice".to_string(), None, None)
             .unwrap();
-        server.club_set_password(sid, club_id, b"secret12345").unwrap();
+        server
+            .club_set_password(sid, club_id, b"secret12345")
+            .unwrap();
 
         for i in 0..10 {
             let fresh_sid = server.connect();
@@ -882,8 +874,10 @@ mod tests {
 
         let fresh_sid = server.connect();
         let _lock = server.login(fresh_sid, club_id).unwrap();
-        let result = server
-            .authenticate_with_pending(fresh_sid, &LockCredential::Password(b"secret12345".to_vec()));
+        let result = server.authenticate_with_pending(
+            fresh_sid,
+            &LockCredential::Password(b"secret12345".to_vec()),
+        );
         assert!(
             result.is_err(),
             "rate limit should persist across new sessions"
@@ -896,7 +890,9 @@ mod tests {
         let club_id = server
             .create_personal_club(sid, "alice".to_string(), None, None)
             .unwrap();
-        server.club_set_password(sid, club_id, b"secret12345").unwrap();
+        server
+            .club_set_password(sid, club_id, b"secret12345")
+            .unwrap();
 
         let sid2 = server.connect();
         for _ in 0..9 {
@@ -906,8 +902,8 @@ mod tests {
         }
 
         let _lock = server.login(sid2, club_id).unwrap();
-        let result =
-            server.authenticate_with_pending(sid2, &LockCredential::Password(b"secret12345".to_vec()));
+        let result = server
+            .authenticate_with_pending(sid2, &LockCredential::Password(b"secret12345".to_vec()));
         assert!(
             result.is_ok(),
             "10th attempt with correct password should succeed and reset"
@@ -1031,12 +1027,14 @@ mod tests {
         let club_id = server
             .create_personal_club(sid, "tiny-pw-test".to_string(), None, None)
             .unwrap();
-        server.club_set_password(sid, club_id, b"1234567890").unwrap();
+        server
+            .club_set_password(sid, club_id, b"1234567890")
+            .unwrap();
 
         let sid2 = server.connect();
         let _lock = server.login(sid2, club_id).unwrap();
-        let result =
-            server.authenticate_with_pending(sid2, &LockCredential::Password(b"1234567890".to_vec()));
+        let result = server
+            .authenticate_with_pending(sid2, &LockCredential::Password(b"1234567890".to_vec()));
         assert!(result.is_ok(), "10-byte password should authenticate");
     }
 

@@ -5,7 +5,10 @@ use crate::persist::chunk_store::ChunkStore;
 use crate::persist::edition_chunks::{self, EditionChunkRef, WorkChunkRef};
 use crate::persist::manifest::{self, Manifest};
 
-fn make_work_entry(be_id: crate::edition::backend::BeId, work_ref: WorkChunkRef) -> manifest::WorkEntry {
+fn make_work_entry(
+    be_id: crate::edition::backend::BeId,
+    work_ref: WorkChunkRef,
+) -> manifest::WorkEntry {
     manifest::WorkEntry {
         be_id,
         work_ref,

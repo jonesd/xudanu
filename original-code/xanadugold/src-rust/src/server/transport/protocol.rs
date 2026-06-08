@@ -2246,7 +2246,10 @@ pub struct RangeElementPayload {
 impl RangeElementPayload {
     pub fn to_range_element(&self) -> Option<crate::edition::RangeElement> {
         match self.elem_type.as_str() {
-            "text" => self.text.as_ref().map(|t| crate::edition::RangeElement::text(t)),
+            "text" => self
+                .text
+                .as_ref()
+                .map(|t| crate::edition::RangeElement::text(t)),
             "label" => self.label_id.map(|id| {
                 crate::edition::RangeElement::label(
                     id,

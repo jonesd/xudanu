@@ -117,10 +117,13 @@ pub fn edition_to_chunks_durable(
     let snapshot = EditionSnapshot::from_edition(edition);
 
     let mut entry_chunk_hashes = Vec::new();
-    for chunk_range in (0..snapshot.entries.len()).step_by(ENTRIES_PER_CHUNK).map(|start| {
-        let end = (start + ENTRIES_PER_CHUNK).min(snapshot.entries.len());
-        start..end
-    }) {
+    for chunk_range in (0..snapshot.entries.len())
+        .step_by(ENTRIES_PER_CHUNK)
+        .map(|start| {
+            let end = (start + ENTRIES_PER_CHUNK).min(snapshot.entries.len());
+            start..end
+        })
+    {
         let entries = snapshot.entries[chunk_range.clone()].to_vec();
         let provenances = if snapshot.provenances.len() >= chunk_range.end {
             snapshot.provenances[chunk_range.clone()].to_vec()
@@ -236,7 +239,11 @@ pub fn work_to_chunks_durable(
         read_club: work.read_club(),
         edit_club: work.edit_club(),
         sponsors: work.sponsors().to_vec(),
-        endorsements: work.endorsements().iter().map(|e| (e.club_id(), e.token_id())).collect(),
+        endorsements: work
+            .endorsements()
+            .iter()
+            .map(|e| (e.club_id(), e.token_id()))
+            .collect(),
     })
 }
 
@@ -254,9 +261,17 @@ pub fn work_from_chunks_current(
     }
     if !chunk_ref.endorsements.is_empty() {
         let es = crate::edition::endorsement::EndorsementSet::from_endorsements(
-            chunk_ref.endorsements.iter().map(|&(c, t)| crate::edition::endorsement::Endorsement::new(c, t)).collect()
+            chunk_ref
+                .endorsements
+                .iter()
+                .map(|&(c, t)| crate::edition::endorsement::Endorsement::new(c, t))
+                .collect(),
         );
-        tracing::info!("[restore] restoring {} endorsements for work {}", es.len(), chunk_ref.be_id);
+        tracing::info!(
+            "[restore] restoring {} endorsements for work {}",
+            es.len(),
+            chunk_ref.be_id
+        );
         work.endorse(&es);
     }
     work.set_revision_count(chunk_ref.revision_count);

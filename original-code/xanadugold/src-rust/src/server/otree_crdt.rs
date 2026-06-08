@@ -1,6 +1,6 @@
-use std::sync::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -696,7 +696,10 @@ impl OtreeCrdtManager {
             llm_model,
             triggerer_club_id,
         );
-        wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()).take();
+        wd.cached_text
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         Ok(())
     }
 
@@ -891,7 +894,7 @@ impl OtreeCrdtManager {
             wd.subscribers.remove(&session_id);
             wd.awareness.remove(&session_id);
             if wd.subscribers.is_empty() {
-        *wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                *wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()) = None;
             }
         }
     }
@@ -1251,13 +1254,13 @@ impl OtreeCrdtManager {
             .docs
             .get(&work_id)
             .ok_or(OtreeError::WorkNotFound(work_id))?;
-        Ok(wd.annotations.iter().find(|a| a.annotation_id == annotation_id))
+        Ok(wd
+            .annotations
+            .iter()
+            .find(|a| a.annotation_id == annotation_id))
     }
 
-    pub fn annotation_list(
-        &self,
-        work_id: BeId,
-    ) -> Result<Vec<&OtreeAnnotation>, OtreeError> {
+    pub fn annotation_list(&self, work_id: BeId) -> Result<Vec<&OtreeAnnotation>, OtreeError> {
         let wd = self
             .docs
             .get(&work_id)
@@ -1276,7 +1279,11 @@ impl OtreeCrdtManager {
             .docs
             .get_mut(&work_id)
             .ok_or(OtreeError::WorkNotFound(work_id))?;
-        if let Some(ann) = wd.annotations.iter_mut().find(|a| a.annotation_id == annotation_id) {
+        if let Some(ann) = wd
+            .annotations
+            .iter_mut()
+            .find(|a| a.annotation_id == annotation_id)
+        {
             ann.char_start = char_start;
             ann.char_end = char_end;
         }
@@ -1788,7 +1795,8 @@ mod tests {
         let edition = Edition::from_text("hello world");
         mgr.initialize_from_edition(work_id, &edition);
 
-        mgr.annotation_create(work_id, 1, "note".into(), "my note".into(), 0, 5, None).unwrap();
+        mgr.annotation_create(work_id, 1, "note".into(), "my note".into(), 0, 5, None)
+            .unwrap();
 
         let anns = mgr.annotation_list(work_id).unwrap();
         assert_eq!(anns.len(), 1);
@@ -1810,7 +1818,16 @@ mod tests {
         let work_id: BeId = 42;
 
         mgr.initialize_from_edition(work_id, &Edition::from_text("hello"));
-        mgr.annotation_create(work_id, 10, "highlight".into(), "important".into(), 2, 4, Some(99)).unwrap();
+        mgr.annotation_create(
+            work_id,
+            10,
+            "highlight".into(),
+            "important".into(),
+            2,
+            4,
+            Some(99),
+        )
+        .unwrap();
 
         let ann = mgr.annotation_get(work_id, 10).unwrap().unwrap();
         assert_eq!(ann.annotation_id, 10);
@@ -1826,7 +1843,8 @@ mod tests {
         let work_id: BeId = 42;
 
         mgr.initialize_from_edition(work_id, &Edition::from_text("hello world"));
-        mgr.annotation_create(work_id, 1, "note".into(), "x".into(), 0, 5, None).unwrap();
+        mgr.annotation_create(work_id, 1, "note".into(), "x".into(), 0, 5, None)
+            .unwrap();
 
         mgr.annotation_update_range(work_id, 1, 3, 8).unwrap();
 
@@ -1856,7 +1874,8 @@ mod tests {
 
         assert!(mgr.docs.contains_key(&work_id));
 
-        mgr.annotation_create(work_id, 1, "note".into(), "ok".into(), 0, 5, None).unwrap();
+        mgr.annotation_create(work_id, 1, "note".into(), "ok".into(), 0, 5, None)
+            .unwrap();
         let anns = mgr.annotation_list(work_id).unwrap();
         assert_eq!(anns.len(), 1);
     }
@@ -1894,9 +1913,12 @@ mod tests {
         mgr.initialize_from_edition(w1, &Edition::from_text("aaa"));
         mgr.initialize_from_edition(w2, &Edition::from_text("bbb"));
 
-        mgr.annotation_create(w1, 1, "note".into(), "n1".into(), 0, 1, None).unwrap();
-        mgr.annotation_create(w1, 2, "note".into(), "n2".into(), 1, 2, None).unwrap();
-        mgr.annotation_create(w2, 3, "note".into(), "n3".into(), 0, 1, None).unwrap();
+        mgr.annotation_create(w1, 1, "note".into(), "n1".into(), 0, 1, None)
+            .unwrap();
+        mgr.annotation_create(w1, 2, "note".into(), "n2".into(), 1, 2, None)
+            .unwrap();
+        mgr.annotation_create(w2, 3, "note".into(), "n3".into(), 0, 1, None)
+            .unwrap();
 
         let all = mgr.all_annotations();
         assert_eq!(all.len(), 2);
