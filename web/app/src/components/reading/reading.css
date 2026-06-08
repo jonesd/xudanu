@@ -147,8 +147,59 @@
   border-radius: 3px;
   background: #64b5f615;
   border: 1px solid #64b5f630;
-  cursor: default;
+  cursor: pointer;
   min-width: 36px;
+}
+
+.timeline-revision:hover {
+  background: #64b5f630;
+}
+
+.timeline-revision.active {
+  background: #1976d2;
+  border-color: #1976d2;
+}
+
+.timeline-revision.active .revision-number,
+.timeline-revision.active .revision-chars {
+  color: #fff;
+}
+
+.timeline-revision-view {
+  margin-top: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.timeline-revision-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #f3f4f6;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.timeline-revision-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: #666;
+  padding: 0 4px;
+}
+
+.timeline-revision-text {
+  padding: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 0;
 }
 
 .revision-number {

@@ -33,6 +33,8 @@ export function ReadingView({
   const [selectedRegion, setSelectedRegion] = useState<{ start: number; end: number } | null>(null);
   const [composition, setComposition] = useState<PassageComposition | null>(null);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [viewingRevision, setViewingRevision] = useState<number | null>(null);
+  const [revisionText, setRevisionText] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -156,14 +158,37 @@ export function ReadingView({
             {timeline.revisions.map((rev) => (
               <div
                 key={rev.revision}
-                className="timeline-revision"
+                className={`timeline-revision${viewingRevision === rev.revision ? " active" : ""}`}
                 title={`Revision ${rev.revision}: ${rev.char_count} chars${rev.author_display_name ? ` by ${rev.author_display_name}` : ""}`}
+                onClick={async () => {
+                  if (viewingRevision === rev.revision) {
+                    setViewingRevision(null);
+                    setRevisionText(null);
+                    return;
+                  }
+                  setViewingRevision(rev.revision);
+                  try {
+                    const t = await clientRef.current?.fetchRevision(workId, rev.revision);
+                    setRevisionText(t ?? null);
+                  } catch {
+                    setRevisionText(null);
+                  }
+                }}
               >
                 <span className="revision-number">r{rev.revision}</span>
                 <span className="revision-chars">{rev.char_count}</span>
               </div>
             ))}
           </div>
+          {viewingRevision !== null && (
+            <div className="timeline-revision-view">
+              <div className="timeline-revision-header">
+                Revision {viewingRevision}
+                <button className="timeline-revision-close" onClick={() => { setViewingRevision(null); setRevisionText(null); }}>×</button>
+              </div>
+              <pre className="timeline-revision-text">{revisionText ?? "Loading..."}</pre>
+            </div>
+          )}
         </div>
       )}
 

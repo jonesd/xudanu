@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry, type WorkListEntry } from "../api/crdt_sync";
+import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry, type WorkListEntry, type AnnotationEntry } from "../api/crdt_sync";
 
 export interface CrdtSyncState {
   text: string;
@@ -33,6 +33,10 @@ export interface CrdtSyncState {
   getEditClub: (workId: number) => Promise<number>;
   publicClubId: number;
   logout: () => void;
+  annotations: AnnotationEntry[];
+  refreshAnnotations: () => void;
+  createAnnotation: (kind: string, payload: string, charStart: number, charEnd: number) => Promise<void>;
+  deleteAnnotation: (annotationId: number) => Promise<void>;
 }
 
 export function useCrdtSync(
@@ -52,25 +56,21 @@ export function useCrdtSync(
   const [identity, setIdentity] = useState<WhoAmIEntry | null>(null);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [publicClubId, setPublicClubId] = useState(0);
-  const credentialsRef = useRef<{ name: string; password: string } | null>(null);
   const reconnectCountRef = useRef(0);
   const [authenticated, setAuthenticated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("xudanu_credentials");
-      if (saved) {
-        credentialsRef.current = JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn("useCrdtSync: failed to parse saved credentials:", e);
-    }
-  }, []);
+  const [annotations, setAnnotations] = useState<AnnotationEntry[]>([]);
+  const [connectionEpoch, setConnectionEpoch] = useState(0);
+  const epochRef = useRef(0);
 
   useEffect(() => {
     if (!wsUrl) return;
 
     setTextState("");
+    setConnected(false);
+    setAuthenticated(false);
+    const newEpoch = epochRef.current + 1;
+    epochRef.current = newEpoch;
+    setConnectionEpoch(newEpoch);
 
     const client = new CrdtSyncClient(wsUrl, workBeId ?? 0);
     clientRef.current = client;
@@ -128,25 +128,14 @@ export function useCrdtSync(
       setAuthenticated(false);
       return;
     }
-    if (!credentialsRef.current) {
-      setAuthenticated(false);
-      return;
-    }
-    const { name, password } = credentialsRef.current;
-    reconnectCountRef.current += 1;
-    const count = reconnectCountRef.current;
     const client = clientRef.current;
     if (!client) return;
-    client.loginByName(name, password).then(() => {
-      if (reconnectCountRef.current === count) {
+    client.checkWhoAmI().then((identity) => {
+      if (identity) {
         setAuthenticated(true);
       }
-    }).catch((e) => {
-      if (reconnectCountRef.current === count) {
-        console.error("Re-login failed after reconnect:", e);
-        credentialsRef.current = null;
-        setAuthenticated(false);
-      }
+    }).catch(() => {
+      setAuthenticated(false);
     });
   }, [connected]);
 
@@ -203,11 +192,19 @@ export function useCrdtSync(
   }, [workBeId]);
 
   const login = useCallback(async (clubName: string, password: string) => {
+    const resp = await fetch("/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ club_name: clubName, password }),
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.error || "login failed");
+    }
     const client = clientRef.current;
-    if (!client || !client.isConnected()) return;
-    await client.loginByName(clubName, password);
-    credentialsRef.current = { name: clubName, password };
-    try { localStorage.setItem("xudanu_credentials", JSON.stringify(credentialsRef.current)); } catch (e) { console.error("useCrdtSync: CRITICAL - failed to persist credentials:", e); }
+    if (client && client.isConnected()) {
+      await client.loginByName(clubName, password);
+    }
     setAuthenticated(true);
   }, []);
 
@@ -215,8 +212,12 @@ export function useCrdtSync(
     const client = clientRef.current;
     if (!client || !client.isConnected()) return;
     await client.createIdentity(displayName, password);
-    credentialsRef.current = { name: displayName, password };
-    try { localStorage.setItem("xudanu_credentials", JSON.stringify(credentialsRef.current)); } catch (e) { console.error("useCrdtSync: CRITICAL - failed to persist credentials:", e); }
+    const resp = await fetch("/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ club_name: displayName, password }),
+    });
+    if (!resp.ok) throw new Error("identity created but session login failed");
     setAuthenticated(true);
   }, []);
 
@@ -326,15 +327,38 @@ export function useCrdtSync(
   }, []);
 
   const logout = useCallback(() => {
-    credentialsRef.current = null;
     setAuthenticated(false);
-    try { localStorage.removeItem("xudanu_credentials"); } catch (e) { console.error("useCrdtSync: CRITICAL - failed to clear credentials on logout:", e); }
+    fetch("/auth/logout", { method: "POST" }).catch(() => {});
     const client = clientRef.current;
     if (client) {
       client.disconnect();
       client.connect();
     }
   }, []);
+
+  const refreshAnnotations = useCallback(() => {
+    const client = clientRef.current;
+    if (!client || workBeId === null) return;
+    if (!client.isConnected()) return;
+    client.annotationList(workBeId).then(setAnnotations).catch((e) => { console.warn("[refreshAnnotations] failed:", e); });
+  }, [workBeId]);
+
+  const createAnnotation = useCallback(async (kind: string, payload: string, charStart: number, charEnd: number) => {
+    const client = clientRef.current;
+    if (!client || workBeId === null) return;
+    if (!client.isConnected()) return;
+    const id = Date.now();
+    await client.annotationCreate(workBeId, id, kind, payload, charStart, charEnd);
+    refreshAnnotations();
+  }, [workBeId, refreshAnnotations]);
+
+  const deleteAnnotation = useCallback(async (annotationId: number) => {
+    const client = clientRef.current;
+    if (!client || workBeId === null) return;
+    if (!client.isConnected()) return;
+    await client.annotationDelete(workBeId, annotationId);
+    refreshAnnotations();
+  }, [workBeId, refreshAnnotations]);
 
   return {
     text, connected, authenticated, awareness, setText, setTextLocal, sendCursor, sendSelection,
@@ -343,5 +367,7 @@ export function useCrdtSync(
     refreshAwareness,
     identity, login, createIdentity, createWork, shareWork, unshareWork, narrateDiff,
     getWritingFeedback, llmEnabled, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
+    annotations, refreshAnnotations, createAnnotation, deleteAnnotation,
+    connectionEpoch,
   };
 }

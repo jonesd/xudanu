@@ -207,6 +207,34 @@ body {
   background: #f0f4ff !important;
 }
 
+.source-badge {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7280;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  user-select: none;
+}
+
+.author-pills {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+  flex-wrap: wrap;
+}
+
+.author-pill {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border: 1px solid;
+  border-radius: 10px;
+  background: transparent;
+  white-space: nowrap;
+}
+
 .workspace-body {
   display: flex;
   flex: 1;
@@ -572,13 +600,13 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-  pointer-events: none;
-  z-index: 1;
+  pointer-events: auto;
+  z-index: 2;
 }
 
 .editor-content {
   position: relative;
-  z-index: 2;
+  z-index: 1;
   padding: 16px 20px;
   min-height: 300px;
   font-size: 15px;
@@ -2301,6 +2329,24 @@ body {
   color: #c4a35a;
   font-size: 10px;
   margin-top: 2px;
+}
+
+.marker-tooltip-link {
+  display: block;
+  margin-top: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #fff;
+  background: #4361ee;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.marker-tooltip-link:hover {
+  background: #3651d4;
 }
 
 /* Compare panel */

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useMemo, useState } from "react";
+import React, { useRef, useEffect, useCallback, useMemo, useState } from "react";
 import { TextBuffer } from "../api/text_buffer";
 import type { AttributionSpan, TransclusionMarker } from "../api/crdt_sync";
 import type { PendingTransclusion } from "../hooks/useTransclusion";
@@ -52,7 +52,7 @@ const PADDING_TOP = 16;
 const PADDING_BOTTOM = 16;
 const OVERSCAN = 15;
 
-export function VirtualizedEditor({
+function VirtualizedEditorInner({
   text,
   onTextChange,
   onCursorChange,
@@ -70,7 +70,8 @@ export function VirtualizedEditor({
   fontSize = DEFAULT_FONT_SIZE,
   lineHeight = DEFAULT_LINE_HEIGHT,
 }: VirtualizedEditorProps) {
-  const bufferRef = useRef<TextBuffer>(new TextBuffer(text));
+  const bufferRef = useRef<TextBuffer | null>(null);
+  if (bufferRef.current === null) bufferRef.current = new TextBuffer(text);
   const LINE_HEIGHT = fontSize * lineHeight;
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -265,7 +266,7 @@ export function VirtualizedEditor({
   const updateViewport = useCallback(() => {
     const container = containerRef.current;
     const buf = bufferRef.current;
-    if (!container || buf.getLineCount() === 0) return;
+    if (!container || !buf || buf.getLineCount() === 0) return;
 
     const scrollTop = container.scrollTop;
     const viewportHeight = container.clientHeight;
@@ -276,6 +277,9 @@ export function VirtualizedEditor({
       buf.getLineCount(),
       Math.ceil((scrollTop - PADDING_TOP + viewportHeight) / lh) + OVERSCAN,
     );
+
+    const prev = lastViewRange.current;
+    if (prev.start === firstVisible && prev.end === lastVisible) return;
 
     lastViewRange.current = { start: firstVisible, end: lastVisible };
     setViewStart(firstVisible);
@@ -759,3 +763,5 @@ export function VirtualizedEditor({
     </div>
   );
 }
+
+export const VirtualizedEditor = React.memo(VirtualizedEditorInner);

@@ -9,7 +9,7 @@ use super::session::SessionId;
 use crate::crypto::sign::{sign_bytes, verify_signature};
 use crate::edition::provenance::{sign_element, sign_span, ElementProvenance, SpanProvenance};
 use crate::edition::three_way::{three_way_merge, MergeStrategy};
-use crate::edition::{BeId, Carrier, Edition, Mapping, RangeElement};
+use crate::edition::{BeId, Carrier, Edition, Mapping, RangeElement, XnRegion};
 use crate::server::transport::protocol::TextDeltaOp;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -92,6 +92,16 @@ impl std::fmt::Display for OtreeSigningError {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OtreeAnnotation {
+    pub annotation_id: u64,
+    pub kind: String,
+    pub payload: String,
+    pub char_start: usize,
+    pub char_end: usize,
+    pub created_by: Option<BeId>,
+}
+
 struct OtreeWorkDoc {
     current_edition: Edition,
     base_edition: Edition,
@@ -105,6 +115,7 @@ struct OtreeWorkDoc {
     federated_provenance: Vec<SpanProvenance>,
     last_author_mapping: Option<Mapping>,
     cached_text: Mutex<Option<String>>,
+    annotations: Vec<OtreeAnnotation>,
 }
 
 #[derive(Debug)]
@@ -467,6 +478,7 @@ impl OtreeCrdtManager {
                     federated_provenance: Vec::new(),
                     last_author_mapping: None,
                     cached_text: Mutex::new(None),
+                    annotations: Vec::new(),
                 },
             );
         }
@@ -551,6 +563,22 @@ impl OtreeCrdtManager {
             &wd.current_edition,
             &merged,
         ));
+
+        let mapping = wd.last_author_mapping.as_ref().unwrap();
+        for ann in &mut wd.annotations {
+            let old_region = XnRegion::interval(ann.char_start as i64, ann.char_end as i64);
+            let new_region = mapping.of_region(&old_region);
+            if new_region.is_empty() {
+                ann.char_start = ann.char_end;
+            } else {
+                let intervals = new_region.intervals();
+                if let Some(&(start, end)) = intervals.first() {
+                    ann.char_start = start.max(0) as usize;
+                    ann.char_end = end.max(0) as usize;
+                }
+            }
+        }
+
         wd.current_edition = merged;
         *wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()) = None;
         wd.last_change_timestamp = current_timestamp_secs();
@@ -906,8 +934,16 @@ impl OtreeCrdtManager {
                 federated_provenance: Vec::new(),
                 last_author_mapping: None,
                 cached_text: Mutex::new(None),
+                annotations: Vec::new(),
             },
         );
+    }
+
+    pub fn ensure_doc_for_annotations(&mut self, work_id: BeId, edition: &Edition) {
+        if self.docs.contains_key(&work_id) {
+            return;
+        }
+        self.initialize_from_edition(work_id, edition);
     }
 
     pub fn get_author_mapping(&self, work_id: BeId) -> Option<Mapping> {
@@ -1166,6 +1202,101 @@ impl OtreeCrdtManager {
             .map_err(OtreeError::SigningFailed)?;
 
         self.apply_federation_update(work_id, &signed.update_text, initial_edition)
+    }
+
+    pub fn annotation_create(
+        &mut self,
+        work_id: BeId,
+        annotation_id: u64,
+        kind: String,
+        payload: String,
+        char_start: usize,
+        char_end: usize,
+        created_by: Option<BeId>,
+    ) -> Result<(), OtreeError> {
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(OtreeError::WorkNotFound(work_id))?;
+        wd.annotations.push(OtreeAnnotation {
+            annotation_id,
+            kind,
+            payload,
+            char_start,
+            char_end,
+            created_by,
+        });
+        Ok(())
+    }
+
+    pub fn annotation_delete(
+        &mut self,
+        work_id: BeId,
+        annotation_id: u64,
+    ) -> Result<(), OtreeError> {
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(OtreeError::WorkNotFound(work_id))?;
+        wd.annotations.retain(|a| a.annotation_id != annotation_id);
+        Ok(())
+    }
+
+    pub fn annotation_get(
+        &self,
+        work_id: BeId,
+        annotation_id: u64,
+    ) -> Result<Option<&OtreeAnnotation>, OtreeError> {
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(OtreeError::WorkNotFound(work_id))?;
+        Ok(wd.annotations.iter().find(|a| a.annotation_id == annotation_id))
+    }
+
+    pub fn annotation_list(
+        &self,
+        work_id: BeId,
+    ) -> Result<Vec<&OtreeAnnotation>, OtreeError> {
+        let wd = self
+            .docs
+            .get(&work_id)
+            .ok_or(OtreeError::WorkNotFound(work_id))?;
+        Ok(wd.annotations.iter().collect())
+    }
+
+    pub fn annotation_update_range(
+        &mut self,
+        work_id: BeId,
+        annotation_id: u64,
+        char_start: usize,
+        char_end: usize,
+    ) -> Result<(), OtreeError> {
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(OtreeError::WorkNotFound(work_id))?;
+        if let Some(ann) = wd.annotations.iter_mut().find(|a| a.annotation_id == annotation_id) {
+            ann.char_start = char_start;
+            ann.char_end = char_end;
+        }
+        Ok(())
+    }
+
+    pub fn all_annotations(&self) -> Vec<(BeId, Vec<OtreeAnnotation>)> {
+        self.docs
+            .iter()
+            .filter(|(_, wd)| !wd.annotations.is_empty())
+            .map(|(work_id, wd)| (*work_id, wd.annotations.clone()))
+            .collect()
+    }
+
+    pub fn restore_annotations(&mut self, data: &[(BeId, Vec<OtreeAnnotation>)]) {
+        for (work_id, annotations) in data {
+            if let Some(wd) = self.docs.get_mut(work_id) {
+                wd.annotations = annotations.clone();
+            }
+        }
     }
 }
 
@@ -1647,5 +1778,159 @@ mod tests {
 
         let text = mgr.current_text(work_id).unwrap();
         assert_eq!(text, "line1\ninserted\nline2\n");
+    }
+
+    #[test]
+    fn test_annotation_crud() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+
+        let edition = Edition::from_text("hello world");
+        mgr.initialize_from_edition(work_id, &edition);
+
+        mgr.annotation_create(work_id, 1, "note".into(), "my note".into(), 0, 5, None).unwrap();
+
+        let anns = mgr.annotation_list(work_id).unwrap();
+        assert_eq!(anns.len(), 1);
+        assert_eq!(anns[0].annotation_id, 1);
+        assert_eq!(anns[0].kind, "note");
+        assert_eq!(anns[0].payload, "my note");
+        assert_eq!(anns[0].char_start, 0);
+        assert_eq!(anns[0].char_end, 5);
+        assert_eq!(anns[0].created_by, None);
+
+        mgr.annotation_delete(work_id, 1).unwrap();
+        let anns = mgr.annotation_list(work_id).unwrap();
+        assert!(anns.is_empty());
+    }
+
+    #[test]
+    fn test_annotation_get() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+
+        mgr.initialize_from_edition(work_id, &Edition::from_text("hello"));
+        mgr.annotation_create(work_id, 10, "highlight".into(), "important".into(), 2, 4, Some(99)).unwrap();
+
+        let ann = mgr.annotation_get(work_id, 10).unwrap().unwrap();
+        assert_eq!(ann.annotation_id, 10);
+        assert_eq!(ann.kind, "highlight");
+        assert_eq!(ann.created_by, Some(99));
+
+        assert!(mgr.annotation_get(work_id, 999).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_annotation_update_range() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+
+        mgr.initialize_from_edition(work_id, &Edition::from_text("hello world"));
+        mgr.annotation_create(work_id, 1, "note".into(), "x".into(), 0, 5, None).unwrap();
+
+        mgr.annotation_update_range(work_id, 1, 3, 8).unwrap();
+
+        let ann = mgr.annotation_get(work_id, 1).unwrap().unwrap();
+        assert_eq!(ann.char_start, 3);
+        assert_eq!(ann.char_end, 8);
+    }
+
+    #[test]
+    fn test_annotation_fails_without_doc() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 99;
+
+        let result = mgr.annotation_create(work_id, 1, "note".into(), "x".into(), 0, 5, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ensure_doc_for_annotations() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+
+        assert!(!mgr.docs.contains_key(&work_id));
+
+        let edition = Edition::from_text("source text");
+        mgr.ensure_doc_for_annotations(work_id, &edition);
+
+        assert!(mgr.docs.contains_key(&work_id));
+
+        mgr.annotation_create(work_id, 1, "note".into(), "ok".into(), 0, 5, None).unwrap();
+        let anns = mgr.annotation_list(work_id).unwrap();
+        assert_eq!(anns.len(), 1);
+    }
+
+    #[test]
+    fn test_ensure_doc_idempotent() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+
+        mgr.open_sync_session(work_id, make_session(1), Some(&Edition::from_text("hello")));
+
+        let text_before = mgr.current_text(work_id).unwrap();
+
+        let edition = Edition::from_text("different");
+        mgr.ensure_doc_for_annotations(work_id, &edition);
+
+        let text_after = mgr.current_text(work_id).unwrap();
+        assert_eq!(text_before, text_after);
+    }
+
+    #[test]
+    fn test_all_annotations_empty() {
+        let mgr = OtreeCrdtManager::new(3);
+        let result = mgr.all_annotations();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_all_annotations_multiple_works() {
+        let mut mgr = OtreeCrdtManager::new(3);
+
+        let w1: BeId = 1;
+        let w2: BeId = 2;
+
+        mgr.initialize_from_edition(w1, &Edition::from_text("aaa"));
+        mgr.initialize_from_edition(w2, &Edition::from_text("bbb"));
+
+        mgr.annotation_create(w1, 1, "note".into(), "n1".into(), 0, 1, None).unwrap();
+        mgr.annotation_create(w1, 2, "note".into(), "n2".into(), 1, 2, None).unwrap();
+        mgr.annotation_create(w2, 3, "note".into(), "n3".into(), 0, 1, None).unwrap();
+
+        let all = mgr.all_annotations();
+        assert_eq!(all.len(), 2);
+
+        let w1_anns: Vec<_> = all.iter().filter(|(id, _)| *id == w1).collect();
+        let w2_anns: Vec<_> = all.iter().filter(|(id, _)| *id == w2).collect();
+        assert_eq!(w1_anns[0].1.len(), 2);
+        assert_eq!(w2_anns[0].1.len(), 1);
+    }
+
+    #[test]
+    fn test_restore_annotations() {
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 42;
+
+        mgr.initialize_from_edition(work_id, &Edition::from_text("hello"));
+
+        let data = vec![(
+            work_id,
+            vec![OtreeAnnotation {
+                annotation_id: 99,
+                kind: "restored".into(),
+                payload: "from disk".into(),
+                char_start: 0,
+                char_end: 5,
+                created_by: Some(7),
+            }],
+        )];
+
+        mgr.restore_annotations(&data);
+        let anns = mgr.annotation_list(work_id).unwrap();
+        assert_eq!(anns.len(), 1);
+        assert_eq!(anns[0].annotation_id, 99);
+        assert_eq!(anns[0].kind, "restored");
+        assert_eq!(anns[0].created_by, Some(7));
     }
 }

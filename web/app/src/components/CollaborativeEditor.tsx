@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from "react";
-import type { AttributionSpan, TransclusionMarker } from "../api/crdt_sync";
+import type { AttributionSpan, TransclusionMarker, AnnotationEntry } from "../api/crdt_sync";
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { TextBuffer } from "../api/text_buffer";
@@ -45,6 +45,8 @@ interface CollaborativeEditorProps {
   onPasteText?: (text: string, pasteStart: number) => void;
   fontSize?: number;
   lineHeight?: number;
+  annotations?: AnnotationEntry[];
+  onCreateAnnotation?: (charStart: number, charEnd: number) => void;
 }
 
 const CHUNK_SIZE = 50_000;
@@ -79,10 +81,16 @@ function drawOverlay(
   spans: AttributionSpan[],
   colorMap: Map<string, AuthorStyle>,
   markers: TransclusionMarker[] = [],
+  annotations: AnnotationEntry[] = [],
 ): MarkerHitZone[] {
   const hitZones: MarkerHitZone[] = [];
   if (!editor || !canvas) return hitZones;
-  if (spans.length === 0 && markers.length === 0) return hitZones;
+  if (spans.length === 0 && markers.length === 0 && annotations.length === 0) {
+    canvas.style.pointerEvents = "none";
+    return hitZones;
+  }
+
+  canvas.style.pointerEvents = "auto";
 
   const container = editor.parentElement;
   if (!container) return hitZones;
@@ -211,6 +219,40 @@ function drawOverlay(
     });
   }
 
+  for (const ann of annotations) {
+    if (ann.char_start >= ann.char_end) continue;
+    const drawStart = Math.max(ann.char_start, 0);
+    const drawEnd = Math.min(ann.char_end, textLen);
+    if (drawStart >= drawEnd) continue;
+
+    const range = document.createRange();
+    try {
+      if (singleNode) {
+        range.setStart(textNode as Text, drawStart);
+        range.setEnd(textNode as Text, drawEnd);
+      } else {
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
+        if (!sn || !en) continue;
+        range.setStart(sn.node, sn.offset);
+        range.setEnd(en.node, en.offset + 1);
+      }
+    } catch {
+      continue;
+    }
+
+    const rangeRects = range.getClientRects();
+    for (const r of rangeRects) {
+      const x = r.left - rect.left;
+      const y = r.top - rect.top;
+      ctx.fillStyle = "rgba(255, 196, 0, 0.15)";
+      ctx.fillRect(x, y, r.width, r.height);
+      ctx.strokeStyle = "rgba(255, 196, 0, 0.4)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
+    }
+  }
+
   return hitZones;
 }
 
@@ -246,6 +288,8 @@ export function CollaborativeEditor({
   onPasteText,
   fontSize,
   lineHeight,
+  annotations = [],
+  onCreateAnnotation,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -315,7 +359,10 @@ export function CollaborativeEditor({
     const el = editorRef.current;
     if (!el) return;
     if (isUndoRedoing.current) return;
-    const currentText = getTextContent(el);
+    let currentText = getTextContent(el);
+    if (currentText === "\n" && !el.querySelector("DIV") && !el.querySelector("P")) {
+      currentText = "";
+    }
     const isRemote = displayText !== lastText.current && displayText !== currentText;
     if (isRemote) {
       if (undoTimer.current !== null) {
@@ -329,6 +376,8 @@ export function CollaborativeEditor({
     if (currentText !== displayText) {
       if (displayText.length > LARGE_DOC_THRESHOLD) {
         chunkedSetTextContent(el, displayText);
+      } else if (displayText === "") {
+        el.innerHTML = "<br>";
       } else {
         el.textContent = displayText;
       }
@@ -358,7 +407,7 @@ export function CollaborativeEditor({
     const redraw = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers);
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers, annotations);
       });
     };
 
@@ -373,11 +422,26 @@ export function CollaborativeEditor({
       container.removeEventListener("scroll", redraw);
       cancelAnimationFrame(rafId);
     };
-  }, [attributionSpans, authorColorMap, transclusionMarkers]);
+  }, [attributionSpans, authorColorMap, transclusionMarkers, annotations]);
+
+  const hideTooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleHideTooltip = useCallback(() => {
+    hideTooltipTimer.current = setTimeout(() => {
+      setHoveredMarker(null);
+      setTooltipPos(null);
+      hideTooltipTimer.current = null;
+    }, 200);
+  }, []);
+
+  const cancelHideTooltip = useCallback(() => {
+    if (hideTooltipTimer.current) { clearTimeout(hideTooltipTimer.current); hideTooltipTimer.current = null; }
+  }, []);
 
   const handleOverlayMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = overlayRef.current;
     if (!canvas) return;
+    if (hideTooltipTimer.current) { clearTimeout(hideTooltipTimer.current); hideTooltipTimer.current = null; }
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -388,17 +452,15 @@ export function CollaborativeEditor({
       setHoveredMarker(hit.marker);
       setTooltipPos({ x: e.clientX, y: e.clientY });
       canvas.style.cursor = "pointer";
-    } else {
-      setHoveredMarker(null);
-      setTooltipPos(null);
+    } else if (hoveredMarker) {
+      scheduleHideTooltip();
       canvas.style.cursor = "";
     }
-  }, []);
+  }, [hoveredMarker, scheduleHideTooltip]);
 
   const handleOverlayMouseLeave = useCallback(() => {
-    setHoveredMarker(null);
-    setTooltipPos(null);
-  }, []);
+    scheduleHideTooltip();
+  }, [scheduleHideTooltip]);
 
   const handleOverlayClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = overlayRef.current;
@@ -409,7 +471,21 @@ export function CollaborativeEditor({
     const hit = hitZonesRef.current.find((hz) =>
       x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
     );
-    if (!hit) return;
+    if (!hit) {
+      const el = editorRef.current;
+      if (el) {
+        el.focus();
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+          if (range) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        }
+      }
+      return;
+    }
     if (e.detail === 2 && onShowBacklinks) {
       const excerpt = hit.marker.excerpt || "";
       onShowBacklinks(hit.marker.otherWorkId, excerpt);
@@ -456,7 +532,9 @@ export function CollaborativeEditor({
     if (!el) { isUndoRedoing.current = false; return; }
     const prevText = lastText.current;
     const { start: prevStart, end: prevEnd } = getSelectionInEditor();
-    if (el.textContent !== entry.text) {
+    if (entry.text === "") {
+      el.innerHTML = "<br>";
+    } else if (el.textContent !== entry.text) {
       el.textContent = entry.text;
     }
     lastText.current = entry.text;
@@ -484,7 +562,10 @@ export function CollaborativeEditor({
     if (isComposing.current || !editable) return;
     const el = editorRef.current;
     if (!el) return;
-    const newText = getTextContent(el);
+    let newText = getTextContent(el);
+    if (newText === "\n" && !el.querySelector("DIV") && !el.querySelector("P")) {
+      newText = "";
+    }
     if (newText !== lastText.current) {
       pushUndo(lastText.current);
       lastText.current = newText;
@@ -514,6 +595,20 @@ export function CollaborativeEditor({
       if (entry) restoreUndoEntry(entry, "redo");
       return;
     }
+    if ((e.ctrlKey || e.metaKey) && e.altKey && e.key === "a") {
+      e.preventDefault();
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount || !onCreateAnnotation) return;
+      const el = editorRef.current;
+      if (!el) return;
+      const preRange = document.createRange();
+      preRange.setStart(el, 0);
+      preRange.setEnd(sel.anchorNode, sel.anchorOffset);
+      const start = preRange.toString().length;
+      const end = start + sel.toString().length;
+      onCreateAnnotation(start, end);
+      return;
+    }
     if (e.key === "Enter") {
       e.preventDefault();
       const sel = window.getSelection();
@@ -541,7 +636,7 @@ export function CollaborativeEditor({
       sel.addRange(range);
       handleInput();
     }
-  }, [handleInput]);
+  }, [handleInput, editable, onCreateAnnotation]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     if (!editable) { e.preventDefault(); return; }
@@ -681,11 +776,12 @@ export function CollaborativeEditor({
           {hoveredMarker && tooltipPos && (
             <div
               className="marker-tooltip"
+              onMouseEnter={cancelHideTooltip}
+              onMouseLeave={scheduleHideTooltip}
               style={{
                 position: "fixed",
                 left: tooltipPos.x + 10,
                 top: tooltipPos.y - 10,
-                pointerEvents: "none",
                 zIndex: 100,
               }}
             >
@@ -699,6 +795,17 @@ export function CollaborativeEditor({
                 <div className="marker-tooltip-chain">
                   {hoveredMarker.provenanceChain.length} provenance hop{hoveredMarker.provenanceChain.length > 1 ? "s" : ""}
                 </div>
+              )}
+              {onNavigateToWork && (
+                <button
+                  className="marker-tooltip-link"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onNavigateToWork(hoveredMarker.otherWorkId);
+                  }}
+                >
+                  Go to {hoveredMarker.otherWorkId.toString(16).padStart(4, "0")}
+                </button>
               )}
             </div>
           )}

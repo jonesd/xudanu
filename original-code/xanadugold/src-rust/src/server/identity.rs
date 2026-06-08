@@ -22,7 +22,7 @@ macro_rules! security_warn {
 }
 
 const MAX_PASSWORD_LEN: usize = 256;
-const MIN_PASSWORD_LEN: usize = 8;
+const MIN_PASSWORD_LEN: usize = 10;
 const MAX_CLUB_LOGIN_ATTEMPTS: u32 = 10;
 const CLUB_LOGIN_ATTEMPT_WINDOW: Duration = Duration::from_secs(300);
 
@@ -284,6 +284,7 @@ impl Server {
         &mut self,
         session_id: SessionId,
         club_id: BeId,
+        signing_key_bytes: Option<Vec<u8>>,
     ) -> Result<(), ServerError> {
         let session = self
             .sessions
@@ -291,6 +292,13 @@ impl Server {
             .ok_or(ServerError::SessionNotFound(session_id))?;
         let km = KeyMaster::make(club_id);
         session.set_key_master(km);
+        if let Some(bytes) = signing_key_bytes {
+            if bytes.len() == 32 {
+                let arr: [u8; 32] = bytes.try_into().unwrap();
+                let signing_key = ed25519_dalek::SigningKey::from_bytes(&arr);
+                session.set_club_signing_key(Some(signing_key));
+            }
+        }
         Ok(())
     }
 

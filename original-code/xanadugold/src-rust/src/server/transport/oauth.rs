@@ -57,6 +57,7 @@ pub struct OAuthSession {
     pub club_id: u64,
     pub display_name: String,
     pub expires_at: u64,
+    pub signing_key_bytes: Option<Vec<u8>>,
 }
 
 pub struct OAuthState {
@@ -126,6 +127,7 @@ impl OAuthState {
         provider_user_id: String,
         club_id: u64,
         display_name: String,
+        signing_key_bytes: Option<Vec<u8>>,
     ) -> String {
         let mut bytes = [0u8; 32];
         rand::rngs::OsRng.fill_bytes(&mut bytes);
@@ -140,6 +142,7 @@ impl OAuthState {
             club_id,
             display_name,
             expires_at: now + 30 * 24 * 3600,
+            signing_key_bytes,
         };
         self.sessions
             .lock()
@@ -148,7 +151,7 @@ impl OAuthState {
         token
     }
 
-    pub fn validate_session(&self, token: &str) -> Option<(u64, String)> {
+    pub fn validate_session(&self, token: &str) -> Option<(u64, String, Option<Vec<u8>>)> {
         let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -156,11 +159,18 @@ impl OAuthState {
             .as_secs();
         sessions.get(token).and_then(|s| {
             if s.expires_at > now {
-                Some((s.club_id, s.display_name.clone()))
+                Some((s.club_id, s.display_name.clone(), s.signing_key_bytes.clone()))
             } else {
                 None
             }
         })
+    }
+
+    pub fn destroy_session(&self, token: &str) {
+        self.sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(token);
     }
 
     pub fn restore_links(&self, links: Vec<OAuthLink>) {
@@ -407,6 +417,7 @@ async fn handle_oauth_success(
         provider_user_id.to_string(),
         club_id,
         display_name.to_string(),
+        None,
     );
 
     let cookie = format!(

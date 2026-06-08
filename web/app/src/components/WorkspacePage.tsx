@@ -1,13 +1,16 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useCrdtSync } from "../hooks/useCrdtSync";
 import { useTransclusion } from "../hooks/useTransclusion";
+import { authorColor } from "../author-color";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
+import { SourceTextViewer } from "../components/SourceTextViewer";
 import { VirtualizedEditor } from "../components/VirtualizedEditor";
 import type { BacklinkEntry, AttributionSpan as AttribSpan } from "../api/crdt_sync";
 import { DropdownMenu, DropdownItem, DropdownSeparator, DropdownLabel } from "../components/DropdownMenu";
 import { AwarenessIndicators } from "../components/AwarenessIndicators";
 import { DebugPanel } from "../components/DebugPanel";
 import { AttributionPanel } from "../components/AttributionPanel";
+import { AnnotationPanel } from "../components/AnnotationPanel";
 import { CompareHeader, CompareSplitView, useCompare } from "../components/ComparePanel";
 import { IdentityPanel } from "../components/IdentityPanel";
 import { ImportWizard } from "../components/ImportWizard";
@@ -39,6 +42,7 @@ const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${wind
 export function WorkspacePage() {
   const [showDebug, setShowDebug] = useState(false);
   const [showAttribution, setShowAttribution] = useState(false);
+  const [showAnnotations, setShowAnnotations] = useState(false);
   const [workBeId, setWorkBeId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [narration, setNarration] = useState<string | null>(null);
@@ -65,7 +69,6 @@ export function WorkspacePage() {
   const [authors, setAuthors] = useState<HistoricalAuthorEntry[]>([]);
   const [expandedAuthorId, setExpandedAuthorId] = useState<number | null>(null);
   const [authorWorks, setAuthorWorks] = useState<WorkListEntry[]>([]);
-  const [sourceText, setSourceText] = useState<string | null>(null);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const sourceViewerRef = useRef<HTMLDivElement>(null);
 
@@ -73,6 +76,7 @@ export function WorkspacePage() {
   const [backlinks, setBacklinks] = useState<BacklinkEntry[]>([]);
   const [endorsementCount, setEndorsementCount] = useState(0);
   const [hasEndorsed, setHasEndorsed] = useState(false);
+  const [endorsedWorkIds, setEndorsedWorkIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -115,6 +119,11 @@ export function WorkspacePage() {
     logout,
     createIdentity,
     clientRef,
+    annotations,
+    refreshAnnotations,
+    createAnnotation,
+    deleteAnnotation,
+    connectionEpoch,
   } = useCrdtSync(WS_URL, workBeId);
 
   useEffect(() => {
@@ -138,41 +147,54 @@ export function WorkspacePage() {
     }).catch(() => {});
   }, [workBeId, connected, authenticated]);
 
+  useEffect(() => {
+    if (!clientRef.current || !authenticated || works.length === 0) {
+      setEndorsedWorkIds(new Set());
+      return;
+    }
+    const myClub = clientRef.current.currentIdentity?.club_id;
+    if (!myClub) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const run = async () => {
+      const endorsed = new Set<number>();
+      for (const w of works) {
+        if (cancelled) return;
+        try {
+          const es = await clientRef.current!.workEndorsements(w.work_id);
+          if (es.some((e) => e[0] === myClub)) endorsed.add(w.work_id);
+        } catch { break; }
+        await new Promise<void>((r) => { timer = setTimeout(r, 50); });
+      }
+      if (!cancelled) setEndorsedWorkIds(endorsed);
+    };
+    timer = setTimeout(run, 1000);
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [works.length, authenticated]);
+
   const currentWorkMeta = works.find(w => w.work_id === workBeId);
   const isSourceWork = currentWorkMeta?.is_source === true;
-  const displayText = isSourceWork && sourceText !== null ? sourceText : text;
+  const displayText = text;
+
+  const docAuthors = useMemo(() => {
+    const seen = new Map<string, { name: string; color: string }>();
+    for (const span of attributionSpans) {
+      const name = span.author_display_name || "unknown";
+      const key = `${span.author_public_key.join(",")}:${name}`;
+      if (seen.has(key)) continue;
+      const isHistorical = span.author_type === "historical";
+      const isLlm = span.author_type === "llm";
+      const color = isHistorical ? "#c4a35a" : isLlm ? "#7c4dff" : authorColor(name);
+      seen.set(key, { name, color });
+    }
+    return Array.from(seen.values());
+  }, [attributionSpans]);
 
   const compare = useCompare(showCompare, workBeId, displayText, clientRef.current);
 
   useEffect(() => {
     if (clientRef.current) clientRef.current.setSkipCrdt(!!isSourceWork);
   }, [isSourceWork, clientRef]);
-
-  useEffect(() => {
-    if (!isSourceWork || workBeId === null || !connected || !clientRef.current) {
-      if (!isSourceWork && sourceText !== null) setSourceText(null);
-      return;
-    }
-    let cancelled = false;
-    const CHUNK = 100_000;
-    (async () => {
-      try {
-        const first = await clientRef.current!.textRange(workBeId!, 0, CHUNK);
-        if (cancelled) return;
-        let loaded = first.text;
-        const total = first.totalChars;
-        while (loaded.length < total && !cancelled) {
-          const next = await clientRef.current!.textRange(workBeId!, loaded.length, Math.min(loaded.length + CHUNK, total));
-          if (cancelled) return;
-          loaded += next.text;
-        }
-        if (!cancelled) setSourceText(loaded);
-      } catch (e) {
-        console.error("[src] source work text load failed:", e);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [isSourceWork, workBeId, connected, clientRef]);
 
   const loadWorks = useCallback(async () => {
     const list = await fetchWorkList();
@@ -285,6 +307,12 @@ export function WorkspacePage() {
       return () => clearTimeout(timer);
     }
   }, [showAttribution, connected, workBeId, text, refreshAttribution]);
+
+  useEffect(() => {
+    if (showAnnotations && connected && workBeId !== null) {
+      refreshAnnotations();
+    }
+  }, [showAnnotations, connected, workBeId, text, refreshAnnotations]);
 
   useEffect(() => {
     if (connected && workBeId !== null) {
@@ -413,8 +441,22 @@ export function WorkspacePage() {
             <span className="work-id-label">{workIdDisplay}</span>
             <span className="work-title-label">
               {currentWorkMeta?.title || "Untitled"}
-              {isSourceWork ? " SRC" : ""}
+              {isSourceWork && <span className="work-list-badge badge-public" style={{ fontSize: "10px", verticalAlign: "middle", marginLeft: 6 }}>pub src</span>}
             </span>
+            {docAuthors.length > 0 && (
+              <span className="author-pills">
+                {docAuthors.map((a) => (
+                  <span
+                    key={a.name}
+                    className="author-pill"
+                    style={{ borderColor: a.color, color: a.color }}
+                    title={a.name}
+                  >
+                    {a.name.length > 12 ? a.name.slice(0, 12) + "\u2026" : a.name}
+                  </span>
+                ))}
+              </span>
+            )}
           </>
         )}
 
@@ -422,6 +464,11 @@ export function WorkspacePage() {
 
         {workBeId !== null && (
           <>
+            {isSourceWork ? (
+              <span className="source-badge" title="This is a historical source document — read only">
+                Historical · read only
+              </span>
+            ) : (
             <button
               onClick={() => {
                 const next = viewMode === "editing" ? "reading" : "editing";
@@ -434,6 +481,7 @@ export function WorkspacePage() {
             >
               {viewMode === "reading" ? "✏️ Edit" : "👁 View"}
             </button>
+            )}
 
             {identity && (
               <DropdownMenu
@@ -517,8 +565,34 @@ export function WorkspacePage() {
                       });
                     }}
                   >
-                    Show attribution
-                  </DropdownItem>
+                     Show attribution
+                   </DropdownItem>
+                   <DropdownItem
+                     checked={showAnnotations}
+                     onClick={() => {
+                       setShowAnnotations((a) => {
+                         const next = !a;
+                         if (next) refreshAnnotations();
+                         return next;
+                       });
+                     }}
+                   >
+                      Annotations
+                    </DropdownItem>
+                    <DropdownItem
+                      disabled={!selectionRange || !authenticated}
+                      onClick={() => {
+                        if (!selectionRange) return;
+                        const note = prompt("Annotation note:");
+                        if (note) {
+                          createAnnotation("note", note, selectionRange.start, selectionRange.end);
+                          setShowAnnotations(true);
+                        }
+                        close();
+                      }}
+                    >
+                      Annotate Selection
+                    </DropdownItem>
                   <DropdownItem
                     disabled={!connected || works.length < 2}
                     onClick={() => { setShowCompare((c) => !c); }}
@@ -602,7 +676,7 @@ export function WorkspacePage() {
                     Revisions ({currentWorkMeta?.revision_count ?? 0})
                   </DropdownItem>
                   <DropdownItem
-                    disabled={!selectionRange || !clientRef.current}
+                     disabled={!selectionRange || !clientRef.current || !authenticated}
                     onClick={async () => {
                       if (!selectionRange || !clientRef.current) return;
                       const selText = displayText.slice(selectionRange.start, selectionRange.end);
@@ -618,9 +692,14 @@ export function WorkspacePage() {
                     Find Similar
                   </DropdownItem>
                   <DropdownSeparator />
-                  <DropdownItem onClick={() => { setShowSettings(true); }}>
+                  <DropdownItem onClick={() => { setShowSettings(true); close(); }}>
                     Settings
                   </DropdownItem>
+                  {authenticated && (
+                    <DropdownItem onClick={() => { logout(); close(); }}>
+                      Sign Out
+                    </DropdownItem>
+                  )}
                 </>
               )}
             </DropdownMenu>
@@ -678,12 +757,13 @@ export function WorkspacePage() {
           <div className="work-list">
             {(() => {
               const q = searchQuery.toLowerCase();
+              const base = authenticated ? works : works.filter((w) => w.read_club === publicClubId);
               const filtered = q
-                ? works.filter((w) =>
+                ? base.filter((w) =>
                     (w.title || "").toLowerCase().includes(q) ||
                     w.work_id.toString(16).includes(q)
                   )
-                : works;
+                : base;
               const docs = filtered.filter((w) => !w.is_source);
               const sources = filtered.filter((w) => w.is_source);
               const filteredAuthors = q
@@ -729,7 +809,7 @@ export function WorkspacePage() {
                     <span className="work-list-id">
                       {w.work_id.toString(16).padStart(4, "0")}
                     </span>
-                    <span className="work-list-badge badge-source">src</span>
+                    <span className="work-list-badge badge-public">pub src</span>
                     <span className="work-list-rev">r{w.revision_count}</span>
                   </div>
                   <span className="work-list-title">
@@ -807,6 +887,13 @@ export function WorkspacePage() {
                       <div className="link-section-label">Source Works ({sources.length})</div>
                       {sources.map(renderSourceWork)}
                     </div>
+                  )}
+                  {endorsedWorkIds.size > 0 && !searchQuery && (
+                    <SidebarSection title={`Endorsed (${endorsedWorkIds.size})`} defaultOpen={false}>
+                      {works.filter((w) => endorsedWorkIds.has(w.work_id)).map((w) => (
+                        w.is_source ? renderSourceWork(w) : renderWork(w)
+                      ))}
+                    </SidebarSection>
                   )}
                   {(outgoing.length > 0 || incoming.length > 0) && (
                     <SidebarSection title={`Links (${outgoing.length + incoming.length})`} defaultOpen={false}>
@@ -900,7 +987,16 @@ export function WorkspacePage() {
         <main className="document-area">
           {workBeId !== null ? (
             <>
-              {viewMode === "reading" && !showCompare ? (
+              {isSourceWork ? (
+                <SourceTextViewer
+                  workId={workBeId}
+                  clientRef={clientRef}
+                  connected={connected}
+                  fontSize={docPrefs.fontSize}
+                  lineHeight={docPrefs.lineHeight}
+                  onSelectionChange={(s, e) => setSelectionRange({ start: s, end: e })}
+                />
+              ) : viewMode === "reading" && !showCompare ? (
                 <ReadingView
                   workId={workBeId}
                   text={displayText}
@@ -923,48 +1019,37 @@ export function WorkspacePage() {
               {showCompare && compare.hasTarget ? (
                 <CompareSplitView currentText={displayText} state={compare} />
                 ) : isSourceWork ? (
-                  <div
-                    ref={sourceViewerRef}
-                    className="source-work-viewer"
-                    style={{
-                      padding: "16px 20px",
-                      fontSize: `${docPrefs.fontSize}px`,
-                      lineHeight: `${docPrefs.lineHeight}`,
-                      whiteSpace: "pre-wrap",
-                      wordWrap: "break-word",
-                      overflowY: "auto",
-                      flex: 1,
-                      minHeight: 0,
-                      background: "#fafafa",
-                      userSelect: "text",
-                    }}
-                  >
-                    {displayText}
-                  </div>
+                  <SourceTextViewer
+                    workId={workBeId!}
+                    clientRef={clientRef}
+                    connected={connected}
+                    fontSize={docPrefs.fontSize}
+                    lineHeight={docPrefs.lineHeight}
+                  />
                 ) : displayText.length > 100_000 ? (
                   <VirtualizedEditor
                     text={displayText}
-                   onTextChange={isSourceWork ? undefined : setText}
-                   onCursorChange={sendCursor}
-                   onSelectionChange={(s, e) => {
-                     sendSelection(s, e);
-                     if (s !== null && e !== null) setSelectionRange({ start: s, end: e });
-                     else setSelectionRange(null);
-                   }}
-                    connected={connected}
-                    attributionSpans={attributionSpans}
-                   editable={!isSourceWork && identity !== null}
-                    contentStartLine={isSourceWork ? undefined : currentWorkMeta?.content_start_line}
-                    contentEndLine={isSourceWork ? undefined : currentWorkMeta?.content_end_line}
-                   transclusionMarkers={transclusion.markers}
-                   pendingTransclusion={transclusion.pending}
-                   onPlaceTransclusion={handlePlaceTransclusion}
-                   selectionRange={selectionRange}
-                   onNavigateToWork={selectWork}
-                   onPasteText={isSourceWork ? undefined : handlePasteText}
-                   fontSize={docPrefs.fontSize}
-                   lineHeight={docPrefs.lineHeight}
-                  />
+                    onTextChange={setText}
+                    onCursorChange={sendCursor}
+                    onSelectionChange={(s, e) => {
+                      sendSelection(s, e);
+                      if (s !== null && e !== null) setSelectionRange({ start: s, end: e });
+                      else setSelectionRange(null);
+                    }}
+                     connected={connected}
+                     attributionSpans={attributionSpans}
+                    editable={identity !== null}
+                     contentStartLine={currentWorkMeta?.content_start_line}
+                     contentEndLine={currentWorkMeta?.content_end_line}
+                    transclusionMarkers={transclusion.markers}
+                    pendingTransclusion={transclusion.pending}
+                    onPlaceTransclusion={handlePlaceTransclusion}
+                     selectionRange={selectionRange}
+                    onNavigateToWork={selectWork}
+                    onPasteText={handlePasteText}
+                     fontSize={docPrefs.fontSize}
+                     lineHeight={docPrefs.lineHeight}
+                   />
                 ) : (
                    <CollaborativeEditor
                     text={displayText}
@@ -978,19 +1063,24 @@ export function WorkspacePage() {
                   connected={connected}
                   attributionSpans={attributionSpans}
                    editable={!isSourceWork && identity !== null}
-                   contentStartLine={currentWorkMeta?.content_start_line}
-                   contentEndLine={currentWorkMeta?.content_end_line}
+                    contentStartLine={isSourceWork ? undefined : currentWorkMeta?.content_start_line}
+                    contentEndLine={isSourceWork ? undefined : currentWorkMeta?.content_end_line}
                    transclusionMarkers={transclusion.markers}
                    pendingTransclusion={transclusion.pending}
                    onPlaceTransclusion={handlePlaceTransclusion}
                    selectionRange={selectionRange}
                    onNavigateToWork={selectWork}
                    onPasteText={isSourceWork ? undefined : handlePasteText}
-                   fontSize={docPrefs.fontSize}
-                   lineHeight={docPrefs.lineHeight}
-                  />
-                )}
-               {watchEnabled && contentMatches.length > 0 && (
+                    fontSize={docPrefs.fontSize}
+                    lineHeight={docPrefs.lineHeight}
+                   annotations={annotations}
+                   onCreateAnnotation={(charStart, charEnd) => {
+                     const note = prompt("Annotation note:");
+                     if (note) createAnnotation("note", note, charStart, charEnd);
+                   }}
+                   />
+                 )}
+                {watchEnabled && contentMatches.length > 0 && (
                 <div className="watch-notifications">
                   <h3>Content Matches</h3>
                   <ul>
@@ -1045,6 +1135,40 @@ export function WorkspacePage() {
         documentLength={displayText.length}
         visible={showAttribution && workBeId !== null}
       />
+
+      {showAnnotations && authenticated && workBeId !== null && (
+        <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: "260px", background: "var(--bg, #fff)", borderLeft: "1px solid var(--border, #ddd)", overflowY: "auto", zIndex: 100, padding: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <strong>Annotations</strong>
+            <button type="button" onClick={() => setShowAnnotations(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.2em" }}>&times;</button>
+          </div>
+          <AnnotationPanel
+            annotations={annotations}
+            onDelete={deleteAnnotation}
+            currentClubId={identity?.club_id ?? null}
+            onNavigate={(charStart) => {
+              const el = document.querySelector('[contenteditable="true"]');
+              if (!el) return;
+              const range = document.createRange();
+              const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+              let current = 0;
+              let node: Node | null;
+              while ((node = walker.nextNode())) {
+                const len = node.textContent?.length ?? 0;
+                if (current + len > charStart) {
+                  range.setStart(node, charStart - current);
+                  range.collapse(true);
+                  const sel = window.getSelection();
+                  sel?.removeAllRanges();
+                  sel?.addRange(range);
+                  break;
+                }
+                current += len;
+              }
+            }}
+          />
+        </div>
+      )}
 
       <ImportWizard
         clientRef={clientRef}
