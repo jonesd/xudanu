@@ -1,7 +1,7 @@
 use ed25519_dalek::SigningKey;
-use xudanu_signing::{Signer, KeyStore};
-use xudanu_types::*;
 use xudanu_core::Document;
+use xudanu_signing::{KeyStore, Signer};
+use xudanu_types::*;
 
 #[test]
 fn test_generate_signer() {
@@ -20,8 +20,10 @@ fn test_sign_and_verify_change() {
     let change = doc.commit_change().unwrap();
 
     let signed = signer.sign_change(change);
-    assert!(signed.change.verify_signature(&signer.verifying_key()),
-        "Author's own signature must verify");
+    assert!(
+        signed.change.verify_signature(&signer.verifying_key()),
+        "Author's own signature must verify"
+    );
 }
 
 #[test]
@@ -35,8 +37,10 @@ fn test_wrong_key_fails_verification() {
     let change = doc.commit_change().unwrap();
     let signed = signer_a.sign_change(change);
 
-    assert!(!signed.change.verify_signature(&signer_b.verifying_key()),
-        "Bob's key must NOT verify Alice's signature");
+    assert!(
+        !signed.change.verify_signature(&signer_b.verifying_key()),
+        "Bob's key must NOT verify Alice's signature"
+    );
 }
 
 #[test]
@@ -48,8 +52,10 @@ fn test_unsigned_change_fails_verification() {
     doc.insert(0, "Data");
     let change = doc.commit_change().unwrap();
 
-    assert!(!change.verify_signature(&signer.verifying_key()),
-        "Unsigned change must fail verification");
+    assert!(
+        !change.verify_signature(&signer.verifying_key()),
+        "Unsigned change must fail verification"
+    );
 }
 
 #[test]
@@ -68,8 +74,11 @@ fn test_sign_multiple_changes() {
 
     assert!(signed1.change.verify_signature(&signer.verifying_key()));
     assert!(signed2.change.verify_signature(&signer.verifying_key()));
-    assert_ne!(signed1.change.signature.unwrap(), signed2.change.signature.unwrap(),
-        "Different changes must produce different signatures");
+    assert_ne!(
+        signed1.change.signature.unwrap(),
+        signed2.change.signature.unwrap(),
+        "Different changes must produce different signatures"
+    );
 }
 
 #[test]
@@ -91,8 +100,14 @@ fn test_sign_arbitrary_bytes() {
     let data = b"arbitrary data to sign";
     let signature = signer.sign_bytes(data);
 
-    assert!(signer.verifying_key().verify_strict(data, &signature).is_ok());
-    assert!(signer.verifying_key().verify_strict(b"tampered data", &signature).is_err());
+    assert!(signer
+        .verifying_key()
+        .verify_strict(data, &signature)
+        .is_ok());
+    assert!(signer
+        .verifying_key()
+        .verify_strict(b"tampered data", &signature)
+        .is_err());
 }
 
 #[test]
@@ -108,8 +123,10 @@ fn test_tampered_content_fails() {
     assert!(signed.change.verify_signature(&signer.verifying_key()));
 
     change.operations.clear();
-    assert!(!change.verify_signature(&signer.verifying_key()),
-        "Tampered change must fail verification");
+    assert!(
+        !change.verify_signature(&signer.verifying_key()),
+        "Tampered change must fail verification"
+    );
 }
 
 #[test]
@@ -140,7 +157,10 @@ fn test_key_store_register_and_lookup() {
 
     assert!(store.is_known(author.id()));
     assert!(!store.is_revoked(author.id()));
-    assert_eq!(store.get_author(author.id()).unwrap().display_name(), "Alice");
+    assert_eq!(
+        store.get_author(author.id()).unwrap().display_name(),
+        "Alice"
+    );
 }
 
 #[test]
@@ -153,7 +173,9 @@ fn test_key_store_revocation() {
     store.register_author(old_signer.author().clone(), ts);
     store.register_author(new_signer.author().clone(), ts);
 
-    store.revoke_key(old_signer.author_id(), new_signer.author_id(), ts).unwrap();
+    store
+        .revoke_key(old_signer.author_id(), new_signer.author_id(), ts)
+        .unwrap();
 
     assert!(store.is_revoked(old_signer.author_id()));
     assert!(!store.is_revoked(new_signer.author_id()));
@@ -171,8 +193,12 @@ fn test_key_rotation_chain() {
     store.register_author(k2.author().clone(), ts);
     store.register_author(k3.author().clone(), ts);
 
-    store.revoke_key(k1.author_id(), k2.author_id(), ts).unwrap();
-    store.revoke_key(k2.author_id(), k3.author_id(), ts).unwrap();
+    store
+        .revoke_key(k1.author_id(), k2.author_id(), ts)
+        .unwrap();
+    store
+        .revoke_key(k2.author_id(), k3.author_id(), ts)
+        .unwrap();
 
     let chain = store.key_chain_for(k3.author_id());
     assert_eq!(chain.len(), 3, "Should have full key chain");

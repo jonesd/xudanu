@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use xudanu_types::{AuthorId, Change, ChangeHash, SiteId};
 use xudanu_core::state_vector::StateVector;
+use xudanu_types::{AuthorId, Change, ChangeHash, SiteId};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncMessage {

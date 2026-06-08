@@ -1,8 +1,8 @@
 use wasm_bindgen::prelude::*;
 use xudanu_core::Document;
 use xudanu_signing::Signer;
-use xudanu_sync::Awareness;
 use xudanu_sync::protocol::SyncProtocol;
+use xudanu_sync::Awareness;
 use xudanu_types::{Change, SiteId};
 
 #[wasm_bindgen]
@@ -51,9 +51,8 @@ impl SyncClient {
 
     pub fn commit_and_sync(&mut self) -> Option<String> {
         let change = self.doc.commit_change()?;
-        self.sync.update_local_state_vector(
-            self.doc.state_vector().clone()
-        );
+        self.sync
+            .update_local_state_vector(self.doc.state_vector().clone());
         serde_json::to_string(&change).ok()
     }
 
@@ -66,10 +65,7 @@ impl SyncClient {
     pub fn handle_sync_step1(&mut self, msg_json: String) -> Result<String, JsValue> {
         let msg: xudanu_sync::message::SyncMessage = serde_json::from_str(&msg_json)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse sync message: {}", e)))?;
-        let changes: Vec<Change> = self.doc.change_history()
-            .into_iter()
-            .cloned()
-            .collect();
+        let changes: Vec<Change> = self.doc.change_history().into_iter().cloned().collect();
         let response = self.sync.handle_sync_step1(&msg, &changes);
         serde_json::to_string(&response)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
@@ -78,18 +74,14 @@ impl SyncClient {
     pub fn handle_sync_step2(&mut self, msg_json: String) -> Result<(), JsValue> {
         let msg: xudanu_sync::message::SyncMessage = serde_json::from_str(&msg_json)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse sync message: {}", e)))?;
-        let accepted = self.sync.handle_sync_step2(
-            &msg,
-            self.site,
-            *self.signer.author().id(),
-            |_change| true,
-        );
+        let accepted =
+            self.sync
+                .handle_sync_step2(&msg, self.site, *self.signer.author().id(), |_change| true);
         for change in &accepted {
             self.doc.integrate_change(change);
         }
-        self.sync.update_local_state_vector(
-            self.doc.state_vector().clone()
-        );
+        self.sync
+            .update_local_state_vector(self.doc.state_vector().clone());
         Ok(())
     }
 
@@ -97,9 +89,8 @@ impl SyncClient {
         let change: Change = serde_json::from_str(&change_json)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse change: {}", e)))?;
         self.doc.integrate_change(&change);
-        self.sync.update_local_state_vector(
-            self.doc.state_vector().clone()
-        );
+        self.sync
+            .update_local_state_vector(self.doc.state_vector().clone());
         Ok(())
     }
 
@@ -118,7 +109,9 @@ impl SyncClient {
             user_color,
             cursor: cursor_index.map(|i| xudanu_sync::awareness::CursorPosition { index: i }),
             selection: match (selection_start, selection_end) {
-                (Some(s), Some(e)) => Some(xudanu_sync::awareness::SelectionRange { start: s, end: e }),
+                (Some(s), Some(e)) => {
+                    Some(xudanu_sync::awareness::SelectionRange { start: s, end: e })
+                }
                 _ => None,
             },
             is_typing,
@@ -163,7 +156,8 @@ impl SyncClient {
 
     pub fn state_vector_json(&self) -> String {
         let sv = self.doc.state_vector();
-        let pairs: Vec<(String, u64)> = sv.iter()
+        let pairs: Vec<(String, u64)> = sv
+            .iter()
             .map(|(site, &clock)| (site.short(), clock))
             .collect();
         serde_json::to_string(&pairs).unwrap_or_default()

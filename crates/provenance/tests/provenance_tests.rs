@@ -1,4 +1,4 @@
-use xudanu_provenance::{AttributionEngine, RoyaltyLedger, RoyaltyEntry, RoyaltySource};
+use xudanu_provenance::{AttributionEngine, RoyaltyEntry, RoyaltyLedger, RoyaltySource};
 use xudanu_types::*;
 
 fn make_author(id: u8) -> AuthorId {
@@ -70,28 +70,37 @@ fn test_three_authors_proportions() {
     let s2 = SiteId::from_bytes(a2);
     let s3 = SiteId::from_bytes(a3);
 
-    let c1 = ItemContent::plain("AAAA");  // 4
-    let c2 = ItemContent::plain("BB");    // 2
+    let c1 = ItemContent::plain("AAAA"); // 4
+    let c2 = ItemContent::plain("BB"); // 2
     let c3 = ItemContent::plain("CCCCCC"); // 6
 
     let id1 = ItemId::new(s1, 1);
     let id2 = ItemId::new(s2, 1);
     let id3 = ItemId::new(s3, 1);
 
-    let items: Vec<(&ItemId, &ItemContent, &AuthorId)> = vec![
-        (&id1, &c1, &a1),
-        (&id2, &c2, &a2),
-        (&id3, &c3, &a3),
-    ];
+    let items: Vec<(&ItemId, &ItemContent, &AuthorId)> =
+        vec![(&id1, &c1, &a1), (&id2, &c2, &a2), (&id3, &c3, &a3)];
     let attributions = AttributionEngine::compute(items.into_iter());
 
     assert_eq!(attributions.len(), 3);
     let total: f64 = attributions.iter().map(|a| a.proportion).sum();
     assert!((total - 1.0).abs() < 0.001, "Proportions must sum to 1.0");
 
-    assert!((attributions[0].proportion - 0.5).abs() < 0.001, "Largest author first: got {}", attributions[0].proportion);
-    assert!((attributions[1].proportion - 1.0 / 3.0).abs() < 0.001, "Second largest: got {}", attributions[1].proportion);
-    assert!((attributions[2].proportion - 1.0 / 6.0).abs() < 0.001, "Smallest last: got {}", attributions[2].proportion);
+    assert!(
+        (attributions[0].proportion - 0.5).abs() < 0.001,
+        "Largest author first: got {}",
+        attributions[0].proportion
+    );
+    assert!(
+        (attributions[1].proportion - 1.0 / 3.0).abs() < 0.001,
+        "Second largest: got {}",
+        attributions[1].proportion
+    );
+    assert!(
+        (attributions[2].proportion - 1.0 / 6.0).abs() < 0.001,
+        "Smallest last: got {}",
+        attributions[2].proportion
+    );
 }
 
 #[test]
@@ -106,10 +115,7 @@ fn test_attribution_sorted_by_byte_count() {
     let id1 = ItemId::new(s1, 1);
     let id2 = ItemId::new(s2, 1);
 
-    let items: Vec<(&ItemId, &ItemContent, &AuthorId)> = vec![
-        (&id1, &c1, &a1),
-        (&id2, &c2, &a2),
-    ];
+    let items: Vec<(&ItemId, &ItemContent, &AuthorId)> = vec![(&id1, &c1, &a1), (&id2, &c2, &a2)];
     let attributions = AttributionEngine::compute(items.into_iter());
 
     assert_eq!(attributions[0].byte_count, 5);
@@ -241,15 +247,24 @@ fn test_summary_sorted() {
     let doc = make_doc_id(1);
 
     ledger.add_entry(RoyaltyEntry {
-        document_id: doc, author: make_author(1), byte_count: 10, source: RoyaltySource::Original,
+        document_id: doc,
+        author: make_author(1),
+        byte_count: 10,
+        source: RoyaltySource::Original,
     });
     ledger.add_entry(RoyaltyEntry {
-        document_id: doc, author: make_author(2), byte_count: 90, source: RoyaltySource::Original,
+        document_id: doc,
+        author: make_author(2),
+        byte_count: 90,
+        source: RoyaltySource::Original,
     });
 
     let summary = ledger.summary();
     assert_eq!(summary.len(), 2);
-    assert!(summary[0].1 > summary[1].1, "Should be sorted descending by proportion");
+    assert!(
+        summary[0].1 > summary[1].1,
+        "Should be sorted descending by proportion"
+    );
 }
 
 #[test]

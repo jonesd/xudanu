@@ -1,6 +1,6 @@
 use xudanu_core::{Document, StateVector};
-use xudanu_types::*;
 use xudanu_signing::Signer;
+use xudanu_types::*;
 
 struct TestUser {
     signer: Signer,
@@ -26,8 +26,12 @@ impl TestUser {
 fn sync_pair(a: &mut Document, b: &mut Document) {
     let change_a = a.commit_change();
     let change_b = b.commit_change();
-    if let Some(c) = &change_a { b.integrate_change(c); }
-    if let Some(c) = &change_b { a.integrate_change(c); }
+    if let Some(c) = &change_a {
+        b.integrate_change(c);
+    }
+    if let Some(c) = &change_b {
+        a.integrate_change(c);
+    }
 }
 
 fn sync_all(docs: &mut [Document]) {
@@ -92,9 +96,13 @@ fn test_commutative_integration_order() {
     doc_2.integrate_change(&change_a);
     doc_2.integrate_change(&change_b);
 
-    assert_eq!(doc_1.to_string(), doc_2.to_string(),
+    assert_eq!(
+        doc_1.to_string(),
+        doc_2.to_string(),
         "Integration order must not affect final state: order1='{}', order2='{}'",
-        doc_1.to_string(), doc_2.to_string());
+        doc_1.to_string(),
+        doc_2.to_string()
+    );
 }
 
 // ── Concurrent insert + delete ──
@@ -120,9 +128,13 @@ fn test_concurrent_insert_and_delete() {
 
     sync_pair(&mut doc_a, &mut doc_b);
 
-    assert_eq!(doc_a.to_string(), doc_b.to_string(),
+    assert_eq!(
+        doc_a.to_string(),
+        doc_b.to_string(),
         "Concurrent insert+delete must converge: A='{}', B='{}'",
-        doc_a.to_string(), doc_b.to_string());
+        doc_a.to_string(),
+        doc_b.to_string()
+    );
 }
 
 #[test]
@@ -164,8 +176,11 @@ fn test_concurrent_deletes_different_ranges() {
     sync_pair(&mut doc_a, &mut doc_b);
 
     assert_eq!(doc_a.to_string(), doc_b.to_string());
-    assert!(doc_a.to_string().contains(' ') == false || doc_a.to_string() == " ",
-        "Both deletes should be reflected: got '{}'", doc_a.to_string());
+    assert!(
+        doc_a.to_string().contains(' ') == false || doc_a.to_string() == " ",
+        "Both deletes should be reflected: got '{}'",
+        doc_a.to_string()
+    );
 }
 
 #[test]
@@ -185,9 +200,13 @@ fn test_concurrent_overlapping_deletes() {
 
     sync_pair(&mut doc_a, &mut doc_b);
 
-    assert_eq!(doc_a.to_string(), doc_b.to_string(),
+    assert_eq!(
+        doc_a.to_string(),
+        doc_b.to_string(),
         "Overlapping deletes must converge: A='{}', B='{}'",
-        doc_a.to_string(), doc_b.to_string());
+        doc_a.to_string(),
+        doc_b.to_string()
+    );
 }
 
 // ── Insert after delete at same position ──
@@ -246,8 +265,11 @@ fn test_diamond_merge() {
     merged_reverse.integrate_change(&change_c);
     merged_reverse.integrate_change(&change_b);
 
-    assert_eq!(merged.to_string(), merged_reverse.to_string(),
-        "Diamond merge must be order-independent");
+    assert_eq!(
+        merged.to_string(),
+        merged_reverse.to_string(),
+        "Diamond merge must be order-independent"
+    );
 }
 
 // ── Non-interleaving guarantee ──
@@ -286,8 +308,10 @@ fn test_non_interleaving_two_authors_typing_words() {
             (Some(hp), Some(wp)) => {
                 let hello_after_world = hp > wp;
                 let world_after_hello = wp > hp;
-                assert!(hello_after_world || world_after_hello,
-                    "Same-author characters must be contiguous");
+                assert!(
+                    hello_after_world || world_after_hello,
+                    "Same-author characters must be contiguous"
+                );
             }
             _ => {}
         }
@@ -313,9 +337,11 @@ fn test_multi_round_insert_delete_convergence() {
 
     let texts: Vec<String> = docs.iter().map(|d| d.to_string()).collect();
     for i in 1..texts.len() {
-        assert_eq!(texts[0], texts[i],
+        assert_eq!(
+            texts[0], texts[i],
             "All docs must converge after multi-round insert+delete. Doc0='{}', Doc{}='{}'",
-            texts[0], i, texts[i]);
+            texts[0], i, texts[i]
+        );
     }
 }
 
@@ -338,8 +364,11 @@ fn test_out_of_order_change_delivery() {
     target.integrate_change(&change1);
     target.integrate_change(&change2);
 
-    assert_eq!(target.to_string(), source.to_string(),
-        "Out-of-order delivery must still produce correct result");
+    assert_eq!(
+        target.to_string(),
+        source.to_string(),
+        "Out-of-order delivery must still produce correct result"
+    );
 }
 
 // ── Empty operations ──
@@ -508,8 +537,14 @@ fn test_multiple_branches() {
     }
 
     assert_eq!(doc.to_string(), "Base");
-    assert_eq!(doc.get_branch("feature-a").unwrap().to_string(), "Base from A");
-    assert_eq!(doc.get_branch("feature-b").unwrap().to_string(), "Base from B");
+    assert_eq!(
+        doc.get_branch("feature-a").unwrap().to_string(),
+        "Base from A"
+    );
+    assert_eq!(
+        doc.get_branch("feature-b").unwrap().to_string(),
+        "Base from B"
+    );
     assert_eq!(doc.list_branches().len(), 2);
 }
 

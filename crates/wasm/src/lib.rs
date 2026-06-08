@@ -75,14 +75,16 @@ impl SignedDocument {
     }
 
     pub fn list_branches(&self) -> Vec<JsValue> {
-        self.doc.list_branches()
+        self.doc
+            .list_branches()
             .into_iter()
             .map(|s| JsValue::from_str(s))
             .collect()
     }
 
     pub fn switch_to_branch(&mut self, name: String) -> Result<(), JsValue> {
-        self.doc.get_branch_mut(&name)
+        self.doc
+            .get_branch_mut(&name)
             .map(|_| ())
             .ok_or_else(|| JsValue::from_str("Branch not found"))
     }
@@ -99,7 +101,8 @@ pub fn generate_keypair(display_name: String) -> Result<Vec<u8>, JsValue> {
 pub fn load_keypair(data: Vec<u8>) -> Result<String, JsValue> {
     let stored = xudanu_signing::signer::StoredKey::deserialize(&data)
         .map_err(|e| JsValue::from_str(&format!("Failed to load key: {}", e)))?;
-    let signer = stored.load()
+    let signer = stored
+        .load()
         .map_err(|e| JsValue::from_str(&format!("Invalid key: {}", e)))?;
     Ok(signer.author().fingerprint())
 }

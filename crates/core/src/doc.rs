@@ -194,9 +194,11 @@ impl Document {
             return;
         }
 
-        self.client_author_map.insert(site_to_client_id(&change.site), change.actor);
+        self.client_author_map
+            .insert(site_to_client_id(&change.site), change.actor);
         if change.sender_client_id != 0 {
-            self.client_author_map.insert(change.sender_client_id, change.actor);
+            self.client_author_map
+                .insert(change.sender_client_id, change.actor);
         }
 
         if !change.update_bytes.is_empty() {
@@ -327,9 +329,7 @@ impl Document {
     fn rebuild_visible_cache(&mut self) {
         self.visible_items.clear();
         let txn = self.doc.transact();
-        let chunks = self
-            .text
-            .diff(&txn, yrs::types::text::YChange::identity);
+        let chunks = self.text.diff(&txn, yrs::types::text::YChange::identity);
 
         let mut char_pos = 0u64;
 
@@ -363,9 +363,10 @@ impl Document {
                     }
                 })
                 .or_else(|| {
-                    chunk.ychange.as_ref().and_then(|yc| {
-                        self.client_author_map.get(&yc.id.client).copied()
-                    })
+                    chunk
+                        .ychange
+                        .as_ref()
+                        .and_then(|yc| self.client_author_map.get(&yc.id.client).copied())
                 })
                 .unwrap_or(self.author);
 
