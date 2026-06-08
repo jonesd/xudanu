@@ -44,9 +44,15 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/auth/login", post(auth_login_handler))
         .route("/auth/logout", post(auth_logout_handler))
         .route("/auth/github", get(super::oauth::github_redirect_handler))
-        .route("/auth/github/callback", get(super::oauth::github_callback_handler))
+        .route(
+            "/auth/github/callback",
+            get(super::oauth::github_callback_handler),
+        )
         .route("/auth/google", get(super::oauth::google_redirect_handler))
-        .route("/auth/google/callback", get(super::oauth::google_callback_handler))
+        .route(
+            "/auth/google/callback",
+            get(super::oauth::google_callback_handler),
+        )
         .route("/", get(index_handler))
         .fallback(get(static_fallback_handler))
         .with_state(state)
@@ -140,7 +146,11 @@ async fn auth_login_handler(
             let club_id = srv.club_id_by_name(&body.club_name)?;
             srv.login(sid, club_id).ok()?;
             use crate::server::lock::LockCredential;
-            srv.authenticate_with_pending(sid, &LockCredential::Password(body.password.as_bytes().to_vec())).ok()?;
+            srv.authenticate_with_pending(
+                sid,
+                &LockCredential::Password(body.password.as_bytes().to_vec()),
+            )
+            .ok()?;
             let display_name = srv.club_name_by_id(club_id)?.to_string();
             let signing_key_bytes = srv.session_signing_key_bytes(sid);
             Some((club_id, display_name, signing_key_bytes))
@@ -178,7 +188,10 @@ async fn auth_login_handler(
         axum::http::StatusCode::OK,
         [
             (axum::http::header::SET_COOKIE, cookie),
-            (axum::http::header::CONTENT_TYPE, "application/json".to_string()),
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/json".to_string(),
+            ),
         ],
         format!(r#"{{"ok":true,"club_id":{}}}"#, club_id),
     )
@@ -191,7 +204,10 @@ async fn auth_logout_handler(
 ) -> impl IntoResponse {
     if let Some(cookie_header) = headers.get(axum::http::header::COOKIE) {
         if let Ok(cookies) = cookie_header.to_str() {
-            if let Some(token) = cookies.split(';').find_map(|c| c.trim().strip_prefix("xudanu_session=")) {
+            if let Some(token) = cookies
+                .split(';')
+                .find_map(|c| c.trim().strip_prefix("xudanu_session="))
+            {
                 state.oauth_state.destroy_session(token);
             }
         }
@@ -301,7 +317,14 @@ async fn ws_handler(
     ws.max_frame_size(16 * 1024 * 1024)
         .max_message_size(64 * 1024 * 1024)
         .on_upgrade(move |socket| {
-            handle_socket(socket, state, format, Some(addr), client_version, oauth_club)
+            handle_socket(
+                socket,
+                state,
+                format,
+                Some(addr),
+                client_version,
+                oauth_club,
+            )
         })
         .into_response()
 }
@@ -481,7 +504,9 @@ async fn handle_socket(
 
     if let Some((club_id, _display_name, signing_key_bytes)) = oauth_club {
         state.server.with_server(|srv| {
-            if let Err(e) = srv.authenticate_session_from_oauth(session_id, club_id, signing_key_bytes) {
+            if let Err(e) =
+                srv.authenticate_session_from_oauth(session_id, club_id, signing_key_bytes)
+            {
                 tracing::warn!(
                     target: "xudanu::security",
                     club_id = club_id,

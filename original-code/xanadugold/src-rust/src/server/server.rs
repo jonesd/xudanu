@@ -254,7 +254,6 @@ impl Server {
             historical_authors: crate::server::historical_author::HistoricalAuthorRegistry::new(),
             source_patterns: crate::server::source_matcher::builtin_patterns(),
             pending_attributions: Vec::new(),
-
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
             // transclusion survival, and materialize_annotation_indexed support.
@@ -461,10 +460,8 @@ impl Server {
             .get_author_sessions(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-        let mut author_signing_keys: std::collections::HashMap<
-            BeId,
-            ed25519_dalek::SigningKey,
-        > = std::collections::HashMap::new();
+        let mut author_signing_keys: std::collections::HashMap<BeId, ed25519_dalek::SigningKey> =
+            std::collections::HashMap::new();
         for (sid, author_id) in &author_sessions {
             if let Some(sk) = self
                 .sessions
@@ -1541,58 +1538,79 @@ impl Server {
                     .iter()
                     .find_map(|(_, c)| c.provenance.as_ref());
 
-                let (author_name, author_type_str, historical_id) =
-                    if let Some(ha_id) = origin_ws.source_author_id {
-                        let name = self.historical_authors.get(ha_id)
-                            .map(|a| if a.display_name.is_empty() { a.name.clone() } else { a.display_name.clone() })
-                            .unwrap_or_else(|| "Unknown Historical Author".to_string());
-                        tracing::info!(
-                            "[attribution_overlay] PA link={:04x} origin={:04x} author_id={} name={}",
-                            pa.link_id, pa.origin_work_id, ha_id, name
-                        );
-                        (name, "historical".to_string(), Some(ha_id))
-                    } else if let Some(ep) = entry_prov {
-                        let name = if ep.author_display_name.is_empty() {
-                            "Unknown".to_string()
-                        } else {
-                            ep.author_display_name.clone()
-                        };
-                        let at = match ep.author_type {
-                            crate::edition::provenance::AuthorType::Human => "human",
-                            crate::edition::provenance::AuthorType::Llm => "llm",
-                            crate::edition::provenance::AuthorType::Historical => "historical",
-                        };
-                        (name, at.to_string(), ep.historical_author_id)
-                    } else if let Some(club_id) = origin_ws.work.current_edition().all_entries()
-                        .iter()
-                        .find_map(|(_, c)| c.provenance.as_ref())
-                        .map(|ep| ep.author_club_id)
-                        .or(origin_ws.last_revision_author)
-                    {
-                        let name = self.clubs.get(&club_id)
-                            .and_then(|c| c.display_name().map(|s| s.to_string()))
-                            .unwrap_or_else(|| format!("Club {:04x}", club_id));
-                        (name, "human".to_string(), None)
+                let (author_name, author_type_str, historical_id) = if let Some(ha_id) =
+                    origin_ws.source_author_id
+                {
+                    let name = self
+                        .historical_authors
+                        .get(ha_id)
+                        .map(|a| {
+                            if a.display_name.is_empty() {
+                                a.name.clone()
+                            } else {
+                                a.display_name.clone()
+                            }
+                        })
+                        .unwrap_or_else(|| "Unknown Historical Author".to_string());
+                    tracing::info!(
+                        "[attribution_overlay] PA link={:04x} origin={:04x} author_id={} name={}",
+                        pa.link_id,
+                        pa.origin_work_id,
+                        ha_id,
+                        name
+                    );
+                    (name, "historical".to_string(), Some(ha_id))
+                } else if let Some(ep) = entry_prov {
+                    let name = if ep.author_display_name.is_empty() {
+                        "Unknown".to_string()
                     } else {
-                        ("Unknown".to_string(), "human".to_string(), None)
+                        ep.author_display_name.clone()
                     };
-
-                let existing: std::collections::HashSet<(i64, i64)> = spans
+                    let at = match ep.author_type {
+                        crate::edition::provenance::AuthorType::Human => "human",
+                        crate::edition::provenance::AuthorType::Llm => "llm",
+                        crate::edition::provenance::AuthorType::Historical => "historical",
+                    };
+                    (name, at.to_string(), ep.historical_author_id)
+                } else if let Some(club_id) = origin_ws
+                    .work
+                    .current_edition()
+                    .all_entries()
                     .iter()
-                    .map(|s| (s.start, s.end))
-                    .collect();
+                    .find_map(|(_, c)| c.provenance.as_ref())
+                    .map(|ep| ep.author_club_id)
+                    .or(origin_ws.last_revision_author)
+                {
+                    let name = self
+                        .clubs
+                        .get(&club_id)
+                        .and_then(|c| c.display_name().map(|s| s.to_string()))
+                        .unwrap_or_else(|| format!("Club {:04x}", club_id));
+                    (name, "human".to_string(), None)
+                } else {
+                    ("Unknown".to_string(), "human".to_string(), None)
+                };
+
+                let existing: std::collections::HashSet<(i64, i64)> =
+                    spans.iter().map(|s| (s.start, s.end)).collect();
 
                 if !existing.contains(&(char_start as i64, char_end as i64)) {
                     tracing::info!(
                         "[attribution_overlay] adding span [{},{}] author={} origin={:04x}",
-                        char_start, char_end, author_name, pa.origin_work_id
+                        char_start,
+                        char_end,
+                        author_name,
+                        pa.origin_work_id
                     );
                     spans.push(super::transport::protocol::AttributionSpanPayload {
                         start: char_start as i64,
                         end: char_end as i64,
-                        author_public_key: entry_prov.map(|ep| ep.author_public_key.to_vec()).unwrap_or_default(),
+                        author_public_key: entry_prov
+                            .map(|ep| ep.author_public_key.to_vec())
+                            .unwrap_or_default(),
                         author_display_name: Some(author_name),
-                        author_club_id: entry_prov.map(|ep| ep.author_club_id)
+                        author_club_id: entry_prov
+                            .map(|ep| ep.author_club_id)
                             .or(origin_ws.last_revision_author)
                             .or(origin_ws.source_author_id),
                         signature_valid: true,
@@ -1649,7 +1667,9 @@ impl Server {
                     pieces = next;
                 }
                 for (ps, pe) in pieces {
-                    if pe <= ps { continue; }
+                    if pe <= ps {
+                        continue;
+                    }
                     let mut s = span.clone();
                     s.start = ps;
                     s.end = pe;
@@ -1809,10 +1829,7 @@ impl Server {
         crate::server::source_matcher::detect_source(text, &self.source_patterns)
     }
 
-    pub fn match_content(
-        &self,
-        text: &str,
-    ) -> Option<(BeId, BeId, f64)> {
+    pub fn match_content(&self, text: &str) -> Option<(BeId, BeId, f64)> {
         let sources: Vec<(BeId, crate::server::source_matcher::MinHashSignature)> = self
             .works
             .iter()
@@ -1830,10 +1847,13 @@ impl Server {
             tracing::info!("[match_content] source_work={:04x}", id);
         }
 
-        let (work_id, score) =
-            crate::server::source_matcher::best_content_match(text, &sources)?;
+        let (work_id, score) = crate::server::source_matcher::best_content_match(text, &sources)?;
 
-        tracing::info!("[match_content] matched work={:04x} score={:.3}", work_id, score);
+        tracing::info!(
+            "[match_content] matched work={:04x} score={:.3}",
+            work_id,
+            score
+        );
 
         let author_id = self
             .works
@@ -1910,10 +1930,8 @@ impl Server {
         let range_start = paste_start.unwrap_or(0);
         let range_end = paste_end.unwrap_or(usize::MAX);
 
-        let mut new_entries: Vec<(
-            i64,
-            std::sync::Arc<crate::edition::range_element::Carrier>,
-        )> = Vec::with_capacity(entries.len());
+        let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
+            Vec::with_capacity(entries.len());
         let mut cum = 0usize;
         let mut attributed_positions: Vec<i64> = Vec::new();
 
@@ -1948,7 +1966,10 @@ impl Server {
         new_edition.span_provenance = current_edition.span_provenance.clone();
 
         if !attributed_positions.is_empty() {
-            let attributed_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> = entries
+            let attributed_entries: Vec<(
+                i64,
+                std::sync::Arc<crate::edition::range_element::Carrier>,
+            )> = entries
                 .iter()
                 .zip(attributed_positions.iter())
                 .filter_map(|((_, c), &pos)| {
@@ -2325,7 +2346,8 @@ impl Server {
         if self.crdt_is_active(work_be_id) {
             let needs = self.crdt_needs_materialization(work_be_id);
             if needs {
-                let edition = self.otree_crdt
+                let edition = self
+                    .otree_crdt
                     .materialize_edition(work_be_id)
                     .map_err(|e| ServerError::Internal(e.to_string()))?;
 
@@ -2428,7 +2450,8 @@ impl Server {
         let needs = self.crdt_needs_materialization(work_be_id);
 
         if needs {
-            let edition = self.otree_crdt
+            let edition = self
+                .otree_crdt
                 .materialize_edition(work_be_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
@@ -2567,15 +2590,30 @@ impl Server {
         end_char: usize,
     ) -> Result<super::otree_crdt::TextRangeResult, ServerError> {
         let is_source = self.is_source_work(work_be_id);
-        tracing::info!("[crdt_text_range] work={} is_source={} start={} end={}", work_be_id, is_source, start_char, end_char);
+        tracing::info!(
+            "[crdt_text_range] work={} is_source={} start={} end={}",
+            work_be_id,
+            is_source,
+            start_char,
+            end_char
+        );
         if is_source {
-            let ws = self.works.get(&work_be_id).ok_or(ServerError::WorkNotFound(work_be_id))?;
+            let ws = self
+                .works
+                .get(&work_be_id)
+                .ok_or(ServerError::WorkNotFound(work_be_id))?;
             let edition = ws.work.edition();
             let total_chars = edition.char_len();
             let clamped_end = end_char.min(total_chars);
             let clamped_start = start_char.min(clamped_end);
             let text = edition.to_text_range(clamped_start, clamped_end);
-            tracing::info!("[crdt_text_range] source work {} total_chars={} chars {}..{}", work_be_id, total_chars, clamped_start, clamped_end);
+            tracing::info!(
+                "[crdt_text_range] source work {} total_chars={} chars {}..{}",
+                work_be_id,
+                total_chars,
+                clamped_start,
+                clamped_end
+            );
             return Ok(super::otree_crdt::TextRangeResult {
                 text,
                 total_chars,
@@ -2625,7 +2663,8 @@ impl Server {
         session_id: SessionId,
     ) -> Result<(), ServerError> {
         let should = self.crdt_needs_materialization(work_be_id);
-        let elapsed = self.otree_crdt
+        let elapsed = self
+            .otree_crdt
             .debounce_elapsed(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
 
@@ -2676,7 +2715,8 @@ impl Server {
             return Ok(0);
         }
 
-        let sessions = self.otree_crdt
+        let sessions = self
+            .otree_crdt
             .get_subscribed_sessions(work_be_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
 
@@ -2798,12 +2838,13 @@ impl Server {
                     .cursor
                     .as_ref()
                     .map(|c| super::crdt_manager::CursorPosition { index: c.index }),
-                selection: s.selection.as_ref().map(|sel| {
-                    super::crdt_manager::SelectionRange {
+                selection: s
+                    .selection
+                    .as_ref()
+                    .map(|sel| super::crdt_manager::SelectionRange {
                         start: sel.start,
                         end: sel.end,
-                    }
-                }),
+                    }),
                 is_typing: s.is_typing,
             })
             .collect())
@@ -3062,10 +3103,7 @@ impl Server {
         let edition = ws.work.current_edition();
         let all_entries = edition.all_entries();
 
-        let total_chars: u64 = all_entries
-            .iter()
-            .map(|(_, c)| c.char_len() as u64)
-            .sum();
+        let total_chars: u64 = all_entries.iter().map(|(_, c)| c.char_len() as u64).sum();
 
         let version_count = ws.work.revision_count();
 
@@ -3079,10 +3117,7 @@ impl Server {
                 .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
                 .collect();
 
-            let span_char_count: u64 = span_entries
-                .iter()
-                .map(|(_, c)| c.char_len() as u64)
-                .sum();
+            let span_char_count: u64 = span_entries.iter().map(|(_, c)| c.char_len() as u64).sum();
 
             let element_prov = span_entries
                 .iter()
@@ -3137,7 +3172,11 @@ impl Server {
                     }
                 })
                 .collect();
-        author_contributions.sort_by(|a, b| b.percentage.partial_cmp(&a.percentage).unwrap_or(std::cmp::Ordering::Equal));
+        author_contributions.sort_by(|a, b| {
+            b.percentage
+                .partial_cmp(&a.percentage)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut reused_in_count: u64 = 0;
         for other_id in self.works.keys() {
@@ -3150,14 +3189,16 @@ impl Server {
             }
         }
 
-        Ok(super::transport::protocol::ResponseValue::WorkSummaryResult {
-            unique_sources: source_work_ids.len() as u64,
-            unique_authors: author_names.len() as u64,
-            version_count,
-            char_count: total_chars,
-            author_contributions,
-            reused_in_count,
-        })
+        Ok(
+            super::transport::protocol::ResponseValue::WorkSummaryResult {
+                unique_sources: source_work_ids.len() as u64,
+                unique_authors: author_names.len() as u64,
+                version_count,
+                char_count: total_chars,
+                author_contributions,
+                reused_in_count,
+            },
+        )
     }
 
     pub fn work_version_timeline(
@@ -3189,12 +3230,11 @@ impl Server {
                 None
             };
 
-            let author_display_name = author_club_id
-                .and_then(|cid| {
-                    self.clubs
-                        .get(&cid)
-                        .and_then(|c| c.display_name().map(|s| s.to_string()))
-                });
+            let author_display_name = author_club_id.and_then(|cid| {
+                self.clubs
+                    .get(&cid)
+                    .and_then(|c| c.display_name().map(|s| s.to_string()))
+            });
 
             revisions.push(super::transport::protocol::RevisionMetaEntry {
                 revision: rev_num,
@@ -3273,12 +3313,11 @@ impl Server {
                 None
             };
 
-            let author_display_name = author_club_id
-                .and_then(|cid| {
-                    self.clubs
-                        .get(&cid)
-                        .and_then(|c| c.display_name().map(|s| s.to_string()))
-                });
+            let author_display_name = author_club_id.and_then(|cid| {
+                self.clubs
+                    .get(&cid)
+                    .and_then(|c| c.display_name().map(|s| s.to_string()))
+            });
 
             layers.push(super::transport::protocol::CompositionLayerEntry {
                 revision: rev_num,
@@ -3624,18 +3663,24 @@ impl Server {
                         parsed
                     } else {
                         tracing::warn!("content_address chunk deserialization failed");
-                        manifest.content_address.clone()
+                        manifest
+                            .content_address
+                            .clone()
                             .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
                     }
                 }
                 Err(e) => {
                     tracing::warn!("content_address chunk read failed: {}", e);
-                    manifest.content_address.clone()
+                    manifest
+                        .content_address
+                        .clone()
                         .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
                 }
             }
         } else {
-            manifest.content_address.clone()
+            manifest
+                .content_address
+                .clone()
                 .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
         };
 
@@ -3704,17 +3749,21 @@ impl Server {
         self.personal_club_count = self.clubs.values().filter(|c| c.is_personal()).count();
 
         for work_entry in &manifest.works {
-            match crate::persist::edition_chunks::work_from_chunks_current(&work_entry.work_ref, &chunk_store) {
+            match crate::persist::edition_chunks::work_from_chunks_current(
+                &work_entry.work_ref,
+                &chunk_store,
+            ) {
                 Ok(work) => {
-                    let source_fingerprint = work_entry.source_fingerprint.as_ref().and_then(|fp| {
-                        if fp.len() == crate::server::source_matcher::MINHASH_SIZE {
-                            let mut arr = [0u64; crate::server::source_matcher::MINHASH_SIZE];
-                            arr.copy_from_slice(fp);
-                            Some(arr)
-                        } else {
-                            None
-                        }
-                    });
+                    let source_fingerprint =
+                        work_entry.source_fingerprint.as_ref().and_then(|fp| {
+                            if fp.len() == crate::server::source_matcher::MINHASH_SIZE {
+                                let mut arr = [0u64; crate::server::source_matcher::MINHASH_SIZE];
+                                arr.copy_from_slice(fp);
+                                Some(arr)
+                            } else {
+                                None
+                            }
+                        });
                     let ws = WorkState {
                         work: work.clone(),
                         chunk_ref: Some(work_entry.work_ref.clone()),
@@ -3776,7 +3825,9 @@ impl Server {
                             tracing::info!("links chunk: migrated from postcard to json format");
                             parsed
                         } else {
-                            tracing::warn!("links chunk deserialization failed (tried json and postcard)");
+                            tracing::warn!(
+                                "links chunk deserialization failed (tried json and postcard)"
+                            );
                             manifest.links.clone()
                         }
                     }
@@ -3923,7 +3974,11 @@ impl Server {
                             self.otree_crdt.restore_annotations(&all_anns);
                             let total: usize = all_anns.iter().map(|(_, a)| a.len()).sum();
                             if total > 0 {
-                                tracing::info!("Restored {} annotations across {} works", total, all_anns.len());
+                                tracing::info!(
+                                    "Restored {} annotations across {} works",
+                                    total,
+                                    all_anns.len()
+                                );
                             }
                         } else {
                             tracing::warn!("annotations chunk deserialization failed");
@@ -4060,8 +4115,8 @@ impl Server {
                                 if let Err(e) = std::fs::rename(&tmp_path, &kh_path) {
                                     tracing::warn!("Failed to rename key history: {}", e);
                                     let _ = std::fs::remove_file(&tmp_path);
-    }
-}
+                                }
+                            }
                             Err(e) => {
                                 tracing::warn!("Failed to write key history: {}", e);
                                 let _ = std::fs::remove_file(&tmp_path);
@@ -4339,10 +4394,13 @@ impl Server {
         self.ensure_authenticated(session_id)?;
 
         let (origin_work_id, dest_work_id, excerpt_text) = {
-            let ls = self.links.get(&link_id).ok_or_else(|| {
-                ServerError::NotFound(format!("link {}", link_id))
-            })?;
-            let excerpt = ls.link.end_at("LeftEnd")
+            let ls = self
+                .links
+                .get(&link_id)
+                .ok_or_else(|| ServerError::NotFound(format!("link {}", link_id)))?;
+            let excerpt = ls
+                .link
+                .end_at("LeftEnd")
                 .and_then(|r| r.excerpt())
                 .map(|e| e.to_text())
                 .unwrap_or_default();
@@ -4356,12 +4414,23 @@ impl Server {
 
         tracing::info!(
             "[apply_transclusion_attribution] link={:04x} origin={:04x} dest={:04x} excerpt_len={}",
-            link_id, origin_work_id, dest_work_id, excerpt_text.len()
+            link_id,
+            origin_work_id,
+            dest_work_id,
+            excerpt_text.len()
         );
 
-        let result = self.apply_transclusion_attribution_internal(link_id, origin_work_id, dest_work_id, &excerpt_text);
+        let result = self.apply_transclusion_attribution_internal(
+            link_id,
+            origin_work_id,
+            dest_work_id,
+            &excerpt_text,
+        );
 
-        let already_pending = self.pending_attributions.iter().any(|pa| pa.link_id == link_id);
+        let already_pending = self
+            .pending_attributions
+            .iter()
+            .any(|pa| pa.link_id == link_id);
         if !already_pending {
             self.pending_attributions.push(PendingAttribution {
                 link_id,
@@ -4381,7 +4450,12 @@ impl Server {
     fn rebuild_pending_attributions(&mut self) {
         let mut rebuilt = Vec::new();
         for (&link_id, ls) in &self.links {
-            let excerpt = match ls.link.end_at("LeftEnd").and_then(|r| r.excerpt()).map(|e| e.to_text()) {
+            let excerpt = match ls
+                .link
+                .end_at("LeftEnd")
+                .and_then(|r| r.excerpt())
+                .map(|e| e.to_text())
+            {
                 Some(t) if !t.is_empty() => t.to_string(),
                 _ => continue,
             };
@@ -4432,9 +4506,16 @@ impl Server {
                     ..p
                 },
                 None => {
-                    let author_name = origin_ws.source_author_id
+                    let author_name = origin_ws
+                        .source_author_id
                         .and_then(|aid| self.historical_authors.get(aid))
-                        .map(|a| if a.display_name.is_empty() { a.name.clone() } else { a.display_name.clone() })
+                        .map(|a| {
+                            if a.display_name.is_empty() {
+                                a.name.clone()
+                            } else {
+                                a.display_name.clone()
+                            }
+                        })
                         .unwrap_or_else(|| "Unknown".to_string());
                     crate::edition::provenance::ElementProvenance {
                         author_public_key: [0u8; 32],
@@ -4460,8 +4541,10 @@ impl Server {
             let char_end = char_start + pa.excerpt.len();
 
             let entries = edition.all_entries();
-            let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
-                Vec::with_capacity(entries.len());
+            let mut new_entries: Vec<(
+                i64,
+                std::sync::Arc<crate::edition::range_element::Carrier>,
+            )> = Vec::with_capacity(entries.len());
             let mut cum = 0usize;
 
             for (pos, c) in &entries {
@@ -4491,7 +4574,9 @@ impl Server {
         excerpt_text: &str,
     ) -> Result<(), ServerError> {
         let source_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> = {
-            let ws = self.works.get(&origin_work_id)
+            let ws = self
+                .works
+                .get(&origin_work_id)
                 .ok_or(ServerError::WorkNotFound(origin_work_id))?;
             ws.work.current_edition().all_entries()
         };
@@ -4500,15 +4585,24 @@ impl Server {
             .iter()
             .find_map(|(_, c)| c.provenance.clone());
 
-        let source_ws = self.works.get(&origin_work_id)
+        let source_ws = self
+            .works
+            .get(&origin_work_id)
             .ok_or(ServerError::WorkNotFound(origin_work_id))?;
 
         let source_prov: crate::edition::provenance::ElementProvenance = match source_prov {
             Some(p) => p,
             None => {
-                let author_name = source_ws.source_author_id
+                let author_name = source_ws
+                    .source_author_id
                     .and_then(|aid| self.historical_authors.get(aid))
-                    .map(|a| if a.display_name.is_empty() { a.name.clone() } else { a.display_name.clone() })
+                    .map(|a| {
+                        if a.display_name.is_empty() {
+                            a.name.clone()
+                        } else {
+                            a.display_name.clone()
+                        }
+                    })
                     .unwrap_or_else(|| "Unknown".to_string());
                 crate::edition::provenance::ElementProvenance {
                     author_public_key: [0u8; 32],
@@ -4531,7 +4625,9 @@ impl Server {
         };
 
         let dest_edition = {
-            let ws = self.works.get(&dest_work_id)
+            let ws = self
+                .works
+                .get(&dest_work_id)
                 .ok_or(ServerError::WorkNotFound(dest_work_id))?;
             ws.work.current_edition().clone()
         };
@@ -4572,7 +4668,9 @@ impl Server {
         if any_applied {
             let mut new_edition = crate::edition::Edition::from_entries(new_entries);
             new_edition.span_provenance = dest_edition.span_provenance.clone();
-            let ws = self.works.get_mut(&dest_work_id)
+            let ws = self
+                .works
+                .get_mut(&dest_work_id)
                 .ok_or(ServerError::WorkNotFound(dest_work_id))?;
             ws.work.revise(new_edition);
             self.auto_checkpoint();
@@ -4664,7 +4762,11 @@ impl Server {
         work_id: BeId,
     ) -> Result<Vec<super::transport::protocol::BacklinkEntryPayload>, ServerError> {
         self.ensure_session(session_id)?;
-        let link_ids = self.work_to_links.get(&work_id).cloned().unwrap_or_default();
+        let link_ids = self
+            .work_to_links
+            .get(&work_id)
+            .cloned()
+            .unwrap_or_default();
         let mut results = Vec::new();
         let mut seen_works = std::collections::HashSet::new();
         seen_works.insert(work_id);
@@ -4691,17 +4793,27 @@ impl Server {
                 continue;
             }
             seen_works.insert(source_work_id);
-            let excerpt = ls.link.end_at("LeftEnd").and_then(|hr| hr.excerpt()).and_then(
-                |ed| {
+            let excerpt = ls
+                .link
+                .end_at("LeftEnd")
+                .and_then(|hr| hr.excerpt())
+                .and_then(|ed| {
                     let text: String = ed
                         .all_entries()
                         .iter()
                         .filter_map(|(_, c)| c.element.as_text())
                         .collect();
-                    if text.is_empty() { None } else { Some(text) }
-                },
-            );
-            let title = self.works.get(&source_work_id).map(|ws| ws.cached_title.clone()).filter(|t| !t.is_empty());
+                    if text.is_empty() {
+                        None
+                    } else {
+                        Some(text)
+                    }
+                });
+            let title = self
+                .works
+                .get(&source_work_id)
+                .map(|ws| ws.cached_title.clone())
+                .filter(|t| !t.is_empty());
             let direction = if ls.destination == work_id {
                 "incoming"
             } else {
@@ -4729,25 +4841,32 @@ impl Server {
         char_end: usize,
     ) -> Result<(), ServerError> {
         self.ensure_authenticated(session_id)?;
-        let created_by = self
-            .sessions
-            .get(&session_id)
-            .and_then(|s| {
-                let km = s._key_master()?;
-                let auth = km.actual_authority();
-                auth.iter().find(|&&id| {
+        let created_by = self.sessions.get(&session_id).and_then(|s| {
+            let km = s._key_master()?;
+            let auth = km.actual_authority();
+            auth.iter()
+                .find(|&&id| {
                     id != self.public_club_id()
                         && id != self.admin_club_id()
                         && id != self.access_club_id()
                         && id != self.empty_club_id()
-                }).copied()
-            });
+                })
+                .copied()
+        });
         if let Some(ws) = self.works.get(&work_id) {
             let edition = ws.work.current_edition();
             self.otree_crdt.initialize_from_edition(work_id, &edition);
         }
         self.otree_crdt
-            .annotation_create(work_id, annotation_id, kind, payload, char_start, char_end, created_by)
+            .annotation_create(
+                work_id,
+                annotation_id,
+                kind,
+                payload,
+                char_start,
+                char_end,
+                created_by,
+            )
             .map_err(|e| ServerError::Internal(e.to_string()))?;
         if let Err(e) = self.checkpoint_to_store() {
             tracing::error!("annotation checkpoint failed: {}", e);
@@ -4802,9 +4921,10 @@ impl Server {
         annotation_id: u64,
     ) -> Result<Option<super::transport::protocol::AnnotationPayload>, ServerError> {
         self.ensure_session(session_id)?;
-        let ws = self.works.get(&work_id).ok_or_else(|| {
-            ServerError::NotFound(format!("work {}", work_id))
-        })?;
+        let ws = self
+            .works
+            .get(&work_id)
+            .ok_or_else(|| ServerError::NotFound(format!("work {}", work_id)))?;
         if !self.work_is_readable(session_id, &ws.work) {
             return Err(ServerError::NotAuthorized);
         }
@@ -4814,7 +4934,11 @@ impl Server {
             .map_err(|e| ServerError::Internal(e.to_string()))?
             .map(|a| {
                 let created_by_name = a.created_by.and_then(|cid| {
-                    self.clubs.get(&cid).and_then(|c| c.display_name().map(|s| s.to_string()).or_else(|| c.name().map(|s| s.to_string())))
+                    self.clubs.get(&cid).and_then(|c| {
+                        c.display_name()
+                            .map(|s| s.to_string())
+                            .or_else(|| c.name().map(|s| s.to_string()))
+                    })
                 });
                 super::transport::protocol::AnnotationPayload {
                     annotation_id: a.annotation_id,
@@ -4834,14 +4958,16 @@ impl Server {
         work_id: BeId,
     ) -> Result<Vec<super::transport::protocol::AnnotationPayload>, ServerError> {
         self.ensure_session(session_id)?;
-        let ws = self.works.get(&work_id).ok_or_else(|| {
-            ServerError::NotFound(format!("work {}", work_id))
-        })?;
+        let ws = self
+            .works
+            .get(&work_id)
+            .ok_or_else(|| ServerError::NotFound(format!("work {}", work_id)))?;
         if !self.work_is_readable(session_id, &ws.work) {
             return Err(ServerError::NotAuthorized);
         }
         let edition = ws.work.current_edition();
-        self.otree_crdt.ensure_doc_for_annotations(work_id, &edition);
+        self.otree_crdt
+            .ensure_doc_for_annotations(work_id, &edition);
         Ok(self
             .otree_crdt
             .annotation_list(work_id)
@@ -4849,7 +4975,11 @@ impl Server {
             .into_iter()
             .map(|a| {
                 let created_by_name = a.created_by.and_then(|cid| {
-                    self.clubs.get(&cid).and_then(|c| c.display_name().map(|s| s.to_string()).or_else(|| c.name().map(|s| s.to_string())))
+                    self.clubs.get(&cid).and_then(|c| {
+                        c.display_name()
+                            .map(|s| s.to_string())
+                            .or_else(|| c.name().map(|s| s.to_string()))
+                    })
                 });
                 super::transport::protocol::AnnotationPayload {
                     annotation_id: a.annotation_id,
@@ -5134,7 +5264,10 @@ impl Server {
         let mut claimed_a: Vec<std::ops::Range<usize>> = Vec::new();
         let mut claimed_b: Vec<std::ops::Range<usize>> = Vec::new();
 
-        let paras_a: Vec<&str> = text_a.split('\n').filter(|p| p.trim().len() >= min_len).collect();
+        let paras_a: Vec<&str> = text_a
+            .split('\n')
+            .filter(|p| p.trim().len() >= min_len)
+            .collect();
         let mut para_offsets_a: Vec<usize> = Vec::new();
         {
             let mut off = 0;
@@ -5186,8 +5319,12 @@ impl Server {
         for (sa, ea, sb, eb) in seeds {
             let range_a = sa..ea;
             let range_b = sb..eb;
-            let conflicts_a = claimed_a.iter().any(|r| r.start < range_a.end && r.end > range_a.start);
-            let conflicts_b = claimed_b.iter().any(|r| r.start < range_b.end && r.end > range_b.start);
+            let conflicts_a = claimed_a
+                .iter()
+                .any(|r| r.start < range_a.end && r.end > range_a.start);
+            let conflicts_b = claimed_b
+                .iter()
+                .any(|r| r.start < range_b.end && r.end > range_b.start);
             if conflicts_a || conflicts_b {
                 continue;
             }
@@ -6347,9 +6484,12 @@ impl Server {
             }
             let km = match session._key_master() {
                 Some(km) => km,
-                None => return Err(ServerError::Unauthorized(format!(
-                    "no authority for club {}", club_id
-                ))),
+                None => {
+                    return Err(ServerError::Unauthorized(format!(
+                        "no authority for club {}",
+                        club_id
+                    )))
+                }
             };
             if !km.has_signature_authority(club_id, &self.clubs) {
                 return Err(ServerError::Unauthorized(format!(
@@ -6375,7 +6515,10 @@ impl Server {
         ws.work.endorse(&endorsements);
         ws.chunk_ref = None;
         drop(ws);
-        tracing::info!("[work_endorse] calling checkpoint_to_store for work {}", work_id);
+        tracing::info!(
+            "[work_endorse] calling checkpoint_to_store for work {}",
+            work_id
+        );
         if let Err(e) = self.checkpoint_to_store() {
             tracing::warn!("[work_endorse] checkpoint failed: {}", e);
         }
@@ -6907,13 +7050,11 @@ impl Server {
 
             let text = String::from_utf8_lossy(&update.update_bytes);
             let initial_edition = initial_text.as_deref().map(Edition::from_text_batched);
-            match self.otree_crdt
-                .apply_federation_update(
-                    update.work_id,
-                    &text,
-                    initial_edition.as_ref(),
-                )
-            {
+            match self.otree_crdt.apply_federation_update(
+                update.work_id,
+                &text,
+                initial_edition.as_ref(),
+            ) {
                 Ok(_) => {
                     if !update.span_provenance.is_empty() {
                         self.otree_crdt.store_federated_provenance(
@@ -8195,8 +8336,7 @@ pub(crate) mod persist_snapshot {
             let chunk_store = self.chunk_store.as_ref().unwrap();
 
             let mut dirty_work_count = 0u64;
-            let mut work_entries: Vec<crate::persist::manifest::WorkEntry> =
-                Vec::new();
+            let mut work_entries: Vec<crate::persist::manifest::WorkEntry> = Vec::new();
             for (id, ws) in &self.works {
                 let work_ref = if let Some(ref existing_ref) = ws.chunk_ref {
                     existing_ref.clone()
@@ -8339,7 +8479,8 @@ pub(crate) mod persist_snapshot {
                 links_hash: {
                     let lk_data = serde_json::to_vec(&links)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-                    let hash = chunk_store.write_chunk(&lk_data)
+                    let hash = chunk_store
+                        .write_chunk(&lk_data)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     Some(hash)
                 },
@@ -8370,7 +8511,8 @@ pub(crate) mod persist_snapshot {
                 content_address_hash: {
                     let ca_data = serde_json::to_vec(&self.content_address)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-                    let hash = chunk_store.write_chunk(&ca_data)
+                    let hash = chunk_store
+                        .write_chunk(&ca_data)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     Some(hash)
                 },
@@ -8378,7 +8520,8 @@ pub(crate) mod persist_snapshot {
                 blob_metas_hash: {
                     let bm_data = serde_json::to_vec(&blob_metas)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-                    let hash = chunk_store.write_chunk(&bm_data)
+                    let hash = chunk_store
+                        .write_chunk(&bm_data)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     Some(hash)
                 },
@@ -8387,7 +8530,8 @@ pub(crate) mod persist_snapshot {
                 historical_authors_hash: {
                     let ha_data = serde_json::to_vec(&self.historical_authors)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-                    let hash = chunk_store.write_chunk(&ha_data)
+                    let hash = chunk_store
+                        .write_chunk(&ha_data)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     Some(hash)
                 },
@@ -8395,12 +8539,22 @@ pub(crate) mod persist_snapshot {
                 annotations_hash: {
                     let all_anns = self.otree_crdt.all_annotations();
                     let total: usize = all_anns.iter().map(|(_, a)| a.len()).sum();
-                    tracing::info!("[checkpoint] saving {} annotations across {} works", total, all_anns.len());
+                    tracing::info!(
+                        "[checkpoint] saving {} annotations across {} works",
+                        total,
+                        all_anns.len()
+                    );
                     let ann_data = serde_json::to_vec(&all_anns)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-                    let hash = chunk_store.write_chunk(&ann_data)
+                    let hash = chunk_store
+                        .write_chunk(&ann_data)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-                    tracing::info!("[checkpoint] annotations chunk hash={}", hash.iter().map(|b| format!("{:02x}", b)).collect::<String>());
+                    tracing::info!(
+                        "[checkpoint] annotations chunk hash={}",
+                        hash.iter()
+                            .map(|b| format!("{:02x}", b))
+                            .collect::<String>()
+                    );
                     Some(hash)
                 },
             };
@@ -8470,9 +8624,7 @@ pub(crate) mod persist_snapshot {
                         ))
                     }
                 };
-                if let Ok(manifest) =
-                    crate::persist::manifest::read_manifest(manifest_path)
-                {
+                if let Ok(manifest) = crate::persist::manifest::read_manifest(manifest_path) {
                     // CHECKLIST: every Option<[u8; 32]> field in Manifest must be
                     // inserted into `referenced` here, or the GC will delete the
                     // chunk. Current fields (as of 2026-06):
@@ -13218,7 +13370,14 @@ mod tests {
         let session = server.connect();
         server.login_public(session).unwrap();
         server.grant_admin_authority(session).unwrap();
-        let club_id = server.session(session).unwrap().authority_clubs().iter().next().copied().unwrap();
+        let club_id = server
+            .session(session)
+            .unwrap()
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied()
+            .unwrap();
         let public_club = server.public_club_id();
 
         let author = server
@@ -13250,14 +13409,7 @@ mod tests {
         }
 
         server
-            .apply_source_attribution(
-                session,
-                dracula_id,
-                author.be_id,
-                None,
-                None,
-                None,
-            )
+            .apply_source_attribution(session, dracula_id, author.be_id, None, None, None)
             .unwrap();
 
         let excerpt = "It was the best of times it was the worst of times.";
@@ -13279,22 +13431,18 @@ mod tests {
                 session,
                 dracula_id,
                 target_id,
-                Some(
-                    crate::edition::links::HyperRef::single(
-                        Some(Edition::from_text(excerpt)),
-                        Some(dracula_id),
-                        None,
-                        None,
-                    ),
-                ),
-                Some(
-                    crate::edition::links::HyperRef::single(
-                        None,
-                        Some(target_id),
-                        None,
-                        None,
-                    ),
-                ),
+                Some(crate::edition::links::HyperRef::single(
+                    Some(Edition::from_text(excerpt)),
+                    Some(dracula_id),
+                    None,
+                    None,
+                )),
+                Some(crate::edition::links::HyperRef::single(
+                    None,
+                    Some(target_id),
+                    None,
+                    None,
+                )),
             )
             .unwrap();
 
@@ -13353,7 +13501,14 @@ mod tests {
         let session = server.connect();
         server.login_public(session).unwrap();
         server.grant_admin_authority(session).unwrap();
-        let club_id = server.session(session).unwrap().authority_clubs().iter().next().copied().unwrap();
+        let club_id = server
+            .session(session)
+            .unwrap()
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied()
+            .unwrap();
         let public_club = server.public_club_id();
 
         let author = server
@@ -13423,15 +13578,12 @@ mod tests {
             let entry_end = cum + carrier.char_len();
             let in_range = entry_end > paste_start && entry_start < paste_end;
 
-            let is_historical = carrier
-                .provenance
-                .as_ref()
-                .is_some_and(|p| {
-                    matches!(
-                        p.author_type,
-                        crate::edition::provenance::AuthorType::Historical
-                    )
-                });
+            let is_historical = carrier.provenance.as_ref().is_some_and(|p| {
+                matches!(
+                    p.author_type,
+                    crate::edition::provenance::AuthorType::Historical
+                )
+            });
 
             if in_range && is_historical {
                 in_range_historical += 1;
@@ -13457,7 +13609,14 @@ mod tests {
         let session = server.connect();
         server.login_public(session).unwrap();
         server.grant_admin_authority(session).unwrap();
-        let club_id = server.session(session).unwrap().authority_clubs().iter().next().copied().unwrap();
+        let club_id = server
+            .session(session)
+            .unwrap()
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied()
+            .unwrap();
         let public_club = server.public_club_id();
 
         let author = server
@@ -13611,7 +13770,14 @@ mod tests {
         let session = server.connect();
         server.login_public(session).unwrap();
         server.grant_admin_authority(session).unwrap();
-        let club_id = server.session(session).unwrap().authority_clubs().iter().next().copied().unwrap();
+        let club_id = server
+            .session(session)
+            .unwrap()
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied()
+            .unwrap();
         let public_club = server.public_club_id();
 
         let author = server
@@ -13717,7 +13883,14 @@ mod tests {
         let session = server.connect();
         server.login_public(session).unwrap();
         server.grant_admin_authority(session).unwrap();
-        let club_id = server.session(session).unwrap().authority_clubs().iter().next().copied().unwrap();
+        let club_id = server
+            .session(session)
+            .unwrap()
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied()
+            .unwrap();
 
         let author = server
             .register_historical_author(
@@ -13746,11 +13919,17 @@ mod tests {
 
         let ws = server.works.get(&source_id).unwrap();
         assert!(ws.is_source, "imported work should have is_source=true");
-        assert!(ws.source_fingerprint.is_some(), "imported work should have source_fingerprint");
+        assert!(
+            ws.source_fingerprint.is_some(),
+            "imported work should have source_fingerprint"
+        );
 
         let query: String = text.chars().take(text.len() / 3).collect();
         let result = server.match_content(&query);
-        assert!(result.is_some(), "match_content should find the source work");
+        assert!(
+            result.is_some(),
+            "match_content should find the source work"
+        );
         let (found_work_id, found_author_id, score) = result.unwrap();
         assert_eq!(found_work_id, source_id);
         assert_eq!(found_author_id, author.be_id);
@@ -13820,10 +13999,7 @@ mod tests {
             let ws = server.works.get(&source_id).unwrap();
             assert!(ws.is_source, "source work should be restored as source");
             assert_eq!(ws.source_author_id, Some(author_id));
-            assert_eq!(
-                ws.source_edition_info.as_deref(),
-                Some("1897 edition")
-            );
+            assert_eq!(ws.source_edition_info.as_deref(), Some("1897 edition"));
             assert!(
                 ws.source_fingerprint.is_some(),
                 "source fingerprint should be recomputed on restore"
@@ -13884,7 +14060,9 @@ mod tests {
 
         let result = server.work_version_timeline(work_id).unwrap();
         match result {
-            crate::server::transport::protocol::ResponseValue::WorkVersionTimelineResult { revisions } => {
+            crate::server::transport::protocol::ResponseValue::WorkVersionTimelineResult {
+                revisions,
+            } => {
                 assert_eq!(revisions.len(), 2, "initial + 1 revise = 2 entries");
                 assert_eq!(revisions[0].revision, 0);
                 assert_eq!(revisions[0].char_count, 11);
@@ -13918,8 +14096,14 @@ mod tests {
 
         let result = server.passage_composition(work_id, 0, 11).unwrap();
         match result {
-            crate::server::transport::protocol::ResponseValue::PassageCompositionResult { layers } => {
-                assert_eq!(layers.len(), 1, "only the initial addition, no change after");
+            crate::server::transport::protocol::ResponseValue::PassageCompositionResult {
+                layers,
+            } => {
+                assert_eq!(
+                    layers.len(),
+                    1,
+                    "only the initial addition, no change after"
+                );
                 assert_eq!(layers[0].text, "Hello world");
                 assert_eq!(layers[0].operation, "added");
             }
@@ -13943,7 +14127,9 @@ mod tests {
 
         let result = server.passage_composition(work_id, 0, 6).unwrap();
         match result {
-            crate::server::transport::protocol::ResponseValue::PassageCompositionResult { layers } => {
+            crate::server::transport::protocol::ResponseValue::PassageCompositionResult {
+                layers,
+            } => {
                 assert_eq!(layers.len(), 2);
                 assert_eq!(layers[0].text, "Hello ");
                 assert_eq!(layers[0].operation, "added");
@@ -13968,9 +14154,7 @@ mod tests {
         let club = server
             .create_club(sid, Edition::from_text("test club"))
             .unwrap();
-        server
-            .club_set_password(sid, club, b"test-pass1")
-            .unwrap();
+        server.club_set_password(sid, club, b"test-pass1").unwrap();
         let lock = server.login(sid, club).unwrap();
         server
             .authenticate(
@@ -14065,12 +14249,8 @@ mod tests {
             server.init_data_dir(&data_dir, None).unwrap();
             let sid = server.connect();
             server.login_public(sid).unwrap();
-            let club = server
-                .create_club(sid, Edition::from_text("club"))
-                .unwrap();
-            server
-                .club_set_password(sid, club, b"test-pass1")
-                .unwrap();
+            let club = server.create_club(sid, Edition::from_text("club")).unwrap();
+            server.club_set_password(sid, club, b"test-pass1").unwrap();
             let lock = server.login(sid, club).unwrap();
             server
                 .authenticate(
@@ -14098,7 +14278,10 @@ mod tests {
             let hex: String = ann_hash.iter().map(|b| format!("{:02x}", b)).collect();
             let chunk_dir = data_dir.join("chunks");
             let chunk_path = chunk_dir.join(&hex[..2]).join(format!("{}.xchunk", hex));
-            assert!(chunk_path.exists(), "annotation chunk must exist after checkpoint");
+            assert!(
+                chunk_path.exists(),
+                "annotation chunk must exist after checkpoint"
+            );
         }
 
         {

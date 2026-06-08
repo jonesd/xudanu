@@ -492,7 +492,12 @@ async fn json_club_operations() {
     .await;
     assert_eq!(resp["value"]["value"], "editors");
 
-    let resp = send_recv_json(&mut s, &mut r, json_req(14, "club_names", Some(serde_json::json!({})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(14, "club_names", Some(serde_json::json!({}))),
+    )
+    .await;
     assert!(resp["value"]["value"]["entries"].as_array().unwrap().len() >= 4);
 }
 
@@ -2270,9 +2275,17 @@ async fn revision_history_preserves_all_edits() {
 async fn work_list_empty() {
     let srv = TestServer::start().await;
     let (mut s, mut r, _) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s, &mut r, json_req(50, "work_list", Some(serde_json::json!({})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(50, "work_list", Some(serde_json::json!({}))),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
-    assert!(resp["value"]["value"]["entries"].as_array().unwrap().is_empty());
+    assert!(resp["value"]["value"]["entries"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[tokio::test]
@@ -2301,7 +2314,12 @@ async fn work_list_after_create() {
     )
     .await;
 
-    let resp = send_recv_json(&mut s, &mut r, json_req(50, "work_list", Some(serde_json::json!({})))).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(50, "work_list", Some(serde_json::json!({}))),
+    )
+    .await;
     let entries = resp["value"]["value"]["entries"].as_array().unwrap();
     assert_eq!(entries.len(), 2);
     assert!(entries[0]["work_id"].as_u64().unwrap() > 0);
@@ -5057,7 +5075,12 @@ async fn federation_content_replication_between_two_servers() {
     )
     .await;
 
-    let resp = send_recv_json(&mut s_b, &mut r_b, json_req(10, "work_list", Some(serde_json::json!({})))).await;
+    let resp = send_recv_json(
+        &mut s_b,
+        &mut r_b,
+        json_req(10, "work_list", Some(serde_json::json!({}))),
+    )
+    .await;
     assert_eq!(resp["type"], "response");
     let initial_b_count = resp["value"]["value"]["entries"].as_array().unwrap().len();
 
@@ -5142,7 +5165,12 @@ async fn federation_content_replication_between_two_servers() {
             .with_server(|srv| srv.federation_import_works(&push, &my_id));
         assert!(imported >= 1);
 
-        let resp = send_recv_json(&mut s_b, &mut r_b, json_req(11, "work_list", Some(serde_json::json!({})))).await;
+        let resp = send_recv_json(
+            &mut s_b,
+            &mut r_b,
+            json_req(11, "work_list", Some(serde_json::json!({}))),
+        )
+        .await;
         assert_eq!(resp["type"], "response");
         let after_b_count = resp["value"]["value"]["entries"].as_array().unwrap().len();
         assert!(
@@ -7815,7 +7843,12 @@ async fn work_list_filters_private_from_other_session() {
     .await;
 
     let (mut s2, mut r2, _sid2) = json_setup(&srv).await;
-    let resp = send_recv_json(&mut s2, &mut r2, json_req(50, "work_list", Some(serde_json::json!({})))).await;
+    let resp = send_recv_json(
+        &mut s2,
+        &mut r2,
+        json_req(50, "work_list", Some(serde_json::json!({}))),
+    )
+    .await;
     let entries = resp["value"]["value"]["entries"].as_array().unwrap();
     let visible_ids: Vec<u64> = entries
         .iter()
@@ -9365,10 +9398,7 @@ async fn backlinks_empty_for_new_work() {
     )
     .await;
     assert_eq!(resp["type"], "response");
-    assert_eq!(
-        resp["value"]["type"],
-        "work_backlinks_result"
-    );
+    assert_eq!(resp["value"]["type"], "work_backlinks_result");
     let entries = resp["value"]["value"].as_array().unwrap();
     assert!(entries.is_empty());
 }
@@ -9458,7 +9488,11 @@ async fn annotation_create_and_get() {
     send_recv_json(
         &mut s,
         &mut r,
-        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id}))),
+        json_req(
+            11,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
     )
     .await;
 
@@ -9520,7 +9554,11 @@ async fn annotation_delete() {
     send_recv_json(
         &mut s,
         &mut r,
-        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id}))),
+        json_req(
+            11,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
     )
     .await;
 
@@ -9559,7 +9597,11 @@ async fn annotation_delete() {
     send_recv_json(
         &mut s,
         &mut r,
-        json_req(22, "work_release", Some(serde_json::json!({"work_id": work_id}))),
+        json_req(
+            22,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
     )
     .await;
 
@@ -9600,7 +9642,11 @@ async fn annotation_list() {
     send_recv_json(
         &mut s,
         &mut r,
-        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id}))),
+        json_req(
+            11,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
     )
     .await;
 
@@ -9638,7 +9684,11 @@ async fn annotation_list() {
     send_recv_json(
         &mut s,
         &mut r,
-        json_req(22, "work_release", Some(serde_json::json!({"work_id": work_id}))),
+        json_req(
+            22,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
     )
     .await;
 
@@ -9678,7 +9728,11 @@ async fn annotation_attach_node_and_span() {
     send_recv_json(
         &mut s,
         &mut r,
-        json_req(11, "work_grab", Some(serde_json::json!({"work_id": work_id}))),
+        json_req(
+            11,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
     )
     .await;
 
@@ -9735,7 +9789,11 @@ async fn annotation_attach_node_and_span() {
     send_recv_json(
         &mut s,
         &mut r,
-        json_req(23, "work_release", Some(serde_json::json!({"work_id": work_id}))),
+        json_req(
+            23,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
     )
     .await;
 
@@ -9841,11 +9899,7 @@ async fn paginated_club_names_with_limit() {
     let resp = send_recv_json(
         &mut s,
         &mut r,
-        json_req(
-            50,
-            "club_names",
-            Some(serde_json::json!({"limit": 1})),
-        ),
+        json_req(50, "club_names", Some(serde_json::json!({"limit": 1}))),
     )
     .await;
     assert_eq!(resp["type"], "response");
@@ -9863,7 +9917,11 @@ async fn paginated_link_list_for_work() {
     let work_a = send_recv_json(
         &mut s,
         &mut r,
-        json_req(10, "work_create", Some(serde_json::json!({"edition": {"text": "a"}}))),
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "a"}})),
+        ),
     )
     .await["value"]["value"]
         .as_u64()
@@ -9871,7 +9929,11 @@ async fn paginated_link_list_for_work() {
     let work_b = send_recv_json(
         &mut s,
         &mut r,
-        json_req(11, "work_create", Some(serde_json::json!({"edition": {"text": "b"}}))),
+        json_req(
+            11,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "b"}})),
+        ),
     )
     .await["value"]["value"]
         .as_u64()
@@ -9879,7 +9941,11 @@ async fn paginated_link_list_for_work() {
     let work_c = send_recv_json(
         &mut s,
         &mut r,
-        json_req(12, "work_create", Some(serde_json::json!({"edition": {"text": "c"}}))),
+        json_req(
+            12,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "c"}})),
+        ),
     )
     .await["value"]["value"]
         .as_u64()
@@ -9888,21 +9954,32 @@ async fn paginated_link_list_for_work() {
     send_recv_json(
         &mut s,
         &mut r,
-        json_req(20, "link_create", Some(serde_json::json!({"origin": work_a, "destination": work_b}))),
+        json_req(
+            20,
+            "link_create",
+            Some(serde_json::json!({"origin": work_a, "destination": work_b})),
+        ),
     )
     .await;
     send_recv_json(
         &mut s,
         &mut r,
-        json_req(21, "link_create", Some(serde_json::json!({"origin": work_a, "destination": work_c}))),
+        json_req(
+            21,
+            "link_create",
+            Some(serde_json::json!({"origin": work_a, "destination": work_c})),
+        ),
     )
     .await;
 
     let resp = send_recv_json(
         &mut s,
         &mut r,
-        json_req(30, "link_list_for_work",
-            Some(serde_json::json!({"work_id": work_a, "offset": 0, "limit": 1}))),
+        json_req(
+            30,
+            "link_list_for_work",
+            Some(serde_json::json!({"work_id": work_a, "offset": 0, "limit": 1})),
+        ),
     )
     .await;
     assert_eq!(resp["type"], "response");
@@ -9977,12 +10054,8 @@ async fn historical_author_register_and_list() {
     assert_eq!(austen["type"], "response");
     let aus_id = austen["value"]["value"]["be_id"].as_u64().unwrap();
 
-    let list_resp = send_recv_json(
-        &mut s,
-        &mut r,
-        json_req(20, "historical_author_list", None),
-    )
-    .await;
+    let list_resp =
+        send_recv_json(&mut s, &mut r, json_req(20, "historical_author_list", None)).await;
     assert_eq!(list_resp["type"], "response");
     let authors = list_resp["value"]["value"]["authors"].as_array().unwrap();
     assert_eq!(authors.len(), 3);
@@ -10016,8 +10089,14 @@ async fn historical_author_register_and_list() {
     )
     .await;
     assert_eq!(get_resp["type"], "response");
-    assert_eq!(get_resp["value"]["value"]["name"].as_str().unwrap(), "Austen");
-    assert_eq!(get_resp["value"]["value"]["birth_year"].as_i64().unwrap(), 1775);
+    assert_eq!(
+        get_resp["value"]["value"]["name"].as_str().unwrap(),
+        "Austen"
+    );
+    assert_eq!(
+        get_resp["value"]["value"]["birth_year"].as_i64().unwrap(),
+        1775
+    );
 
     let _ = (vit_id, mel_id, aus_id);
 }
