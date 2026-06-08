@@ -1183,6 +1183,8 @@ pub enum WireRequest {
         annotation_id: u64,
         kind: String,
         payload: String,
+        char_start: usize,
+        char_end: usize,
     },
     AnnotationDelete {
         work_id: BeId,
@@ -2143,9 +2145,13 @@ pub struct AnnotationPayload {
     pub kind: String,
     pub payload: String,
     #[serde(default)]
-    pub attached_nodes: Vec<u64>,
+    pub char_start: usize,
     #[serde(default)]
-    pub attached_spans: Vec<u64>,
+    pub char_end: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

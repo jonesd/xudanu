@@ -204,8 +204,10 @@ export interface AnnotationEntry {
   annotation_id: number;
   kind: string;
   payload: string;
-  attached_nodes: number[];
-  attached_spans: number[];
+  char_start: number;
+  char_end: number;
+  created_by: number | null;
+  created_by_name: string | null;
 }
 
 export interface TransclusionMarker {
@@ -910,9 +912,11 @@ export class CrdtSyncClient {
     try {
       const resp = await this.sendRequest("session_connect");
       this.sessionId = extractValue(resp) as number;
-      await this.sendRequest("session_login_public");
 
-      this.checkWhoAmI();
+      const who = await this.checkWhoAmI();
+      if (!who) {
+        await this.sendRequest("session_login_public");
+      }
 
       await this.checkSourceWork();
       await this.tryOpenWork();
@@ -1169,12 +1173,14 @@ export class CrdtSyncClient {
     return (rec.work_ids as number[]) || [];
   }
 
-  async annotationCreate(workId: number, annotationId: number, kind: string, payload: string): Promise<void> {
+  async annotationCreate(workId: number, annotationId: number, kind: string, payload: string, charStart: number, charEnd: number): Promise<void> {
     await this.sendRequest("annotation_create", {
       work_id: workId,
       annotation_id: annotationId,
       kind,
       payload,
+      char_start: charStart,
+      char_end: charEnd,
     });
   }
 

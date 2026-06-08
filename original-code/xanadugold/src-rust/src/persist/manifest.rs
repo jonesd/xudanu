@@ -173,6 +173,8 @@ pub struct Manifest {
     /// old manifests. New checkpoints use `historical_authors_hash` instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub historical_authors: Option<crate::server::historical_author::HistoricalAuthorRegistry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations_hash: Option<[u8; 32]>,
 }
 
 #[derive(Debug)]
@@ -466,6 +468,7 @@ pub fn create_empty_manifest(
         key_history: None,
         historical_authors_hash: None,
         historical_authors: None,
+        annotations_hash: None,
     }
 }
 

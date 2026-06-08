@@ -73,15 +73,10 @@ fn dispatch_narration(
         };
 
         let base_text = if srv.crdt_is_active(work_id) {
-            if srv.use_otree_crdt {
-                srv.otree_crdt
-                    .narration_snapshot(work_id)
-                    .map_err(|e| crate::server::ServerError::Internal(e.to_string()))?
-                    .unwrap_or_default()
-            } else {
-                let edition = srv.work_edition(work_id)?;
-                edition_to_text(&edition)
-            }
+            srv.otree_crdt
+                .narration_snapshot(work_id)
+                .map_err(|e| crate::server::ServerError::Internal(e.to_string()))?
+                .unwrap_or_default()
         } else {
             String::new()
         };
@@ -128,7 +123,7 @@ fn dispatch_narration(
     );
 
     state.server.with_server(|srv| {
-        if srv.crdt_is_active(work_id) && srv.use_otree_crdt {
+        if srv.crdt_is_active(work_id) {
             let _ = srv.otree_crdt.set_narration_snapshot(work_id);
             let triggerer_club = srv
                 .otree_crdt
@@ -2203,8 +2198,10 @@ fn dispatch_inner(
             annotation_id,
             kind,
             payload,
+            char_start,
+            char_end,
         } => {
-            srv.annotation_create(session_id, work_id, annotation_id, kind, payload)?;
+            srv.annotation_create(session_id, work_id, annotation_id, kind, payload, char_start, char_end)?;
             Ok(ResponseValue::Id(annotation_id))
         }
         WireRequest::AnnotationDelete {

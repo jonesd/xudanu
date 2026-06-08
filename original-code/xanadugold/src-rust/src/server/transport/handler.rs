@@ -10,7 +10,7 @@ use axum::{
         ConnectInfo, Query, State,
     },
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -41,6 +41,8 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/blobs/{hash}/preview", get(blob_preview_handler))
         .route("/health", get(health_handler))
         .route("/csrf-token", get(csrf_token_handler))
+        .route("/auth/login", post(auth_login_handler))
+        .route("/auth/logout", post(auth_logout_handler))
         .route("/auth/github", get(super::oauth::github_redirect_handler))
         .route("/auth/github/callback", get(super::oauth::github_callback_handler))
         .route("/auth/google", get(super::oauth::google_redirect_handler))
@@ -117,6 +119,88 @@ async fn csrf_token_handler(State(state): State<SharedState>) -> impl IntoRespon
             ),
         ],
         serde_json::to_string(&body).unwrap_or_default(),
+    )
+        .into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct LoginRequest {
+    club_name: String,
+    password: String,
+}
+
+async fn auth_login_handler(
+    State(state): State<SharedState>,
+    axum::Json(body): axum::Json<LoginRequest>,
+) -> impl IntoResponse {
+    let result: Option<(u64, String, Option<Vec<u8>>)> = state.server.with_server(|srv| {
+        let sid = srv.connect();
+        let auth_result = (|| -> Option<(u64, String, Option<Vec<u8>>)> {
+            srv.login_public(sid).ok()?;
+            let club_id = srv.club_id_by_name(&body.club_name)?;
+            srv.login(sid, club_id).ok()?;
+            use crate::server::lock::LockCredential;
+            srv.authenticate_with_pending(sid, &LockCredential::Password(body.password.as_bytes().to_vec())).ok()?;
+            let display_name = srv.club_name_by_id(club_id)?.to_string();
+            let signing_key_bytes = srv.session_signing_key_bytes(sid);
+            Some((club_id, display_name, signing_key_bytes))
+        })();
+        let _ = srv.disconnect(sid);
+        auth_result
+    });
+
+    let (club_id, display_name, signing_key_bytes) = match result {
+        Some(v) => v,
+        None => {
+            return (
+                axum::http::StatusCode::UNAUTHORIZED,
+                [("content-type", "application/json")],
+                r#"{"error":"invalid credentials"}"#,
+            )
+                .into_response();
+        }
+    };
+
+    let session_token = state.oauth_state.create_session(
+        "password".to_string(),
+        club_id.to_string(),
+        club_id,
+        display_name,
+        signing_key_bytes,
+    );
+
+    let cookie = format!(
+        "xudanu_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000",
+        session_token
+    );
+
+    (
+        axum::http::StatusCode::OK,
+        [
+            (axum::http::header::SET_COOKIE, cookie),
+            (axum::http::header::CONTENT_TYPE, "application/json".to_string()),
+        ],
+        format!(r#"{{"ok":true,"club_id":{}}}"#, club_id),
+    )
+        .into_response()
+}
+
+async fn auth_logout_handler(
+    State(state): State<SharedState>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    if let Some(cookie_header) = headers.get(axum::http::header::COOKIE) {
+        if let Ok(cookies) = cookie_header.to_str() {
+            if let Some(token) = cookies.split(';').find_map(|c| c.trim().strip_prefix("xudanu_session=")) {
+                state.oauth_state.destroy_session(token);
+            }
+        }
+    }
+    let cookie = "xudanu_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0";
+    (
+        axum::http::StatusCode::OK,
+        [(axum::http::header::SET_COOKIE, cookie.to_string())],
+        r#"{"ok":true}"#,
     )
         .into_response()
 }
@@ -341,7 +425,7 @@ async fn handle_socket(
     format: String,
     remote_addr: Option<SocketAddr>,
     client_version: u8,
-    oauth_club: Option<(u64, String)>,
+    oauth_club: Option<(u64, String, Option<Vec<u8>>)>,
 ) {
     let is_text = format == "json";
     let codec: Box<dyn WireCodec> = if is_text {
@@ -395,9 +479,9 @@ async fn handle_socket(
 
     let session_id = state.server.with_server(|srv| srv.connect());
 
-    if let Some((club_id, _display_name)) = oauth_club {
+    if let Some((club_id, _display_name, signing_key_bytes)) = oauth_club {
         state.server.with_server(|srv| {
-            if let Err(e) = srv.authenticate_session_from_oauth(session_id, club_id) {
+            if let Err(e) = srv.authenticate_session_from_oauth(session_id, club_id, signing_key_bytes) {
                 tracing::warn!(
                     target: "xudanu::security",
                     club_id = club_id,

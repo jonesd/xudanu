@@ -1687,6 +1687,10 @@ impl JsonCodec {
                     annotation_id: u64,
                     kind: String,
                     payload: String,
+                    #[serde(default)]
+                    char_start: usize,
+                    #[serde(default)]
+                    char_end: usize,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
@@ -1695,6 +1699,8 @@ impl JsonCodec {
                     annotation_id: args.annotation_id,
                     kind: args.kind,
                     payload: args.payload,
+                    char_start: args.char_start,
+                    char_end: args.char_end,
                 })
             }
             OperationCode::AnnotationDelete => {

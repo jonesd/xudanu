@@ -97,7 +97,6 @@ export function useTransclusion(): TransclusionState {
           const excerpt = localRef?.excerpt || remoteRef?.excerpt || "";
           if (excerpt.length >= 3) {
             const positions = await client.findExcerptPositions(workId, excerpt);
-            console.log(`[loadLinks] link ${link.link_id} excerpt="${excerpt.substring(0, 40)}..." positions=${JSON.stringify(positions)}`);
             const chain = localRef?.provenance_chain || remoteRef?.provenance_chain;
             for (const pos of positions) {
               newMarkers.push({
