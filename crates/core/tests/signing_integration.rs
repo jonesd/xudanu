@@ -14,12 +14,10 @@ fn test_sign_and_verify_roundtrip() {
     let (alice_signer, alice_site, alice_author) = make_signed_user("Alice");
     let (bob_signer, bob_site, bob_author) = make_signed_user("Bob");
 
-    let mut doc_a =
-        SignedDocument::new([0u8; 32], alice_signer, alice_site);
+    let mut doc_a = SignedDocument::new([0u8; 32], alice_signer, alice_site);
     doc_a.register_author(&bob_author);
 
-    let mut doc_b =
-        SignedDocument::new([0u8; 32], bob_signer, bob_site);
+    let mut doc_b = SignedDocument::new([0u8; 32], bob_signer, bob_site);
     doc_b.register_author(&alice_author);
 
     doc_a.insert(0, "Hello ");
@@ -36,10 +34,8 @@ fn test_reject_tampered_change() {
     let (alice_signer, alice_site, alice_author) = make_signed_user("Alice");
     let (bob_signer, bob_site, bob_author) = make_signed_user("Bob");
 
-    let mut doc_a =
-        SignedDocument::new([0u8; 32], alice_signer, alice_site);
-    let mut doc_b =
-        SignedDocument::new([0u8; 32], bob_signer, bob_site);
+    let mut doc_a = SignedDocument::new([0u8; 32], alice_signer, alice_site);
+    let mut doc_b = SignedDocument::new([0u8; 32], bob_signer, bob_site);
     doc_b.register_author(&alice_author);
 
     doc_a.insert(0, "Hello ");
@@ -49,7 +45,10 @@ fn test_reject_tampered_change() {
     signed.change.update_bytes.push(0xFF);
 
     let result = doc_b.integrate_signed_change(&signed);
-    assert!(matches!(result, Err(VerificationError::InvalidSignature(_))));
+    assert!(matches!(
+        result,
+        Err(VerificationError::InvalidSignature(_))
+    ));
     assert_eq!(doc_b.to_string(), "");
 }
 
@@ -58,10 +57,8 @@ fn test_reject_unsigned_change() {
     let (alice_signer, alice_site, alice_author) = make_signed_user("Alice");
     let (bob_signer, bob_site, bob_author) = make_signed_user("Bob");
 
-    let mut doc_a =
-        SignedDocument::new([0u8; 32], alice_signer, alice_site);
-    let mut doc_b =
-        SignedDocument::new([0u8; 32], bob_signer, bob_site);
+    let mut doc_a = SignedDocument::new([0u8; 32], alice_signer, alice_site);
+    let mut doc_b = SignedDocument::new([0u8; 32], bob_signer, bob_site);
     doc_b.register_author(&alice_author);
 
     doc_a.insert(0, "Hello ");
@@ -69,7 +66,10 @@ fn test_reject_unsigned_change() {
     signed.change.signature = None;
 
     let result = doc_b.integrate_signed_change(&signed);
-    assert!(matches!(result, Err(VerificationError::MissingSignature(_))));
+    assert!(matches!(
+        result,
+        Err(VerificationError::MissingSignature(_))
+    ));
 }
 
 #[test]
@@ -77,10 +77,8 @@ fn test_reject_unknown_author() {
     let (alice_signer, alice_site, alice_author) = make_signed_user("Alice");
     let (bob_signer, bob_site, bob_author) = make_signed_user("Bob");
 
-    let mut doc_a =
-        SignedDocument::new([0u8; 32], alice_signer, alice_site);
-    let mut doc_b =
-        SignedDocument::new([0u8; 32], bob_signer, bob_site);
+    let mut doc_a = SignedDocument::new([0u8; 32], alice_signer, alice_site);
+    let mut doc_b = SignedDocument::new([0u8; 32], bob_signer, bob_site);
     // Bob does NOT register Alice's key
 
     doc_a.insert(0, "Hello ");
@@ -95,12 +93,10 @@ fn test_signed_two_way_convergence() {
     let (alice_signer, alice_site, alice_author) = make_signed_user("Alice");
     let (bob_signer, bob_site, bob_author) = make_signed_user("Bob");
 
-    let mut doc_a =
-        SignedDocument::new([0u8; 32], alice_signer, alice_site);
+    let mut doc_a = SignedDocument::new([0u8; 32], alice_signer, alice_site);
     doc_a.register_author(&bob_author);
 
-    let mut doc_b =
-        SignedDocument::new([0u8; 32], bob_signer, bob_site);
+    let mut doc_b = SignedDocument::new([0u8; 32], bob_signer, bob_site);
     doc_b.register_author(&alice_author);
 
     doc_a.insert(0, "Hello ");
@@ -120,12 +116,10 @@ fn test_signed_attribution_works() {
     let (alice_signer, alice_site, alice_author) = make_signed_user("Alice");
     let (bob_signer, bob_site, bob_author) = make_signed_user("Bob");
 
-    let mut doc_a =
-        SignedDocument::new([0u8; 32], alice_signer, alice_site);
+    let mut doc_a = SignedDocument::new([0u8; 32], alice_signer, alice_site);
     doc_a.register_author(&bob_author);
 
-    let mut doc_b =
-        SignedDocument::new([0u8; 32], bob_signer, bob_site);
+    let mut doc_b = SignedDocument::new([0u8; 32], bob_signer, bob_site);
     doc_b.register_author(&alice_author);
 
     doc_a.insert(0, "Hello ");
@@ -138,7 +132,10 @@ fn test_signed_attribution_works() {
 
     let items: Vec<_> = doc_a.iter_visible().collect();
     assert_eq!(items.len(), 2, "Should have 2 items from different authors");
-    assert_ne!(items[0].2, items[1].2, "Items should have different authors");
+    assert_ne!(
+        items[0].2, items[1].2,
+        "Items should have different authors"
+    );
 }
 
 #[test]
@@ -147,10 +144,8 @@ fn test_reject_forged_signature() {
     let (eve_signer, _, _eve_author) = make_signed_user("Eve");
     let (bob_signer, bob_site, _bob_author) = make_signed_user("Bob");
 
-    let mut doc_a =
-        SignedDocument::new([0u8; 32], alice_signer, alice_site);
-    let mut doc_b =
-        SignedDocument::new([0u8; 32], bob_signer, bob_site);
+    let mut doc_a = SignedDocument::new([0u8; 32], alice_signer, alice_site);
+    let mut doc_b = SignedDocument::new([0u8; 32], bob_signer, bob_site);
 
     // Bob has Alice's REAL public key
     doc_b.register_author(&alice_author);

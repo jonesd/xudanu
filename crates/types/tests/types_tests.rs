@@ -111,9 +111,21 @@ fn test_timestamp_now() {
 
 #[test]
 fn test_timestamp_ordering() {
-    let ts1 = HybridTimestamp { lamport: 1, wall_secs: 100, wall_nanos: 0 };
-    let ts2 = HybridTimestamp { lamport: 2, wall_secs: 100, wall_nanos: 0 };
-    let ts3 = HybridTimestamp { lamport: 1, wall_secs: 200, wall_nanos: 0 };
+    let ts1 = HybridTimestamp {
+        lamport: 1,
+        wall_secs: 100,
+        wall_nanos: 0,
+    };
+    let ts2 = HybridTimestamp {
+        lamport: 2,
+        wall_secs: 100,
+        wall_nanos: 0,
+    };
+    let ts3 = HybridTimestamp {
+        lamport: 1,
+        wall_secs: 200,
+        wall_nanos: 0,
+    };
 
     assert!(ts1 < ts2);
     assert!(ts1 < ts3);
@@ -122,8 +134,16 @@ fn test_timestamp_ordering() {
 
 #[test]
 fn test_timestamp_merge() {
-    let ts1 = HybridTimestamp { lamport: 5, wall_secs: 100, wall_nanos: 0 };
-    let ts2 = HybridTimestamp { lamport: 3, wall_secs: 200, wall_nanos: 0 };
+    let ts1 = HybridTimestamp {
+        lamport: 5,
+        wall_secs: 100,
+        wall_nanos: 0,
+    };
+    let ts2 = HybridTimestamp {
+        lamport: 3,
+        wall_secs: 200,
+        wall_nanos: 0,
+    };
     let merged = ts1.merge(&ts2);
 
     assert!(merged.lamport > ts1.lamport);
@@ -137,7 +157,11 @@ fn test_timestamp_merge() {
 fn test_change_hash_deterministic() {
     let site = make_site(1);
     let author: AuthorId = [1u8; 32];
-    let ts = HybridTimestamp { lamport: 1, wall_secs: 0, wall_nanos: 0 };
+    let ts = HybridTimestamp {
+        lamport: 1,
+        wall_secs: 0,
+        wall_nanos: 0,
+    };
 
     let change1 = Change::unsigned(author, site, vec![], vec![], ts, 1);
     let change2 = Change::unsigned(author, site, vec![], vec![], ts, 1);
@@ -149,7 +173,11 @@ fn test_change_hash_deterministic() {
 fn test_change_hash_differs_for_different_ops() {
     let site = make_site(1);
     let author: AuthorId = [1u8; 32];
-    let ts = HybridTimestamp { lamport: 1, wall_secs: 0, wall_nanos: 0 };
+    let ts = HybridTimestamp {
+        lamport: 1,
+        wall_secs: 0,
+        wall_nanos: 0,
+    };
 
     let op1 = Op::Insert {
         id: ItemId::new(site, 1),
@@ -169,7 +197,10 @@ fn test_change_hash_differs_for_different_ops() {
     let change1 = Change::unsigned(author, site, vec![], vec![op1], ts, 1);
     let change2 = Change::unsigned(author, site, vec![], vec![op2], ts, 1);
 
-    assert_ne!(change1.id, change2.id, "Different ops must produce different hashes");
+    assert_ne!(
+        change1.id, change2.id,
+        "Different ops must produce different hashes"
+    );
 }
 
 // ── Change signing payload ──
@@ -178,7 +209,11 @@ fn test_change_hash_differs_for_different_ops() {
 fn test_signing_payload_deterministic() {
     let site = make_site(1);
     let author: AuthorId = [1u8; 32];
-    let ts = HybridTimestamp { lamport: 1, wall_secs: 0, wall_nanos: 0 };
+    let ts = HybridTimestamp {
+        lamport: 1,
+        wall_secs: 0,
+        wall_nanos: 0,
+    };
 
     let change1 = Change::unsigned(author, site, vec![], vec![], ts, 1);
     let change2 = Change::unsigned(author, site, vec![], vec![], ts, 1);
@@ -224,7 +259,11 @@ fn test_span_ref_at_latest() {
 fn test_change_serialization_roundtrip() {
     let site = make_site(1);
     let author: AuthorId = [1u8; 32];
-    let ts = HybridTimestamp { lamport: 1, wall_secs: 0, wall_nanos: 0 };
+    let ts = HybridTimestamp {
+        lamport: 1,
+        wall_secs: 0,
+        wall_nanos: 0,
+    };
 
     let original = Change::unsigned(author, site, vec![], vec![], ts, 1);
     let serialized = bincode::serialize(&original).unwrap();
@@ -277,7 +316,11 @@ fn test_item_content_serialization() {
 
 #[test]
 fn test_hybrid_timestamp_serialization() {
-    let original = HybridTimestamp { lamport: 42, wall_secs: 1700000000, wall_nanos: 12345 };
+    let original = HybridTimestamp {
+        lamport: 42,
+        wall_secs: 1700000000,
+        wall_nanos: 12345,
+    };
     let serialized = bincode::serialize(&original).unwrap();
     let deserialized: HybridTimestamp = bincode::deserialize(&serialized).unwrap();
     assert_eq!(original, deserialized);
@@ -308,13 +351,18 @@ fn test_mark_types() {
         MarkType::Italic,
         MarkType::Underline,
         MarkType::Strikethrough,
-        MarkType::Link { href: "https://example.com".to_string() },
+        MarkType::Link {
+            href: "https://example.com".to_string(),
+        },
         MarkType::Code,
         MarkType::Custom("highlight".to_string()),
     ];
 
     for mark_type in marks {
-        let mark = Mark { mark_type, attributes: Default::default() };
+        let mark = Mark {
+            mark_type,
+            attributes: Default::default(),
+        };
         let serialized = bincode::serialize(&mark).unwrap();
         let deserialized: Mark = bincode::deserialize(&serialized).unwrap();
         assert_eq!(bincode::serialize(&mark).unwrap(), serialized);
@@ -327,7 +375,9 @@ fn test_block_types() {
         BlockType::Paragraph,
         BlockType::Heading { level: 1 },
         BlockType::Heading { level: 3 },
-        BlockType::CodeBlock { language: Some("rust".to_string()) },
+        BlockType::CodeBlock {
+            language: Some("rust".to_string()),
+        },
         BlockType::CodeBlock { language: None },
         BlockType::BlockQuote,
         BlockType::List { ordered: true },

@@ -1538,58 +1538,57 @@ impl Server {
                     .iter()
                     .find_map(|(_, c)| c.provenance.as_ref());
 
-                let (author_name, author_type_str, historical_id) = if let Some(ha_id) =
-                    origin_ws.source_author_id
-                {
-                    let name = self
-                        .historical_authors
-                        .get(ha_id)
-                        .map(|a| {
-                            if a.display_name.is_empty() {
-                                a.name.clone()
-                            } else {
-                                a.display_name.clone()
-                            }
-                        })
-                        .unwrap_or_else(|| "Unknown Historical Author".to_string());
-                    tracing::info!(
+                let (author_name, author_type_str, historical_id) =
+                    if let Some(ha_id) = origin_ws.source_author_id {
+                        let name = self
+                            .historical_authors
+                            .get(ha_id)
+                            .map(|a| {
+                                if a.display_name.is_empty() {
+                                    a.name.clone()
+                                } else {
+                                    a.display_name.clone()
+                                }
+                            })
+                            .unwrap_or_else(|| "Unknown Historical Author".to_string());
+                        tracing::info!(
                         "[attribution_overlay] PA link={:04x} origin={:04x} author_id={} name={}",
                         pa.link_id,
                         pa.origin_work_id,
                         ha_id,
                         name
                     );
-                    (name, "historical".to_string(), Some(ha_id))
-                } else if let Some(ep) = entry_prov {
-                    let name = if ep.author_display_name.is_empty() {
-                        "Unknown".to_string()
+                        (name, "historical".to_string(), Some(ha_id))
+                    } else if let Some(ep) = entry_prov {
+                        let name = if ep.author_display_name.is_empty() {
+                            "Unknown".to_string()
+                        } else {
+                            ep.author_display_name.clone()
+                        };
+                        let at = match ep.author_type {
+                            crate::edition::provenance::AuthorType::Human => "human",
+                            crate::edition::provenance::AuthorType::Llm => "llm",
+                            crate::edition::provenance::AuthorType::Historical => "historical",
+                        };
+                        (name, at.to_string(), ep.historical_author_id)
+                    } else if let Some(club_id) = origin_ws
+                        .work
+                        .current_edition()
+                        .all_entries()
+                        .iter()
+                        .find_map(|(_, c)| c.provenance.as_ref())
+                        .map(|ep| ep.author_club_id)
+                        .or(origin_ws.last_revision_author)
+                    {
+                        let name = self
+                            .clubs
+                            .get(&club_id)
+                            .and_then(|c| c.display_name().map(|s| s.to_string()))
+                            .unwrap_or_else(|| format!("Club {:04x}", club_id));
+                        (name, "human".to_string(), None)
                     } else {
-                        ep.author_display_name.clone()
+                        ("Unknown".to_string(), "human".to_string(), None)
                     };
-                    let at = match ep.author_type {
-                        crate::edition::provenance::AuthorType::Human => "human",
-                        crate::edition::provenance::AuthorType::Llm => "llm",
-                        crate::edition::provenance::AuthorType::Historical => "historical",
-                    };
-                    (name, at.to_string(), ep.historical_author_id)
-                } else if let Some(club_id) = origin_ws
-                    .work
-                    .current_edition()
-                    .all_entries()
-                    .iter()
-                    .find_map(|(_, c)| c.provenance.as_ref())
-                    .map(|ep| ep.author_club_id)
-                    .or(origin_ws.last_revision_author)
-                {
-                    let name = self
-                        .clubs
-                        .get(&club_id)
-                        .and_then(|c| c.display_name().map(|s| s.to_string()))
-                        .unwrap_or_else(|| format!("Club {:04x}", club_id));
-                    (name, "human".to_string(), None)
-                } else {
-                    ("Unknown".to_string(), "human".to_string(), None)
-                };
 
                 let existing: std::collections::HashSet<(i64, i64)> =
                     spans.iter().map(|s| (s.start, s.end)).collect();

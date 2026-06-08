@@ -1,7 +1,7 @@
-use xudanu_sync::protocol::SyncProtocol;
+use xudanu_core::state_vector::StateVector;
 use xudanu_sync::awareness::{Awareness, AwarenessState};
 use xudanu_sync::message;
-use xudanu_core::state_vector::StateVector;
+use xudanu_sync::protocol::SyncProtocol;
 use xudanu_types::*;
 
 fn make_site(id: u8) -> SiteId {
@@ -54,14 +54,7 @@ fn test_changes_message() {
     let author: AuthorId = [1u8; 32];
 
     let mut changes = Vec::new();
-    let change = Change::unsigned(
-        author,
-        site,
-        vec![],
-        vec![],
-        HybridTimestamp::now(1),
-        1,
-    );
+    let change = Change::unsigned(author, site, vec![], vec![], HybridTimestamp::now(1), 1);
     changes.push(change);
 
     let msg = protocol.create_changes_message(changes, site, author);

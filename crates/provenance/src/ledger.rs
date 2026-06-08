@@ -44,13 +44,16 @@ impl RoyaltyLedger {
     }
 
     pub fn add_entry(&mut self, entry: RoyaltyEntry) {
-        let total = self.author_totals.entry(entry.author).or_insert(AuthorTotal {
-            total_bytes: 0,
-            original_bytes: 0,
-            transcluded_bytes: 0,
-            derived_bytes: 0,
-            document_count: 0,
-        });
+        let total = self
+            .author_totals
+            .entry(entry.author)
+            .or_insert(AuthorTotal {
+                total_bytes: 0,
+                original_bytes: 0,
+                transcluded_bytes: 0,
+                derived_bytes: 0,
+                document_count: 0,
+            });
 
         total.total_bytes += entry.byte_count;
         match &entry.source {
@@ -72,11 +75,17 @@ impl RoyaltyLedger {
         if grand_total == 0 {
             return 0.0;
         }
-        self.author_totals.get(author).map(|t| t.total_bytes as f64 / grand_total as f64).unwrap_or(0.0)
+        self.author_totals
+            .get(author)
+            .map(|t| t.total_bytes as f64 / grand_total as f64)
+            .unwrap_or(0.0)
     }
 
     pub fn entries_for_document(&self, doc_id: &DocumentId) -> Vec<&RoyaltyEntry> {
-        self.entries.iter().filter(|e| &e.document_id == doc_id).collect()
+        self.entries
+            .iter()
+            .filter(|e| &e.document_id == doc_id)
+            .collect()
     }
 
     pub fn summary(&self) -> Vec<(AuthorId, f64)> {

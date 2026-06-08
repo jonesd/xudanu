@@ -1,7 +1,7 @@
 use xudanu_core::{Document, StateVector};
-use xudanu_types::*;
-use xudanu_signing::Signer;
 use xudanu_provenance::AttributionEngine;
+use xudanu_signing::Signer;
+use xudanu_types::*;
 
 struct TestUser {
     signer: Signer,
@@ -165,8 +165,11 @@ fn test_concurrent_inserts_converge() {
     doc_a.integrate_change(&change_b);
     doc_b.integrate_change(&change_a);
 
-    assert_eq!(doc_a.to_string(), doc_b.to_string(),
-        "Documents must converge after exchanging concurrent edits");
+    assert_eq!(
+        doc_a.to_string(),
+        doc_b.to_string(),
+        "Documents must converge after exchanging concurrent edits"
+    );
 }
 
 #[test]
@@ -188,7 +191,11 @@ fn test_concurrent_insert_at_same_position() {
 
     let text_a = doc_a.to_string();
     let text_b = doc_b.to_string();
-    assert_eq!(text_a, text_b, "Must converge: A='{}', B='{}'", text_a, text_b);
+    assert_eq!(
+        text_a, text_b,
+        "Must converge: A='{}', B='{}'",
+        text_a, text_b
+    );
 }
 
 #[test]
@@ -282,7 +289,10 @@ fn test_signing_roundtrip() {
     assert!(signed.change.verify_signature(&signer_a.verifying_key()));
 
     let verification = signed.change.verify_signature(&signer_b.verifying_key());
-    assert!(!verification, "Bob should NOT be able to verify Alice's change as his own");
+    assert!(
+        !verification,
+        "Bob should NOT be able to verify Alice's change as his own"
+    );
 }
 
 #[test]
@@ -384,7 +394,9 @@ fn test_stress_many_inserts() {
 
 #[test]
 fn test_stress_concurrent_typing() {
-    let users: Vec<TestUser> = (1..=5).map(|i| TestUser::new(&format!("User{}", i), i)).collect();
+    let users: Vec<TestUser> = (1..=5)
+        .map(|i| TestUser::new(&format!("User{}", i), i))
+        .collect();
     let mut docs: Vec<Document> = users.iter().map(|u| u.make_doc()).collect();
 
     for round in 0..10u8 {
@@ -405,8 +417,10 @@ fn test_stress_concurrent_typing() {
 
     let texts: Vec<String> = docs.iter().map(|d| d.to_string()).collect();
     for i in 1..texts.len() {
-        assert_eq!(texts[0], texts[i],
+        assert_eq!(
+            texts[0], texts[i],
             "All documents must converge after 10 rounds. Doc0='{}', Doc{}='{}'",
-            texts[0], i, texts[i]);
+            texts[0], i, texts[i]
+        );
     }
 }

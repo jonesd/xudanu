@@ -15,14 +15,24 @@ impl Signer {
         let signing_key = SigningKey::generate(&mut csprng);
         let verifying_key = signing_key.verifying_key();
         let author = Author::new(&verifying_key, display_name, 0);
-        Self { signing_key, author }
+        Self {
+            signing_key,
+            author,
+        }
     }
 
-    pub fn from_bytes(bytes: &[u8; 32], display_name: String, device_id: u64) -> Result<Self, ed25519_dalek::SignatureError> {
+    pub fn from_bytes(
+        bytes: &[u8; 32],
+        display_name: String,
+        device_id: u64,
+    ) -> Result<Self, ed25519_dalek::SignatureError> {
         let signing_key = SigningKey::from_bytes(bytes);
         let verifying_key = signing_key.verifying_key();
         let author = Author::new(&verifying_key, display_name, device_id);
-        Ok(Self { signing_key, author })
+        Ok(Self {
+            signing_key,
+            author,
+        })
     }
 
     pub fn author(&self) -> &Author {
@@ -66,7 +76,11 @@ impl StoredKey {
     }
 
     pub fn load(&self) -> Result<Signer, ed25519_dalek::SignatureError> {
-        Signer::from_bytes(&self.private_key_bytes, self.display_name.clone(), self.device_id)
+        Signer::from_bytes(
+            &self.private_key_bytes,
+            self.display_name.clone(),
+            self.device_id,
+        )
     }
 
     pub fn serialize(&self) -> Vec<u8> {

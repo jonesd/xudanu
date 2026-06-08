@@ -10,7 +10,11 @@ pub struct Author {
 }
 
 impl Author {
-    pub fn new(public_key: &ed25519_dalek::VerifyingKey, display_name: String, device_id: u64) -> Self {
+    pub fn new(
+        public_key: &ed25519_dalek::VerifyingKey,
+        display_name: String,
+        device_id: u64,
+    ) -> Self {
         Self {
             public_key_bytes: public_key.to_bytes(),
             display_name,
@@ -18,7 +22,9 @@ impl Author {
         }
     }
 
-    pub fn verifying_key(&self) -> Result<ed25519_dalek::VerifyingKey, ed25519_dalek::SignatureError> {
+    pub fn verifying_key(
+        &self,
+    ) -> Result<ed25519_dalek::VerifyingKey, ed25519_dalek::SignatureError> {
         ed25519_dalek::VerifyingKey::from_bytes(&self.public_key_bytes)
     }
 
@@ -39,7 +45,7 @@ impl Author {
     }
 
     pub fn fingerprint(&self) -> String {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(&self.public_key_bytes);
         let hash = hasher.finalize();

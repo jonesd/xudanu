@@ -54,9 +54,10 @@ impl SyncProtocol {
         self.remote_state_vectors.insert(msg.sender_site, remote_sv);
 
         SyncMessage {
-            message_type: SyncMessageType::StateVector(
-                StateVectorMessage::from_state_vector(&self.local_state_vector, &[]),
-            ),
+            message_type: SyncMessageType::StateVector(StateVectorMessage::from_state_vector(
+                &self.local_state_vector,
+                &[],
+            )),
             sender_site: msg.sender_site,
             sender_author: msg.sender_author,
         }
@@ -78,13 +79,11 @@ impl SyncProtocol {
         for change in changes {
             if !self.local_state_vector.knows(&change.site, change.lamport) {
                 if verify_fn(change) {
-                    self.local_state_vector.merge(
-                        &{
-                            let mut sv = StateVector::new();
-                            sv.set(change.site, change.lamport);
-                            sv
-                        },
-                    );
+                    self.local_state_vector.merge(&{
+                        let mut sv = StateVector::new();
+                        sv.set(change.site, change.lamport);
+                        sv
+                    });
                     accepted.push(change.clone());
                 }
             }
@@ -116,7 +115,11 @@ impl SyncProtocol {
         SyncMessage {
             message_type: SyncMessageType::Ack(AckMessage {
                 acknowledged_hashes: Vec::new(),
-                current_state_vector: self.local_state_vector.iter().map(|(s, &c)| (*s, c)).collect(),
+                current_state_vector: self
+                    .local_state_vector
+                    .iter()
+                    .map(|(s, &c)| (*s, c))
+                    .collect(),
             }),
             sender_site: site,
             sender_author: author,

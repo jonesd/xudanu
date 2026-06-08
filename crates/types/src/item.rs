@@ -34,10 +34,7 @@ pub enum BlockType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ItemContent {
-    Text {
-        text: String,
-        marks: Vec<Mark>,
-    },
+    Text { text: String, marks: Vec<Mark> },
     BlockStart(BlockType),
     BlockEnd,
     Transclusion(SpanRef),
