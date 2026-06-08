@@ -110,6 +110,7 @@ export function SourceTextViewer({ workId, clientRef, connected, fontSize = DEFA
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    setReady(false);
     const check = () => {
       const client = clientRef.current;
       if (client && client.isConnected()) {
@@ -119,7 +120,7 @@ export function SourceTextViewer({ workId, clientRef, connected, fontSize = DEFA
     check();
     const id = setInterval(check, 200);
     return () => clearInterval(id);
-  }, [clientRef, ready]);
+  }, [clientRef, workId]);
 
   useEffect(() => {
     if (!ready || !clientRef.current) return;
@@ -162,31 +163,45 @@ export function SourceTextViewer({ workId, clientRef, connected, fontSize = DEFA
       const lh = lineHRef.current;
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        container.scrollTop += lh;
+        container.scrollBy({ top: lh, behavior: "smooth" });
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        container.scrollTop -= lh;
+        container.scrollBy({ top: -lh, behavior: "smooth" });
       } else if (e.key === "PageDown") {
         e.preventDefault();
-        container.scrollTop += container.clientHeight * 0.9;
+        container.scrollBy({ top: container.clientHeight * 0.9, behavior: "smooth" });
       } else if (e.key === "PageUp") {
         e.preventDefault();
-        container.scrollTop -= container.clientHeight * 0.9;
+        container.scrollBy({ top: -container.clientHeight * 0.9, behavior: "smooth" });
       } else if (e.key === "Home") {
         e.preventDefault();
-        container.scrollTop = 0;
+        container.scrollTo({ top: 0, behavior: "smooth" });
       } else if (e.key === "End") {
         e.preventDefault();
-        container.scrollTop = container.scrollHeight;
+        container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+      } else if (e.key === " ") {
+        e.preventDefault();
+        container.scrollBy({ top: container.clientHeight * 0.9, behavior: "smooth" });
       }
     };
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const lh = lineHRef.current;
+      const linesPerTick = 5;
+      const delta = e.deltaY > 0 ? lh * linesPerTick : e.deltaY < 0 ? -lh * linesPerTick : 0;
+      container.scrollBy({ top: delta, behavior: "smooth" });
+    };
+
     container.addEventListener("keydown", onKeyDown);
+    container.addEventListener("wheel", onWheel, { passive: false });
     container.tabIndex = 0;
     container.focus();
 
     return () => {
       container.removeEventListener("scroll", onScroll);
       container.removeEventListener("keydown", onKeyDown);
+      container.removeEventListener("wheel", onWheel);
     };
   }, [onScroll]);
 
@@ -201,6 +216,7 @@ export function SourceTextViewer({ workId, clientRef, connected, fontSize = DEFA
       ref={containerRef}
       style={{
         overflowY: "auto",
+        scrollBehavior: "smooth",
         flex: 1,
         minHeight: 0,
         userSelect: "text",
