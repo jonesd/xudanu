@@ -1153,7 +1153,7 @@ export class CrdtSyncClient {
           return el?.Text || el?.text || "";
         }).join("");
       }
-      return ed?.Text || ed?.text || JSON.stringify(ed);
+      return ed?.Text || ed?.text || JSON.stringify(ed) || "";
     });
   }
 

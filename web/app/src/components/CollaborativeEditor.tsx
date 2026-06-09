@@ -487,7 +487,7 @@ export function CollaborativeEditor({
       return;
     }
     if (e.detail === 2 && onShowBacklinks) {
-      const excerpt = hit.marker.excerpt || "";
+      const excerpt = (hit.marker as Record<string, unknown>).excerpt as string || "";
       onShowBacklinks(hit.marker.otherWorkId, excerpt);
     } else if (e.detail === 1 && onNavigateToWork) {
       onNavigateToWork(hit.marker.otherWorkId);
@@ -603,7 +603,7 @@ export function CollaborativeEditor({
       if (!el) return;
       const preRange = document.createRange();
       preRange.setStart(el, 0);
-      preRange.setEnd(sel.anchorNode, sel.anchorOffset);
+      preRange.setEnd(sel.anchorNode!, sel.anchorOffset);
       const start = preRange.toString().length;
       const end = start + sel.toString().length;
       onCreateAnnotation(start, end);
@@ -649,7 +649,7 @@ export function CollaborativeEditor({
     const range = sel.getRangeAt(0);
 
     const pre = document.createRange();
-    pre.selectNodeContents(el);
+    pre.selectNodeContents(el!);
     pre.setEnd(range.startContainer, range.startOffset);
     const pasteStart = pre.toString().length;
 

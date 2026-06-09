@@ -8,7 +8,7 @@ interface AnnotationPanelProps {
   currentClubId: number | null;
 }
 
-export function AnnotationPanel({ annotations, onDelete, onNavigate, currentClubId }: AnnotationPanelProps) {
+export function AnnotationPanel({ annotations, onDelete, onNavigate, currentClubId = null }: AnnotationPanelProps) {
   const [expanded, setExpanded] = useState(true);
 
   if (annotations.length === 0) {

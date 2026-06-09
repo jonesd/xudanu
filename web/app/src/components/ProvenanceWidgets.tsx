@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useMemo } from "react";
 import type { AttributionSpan } from "../api/crdt_sync";
 import { authorColor } from "../author-color";
 
@@ -482,7 +482,7 @@ export function BracketHintsWidget({ text, regions }: BracketHintsProps) {
   const lines = useMemo(() => {
     const allLines = text.split("\n");
     let charOffset = 0;
-    return allLines.map((line, li) => {
+    return allLines.map((line, _li) => {
       const prevOffset = charOffset;
       charOffset += line.length + 1;
 
@@ -497,7 +497,7 @@ export function BracketHintsWidget({ text, regions }: BracketHintsProps) {
   return (
     <ProvenanceCard className="prov-bracket-card">
       <div className="prov-bracket-text">
-        {lines.map(({ line, regions: lineRegions, charOffset }, li) => (
+        {lines.map(({ line, regions: lineRegions }, li) => (
           <div key={li} className="prov-bracket-row">
             <div className="prov-bracket-line">{line || "\u00a0"}</div>
             {lineRegions.length > 0 && (
