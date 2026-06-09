@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import type { CrdtSyncClient, SharedRegion, WorkListEntry } from "../api/crdt_sync";
+import type { CrdtSyncClient, WorkListEntry } from "../api/crdt_sync";
 
 const BRIDGE_COLORS = [
   "#d29922", "#56b4e9", "#009e73", "#cc79a7",
