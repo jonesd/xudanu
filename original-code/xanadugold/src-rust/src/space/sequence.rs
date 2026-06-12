@@ -165,6 +165,160 @@ impl Sequence {
         }
         Ordering::Equal
     }
+
+    pub fn first(&self) -> Sequence {
+        for (i, &v) in self.numbers.iter().enumerate() {
+            if v == 0 {
+                return Sequence::from_numbers_with_shift(
+                    self.numbers[..i].to_vec(),
+                    self.shift,
+                );
+            }
+        }
+        self.clone()
+    }
+
+    pub fn rest(&self) -> Sequence {
+        for (i, &v) in self.numbers.iter().enumerate() {
+            if v == 0 {
+                let rest = &self.numbers[i + 1..];
+                return Sequence::from_numbers_with_shift(
+                    rest.to_vec(),
+                    self.shift + i as i64 + 1,
+                );
+            }
+        }
+        Sequence::zero()
+    }
+
+    pub fn with_rest(&self, other: &Sequence) -> Sequence {
+        let mut nums = self.numbers.clone();
+        nums.push(0);
+        nums.extend_from_slice(&other.numbers);
+        Sequence {
+            shift: self.shift,
+            numbers: nums,
+        }
+    }
+
+    pub fn with_last(&self, n: i64) -> Sequence {
+        if n == 0 {
+            return self.clone();
+        }
+        let mut nums = self.numbers.clone();
+        nums.push(n);
+        Sequence {
+            shift: self.shift,
+            numbers: nums,
+        }
+    }
+
+    pub fn with_first(&self, n: i64) -> Sequence {
+        if n == 0 {
+            return self.clone();
+        }
+        if self.numbers.is_empty() {
+            return Sequence::one(n);
+        }
+        let mut nums = vec![n];
+        nums.extend_from_slice(&self.numbers);
+        Sequence {
+            shift: self.shift,
+            numbers: nums,
+        }
+    }
+
+    pub fn compare_prefix(&self, other: &Sequence, limit: i64) -> Ordering {
+        let self_has = self.last_index().map_or(false, |l| l >= limit);
+        let other_has = other.last_index().map_or(false, |l| l >= limit);
+        if !self_has && !other_has {
+            return Ordering::Equal;
+        }
+        if !self_has {
+            return match other.first_non_zero_up_to(limit) {
+                Some(v) if v > 0 => Ordering::Less,
+                Some(v) if v < 0 => Ordering::Greater,
+                _ => Ordering::Equal,
+            };
+        }
+        if !other_has {
+            return match self.first_non_zero_up_to(limit) {
+                Some(v) if v > 0 => Ordering::Greater,
+                Some(v) if v < 0 => Ordering::Less,
+                _ => Ordering::Equal,
+            };
+        }
+        let min_idx = self
+            .first_index()
+            .unwrap_or(0)
+            .min(other.first_index().unwrap_or(0));
+        for i in min_idx..=limit {
+            let a = self.at(i);
+            let b = other.at(i);
+            if a < b {
+                return Ordering::Less;
+            }
+            if a > b {
+                return Ordering::Greater;
+            }
+        }
+        Ordering::Equal
+    }
+
+    fn first_non_zero_up_to(&self, limit: i64) -> Option<i64> {
+        let start = self.first_index().unwrap_or(0);
+        for i in start..=limit {
+            let v = self.at(i);
+            if v != 0 {
+                return Some(v);
+            }
+        }
+        None
+    }
+
+    pub fn from_dotted(s: &str) -> Self {
+        let parts: Vec<i64> = s
+            .split('.')
+            .filter_map(|p| p.parse().ok())
+            .collect();
+        if parts.is_empty() {
+            return Sequence::zero();
+        }
+        let mut nums = Vec::new();
+        for (i, v) in parts.iter().enumerate() {
+            if i > 0 {
+                nums.push(0);
+            }
+            nums.push(*v);
+        }
+        Sequence::from_numbers(nums)
+    }
+}
+
+impl std::fmt::Display for Sequence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.numbers.is_empty() {
+            return write!(f, "0");
+        }
+        let mut first = true;
+        let mut i = 0i64;
+        while i < self.shift {
+            if !first {
+                write!(f, ".")?;
+            }
+            write!(f, "0")?;
+            first = false;
+            i += 1;
+        }
+        for &v in &self.numbers {
+            if !first {
+                write!(f, ".")?;
+            }
+            write!(f, "{}", v)?;
+            first = false;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -193,6 +347,10 @@ impl SequenceSpace {
 
     pub fn mapping(&self, shift: i64, translation: Sequence) -> SequenceDsp {
         SequenceDsp { shift, translation }
+    }
+
+    pub fn prefixed_by(&self, sequence: &Sequence, limit: i64) -> SequenceRegion {
+        SequenceRegion::prefixed_by(sequence, limit)
     }
 }
 
@@ -271,6 +429,13 @@ impl std::hash::Hash for SequenceEdge {
 pub struct SequenceRegion {
     starts_inside: bool,
     transitions: Vec<SequenceEdge>,
+    prefix_filter: Option<PrefixFilter>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct PrefixFilter {
+    sequence: Sequence,
+    limit: i64,
 }
 
 impl SequenceRegion {
@@ -278,6 +443,7 @@ impl SequenceRegion {
         SequenceRegion {
             starts_inside: false,
             transitions: Vec::new(),
+            prefix_filter: None,
         }
     }
 
@@ -285,6 +451,7 @@ impl SequenceRegion {
         SequenceRegion {
             starts_inside: true,
             transitions: Vec::new(),
+            prefix_filter: None,
         }
     }
 
@@ -301,6 +468,7 @@ impl SequenceRegion {
                     inclusive: false,
                 },
             ],
+            prefix_filter: None,
         }
     }
 
@@ -320,6 +488,7 @@ impl SequenceRegion {
                     inclusive: false,
                 },
             ],
+            prefix_filter: None,
         }
     }
 
@@ -330,6 +499,7 @@ impl SequenceRegion {
                 sequence: start,
                 inclusive,
             }],
+            prefix_filter: None,
         }
     }
 
@@ -340,10 +510,31 @@ impl SequenceRegion {
                 sequence: stop,
                 inclusive,
             }],
+            prefix_filter: None,
+        }
+    }
+
+    pub fn prefixed_by(sequence: &Sequence, limit: i64) -> Self {
+        SequenceRegion {
+            starts_inside: true,
+            transitions: Vec::new(),
+            prefix_filter: Some(PrefixFilter {
+                sequence: sequence.clone(),
+                limit,
+            }),
         }
     }
 
     pub fn contains_sequence(&self, seq: &Sequence) -> bool {
+        if let Some(pf) = &self.prefix_filter {
+            let matches = seq.compare_prefix(&pf.sequence, pf.limit) == Ordering::Equal;
+            if !matches {
+                return false;
+            }
+            if self.transitions.is_empty() {
+                return true;
+            }
+        }
         let idx = self
             .transitions
             .partition_point(|e| e.sequence.compare_to(seq) == Ordering::Less);
@@ -370,6 +561,12 @@ fn merge_sequence_regions(
     combine: impl Fn(bool, bool) -> bool,
 ) -> SequenceRegion {
     let new_starts = combine(a.starts_inside, b.starts_inside);
+    let new_prefix = match (&a.prefix_filter, &b.prefix_filter) {
+        (Some(p), None) => Some(p.clone()),
+        (None, Some(p)) => Some(p.clone()),
+        (Some(p1), Some(p2)) if p1 == p2 => Some(p1.clone()),
+        _ => None,
+    };
     let mut result = Vec::new();
     let mut ai = 0usize;
     let mut bi = 0usize;
@@ -446,6 +643,7 @@ fn merge_sequence_regions(
     SequenceRegion {
         starts_inside: new_starts,
         transitions: result,
+        prefix_filter: new_prefix,
     }
 }
 
@@ -487,6 +685,7 @@ impl Region for SequenceRegion {
                     inclusive: !e.inclusive,
                 })
                 .collect(),
+            prefix_filter: self.prefix_filter.clone(),
         }
     }
 
@@ -562,6 +761,10 @@ impl Dsp for SequenceDsp {
                     inclusive: e.inclusive,
                 })
                 .collect(),
+            prefix_filter: region.prefix_filter.as_ref().map(|pf| PrefixFilter {
+                sequence: self.transform(&pf.sequence),
+                limit: pf.limit,
+            }),
         }
     }
 
@@ -854,5 +1057,201 @@ mod tests {
         let r = SequenceRegion::interval(lo.clone(), hi.clone());
         assert!(r.contains_sequence(&Sequence::two(1, 3)));
         assert!(!r.contains_sequence(&Sequence::two(2, 0)));
+    }
+
+    #[test]
+    fn first_returns_prefix_before_zero() {
+        let s = Sequence::from_numbers(vec![1, 0, 3, 5]);
+        let f = s.first();
+        assert_eq!(f, Sequence::one(1));
+    }
+
+    #[test]
+    fn rest_returns_suffix_after_zero() {
+        let s = Sequence::from_numbers(vec![1, 0, 3, 5]);
+        let r = s.rest();
+        assert_eq!(r.at(2), 3);
+        assert_eq!(r.at(3), 5);
+        assert_eq!(r.shift(), 2);
+    }
+
+    #[test]
+    fn first_no_zero_returns_self() {
+        let s = Sequence::two(3, 5);
+        assert_eq!(s.first(), s);
+    }
+
+    #[test]
+    fn rest_no_zero_returns_zero() {
+        let s = Sequence::two(3, 5);
+        assert!(s.rest().is_zero());
+    }
+
+    #[test]
+    fn first_empty_returns_zero() {
+        assert!(Sequence::zero().first().is_zero());
+    }
+
+    #[test]
+    fn rest_empty_returns_zero() {
+        assert!(Sequence::zero().rest().is_zero());
+    }
+
+    #[test]
+    fn first_with_multiple_zeros() {
+        let s = Sequence::from_numbers(vec![1, 0, 3, 0, 5]);
+        assert_eq!(s.first(), Sequence::one(1));
+    }
+
+    #[test]
+    fn with_rest_concatenates_with_zero_separator() {
+        let a = Sequence::one(1);
+        let b = Sequence::two(3, 5);
+        let result = a.with_rest(&b);
+        assert_eq!(result.at(0), 1);
+        assert_eq!(result.at(1), 0);
+        assert_eq!(result.at(2), 3);
+        assert_eq!(result.at(3), 5);
+    }
+
+    #[test]
+    fn with_rest_roundtrip() {
+        let original = Sequence::from_numbers(vec![1, 0, 3, 5]);
+        assert_eq!(original.first().with_rest(&original.rest()), original);
+    }
+
+    #[test]
+    fn with_rest_with_zero_other() {
+        let a = Sequence::one(1);
+        let result = a.with_rest(&Sequence::zero());
+        assert_eq!(result.at(0), 1);
+        assert_eq!(result.at(1), 0);
+        assert!(result.at(2) == 0);
+    }
+
+    #[test]
+    fn with_last_appends() {
+        let s = Sequence::two(1, 2).with_last(3);
+        assert_eq!(s.at(0), 1);
+        assert_eq!(s.at(1), 2);
+        assert_eq!(s.at(2), 3);
+    }
+
+    #[test]
+    fn with_first_prepends() {
+        let s = Sequence::two(2, 3).with_first(1);
+        assert_eq!(s.at(0), 1);
+        assert_eq!(s.at(1), 2);
+        assert_eq!(s.at(2), 3);
+    }
+
+    #[test]
+    fn compare_prefix_equal_up_to_limit() {
+        let a = Sequence::from_numbers(vec![1, 3, 5]);
+        let b = Sequence::from_numbers(vec![1, 3, 7]);
+        assert_eq!(a.compare_prefix(&b, 1), Ordering::Equal);
+    }
+
+    #[test]
+    fn compare_prefix_differs_within_range() {
+        let a = Sequence::from_numbers(vec![1, 3, 5]);
+        let b = Sequence::from_numbers(vec![1, 4, 5]);
+        assert_eq!(a.compare_prefix(&b, 1), Ordering::Less);
+    }
+
+    #[test]
+    fn compare_prefix_beyond_array() {
+        let a = Sequence::from_numbers(vec![1, 3]);
+        let b = Sequence::from_numbers(vec![1, 3, 5]);
+        assert_eq!(a.compare_prefix(&b, 1), Ordering::Equal);
+    }
+
+    #[test]
+    fn from_dotted_and_display_roundtrip() {
+        let s = Sequence::from_dotted("3.7.5");
+        assert_eq!(s.at(0), 3);
+        assert_eq!(s.at(1), 0);
+        assert_eq!(s.at(2), 7);
+        assert_eq!(s.at(3), 0);
+        assert_eq!(s.at(4), 5);
+    }
+
+    #[test]
+    fn display_shows_dotted() {
+        let s = Sequence::from_numbers(vec![1, 0, 3, 0, 5]);
+        let displayed = format!("{}", s);
+        assert!(displayed.contains("1"));
+        assert!(displayed.contains("3"));
+        assert!(displayed.contains("5"));
+    }
+
+    #[test]
+    fn prefixed_by_matches_prefix() {
+        let prefix = Sequence::from_numbers(vec![1, 3]);
+        let region = SequenceRegion::prefixed_by(&prefix, 1);
+        assert!(
+            region.contains_sequence(&Sequence::from_numbers(vec![1, 3, 5])),
+            "prefix [1,3] should contain [1,3,5]"
+        );
+        assert!(
+            region.contains_sequence(&Sequence::from_numbers(vec![1, 3, 7])),
+            "prefix [1,3] should contain [1,3,7]"
+        );
+        assert!(
+            !region.contains_sequence(&Sequence::from_numbers(vec![1, 4, 5])),
+            "prefix [1,3] should not contain [1,4,5]"
+        );
+    }
+
+    #[test]
+    fn prefixed_by_single_element() {
+        let prefix = Sequence::one(1);
+        let region = SequenceRegion::prefixed_by(&prefix, 0);
+        assert!(region.contains_sequence(&Sequence::from_numbers(vec![1, 0, 5])));
+        assert!(!region.contains_sequence(&Sequence::from_numbers(vec![2, 0, 5])));
+    }
+
+    #[test]
+    fn prefixed_by_intersect_with_interval() {
+        let prefix = Sequence::one(1);
+        let region = SequenceRegion::prefixed_by(&prefix, 0);
+        let interval = SequenceRegion::interval(
+            Sequence::from_numbers(vec![1, 0, 0]),
+            Sequence::from_numbers(vec![1, 0, 10]),
+        );
+        let intersection = region.intersect(&interval);
+        assert!(intersection.contains_sequence(&Sequence::from_numbers(vec![1, 0, 5])));
+    }
+
+    #[test]
+    fn space_prefixed_by() {
+        let space = SequenceSpace::new();
+        let prefix = Sequence::two(1, 3);
+        let region = space.prefixed_by(&prefix, 1);
+        assert!(region.contains_sequence(&Sequence::from_numbers(vec![1, 3, 5])));
+    }
+
+    #[test]
+    fn tumbler_decomposition_hierarchy() {
+        let addr = Sequence::from_numbers(vec![1, 0, 3, 0, 5]);
+        let server = addr.first();
+        assert_eq!(server, Sequence::one(1));
+        let rest1 = addr.rest();
+        assert_eq!(rest1.at(2), 3);
+        assert_eq!(rest1.at(4), 5);
+        let work = rest1.first();
+        assert_eq!(work.at(2), 3);
+        let rest2 = rest1.rest();
+        let position = rest2.first();
+        assert_eq!(position.at(4), 5);
+    }
+
+    #[test]
+    fn tumbler_recompose_hierarchy() {
+        let server = Sequence::one(1);
+        let work = Sequence::one(3);
+        let position = Sequence::one(5);
+        let addr = server.with_rest(&work).with_rest(&position);
+        assert_eq!(addr, Sequence::from_numbers(vec![1, 0, 3, 0, 5]));
     }
 }

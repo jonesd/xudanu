@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use super::range_element::RangeElement;
 use super::xn_region::XnRegion;
@@ -7,12 +6,14 @@ use super::xn_region::XnRegion;
 pub type RecorderId = u64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum RecorderKind {
     Transcluders,
     Works,
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RecorderQuery {
     pub kind: RecorderKind,
     pub region: Option<XnRegion>,
@@ -79,6 +80,7 @@ impl RecorderQuery {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RecordedResult {
     pub element: RangeElement,
     pub source_edition_id: Option<u64>,
@@ -88,10 +90,12 @@ pub struct RecordedResult {
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Fossil {
     pub id: RecorderId,
     pub query: RecorderQuery,
     pub results: Vec<RecordedResult>,
+    #[cfg_attr(feature = "serde", serde(with = "hashset_bytes"))]
     pub recorded_fingerprints: HashSet<Vec<u8>>,
     pub is_extinct: bool,
     pub reference_count: u64,
@@ -452,6 +456,10 @@ impl RecorderSystem {
             .add(Box::new(Matcher::new(fossil_id, query, target_edition_id)));
     }
 
+    pub fn schedule_hoist(&mut self, item: Box<dyn AgendaItem>) {
+        self.agenda.add(item);
+    }
+
     pub fn process_agenda(&mut self) -> usize {
         let mut processed = 0;
         while !self.agenda.is_empty() {
@@ -480,6 +488,19 @@ impl RecorderSystem {
             }
         }
         self.agenda.items.retain(|item| !item.is_complete());
+
+        for item in &mut self.agenda.items {
+            if let Some(hoister) = item
+                .as_any_mut()
+                .downcast_mut::<super::hoist::RecorderHoister>()
+            {
+                if !hoister.is_complete() {
+                    hoister.step();
+                }
+            }
+        }
+        self.agenda.items.retain(|item| !item.is_complete());
+
         for (fossil_id, query, target_edition_id) in matchers {
             let mut all_results = Vec::new();
             if query.watched_content.is_empty() {
@@ -549,9 +570,114 @@ impl Default for RecorderSystem {
     }
 }
 
+impl RecorderSystem {
+    pub fn to_snapshots(&self) -> (Vec<Fossil>, RecorderId) {
+        let mut ids: Vec<_> = self.fossils.keys().copied().collect();
+        ids.sort();
+        let fossils = ids
+            .into_iter()
+            .filter_map(|id| {
+                let f = self.fossils.get(&id)?;
+                if f.is_extinct {
+                    return None;
+                }
+                Some(f.clone())
+            })
+            .collect();
+        (fossils, self.next_id)
+    }
+
+    pub fn restore_from_snapshots(
+        &mut self,
+        snapshots: Vec<Fossil>,
+        next_id: RecorderId,
+    ) {
+        if next_id > self.next_id {
+            self.next_id = next_id;
+        }
+        for fossil in snapshots {
+            self.fossils.insert(fossil.id, fossil);
+        }
+    }
+
+    pub fn next_id(&self) -> RecorderId {
+        self.next_id
+    }
+
+    pub fn restore_next_id(&mut self, id: RecorderId) {
+        if id > self.next_id {
+            self.next_id = id;
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+mod hashset_bytes {
+    use std::collections::HashSet;
+    use serde::ser::SerializeSeq;
+    use serde::de::{SeqAccess, Visitor};
+
+    pub fn serialize<S>(set: &HashSet<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut vec: Vec<&Vec<u8>> = set.iter().collect();
+        vec.sort();
+        let mut seq = serializer.serialize_seq(Some(vec.len()))?;
+        for item in &vec {
+            seq.serialize_element(&item.as_slice())?;
+        }
+        seq.end()
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashSet<Vec<u8>>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct BytesVecVisitor;
+
+        impl<'de> Visitor<'de> for BytesVecVisitor {
+            type Value = HashSet<Vec<u8>>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a sequence of byte arrays")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut set = HashSet::new();
+                while let Some(item) = seq.next_element::<Vec<u8>>()? {
+                    set.insert(item);
+                }
+                Ok(set)
+            }
+        }
+
+        deserializer.deserialize_seq(BytesVecVisitor)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fossil_json_roundtrip() {
+        let mut fossil = Fossil::new(1, RecorderQuery::transcluders());
+        fossil.source_edition_id = Some(42);
+        fossil.record(RangeElement::edition(10), Some(5), None, true);
+        fossil.record(RangeElement::edition(20), Some(6), None, false);
+
+        let json = serde_json::to_vec(&fossil).unwrap();
+        let restored: Fossil = serde_json::from_slice(&json).unwrap();
+        assert_eq!(restored.id, fossil.id);
+        assert_eq!(restored.source_edition_id, fossil.source_edition_id);
+        assert_eq!(restored.results.len(), 2);
+        assert_eq!(restored.recorded_fingerprints.len(), 2);
+        assert!(!restored.is_extinct);
+    }
 
     #[test]
     fn fossil_record_deduplicates() {

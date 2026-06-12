@@ -377,7 +377,6 @@ fn dispatch_inner(
 
                 Ok(ResponseValue::Humber(rev))
             } else {
-                use super::protocol::apply_text_delta;
                 let current_ed = srv.work_edition(work_id)?;
                 let current_rev = srv.work_revision_count(work_id)?;
                 if current_rev != base_revision {
@@ -385,9 +384,21 @@ fn dispatch_inner(
                         &current_ed,
                     )));
                 }
-                let current_text = edition_to_text(&current_ed);
-                let new_text = apply_text_delta(&current_text, &ops);
-                let new_ed = Edition::from_text_batched(&new_text);
+                let (display_name, club_id, pub_key) = srv.identity_for_session(session_id);
+                let author = club_id.map(|cid| {
+                    crate::server::otree_crdt::OtreeAuthorIdentity::new(
+                        pub_key.map_or([0u8; 32], |pk| {
+                            let mut arr = [0u8; 32];
+                            arr.copy_from_slice(&pk[..32]);
+                            arr
+                        }),
+                        display_name,
+                        cid,
+                    )
+                });
+                let new_ed = crate::server::otree_crdt::apply_text_delta_to_edition(
+                    &current_ed, &ops, author.as_ref(),
+                );
                 let rev = srv.work_revise(session_id, work_id, new_ed)?;
                 Ok(ResponseValue::Humber(rev))
             }
@@ -782,6 +793,7 @@ fn dispatch_inner(
             destination,
             origin_ref,
             destination_ref,
+            link_types,
         } => {
             srv.ensure_authenticated(session_id)?;
             srv.ensure_can_read(session_id, origin)?;
@@ -825,7 +837,22 @@ fn dispatch_inner(
                     path,
                 )
             });
-            let link_id = srv.create_link(session_id, origin, destination, o_ref, d_ref)?;
+            let link_id = if link_types.is_empty() {
+                srv.create_link(session_id, origin, destination, o_ref, d_ref)?
+            } else {
+                let chain = srv.compute_provenance_chain(origin);
+                let o_with_chain = o_ref
+                    .map(|r| r.with_provenance_chain(chain.clone()))
+                    .unwrap_or_else(|| {
+                        crate::edition::links::HyperRef::single(None, Some(origin), None, None)
+                            .with_provenance_chain(chain)
+                    });
+                let d_final = d_ref.unwrap_or_else(|| {
+                    crate::edition::links::HyperRef::single(None, Some(destination), None, None)
+                });
+                let link = crate::edition::links::HyperLink::make(link_types, o_with_chain, d_final);
+                srv.create_link_with_hyperlink(session_id, link)?
+            };
             Ok(ResponseValue::Id(link_id))
         }
         WireRequest::LinkGet { link_id } => {
@@ -975,7 +1002,8 @@ fn dispatch_inner(
 
         WireRequest::FindTranscluders { content_be_id } => {
             let results = srv
-                .find_transcluders(content_be_id)
+                .find_transcluders_for_session(session_id, content_be_id)
+                .unwrap_or_else(|_| srv.find_transcluders(content_be_id))
                 .into_iter()
                 .filter(|(element_type, element_id, _)| {
                     if element_type == "work" {

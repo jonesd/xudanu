@@ -11,6 +11,7 @@ pub mod edition;
 pub mod endorsement;
 pub mod fetext;
 pub mod grandmap;
+pub mod hoist;
 pub mod label;
 pub mod links;
 pub mod mapping;
@@ -45,6 +46,7 @@ pub use bundle_stepper::{
     loaf_bundle_stepper, loaf_merge_stepper, BundleStepper, MergeBundleStepper,
 };
 pub use canopy::{BertCanopy, CanopyCrumData, CanopyCrumKind, SensorCanopy};
+pub use hoist::{RecorderHoister, check_recorders, collect_all_recorders};
 #[cfg(feature = "serde")]
 pub use compound::{CompoundEdition, CompoundElement, CompoundSpan};
 pub use content_address::ContentAddressIndex;

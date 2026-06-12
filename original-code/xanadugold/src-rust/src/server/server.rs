@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use super::admin::{AdminState, IdGrant, SessionInfo};
 use super::club::Club;
@@ -7,6 +8,7 @@ use super::error::ServerError;
 use super::keymaster::KeyMaster;
 use super::lock::{BooLockSmith, Lock, LockCredential, LockSmith};
 use super::session::{Session, SessionId};
+use super::wait_barrier::{ConsequenceTracker, OperationGuard, WriteBarrier, WriteGuard};
 use crate::edition::backfollow::BackfollowEngine;
 use crate::edition::blob_store::{BlobMeta, BlobStore, MemoryBackend};
 use crate::edition::links::{HyperLink, HyperRef};
@@ -39,6 +41,7 @@ struct WorkState {
     grabbed_at: Option<u64>,
     grab_waiters: Vec<GrabWaiter>,
     last_revision_author: Option<BeId>,
+    revision_authors: std::collections::HashMap<u64, BeId>,
     status_detectors: DetectorList,
     revision_detectors: DetectorList,
     cached_title: String,
@@ -118,6 +121,8 @@ pub struct Server {
     pub(crate) historical_authors: crate::server::historical_author::HistoricalAuthorRegistry,
     pub(crate) source_patterns: Vec<crate::server::source_matcher::SourcePattern>,
     pub(crate) pending_attributions: Vec<PendingAttribution>,
+    consequence_tracker: Arc<ConsequenceTracker>,
+    write_barrier: Arc<WriteBarrier>,
 }
 
 #[derive(Clone)]
@@ -157,9 +162,10 @@ impl Server {
             .iter()
             .map(|(_, c)| c.element.as_text().unwrap_or(""))
             .collect();
-        text.split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
+        text.lines()
+            .next()
+            .unwrap_or("")
+            .trim()
             .chars()
             .take(80)
             .collect()
@@ -254,6 +260,8 @@ impl Server {
             historical_authors: crate::server::historical_author::HistoricalAuthorRegistry::new(),
             source_patterns: crate::server::source_matcher::builtin_patterns(),
             pending_attributions: Vec::new(),
+            consequence_tracker: Arc::new(ConsequenceTracker::new()),
+            write_barrier: Arc::new(WriteBarrier::new()),
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
             // transclusion survival, and materialize_annotation_indexed support.
@@ -322,6 +330,22 @@ impl Server {
 
     pub fn grand_map_mut(&mut self) -> &mut GrandMap {
         &mut self.grand_map
+    }
+
+    pub fn consequence_tracker(&self) -> Arc<ConsequenceTracker> {
+        self.consequence_tracker.clone()
+    }
+
+    pub fn write_barrier(&self) -> Arc<WriteBarrier> {
+        self.write_barrier.clone()
+    }
+
+    pub fn pending_operation_count(&self) -> u64 {
+        self.consequence_tracker.pending_count()
+    }
+
+    pub fn pending_write_count(&self) -> u64 {
+        self.write_barrier.pending_writes()
     }
 
     // === Session management ===
@@ -403,6 +427,24 @@ impl Server {
     pub fn display_name_for_session(&self, session_id: SessionId) -> String {
         let (name, _, _) = self.identity_for_session(session_id);
         name
+    }
+
+    fn resolve_author_club(&self, session_id: SessionId) -> Option<BeId> {
+        let session = self.sessions.get(&session_id)?;
+        session
+            .initial_login()
+            .and_then(|id| self.clubs.get(&id))
+            .filter(|c| c.is_personal())
+            .map(|c| c.be_id())
+            .or_else(|| {
+                session.authority_clubs().iter().find_map(|id| {
+                    self.clubs
+                        .get(id)
+                        .filter(|c| c.is_personal())
+                        .map(|c| c.be_id())
+                })
+            })
+            .or(session.initial_login())
     }
 
     pub fn identity_for_session(
@@ -626,6 +668,7 @@ impl Server {
         session_id: SessionId,
         edition: Edition,
     ) -> Result<BeId, ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_logged_in(session_id)?;
         const MAX_WORK_COUNT: usize = 100_000;
         if self.work_count() >= MAX_WORK_COUNT {
@@ -661,13 +704,22 @@ impl Server {
             }
         }
 
+        let author_club = self.resolve_author_club(session_id);
+
         let ws = WorkState {
             work,
             chunk_ref: None,
             grabber: None,
             grabbed_at: None,
             grab_waiters: Vec::new(),
-            last_revision_author: None,
+            last_revision_author: author_club,
+            revision_authors: if let Some(cid) = author_club {
+                let mut m = std::collections::HashMap::new();
+                m.insert(0, cid);
+                m
+            } else {
+                std::collections::HashMap::new()
+            },
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
             cached_title: title,
@@ -719,6 +771,59 @@ impl Server {
         mut edition: Edition,
         author_club: Option<BeId>,
     ) -> Result<u64, ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
+
+        let needs_element_prov = edition.all_entries().iter().any(|(_, c)| c.provenance.is_none());
+        if needs_element_prov {
+            if let Some(club_id) = author_club {
+                let display_name = self
+                    .clubs
+                    .get(&club_id)
+                    .and_then(|c| c.display_name().map(|s| s.to_string()))
+                    .unwrap_or_else(|| format!("club:{:04x}", club_id));
+                let pub_key = self
+                    .sessions
+                    .get(&session_id)
+                    .and_then(|s| s.club_signing_key().map(|k| k.verifying_key().to_bytes()))
+                    .unwrap_or([0u8; 32]);
+                let timestamp = Self::current_timestamp_secs();
+                let elem_prov = crate::edition::provenance::ElementProvenance {
+                    author_public_key: pub_key,
+                    author_display_name: display_name,
+                    author_club_id: club_id,
+                    timestamp,
+                    author_type: crate::edition::provenance::AuthorType::Human,
+                    llm_model: None,
+                    historical_author_id: None,
+                    source_work_id: None,
+                };
+                let entries = edition.all_entries();
+                let text_before = edition.to_text();
+                let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
+                    Vec::with_capacity(entries.len());
+                for (pos, c) in &entries {
+                    if c.provenance.is_none() {
+                        let mut carrier = (**c).clone();
+                        carrier.provenance = Some(elem_prov.clone());
+                        new_entries.push((*pos, Arc::new(carrier)));
+                    } else {
+                        new_entries.push((*pos, c.clone()));
+                    }
+                }
+                let new_edition = crate::edition::Edition::from_entries(new_entries);
+                let text_after = new_edition.to_text();
+                if text_before == text_after {
+                    edition = new_edition;
+                } else {
+                    tracing::warn!(
+                        "[revise_work] element prov rebuild changed text ({} -> {}), skipping",
+                        text_before.len(),
+                        text_after.len()
+                    );
+                }
+            }
+        }
+
         if edition.span_provenance.is_empty() {
             if let Some(sp) = self.build_edition_provenance(session_id, &edition) {
                 edition.span_provenance = sp;
@@ -772,6 +877,9 @@ impl Server {
         ws.work.revise(edition);
         ws.cached_title = Self::extract_title(ws.work.current_edition());
         let revision = ws.work.revision_count();
+        if let Some(club_id) = author_club {
+            ws.revision_authors.insert(revision, club_id);
+        }
 
         ws.revision_detectors.fire(&Event::WorkRevised {
             work_be_id,
@@ -810,10 +918,7 @@ impl Server {
         }
         self.ensure_grabbed_by(session_id, work_be_id)?;
 
-        let author_club = self
-            .sessions
-            .get(&session_id)
-            .and_then(|s| s.initial_login());
+        let author_club = self.resolve_author_club(session_id);
 
         let revision = self.revise_work(work_be_id, session_id, new_edition, author_club)?;
         Ok(revision)
@@ -824,6 +929,7 @@ impl Server {
         session_id: SessionId,
         work_be_id: BeId,
     ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_session(session_id)?;
         if self.is_source_work(work_be_id) {
             return Err(ServerError::InvalidArgument(
@@ -864,6 +970,7 @@ impl Server {
         session_id: SessionId,
         work_be_id: BeId,
     ) -> Result<Option<SessionId>, ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_can_edit(session_id, work_be_id)?;
         let ws = self
             .works
@@ -883,6 +990,7 @@ impl Server {
         session_id: SessionId,
         work_be_id: BeId,
     ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_session(session_id)?;
         self.ensure_grabbed_by(session_id, work_be_id)?;
 
@@ -909,6 +1017,7 @@ impl Server {
         work_be_id: BeId,
         new_edition: Edition,
     ) -> Result<u64, ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_session(session_id)?;
         self.ensure_grabbed_by(session_id, work_be_id)?;
 
@@ -1100,6 +1209,7 @@ impl Server {
         work_be_id: BeId,
         club_id: Option<BeId>,
     ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_can_edit(session_id, work_be_id)?;
         let ws = self
             .works
@@ -1758,6 +1868,7 @@ impl Server {
         source_bibliography: String,
         created_by: BeId,
     ) -> Result<crate::server::historical_author::HistoricalAuthor, ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -1871,6 +1982,7 @@ impl Server {
         paste_start: Option<usize>,
         paste_end: Option<usize>,
     ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_can_edit(session_id, work_be_id)?;
 
         let author = self
@@ -2030,6 +2142,7 @@ impl Server {
         skip_prefix_lines: u64,
         skip_suffix_lines: u64,
     ) -> Result<(BeId, BeId, u64, String), ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_logged_in(session_id)?;
 
         self.historical_authors.get(author_id).ok_or_else(|| {
@@ -2132,9 +2245,10 @@ impl Server {
             grabbed_at: None,
             grab_waiters: Vec::new(),
             last_revision_author: None,
+            revision_authors: std::collections::HashMap::new(),
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
-            cached_title: final_title.clone(),
+            cached_title: title.clone(),
             is_source: true,
             source_author_id: Some(author_id),
             source_edition_info: Some(edition_info),
@@ -2196,6 +2310,7 @@ impl Server {
         session_id: SessionId,
         work_be_id: BeId,
     ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_owner(session_id, work_be_id)?;
         let ws = self
             .works
@@ -2206,6 +2321,7 @@ impl Server {
         }
         ws.work.set_read_club(Some(self.system_clubs.public_club));
         ws.chunk_ref = None;
+        self.update_work_prop_and_trigger(work_be_id);
         self.auto_checkpoint();
         Ok(())
     }
@@ -2215,6 +2331,7 @@ impl Server {
         session_id: SessionId,
         work_be_id: BeId,
     ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_owner(session_id, work_be_id)?;
         let ws = self
             .works
@@ -2226,6 +2343,7 @@ impl Server {
         let owner = ws.work.owner();
         ws.work.set_read_club(owner);
         ws.chunk_ref = None;
+        self.update_work_prop_and_trigger(work_be_id);
         self.auto_checkpoint();
         Ok(())
     }
@@ -2235,6 +2353,7 @@ impl Server {
         session_id: SessionId,
         work_be_id: BeId,
     ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_owner(session_id, work_be_id)?;
         let ws = self
             .works
@@ -2265,6 +2384,7 @@ impl Server {
         club_id: BeId,
         default_read_club: Option<BeId>,
     ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_session(session_id)?;
         if !self
             .sessions
@@ -2290,6 +2410,7 @@ impl Server {
         club_id: BeId,
         default_edit_club: Option<BeId>,
     ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_session(session_id)?;
         if !self
             .sessions
@@ -2336,11 +2457,8 @@ impl Server {
         work_be_id: BeId,
     ) -> Result<super::crdt_manager::SyncStartResult, ServerError> {
         self.ensure_session(session_id)?;
-        if self.is_source_work(work_be_id) {
-            self.ensure_can_read(session_id, work_be_id)?;
-        } else {
-            self.ensure_can_edit(session_id, work_be_id)?;
-        }
+        self.ensure_can_read(session_id, work_be_id)?;
+        self.ensure_can_edit(session_id, work_be_id)?;
 
         if self.crdt_is_active(work_be_id) {
             let needs = self.crdt_needs_materialization(work_be_id);
@@ -2350,13 +2468,11 @@ impl Server {
                     .materialize_edition(work_be_id)
                     .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-                let author_club = self.sessions.iter().find_map(|(sid, _)| {
-                    if self.crdt_is_active_subscriber(work_be_id, *sid) {
-                        self.sessions.get(sid).and_then(|s| s.initial_login())
-                    } else {
-                        None
-                    }
-                });
+                let author_club = self
+                    .sessions
+                    .keys()
+                    .find(|sid| self.crdt_is_active_subscriber(work_be_id, **sid))
+                    .and_then(|sid| self.resolve_author_club(*sid));
 
                 self.revise_work(work_be_id, session_id, edition, author_club)?;
             }
@@ -2454,10 +2570,7 @@ impl Server {
                 .materialize_edition(work_be_id)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
-            let author_club = self
-                .sessions
-                .get(&session_id)
-                .and_then(|s| s.initial_login());
+            let author_club = self.resolve_author_club(session_id);
 
             self.revise_work(work_be_id, session_id, edition, author_club)?;
         }
@@ -2488,12 +2601,11 @@ impl Server {
                 .map(|(sid, osid)| (sid, super::crdt_manager::SyncSessionId::from(osid.as_u64())))
                 .collect();
 
-            let revision = if self.crdt_needs_materialization(work_be_id) {
+            let revision = if self.crdt_needs_materialization(work_be_id)
+                && self.otree_crdt.debounce_elapsed(work_be_id).unwrap_or(false)
+            {
                 let ed = self.materialize_with_provenance(work_be_id, session_id)?;
-                let author_club = self
-                    .sessions
-                    .get(&session_id)
-                    .and_then(|s| s.initial_login());
+                let author_club = self.resolve_author_club(session_id);
                 Some(self.revise_work(work_be_id, session_id, ed, author_club)?)
             } else {
                 None
@@ -2672,10 +2784,7 @@ impl Server {
 
             self.apply_pending_provenance_to_edition(work_be_id, &mut edition);
 
-            let author_club = self
-                .sessions
-                .get(&session_id)
-                .and_then(|s| s.initial_login());
+            let author_club = self.resolve_author_club(session_id);
 
             self.revise_work(work_be_id, session_id, edition, author_club)?;
         }
@@ -2700,10 +2809,7 @@ impl Server {
 
         self.apply_pending_provenance_to_edition(work_be_id, &mut edition);
 
-        let author_club = self
-            .sessions
-            .get(&session_id)
-            .and_then(|s| s.initial_login());
+        let author_club = self.resolve_author_club(session_id);
 
         let revision = self.revise_work(work_be_id, session_id, edition, author_club)?;
         Ok(revision)
@@ -2740,12 +2846,27 @@ impl Server {
 
         self.apply_pending_provenance_to_edition(work_be_id, &mut edition);
 
-        let author_club = self
-            .sessions
-            .get(&session_id)
-            .and_then(|s| s.initial_login());
+        let author_club = self.resolve_author_club(session_id);
 
+        let text_before = edition.to_text();
         let revision = self.revise_work(work_be_id, session_id, edition, author_club)?;
+
+        if let Ok(ed_new) = self.work_edition(work_be_id) {
+            let text_after = ed_new.to_text();
+            if text_before != text_after {
+                tracing::error!(
+                    "[materialize] text changed after revise_work ({} -> {})",
+                    text_before.len(),
+                    text_after.len()
+                );
+            }
+            self.otree_crdt
+                .sync_to_edition(work_be_id, ed_new)
+                .unwrap_or_else(|e| {
+                    tracing::warn!("[materialize] CRDT sync failed: {}", e);
+                });
+        }
+
         Ok(revision)
     }
 
@@ -3109,45 +3230,100 @@ impl Server {
         let mut source_work_ids: HashSet<BeId> = HashSet::new();
         let mut author_chars: HashMap<BeId, u64> = HashMap::new();
         let mut author_names: HashMap<BeId, String> = HashMap::new();
+        let mut author_types: HashMap<BeId, String> = HashMap::new();
 
-        for sp in &edition.span_provenance {
-            let span_entries: Vec<_> = all_entries
-                .iter()
-                .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
-                .collect();
-
-            let span_char_count: u64 = span_entries.iter().map(|(_, c)| c.char_len() as u64).sum();
-
-            let element_prov = span_entries
-                .iter()
-                .find(|(_, c)| c.provenance.is_some())
-                .and_then(|(_, c)| c.provenance.as_ref());
-
-            let sw_id = element_prov.and_then(|ep| ep.source_work_id);
-            if let Some(sw) = sw_id {
-                source_work_ids.insert(sw);
+        for (_, c) in &all_entries {
+            let char_count = c.char_len() as u64;
+            if char_count == 0 {
+                continue;
             }
 
-            let club_id = self
-                .clubs
-                .iter()
-                .find(|(_, club)| match club.encrypted_signing_key() {
-                    Some(ek) => ek.verifying_key == sp.provenance.author_public_key,
-                    None => false,
-                })
-                .map(|(id, _)| *id);
+            if let Some(ep) = &c.provenance {
+                if let Some(sw) = ep.source_work_id {
+                    source_work_ids.insert(sw);
+                }
 
-            if let Some(cid) = club_id {
-                *author_chars.entry(cid).or_insert(0) += span_char_count;
-                if !author_names.contains_key(&cid) {
-                    let name = self
-                        .clubs
-                        .get(&cid)
-                        .and_then(|c| c.display_name().map(|s| s.to_string()))
-                        .unwrap_or_else(|| format!("club:{:04x}", cid));
-                    author_names.insert(cid, name);
+                let (author_key, display_name, atype) = match ep.author_type {
+                    crate::edition::provenance::AuthorType::Historical => {
+                        let ha_name = ep
+                            .historical_author_id
+                            .and_then(|id| self.historical_authors.get(id))
+                            .map(|a| a.display_name.clone())
+                            .unwrap_or_else(|| "Unknown Historical Author".to_string());
+                        let key = ep.historical_author_id.unwrap_or(0);
+                        (key, ha_name, "historical")
+                    }
+                    crate::edition::provenance::AuthorType::Llm => {
+                        let model = ep.llm_model.as_deref().unwrap_or("llm");
+                        let key = ep.author_club_id.wrapping_add(ep.llm_model.as_ref().map_or(0, |m| m.as_str().bytes().fold(0u64, |a, b| a.wrapping_add(b as u64))));
+                        (key, model.to_string(), "llm")
+                    }
+                    crate::edition::provenance::AuthorType::Human => {
+                        let key = ep.author_club_id;
+                        let name = self
+                            .clubs
+                            .get(&key)
+                            .and_then(|c| c.display_name().map(|s| s.to_string()))
+                            .unwrap_or_else(|| format!("club:{:04x}", key));
+                        (key, name, "human")
+                    }
+                };
+
+                *author_chars.entry(author_key).or_insert(0) += char_count;
+                author_names.entry(author_key).or_insert(display_name);
+                author_types.entry(author_key).or_insert(atype.to_string());
+            }
+        }
+
+        if author_chars.is_empty() {
+            for sp in &edition.span_provenance {
+                let span_entries: Vec<_> = all_entries
+                    .iter()
+                    .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
+                    .collect();
+
+                let span_char_count: u64 =
+                    span_entries.iter().map(|(_, c)| c.char_len() as u64).sum();
+
+                let element_prov = span_entries
+                    .iter()
+                    .find(|(_, c)| c.provenance.is_some())
+                    .and_then(|(_, c)| c.provenance.as_ref());
+
+                if let Some(sw) = element_prov.and_then(|ep| ep.source_work_id) {
+                    source_work_ids.insert(sw);
+                }
+
+                let club_id = self
+                    .clubs
+                    .iter()
+                    .find(|(_, club)| match club.encrypted_signing_key() {
+                        Some(ek) => ek.verifying_key == sp.provenance.author_public_key,
+                        None => false,
+                    })
+                    .map(|(id, _)| *id);
+
+                if let Some(cid) = club_id {
+                    *author_chars.entry(cid).or_insert(0) += span_char_count;
+                    if !author_names.contains_key(&cid) {
+                        let name = self
+                            .clubs
+                            .get(&cid)
+                            .and_then(|c| c.display_name().map(|s| s.to_string()))
+                            .unwrap_or_else(|| format!("club:{:04x}", cid));
+                        author_names.insert(cid, name);
+                        author_types.insert(cid, "human".to_string());
+                    }
                 }
             }
+        }
+
+        let unattributed: u64 = total_chars.saturating_sub(author_chars.values().sum());
+        if unattributed > 0 {
+            let unattributed_key = 0xFFFF_FFFF_FFFF_FFFF_u64;
+            author_names.insert(unattributed_key, "Unattributed".to_string());
+            author_chars.insert(unattributed_key, unattributed);
+            author_types.insert(unattributed_key, "unattributed".to_string());
         }
 
         let mut author_contributions: Vec<super::transport::protocol::AuthorContributionEntry> =
@@ -3168,6 +3344,7 @@ impl Server {
                         display_name: name,
                         char_count: chars,
                         percentage: pct,
+                        author_type: author_types.get(&cid).cloned(),
                     }
                 })
                 .collect();
@@ -3178,6 +3355,7 @@ impl Server {
         });
 
         let mut reused_in_count: u64 = 0;
+        let mut reused_in_docs: Vec<super::transport::protocol::ReusedInDocEntry> = Vec::new();
         for other_id in self.works.keys() {
             if *other_id == work_be_id {
                 continue;
@@ -3185,6 +3363,15 @@ impl Server {
             let shared = self.find_shared_regions(work_be_id, *other_id);
             if !shared.is_empty() {
                 reused_in_count += 1;
+                let shared_chars: u64 = shared.iter().map(|r| r.4.len() as u64).sum();
+                let title = self.works.get(other_id)
+                    .map(|ws| ws.cached_title.clone())
+                    .unwrap_or_default();
+                reused_in_docs.push(super::transport::protocol::ReusedInDocEntry {
+                    work_id: *other_id,
+                    title,
+                    shared_char_count: shared_chars,
+                });
             }
         }
 
@@ -3196,6 +3383,7 @@ impl Server {
                 char_count: total_chars,
                 author_contributions,
                 reused_in_count,
+                reused_in_docs,
             },
         )
     }
@@ -3217,29 +3405,90 @@ impl Server {
                 Some(ed) => ed.clone(),
                 None => continue,
             };
-            let char_count: u64 = ed
-                .all_entries()
-                .iter()
-                .map(|(_, c)| c.char_len() as u64)
-                .sum();
+            let entries = ed.all_entries();
+            let char_count: u64 = entries.iter().map(|(_, c)| c.char_len() as u64).sum();
 
-            let author_club_id = if rev_num == rev_count {
-                ws.last_revision_author
-            } else {
-                None
+            let (author_club_id, author_display_name, author_type) = {
+                let from_rev = if rev_num == rev_count {
+                    ws.last_revision_author
+                } else {
+                    ws.revision_authors.get(&rev_num).copied()
+                };
+
+                if let Some(cid) = from_rev {
+                    let name = self.clubs.get(&cid)
+                        .and_then(|c| c.display_name().map(|s| s.to_string()));
+                    (Some(cid), name, Some("human".to_string()))
+                } else {
+                    let mut prov_chars: HashMap<BeId, u64> = HashMap::new();
+                    let mut prov_names: HashMap<BeId, String> = HashMap::new();
+                    let mut prov_types: HashMap<BeId, String> = HashMap::new();
+
+                    for (_, c) in &entries {
+                        if c.char_len() == 0 { continue; }
+                        if let Some(ep) = &c.provenance {
+                            let len = c.char_len() as u64;
+                            let (key, name, atype) = match ep.author_type {
+                                crate::edition::provenance::AuthorType::Historical => {
+                                    let ha_name = ep.historical_author_id
+                                        .and_then(|id| self.historical_authors.get(id))
+                                        .map(|a| a.display_name.clone())
+                                        .unwrap_or_else(|| "Unknown Historical Author".to_string());
+                                    (ep.historical_author_id.unwrap_or(0), ha_name, "historical")
+                                }
+                                crate::edition::provenance::AuthorType::Llm => {
+                                    let model = ep.llm_model.as_deref().unwrap_or("llm");
+                                    let key = ep.author_club_id.wrapping_add(
+                                        ep.llm_model.as_ref().map_or(0, |m| m.as_str().bytes().fold(0u64, |a, b| a.wrapping_add(b as u64)))
+                                    );
+                                    (key, model.to_string(), "llm")
+                                }
+                                crate::edition::provenance::AuthorType::Human => {
+                                    let name = self.clubs.get(&ep.author_club_id)
+                                        .and_then(|c| c.display_name().map(|s| s.to_string()))
+                                        .unwrap_or_else(|| format!("club:{:04x}", ep.author_club_id));
+                                    (ep.author_club_id, name, "human")
+                                }
+                            };
+                            *prov_chars.entry(key).or_insert(0) += len;
+                            prov_names.entry(key).or_insert(name);
+                            prov_types.entry(key).or_insert(atype.to_string());
+                        }
+                    }
+
+                    let best = prov_chars.iter().max_by_key(|(_, &v)| v);
+                    if let Some((&best_key, _)) = best {
+                        let best_type = prov_types.get(&best_key).cloned().unwrap_or("human".to_string());
+                        if best_type == "human" {
+                            let cid = entries.iter()
+                                .filter_map(|(_, c)| c.provenance.as_ref())
+                                .filter(|ep| {
+                                    match ep.author_type {
+                                        crate::edition::provenance::AuthorType::Human => {
+                                            let key = ep.author_club_id;
+                                            key == best_key
+                                        }
+                                        _ => false,
+                                    }
+                                })
+                                .map(|ep| ep.author_club_id)
+                                .next();
+                            (cid, prov_names.get(&best_key).cloned(), Some(best_type))
+                        } else {
+                            (None, prov_names.get(&best_key).cloned(), Some(best_type))
+                        }
+                    } else {
+                        (None, None, None)
+                    }
+                }
             };
-
-            let author_display_name = author_club_id.and_then(|cid| {
-                self.clubs
-                    .get(&cid)
-                    .and_then(|c| c.display_name().map(|s| s.to_string()))
-            });
 
             revisions.push(super::transport::protocol::RevisionMetaEntry {
                 revision: rev_num,
                 char_count,
                 author_club_id,
                 author_display_name,
+                author_type,
             });
         }
 
@@ -3770,6 +4019,7 @@ impl Server {
                         grabbed_at: None,
                         grab_waiters: Vec::new(),
                         last_revision_author: None,
+                        revision_authors: std::collections::HashMap::new(),
                         status_detectors: DetectorList::new(),
                         revision_detectors: DetectorList::new(),
                         cached_title: Self::extract_title(work.current_edition()),
@@ -3843,36 +4093,14 @@ impl Server {
             let o_ref = link
                 .origin_ref
                 .as_ref()
-                .map(|hr| {
-                    let excerpt = hr
-                        .excerpt
-                        .as_deref()
-                        .map(crate::edition::Edition::from_text);
-                    crate::edition::links::HyperRef::single(
-                        excerpt,
-                        hr.work_context,
-                        hr.original_context,
-                        None,
-                    )
-                })
+                .map(|hr| hr.to_hyper_ref(link.origin))
                 .unwrap_or_else(|| {
                     crate::edition::links::HyperRef::single(None, Some(link.origin), None, None)
                 });
             let d_ref = link
                 .destination_ref
                 .as_ref()
-                .map(|hr| {
-                    let excerpt = hr
-                        .excerpt
-                        .as_deref()
-                        .map(crate::edition::Edition::from_text);
-                    crate::edition::links::HyperRef::single(
-                        excerpt,
-                        hr.work_context,
-                        hr.original_context,
-                        None,
-                    )
-                })
+                .map(|hr| hr.to_hyper_ref(link.destination))
                 .unwrap_or_else(|| {
                     crate::edition::links::HyperRef::single(
                         None,
@@ -3881,7 +4109,8 @@ impl Server {
                         None,
                     )
                 });
-            let hyperlink = crate::edition::links::HyperLink::make(vec![], o_ref, d_ref);
+            let hyperlink =
+                crate::edition::links::HyperLink::make(link.link_types.clone(), o_ref, d_ref);
             self.links.insert(
                 link.link_id,
                 LinkState {
@@ -3985,6 +4214,50 @@ impl Server {
                     }
                     Err(e) => {
                         tracing::warn!("annotations chunk read failed: {}", e);
+                    }
+                }
+            }
+        }
+
+        if let Some(hash) = manifest.fossil_snapshots_hash {
+            if let Some(ref cs) = self.chunk_store {
+                match cs.read_chunk(&hash) {
+                    Ok(data) => {
+                        match serde_json::from_slice::<
+                            Vec<crate::edition::recorder::Fossil>,
+                        >(&data)
+                        {
+                            Ok(snapshots) => {
+                                let fossil_count = snapshots.len();
+                                let mut fingerprints_to_register: Vec<(crate::edition::recorder::RecorderId, Vec<crate::edition::RangeElement>)> = Vec::new();
+                                let mut next_id = 0u64;
+                                for fossil in &snapshots {
+                                    if fossil.id >= next_id {
+                                        next_id = fossil.id + 1;
+                                    }
+                                    if !fossil.is_extinct {
+                                        fingerprints_to_register.push(
+                                            (fossil.id, fossil.query.watched_content.clone())
+                                        );
+                                    }
+                                }
+                                self.recorder_system.restore_from_snapshots(snapshots, next_id);
+                                for (fossil_id, content) in &fingerprints_to_register {
+                                    self.backfollow.register_fossil_fingerprints(*fossil_id, content);
+                                }
+                                tracing::info!(
+                                    "Restored {} fossil snapshots ({} active)",
+                                    fossil_count,
+                                    fingerprints_to_register.len(),
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!("fossil snapshots chunk deserialization failed: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("fossil snapshots chunk read failed: {}", e);
                     }
                 }
             }
@@ -4349,6 +4622,7 @@ impl Server {
         origin_ref: Option<HyperRef>,
         destination_ref: Option<HyperRef>,
     ) -> Result<BeId, ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         self.ensure_session(_session_id)?;
         let _ = self.work(origin)?;
         let _ = self.work(destination)?;
@@ -4367,6 +4641,46 @@ impl Server {
             let d_ref = HyperRef::single(None, Some(destination), None, None);
             HyperLink::make(vec![], o_ref, d_ref)
         };
+
+        let ls = LinkState {
+            link,
+            origin,
+            destination,
+        };
+        self.links.insert(link_id, ls);
+        self.work_to_links.entry(origin).or_default().push(link_id);
+        self.work_to_links
+            .entry(destination)
+            .or_default()
+            .push(link_id);
+        self.backfollow
+            .register_link_content(&self.links[&link_id].link, link_id);
+        self.auto_checkpoint();
+        Ok(link_id)
+    }
+
+    pub fn create_link_with_hyperlink(
+        &mut self,
+        _session_id: SessionId,
+        link: HyperLink,
+    ) -> Result<BeId, ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
+        self.ensure_session(_session_id)?;
+
+        let origin = link
+            .end_at("LeftEnd")
+            .and_then(|r| r.work_context())
+            .ok_or_else(|| ServerError::InvalidArgument("link must have LeftEnd with work_context".into()))?;
+        let destination = link
+            .end_at("RightEnd")
+            .and_then(|r| r.work_context())
+            .ok_or_else(|| ServerError::InvalidArgument("link must have RightEnd with work_context".into()))?;
+
+        let _ = self.work(origin)?;
+        let _ = self.work(destination)?;
+
+        self.link_counter += 1;
+        let link_id = self.link_counter;
 
         let ls = LinkState {
             link,
@@ -4572,6 +4886,7 @@ impl Server {
         dest_work_id: BeId,
         excerpt_text: &str,
     ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         let source_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> = {
             let ws = self
                 .works
@@ -4997,7 +5312,7 @@ impl Server {
         self.links.len()
     }
 
-    fn compute_provenance_chain(
+    pub(crate) fn compute_provenance_chain(
         &self,
         origin_work_id: BeId,
     ) -> Vec<crate::edition::links::ProvenanceHop> {
@@ -5100,6 +5415,33 @@ impl Server {
     pub fn find_transcluders(&self, content_be_id: BeId) -> Vec<(String, BeId, bool)> {
         let content = RangeElement::edition(content_be_id);
         let query = TransclusionQuery::all();
+        self.find_transcluders_with_query(&content, &query)
+    }
+
+    pub fn find_transcluders_for_session(
+        &self,
+        session_id: SessionId,
+        content_be_id: BeId,
+    ) -> Result<Vec<(String, BeId, bool)>, ServerError> {
+        let content = RangeElement::edition(content_be_id);
+        let mut query = TransclusionQuery::all();
+        if let Ok(session) = self.session(session_id) {
+            let authority: Vec<u64> = session.authority_clubs().into_iter().collect();
+            if !authority.is_empty() {
+                let perm_region = crate::edition::props::permissions_region(&authority);
+                query = query.with_permissions(
+                    crate::edition::props::FilterRegion::new(perm_region),
+                );
+            }
+        }
+        Ok(self.find_transcluders_with_query(&content, &query))
+    }
+
+    fn find_transcluders_with_query(
+        &self,
+        content: &RangeElement,
+        query: &TransclusionQuery,
+    ) -> Vec<(String, BeId, bool)> {
         let results = self
             .backfollow
             .find_transcluders_with_backfollow(&content, &query);
@@ -5342,14 +5684,32 @@ impl Server {
         work_b: BeId,
         filter_text: &str,
     ) -> Vec<(i64, i64, i64, i64, String)> {
-        let shared = self.find_shared_regions(work_a, work_b);
         if filter_text.is_empty() {
-            return shared;
+            return self.find_shared_regions(work_a, work_b);
         }
-        shared
+
+        let filter_elem = RangeElement::text(filter_text);
+        let filter_fp = filter_elem.content_fingerprint();
+
+        let works_with_filter: std::collections::HashSet<BeId> = self
+            .backfollow
+            .find_works_by_fingerprint(&filter_fp)
             .into_iter()
-            .filter(|(_, _, _, _, text)| text.contains(filter_text))
-            .collect()
+            .collect();
+
+        let both_contain = works_with_filter.contains(&work_a)
+            && works_with_filter.contains(&work_b);
+
+        let shared = self.find_shared_regions(work_a, work_b);
+
+        if both_contain {
+            shared
+        } else {
+            shared
+                .into_iter()
+                .filter(|(_, _, _, _, text)| text.contains(filter_text))
+                .collect()
+        }
     }
 
     pub fn find_excerpt_positions(&self, work_id: BeId, excerpt_text: &str) -> Vec<(usize, usize)> {
@@ -5524,14 +5884,76 @@ impl Server {
             .process_agenda_with_engine(&mut self.backfollow)
     }
 
+    pub fn update_work_prop_and_trigger(&mut self, work_be_id: BeId) {
+        let ws = match self.works.get(&work_be_id) {
+            Some(ws) => ws,
+            None => return,
+        };
+        let work = &ws.work;
+        let read_club = work.read_club();
+        let edit_club = work.edit_club();
+        let new_prop = BackfollowEngine::make_work_prop(work, read_club, edit_club);
+        self.backfollow.update_edition_prop(work_be_id, new_prop);
+        let triggered = self.backfollow.on_prop_changed(work_be_id);
+        for fossil_id in triggered {
+            let fossil = match self.recorder_system.get_fossil(fossil_id) {
+                Some(f) => f,
+                None => continue,
+            };
+            if fossil.is_extinct {
+                continue;
+            }
+            let query = fossil.query.clone();
+            let mut all_results = Vec::new();
+            for content in &query.watched_content {
+                let results = match query.kind {
+                    crate::edition::RecorderKind::Transcluders => {
+                        let tq = crate::edition::TransclusionQuery::all();
+                        self.backfollow
+                            .find_transcluders_with_backfollow(content, &tq)
+                    }
+                    crate::edition::RecorderKind::Works => {
+                        let wq = crate::edition::WorkQuery::all();
+                        self.backfollow
+                            .find_works_for_content(content, &wq)
+                            .into_iter()
+                            .map(|wid| crate::edition::TransclusionResult {
+                                element: crate::edition::RangeElement::work(wid),
+                                is_direct: true,
+                            })
+                            .collect()
+                    }
+                };
+                all_results.extend(results);
+            }
+            for result in all_results {
+                let source_id = result
+                    .element
+                    .as_work_id()
+                    .or(result.element.as_edition_id());
+                self.recorder_system.record_result(
+                    fossil_id,
+                    result.element,
+                    source_id,
+                    None,
+                    result.is_direct,
+                );
+            }
+        }
+    }
+
     pub fn recorder_plant(
         &mut self,
         edition_id: u64,
         fossil_id: crate::edition::RecorderId,
         content: &[crate::edition::RangeElement],
     ) {
-        self.backfollow
-            .plant_recorder(edition_id, fossil_id, content);
+        if let Some(hoist_item) = self
+            .backfollow
+            .plant_recorder_with_hoist(edition_id, fossil_id, content)
+        {
+            self.recorder_system.schedule_hoist(hoist_item);
+        }
         self.recorder_process();
     }
 
@@ -5573,6 +5995,23 @@ impl Server {
         let triggered_fossils = self.backfollow.check_recorders_by_content(&edition_fps);
         tracing::debug!(target: "xudanu::content_watch",
             edition_id, triggered_count = triggered_fossils.len(), "trigger_planted_recorders: fossils triggered");
+        let permission_queries: std::collections::HashMap<crate::edition::RecorderId, (Vec<u64>, Option<Vec<u64>>)> = triggered_fossils
+            .iter()
+            .filter_map(|&fid| {
+                let f = self.recorder_system.get_fossil(fid)?;
+                if f.is_extinct {
+                    return None;
+                }
+                Some((fid, (f.query.authority_clubs.clone(), f.query.endorsement_filter.clone())))
+            })
+            .collect();
+        let triggered_fossils = self.backfollow.filter_fossils_by_permission(
+            &triggered_fossils,
+            &permission_queries,
+            edition_id,
+        );
+        tracing::debug!(target: "xudanu::content_watch",
+            edition_id, after_perm_filter = triggered_fossils.len(), "trigger_planted_recorders: after permission filter");
         for fossil_id in triggered_fossils {
             let (source_edition_id, query) = {
                 let fossil = match self.recorder_system.get_fossil(fossil_id) {
@@ -5693,6 +6132,13 @@ impl Server {
 
     pub fn version_trace_position(&self, work_id: BeId) -> Option<TracePosition> {
         self.backfollow.trace_position_of(work_id)
+    }
+
+    pub fn materialize_work(
+        &self,
+        work_id: BeId,
+    ) -> Option<crate::ent::content::MaterializedDocument> {
+        self.backfollow.materialize_work(work_id)
     }
 
     pub fn blob_preview(&self, hash_u64: u64) -> Result<Option<Vec<u8>>, ServerError> {
@@ -6830,6 +7276,7 @@ impl Server {
         entries: &[crate::server::federation::SyncWorkEntry],
         my_server_id: &str,
     ) -> (usize, usize) {
+        let _guard = OperationGuard::new(self.consequence_tracker.clone(), self.consequence_tracker.begin_operation());
         let mut imported = 0;
         let mut already_known = 0;
         let existing_fingerprints: Vec<[u8; 32]> = self
@@ -6880,12 +7327,13 @@ impl Server {
                 let mut work = crate::edition::Work::new_with_owner(be_id, None, edition);
                 work.set_read_club(Some(self.system_clubs.public_club));
                 let ws = WorkState {
-                    work,
-                    chunk_ref: None,
-                    grabber: None,
-                    grabbed_at: None,
-                    grab_waiters: Vec::new(),
-                    last_revision_author: None,
+            work,
+            chunk_ref: None,
+            grabber: None,
+            grabbed_at: None,
+            grab_waiters: Vec::new(),
+            last_revision_author: None,
+            revision_authors: std::collections::HashMap::new(),
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
                     cached_title: title,
@@ -7840,7 +8288,8 @@ pub(crate) mod persist_snapshot {
     struct WorkStateSnapshot {
         work: WorkSnapshot,
         grabber: Option<u64>,
-        last_revision_author: Option<BeId>,
+    last_revision_author: Option<BeId>,
+    revision_authors: std::collections::HashMap<u64, BeId>,
         #[serde(default)]
         is_source: bool,
         #[serde(default)]
@@ -7892,6 +8341,8 @@ pub(crate) mod persist_snapshot {
         origin_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         destination_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        link_types: Vec<u64>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -7953,6 +8404,7 @@ pub(crate) mod persist_snapshot {
                             work: WorkSnapshot::from_work(&ws.work),
                             grabber: ws.grabber.map(|s| s.0),
                             last_revision_author: ws.last_revision_author,
+                            revision_authors: ws.revision_authors.clone(),
                             is_source: ws.is_source,
                             source_author_id: ws.source_author_id,
                             source_edition_info: ws.source_edition_info.clone(),
@@ -8037,6 +8489,7 @@ pub(crate) mod persist_snapshot {
                             destination: ls.destination,
                             origin_ref: o_ref,
                             destination_ref: d_ref,
+                            link_types: ls.link.link_types().to_vec(),
                         }
                     })
                     .collect(),
@@ -8129,6 +8582,8 @@ pub(crate) mod persist_snapshot {
                 ),
                 source_patterns: crate::server::source_matcher::builtin_patterns(),
                 pending_attributions: Vec::new(),
+                consequence_tracker: Arc::new(ConsequenceTracker::new()),
+                write_barrier: Arc::new(WriteBarrier::new()),
             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap
@@ -8173,6 +8628,7 @@ pub(crate) mod persist_snapshot {
                     grabbed_at: None,
                     grab_waiters: Vec::new(),
                     last_revision_author: ws_snap.last_revision_author,
+                    revision_authors: ws_snap.revision_authors.clone(),
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
                     cached_title: Self::extract_title(work.current_edition()),
@@ -8213,26 +8669,14 @@ pub(crate) mod persist_snapshot {
                 let o_ref = ls
                     .origin_ref
                     .as_ref()
-                    .map(|hr| {
-                        let excerpt = hr
-                            .excerpt
-                            .as_deref()
-                            .map(crate::edition::Edition::from_text);
-                        HyperRef::single(excerpt, hr.work_context, hr.original_context, None)
-                    })
+                    .map(|hr| hr.to_hyper_ref(ls.origin))
                     .unwrap_or_else(|| HyperRef::single(None, Some(ls.origin), None, None));
                 let d_ref = ls
                     .destination_ref
                     .as_ref()
-                    .map(|hr| {
-                        let excerpt = hr
-                            .excerpt
-                            .as_deref()
-                            .map(crate::edition::Edition::from_text);
-                        HyperRef::single(excerpt, hr.work_context, hr.original_context, None)
-                    })
+                    .map(|hr| hr.to_hyper_ref(ls.destination))
                     .unwrap_or_else(|| HyperRef::single(None, Some(ls.destination), None, None));
-                let link = HyperLink::make(vec![], o_ref, d_ref);
+                let link = HyperLink::make(ls.link_types.clone(), o_ref, d_ref);
                 server.links.insert(
                     ls.link_id,
                     LinkState {
@@ -8298,8 +8742,9 @@ pub(crate) mod persist_snapshot {
             server
         }
 
-        pub fn checkpoint_to_file(&self, path: &std::path::Path) -> std::io::Result<()> {
-            let start = std::time::Instant::now();
+         pub fn checkpoint_to_file(&self, path: &std::path::Path) -> std::io::Result<()> {
+             let _wg = WriteGuard::new(self.write_barrier.clone());
+             let start = std::time::Instant::now();
             let snapshot = self.to_snapshot();
             let data = serde_json::to_value(&snapshot)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -8313,8 +8758,9 @@ pub(crate) mod persist_snapshot {
             Ok(())
         }
 
-        pub fn checkpoint_to_store(&mut self) -> std::io::Result<()> {
-            let has_chunk_store = self.chunk_store.is_some();
+         pub fn checkpoint_to_store(&mut self) -> std::io::Result<()> {
+             let _wg = WriteGuard::new(self.write_barrier.clone());
+             let has_chunk_store = self.chunk_store.is_some();
             if !has_chunk_store {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
@@ -8436,6 +8882,7 @@ pub(crate) mod persist_snapshot {
                             destination: ls.destination,
                             origin_ref: o_ref,
                             destination_ref: d_ref,
+                            link_types: ls.link.link_types().to_vec(),
                         }
                     })
                     .collect();
@@ -8556,6 +9003,23 @@ pub(crate) mod persist_snapshot {
                     );
                     Some(hash)
                 },
+                fossil_snapshots_hash: {
+                    let (snapshots, _next_id) = self.recorder_system.to_snapshots();
+                    if snapshots.is_empty() {
+                        None
+                    } else {
+                        tracing::info!(
+                            "[checkpoint] saving {} fossil snapshots",
+                            snapshots.len()
+                        );
+                        let fs_data = serde_json::to_vec(&snapshots)
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                        let hash = chunk_store
+                            .write_chunk(&fs_data)
+                            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                        Some(hash)
+                    }
+                },
             };
 
             let data_dir = match self.data_dir.as_ref() {
@@ -8632,6 +9096,7 @@ pub(crate) mod persist_snapshot {
                     //   - content_address_hash
                     //   - links_hash
                     //   - annotations_hash
+                    //   - fossil_snapshots_hash
                     if let Some(hash) = manifest.historical_authors_hash {
                         referenced.insert(hash);
                     }
@@ -8645,6 +9110,9 @@ pub(crate) mod persist_snapshot {
                         referenced.insert(hash);
                     }
                     if let Some(hash) = manifest.annotations_hash {
+                        referenced.insert(hash);
+                    }
+                    if let Some(hash) = manifest.fossil_snapshots_hash {
                         referenced.insert(hash);
                     }
                 }
@@ -11864,6 +12332,41 @@ mod tests {
     }
 
     #[test]
+    fn find_shared_regions_filtered_uses_fingerprint_index() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let ed_a = Edition::from_text_elements(&[
+            RangeElement::text("intro A".to_string()),
+            RangeElement::text("unique shared alpha".to_string()),
+            RangeElement::text("unique shared beta".to_string()),
+            RangeElement::text("outro A".to_string()),
+        ]);
+        let ed_b = Edition::from_text_elements(&[
+            RangeElement::text("intro B".to_string()),
+            RangeElement::text("unique shared alpha".to_string()),
+            RangeElement::text("unique shared beta".to_string()),
+            RangeElement::text("outro B".to_string()),
+        ]);
+
+        let id_a = server.create_work(sid, ed_a).unwrap();
+        let id_b = server.create_work(sid, ed_b).unwrap();
+
+        let fp = RangeElement::text("unique shared alpha").content_fingerprint();
+        let works = server.backfollow.find_works_by_fingerprint(&fp);
+        assert!(
+            works.contains(&id_a) && works.contains(&id_b),
+            "fingerprint index should contain both works for shared text"
+        );
+
+        let filtered = server.find_shared_regions_filtered(id_a, id_b, "unique shared alpha");
+        assert!(
+            !filtered.is_empty(),
+            "fingerprint-based filter should find shared regions"
+        );
+    }
+
+    #[test]
     fn watch_plant_and_trigger_finds_matching_work() {
         crate::edition::init_endorsement_flags();
         let mut server = Server::new();
@@ -14024,12 +14527,16 @@ mod tests {
                 char_count,
                 author_contributions,
                 reused_in_count,
+                reused_in_docs: _,
             } => {
                 assert_eq!(version_count, 0);
                 assert!(char_count > 0, "char_count should be positive");
                 assert_eq!(unique_sources, 0);
-                assert_eq!(unique_authors, 0);
-                assert!(author_contributions.is_empty());
+                assert_eq!(unique_authors, 1);
+                assert_eq!(author_contributions.len(), 1);
+                assert_eq!(author_contributions[0].display_name, "Unattributed");
+                assert_eq!(author_contributions[0].char_count, char_count);
+                assert_eq!(author_contributions[0].author_type.as_deref(), Some("unattributed"));
                 assert_eq!(reused_in_count, 0);
             }
             _ => panic!("expected WorkSummaryResult"),
@@ -14041,6 +14548,328 @@ mod tests {
         let server = Server::new();
         let result = server.work_summary(99999);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn work_summary_two_human_authors_via_element_provenance() {
+        let mut server = Server::new();
+        let (alice_id, alice_sid) = ac_create_user(&mut server, "alice", b"pw1");
+        let (bob_id, bob_sid) = ac_create_user(&mut server, "bob", b"pw2");
+        let public = server.public_club_id();
+
+        let work_id = server.create_work(alice_sid, Edition::from_text("hello world")).unwrap();
+        if let Some(ws) = server.works.get_mut(&work_id) {
+            ws.work.set_edit_club(Some(public));
+        }
+
+        server.work_grab(alice_sid, work_id).unwrap();
+        let alice_ed = {
+            let edition = server.work_edition(work_id).unwrap();
+            let entries = edition.all_entries();
+            let alice_prov = crate::edition::provenance::ElementProvenance {
+                author_public_key: [0u8; 32],
+                author_display_name: "alice".to_string(),
+                author_club_id: alice_id,
+                timestamp: 100,
+                author_type: crate::edition::provenance::AuthorType::Human,
+                llm_model: None,
+                historical_author_id: None,
+                source_work_id: None,
+            };
+            let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
+                Vec::new();
+            for (pos, c) in &entries {
+                let mut carrier = (**c).clone();
+                carrier.provenance = Some(alice_prov.clone());
+                new_entries.push((*pos, Arc::new(carrier)));
+            }
+            crate::edition::Edition::from_entries(new_entries)
+        };
+        server.work_revise(alice_sid, work_id, alice_ed).unwrap();
+        server.work_release(alice_sid, work_id).unwrap();
+
+        server.work_grab(bob_sid, work_id).unwrap();
+        let bob_ed = {
+            let edition = server.work_edition(work_id).unwrap();
+            let text = edition.to_text();
+            let new_text = format!("{} and bob was here", &text[..5]);
+            let bob_prov = crate::edition::provenance::ElementProvenance {
+                author_public_key: [0u8; 32],
+                author_display_name: "bob".to_string(),
+                author_club_id: bob_id,
+                timestamp: 200,
+                author_type: crate::edition::provenance::AuthorType::Human,
+                llm_model: None,
+                historical_author_id: None,
+                source_work_id: None,
+            };
+            let entries = edition.all_entries();
+            let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
+                Vec::new();
+            let mut pos = 0i64;
+            for (i, ch) in "hello".chars().enumerate() {
+                let mut c = crate::edition::range_element::Carrier::new(
+                    crate::edition::RangeElement::text(ch.to_string()),
+                );
+                if let Some(old_entry) = entries.iter().find(|(p, _)| *p == i as i64) {
+                    c.provenance = old_entry.1.provenance.clone();
+                }
+                new_entries.push((pos, Arc::new(c)));
+                pos += 1;
+            }
+            for part in &[" and bob was here"] {
+                let c = crate::edition::range_element::Carrier::new(
+                    crate::edition::RangeElement::text(part.to_string()),
+                )
+                .with_provenance(bob_prov.clone());
+                new_entries.push((pos, Arc::new(c)));
+                pos += 1;
+            }
+            crate::edition::Edition::from_entries(new_entries)
+        };
+        server.work_revise(bob_sid, work_id, bob_ed).unwrap();
+        server.work_release(bob_sid, work_id).unwrap();
+
+        let result = server.work_summary(work_id).unwrap();
+        match result {
+            crate::server::transport::protocol::ResponseValue::WorkSummaryResult {
+                author_contributions,
+                unique_authors,
+                ..
+            } => {
+                assert!(
+                    unique_authors >= 2,
+                    "should have at least 2 authors, got {}",
+                    unique_authors
+                );
+                let names: Vec<&str> =
+                    author_contributions.iter().map(|a| a.display_name.as_str()).collect();
+                assert!(
+                    names.iter().any(|n| *n == "alice"),
+                    "alice should appear in {:?}",
+                    names
+                );
+                assert!(
+                    names.iter().any(|n| *n == "bob"),
+                    "bob should appear in {:?}",
+                    names
+                );
+                for ac in &author_contributions {
+                    if ac.display_name == "alice" || ac.display_name == "bob" {
+                        assert_eq!(
+                            ac.author_type.as_deref(),
+                            Some("human"),
+                            "{} should have type human",
+                            ac.display_name
+                        );
+                    }
+                }
+            }
+            _ => panic!("expected WorkSummaryResult"),
+        }
+    }
+
+    #[test]
+    fn work_summary_historical_author_via_element_provenance() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server.grant_admin_authority(sid).unwrap();
+        let club_id = server
+            .session(sid)
+            .unwrap()
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied()
+            .unwrap();
+
+        let author = server
+            .register_historical_author(
+                "Ted Nelson".into(),
+                "Ted Nelson".into(),
+                Some(1937),
+                None,
+                std::collections::HashMap::new(),
+                "Literary Machines".into(),
+                club_id,
+            )
+            .unwrap();
+
+        let source_text = "Everything is deeply intertwingled.";
+        let (source_id, _, _, _) = server
+            .import_source_work(
+                sid,
+                author.be_id,
+                "Literary Machines".into(),
+                source_text.to_string(),
+                "1980 edition".into(),
+                0,
+                0,
+            )
+            .unwrap();
+
+        let result = server.work_summary(source_id).unwrap();
+        match result {
+            crate::server::transport::protocol::ResponseValue::WorkSummaryResult {
+                author_contributions,
+                unique_authors,
+                char_count,
+                ..
+            } => {
+                assert!(char_count > 0);
+                assert!(
+                    unique_authors >= 1,
+                    "should have at least 1 author, got {}",
+                    unique_authors
+                );
+                let names: Vec<&str> =
+                    author_contributions.iter().map(|a| a.display_name.as_str()).collect();
+                assert!(
+                    names.iter().any(|n| *n == "Ted Nelson"),
+                    "Ted Nelson should appear in {:?}",
+                    names
+                );
+                let ted = author_contributions.iter().find(|a| a.display_name == "Ted Nelson");
+                assert!(
+                    ted.is_some() && ted.unwrap().author_type.as_deref() == Some("historical"),
+                    "Ted Nelson should have type historical"
+                );
+            }
+            _ => panic!("expected WorkSummaryResult"),
+        }
+    }
+
+    #[test]
+    fn work_summary_revise_stamps_element_provenance() {
+        let mut server = Server::new();
+        let (alice_id, alice_sid) = ac_create_user(&mut server, "alice", b"pw1");
+
+        let work_id = server
+            .create_work(alice_sid, Edition::from_text("aaaa bbbb cccc"))
+            .unwrap();
+
+        server.work_grab(alice_sid, work_id).unwrap();
+        server
+            .work_revise(alice_sid, work_id, Edition::from_text("aaaa bbbb cccc dddd"))
+            .unwrap();
+        server.work_release(alice_sid, work_id).unwrap();
+
+        let result = server.work_summary(work_id).unwrap();
+        match result {
+            crate::server::transport::protocol::ResponseValue::WorkSummaryResult {
+                author_contributions,
+                unique_authors,
+                char_count,
+                ..
+            } => {
+                assert!(char_count > 0);
+                assert!(
+                    unique_authors >= 1,
+                    "should have at least alice, got {}",
+                    unique_authors
+                );
+                assert!(
+                    !author_contributions.iter().any(|a| a.display_name == "Unattributed"),
+                    "revise_work should have stamped element provenance on all entries, got {:?}",
+                    author_contributions
+                        .iter()
+                        .map(|a| &a.display_name)
+                        .collect::<Vec<_>>()
+                );
+                let alice = author_contributions.iter().find(|a| a.display_name == "alice");
+                assert!(
+                    alice.is_some() && alice.unwrap().author_type.as_deref() == Some("human"),
+                    "alice should have type human"
+                );
+            }
+            _ => panic!("expected WorkSummaryResult"),
+        }
+    }
+
+    #[test]
+    fn work_summary_llm_author_via_element_provenance() {
+        let mut server = Server::new();
+        let (club_id, sid) = ac_create_user(&mut server, "user", b"pw1");
+
+        let mut edition = Edition::from_text("Human text. ");
+        let llm_prov = crate::edition::provenance::ElementProvenance {
+            author_public_key: [0u8; 32],
+            author_display_name: "gpt-4".to_string(),
+            author_club_id: club_id,
+            timestamp: 100,
+            author_type: crate::edition::provenance::AuthorType::Llm,
+            llm_model: Some("gpt-4".to_string()),
+            historical_author_id: None,
+            source_work_id: None,
+        };
+        let llm_text = "AI generated text.";
+        let llm_carrier =
+            crate::edition::range_element::Carrier::new(crate::edition::RangeElement::text(
+                llm_text.to_string(),
+            ))
+            .with_provenance(llm_prov);
+
+        let mut entries = edition.all_entries().to_vec();
+        let next_pos = entries.last().map(|(p, _)| *p + 1).unwrap_or(0);
+        entries.push((next_pos, Arc::new(llm_carrier)));
+        let full_edition = crate::edition::Edition::from_entries(entries);
+
+        let work_id = server.create_work(sid, full_edition).unwrap();
+
+        let result = server.work_summary(work_id).unwrap();
+        match result {
+            crate::server::transport::protocol::ResponseValue::WorkSummaryResult {
+                author_contributions,
+                ..
+            } => {
+                let names: Vec<&str> =
+                    author_contributions.iter().map(|a| a.display_name.as_str()).collect();
+                assert!(
+                    names.iter().any(|n| *n == "gpt-4"),
+                    "gpt-4 should appear in {:?}",
+                    names
+                );
+                let gpt = author_contributions.iter().find(|a| a.display_name == "gpt-4");
+                assert!(
+                    gpt.is_some() && gpt.unwrap().author_type.as_deref() == Some("llm"),
+                    "gpt-4 should have type llm"
+                );
+            }
+            _ => panic!("expected WorkSummaryResult"),
+        }
+    }
+
+    #[test]
+    fn work_summary_span_provenance_fallback_when_no_element_prov() {
+        let mut server = Server::new();
+        let (alice_id, alice_sid) = ac_create_user(&mut server, "alice", b"pw1");
+
+        let work_id = server
+            .create_work(alice_sid, Edition::from_text("just span prov, no element prov"))
+            .unwrap();
+
+        let result = server.work_summary(work_id).unwrap();
+        match result {
+            crate::server::transport::protocol::ResponseValue::WorkSummaryResult {
+                unique_authors,
+                author_contributions,
+                char_count,
+                ..
+            } => {
+                assert!(char_count > 0);
+                assert!(
+                    unique_authors >= 1,
+                    "should report at least unattributed, got {}",
+                    unique_authors
+                );
+                assert!(
+                    !author_contributions.is_empty(),
+                    "should have some author entry"
+                );
+            }
+            _ => panic!("expected WorkSummaryResult"),
+        }
     }
 
     #[test]
@@ -14293,5 +15122,817 @@ mod tests {
             assert_eq!(all_anns[0].1[0].payload, "must survive");
             assert_eq!(all_anns[0].1[0].annotation_id, 42);
         }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn link_persistence_round_trip_preserves_all_fields() {
+        use crate::edition::links::{HyperLink, HyperRef, Path, ProvenanceHop};
+
+        let dir = TempDir::new("link_persist");
+        let data_dir = dir.snapshot_path().parent().unwrap().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let link_id;
+        let origin_work_id;
+        let dest_work_id;
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            origin_work_id = server
+                .create_work(sid, Edition::from_text("origin document"))
+                .unwrap();
+            dest_work_id = server
+                .create_work(sid, Edition::from_text("destination document"))
+                .unwrap();
+
+            let origin_ref = HyperRef::single(
+                Some(Edition::from_text("excerpt text")),
+                Some(origin_work_id),
+                None,
+                Some(Path::new(vec![
+                    RangeElement::label(42, RangeElement::text("labelled")),
+                ])),
+            )
+            .with_provenance_chain(vec![ProvenanceHop::new(999, 888)]);
+            let dest_ref = HyperRef::single(
+                None,
+                Some(dest_work_id),
+                Some(origin_work_id),
+                None,
+            );
+            let link = HyperLink::make(vec![100, 200], origin_ref, dest_ref);
+            link_id = server.create_link_with_hyperlink(sid, link).unwrap();
+
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let ls = server.links.get(&link_id).expect("link must survive restore");
+            assert_eq!(ls.origin, origin_work_id);
+            assert_eq!(ls.destination, dest_work_id);
+            assert_eq!(ls.link.link_types(), &[100, 200], "link_types must survive restore");
+
+            let o_ref = ls.link.end_at("LeftEnd").expect("LeftEnd must exist");
+            assert_eq!(o_ref.work_context(), Some(origin_work_id));
+            assert!(o_ref.excerpt().is_some(), "excerpt must survive restore");
+            assert_eq!(
+                o_ref.excerpt().unwrap().to_text().to_string(),
+                "excerpt text",
+                "excerpt content must match"
+            );
+            assert!(
+                o_ref.path_context().is_some(),
+                "path_context must survive restore"
+            );
+            assert_eq!(o_ref.path_context().unwrap().len(), 1);
+            assert_eq!(
+                o_ref.provenance_chain().len(),
+                1,
+                "provenance_chain must survive restore"
+            );
+            assert_eq!(o_ref.provenance_chain()[0].source_work_id(), 999);
+            assert_eq!(o_ref.provenance_chain()[0].link_id(), 888);
+
+            let d_ref = ls.link.end_at("RightEnd").expect("RightEnd must exist");
+            assert_eq!(d_ref.work_context(), Some(dest_work_id));
+            assert_eq!(d_ref.original_context(), Some(origin_work_id));
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn link_snapshot_round_trip_preserves_all_fields() {
+        use crate::edition::links::{HyperLink, HyperRef, Path, ProvenanceHop};
+
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let origin_work_id = server
+            .create_work(sid, Edition::from_text("origin"))
+            .unwrap();
+        let dest_work_id = server
+            .create_work(sid, Edition::from_text("dest"))
+            .unwrap();
+
+        let origin_ref = HyperRef::single(
+            Some(Edition::from_text("excerpt")),
+            Some(origin_work_id),
+            None,
+            Some(Path::new(vec![
+                RangeElement::label(7, RangeElement::text("deep")),
+            ])),
+        )
+        .with_provenance_chain(vec![ProvenanceHop::new(55, 66)]);
+        let dest_ref = HyperRef::single(None, Some(dest_work_id), None, None);
+        let link = HyperLink::make(vec![10, 20, 30], origin_ref, dest_ref);
+        let link_id = server.create_link_with_hyperlink(sid, link).unwrap();
+
+        let snapshot = server.to_snapshot();
+        let restored = Server::from_snapshot(&snapshot);
+
+        let ls = restored.links.get(&link_id).expect("link must survive snapshot restore");
+        assert_eq!(ls.link.link_types(), &[10, 20, 30], "link_types must survive snapshot");
+
+        let o_ref = ls.link.end_at("LeftEnd").unwrap();
+        assert!(o_ref.path_context().is_some(), "path_context must survive snapshot");
+        assert_eq!(o_ref.provenance_chain().len(), 1, "provenance_chain must survive snapshot");
+    }
+
+    #[test]
+    fn consequence_tracker_wired_into_create_work() {
+        let mut server = Server::new();
+        assert_eq!(server.pending_operation_count(), 0);
+
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let _work_id = server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
+
+        assert_eq!(server.pending_operation_count(), 0);
+    }
+
+    #[test]
+    fn consequence_tracker_wired_into_revise() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let wid = server
+            .create_work(sid, Edition::from_text("v1"))
+            .unwrap();
+
+        server.work_grab(sid, wid).unwrap();
+        assert_eq!(server.pending_operation_count(), 0);
+
+        server
+            .work_save_and_release(sid, wid, Edition::from_text("v2"))
+            .unwrap();
+        assert_eq!(server.pending_operation_count(), 0);
+    }
+
+    #[test]
+    fn consequence_tracker_wired_into_link_operations() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let w1 = server
+            .create_work(sid, Edition::from_text("origin"))
+            .unwrap();
+        let w2 = server
+            .create_work(sid, Edition::from_text("dest"))
+            .unwrap();
+
+        let _link_id = server.create_link(sid, w1, w2, None, None).unwrap();
+        assert_eq!(server.pending_operation_count(), 0);
+    }
+
+    #[test]
+    fn write_barrier_tracks_checkpoints() {
+        let mut server = Server::new();
+        assert_eq!(server.pending_write_count(), 0);
+
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let _wid = server
+            .create_work(sid, Edition::from_text("test"))
+            .unwrap();
+
+        assert_eq!(server.pending_write_count(), 0);
+    }
+
+    #[test]
+    fn wait_for_consequences_returns_immediately_when_no_pending() {
+        let tracker = std::sync::Arc::new(crate::server::ConsequenceTracker::new());
+        assert_eq!(tracker.pending_count(), 0);
+        tracker.wait_for_consequences();
+    }
+
+    #[test]
+    fn wait_for_write_returns_immediately_when_no_pending() {
+        let barrier = std::sync::Arc::new(crate::server::WriteBarrier::new());
+        assert_eq!(barrier.pending_writes(), 0);
+        barrier.wait_for_write();
+    }
+
+    #[test]
+    fn operation_guard_fires_on_early_return() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let _result = server.work_force_release(sid, 99999);
+        assert_eq!(server.pending_operation_count(), 0);
+    }
+
+    #[test]
+    fn tracker_accessible_from_handle() {
+        let server = Server::new();
+        let tracker = server.consequence_tracker();
+        let barrier = server.write_barrier();
+        assert_eq!(tracker.pending_count(), 0);
+        assert_eq!(barrier.pending_writes(), 0);
+    }
+
+    #[test]
+    fn recorder_plant_uses_hoister() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let w1 = server
+            .create_work(sid, Edition::from_text("alpha beta gamma"))
+            .unwrap();
+
+        let content_elements: Vec<_> = server.work_edition(w1).unwrap()
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements.clone());
+        let fossil_id = server.recorder_create_for_content(query.clone(), w1);
+        assert!(!server.recorder_system.get_fossil(fossil_id).unwrap().is_extinct);
+
+        server.recorder_plant(w1, fossil_id, &query.watched_content);
+
+        let fossil = server.recorder_system.get_fossil(fossil_id).unwrap();
+        assert!(!fossil.is_extinct);
+    }
+
+    #[test]
+    fn recorder_hoister_propagates_flags() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let w = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+
+        let content_elements: Vec<_> = server.work_edition(w).unwrap()
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements.clone());
+        let fossil_id = server.recorder_create_for_content(query.clone(), w);
+        server.recorder_plant(w, fossil_id, &query.watched_content);
+
+        assert!(server.backfollow.is_sensor_waiting(w),
+            "sensor crum should have IS_SENSOR_WAITING_FLAG after planting");
+    }
+
+    #[test]
+    fn recorder_plant_idempotent() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let w = server
+            .create_work(sid, Edition::from_text("test content"))
+            .unwrap();
+
+        let content_elements: Vec<_> = server.work_edition(w).unwrap()
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements.clone());
+        let fossil_id = server.recorder_create_for_content(query.clone(), w);
+        server.recorder_plant(w, fossil_id, &query.watched_content);
+        server.recorder_plant(w, fossil_id, &query.watched_content);
+
+        let fossil = server.recorder_system.get_fossil(fossil_id).unwrap();
+        assert!(!fossil.is_extinct);
+    }
+
+    #[test]
+    fn permission_filter_blocks_unauthorized_fossil() {
+        use crate::edition::grandmap::Id;
+        let mut engine = crate::edition::backfollow::BackfollowEngine::new();
+
+        let public_edition = crate::edition::Edition::from_text("shared content");
+        let private_edition = crate::edition::Edition::from_text("shared content");
+
+        let pub_id = 1u64;
+        let priv_id = 2u64;
+        engine.register_edition(
+            &public_edition,
+            pub_id,
+            crate::edition::props::BertProp::permissions_prop(vec![Id::global(0)]),
+        );
+        engine.register_edition(
+            &private_edition,
+            priv_id,
+            crate::edition::props::BertProp::make(),
+        );
+
+        let fossil_ids = vec![1u64, 2u64, 3u64];
+        let mut queries = std::collections::HashMap::new();
+        queries.insert(1, (vec![0u64], None));
+        queries.insert(2, (vec![42u64], None));
+        queries.insert(3, (vec![], None));
+
+        let filtered = engine.filter_fossils_by_permission(&fossil_ids, &queries, pub_id);
+        assert!(filtered.contains(&1), "fossil with public authority should pass");
+        assert!(!filtered.contains(&2), "fossil with club 42 authority should be blocked by public-only work");
+        assert!(filtered.contains(&3), "fossil with no authority requirements should always pass");
+    }
+
+    #[test]
+    fn permission_filter_passes_all_when_no_authority() {
+        let mut engine = crate::edition::backfollow::BackfollowEngine::new();
+        let edition = crate::edition::Edition::from_text("test");
+        engine.register_edition(&edition, 1, crate::edition::props::BertProp::make());
+
+        let fossil_ids = vec![1u64, 2u64];
+        let queries = std::collections::HashMap::new();
+
+        let filtered = engine.filter_fossils_by_permission(&fossil_ids, &queries, 1);
+        assert_eq!(filtered.len(), 2, "all fossils should pass with no queries");
+    }
+
+    #[test]
+    fn fossil_snapshots_roundtrip() {
+        let mut sys = crate::edition::RecorderSystem::new();
+        let query_a = crate::edition::RecorderQuery::transcluders()
+            .with_watched_content(vec![crate::edition::RangeElement::text("hello")]);
+        let fid_a = sys.create_fossil(query_a);
+        sys.record_result(
+            fid_a,
+            crate::edition::RangeElement::edition(42),
+            Some(1),
+            None,
+            true,
+        );
+
+        let query_b = crate::edition::RecorderQuery::works()
+            .with_authority(vec![10, 20])
+            .with_watched_content(vec![crate::edition::RangeElement::text("world")]);
+        let fid_b = sys.create_fossil(query_b);
+
+        let extinct_query = crate::edition::RecorderQuery::transcluders();
+        let fid_extinct = sys.create_fossil(extinct_query);
+        sys.extinguish_fossil(fid_extinct);
+
+        let (snapshots, next_id) = sys.to_snapshots();
+        assert_eq!(snapshots.len(), 2, "extinct fossils should not be snapshotted");
+        assert!(snapshots.iter().all(|f| !f.is_extinct));
+        assert_eq!(next_id, 4, "next_id should be preserved");
+
+        let json = serde_json::to_vec(&snapshots).unwrap();
+        let restored: Vec<crate::edition::recorder::Fossil> = serde_json::from_slice(&json).unwrap();
+        assert_eq!(restored.len(), 2);
+
+        let mut sys2 = crate::edition::RecorderSystem::new();
+        sys2.restore_from_snapshots(restored, next_id);
+        assert!(sys2.get_fossil(fid_a).is_some());
+        assert!(sys2.get_fossil(fid_b).is_some());
+        assert!(sys2.get_fossil(fid_extinct).is_none());
+        assert_eq!(sys2.get_fossil(fid_a).unwrap().result_count(), 1);
+        assert!(sys2.next_id() > fid_extinct);
+    }
+
+    #[test]
+    fn fossil_persistence_survives_checkpoint_restore() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_fossil_persist_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let fossil_id;
+        let work_id;
+        let mut server = Server::new();
+        let chunk_store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
+        server.chunk_store = Some(chunk_store);
+        server.checkpoint_path =
+            Some(crate::persist::manifest::manifest_path(&data_dir));
+        server.data_dir = Some(data_dir.clone());
+
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        work_id = server
+            .create_work(sid, Edition::from_text("monitored content here"))
+            .unwrap();
+
+        let content_elements: Vec<_> = server
+            .work_edition(work_id)
+            .unwrap()
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_elements.clone());
+        fossil_id = server.recorder_create_for_content(query.clone(), work_id);
+        server.recorder_plant(work_id, fossil_id, &query.watched_content);
+
+        assert!(!server
+            .recorder_system
+            .get_fossil(fossil_id)
+            .unwrap()
+            .is_extinct);
+
+        server.checkpoint_to_store().unwrap();
+        drop(server);
+
+        {
+            let mut server2 = Server::new();
+            server2.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let fossil = server2.recorder_system.get_fossil(fossil_id);
+            assert!(
+                fossil.is_some(),
+                "fossil should survive checkpoint/restore"
+            );
+            let f = fossil.unwrap();
+            assert!(!f.is_extinct);
+            assert_eq!(f.source_edition_id, Some(work_id));
+
+            let fp_index = server2.backfollow.fossil_fingerprints();
+            assert!(
+                !fp_index.is_empty(),
+                "fossil fingerprints should be re-registered in backfollow"
+            );
+        }
+
+        let manifest = crate::persist::manifest::read_manifest(
+            &crate::persist::manifest::manifest_path(&data_dir),
+        )
+        .unwrap();
+        assert!(
+            manifest.fossil_snapshots_hash.is_some(),
+            "manifest should have fossil_snapshots_hash"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn empty_fossils_no_hash_in_manifest() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_fossil_empty_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        {
+            let mut server = Server::new();
+            server.chunk_store = Some(
+                crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap(),
+            );
+            server.checkpoint_path =
+                Some(crate::persist::manifest::manifest_path(&data_dir));
+            server.data_dir = Some(data_dir.clone());
+
+            server.checkpoint_to_store().unwrap();
+        }
+
+        let manifest = crate::persist::manifest::read_manifest(
+            &crate::persist::manifest::manifest_path(&data_dir),
+        )
+        .unwrap();
+        assert!(
+            manifest.fossil_snapshots_hash.is_none(),
+            "empty recorder system should not produce fossil hash"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn reactive_trigger_after_revise_adds_matching_content() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
+
+        let content_a: Vec<RangeElement> = server
+            .get_edition(work_a)
+            .unwrap()
+            .unwrap()
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(content_a.clone());
+        let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
+        server.recorder_plant(work_a, fossil_id, &query.watched_content);
+
+        let work_b = server
+            .create_work(sid, Edition::from_text("beta"))
+            .unwrap();
+        server.work_grab(sid, work_b).unwrap();
+        let _drained = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_id]),
+        );
+
+        server
+            .work_revise(sid, work_b, Edition::from_text("alpha"))
+            .unwrap();
+
+        let notifications = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_id]),
+        );
+        assert!(
+            !notifications.is_empty(),
+            "revising work_b to add matching content should trigger the recorder"
+        );
+    }
+
+    #[test]
+    fn reactive_trigger_on_publish_prop_change() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work = server
+            .create_work(sid, Edition::from_text("content"))
+            .unwrap();
+
+        let edition = server.get_edition(work).unwrap().unwrap();
+        let content: Vec<RangeElement> = edition
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query = crate::edition::RecorderQuery::works().with_watched_content(content.clone());
+        let fossil_id = server.recorder_create_for_content(query.clone(), work);
+        server.recorder_plant(work, fossil_id, &query.watched_content);
+        let results_before = server.recorder_get(fossil_id).unwrap().result_count();
+
+        let work_b = server
+            .create_work(sid, Edition::from_text("content"))
+            .unwrap();
+        let _drained = server.drain_content_notifications_for(
+            &std::collections::HashSet::from([fossil_id]),
+        );
+
+        server.work_unpublish(sid, work_b).unwrap();
+
+        let results_after = server.recorder_get(fossil_id).unwrap().result_count();
+        assert!(
+            results_after >= results_before,
+            "prop change should not lose existing results"
+        );
+    }
+
+    #[test]
+    fn extinguished_fossil_ignores_triggers() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
+
+        let content_a: Vec<RangeElement> = server
+            .get_edition(work_a)
+            .unwrap()
+            .unwrap()
+            .all_entries()
+            .iter()
+            .map(|(_, c)| c.element.clone())
+            .collect();
+        let query = crate::edition::RecorderQuery::works()
+            .with_watched_content(vec![content_a[0].clone()]);
+        let fossil_id = server.recorder_create_for_content(query.clone(), work_a);
+        server.recorder_plant(work_a, fossil_id, &query.watched_content);
+
+        let _work_b = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
+
+        let results_before = server.recorder_get(fossil_id).unwrap().result_count();
+        assert!(results_before > 0, "should have initial results from work_b");
+
+        server.recorder_extinguish(fossil_id);
+        assert!(server.recorder_get(fossil_id).unwrap().is_extinct);
+
+        let _work_c = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
+
+        let results_after = server.recorder_get(fossil_id).unwrap().result_count();
+        assert_eq!(
+            results_after, results_before,
+            "extinguished fossil should not accumulate new results"
+        );
+    }
+
+    #[test]
+    fn ent_bridge_create_work_materializes() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_id = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+
+        let doc = server.materialize_work(work_id).unwrap();
+        assert!(doc.root.is_some(), "document should have a root node");
+        let root = doc.root.unwrap();
+        assert_eq!(root.kind, "document");
+        assert!(!root.spans.is_empty(), "should have spans from edition elements");
+
+        let all_text: String = root
+            .spans
+            .iter()
+            .map(|s| match &s.text {
+                crate::ent::content::AlternativeSet::Single(t) => t.as_str(),
+                crate::ent::content::AlternativeSet::Alternatives(ts) => {
+                    ts.first().map(|s| s.as_str()).unwrap_or("")
+                }
+            })
+            .collect();
+        assert!(
+            all_text.contains("hello"),
+            "materialized text should contain 'hello', got: {:?}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn ent_bridge_revise_creates_new_trace_position() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_id = server
+            .create_work(sid, Edition::from_text("v1"))
+            .unwrap();
+
+        let tp1 = server.version_trace_position(work_id);
+        assert!(tp1.is_some(), "first revision should have trace position");
+
+        server.work_grab(sid, work_id).unwrap();
+        server
+            .work_revise(sid, work_id, Edition::from_text("v2"))
+            .unwrap();
+
+        let tp2 = server.version_trace_position(work_id);
+        assert!(tp2.is_some(), "second revision should have trace position");
+        assert_ne!(tp1, tp2, "revision should create new trace position");
+
+        let doc = server.materialize_work(work_id).unwrap();
+        let root = doc.root.unwrap();
+        let all_text: String = root
+            .spans
+            .iter()
+            .map(|s| match &s.text {
+                crate::ent::content::AlternativeSet::Single(t) => t.as_str(),
+                crate::ent::content::AlternativeSet::Alternatives(ts) => {
+                    ts.first().map(|s| s.as_str()).unwrap_or("")
+                }
+            })
+            .collect();
+        assert!(
+            all_text.contains("v2"),
+            "after revise, materialized text should show v2, got: {:?}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn ent_bridge_version_ordering() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_a = server
+            .create_work(sid, Edition::from_text("original"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("derived"))
+            .unwrap();
+
+        let is_before = server.version_is_before(work_a, work_b);
+        assert!(
+            is_before.is_some(),
+            "both works should have trace positions"
+        );
+    }
+
+    #[test]
+    fn ent_bridge_materialize_after_revise() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_id = server
+            .create_work(sid, Edition::from_text("first"))
+            .unwrap();
+        server.work_grab(sid, work_id).unwrap();
+        server
+            .work_revise(sid, work_id, Edition::from_text("second"))
+            .unwrap();
+        server.work_release(sid, work_id).unwrap();
+
+        let doc = server.materialize_work(work_id).unwrap();
+        let root = doc.root.unwrap();
+
+        let all_text: String = root
+            .spans
+            .iter()
+            .map(|s| match &s.text {
+                crate::ent::content::AlternativeSet::Single(t) => t.as_str(),
+                crate::ent::content::AlternativeSet::Alternatives(ts) => {
+                    ts.first().map(|s| s.as_str()).unwrap_or("")
+                }
+            })
+            .collect();
+        assert!(
+            all_text.contains("second"),
+            "materialized text should show latest revision, got: {:?}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn ent_bridge_ancestry_chain() {
+        crate::edition::init_endorsement_flags();
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_id = server
+            .create_work(sid, Edition::from_text("r1"))
+            .unwrap();
+        let tp1 = server.version_trace_position(work_id).unwrap();
+
+        server.work_grab(sid, work_id).unwrap();
+        server
+            .work_revise(sid, work_id, Edition::from_text("r2"))
+            .unwrap();
+        server.work_release(sid, work_id).unwrap();
+        let tp2 = server.version_trace_position(work_id).unwrap();
+
+        server.work_grab(sid, work_id).unwrap();
+        server
+            .work_revise(sid, work_id, Edition::from_text("r3"))
+            .unwrap();
+        server.work_release(sid, work_id).unwrap();
+        let tp3 = server.version_trace_position(work_id).unwrap();
+
+        assert_ne!(tp1, tp2, "each revise creates new trace position");
+        assert_ne!(tp2, tp3, "each revise creates new trace position");
+
+        let doc = server.materialize_work(work_id).unwrap();
+        let root = doc.root.unwrap();
+        let all_text: String = root
+            .spans
+            .iter()
+            .map(|s| match &s.text {
+                crate::ent::content::AlternativeSet::Single(t) => t.as_str(),
+                crate::ent::content::AlternativeSet::Alternatives(ts) => {
+                    ts.first().map(|s| s.as_str()).unwrap_or("")
+                }
+            })
+            .collect();
+        assert!(
+            all_text.contains("r3"),
+            "latest revision should materialize with r3, got: {:?}",
+            all_text
+        );
     }
 }

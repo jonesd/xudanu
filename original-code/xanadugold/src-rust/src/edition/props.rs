@@ -70,6 +70,20 @@ pub fn permissions_flags(permissions: &[Id]) -> u32 {
     result
 }
 
+pub fn permissions_region(authority_clubs: &[u64]) -> XnRegion {
+    let flags = permissions_flags(
+        &authority_clubs
+            .iter()
+            .map(|&c| Id::global(c as i64))
+            .collect::<Vec<_>>(),
+    );
+    if flags == 0 {
+        XnRegion::empty()
+    } else {
+        XnRegion::singleton(flags as i64)
+    }
+}
+
 pub fn endorsements_flags(endorsements: &[Id]) -> u32 {
     if endorsements.is_empty() {
         return 0;

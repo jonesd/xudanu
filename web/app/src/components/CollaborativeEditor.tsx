@@ -90,7 +90,11 @@ function drawOverlay(
     return hitZones;
   }
 
-  canvas.style.pointerEvents = "auto";
+  if (markers.length === 0 && annotations.length === 0) {
+    canvas.style.pointerEvents = "none";
+  } else {
+    canvas.style.pointerEvents = "auto";
+  }
 
   const container = editor.parentElement;
   if (!container) return hitZones;
@@ -431,7 +435,7 @@ export function CollaborativeEditor({
       setHoveredMarker(null);
       setTooltipPos(null);
       hideTooltipTimer.current = null;
-    }, 200);
+    }, 800);
   }, []);
 
   const cancelHideTooltip = useCallback(() => {
@@ -776,6 +780,7 @@ export function CollaborativeEditor({
           {hoveredMarker && tooltipPos && (
             <div
               className="marker-tooltip"
+              onMouseEnter={cancelHideTooltip}
               onMouseEnter={cancelHideTooltip}
               onMouseLeave={scheduleHideTooltip}
               style={{

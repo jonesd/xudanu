@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What's New Since Udanax Gold &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+*{margin:0;padding:0;box-sizing:border-box}
+
+html{scroll-behavior:smooth}
+
+body{
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  background:#0d1117;
+  color:#c9d1d9;
+  line-height:1.7;
+  padding:0;
+}
+
+.mono{font-family:'JetBrains Mono',monospace}
+
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+
+h1,h2,h3,h4{color:#e6edf3}
+
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+
+p{margin-bottom:12px;max-width:780px}
+
+code{
+  font-family:'JetBrains Mono',monospace;
+  font-size:0.9em;
+  background:rgba(110,118,129,0.15);
+  padding:2px 6px;
+  border-radius:4px;
+  color:#79c0ff;
+}
+
+pre{
+  background:#161b22;
+  border:1px solid #30363d;
+  border-radius:8px;
+  padding:16px 20px;
+  margin:16px 0;
+  overflow-x:auto;
+  font-family:'JetBrains Mono',monospace;
+  font-size:13px;
+  line-height:1.6;
+  color:#c9d1d9;
+}
+
+.content-wrap{
+  max-width:960px;
+  margin:0 auto;
+  padding:48px 32px 80px;
+}
+
+.subtitle{
+  font-size:18px;
+  color:#8b949e;
+  font-weight:300;
+  margin-bottom:40px;
+}
+
+.diagram-container{
+  margin:32px 0;
+  padding:24px;
+  background:#0d1117;
+  border:1px solid #21262d;
+  border-radius:12px;
+  overflow-x:auto;
+}
+
+.diagram-container svg{
+  display:block;
+  margin:0 auto;
+  max-width:100%;
+  height:auto;
+}
+
+.diagram-caption{
+  text-align:center;
+  font-size:12px;
+  color:#484f58;
+  margin-top:12px;
+  font-style:italic;
+}
+
+.note{
+  background:rgba(88,166,255,0.06);
+  border-left:3px solid #58a6ff;
+  padding:12px 16px;
+  margin:16px 0;
+  border-radius:0 6px 6px 0;
+  font-size:14px;
+  color:#8b949e;
+}
+.note strong{color:#58a6ff}
+
+.warning{
+  background:rgba(210,153,34,0.06);
+  border-left:3px solid #d29922;
+  padding:12px 16px;
+  margin:16px 0;
+  border-radius:0 6px 6px 0;
+  font-size:14px;
+  color:#8b949e;
+}
+.warning strong{color:#d29922}
+
+.example-block{
+  background:#161b22;
+  border:1px solid #21262d;
+  border-radius:8px;
+  padding:16px 20px;
+  margin:16px 0;
+}
+.example-block .example-label{
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:1px;
+  color:#484f58;
+  margin-bottom:8px;
+  font-weight:600;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin:16px 0;
+  font-size:14px;
+}
+th{
+  text-align:left;
+  padding:10px 14px;
+  border-bottom:2px solid #30363d;
+  color:#8b949e;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:0.5px;
+  font-weight:600;
+}
+td{
+  padding:10px 14px;
+  border-bottom:1px solid #21262d;
+  vertical-align:top;
+}
+.fast{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
+.naive{color:#f85149;font-family:'JetBrains Mono',monospace}
+
+.two-col{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:24px;
+  margin:16px 0;
+}
+
+.toc{
+  background:#161b22;
+  border:1px solid #21262d;
+  border-radius:8px;
+  padding:20px 24px;
+  margin:24px 0;
+}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.toc .toc-sub{padding-left:16px}
+
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-cyan{color:#39d2c0}
+
+.legend{
+  display:flex;
+  gap:16px;
+  flex-wrap:wrap;
+  margin:12px 0;
+  font-size:12px;
+  color:#8b949e;
+}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+
+.footer{
+  margin-top:80px;
+  padding-top:24px;
+  border-top:1px solid #21262d;
+  font-size:12px;
+  color:#484f58;
+  text-align:center;
+}
+
+.status-done{color:#3fb950;font-weight:600}
+.status-partial{color:#d29922;font-weight:600}
+.status-not{color:#f85149;font-weight:600}
+
+@media print{
+  body{background:#fff;color:#222}
+  h1,h2,h3,h4{color:#111}
+  h2{page-break-before:always;margin-top:40px}
+  .diagram-container{border:1px solid #ddd;background:#fafafa}
+  pre{background:#f5f5f5;border-color:#ddd;color:#333}
+  code{background:#f0f0f0;color:#555}
+  .note{background:#f0f7ff;border-left-color:#3b82f6}
+  .note strong{color:#3b82f6}
+  a{color:#2563eb}
+  .footer{color:#999}
+  .toc a{color:#444}
+  .fast{color:#16a34a}
+  .naive{color:#dc2626}
+}
+
+@media(max-width:640px){
+  .content-wrap{padding:24px 16px 60px}
+  h1{font-size:28px}
+  h2{font-size:22px}
+  .two-col{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>What's New Since Udanax Gold</h1>
+<p class="subtitle">In 1999, Udanax Gold was open-sourced — 200,000 lines of mechanically-translated Smalltalk-to-C++ with elegant data structures but no working transclusion queries. Here is everything we built on top.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. Three-Way Merge for Collaborative Editing</a>
+  <a class="toc-section" href="#s2">2. Cookie-Based Auth with Signing Keys</a>
+  <a class="toc-section" href="#s3">3. Cryptographic Provenance</a>
+  <a class="toc-section" href="#s4">4. Content-Addressed Chunk Store</a>
+  <a class="toc-section" href="#s5">5. Char-Range Annotations</a>
+  <a class="toc-section" href="#s6">6. Modern Web Frontend</a>
+  <a class="toc-section" href="#s7">7. Historical Author &amp; Source Import</a>
+  <a class="toc-section" href="#s8">8. LLM Integration</a>
+  <a class="toc-section" href="#s9">9. Club-Based Identity &amp; Security</a>
+  <a class="toc-section" href="#s10">10. Optimized Transclusion Queries</a>
+  <a class="toc-section" href="#s11">11. Nelson's 17 Rules: Implementation Status</a>
+  <a class="toc-section" href="#s12">12. What's Not Yet Implemented</a>
+  <a class="toc-section" href="#s13">13. Gold Features Not Yet in Xudanu</a>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 1: Three-Way Merge -->
+<!-- ============================================================ -->
+<h2 id="s1">1. Three-Way Merge for Collaborative Editing</h2>
+
+<p>
+Gold was single-user only. Xudanu supports real-time collaborative editing via <strong>otree-merge</strong>, a three-way merge that operates directly on O-tree elements — not flattened text. Collaborative edits preserve transclusions, overlays, data bindings, and attribution.
+</p>
+
+<h3>How It Works</h3>
+
+<p>
+When two users edit the same document concurrently, the server performs a three-way merge against a common base:
+</p>
+
+<ol style="margin-left:24px;margin-bottom:16px">
+  <li><strong>BLAKE3 fingerprint alignment</strong> — identify unchanged segments between three versions</li>
+  <li><strong>Segment classification</strong> — Unchanged, OnlyA, OnlyB, Conflict, Insert</li>
+  <li><strong>Composable position mappings</strong> — positions shift correctly after each merge decision</li>
+  <li><strong>Conflict-free by default</strong> — concurrent inserts at different positions auto-merge</li>
+</ol>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 260" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrG" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#58a6ff"/></marker>
+    <marker id="arrA" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#d29922"/></marker>
+  </defs>
+
+  <!-- Base version -->
+  <rect x="20" y="30" width="210" height="50" rx="6" fill="rgba(255,255,255,0.03)" stroke="#30363d" stroke-width="1.5"/>
+  <text x="125" y="48" text-anchor="middle" fill="#8b949e" font-size="10" font-weight="600">BASE</text>
+  <text x="125" y="66" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">"The quick brown fox"</text>
+
+  <!-- User A -->
+  <rect x="20" y="110" width="210" height="50" rx="6" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="125" y="128" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">USER A</text>
+  <text x="125" y="146" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">"The swift brown fox"</text>
+
+  <!-- User B -->
+  <rect x="20" y="190" width="210" height="50" rx="6" fill="rgba(88,166,255,0.05)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="125" y="208" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="600">USER B</text>
+  <text x="125" y="226" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">"The quick red fox"</text>
+
+  <!-- Arrows to merge -->
+  <line x1="230" y1="135" x2="390" y2="145" stroke="#3fb950" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrG)"/>
+  <line x1="230" y1="215" x2="390" y2="165" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrB)"/>
+
+  <!-- Merge box -->
+  <rect x="390" y="118" width="150" height="58" rx="8" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="465" y="144" text-anchor="middle" fill="#d29922" font-size="13" font-weight="700">THREE-WAY</text>
+  <text x="465" y="162" text-anchor="middle" fill="#d29922" font-size="13" font-weight="700">MERGE</text>
+
+  <!-- Arrow to result -->
+  <line x1="540" y1="147" x2="590" y2="147" stroke="#d29922" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrA)"/>
+
+  <!-- Result -->
+  <rect x="590" y="122" width="170" height="50" rx="6" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="675" y="143" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">MERGED</text>
+  <text x="675" y="161" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">"The swift red fox"</text>
+
+  <text x="390" y="254" text-anchor="middle" fill="#484f58" font-size="11">Both changes preserved — no conflicts, no data loss</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 1: Two concurrent edits merged via three-way fingerprint alignment.</p>
+
+<pre>pub enum MergeSegment&lt;T&gt; {
+    Unchanged(T),
+    OnlyA(T),
+    OnlyB(T),
+    Conflict { a: T, b: T },
+    Insert { pos: usize, elements: Vec&lt;T&gt; },
+}</pre>
+
+<div class="note">
+  <strong>Source:</strong> The merge engine is in <code>src/edition/three_way.rs</code>. The CRDT manager that wraps it for collaborative editing is in <code>src/server/otree_crdt.rs</code>.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 2: Auth -->
+<!-- ============================================================ -->
+<h2 id="s2">2. Cookie-Based Auth with Signing Keys</h2>
+
+<p>
+Every edit in Xudanu is cryptographically signed with an Ed25519 key. The challenge: how does a web browser hold a signing key? The answer is a carefully designed auth chain where the key is encrypted at rest, decrypted on login, and cached in the server-side session.
+</p>
+
+<h3>Login Flow</h3>
+
+<ol style="margin-left:24px;margin-bottom:16px">
+  <li><strong>POST /auth/login</strong> — validates club credentials against Argon2id password hash</li>
+  <li><strong>Decrypts signing key</strong> — <code>authenticate_with_pending</code> uses Argon2id + ChaCha20-Poly1305 AEAD</li>
+  <li><strong>Caches in session</strong> — <code>OAuthSession.signing_key_bytes</code> stores the Ed25519 key bytes server-side</li>
+  <li><strong>Sets HttpOnly cookie</strong> — <code>xudanu_session</code> cookie with CSRF token provided separately</li>
+</ol>
+
+<h3>WebSocket Auto-Auth</h3>
+
+<ol style="margin-left:24px;margin-bottom:16px">
+  <li><strong>Browser sends cookie</strong> on WebSocket upgrade request automatically</li>
+  <li><strong>Server reconstructs SigningKey</strong> via <code>authenticate_session_from_oauth</code> from cached bytes</li>
+  <li><strong>Provenance works</strong> — <code>materialize_with_provenance</code> finds the key, signs every edit</li>
+  <li><strong>Public fallback</strong> — <code>session_login_public</code> for anonymous browsing if no cookie present</li>
+</ol>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 180" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Login -->
+  <rect x="20" y="55" width="120" height="60" rx="8" fill="rgba(88,166,255,0.05)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="80" y="78" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">LOGIN</text>
+  <text x="80" y="96" text-anchor="middle" fill="#8b949e" font-size="9">Argon2id verify</text>
+
+  <!-- Arrow -->
+  <line x1="140" y1="85" x2="175" y2="85" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrB)"/>
+
+  <!-- Decrypt -->
+  <rect x="175" y="55" width="135" height="60" rx="8" fill="rgba(163,113,247,0.05)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="242" y="78" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="700">DECRYPT KEY</text>
+  <text x="242" y="96" text-anchor="middle" fill="#8b949e" font-size="9">ChaCha20-Poly1305</text>
+
+  <!-- Arrow -->
+  <line x1="310" y1="85" x2="345" y2="85" stroke="#a371f7" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrB)"/>
+
+  <!-- Session -->
+  <rect x="345" y="55" width="135" height="60" rx="8" fill="rgba(210,153,34,0.05)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="412" y="78" text-anchor="middle" fill="#d29922" font-size="11" font-weight="700">CACHE SESSION</text>
+  <text x="412" y="96" text-anchor="middle" fill="#8b949e" font-size="9">signing_key_bytes</text>
+
+  <!-- Arrows to outputs -->
+  <line x1="480" y1="72" x2="530" y2="55" stroke="#d29922" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrA)"/>
+  <line x1="480" y1="98" x2="530" y2="115" stroke="#d29922" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrA)"/>
+
+  <!-- Cookie -->
+  <rect x="530" y="35" width="130" height="35" rx="6" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1"/>
+  <text x="595" y="50" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">HttpOnly Cookie</text>
+  <text x="595" y="63" text-anchor="middle" fill="#8b949e" font-size="9">xudanu_session</text>
+
+  <!-- WS -->
+  <rect x="530" y="100" width="130" height="35" rx="6" fill="rgba(88,166,255,0.05)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="595" y="115" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="600">WebSocket</text>
+  <text x="595" y="128" text-anchor="middle" fill="#8b949e" font-size="9">auto-auth via cookie</text>
+
+  <!-- Subtitle -->
+  <text x="390" y="168" text-anchor="middle" fill="#484f58" font-size="11">The signing key never leaves the server — the browser only holds a session cookie</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 2: Auth chain from login through WebSocket auto-authentication.</p>
+
+<div class="note">
+  <strong>OAuth2 support:</strong> GitHub and Google OAuth2 login with session cookies via the <code>oauth2</code> crate v5. Club signing keys are encrypted at rest with Argon2id key derivation + ChaCha20-Poly1305 AEAD. Rate-limited login: 10 attempts per 5 minutes per club.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 3: Provenance -->
+<!-- ============================================================ -->
+<h2 id="s3">3. Cryptographic Provenance</h2>
+
+<p>
+Gold had no cryptographic attribution — authorship was asserted, not proven. Xudanu signs every edit with Ed25519. An append-only SHA-256 hash-chained transparency log records every provenance signature, making forgery detectable after the fact.
+</p>
+
+<h3>Three Author Types</h3>
+
+<div class="two-col">
+  <div>
+    <table>
+      <tr><th>Type</th><th>Color</th><th>Details</th></tr>
+      <tr><td><span class="accent-green">Human</span></td><td>Green</td><td>Ed25519 keypair, display name from club profile. Every keystroke attributed to a verified identity.</td></tr>
+      <tr><td><span class="accent-purple">LLM</span></td><td>Purple</td><td>Model name tagged in provenance. AI-generated text visually distinguished. Supports Ollama (local) and OpenRouter (cloud).</td></tr>
+      <tr><td><span class="accent-amber">Historical</span></td><td>Amber</td><td>Shakespeare, Austen, etc. Server-signed attestations. Generic <code>external_ids</code> field for authority database lookups (not yet populated).</td></tr>
+    </table>
+  </div>
+  <div>
+    <pre>ElementProvenance {
+  signature:   Signature,   // Ed25519
+  author_key:  PublicKey,
+  author_name: String,
+  author_type: AuthorType,
+  // Human | Llm | Historical
+  timestamp:   u64,
+  server_id:   String,
+}
+
+// Signature covers:
+// BLAKE3(
+//   fingerprint
+//   || author_key
+//   || timestamp
+//   || server_id
+// )
+// with domain separation</pre>
+  </div>
+</div>
+
+<h3>Transparency Log</h3>
+
+<p>
+Every provenance signature is recorded in an append-only SHA-256 hash-chained log. Each entry includes the hash of the previous entry — tampering with any single entry breaks the entire chain from that point forward.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 130" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Entry 1 -->
+  <rect x="20" y="20" width="210" height="80" rx="6" fill="rgba(63,185,80,0.05)" stroke="#3fb950" stroke-width="1"/>
+  <text x="125" y="40" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">ENTRY #1</text>
+  <text x="125" y="56" text-anchor="middle" fill="#8b949e" font-size="9">Alice writes paragraph</text>
+  <text x="125" y="72" text-anchor="middle" fill="#484f58" font-size="9" font-family="'JetBrains Mono',monospace">sha256(prev=null)</text>
+  <text x="125" y="88" text-anchor="middle" fill="#3fb950" font-size="9" font-family="'JetBrains Mono',monospace">→ hash_a</text>
+
+  <!-- Arrow -->
+  <line x1="230" y1="60" x2="265" y2="60" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrB)"/>
+
+  <!-- Entry 2 -->
+  <rect x="265" y="20" width="210" height="80" rx="6" fill="rgba(88,166,255,0.05)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="370" y="40" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="600">ENTRY #2</text>
+  <text x="370" y="56" text-anchor="middle" fill="#8b949e" font-size="9">Bob transcludes Alice</text>
+  <text x="370" y="72" text-anchor="middle" fill="#484f58" font-size="9" font-family="'JetBrains Mono',monospace">sha256(hash_a)</text>
+  <text x="370" y="88" text-anchor="middle" fill="#58a6ff" font-size="9" font-family="'JetBrains Mono',monospace">→ hash_b</text>
+
+  <!-- Arrow -->
+  <line x1="475" y1="60" x2="510" y2="60" stroke="#a371f7" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrB)"/>
+
+  <!-- Entry 3 -->
+  <rect x="510" y="20" width="210" height="80" rx="6" fill="rgba(163,113,247,0.05)" stroke="#a371f7" stroke-width="1"/>
+  <text x="615" y="40" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="600">ENTRY #3</text>
+  <text x="615" y="56" text-anchor="middle" fill="#8b949e" font-size="9">Claire edits her section</text>
+  <text x="615" y="72" text-anchor="middle" fill="#484f58" font-size="9" font-family="'JetBrains Mono',monospace">sha256(hash_b)</text>
+  <text x="615" y="88" text-anchor="middle" fill="#a371f7" font-size="9" font-family="'JetBrains Mono',monospace">→ hash_c</text>
+
+  <text x="390" y="120" text-anchor="middle" fill="#484f58" font-size="10" font-style="italic">Each entry includes the hash of the previous entry — tampering breaks the chain</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 3: SHA-256 hash-chained transparency log for provenance signatures.</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 4: Chunk Store -->
+<!-- ============================================================ -->
+<h2 id="s4">4. Content-Addressed Chunk Store</h2>
+
+<p>
+Gold used in-memory Smalltalk object storage with no persistence. Xudanu stores document content as individually addressable <code>.xchunk</code> files in hex-sharded directories, each verified by BLAKE3 hash. Checkpoints write only changed chunks, not the entire state.
+</p>
+
+<h3>Storage Layout</h3>
+
+<pre>xudanu-data/
+├── chunks/
+│   ├── ab/
+│   │   └── ab3f...c821.xchunk
+│   ├── 7e/
+│   │   └── 7e2a...f409.xchunk
+│   └── ...
+├── works/
+│   ├── work-001.json
+│   └── ...
+├── manifest.json
+└── audit.log</pre>
+
+<h3>Properties</h3>
+
+<table>
+  <tr><th>Property</th><th>How</th></tr>
+  <tr><td>Deduplication</td><td>Identical content stored once (content-addressed via BLAKE3)</td></tr>
+  <tr><td>Hex-sharded directories</td><td>First 2 hex chars of BLAKE3 hash determine the subdirectory</td></tr>
+  <tr><td>Incremental checkpoints</td><td>Write only changed chunks, not entire state</td></tr>
+  <tr><td>LRU cache</td><td>Capacity 1024 for hot chunks in memory</td></tr>
+  <tr><td>Atomic writes</td><td>tmp file + rename prevents corruption on crash</td></tr>
+  <tr><td>BLAKE3 verification</td><td>Every chunk verified on read by hash comparison</td></tr>
+  <tr><td>Garbage collection</td><td>Orphaned chunks cleaned up alongside annotation cleanup</td></tr>
+  <tr><td>Off-site backup</td><td><code>backup-chunks.sh</code> syncs immutable chunks + manifests to a remote server via rsync/SSH. Content-addressed design makes incremental backup safe — chunks are write-once, BLAKE3 hash = filename.</td></tr>
+</table>
+
+<div class="warning">
+  <strong>Backup gaps:</strong> The backup script intentionally excludes blobs (binary objects) and server keys (private key material). For full disaster recovery, blobs need a separate sync and the server's Ed25519 keypair needs out-of-band transfer (e.g. manual <code>scp</code> or a secrets manager). Completing federation would provide automatic multi-node replication as an alternative.
+</div>
+
+<div class="note">
+  <strong>Source:</strong> The chunk store is implemented in <code>src/persist/</code>. The manifest with <code>annotations_hash</code> field is in <code>src/persist/manifest.rs</code>. The backup script is at <code>examples/backup-chunks.sh</code>.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 5: Annotations -->
+<!-- ============================================================ -->
+<h2 id="s5">5. Char-Range Annotations</h2>
+
+<p>
+A full CRUD annotation system operating on character ranges. Yellow highlights in the editor, annotation panel with author attribution, keyboard shortcut <code>Ctrl+Alt+A</code> / <code>Cmd+Alt+A</code>. Annotations are a metadata layer — they don't modify document content — so they work on source works too.
+</p>
+
+<pre>pub struct Annotation {
+    id:              String,
+    doc_id:          String,
+    start:           usize,    // char offset
+    end:             usize,    // char offset
+    text:            String,   // annotation body
+    color:           Option&lt;String&gt;,
+    created_by:      String,   // club ID
+    created_by_name: String,   // display name
+    created_at:      u64,
+}</pre>
+
+<h3>Features</h3>
+
+<ul>
+  <li><strong>Create, read, update, delete</strong> — full lifecycle via WebSocket ops</li>
+  <li><strong>Persistent storage</strong> — <code>annotations_hash</code> in manifest, chunk-stored</li>
+  <li><strong>Author attribution</strong> — <code>created_by_name</code> resolved from club display name</li>
+  <li><strong>Source work support</strong> — annotations allowed on frozen source documents</li>
+  <li><strong>GC-aware</strong> — orphaned annotations cleaned up with chunk garbage collection</li>
+  <li><strong>Canvas rendering</strong> — yellow highlight overlay, <code>pointer-events: none</code> when no annotations to draw</li>
+</ul>
+
+<div class="note">
+  <strong>Source:</strong> Annotation CRUD, persistence, and three-way merge support are in <code>src/server/otree_crdt.rs</code>. The frontend annotation panel is in <code>web/app/src/components/AnnotationPanel.tsx</code>.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 6: Frontend -->
+<!-- ============================================================ -->
+<h2 id="s6">6. Modern Web Frontend</h2>
+
+<p>
+Gold had a terminal/Motif UI. Xudanu has a React SPA with TypeScript, real-time collaborative editing via WebSocket, canvas-based attribution overlays, and side-by-side comparison with bridge curves connecting transcluded regions.
+</p>
+
+<h3>Components</h3>
+
+<table>
+  <tr><th>Component</th><th>What It Does</th></tr>
+  <tr><td><span class="accent-blue">Editor</span></td><td>contentEditable with canvas overlay for provenance colors, transclusion markers, and annotation highlights. <code>pointer-events: none</code> when no overlays — cursor placement always works.</td></tr>
+  <tr><td><span class="accent-green">Compare</span></td><td>Side-by-side document comparison with bridge curves connecting transcluded regions. Shared (amber), left-only (blue), right-only (orange). Edit while comparing — highlights update live.</td></tr>
+  <tr><td><span class="accent-purple">Source Viewer</span></td><td>Read-only source work display with smooth scrolling (5 lines/tick wheel normalization). Green "pub src" badge. Annotations overlay supported.</td></tr>
+  <tr><td><span class="accent-amber">Annotations</span></td><td>Yellow highlight selection, annotation panel with CRUD, author names. Keyboard shortcut <code>Ctrl+Alt+A</code>.</td></tr>
+  <tr><td><span class="accent-blue">Privacy</span></td><td>Documents default to private ("PRIV" badge). Share menu toggles public/private. Signed-out users see only public works.</td></tr>
+  <tr><td><span class="accent-green">Deep Links</span></td><td>SPA with <code>?work=&lt;id&gt;</code> query param and <code>#L&lt;line&gt;</code> / <code>#C&lt;char&gt;</code> hash deep links. No react-router.</td></tr>
+</table>
+
+<h3>Wire Protocol</h3>
+
+<p>
+110+ operation codes covering sessions, clubs, works, editions, links, transclusion, blobs, overlays, labels, retrieval, attribution, search, shared content, range queries, versioning, recorders, crypto, endorsements, federation, membership, governance, and CRDT sync. Dual codec: binary (LEB128 + postcard) and JSON.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 7: Historical Author -->
+<!-- ============================================================ -->
+<h2 id="s7">7. Historical Author &amp; Source Import</h2>
+
+<p>
+Pattern-based detection for Project Gutenberg, Internet Archive, and plain text. Registry for non-digital authors with external IDs. Content boundary detection to skip header/footer boilerplate. Source works are permanently frozen — no edits allowed. Content matching on paste automatically attributes provenance to historical authors.
+</p>
+
+<h3>Source Import Flow</h3>
+
+<ol style="margin-left:24px;margin-bottom:16px">
+  <li><strong>Detect format</strong> — Project Gutenberg headers, Internet Archive metadata, or plain text</li>
+  <li><strong>Extract boundaries</strong> — skip boilerplate header/footer, identify actual content</li>
+  <li><strong>Register author</strong> — match to existing historical author or create new (with optional external IDs)</li>
+  <li><strong>Freeze work</strong> — mark as source (immutable), public by default</li>
+  <li><strong>Attribution on paste</strong> — when pasted content matches a source work, provenance automatically attributed to the historical author</li>
+</ol>
+
+<div class="note">
+  <strong>Historical authors receive server-signed attestations.</strong> Since Shakespeare doesn't have an Ed25519 keypair, the server signs on his behalf using its own key, with the author type set to <code>Historical</code> and the external ID recorded.
+</div>
+
+<div class="warning">
+  <strong>External IDs not yet wired in.</strong> The data model has a generic <code>external_ids: HashMap&lt;String, String&gt;</code> field for authority database lookups, and both VIAF and LoC expose free public APIs that return stable IDs from an author name (e.g. VIAF AutoSuggest returns <code>viafid</code> and <code>lc</code> IDs). However, the ImportWizard does not yet call these APIs — the field is always empty. This is a natural enhancement for the author creation step.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 8: LLM -->
+<!-- ============================================================ -->
+<h2 id="s8">8. LLM Integration</h2>
+
+<p>
+Multi-backend support for AI-assisted editing. All LLM output is cryptographically tagged in the provenance system with <code>AuthorType::Llm</code> and the model name.
+</p>
+
+<table>
+  <tr><th>Feature</th><th>Details</th></tr>
+  <tr><td><strong>Local models</strong></td><td>Ollama integration for running models on the developer's machine</td></tr>
+  <tr><td><strong>Cloud models</strong></td><td>OpenRouter and GitHub Models for cloud-based LLMs</td></tr>
+  <tr><td><strong>Diff narration</strong></td><td>"Summarize changes" between two document versions</td></tr>
+  <tr><td><strong>Auto-title generation</strong></td><td>Generate document titles from content</td></tr>
+  <tr><td><strong>Writing feedback</strong></td><td>On-demand feedback and suggestions</td></tr>
+  <tr><td><strong>Provenance tagging</strong></td><td>All LLM output tagged with model name and <code>AuthorType::Llm</code> in the provenance system</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<!-- SECTION 9: Security -->
+<!-- ============================================================ -->
+<h2 id="s9">9. Club-Based Identity &amp; Security</h2>
+
+<p>
+Personal "clubs" with Ed25519 keypairs encrypted at rest. Gold had no concept of user identity or access control.
+</p>
+
+<h3>Security Features</h3>
+
+<table>
+  <tr><th>Feature</th><th>Implementation</th></tr>
+  <tr><td>Key encryption at rest</td><td>Argon2id key derivation + ChaCha20-Poly1305 AEAD</td></tr>
+  <tr><td>Password hashing</td><td>Argon2id with PHC-string format</td></tr>
+  <tr><td>Rate limiting</td><td>10 login attempts per 5 minutes per club</td></tr>
+  <tr><td>OAuth2</td><td>GitHub and Google login via <code>oauth2</code> crate v5</td></tr>
+  <tr><td>CSRF protection</td><td>CSRF token required on WebSocket connections</td></tr>
+  <tr><td>Audit log</td><td>SHA-256 chained tamper-evident log of security events</td></tr>
+  <tr><td>Session cookies</td><td>HttpOnly, validated on every request</td></tr>
+  <tr><td>Threat classification</td><td>Threat-level classification for security events</td></tr>
+  <tr><td>Password policy</td><td>Minimum 10 chars, mixed case + digit (client + server enforced)</td></tr>
+</table>
+
+<h3>Federation with Byzantine Fault Tolerance</h3>
+
+<p>
+Encrypted peer channels (X25519 + ChaCha20-Poly1305). OrSet and LwwRegister CRDTs for state reconciliation. PBFT governance for membership and policy decisions. Cross-server transclusion queries. Transport layer exists; content sync is incomplete. Once finished, federation would provide automatic multi-node replication — an alternative to the manual off-site backup script for data redundancy.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 10: Performance -->
+<!-- ============================================================ -->
+<h2 id="s10">10. Optimized Transclusion Queries</h2>
+
+<p>
+The Udanax team designed elegant data structures but left core queries unimplemented. The BackfollowEngine had no callers. H-tree canopy flags were allocated but never checked. Xudanu connects the pieces and makes them fast.
+</p>
+
+<table>
+  <tr><th>Operation</th><th>Naive (C++ parity)</th><th>Xudanu</th><th>How</th></tr>
+  <tr><td>Find works containing text</td><td class="naive">O(W &times; L)</td><td class="fast">O(U &times; A)</td><td>Fingerprint HashMap intersection, no full scan</td></tr>
+  <tr><td>Find shared regions (diff)</td><td class="naive">O(n &times; m)</td><td class="fast">O(L<sub>a</sub> + L<sub>b</sub>)</td><td>Fingerprint seed discovery + greedy claiming</td></tr>
+  <tr><td>Edition element listing</td><td class="naive">O(n log n) every call</td><td class="fast">O(1) after first</td><td>OnceLock cache shared via Arc</td></tr>
+  <tr><td>Transclusion index lookup</td><td class="naive">O(n) flat scan</td><td class="fast">O(log n)</td><td>H-tree canopy-filtered traversal</td></tr>
+  <tr><td>Position transform (shift)</td><td class="naive">O(n) rewrite</td><td class="fast">O(1)</td><td>Lazy Dsp node wraps tree without traversal</td></tr>
+  <tr><td>Region highlighting</td><td class="naive">O(r &times; t)</td><td class="fast">O(r + t)</td><td>Sorted regions, single pass</td></tr>
+</table>
+<p style="font-size:11px;color:#484f58;margin-top:4px">W = works, L = text length, U = unique fingerprints, A = avg works/fingerprint, n/m = doc lengths, r = regions, t = text</p>
+
+<div class="note">
+  <strong>Key insight:</strong> BLAKE3 content fingerprints give us inverted indexes (fingerprint &rarr; works), intersection (shared content), and pruning (canopy flags) — all from the same hash. The O-tree's content-addressing IS the optimization.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 11: 17 Rules -->
+<!-- ============================================================ -->
+<h2 id="s11">11. Nelson's 17 Rules: Implementation Status</h2>
+
+<p>
+How closely does Xudanu implement Ted Nelson's original 17 Rules of Xanadu? Here is the honest accounting.
+</p>
+
+<table>
+  <tr><th>#</th><th>Rule</th><th>Status</th></tr>
+  <tr><td>1</td><td>Every document consists of arbitrarily many portions</td><td class="status-done">Done — O-tree elements</td></tr>
+  <tr><td>2</td><td>Every portion can be transcluded</td><td class="status-partial">Partial — backend finds, no live rendering</td></tr>
+  <tr><td>3</td><td>Permission is required to transclude</td><td class="status-done">Done — club-based ACLs</td></tr>
+  <tr><td>4</td><td>Permission is required to quote</td><td class="status-done">Done — source import + attribution</td></tr>
+  <tr><td>5</td><td>Tumbler addressing</td><td class="status-partial">Partial — Id/IdSpace, no full tumbler paths</td></tr>
+  <tr><td>6</td><td>Bidirectional links</td><td class="status-done">Done — HyperLink/HyperRef</td></tr>
+  <tr><td>7</td><td>Visible on both sides</td><td class="status-partial">Partial — backlinks exist, no always-visible UI</td></tr>
+  <tr><td>8</td><td>Identical content stored once</td><td class="status-done">Done — GrandMap + BLAKE3</td></tr>
+  <tr><td>9</td><td>Royalty at any granularity</td><td class="status-partial">Partial — data structures exist, no payments</td></tr>
+  <tr><td>10</td><td>Mix of royalty-bearing and free content</td><td class="status-partial">Partial — endorsement types exist</td></tr>
+  <tr><td>11</td><td>Data available from any server</td><td class="status-partial">Partial — federation transport, incomplete sync</td></tr>
+  <tr><td>12</td><td>Connection by any protocol</td><td class="status-partial">Partial — WebSocket only</td></tr>
+  <tr><td>13</td><td>Adaptive storage tiering</td><td class="status-not">Not started</td></tr>
+  <tr><td>14</td><td>Redundant storage</td><td class="status-partial">Partial — local checkpoint + off-site backup script for chunks/manifests. Federation transport exists but content sync incomplete</td></tr>
+  <tr><td>15</td><td>Charge users at any rate</td><td class="status-not">Not started</td></tr>
+  <tr><td>16</td><td>Handle any data type</td><td class="status-partial">Partial — 9 element types, no structured editing UI</td></tr>
+  <tr><td>17</td><td>Portable front-end</td><td class="status-partial">Partial — web SPA, no mobile</td></tr>
+</table>
+
+<div style="display:flex;gap:48px;margin-top:24px;flex-wrap:wrap">
+  <div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#3fb950">4</div>
+    <div style="font-size:11px;color:#484f58;text-transform:uppercase;letter-spacing:1px">Fully Done</div>
+  </div>
+  <div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#d29922">11</div>
+    <div style="font-size:11px;color:#484f58;text-transform:uppercase;letter-spacing:1px">Partially Done</div>
+  </div>
+  <div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;color:#f85149">2</div>
+    <div style="font-size:11px;color:#484f58;text-transform:uppercase;letter-spacing:1px">Not Started</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 12: Not Yet -->
+<!-- ============================================================ -->
+<h2 id="s12">12. What's Not Yet Implemented</h2>
+
+<p>
+Features from Ted Nelson's original vision that remain to be built.
+</p>
+
+<h3>Content &amp; Editing</h3>
+
+<table>
+  <tr><th>Feature</th><th>Status</th><th>What Exists</th></tr>
+  <tr><td>Live transclusion rendering</td><td class="status-not">Not started</td><td>BackfollowEngine finds content, but no rendering pipeline for showing transcluded fragments inline with live updates</td></tr>
+  <tr><td>Compound documents</td><td class="status-partial">Partial</td><td><code>CompoundResolve</code> opcode and <code>CompoundSpan</code> stubs exist in <code>src/edition/compound.rs</code> but no resolution engine or UI</td></tr>
+  <tr><td>Trails and guided paths</td><td class="status-not">Not started</td><td>No trail builder UI or data model for curated paths through documents</td></tr>
+  <tr><td>Inter-span links</td><td class="status-partial">Partial</td><td>Links at work-level only. No <code>(work, edition, start, end)</code> targeting</td></tr>
+  <tr><td>Three-way visual diff UI</td><td class="status-partial">Partial</td><td>Backend has <code>three_way_diff()</code> and <code>three_way_merge()</code>. No visual character-level diff UI</td></tr>
+  <tr><td>Full-text search</td><td class="status-partial">Partial</td><td><code>find_text_transcluders</code> does fingerprint search. No general inverted-index search across all works</td></tr>
+</table>
+
+<h3>Infrastructure</h3>
+
+<table>
+  <tr><th>Feature</th><th>Status</th><th>What Exists</th></tr>
+  <tr><td>Royalty/micropayment system</td><td class="status-partial">Partial</td><td><code>StorageCost</code>, <code>CostMethod</code>, <code>cost()</code> fully implemented. No payment flow or billing system</td></tr>
+  <tr><td>Adaptive storage tiering</td><td class="status-not">Not started</td><td>All data on local filesystem. No hot/cold migration</td></tr>
+  <tr><td>Geographic replication</td><td class="status-partial">Partial</td><td>Crash-safe checkpoint + off-site backup script (<code>backup-chunks.sh</code>) for immutable chunks/manifests via rsync. Federation transport exists but content sync incomplete. Blobs and server keys excluded from backup — need separate handling.</td></tr>
+  <tr><td>Export / interchange format</td><td class="status-not">Not started</td><td>No way to export works to a portable format</td></tr>
+  <tr><td>Version genealogy UI</td><td class="status-partial">Partial</td><td>API operations exist (<code>version_ancestors</code>, <code>version_descendants</code>). No UI</td></tr>
+  <tr><td>Non-destructive archive</td><td class="status-partial">Partial</td><td><code>WorkIrrevocablyUnpublish</code> is destructive. No soft-delete or <code>is_archived</code> flag</td></tr>
+</table>
+
+<h3>Known Limitations</h3>
+
+<ul>
+  <li><strong>Write lock serialization</strong> — the server uses <code>Arc&lt;RwLock&lt;Server&gt;&gt;</code>, allowing concurrent reads (health checks, blob reads, session lookups) via <code>with_server_ref</code>. Gold was single-threaded with no concurrency support at all. The RwLock is a step up, but mutations (edits, saves) still acquire an exclusive write lock via <code>with_server</code> and are serialized — the bottleneck for write-heavy workloads.</li>
+  <li><strong>Desktop-only frontend</strong> — no responsive layout or mobile breakpoints</li>
+  <li><strong>No global dark mode</strong> — only the debug panel is dark-themed</li>
+  <li><strong>Verified user names</strong> — <code>crdt_awareness_update</code> accepts <code>user_name</code> from the client without server-side verification. Any connected user can impersonate any other user.</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- SECTION 13: Gold Features Not in Xudanu -->
+<!-- ============================================================ -->
+<h2 id="s13">13. Gold Features Not Yet in Xudanu</h2>
+
+<p>
+Features present in the Udanax Gold C++ codebase (~200,000 lines) that have no equivalent or only stubs in Xudanu.
+</p>
+
+<h3>Content Model</h3>
+
+<table>
+  <tr><th>Feature</th><th>What Gold Had</th><th>What Xudanu Has</th></tr>
+  <tr><td>Tumbler / Sequence addressing</td><td>Full <code>Sequence</code> positions (<code>1.2.3.4</code>) with interval regions, prefix queries, edge types (INCLUSIVE, EXCLUSIVE, PREFIX)</td><td>Simple <code>Vec&lt;i64&gt;</code> — no hierarchical addressing or prefix queries</td></tr>
+  <tr><td>Multi-dimensional coordinate spaces</td><td><code>IntegerSpace</code>, <code>RealSpace</code>, <code>SequenceSpace</code>, <code>IDSpace</code>, <code>CrossSpace</code>, <code>FilterSpace</code> with full mapping/ordering subsystems</td><td>Partial implementations in <code>src/space/</code> — <code>RealSpace</code> and <code>FilterSpace</code> are stubs</td></tr>
+  <tr><td>CrossRegion endorsements</td><td>Endorsements as multi-dimensional <code>CrossRegion</code> over <code>IDSpace &times; EndorsementSpace</code> with projection and set operations. Per-region endorsements within editions.</td><td>Flat <code>BTreeSet&lt;Endorsement&gt;</code> — edition-wide only, no cross-space operations</td></tr>
+  <tr><td>Edition structural operations</td><td><code>combine()</code>, <code>replace()</code>, <code>stepper(Region, OrderSpec)</code>, <code>isRangeIdentical()</code>, <code>makeRangeIdentical()</code>, <code>mapSharedOnto()</code>, <code>sharedWith()</code></td><td><code>with()</code>/<code>without()</code> for single-position ops. <code>three_way_diff()</code> for text only. No structural Edition-level merge or identity unification.</td></tr>
+  <tr><td>PlaceHolder / FillDetector</td><td><code>PlaceHolder</code> as a RangeElement for template slots. <code>FillDetector</code> fired async when slots were filled. Background transclusion resolution.</td><td><code>PlaceHolder</code> in the enum but never created — no fill detection, no templates</td></tr>
+  <tr><td>Recursive transclusion (<code>again()</code>)</td><td><code>RangeElement::again()</code> returned the element this was a transclusion of, supporting recursive chains</td><td>No equivalent</td></tr>
+  <tr><td>IDHolder (in-content references)</td><td><code>IDHolder</code> as a RangeElement wrapping an ID — editions could contain pointers to other objects inline</td><td><code>WorkRef</code>/<code>EditionRef</code> variants exist but are not first-class RangeElements</td></tr>
+  <tr><td>Overlays</td><td>Compositional layers on editions with resolution pipeline</td><td><code>RangeElement::Overlay</code> in enum — no overlay resolution or rendering</td></tr>
+</table>
+
+<h3>Identity &amp; Access Control</h3>
+
+<table>
+  <tr><th>Feature</th><th>What Gold Had</th><th>What Xudanu Has</th></tr>
+  <tr><td>Recursive club membership</td><td><code>ClubDescription</code> with <code>Set</code> of member clubs. Clubs could contain clubs with recursive resolution.</td><td>Flat clubs — no nesting, no delegation</td></tr>
+  <tr><td>Work sponsors</td><td>Separate sponsor relationship — clubs that vouched for a work's existence</td><td>No sponsor concept — only read/edit clubs</td></tr>
+  <tr><td>Work history club</td><td>Separate <code>historyClub</code> controlling access to revision history</td><td>History visible to anyone with read access</td></tr>
+  <tr><td>KeyMaster authority delegation</td><td>Accumulated authority from multiple logins, <code>incorporate()</code> to merge, <code>removeLogins()</code> to revoke</td><td><code>has_authority()</code> checks only — no merge or delegation</td></tr>
+  <tr><td>ID batch allocation</td><td><code>IDSpace::global()</code>/<code>unique()</code>, <code>BatchCounter</code> for preallocating ranges on disk, <code>GrantTable</code> for club-scoped allocation</td><td>Simple sequential <code>u64</code> — no batch preallocation or grants</td></tr>
+</table>
+
+<h3>Protocol &amp; Infrastructure</h3>
+
+<table>
+  <tr><th>Feature</th><th>What Gold Had</th><th>What Xudanu Has</th></tr>
+  <tr><td>Link type sets and named ends</td><td><code>HyperLink</code> with <code>Set</code> of link types, <code>endNames()</code>, <code>MultiRef</code> with set operations</td><td>Simple links — no type sets, no named ends, no <code>MultiRef</code></td></tr>
+  <tr><td>Persistent agenda / task queue</td><td><code>Agenda</code>/<code>AgendaItem</code> surviving crashes. <code>Sequencer</code> for ordered composition. Background transclusion resolution.</td><td>All operations synchronous — no deferred work, no crash-surviving task queue</td></tr>
+  <tr><td>Comm protocol negotiation</td><td><code>Portal</code> for bidirectional channels, <code>Negotiator</code> for version negotiation, <code>BootPlan</code> for connection setup</td><td>Single WebSocket protocol — no version negotiation, no multi-transport</td></tr>
+</table>
+
+<div class="footer">
+  Xudanu v0.6.4 &mdash; <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a> &mdash; Based on Udanax Gold, open-sourced 1999. From Ted Nelson's vision, 1963.
+</div>
+
+</div>
+</body>
+</html>

@@ -37,6 +37,7 @@ export interface CrdtSyncState {
   refreshAnnotations: () => void;
   createAnnotation: (kind: string, payload: string, charStart: number, charEnd: number) => Promise<void>;
   deleteAnnotation: (annotationId: number) => Promise<void>;
+  canEdit: boolean;
 }
 
 export function useCrdtSync(
@@ -61,6 +62,7 @@ export function useCrdtSync(
   const [annotations, setAnnotations] = useState<AnnotationEntry[]>([]);
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const epochRef = useRef(0);
+  const [canEdit, setCanEdit] = useState(false);
 
   useEffect(() => {
     if (!wsUrl) return;
@@ -138,6 +140,16 @@ export function useCrdtSync(
       setAuthenticated(false);
     });
   }, [connected]);
+
+  useEffect(() => {
+    if (!connected || !workBeId) {
+      setCanEdit(false);
+      return;
+    }
+    const client = clientRef.current;
+    if (!client) return;
+    client.canEdit(workBeId).then(setCanEdit).catch(() => setCanEdit(false));
+  }, [connected, workBeId, authenticated, connectionEpoch]);
 
   const setText = useCallback((newText: string) => {
     clientRef.current?.setText(newText);
@@ -369,5 +381,6 @@ export function useCrdtSync(
     getWritingFeedback, llmEnabled, fetchWorkList,     setVisibility, getReadClub, getEditClub, publicClubId, logout,
     annotations, refreshAnnotations, createAnnotation, deleteAnnotation,
     connectionEpoch,
+    canEdit,
   };
 }

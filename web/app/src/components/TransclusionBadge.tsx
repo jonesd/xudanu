@@ -23,7 +23,7 @@ export function TransclusionBadge({ pending, onCancel }: TransclusionBadgeProps)
       </div>
       <div className="transclusion-badge-actions">
         <span className="transclusion-badge-hint">
-          Click in editor to place
+          Click to place &middot; Esc to cancel
         </span>
         <button className="transclusion-badge-cancel" onClick={onCancel}>
           Cancel

@@ -13,7 +13,10 @@ use super::transclusion::{
 };
 use super::work::Work;
 use super::wrapper::{WrapperRegistry, WRAPPER_CLUB_ID};
-use crate::ent::dagwood::DagWood;
+use crate::ent::content::{
+    AssertionPayload, AssertionStore, DocumentId, MaterializedDocument, NodeId, SpanId,
+};
+use crate::ent::dagwood::{DagWood, TraceView};
 use crate::ent::htree::{HPart, HUpperCrumData};
 use crate::ent::trace::TracePosition;
 
@@ -127,7 +130,6 @@ impl HPart for EditionMeta {
     }
 }
 
-#[derive(Debug)]
 pub struct BackfollowEngine {
     transclusion_index: TransclusionIndex,
     bert_canopy: BertCanopy,
@@ -138,6 +140,18 @@ pub struct BackfollowEngine {
         std::collections::HashMap<[u8; 32], std::collections::HashSet<RecorderId>>,
     dagwood: DagWood,
     parent_of: std::collections::HashMap<u64, Vec<u64>>,
+    assertion_store: AssertionStore,
+    next_span_id: u64,
+    work_spans: std::collections::HashMap<u64, Vec<SpanId>>,
+}
+
+impl std::fmt::Debug for BackfollowEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BackfollowEngine")
+            .field("edition_metas", &self.edition_metas)
+            .field("parent_of", &self.parent_of)
+            .finish()
+    }
 }
 
 impl BackfollowEngine {
@@ -151,6 +165,9 @@ impl BackfollowEngine {
             fossil_by_fingerprint: std::collections::HashMap::new(),
             dagwood: DagWood::new(),
             parent_of: std::collections::HashMap::new(),
+            assertion_store: AssertionStore::new(),
+            next_span_id: 1,
+            work_spans: std::collections::HashMap::new(),
         }
     }
 
@@ -242,6 +259,7 @@ impl BackfollowEngine {
         meta.set_trace_position(tp);
         self.parent_of.insert(work_id, Vec::new());
         self.edition_metas.insert(work_id, meta);
+        self.bridge_edition_to_assertions(work_id, work.current_edition(), tp);
     }
 
     pub fn update_work_with_parent(
@@ -328,6 +346,7 @@ impl BackfollowEngine {
         meta.set_trace_position(tp);
         self.parent_of.insert(work_id, vec![parent_work_id]);
         self.edition_metas.insert(work_id, meta);
+        self.bridge_edition_to_assertions(work_id, new_work.current_edition(), tp);
     }
 
     pub fn update_work(&mut self, work_id: u64, old_edition: &Edition, new_work: &Work) {
@@ -396,6 +415,20 @@ impl BackfollowEngine {
         if let Some(meta) = self.edition_metas.get_mut(&edition_id) {
             meta.update_prop(new_prop);
         }
+    }
+
+    pub fn on_prop_changed(&self, edition_id: u64) -> Vec<RecorderId> {
+        let meta = match self.edition_metas.get(&edition_id) {
+            Some(m) => m,
+            None => return Vec::new(),
+        };
+        let sensor_crum = meta.sensor_crum();
+        let crum_guard = sensor_crum.lock().unwrap_or_else(|e| e.into_inner());
+        let flags = crum_guard.flags();
+        if flags & crate::edition::props::IS_SENSOR_WAITING_FLAG == 0 {
+            return Vec::new();
+        }
+        crate::edition::hoist::check_recorders(sensor_crum, |_| true)
     }
 
     pub fn on_work_created(&mut self, work_id: u64, work: &Work) {
@@ -567,6 +600,87 @@ impl BackfollowEngine {
             .and_then(|m| m.trace_position().copied())
     }
 
+    pub fn assertion_store(&self) -> &AssertionStore {
+        &self.assertion_store
+    }
+
+    pub fn dagwood(&self) -> &DagWood {
+        &self.dagwood
+    }
+
+    pub fn trace_view_for_work(&self, work_id: u64) -> Option<TraceView> {
+        let meta = self.edition_metas.get(&work_id)?;
+        let tp = meta.trace_position().copied()?;
+        Some(self.dagwood.trace_view(tp))
+    }
+
+    pub fn materialize_work(&self, work_id: u64) -> Option<MaterializedDocument> {
+        let meta = self.edition_metas.get(&work_id)?;
+        let tp = meta.trace_position().copied()?;
+        let view = self.dagwood.trace_view(tp);
+        let doc_id = DocumentId::new(work_id);
+        Some(crate::ent::content::materialize_document(
+            &self.assertion_store,
+            &view,
+            doc_id,
+        ))
+    }
+
+    fn bridge_edition_to_assertions(&mut self, work_id: u64, edition: &Edition, tp: TracePosition) {
+        let doc_id = DocumentId::new(work_id);
+        let node_id = doc_id.node_id();
+
+        let first_time = !self.work_spans.contains_key(&work_id);
+
+        if first_time {
+            self.assertion_store.add(
+                tp,
+                AssertionPayload::CreateNode {
+                    node_id,
+                    kind: "document".into(),
+                },
+            );
+        }
+
+        let old_span_count = self.work_spans.get(&work_id).map(|s| s.len()).unwrap_or(0);
+        let entries = edition.all_entries();
+        let new_count = entries.len();
+
+        let mut spans = self.work_spans.remove(&work_id).unwrap_or_default();
+
+        for i in old_span_count..new_count {
+            let span_id = SpanId::new(self.next_span_id);
+            self.next_span_id += 1;
+            spans.push(span_id);
+            self.assertion_store.add(
+                tp,
+                AssertionPayload::CreateSpan { span_id },
+            );
+            self.assertion_store.add(
+                tp,
+                AssertionPayload::AttachSpanToNode {
+                    node_id,
+                    span_id,
+                    ordinal: i as u32,
+                },
+            );
+        }
+
+        for (i, (_, carrier)) in entries.iter().enumerate() {
+            let span_id = spans[i];
+            let text = carrier.element.as_text().unwrap_or("").to_string();
+            self.assertion_store.add(
+                tp,
+                AssertionPayload::SetSpanText {
+                    span_id,
+                    text,
+                },
+            );
+        }
+
+        self.work_spans.insert(work_id, spans);
+    }
+
     pub fn transclusion_index(&self) -> &TransclusionIndex {
         &self.transclusion_index
     }
@@ -655,6 +769,78 @@ impl BackfollowEngine {
         tracing::debug!(target: "xudanu::content_watch",
             fossil_id, total_fp_entries = self.fossil_by_fingerprint.len(),
             "plant_recorder: fossil_by_fingerprint updated");
+    }
+
+    pub fn plant_recorder_with_hoist(
+        &mut self,
+        edition_id: u64,
+        fossil_id: RecorderId,
+        content: &[RangeElement],
+    ) -> Option<Box<dyn super::recorder::AgendaItem>> {
+        let hoist_item = if let Some(meta) = self.edition_metas.get(&edition_id) {
+            let scrum = meta.sensor_crum().clone();
+            self.sensor_canopy.recording_agent(&scrum, fossil_id)
+        } else {
+            None
+        };
+        for elem in content {
+            let fp = elem.content_fingerprint();
+            self.fossil_by_fingerprint
+                .entry(fp)
+                .or_default()
+                .insert(fossil_id);
+        }
+        hoist_item
+    }
+
+    pub fn register_fossil_fingerprints(&mut self, fossil_id: RecorderId, content: &[RangeElement]) {
+        for elem in content {
+            let fp = elem.content_fingerprint();
+            self.fossil_by_fingerprint
+                .entry(fp)
+                .or_default()
+                .insert(fossil_id);
+        }
+    }
+
+    pub fn fossil_fingerprints(&self) -> &std::collections::HashMap<[u8; 32], std::collections::HashSet<RecorderId>> {
+        &self.fossil_by_fingerprint
+    }
+
+    pub fn filter_fossils_by_permission(
+        &self,
+        fossil_ids: &[RecorderId],
+        queries: &std::collections::HashMap<RecorderId, (Vec<u64>, Option<Vec<u64>>)>,
+        edition_id: u64,
+    ) -> Vec<RecorderId> {
+        let meta = match self.edition_metas.get(&edition_id) {
+            Some(m) => m,
+            None => return fossil_ids.to_vec(),
+        };
+        let meta_flags = meta.bert_crum.lock().unwrap_or_else(|e| e.into_inner()).flags();
+        fossil_ids.iter().copied().filter(|fid| {
+            if let Some((authority_clubs, _endo_filter)) = queries.get(fid) {
+                if authority_clubs.is_empty() {
+                    return true;
+                }
+                let query_flags = crate::edition::props::permissions_flags(
+                    &authority_clubs.iter().map(|&c| super::grandmap::Id::global(c as i64)).collect::<Vec<_>>(),
+                );
+                (query_flags & meta_flags) != 0
+            } else {
+                true
+            }
+        }).collect()
+    }
+
+    pub fn is_sensor_waiting(&self, edition_id: u64) -> bool {
+        self.edition_metas
+            .get(&edition_id)
+            .map(|m| {
+                let flags = m.sensor_crum.lock().unwrap_or_else(|e| e.into_inner()).flags();
+                (flags & crate::edition::props::IS_SENSOR_WAITING_FLAG) != 0
+            })
+            .unwrap_or(false)
     }
 
     pub fn remove_planted_recorder(
@@ -1657,6 +1843,37 @@ mod tests {
         assert!(
             endorsements.iter().any(|id| id.number == TEXT_TOKEN as i64),
             "updated work should have TEXT_TOKEN"
+        );
+    }
+
+    #[test]
+    fn find_transcluders_with_permission_filter() {
+        crate::edition::init_endorsement_flags();
+        let mut engine = BackfollowEngine::new();
+        let shared = RangeElement::text("shared");
+
+        let club_a: u64 = 100;
+        let work_a = Work::new(1, Edition::from_one(0, shared.clone()));
+        let prop_a = BackfollowEngine::make_work_prop(&work_a, Some(club_a), Some(club_a));
+        engine.register_work_with_prop(&work_a, 1, None, prop_a);
+
+        let club_b: u64 = 200;
+        let work_b = Work::new(2, Edition::from_one(0, shared.clone()));
+        let prop_b = BackfollowEngine::make_work_prop(&work_b, Some(club_b), Some(club_b));
+        engine.register_work_with_prop(&work_b, 2, None, prop_b);
+
+        let q_all = TransclusionQuery::all();
+        let all_results = engine.find_transcluders(&shared, &q_all);
+        assert!(all_results.len() >= 2, "unfiltered should find both works");
+
+        let perm_region = crate::edition::props::permissions_region(&[club_a]);
+        let q_filtered = TransclusionQuery::all().with_permissions(
+            crate::edition::props::FilterRegion::new(perm_region),
+        );
+        let filtered_results = engine.find_transcluders(&shared, &q_filtered);
+        assert!(
+            !filtered_results.is_empty(),
+            "filtered should find at least one result"
         );
     }
 }

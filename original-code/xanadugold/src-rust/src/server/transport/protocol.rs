@@ -1045,6 +1045,8 @@ pub enum WireRequest {
         destination: BeId,
         origin_ref: Option<HyperRefPayload>,
         destination_ref: Option<HyperRefPayload>,
+        #[serde(default)]
+        link_types: Vec<u64>,
     },
     LinkGet {
         link_id: BeId,
@@ -1982,6 +1984,7 @@ pub enum ResponseValue {
         char_count: u64,
         author_contributions: Vec<AuthorContributionEntry>,
         reused_in_count: u64,
+        reused_in_docs: Vec<ReusedInDocEntry>,
     },
 
     WorkVersionTimelineResult {
@@ -2321,6 +2324,39 @@ impl HyperRefPayload {
             excerpt,
             provenance_chain,
         }
+    }
+
+    pub fn to_hyper_ref(&self, fallback_work_id: BeId) -> crate::edition::links::HyperRef {
+        use crate::edition::links::{HyperRef, Path, ProvenanceHop};
+
+        let excerpt = self
+            .excerpt
+            .as_deref()
+            .map(crate::edition::Edition::from_text);
+        let path_context = self.path_context.as_ref().and_then(|labels| {
+            let elems: Vec<crate::edition::RangeElement> = labels
+                .iter()
+                .filter_map(|l| l.to_range_element())
+                .collect();
+            if elems.is_empty() {
+                None
+            } else {
+                Some(Path::new(elems))
+            }
+        });
+        let provenance_chain: Vec<ProvenanceHop> = self
+            .provenance_chain
+            .iter()
+            .map(|hop| ProvenanceHop::new(hop.source_work_id, hop.link_id))
+            .collect();
+        let work_context = self
+            .work_context
+            .or_else(|| Some(fallback_work_id));
+        let mut hr = HyperRef::single(excerpt, work_context, self.original_context, path_context);
+        if !provenance_chain.is_empty() {
+            hr = hr.with_provenance_chain(provenance_chain);
+        }
+        hr
     }
 }
 
@@ -2711,6 +2747,8 @@ pub struct AuthorContributionEntry {
     pub display_name: String,
     pub char_count: u64,
     pub percentage: f64,
+    #[serde(default)]
+    pub author_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2719,6 +2757,14 @@ pub struct RevisionMetaEntry {
     pub char_count: u64,
     pub author_club_id: Option<BeId>,
     pub author_display_name: Option<String>,
+    pub author_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReusedInDocEntry {
+    pub work_id: BeId,
+    pub title: String,
+    pub shared_char_count: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
