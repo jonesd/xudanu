@@ -72,7 +72,10 @@ impl PartialEq for Edition {
             return false;
         }
         for (a, b) in my_entries.iter().zip(other_entries.iter()) {
-            if a.0 != b.0 || *a.1 != *b.1 {
+            if a.0 != b.0 {
+                return false;
+            }
+            if a.1.element.as_text() != b.1.element.as_text() {
                 return false;
             }
         }

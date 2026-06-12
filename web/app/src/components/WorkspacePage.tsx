@@ -15,6 +15,8 @@ import { CompareHeader, CompareSplitView, useCompare } from "../components/Compa
 import { IdentityPanel } from "../components/IdentityPanel";
 import { ImportWizard } from "../components/ImportWizard";
 import { TransclusionBadge } from "../components/TransclusionBadge";
+import { WorkSummaryPanel } from "../components/WorkSummaryPanel";
+import { SharePanel } from "../components/SharePanel";
 import { ReadingView } from "./reading/ReadingView";
 import { DocumentSettings, loadDocPreferences, saveDocPreferences } from "../components/DocumentSettings";
 import type { DocPreferences } from "../components/DocumentSettings";
@@ -57,6 +59,8 @@ export function WorkspacePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showImport, setShowImport] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showRevisions, setShowRevisions] = useState(false);
   const [revisionList, setRevisionList] = useState<string[]>([]);
@@ -124,6 +128,7 @@ export function WorkspacePage() {
     createAnnotation,
     deleteAnnotation,
     connectionEpoch,
+    canEdit,
   } = useCrdtSync(WS_URL, workBeId);
 
   useEffect(() => {
@@ -379,6 +384,18 @@ export function WorkspacePage() {
     transclusion.holdSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
   }, [selectionRange, workBeId, displayText, currentWorkMeta, transclusion]);
 
+  useEffect(() => {
+    if (!transclusion.pending) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        transclusion.clearPending();
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [transclusion]);
+
   const handlePasteText = useCallback(async (pasteText: string, pasteStart: number) => {
     if (!clientRef.current || workBeId === null) return;
     try {
@@ -591,8 +608,17 @@ export function WorkspacePage() {
                         close();
                       }}
                     >
-                      Annotate Selection
-                    </DropdownItem>
+                       Annotate Selection
+                     </DropdownItem>
+                     <DropdownItem
+                       disabled={!selectionRange}
+                       onClick={() => {
+                         handleTranscludeSelection();
+                         close();
+                       }}
+                     >
+                       Transclude Selection
+                     </DropdownItem>
                   <DropdownItem
                     disabled={!connected || works.length < 2}
                     onClick={() => { setShowCompare((c) => !c); }}
@@ -692,6 +718,18 @@ export function WorkspacePage() {
                     Find Similar
                   </DropdownItem>
                   <DropdownSeparator />
+                  <DropdownItem
+                    disabled={!workBeId}
+                    onClick={() => { setShowSummary(true); close(); }}
+                  >
+                    Work Summary
+                  </DropdownItem>
+                  <DropdownItem
+                    disabled={!workBeId}
+                    onClick={() => { setShowShare(true); close(); }}
+                  >
+                    Share
+                  </DropdownItem>
                   <DropdownItem onClick={() => { setShowSettings(true); close(); }}>
                     Settings
                   </DropdownItem>
@@ -1005,10 +1043,20 @@ export function WorkspacePage() {
                   isSource={isSourceWork}
                   clientRef={clientRef}
                   connected={connected}
+                  onSelectionChange={(s, e) => {
+                    if (s !== e) setSelectionRange({ start: s, end: e });
+                    else setSelectionRange(null);
+                  }}
                 />
               ) : (
               <>
               <AwarenessIndicators states={awareness} connected={connected} />
+              {workBeId && connected && !canEdit && (
+                <div className="readonly-banner">
+                  Read-only — you do not have edit permission for this work.
+                  {identity === null && <span className="readonly-hint"> Log in or create an identity to edit.</span>}
+                </div>
+              )}
               {transclusion.pending && (
                 <TransclusionBadge
                   pending={transclusion.pending}
@@ -1038,31 +1086,31 @@ export function WorkspacePage() {
                     }}
                      connected={connected}
                      attributionSpans={attributionSpans}
-                    editable={identity !== null}
+                   editable={canEdit}
                      contentStartLine={currentWorkMeta?.content_start_line}
                      contentEndLine={currentWorkMeta?.content_end_line}
-                    transclusionMarkers={transclusion.markers}
-                    pendingTransclusion={transclusion.pending}
-                    onPlaceTransclusion={handlePlaceTransclusion}
-                     selectionRange={selectionRange}
-                    onNavigateToWork={selectWork}
-                    onPasteText={handlePasteText}
-                     fontSize={docPrefs.fontSize}
-                     lineHeight={docPrefs.lineHeight}
-                   />
-                ) : (
-                   <CollaborativeEditor
-                    text={displayText}
-                   onTextChange={isSourceWork ? undefined : setText}
-                  onCursorChange={sendCursor}
-                  onSelectionChange={(s, e) => {
-                    sendSelection(s, e);
-                    if (s !== null && e !== null) setSelectionRange({ start: s, end: e });
-                    else setSelectionRange(null);
-                  }}
-                  connected={connected}
-                  attributionSpans={attributionSpans}
-                   editable={!isSourceWork && identity !== null}
+                     transclusionMarkers={transclusion.markers}
+                     pendingTransclusion={transclusion.pending}
+                     onPlaceTransclusion={handlePlaceTransclusion}
+                      selectionRange={selectionRange}
+                     onNavigateToWork={selectWork}
+                     onPasteText={handlePasteText}
+                      fontSize={docPrefs.fontSize}
+                      lineHeight={docPrefs.lineHeight}
+                    />
+                 ) : (
+                    <CollaborativeEditor
+                     text={displayText}
+                    onTextChange={canEdit ? setText : undefined}
+                   onCursorChange={sendCursor}
+                   onSelectionChange={(s, e) => {
+                     sendSelection(s, e);
+                     if (s !== null && e !== null) setSelectionRange({ start: s, end: e });
+                     else setSelectionRange(null);
+                   }}
+                   connected={connected}
+                   attributionSpans={attributionSpans}
+                    editable={canEdit}
                     contentStartLine={isSourceWork ? undefined : currentWorkMeta?.content_start_line}
                     contentEndLine={isSourceWork ? undefined : currentWorkMeta?.content_end_line}
                    transclusionMarkers={transclusion.markers}
@@ -1070,7 +1118,7 @@ export function WorkspacePage() {
                    onPlaceTransclusion={handlePlaceTransclusion}
                    selectionRange={selectionRange}
                    onNavigateToWork={selectWork}
-                   onPasteText={isSourceWork ? undefined : handlePasteText}
+                    onPasteText={canEdit ? handlePasteText : undefined}
                     fontSize={docPrefs.fontSize}
                     lineHeight={docPrefs.lineHeight}
                    annotations={annotations}
@@ -1243,6 +1291,26 @@ export function WorkspacePage() {
             )}
           </div>
         </div>
+      )}
+
+      {showSummary && (
+        <WorkSummaryPanel
+          clientRef={clientRef}
+          workBeId={workBeId}
+          connected={connected}
+          onClose={() => setShowSummary(false)}
+          onNavigateToWork={selectWork}
+        />
+      )}
+
+      {showShare && workBeId && (
+        <SharePanel
+          workBeId={workBeId}
+          clientRef={clientRef}
+          connected={connected}
+          canEdit={canEdit}
+          onClose={() => setShowShare(false)}
+        />
       )}
     </div>
   );

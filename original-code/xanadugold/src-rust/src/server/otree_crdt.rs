@@ -62,6 +62,12 @@ pub struct OtreeAuthorIdentity {
     pub club_be_id: BeId,
 }
 
+impl OtreeAuthorIdentity {
+    pub fn new(public_key: [u8; 32], display_name: String, club_be_id: BeId) -> Self {
+        Self { public_key, display_name, club_be_id }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OtreeSignedUpdate {
     pub update_text: String,
@@ -249,7 +255,7 @@ fn flush_batched_insert(
     }
 }
 
-fn apply_text_delta_to_edition(
+pub fn apply_text_delta_to_edition(
     edition: &Edition,
     ops: &[TextDeltaOp],
     author: Option<&OtreeAuthorIdentity>,
@@ -579,7 +585,33 @@ impl OtreeCrdtManager {
             }
         }
 
+        let expected_len = if was_merged {
+            0
+        } else {
+            let insert_len: usize = ops.iter().map(|op| match op {
+                TextDeltaOp::Insert { text } => text.len(),
+                _ => 0,
+            }).sum();
+            let delete_sum: u64 = ops.iter().map(|op| match op {
+                TextDeltaOp::Delete { count } => *count,
+                _ => 0,
+            }).sum();
+            let old_len = wd.current_edition.to_text().len() as u64;
+            (old_len + insert_len as u64).saturating_sub(delete_sum) as usize
+        };
+
         wd.current_edition = merged;
+        wd.base_edition = wd.current_edition.clone();
+        if !was_merged && expected_len > 0 {
+            let actual_len = wd.current_edition.to_text().len();
+            if actual_len > expected_len * 2 || (expected_len > 100 && actual_len > expected_len + expected_len / 2) {
+                tracing::error!(
+                    "[crdt] possible duplication: expected ~{} chars, got {}",
+                    expected_len,
+                    actual_len
+                );
+            }
+        }
         *wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()) = None;
         wd.last_change_timestamp = current_timestamp_secs();
         wd.pending_edition = Some(wd.current_edition.clone());
@@ -1086,6 +1118,18 @@ impl OtreeCrdtManager {
         self.docs
             .get(&work_id)
             .map(|wd| wd.federated_provenance.as_slice())
+    }
+
+    pub fn sync_to_edition(&mut self, work_id: BeId, edition: Edition) -> Result<(), OtreeError> {
+        let wd = self
+            .docs
+            .get_mut(&work_id)
+            .ok_or(OtreeError::WorkNotFound(work_id))?;
+        wd.current_edition = edition;
+        wd.base_edition = wd.current_edition.clone();
+        wd.pending_edition = None;
+        *wd.cached_text.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        Ok(())
     }
 
     pub fn extract_update_for_federation(&mut self, work_id: BeId) -> Result<String, OtreeError> {

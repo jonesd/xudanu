@@ -74,25 +74,58 @@ impl<A: Position, B: Position> Position for Tuple2<A, B> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CrossRegion2<R1, R2> {
-    r1: R1,
-    r2: R2,
+    boxes: Vec<(R1, R2)>,
 }
 
 impl<R1: Region, R2: Region> CrossRegion2<R1, R2> {
     pub fn box_of(r1: R1, r2: R2) -> Self {
-        CrossRegion2 { r1, r2 }
+        if r1.is_empty() || r2.is_empty() {
+            return CrossRegion2 { boxes: Vec::new() };
+        }
+        CrossRegion2 { boxes: vec![(r1, r2)] }
     }
 
-    pub fn projection_a(&self) -> &R1 {
-        &self.r1
+    pub fn projection_a(&self) -> R1
+    where
+        R1: Clone,
+    {
+        let first = self.boxes.first();
+        if first.is_none() {
+            unreachable!("projection_a called on empty CrossRegion2");
+        }
+        let mut result = self.boxes[0].0.clone();
+        for (r, _) in &self.boxes[1..] {
+            result = result.union_with(r);
+        }
+        result
     }
 
-    pub fn projection_b(&self) -> &R2 {
-        &self.r2
+    pub fn projection_b(&self) -> R2
+    where
+        R2: Clone,
+    {
+        let first = self.boxes.first();
+        if first.is_none() {
+            unreachable!("projection_b called on empty CrossRegion2");
+        }
+        let mut result = self.boxes[0].1.clone();
+        for (_, r) in &self.boxes[1..] {
+            result = result.union_with(r);
+        }
+        result
     }
 
     pub fn into_projections(self) -> (R1, R2) {
-        (self.r1, self.r2)
+        if self.boxes.is_empty() {
+            panic!("into_projections called on empty CrossRegion2");
+        }
+        let mut r1 = self.boxes[0].0.clone();
+        let mut r2 = self.boxes[0].1.clone();
+        for (a, b) in &self.boxes[1..] {
+            r1 = r1.union_with(a);
+            r2 = r2.union_with(b);
+        }
+        (r1, r2)
     }
 }
 
@@ -100,35 +133,72 @@ impl<R1: Region, R2: Region> Region for CrossRegion2<R1, R2> {
     type Position = Tuple2<R1::Position, R2::Position>;
 
     fn is_empty(&self) -> bool {
-        self.r1.is_empty() || self.r2.is_empty()
+        self.boxes.is_empty()
     }
 
     fn is_full(&self) -> bool {
-        self.r1.is_full() && self.r2.is_full()
+        self.boxes.len() == 1 && self.boxes[0].0.is_full() && self.boxes[0].1.is_full()
     }
 
     fn contains(&self, pos: &Self::Position) -> bool {
-        self.r1.contains(&pos.0) && self.r2.contains(&pos.1)
+        self.boxes.iter().any(|(r1, r2)| r1.contains(&pos.0) && r2.contains(&pos.1))
     }
 
     fn intersects(&self, other: &Self) -> bool {
-        self.r1.intersects(&other.r1) && self.r2.intersects(&other.r2)
+        for (r1, r2) in &self.boxes {
+            for (o1, o2) in &other.boxes {
+                if r1.intersects(o1) && r2.intersects(o2) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     fn intersect(&self, other: &Self) -> Self {
-        CrossRegion2::box_of(self.r1.intersect(&other.r1), self.r2.intersect(&other.r2))
+        let mut result = Vec::new();
+        for (r1, r2) in &self.boxes {
+            for (o1, o2) in &other.boxes {
+                let i1 = r1.intersect(o1);
+                let i2 = r2.intersect(o2);
+                if !i1.is_empty() && !i2.is_empty() {
+                    result.push((i1, i2));
+                }
+            }
+        }
+        CrossRegion2 { boxes: result }
     }
 
     fn union_with(&self, other: &Self) -> Self {
-        CrossRegion2::box_of(self.r1.union_with(&other.r1), self.r2.union_with(&other.r2))
+        let mut boxes = self.boxes.clone();
+        boxes.extend(other.boxes.clone());
+        CrossRegion2 { boxes }
     }
 
     fn complement(&self) -> Self {
-        let r1c = self.r1.complement();
-        let r2c = self.r2.complement();
-        let left = CrossRegion2::box_of(r1c, self.r2.clone());
-        let right = CrossRegion2::box_of(self.r1.clone(), r2c);
-        left.union_with(&right)
+        if self.boxes.is_empty() {
+            return self.clone();
+        }
+        let full_r1 = self.boxes[0].0.complement().union_with(&self.boxes[0].0);
+        let full_r2 = self.boxes[0].1.complement().union_with(&self.boxes[0].1);
+        let mut result: Option<CrossRegion2<R1, R2>> = None;
+        for (r1, r2) in &self.boxes {
+            let r1c = r1.complement();
+            let r2c = r2.complement();
+            let mut comp_boxes = Vec::new();
+            if !r1c.is_empty() {
+                comp_boxes.push((r1c, full_r2.clone()));
+            }
+            if !r2c.is_empty() {
+                comp_boxes.push((full_r1.clone(), r2c));
+            }
+            let box_comp = CrossRegion2 { boxes: comp_boxes };
+            result = Some(match result {
+                None => box_comp,
+                Some(prev) => prev.intersect(&box_comp),
+            });
+        }
+        result.unwrap_or_else(|| CrossRegion2 { boxes: Vec::new() })
     }
 
     fn minus(&self, other: &Self) -> Self {
@@ -136,14 +206,16 @@ impl<R1: Region, R2: Region> Region for CrossRegion2<R1, R2> {
     }
 
     fn is_simple(&self) -> bool {
-        self.r1.is_simple() && self.r2.is_simple()
+        self.boxes.len() <= 1 && self.boxes.iter().all(|(r1, r2)| r1.is_simple() && r2.is_simple())
     }
 
     fn count(&self) -> Option<usize> {
-        match (self.r1.count(), self.r2.count()) {
-            (Some(a), Some(b)) => Some(a * b),
-            _ => None,
-        }
+        self.boxes.iter().try_fold(0usize, |acc, (r1, r2)| {
+            match (r1.count(), r2.count()) {
+                (Some(a), Some(b)) => Some(acc + a * b),
+                _ => None,
+            }
+        })
     }
 }
 
@@ -159,8 +231,12 @@ impl<D1: Dsp, D2: Dsp> Dsp for CrossDsp2<D1, D2> {
     }
 
     fn of_all(&self, region: &Self::Region) -> Self::Region {
-        let (r1, r2) = region.clone().into_projections();
-        CrossRegion2::box_of(self.0.of_all(&r1), self.1.of_all(&r2))
+        let boxes: Vec<_> = region
+            .boxes
+            .iter()
+            .map(|(r1, r2)| (self.0.of_all(r1), self.1.of_all(r2)))
+            .collect();
+        CrossRegion2 { boxes }
     }
 
     fn inverse(&self) -> Self {
@@ -260,13 +336,16 @@ mod tests {
     }
 
     #[test]
-    fn cross_complement_produces_box() {
+    fn cross_complement_is_union_of_strips() {
         let s = space();
         let ra = IntegerRegion::interval(2, 5);
         let rb = IntegerRegion::interval(10, 20);
         let r = s.box_region(ra, rb);
         let c = r.complement();
-        assert!(c.is_full());
+        assert!(!c.contains(&Tuple2(IntegerPos(3), IntegerPos(15))));
+        assert!(c.contains(&Tuple2(IntegerPos(0), IntegerPos(15))));
+        assert!(c.contains(&Tuple2(IntegerPos(3), IntegerPos(25))));
+        assert!(c.contains(&Tuple2(IntegerPos(10), IntegerPos(0))));
     }
 
     #[test]

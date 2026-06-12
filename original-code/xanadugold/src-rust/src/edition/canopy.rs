@@ -524,6 +524,26 @@ impl SensorCanopy {
         propagate_flags(crum);
         propagate_height(crum);
     }
+
+    pub fn recording_agent(
+        &self,
+        crum: &Arc<Mutex<CanopyCrumData>>,
+        recorder_id: RecorderId,
+    ) -> Option<Box<dyn super::recorder::AgendaItem>> {
+        let already_present = crum
+            .lock()
+            .unwrap()
+            .recorders()
+            .contains(&recorder_id);
+        if already_present {
+            return None;
+        }
+        crum.lock().unwrap().install_recorders(&[recorder_id]);
+        Some(super::hoist::RecorderHoister::make(
+            crum.clone(),
+            vec![recorder_id],
+        ))
+    }
 }
 
 impl Default for SensorCanopy {

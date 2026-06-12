@@ -140,6 +140,13 @@ export interface AuthorContribution {
   display_name: string;
   char_count: number;
   percentage: number;
+  author_type: string | null;
+}
+
+export interface ReusedInDoc {
+  work_id: number;
+  title: string;
+  shared_char_count: number;
 }
 
 export interface WorkSummary {
@@ -149,6 +156,7 @@ export interface WorkSummary {
   char_count: number;
   author_contributions: AuthorContribution[];
   reused_in_count: number;
+  reused_in_docs: ReusedInDoc[];
 }
 
 export interface RevisionMeta {
@@ -156,6 +164,7 @@ export interface RevisionMeta {
   char_count: number;
   author_club_id: number | null;
   author_display_name: string | null;
+  author_type: string | null;
 }
 
 export interface WorkVersionTimeline {
@@ -759,6 +768,13 @@ export class CrdtSyncClient {
     });
   }
 
+  async setEditClub(workId: number, clubId: number | null): Promise<void> {
+    await this.sendRequest("work_set_edit_club", {
+      work_id: workId,
+      club_id: clubId,
+    });
+  }
+
   async getReadClub(workId: number): Promise<number> {
     const resp = await this.sendRequest("work_read_club", { work_id: workId });
     const val = extractValue(resp);
@@ -769,6 +785,38 @@ export class CrdtSyncClient {
     const resp = await this.sendRequest("work_edit_club", { work_id: workId });
     const val = extractValue(resp);
     return (val as number) || 0;
+  }
+
+  async canEdit(workId: number): Promise<boolean> {
+    try {
+      const resp = await this.sendRequest("work_can_revise", { work_id: workId });
+      const val = extractValue(resp);
+      return val === true;
+    } catch {
+      return false;
+    }
+  }
+
+  async clubMembers(clubId: number): Promise<number[]> {
+    const resp = await this.sendRequest("club_members", { club_id: clubId });
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as number[];
+    const r = val as Record<string, unknown>;
+    return (r.members as number[]) || [];
+  }
+
+  async clubAddMember(clubId: number, memberId: number): Promise<void> {
+    await this.sendRequest("club_add_member", { club_id: clubId, member_id: memberId });
+  }
+
+  async clubRemoveMember(clubId: number, memberId: number): Promise<void> {
+    await this.sendRequest("club_remove_member", { club_id: clubId, member_id: memberId });
+  }
+
+  async clubNameById(clubId: number): Promise<string> {
+    const resp = await this.sendRequest("club_name_by_id", { club_id: clubId });
+    const val = extractValue(resp);
+    return (val as string) || "";
   }
 
   async createIdentity(displayName: string, password: string): Promise<WhoAmIEntry> {
@@ -971,7 +1019,22 @@ export class CrdtSyncClient {
         this.awarenessListeners.forEach((cb) => cb(states));
       }).catch(() => {});
     } catch (e) {
-      console.warn("crdt_sync_open failed (work may be private):", e);
+      console.warn("crdt_sync_open failed, falling back to work_get_edition:", e);
+      try {
+        const edResp = await this.sendRequest("work_get_edition", {
+          work_id: this.workBeId,
+        });
+        const edVal = extractValue(edResp) as Record<string, unknown>;
+        if (edVal) {
+          const edText = (edVal as { text?: string }).text
+            || (edVal as { type?: string; value?: string }).value
+            || "";
+          this.text = edText;
+          this.textListeners.forEach((cb) => cb(this.text));
+        }
+      } catch (e2) {
+        console.warn("work_get_edition fallback also failed:", e2);
+      }
     }
   }
 

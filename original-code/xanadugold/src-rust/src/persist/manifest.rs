@@ -46,6 +46,8 @@ pub struct LinkEntry {
     pub origin_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub destination_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub link_types: Vec<u64>,
 }
 
 /// On-disk representation of a work entry in the manifest.
@@ -175,6 +177,8 @@ pub struct Manifest {
     pub historical_authors: Option<crate::server::historical_author::HistoricalAuthorRegistry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations_hash: Option<[u8; 32]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fossil_snapshots_hash: Option<[u8; 32]>,
 }
 
 #[derive(Debug)]
@@ -469,6 +473,7 @@ pub fn create_empty_manifest(
         historical_authors_hash: None,
         historical_authors: None,
         annotations_hash: None,
+        fossil_snapshots_hash: None,
     }
 }
 
@@ -603,6 +608,7 @@ mod tests {
             destination: 11,
             origin_ref: None,
             destination_ref: None,
+            link_types: vec![],
         });
         manifest.link_counter = 51;
 

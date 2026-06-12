@@ -1,4 +1,6 @@
+mod arrangement;
 mod cross;
+mod cross_n;
 mod filter;
 mod integer;
 mod mapping;
@@ -7,7 +9,12 @@ mod real;
 mod sequence;
 mod traits;
 
+#[cfg(test)]
+mod phase3_tests;
+
+pub use arrangement::*;
 pub use cross::*;
+pub use cross_n::*;
 pub use filter::*;
 pub use integer::*;
 pub use mapping::*;

@@ -134,6 +134,31 @@ impl ServerHandle {
         });
         f(&guard)
     }
+
+    pub fn wait_for_consequences(&self) {
+        let tracker = self.inner.read().unwrap_or_else(|e| {
+            tracing::error!("Server rwlock poisoned, recovering: {}", e);
+            e.into_inner()
+        }).consequence_tracker();
+        drop(tracker);
+        let tracker = self.inner.read().unwrap_or_else(|e| e.into_inner()).consequence_tracker();
+        tracker.wait_for_consequences();
+    }
+
+    pub fn wait_for_consequences_timeout(&self, timeout: std::time::Duration) -> bool {
+        let tracker = self.inner.read().unwrap_or_else(|e| e.into_inner()).consequence_tracker();
+        tracker.wait_for_consequences_timeout(timeout)
+    }
+
+    pub fn wait_for_write(&self) {
+        let barrier = self.inner.read().unwrap_or_else(|e| e.into_inner()).write_barrier();
+        barrier.wait_for_write();
+    }
+
+    pub fn wait_for_write_timeout(&self, timeout: std::time::Duration) -> bool {
+        let barrier = self.inner.read().unwrap_or_else(|e| e.into_inner()).write_barrier();
+        barrier.wait_for_write_timeout(timeout)
+    }
 }
 
 impl std::fmt::Debug for ServerHandle {

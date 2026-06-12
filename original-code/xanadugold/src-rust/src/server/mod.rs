@@ -34,6 +34,9 @@ pub mod source_matcher;
 pub mod transport;
 
 #[cfg(feature = "server")]
+pub mod wait_barrier;
+
+#[cfg(feature = "server")]
 pub use club::Club;
 #[cfg(feature = "server")]
 pub use detector::{Detector, Event, FnDetector};
@@ -61,3 +64,8 @@ pub use lock::{
 pub use server::{Server, SystemClubs};
 #[cfg(feature = "server")]
 pub use session::SessionId;
+#[cfg(feature = "server")]
+pub use wait_barrier::{
+    BlockingWaitDetector, ConsequenceTracker, OperationGuard, WaitDetector, WriteBarrier,
+    WriteGuard,
+};

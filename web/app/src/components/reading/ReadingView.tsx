@@ -13,6 +13,7 @@ interface ReadingViewProps {
   isSource: boolean;
   clientRef: React.MutableRefObject<CrdtSyncClient | null>;
   connected: boolean;
+  onSelectionChange?: (start: number, end: number) => void;
 }
 
 type ProvenanceLevel = 0 | 1 | 2 | 3;
@@ -25,6 +26,7 @@ export function ReadingView({
   isSource,
   clientRef,
   connected,
+  onSelectionChange,
 }: ReadingViewProps) {
   const [summary, setSummary] = useState<WorkSummary | null>(null);
   const [timeline, setTimeline] = useState<WorkVersionTimeline | null>(null);
@@ -36,6 +38,29 @@ export function ReadingView({
   const [viewingRevision, setViewingRevision] = useState<number | null>(null);
   const [revisionText, setRevisionText] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!onSelectionChange) return;
+    const handler = () => {
+      const el = containerRef.current;
+      if (!el) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount || !el.contains(sel.anchorNode)) {
+        if (onSelectionChange) onSelectionChange(0, 0);
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      const pre = document.createRange();
+      pre.selectNodeContents(el);
+      pre.setEnd(range.startContainer, range.startOffset);
+      const start = pre.toString().length;
+      pre.setEnd(range.endContainer, range.endOffset);
+      const end = pre.toString().length;
+      onSelectionChange(start, end);
+    };
+    document.addEventListener("selectionchange", handler);
+    return () => document.removeEventListener("selectionchange", handler);
+  }, [onSelectionChange]);
 
   useEffect(() => {
     if (!clientRef.current || !connected || workId === null) return;

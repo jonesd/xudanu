@@ -606,6 +606,8 @@ impl JsonCodec {
             OperationCode::AttributionLogStatus,
             OperationCode::HistoricalAuthorList,
             OperationCode::SourcePatternList,
+            OperationCode::ClubNames,
+            OperationCode::WorkList,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -639,6 +641,14 @@ impl JsonCodec {
                 OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
                 OperationCode::HistoricalAuthorList => Ok(WireRequest::HistoricalAuthorList),
                 OperationCode::SourcePatternList => Ok(WireRequest::SourcePatternList),
+                OperationCode::ClubNames => Ok(WireRequest::ClubNames {
+                    offset: None,
+                    limit: None,
+                }),
+                OperationCode::WorkList => Ok(WireRequest::WorkList {
+                    offset: None,
+                    limit: None,
+                }),
                 _ => unreachable!(),
             };
         }
@@ -1358,6 +1368,8 @@ impl JsonCodec {
                     destination: BeId,
                     origin_ref: Option<HyperRefPayload>,
                     destination_ref: Option<HyperRefPayload>,
+                    #[serde(default)]
+                    link_types: Vec<u64>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
@@ -1366,6 +1378,7 @@ impl JsonCodec {
                     destination: args.destination,
                     origin_ref: args.origin_ref,
                     destination_ref: args.destination_ref,
+                    link_types: args.link_types,
                 })
             }
             OperationCode::LinkGet => {

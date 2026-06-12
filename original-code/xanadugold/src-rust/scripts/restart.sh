@@ -6,6 +6,7 @@
 #   ./scripts/restart.sh 9090 /tmp/my-data         # custom port and data dir
 #   LAN=1 ./scripts/restart.sh                     # bind 0.0.0.0 for LAN access
 #   NO_VITE=1 ./scripts/restart.sh                 # skip Vite dev server
+#   SEED=1 ./scripts/restart.sh                    # seed test data after start
 
 set -e
 
@@ -225,6 +226,16 @@ if [ "${NO_VITE:-0}" != "1" ] && [ -n "$VITE_DIR" ]; then
         echo "  Vite:             http://localhost:${VITE_PORT} (pid ${VITE_PID})"
         echo "  Vite log:         ${LOG_DIR}/xudanu-vite.log"
     fi
+fi
+
+# --- Summary ---
+
+# --- Seed data if requested ---
+
+if [ "${SEED:-0}" = "1" ]; then
+    echo ""
+    echo "Seeding test data..."
+    python3 "$(dirname "$0")/seed.py" "${ADDR}" 2>&1 || echo "  WARNING: seed script failed (install websocket-client: pip install websocket-client)"
 fi
 
 # --- Summary ---
