@@ -45,7 +45,7 @@ kbd{font-family:'JetBrains Mono',monospace;background:#21262d;padding:2px 8px;bo
 <p class="subtitle">Version 0.7.0 &mdash; Stars, Trails, Document Map, Content Similarity, and hardened persistence</p>
 
 <h2>Xanadu Gold Foundations</h2>
-<p>Xudanu builds directly on the Udanax Gold hypertext model, progressively implementing Ted Nelson's original design. The features in this release rest on core Gold abstractions:</p>
+<p>Xudanu builds directly on the <strong>Udanax-Gold</strong> hypertext model &mdash; Ted Nelson's C++ implementation open-sourced in 1999 &mdash; with modern enhancements including BLAKE3 content hashing, Ed25519 cryptographic attribution, CRDT-based collaborative editing, and a real-time web UI. The features in this release rest on core Gold abstractions:</p>
 <ul>
   <li><strong>Works &amp; Editions</strong> &mdash; Documents are Works containing versioned Editions. Each Edition captures a complete snapshot with per-line attribution, three-way merge, and the O-tree CRDT data model.</li>
   <li><strong>Transclusion</strong> &mdash; The foundational Xanadu concept: content is linked, not copied. When you transclude text from one document into another, provenance is preserved &mdash; the attribution panel shows <code>via work:XXXX</code> for every transcluded passage.</li>
