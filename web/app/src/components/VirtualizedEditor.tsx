@@ -624,12 +624,22 @@ function VirtualizedEditorInner({
     if (!el) return;
     if (!el.contains(e.target as Node)) return;
 
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
     const buf = bufferRef.current;
     const { start: vs } = lastViewRange.current;
     const viewportCharStart = buf.getCharOffset(vs);
+
+    let range: Range | null = null;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      range = sel.getRangeAt(0);
+    }
+    if (!range) {
+      const doc = el.ownerDocument as Document & { caretRangeFromPoint?: (x: number, y: number) => Range | null };
+      if (doc.caretRangeFromPoint) {
+        range = doc.caretRangeFromPoint(e.clientX, e.clientY);
+      }
+    }
+    if (!range) return;
 
     const pre = document.createRange();
     pre.selectNodeContents(el);

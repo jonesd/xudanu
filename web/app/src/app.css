@@ -3763,3 +3763,86 @@ canvas._bridge {
   padding: 0 2px;
   line-height: 1;
 }
+
+/* Version Genealogy Panel */
+.gene-section-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-top: 8px;
+}
+
+.gene-section-hint {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-bottom: 6px;
+}
+
+.gene-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gene-node {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #f3f4f6;
+  cursor: pointer;
+  transition: background 0.15s;
+  border: 1px solid #e5e7eb;
+}
+
+.gene-node:hover {
+  background: #e0e7ff;
+  border-color: #818cf8;
+}
+
+.gene-node-title {
+  font-size: 13px;
+  color: #1f2937;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
+}
+
+.gene-node-id {
+  font-family: monospace;
+  font-size: 11px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.gene-node-current {
+  background: #1e3a8a;
+  border-color: #1e40af;
+}
+
+.gene-node-current .gene-node-title {
+  color: #fff;
+  font-weight: 600;
+}
+
+.gene-node-current .gene-node-id {
+  color: #93c5fd;
+}
+
+.gene-current {
+  padding: 4px 0;
+}
+
+.gene-current .gene-node {
+  background: #1e3a8a;
+  border-color: #1e40af;
+}
+
+.gene-connector {
+  text-align: center;
+  font-size: 18px;
+  color: #9ca3af;
+  margin: 4px 0;
+}

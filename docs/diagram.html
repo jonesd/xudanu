@@ -251,7 +251,7 @@ h2 { font-size: 16px; color: #8b949e; font-weight: 400; margin-bottom: 32px; }
   <div class="note">
     <strong>Content identity enables all the optimizations.</strong> Because BLAKE3 fingerprints give us content-addressed identity for free, we can build inverted indexes (fingerprint &rarr; works), intersect them (shared content), cache them (OnceLock), and prune tree traversals (canopy flags). Without content-addressing, none of these O(log n) shortcuts work &mdash; you're back to O(n) string comparison.
   </div>
-  <p style="margin-top:12px">This is the same insight behind Git (content-addressed objects), IPFS (content-addressed storage), and modern databases (hash indexes). Udanax Gold had it in the 1990s &mdash; just without BLAKE3.</p>
+  <p style="margin-top:12px">This is the same insight behind Git (content-addressed objects), IPFS (content-addressed storage), and modern databases (hash indexes). Udanax-Gold had it in the 1990s &mdash; just without BLAKE3.</p>
 </div>
 
 <div class="footer">Xudanu &mdash; Ted Nelson's hypertext, optimized for the 2020s</div>

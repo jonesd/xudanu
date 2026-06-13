@@ -27,6 +27,8 @@ pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 2
 .diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
 .note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
 .note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
 .warning{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
 .warning strong{color:#d29922}
 .example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
@@ -167,8 +169,12 @@ The key relationship: a <strong>Work</strong> is the <em>identity</em> (who can 
 <h2 id="s2">2. The O-Tree: How an Edition Stores Its Elements</h2>
 
 <p>
-An Edition's content lives in an <strong>O-tree</strong> &mdash; a splay-tree structure originally designed for the Udanax Gold hypertext system. Each element is stored at an integer position (0, 1, 2, ...) in a <code>OrglRoot</code>, which wraps a splay tree of <code>Loaf</code> nodes.
+An Edition's content lives in an <strong>O-tree</strong> &mdash; a splay-tree structure originally designed for the Udanax-Gold hypertext system. Each element is stored at an integer position (0, 1, 2, ...) in a <code>OrglRoot</code>, which wraps a splay tree of <code>Loaf</code> nodes.
 </p>
+
+<div class="gold">
+  <strong>Udanax-Gold origin:</strong> The O-tree (splay tree), <code>OrglRoot</code>, <code>Loaf</code>, and <code>RangeElement</code> are all directly from the original C++ codebase. The names are preserved as-is to maintain continuity with the Gold design. Xudanu adds thread-safe access via <code>Arc&lt;Mutex&gt;</code> wrappers.
+</div>
 
 <p>
 The O-tree is not a B-tree or a trie. It's a <strong>splay tree</strong>: every time you access a position, the tree reorganizes itself to make that position (and its neighbors) faster to access next time. This means:
