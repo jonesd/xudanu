@@ -800,6 +800,11 @@ export class CrdtSyncClient {
     return extractValue(resp) as CompoundResolveWorkResult;
   }
 
+  async compoundResolveRecursive(workId: number): Promise<CompoundResolveWorkResult> {
+    const resp = await this.sendRequest("compound_resolve_recursive", { work_id: workId });
+    return extractValue(resp) as CompoundResolveWorkResult;
+  }
+
   async rangeTranscluders(workId: number): Promise<{ edition_ids: number[]; work_ids: number[] }> {
     const resp = await this.sendRequest("range_transcluders", { work_id: workId });
     const val = extractValue(resp) as Record<string, unknown>;

@@ -2013,6 +2013,17 @@ impl JsonCodec {
                     work_id: args.work_id,
                 })
             }
+            OperationCode::CompoundResolveRecursive => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CompoundResolveRecursive {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::AdminRecorderCreate => {
                 #[derive(Deserialize)]
                 struct Args {
