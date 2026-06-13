@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Identity &amp; Authentication &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+code{font-family:'JetBrains Mono',monospace;font-size:.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
+.footer{margin-top:64px;padding-top:20px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+@media(max-width:768px){.two-col{grid-template-columns:1fr}.content-wrap{padding:24px 16px 60px}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Identity &amp; Authentication</h1>
+<p class="subtitle">Clubs, credentials, the lock hierarchy, KeyMaster authority tracking, and Ed25519-signed provenance &mdash; the Udanax-Gold permission model, enhanced with modern cryptography.</p>
+
+<div class="toc">
+  <a href="#clubs" class="toc-section">1. Clubs &mdash; Identity and Permission Units</a>
+  <a href="#credentials" class="toc-section">2. Credentials</a>
+  <a href="#locks" class="toc-section">3. The Lock Hierarchy</a>
+  <a href="#keymaster" class="toc-section">4. KeyMaster &mdash; Authority Tracking</a>
+  <a href="#provenance" class="toc-section">5. Provenance &amp; Attribution</a>
+  <a href="#sessions" class="toc-section">6. Session Lifecycle</a>
+  <a href="#security" class="toc-section">7. Security Monitor</a>
+  <a href="#gold-comparison" class="toc-section">8. Udanax-Gold Comparison</a>
+</div>
+
+<h2 id="clubs">1. Clubs &mdash; Identity and Permission Units</h2>
+<p>In Udanax-Gold, a <strong>Club</strong> is the fundamental identity unit. Every user, group, and permission set is a Club. Clubs own works, control access, and sign content. There is no separate "user" concept &mdash; everything is a Club.</p>
+
+<h3>Club structure</h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Purpose</th></tr>
+  <tr><td><code>be_id</code></td><td><code>BeId</code></td><td>Unique identifier</td></tr>
+  <tr><td><code>name</code></td><td><code>Option&lt;String&gt;</code></td><td>Human-readable name ("alice", "editors")</td></tr>
+  <tr><td><code>members</code></td><td><code>HashSet&lt;BeId&gt;</code></td><td>Member clubs (for group clubs)</td></tr>
+  <tr><td><code>credential</code></td><td><code>Option&lt;Credential&gt;</code></td><td>Password or public key for authentication</td></tr>
+  <tr><td><code>is_personal</code></td><td><code>bool</code></td><td>True for individual user clubs</td></tr>
+  <tr><td><code>encrypted_signing_key</code></td><td><code>Option&lt;EncryptedSigningKey&gt;</code></td><td>Per-club Ed25519 signing key, encrypted with the club's password</td></tr>
+  <tr><td><code>signature_club</code></td><td><code>Option&lt;BeId&gt;</code></td><td>The owning club (usually the user's personal club)</td></tr>
+  <tr><td><code>sponsored_works</code></td><td><code>HashSet&lt;BeId&gt;</code></td><td>Works vouched for by this club</td></tr>
+  <tr><td><code>default_read_club</code></td><td><code>Option&lt;BeId&gt;</code></td><td>Default read-access club for new works</td></tr>
+  <tr><td><code>default_edit_club</code></td><td><code>Option&lt;BeId&gt;</code></td><td>Default edit-access club for new works</td></tr>
+</table>
+
+<h3>Club types</h3>
+<div class="two-col">
+  <div>
+    <h4 style="color:#22c55e">Personal Club</h4>
+    <p>One per user. Has credentials (password or public key). Owns the user's works and edits. Has an encrypted Ed25519 signing key for attribution.</p>
+  </div>
+  <div>
+    <h4 style="color:#58a6ff">Group Club</h4>
+    <p>A named collection of member clubs. Used for team permissions: "editors", "reviewers", "public". Members inherit the group's access rights.</p>
+  </div>
+  <div>
+    <h4 style="color:#a855f7">Public Club</h4>
+    <p>Special club for anonymous/guest access. Users who haven't signed in operate under the public club. Their edits are attributed to "anonymous".</p>
+  </div>
+  <div>
+    <h4 style="color:#f59e0b">Signature Club</h4>
+    <p>Internal club that holds signing keys. Every personal club has a signature club that owns its Ed25519 keypair.</p>
+  </div>
+</div>
+
+<div class="gold">
+  <strong>Udanax-Gold origin:</strong> Clubs are directly from the original C++ codebase. Gold had a <code>Club</code> class with recursive membership (clubs containing clubs). Xudanu currently implements flat membership (no nesting) but retains the sponsorship concept for work vouching.
+</div>
+
+<h2 id="credentials">2. Credentials</h2>
+<p>A club can have one of two credential types:</p>
+<div class="two-col">
+  <div>
+    <h4 style="color:#22c55e">Password</h4>
+    <p><code>Credential::Password { phc_hash }</code></p>
+    <p>Stored as a PHC-format Argon2id hash. The PHC string encodes the algorithm, parameters, salt, and hash, making it self-describing and future-proof.</p>
+  </div>
+  <div>
+    <h4 style="color:#a855f7">Public Key</h4>
+    <p><code>Credential::PublicKey { verifying_key }</code></p>
+    <p>A 32-byte Ed25519 verifying key. The client proves identity by signing a challenge with the corresponding private key.</p>
+  </div>
+</div>
+
+<h2 id="locks">3. The Lock Hierarchy</h2>
+<p>Locks control access to clubs. A club may have a lock that must be opened before the club's authority can be used. The lock system implements the Strategy pattern via the <code>Lock</code> trait:</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 260" xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="a4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#58a6ff"/></marker></defs>
+
+  <rect x="260" y="20" width="180" height="50" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+  <text x="350" y="42" text-anchor="middle" fill="#58a6ff" font-family="JetBrains Mono" font-size="12" font-weight="600">trait Lock</text>
+  <text x="350" y="58" text-anchor="middle" fill="#8b949e" font-family="JetBrains Mono" font-size="10">try_open() → KeyMaster</text>
+
+  <rect x="20" y="120" width="130" height="50" rx="8" fill="#161b22" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="85" y="142" text-anchor="middle" fill="#22c55e" font-family="JetBrains Mono" font-size="11" font-weight="600">BooLock</text>
+  <text x="85" y="158" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="10">Open access</text>
+
+  <rect x="170" y="120" width="130" height="50" rx="8" fill="#161b22" stroke="#f85149" stroke-width="1.5"/>
+  <text x="235" y="142" text-anchor="middle" fill="#f85149" font-family="JetBrains Mono" font-size="11" font-weight="600">WallLock</text>
+  <text x="235" y="158" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="10">Permanently locked</text>
+
+  <rect x="320" y="120" width="150" height="50" rx="8" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+  <text x="395" y="142" text-anchor="middle" fill="#d29922" font-family="JetBrains Mono" font-size="11" font-weight="600">ChallengeLock</text>
+  <text x="395" y="158" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="10">Password challenge</text>
+
+  <rect x="490" y="120" width="130" height="50" rx="8" fill="#161b22" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="555" y="142" text-anchor="middle" fill="#a371f7" font-family="JetBrains Mono" font-size="11" font-weight="600">MatchLock</text>
+  <text x="555" y="158" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="10">Credential match</text>
+
+  <!-- Arrows from Lock trait -->
+  <line x1="310" y1="72" x2="100" y2="118" stroke="#30363d" stroke-width="1" stroke-dasharray="4 3"/>
+  <line x1="340" y1="72" x2="235" y2="118" stroke="#30363d" stroke-width="1" stroke-dasharray="4 3"/>
+  <line x1="380" y1="72" x2="390" y2="118" stroke="#30363d" stroke-width="1" stroke-dasharray="4 3"/>
+  <line x1="420" y1="72" x2="530" y2="118" stroke="#30363d" stroke-width="1" stroke-dasharray="4 3"/>
+
+  <!-- MultiLock -->
+  <rect x="220" y="210" width="260" height="40" rx="8" fill="#161b22" stroke="#8b949e" stroke-width="1"/>
+  <text x="350" y="235" text-anchor="middle" fill="#8b949e" font-family="JetBrains Mono" font-size="11" font-weight="600">MultiLock { locks: Vec&lt;Box&lt;dyn Lock&gt;&gt; }</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 1: The Lock hierarchy. Each lock type implements the <code>Lock</code> trait. <code>MultiLock</code> composes multiple locks.</p>
+
+<h3>Lock types</h3>
+<table>
+  <tr><th>Lock</th><th>Behavior</th><th>Use case</th></tr>
+  <tr><td><code>BooLock</code></td><td>Always opens with <code>LockCredential::Boo</code></td><td>Open/public access, anonymous login</td></tr>
+  <tr><td><code>WallLock</code></td><td>Never opens &mdash; always returns <code>LockFailed</code></td><td>Permanently locked accounts, disabled users</td></tr>
+  <tr><td><code>ChallengeLock</code></td><td>Requires correct password response</td><td>Standard password authentication</td></tr>
+  <tr><td><code>MatchLock</code></td><td>Matches stored credential (password hash or public key)</td><td>Username/password login, key-based auth</td></tr>
+  <tr><td><code>MultiLock</code></td><td>Composes multiple locks; opens if ANY child opens</td><td>Multi-factor: accept either password OR key</td></tr>
+</table>
+
+<h2 id="keymaster">4. KeyMaster &mdash; Authority Tracking</h2>
+<p>The <code>KeyMaster</code> tracks which clubs a session has proven identity for. When a lock is opened, the resulting <code>KeyMaster</code> contains the set of authorized club IDs.</p>
+
+<h3>Authority operations</h3>
+<ul>
+  <li><code>KeyMaster::make(club_id)</code> &mdash; create authority for a single club</li>
+  <li><code>KeyMaster::merge(other)</code> &mdash; combine authority from multiple authentications</li>
+  <li><code>KeyMaster::has_authority(club_id)</code> &mdash; check if the session can act as this club</li>
+  <li><code>KeyMaster::clubs()</code> &mdash; iterate all authorized clubs</li>
+</ul>
+
+<div class="gold">
+  <strong>Udanax-Gold origin:</strong> The original C++ <code>KeyMaster</code> had <code>incorporate()</code> (merge authority) and <code>removeLogins()</code> (revoke). Xudanu implements <code>make()</code> and <code>merge()</code> but not revocation yet.
+</div>
+
+<h2 id="provenance">5. Provenance &amp; Attribution</h2>
+<p>Every piece of content has a cryptographic provenance chain. The system tracks:</p>
+<ul>
+  <li><strong>ElementProvenance</strong> &mdash; author public key, display name, club ID, timestamp, and author type (Human/LLM/Historical) for individual elements</li>
+  <li><strong>SpanProvenance</strong> &mdash; Ed25519-signed proof covering a contiguous range of characters, linking them to their author</li>
+</ul>
+
+<h3>Signing and verification</h3>
+<ul>
+  <li><code>sign_element(signing_key, element, author_identity)</code> &mdash; creates <code>ElementProvenance</code></li>
+  <li><code>sign_span(signing_key, text, author_identity, region)</code> &mdash; creates <code>SpanProvenance</code> with a signature over the text + region</li>
+  <li><code>verify_span_provenance(provenance)</code> &mdash; verifies the Ed25519 signature, returns true if valid</li>
+</ul>
+
+<h3>Attribution log</h3>
+<p>The server maintains an <code>AttributionLog</code> (<code>src/server/transport/attribution_log.rs</code>) that records every authorship change. The log:</p>
+<ul>
+  <li>Writes to <code>attribution.log</code> in the data directory</li>
+  <li>Supports verification: <code>verify_log()</code> checks every entry's cryptographic integrity</li>
+  <li>Is append-only: entries are never modified or deleted</li>
+  <li>Is checked by <code>preflight_check()</code> on server startup</li>
+</ul>
+
+<h2 id="sessions">6. Session Lifecycle</h2>
+<ol>
+  <li><strong>Connect:</strong> WebSocket connection established. A <code>Session</code> is created with a unique <code>SessionId</code>.</li>
+  <li><strong>Authenticate:</strong> Client sends credentials. Server opens the club's lock, producing a <code>KeyMaster</code>.</li>
+  <li><strong>Author identity:</strong> The session is assigned an <code>OtreeAuthorIdentity</code> (public key, display name, club ID) for CRDT attribution.</li>
+  <li><strong>Operate:</strong> All subsequent operations (read, edit, star, trail) are performed under the session's authority.</li>
+  <li><strong>Disconnect:</strong> Session is cleaned up. Awareness state is removed. Active edits are preserved (auto-saved via CRDT).</li>
+</ol>
+
+<h2 id="security">7. Security Monitor</h2>
+<p>The <code>SecurityMonitor</code> (<code>src/server/transport/audit.rs</code>) tracks threat levels per session and IP address:</p>
+<ul>
+  <li><strong>Auth failures</strong> &mdash; repeated wrong passwords</li>
+  <li><strong>Protocol violations</strong> &mdash; malformed messages, invalid operation codes</li>
+  <li><strong>Permission denials</strong> &mdash; attempts to access unauthorized resources</li>
+  <li><strong>Grab conflicts</strong> &mdash; concurrent edit conflicts</li>
+</ul>
+<p>Threat levels escalate: <code>None → Low → Medium → High → Critical</code>. At Critical, the session is recommended for disconnection. All events are written to a structured audit log.</p>
+
+<h2 id="gold-comparison">8. Udanax-Gold Comparison</h2>
+<table>
+  <tr><th>Aspect</th><th>Udanax-Gold</th><th>Xudanu</th></tr>
+  <tr><td>Identity</td><td>Clubs with recursive membership</td><td>Clubs with flat membership (nesting planned)</td></tr>
+  <tr><td>Authentication</td><td>Password-only</td><td>Password (Argon2id) + Ed25519 public key</td></tr>
+  <tr><td>Signing</td><td>No cryptographic signing</td><td>Ed25519 per-club signing keys (encrypted at rest)</td></tr>
+  <tr><td>Provenance</td><td>Club ownership of entire works</td><td>Per-span Ed25519-signed attribution</td></tr>
+  <tr><td>Locks</td><td>Boo, Wall, Challenge, Match, Multi</td><td>Same hierarchy, enhanced with modern hash verification</td></tr>
+  <tr><td>Key delegation</td><td>Full incorporate/removeLogins</td><td>make/merge (remove planned)</td></tr>
+  <tr><td>Audit</td><td>No security monitoring</td><td>SecurityMonitor with per-IP/per-session threat levels</td></tr>
+  <tr><td>Key storage</td><td>Plaintext keys in memory</td><td>Encrypted signing keys (AES-256-GCM + Argon2id-derived KEK)</td></tr>
+</table>
+
+<div class="footer">
+  <a href="index.html">Back to Documentation</a> &mdash; Xudanu v0.7.0 &mdash; <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collaborative Editing &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+code{font-family:'JetBrains Mono',monospace;font-size:.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
+.footer{margin-top:64px;padding-top:20px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+@media(max-width:768px){.two-col{grid-template-columns:1fr}.content-wrap{padding:24px 16px 60px}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Collaborative Editing</h1>
+<p class="subtitle">Real-time multi-user editing with O-tree CRDT, Ed25519-signed author attribution, awareness state (cursors/selections), automatic three-way merge fallback, and LLM-assisted change narration.</p>
+
+<div class="toc">
+  <a href="#overview" class="toc-section">1. Overview</a>
+  <a href="#otree-crdt" class="toc-section">2. O-Tree CRDT Model</a>
+  <a href="#awareness" class="toc-section">3. Awareness State</a>
+  <a href="#signed-updates" class="toc-section">4. Signed Updates &amp; Author Identity</a>
+  <a href="#merge-fallback" class="toc-section">5. Three-Way Merge Fallback</a>
+  <a href="#llm" class="toc-section">6. LLM Integration</a>
+  <a href="#protocol" class="toc-section">7. Protocol Flow</a>
+  <a href="#gold-comparison" class="toc-section">8. Udanax-Gold Comparison</a>
+</div>
+
+<h2 id="overview">1. Overview</h2>
+<p>Xudanu supports real-time collaborative editing: multiple users can edit the same document simultaneously, seeing each other's changes live. The system is built on an O-tree CRDT (Conflict-free Replicated Data Type) with Ed25519 cryptographic attribution for every character.</p>
+<p>The implementation lives in <code>src/server/otree_crdt.rs</code> (~2,030 lines) and provides:</p>
+<ul>
+  <li>Per-work CRDT state with concurrent session tracking</li>
+  <li>Text delta application with automatic conflict resolution</li>
+  <li>Awareness state (cursor positions, selections, typing indicators)</li>
+  <li>Signed updates with Ed25519 author identity</li>
+  <li>Automatic fallback to three-way merge when CRDT state diverges</li>
+  <li>LLM-generated change narration (diff summaries)</li>
+</ul>
+
+<h2 id="otree-crdt">2. O-Tree CRDT Model</h2>
+<p>The <code>OtreeCrdt</code> struct manages collaborative editing state for all works on the server. Each work has its own CRDT "document" that tracks:</p>
+<ul>
+  <li><strong>Current text</strong> &mdash; the canonical document content</li>
+  <li><strong>Revision history</strong> &mdash; every version, accessible by revision number</li>
+  <li><strong>Active sessions</strong> &mdash; which users are currently editing this work</li>
+  <li><strong>Author identity</strong> &mdash; public key + display name + club ID for each session</li>
+</ul>
+
+<h3>Text delta operations</h3>
+<p>When a client sends a text edit, the CRDT applies it as a delta:</p>
+<ol>
+  <li>Client sends <code>TextDeltaOp</code> with the full replacement text</li>
+  <li>Server computes the diff against the current text</li>
+  <li>A new revision is created with Ed25519 attribution</li>
+  <li>The update is relayed to all other sessions editing the same work</li>
+</ol>
+
+<div class="note">
+  <strong>Design choice:</strong> The current implementation uses full-text replacement (the client sends the entire document). This is simpler than operational transform and works well for the document sizes typical of hypertext content. Future work may add fine-grained character-level deltas for lower bandwidth.
+</div>
+
+<h3>Revision storage</h3>
+<p>Every edit creates a new revision. The CRDT maintains:</p>
+<ul>
+  <li><code>revisions: HashMap&lt;BeId, Vec&lt;String&gt;&gt;</code> &mdash; per-work revision history</li>
+  <li><code>cached_text: HashMap&lt;BeId, String&gt;</code> &mdash; memoized current text</li>
+  <li><code>work_authors: HashMap&lt;BeId, HashMap&lt;SessionId, OtreeAuthorIdentity&gt;&gt;</code> &mdash; per-session author tracking</li>
+</ul>
+
+<h2 id="awareness">3. Awareness State</h2>
+<p>Awareness is the real-time presence system. Each editing session broadcasts its state to all other sessions on the same work:</p>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Purpose</th></tr>
+  <tr><td><code>session_id</code></td><td><code>u64</code></td><td>Unique session identifier</td></tr>
+  <tr><td><code>user_name</code></td><td><code>String</code></td><td>Display name</td></tr>
+  <tr><td><code>cursor</code></td><td><code>Option&lt;OtreeCursorPosition&gt;</code></td><td>Cursor position (character index)</td></tr>
+  <tr><td><code>selection</code></td><td><code>Option&lt;OtreeSelectionRange&gt;</code></td><td>Selected text range</td></tr>
+  <tr><td><code>is_typing</code></td><td><code>bool</code></td><td>Whether the user is actively typing</td></tr>
+  <tr><td><code>club_id</code></td><td><code>Option&lt;BeId&gt;</code></td><td>The user's personal club</td></tr>
+  <tr><td><code>author_public_key</code></td><td><code>Option&lt;Vec&lt;u8&gt;&gt;</code></td><td>Ed25519 public key for attribution</td></tr>
+</table>
+
+<p>When a session updates its awareness, the server relays it to all other sessions editing the same work via <code>OtreeAwarenessRelayResult</code>, which contains the list of <code>(SessionId, OtreeSyncSessionId)</code> pairs to notify.</p>
+
+<h2 id="signed-updates">4. Signed Updates &amp; Author Identity</h2>
+<p>Every edit is cryptographically signed. The <code>OtreeSignedUpdate</code> contains:</p>
+<ul>
+  <li><code>update_text</code> &mdash; the new document content</li>
+  <li><code>signature</code> &mdash; Ed25519 signature over the text</li>
+  <li><code>signer_public_key</code> &mdash; the author's 32-byte public key</li>
+</ul>
+
+<p>The <code>OtreeAuthorIdentity</code> struct ties the public key to a human-readable name and club:</p>
+<ul>
+  <li><code>public_key: [u8; 32]</code> &mdash; Ed25519 verifying key</li>
+  <li><code>display_name: String</code> &mdash; shown in attribution panel</li>
+  <li><code>club_be_id: BeId</code> &mdash; the author's personal club</li>
+</ul>
+
+<h3>Author type classification</h3>
+<p>Authors are classified into types that affect attribution coloring in the UI:</p>
+<div class="two-col">
+  <div>
+    <h4 style="color:#22c55e">Human</h4>
+    <p>Direct user input, signed with the user's club key. Shown in green in the attribution panel.</p>
+  </div>
+  <div>
+    <h4 style="color:#a855f7">LLM</h4>
+    <p>AI-generated text from Ollama/OpenRouter. Signed with the server's key. Shown in purple.</p>
+  </div>
+  <div>
+    <h4 style="color:#f59e0b">Historical</h4>
+    <p>Imported texts (Project Gutenberg, etc.). Signed with the importing user's key. Shown in amber.</p>
+  </div>
+  <div>
+    <h4 style="color:#6b7280">Unattributed</h4>
+    <p>Content without provenance. Occurs in legacy data or anonymous edits.</p>
+  </div>
+</div>
+
+<h2 id="merge-fallback">5. Three-Way Merge Fallback</h2>
+<p>When CRDT state diverges beyond what can be reconciled (e.g., two users make conflicting edits to the same paragraph), the system falls back to three-way merge:</p>
+<ol>
+  <li>The last common revision is identified as the <strong>base</strong></li>
+  <li>Both divergent revisions are compared against the base</li>
+  <li>Non-conflicting changes are merged automatically</li>
+  <li>Conflicts are resolved using <code>LastWriterWins</code> strategy (based on timestamp)</li>
+  <li>The merged result becomes the new canonical revision</li>
+</ol>
+
+<p>The three-way merge engine (<code>src/edition/three_way.rs</code>, ~1,889 lines) produces:</p>
+<ul>
+  <li>A merged <code>Edition</code> combining both inputs</li>
+  <li><code>Mapping</code> objects showing how positions in each input map to the merged result</li>
+  <li>Conflict regions flagged for potential user review</li>
+</ul>
+
+<h2 id="llm">6. LLM Integration</h2>
+<p>The CRDT integrates with the LLM subsystem (<code>src/server/ollama.rs</code>) for:</p>
+<ul>
+  <li><strong>Auto-titling:</strong> When a new work is created, the LLM generates a title from the first few paragraphs</li>
+  <li><strong>Diff narration:</strong> After edits, the LLM summarizes the changes in natural language</li>
+  <li><strong>Writing feedback:</strong> Optional writing suggestions (future)</li>
+</ul>
+
+<p>LLM-appended text is attributed with a separate <code>OtreeAuthorIdentity</code> marked as LLM type, ensuring the attribution panel correctly shows it in purple.</p>
+
+<h2 id="protocol">7. Protocol Flow</h2>
+<div class="diagram-container">
+<svg viewBox="0 0 800 340" xmlns="http://www.w3.org/2000/svg">
+  <defs><marker id="a3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#58a6ff"/></marker></defs>
+
+  <!-- Client A -->
+  <rect x="30" y="30" width="140" height="40" rx="8" fill="#161b22" stroke="#22c55e" stroke-width="2"/>
+  <text x="100" y="55" text-anchor="middle" fill="#22c55e" font-family="Inter" font-size="13" font-weight="600">Client A</text>
+
+  <!-- Server -->
+  <rect x="320" y="20" width="160" height="60" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+  <text x="400" y="45" text-anchor="middle" fill="#58a6ff" font-family="Inter" font-size="13" font-weight="600">OtreeCrdt</text>
+  <text x="400" y="65" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="11">Server State</text>
+
+  <!-- Client B -->
+  <rect x="630" y="30" width="140" height="40" rx="8" fill="#161b22" stroke="#a855f7" stroke-width="2"/>
+  <text x="700" y="55" text-anchor="middle" fill="#a855f7" font-family="Inter" font-size="13" font-weight="600">Client B</text>
+
+  <!-- Step 1: A sends edit -->
+  <line x1="170" y1="55" x2="318" y2="40" stroke="#22c55e" stroke-width="1.5" marker-end="url(#a3)"/>
+  <text x="240" y="35" fill="#8b949e" font-family="Inter" font-size="10">① edit + signature</text>
+
+  <!-- Step 2: Server relays to B -->
+  <line x1="480" y1="40" x2="628" y2="55" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#a3)"/>
+  <text x="550" y="35" fill="#8b949e" font-family="Inter" font-size="10">② relay update</text>
+
+  <!-- Step 3: B sends awareness -->
+  <line x1="630" y1="80" x2="482" y2="80" stroke="#a855f7" stroke-width="1.5" marker-end="url(#a3)"/>
+  <text x="548" y="96" fill="#8b949e" font-family="Inter" font-size="10">③ awareness update</text>
+
+  <!-- Step 4: Server relays awareness to A -->
+  <line x1="318" y1="80" x2="172" y2="80" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#a3)"/>
+  <text x="240" y="96" fill="#8b949e" font-family="Inter" font-size="10">④ relay awareness</text>
+
+  <!-- Attribution -->
+  <rect x="150" y="150" width="500" height="60" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="400" y="172" text-anchor="middle" fill="#e6edf3" font-family="Inter" font-size="12" font-weight="600">Attribution Storage</text>
+  <text x="400" y="195" text-anchor="middle" fill="#8b949e" font-family="JetBrains Mono" font-size="11">ElementProvenance → Ed25519 signature per span</text>
+
+  <line x1="400" y1="82" x2="400" y2="148" stroke="#30363d" stroke-width="1" stroke-dasharray="4 4"/>
+
+  <!-- Revision chain -->
+  <rect x="150" y="250" width="500" height="60" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="400" y="272" text-anchor="middle" fill="#e6edf3" font-family="Inter" font-size="12" font-weight="600">Revision Chain</text>
+  <text x="400" y="295" text-anchor="middle" fill="#8b949e" font-family="JetBrains Mono" font-size="11">rev 1 → rev 2 → rev 3 → ... → rev N (current)</text>
+
+  <line x1="400" y1="212" x2="400" y2="248" stroke="#30363d" stroke-width="1" stroke-dasharray="4 4"/>
+</svg>
+</div>
+<p class="diagram-caption">Figure 1: Collaborative editing protocol. Edits flow through the server with attribution; awareness is relayed between sessions.</p>
+
+<h2 id="gold-comparison">8. Udanax-Gold Comparison</h2>
+<table>
+  <tr><th>Aspect</th><th>Udanax-Gold</th><th>Xudanu</th></tr>
+  <tr><td>Concurrency model</td><td>Single-user; grab/release locks with queuing</td><td>Multi-user CRDT with awareness state</td></tr>
+  <tr><td>Conflict resolution</td><td>Manual: last writer wins by default</td><td>Automatic: three-way merge with LWW fallback</td></tr>
+  <tr><td>Attribution</td><td>Club-based ownership of entire works</td><td>Per-span Ed25519-signed attribution with author types</td></tr>
+  <tr><td>Real-time updates</td><td>Poll-based; no push notifications</td><td>WebSocket relay for edits and awareness</td></tr>
+  <tr><td>Version history</td><td>Flat revision list per work</td><td>Same, plus revision diffing and comparison</td></tr>
+  <tr><td>AI assistance</td><td>None</td><td>Ollama/OpenRouter integration for narration and auto-titling</td></tr>
+</table>
+
+<div class="gold">
+  <strong>Key enhancement:</strong> The original Udanax-Gold had a sophisticated grab/release lock system where only one user could edit a work at a time. Xudanu retains grab/release for backward compatibility but adds CRDT-based collaborative editing that allows multiple simultaneous editors without locking.
+</div>
+
+<div class="footer">
+  <a href="index.html">Back to Documentation</a> &mdash; Xudanu v0.7.0 &mdash; <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a>
+</div>
+</div>
+</body>
+</html>

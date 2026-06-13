@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transclusion Engine &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.toc .toc-sub{padding-left:16px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
+@media(max-width:768px){.two-col{grid-template-columns:1fr}.content-wrap{padding:24px 16px 60px}}
+.footer{margin-top:64px;padding-top:20px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Transclusion Engine</h1>
+<p class="subtitle">How Xudanu detects, indexes, and queries content reuse across documents &mdash; the core intellectual property inherited from Udanax-Gold, enhanced with BLAKE3 fingerprinting, the Bert Canopy tree, Recorder pub/sub, and the Hoist propagation algorithm.</p>
+
+<div class="toc">
+  <a href="#overview" class="toc-section">1. Overview</a>
+  <a href="#transclusion-index" class="toc-section">2. TransclusionIndex &mdash; BLAKE3 Content Registry</a>
+  <a href="#canopy" class="toc-section">3. Bert Canopy &mdash; Hierarchical Property Tree</a>
+  <a href="#recorder" class="toc-section">4. Recorder System &mdash; Publish/Subscribe for Content</a>
+  <a href="#hoist" class="toc-section">5. Recorder Hoist &mdash; Incremental Propagation</a>
+  <a href="#backfollow" class="toc-section">6. BackfollowEngine &mdash; Cross-Document Queries</a>
+  <a href="#end-to-end" class="toc-section">7. End-to-End Flow</a>
+  <a href="#enhancements" class="toc-section">8. Modern Enhancements Over Udanax-Gold</a>
+  <a href="#performance" class="toc-section">9. Performance Characteristics</a>
+</div>
+
+<h2 id="overview">1. Overview</h2>
+<p>Transclusion is Ted Nelson's foundational concept: <strong>content is linked, not copied</strong>. When the same text appears in multiple documents, the system should know they are the <em>same</em> content, not independent copies.</p>
+<p>Xudanu's transclusion engine is a five-layer pipeline:</p>
+<ol>
+  <li><strong>TransclusionIndex</strong> &mdash; maps BLAKE3 content fingerprints to the editions containing them</li>
+  <li><strong>Bert Canopy</strong> &mdash; a hierarchical tree that indexes content properties for efficient querying</li>
+  <li><strong>Recorder System</strong> &mdash; persistent queries ("recordings") that accumulate results over time</li>
+  <li><strong>RecorderHoister</strong> &mdash; propagates recorder state incrementally up the canopy tree</li>
+  <li><strong>BackfollowEngine</strong> &mdash; given an edition, finds all other editions/works sharing content</li>
+</ol>
+
+<div class="diagram-container">
+<svg viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#58a6ff"/></marker>
+  </defs>
+  <!-- Boxes -->
+  <rect x="30" y="30" width="160" height="60" rx="8" fill="#161b22" stroke="#3fb950" stroke-width="2"/>
+  <text x="110" y="55" text-anchor="middle" fill="#3fb950" font-family="Inter" font-size="13" font-weight="600">TransclusionIndex</text>
+  <text x="110" y="75" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="11">BLAKE3 → Edition IDs</text>
+
+  <rect x="230" y="30" width="160" height="60" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+  <text x="310" y="55" text-anchor="middle" fill="#58a6ff" font-family="Inter" font-size="13" font-weight="600">Bert Canopy</text>
+  <text x="310" y="75" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="11">Hierarchical property tree</text>
+
+  <rect x="430" y="30" width="160" height="60" rx="8" fill="#161b22" stroke="#a371f7" stroke-width="2"/>
+  <text x="510" y="55" text-anchor="middle" fill="#a371f7" font-family="Inter" font-size="13" font-weight="600">Recorder System</text>
+  <text x="510" y="75" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="11">Persistent queries → Fossils</text>
+
+  <rect x="630" y="30" width="140" height="60" rx="8" fill="#161b22" stroke="#d29922" stroke-width="2"/>
+  <text x="700" y="55" text-anchor="middle" fill="#d29922" font-family="Inter" font-size="13" font-weight="600">Hoist</text>
+  <text x="700" y="75" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="11">Incremental propagation</text>
+
+  <rect x="280" y="180" width="240" height="60" rx="8" fill="#161b22" stroke="#f85149" stroke-width="2"/>
+  <text x="400" y="205" text-anchor="middle" fill="#f85149" font-family="Inter" font-size="13" font-weight="600">BackfollowEngine</text>
+  <text x="400" y="225" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="11">Cross-document transclusion queries</text>
+
+  <rect x="280" y="300" width="240" height="60" rx="8" fill="#161b22" stroke="#8b949e" stroke-width="1.5"/>
+  <text x="400" y="325" text-anchor="middle" fill="#e6edf3" font-family="Inter" font-size="13" font-weight="600">API Response</text>
+  <text x="400" y="345" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="11">TransclusionResult, ContentMatch</text>
+
+  <!-- Arrows -->
+  <line x1="190" y1="60" x2="228" y2="60" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="390" y1="60" x2="428" y2="60" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="590" y1="60" x2="628" y2="60" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="700" y1="92" x2="700" y2="120" stroke="#d29922" stroke-width="1.5"/>
+  <line x1="700" y1="120" x2="520" y2="180" stroke="#d29922" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="310" y1="92" x2="310" y2="120" stroke="#58a6ff" stroke-width="1.5"/>
+  <line x1="310" y1="120" x2="370" y2="178" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="400" y1="242" x2="400" y2="298" stroke="#f85149" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Labels -->
+  <text x="580" y="155" fill="#8b949e" font-family="Inter" font-size="11">propagated recorders</text>
+  <text x="260" y="145" fill="#8b949e" font-family="Inter" font-size="11">canopy walk</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 1: The five-layer transclusion pipeline. Content fingerprints flow left-to-right; queries flow top-to-bottom.</p>
+
+<h2 id="transclusion-index">2. TransclusionIndex &mdash; BLAKE3 Content Registry</h2>
+<p>The <code>TransclusionIndex</code> is the foundation. Every <code>RangeElement</code> in every Edition has a 256-bit BLAKE3 content fingerprint. The index is a <code>HashMap&lt;[u8;32], Vec&lt;EditionId&gt;&gt;</code> that maps each fingerprint to the editions containing it.</p>
+
+<div class="gold">
+  <strong>Udanax-Gold origin:</strong> The original C++ code had a <code>Transclusion</code> class with a similar fingerprint-to-edition mapping, but used a weaker hash. Xudanu replaces this with BLAKE3, which is both faster ( SIMD-optimized) and cryptographically collision-resistant.
+</div>
+
+<h3>TrailBlazer &mdash; content-based queries</h3>
+<p>The <code>TrailBlazer</code> struct wraps the index and provides query methods:</p>
+<ul>
+  <li><code>find_editions_with_content(fingerprint)</code> &mdash; all editions containing a specific element</li>
+  <li><code>find_works_with_content(fingerprint)</code> &mdash; all works (across all editions) containing the element</li>
+  <li><code>find_shared_content(edition_a, edition_b)</code> &mdash; the XnRegion of content shared between two editions</li>
+</ul>
+
+<h3>TransclusionQuery / TransclusionResult</h3>
+<p>A <code>TransclusionQuery</code> specifies what to search for (a specific edition, or all works). The <code>TransclusionResult</code> returns matched works with their <code>fossil_id</code> (from the Recorder), <code>edition_be_id</code>, and whether the match is direct or transitive.</p>
+
+<h2 id="canopy">3. Bert Canopy &mdash; Hierarchical Property Tree</h2>
+<p>The Bert Canopy is a binary tree structure where each node ("crum") holds computed property flags for the editions beneath it. This is the key data structure that makes transclusion queries efficient across large corpora.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 280" xmlns="http://www.w3.org/2000/svg">
+  <!-- Root -->
+  <rect x="290" y="20" width="120" height="40" rx="6" fill="#1c2333" stroke="#58a6ff" stroke-width="2"/>
+  <text x="350" y="45" text-anchor="middle" fill="#58a6ff" font-family="JetBrains Mono" font-size="11">Root Crum</text>
+  <text x="350" y="56" text-anchor="middle" fill="#8b949e" font-family="JetBrains Mono" font-size="9">flags: union of all</text>
+  <!-- Level 1 -->
+  <rect x="120" y="100" width="120" height="40" rx="6" fill="#1c2333" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="180" y="125" text-anchor="middle" fill="#3fb950" font-family="JetBrains Mono" font-size="11">Bert Crum L1</text>
+  <rect x="460" y="100" width="120" height="40" rx="6" fill="#1c2333" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="520" y="125" text-anchor="middle" fill="#3fb950" font-family="JetBrains Mono" font-size="11">Bert Crum L1</text>
+  <!-- Level 2 (leaves) -->
+  <rect x="30" y="190" width="90" height="36" rx="6" fill="#1c2333" stroke="#a371f7" stroke-width="1"/>
+  <text x="75" y="212" text-anchor="middle" fill="#a371f7" font-family="JetBrains Mono" font-size="10">Leaf A</text>
+  <rect x="140" y="190" width="90" height="36" rx="6" fill="#1c2333" stroke="#a371f7" stroke-width="1"/>
+  <text x="185" y="212" text-anchor="middle" fill="#a371f7" font-family="JetBrains Mono" font-size="10">Leaf B</text>
+  <rect x="370" y="190" width="90" height="36" rx="6" fill="#1c2333" stroke="#a371f7" stroke-width="1"/>
+  <text x="415" y="212" text-anchor="middle" fill="#a371f7" font-family="JetBrains Mono" font-size="10">Leaf C</text>
+  <rect x="480" y="190" width="90" height="36" rx="6" fill="#1c2333" stroke="#a371f7" stroke-width="1"/>
+  <text x="525" y="212" text-anchor="middle" fill="#a371f7" font-family="JetBrains Mono" font-size="10">Leaf D</text>
+  <rect x="590" y="190" width="90" height="36" rx="6" fill="#1c2333" stroke="#a371f7" stroke-width="1"/>
+  <text x="635" y="212" text-anchor="middle" fill="#a371f7" font-family="JetBrains Mono" font-size="10">Leaf E</text>
+  <!-- Edges -->
+  <line x1="320" y1="62" x2="200" y2="98" stroke="#30363d" stroke-width="1.5"/>
+  <line x1="380" y1="62" x2="500" y2="98" stroke="#30363d" stroke-width="1.5"/>
+  <line x1="155" y1="142" x2="95" y2="188" stroke="#30363d" stroke-width="1.5"/>
+  <line x1="205" y1="142" x2="175" y2="188" stroke="#30363d" stroke-width="1.5"/>
+  <line x1="490" y1="142" x2="425" y2="188" stroke="#30363d" stroke-width="1.5"/>
+  <line x1="540" y1="142" x2="560" y2="188" stroke="#30363d" stroke-width="1.5"/>
+  <line x1="570" y1="142" x2="610" y2="188" stroke="#30363d" stroke-width="1.5"/>
+</svg>
+</div>
+<p class="diagram-caption">Figure 2: The Bert Canopy tree. Leaf nodes hold per-edition property flags. Interior nodes hold the union of their children's flags. The <code>PropFinder</code> can prune entire subtrees when flags don't match.</p>
+
+<h3>CanopyCrumData</h3>
+<p>Each crum contains:</p>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Purpose</th></tr>
+  <tr><td><code>child1, child2</code></td><td><code>Option&lt;Arc&lt;Mutex&lt;CanopyCrumData&gt;&gt;&gt;</code></td><td>Binary tree children</td></tr>
+  <tr><td><code>parent</code></td><td><code>Option&lt;Arc&lt;Mutex&lt;CanopyCrumData&gt;&gt;&gt;</code></td><td>Upward link for hoisting</td></tr>
+  <tr><td><code>flags</code></td><td><code>u32</code></td><td>Computed property bitmask (union of children)</td></tr>
+  <tr><td><code>own_flags</code></td><td><code>u32</code></td><td>Flags specific to this node (not inherited)</td></tr>
+  <tr><td><code>recorders</code></td><td><code>Vec&lt;RecorderId&gt;</code></td><td>Persistent queries installed at this node</td></tr>
+</table>
+
+<h3>BertProp &mdash; property flags</h3>
+<p><code>BertProp</code> is a bitmask computed from an Edition's content. Each bit indicates the presence of a particular content type (text elements, edition references, work references, etc.). The canopy tree propagates these flags upward via <code>compute_join()</code> so a parent crum's flags are the bitwise OR of all descendants.</p>
+<p>During a transclusion query, the <code>PropFinder</code> checks a crum's flags before descending. If the sought property bit is not set, the entire subtree is pruned &mdash; turning a full-corpus scan into a logarithmic search.</p>
+
+<div class="gold">
+  <strong>Udanax-Gold origin:</strong> The Bert Canopy is directly from the original codebase. "Bert" was the name for backward-edge trackers. The C++ used a <code>Heaper</code>-based object hierarchy; Xudanu replaces this with <code>Arc&lt;Mutex&lt;CanopyCrumData&gt;&gt;</code> for thread-safe shared ownership.
+</div>
+
+<h3>Two canopy types</h3>
+<div class="two-col">
+  <div>
+    <h4 style="color:#3fb950">Bert Canopy</h4>
+    <p>Indexes <em>content properties</em> &mdash; what types of elements exist. Used for pruning transclusion queries. Every edition has a Bert crum in the canopy.</p>
+  </div>
+  <div>
+    <h4 style="color:#a371f7">Sensor Canopy</h4>
+    <p>Indexes <em>recorder properties</em> &mdash; what persistent queries are active. The sensor canopy's <code>IS_SENSOR_WAITING_FLAG</code> indicates whether any recorder in the subtree is still waiting for results.</p>
+  </div>
+</div>
+
+<h2 id="recorder">4. Recorder System &mdash; Publish/Subscribe for Content</h2>
+<p>Recorders are the Udanax-Gold equivalent of persistent database queries. A recorder is "planted" on specific content, and when matching content appears in new editions, the recorder "fires" and accumulates a result (a <strong>Fossil</strong>).</p>
+
+<h3>Key types</h3>
+<table>
+  <tr><th>Type</th><th>Role</th></tr>
+  <tr><td><code>RecorderQuery</code></td><td>Defines what to search for: <code>Transcluders</code> (editions containing shared content) or <code>Works</code> (works containing shared content). Can include region filters, authority clubs, endorsement filters, and watched content.</td></tr>
+  <tr><td><code>Fossil</code></td><td>The accumulated results of a recorder. Contains <code>RecordedResult</code> entries, each with the matched element, source edition/work, and whether the match was direct. A fossil can be <em>extinguished</em> (no longer active).</td></tr>
+  <tr><td><code>Matcher</code></td><td>An <code>AgendaItem</code> that executes a one-shot query against the transclusion index, feeding results into a fossil.</td></tr>
+  <tr><td><code>RecorderTrigger</code></td><td>An <code>AgendaItem</code> that fires when new matching content is detected, recording the result in the fossil.</td></tr>
+</table>
+
+<h3>Recorder lifecycle</h3>
+<ol>
+  <li><strong>Plant:</strong> A <code>RecorderQuery</code> is created and installed at a canopy crum. A new <code>Fossil</code> is allocated.</li>
+  <li><strong>Initial match:</strong> A <code>Matcher</code> agenda item runs the query against the current transclusion index, populating the fossil with existing matches.</li>
+  <li><strong>Watch:</strong> The recorder sits in the canopy tree, listening for new content via the sensor canopy.</li>
+  <li><strong>Trigger:</strong> When a new edition is registered and its content matches, a <code>RecorderTrigger</code> fires, adding a new <code>RecordedResult</code> to the fossil.</li>
+  <li><strong>Extinguish:</strong> When no longer needed, the fossil is marked extinct and its recorders are removed from the canopy.</li>
+</ol>
+
+<div class="gold">
+  <strong>Udanax-Gold origin:</strong> The recorder/fossil terminology is directly from the original C++. In Gold, recorders were part of the "Agenda" system for deferred background work. Xudanu preserves this model but adds BLAKE3 fingerprint-based deduplication in <code>Fossil::record()</code>.
+</div>
+
+<h2 id="hoist">5. Recorder Hoist &mdash; Incremental Propagation</h2>
+<p>When recorders are installed at leaf nodes of the canopy, they need to be visible to ancestors for efficient querying. The <code>RecorderHoister</code> is an <code>AgendaItem</code> that incrementally propagates recorders upward through the tree.</p>
+
+<h3>Two phases</h3>
+<div class="two-col">
+  <div>
+    <h4 style="color:#d29922">Phase 1: Hoisting</h4>
+    <p>The hoister walks from the current crum upward to the parent. At each step, it removes the recorders from child nodes and installs them at the parent. This continues until the recorders already exist at an ancestor (deduplication) or the root is reached.</p>
+  </div>
+  <div>
+    <h4 style="color:#3fb950">Phase 2: Propagating</h4>
+    <p>Once recorders are installed, property flags need to be recomputed upward. The <code>change_canopy()</code> call recomputes <code>flags = own_flags | children.flags</code> at each level, walking to the root.</p>
+  </div>
+</div>
+
+<h3>Why incremental?</h3>
+<p>A naive approach would recompute the entire canopy on every edition registration. The hoister instead does the minimum work: it only walks the path from the affected leaf to the root, touching O(log n) nodes. For a corpus of 10,000 editions, this means ~13 nodes instead of 10,000.</p>
+
+<h2 id="backfollow">6. BackfollowEngine &mdash; Cross-Document Queries</h2>
+<p>The <code>BackfollowEngine</code> is the top-level query engine. Given an edition or work, it finds all other works that share content with it.</p>
+
+<h3>How it works</h3>
+<ol>
+  <li>Walk the edition's elements and collect their BLAKE3 fingerprints</li>
+  <li>For each fingerprint, look up the <code>TransclusionIndex</code> to find other editions containing the same content</li>
+  <li>Use the <code>PropFinder</code> to walk the Bert Canopy, pruning subtrees whose flags don't match the query</li>
+  <li>For matching canopy leaves, check installed recorders and their fossils</li>
+  <li>Aggregate results into <code>TransclusionResult</code> structs with work IDs, edition IDs, and match types (direct or transitive)</li>
+</ol>
+
+<h3>Query types</h3>
+<table>
+  <tr><th>Query</th><th>Returns</th><th>Use case</th></tr>
+  <tr><td><code>WorkQuery::ByEdition(id)</code></td><td>All works sharing content with the given edition</td><td>"What documents reuse this content?"</td></tr>
+  <tr><td><code>WorkQuery::AllWorks</code></td><td>Full cross-reference of all works</td><td>Document Map visualization</td></tr>
+  <tr><td><code>RecorderQuery::Transcluders</code></td><td>Editions that transclude from the target</td><td>"Who cited this passage?"</td></tr>
+  <tr><td><code>RecorderQuery::Works</code></td><td>Works containing shared content</td><td>"Related documents"</td></tr>
+</table>
+
+<h2 id="end-to-end">7. End-to-End Flow</h2>
+<p>Here's what happens when a user pastes a transclusion (copies content from Document A into Document B):</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 800 520" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="a2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#3fb950"/></marker>
+  </defs>
+  <!-- Step boxes -->
+  <rect x="40" y="20" width="720" height="48" rx="8" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="60" y="42" fill="#3fb950" font-family="JetBrains Mono" font-size="12" font-weight="600">1.</text>
+  <text x="80" y="42" fill="#e6edf3" font-family="Inter" font-size="13">User pastes content from Doc A into Doc B via transclusion API</text>
+  <text x="80" y="58" fill="#8b949e" font-family="Inter" font-size="11">Server creates new edition of Doc B with the pasted RangeElements</text>
+
+  <rect x="40" y="82" width="720" height="48" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="60" y="104" fill="#58a6ff" font-family="JetBrains Mono" font-size="12" font-weight="600">2.</text>
+  <text x="80" y="104" fill="#e6edf3" font-family="Inter" font-size="13">TransclusionIndex updated: each element's BLAKE3 hash → new edition ID</text>
+  <text x="80" y="120" fill="#8b949e" font-family="Inter" font-size="11">O(1) per element — just a HashMap insert</text>
+
+  <rect x="40" y="144" width="720" height="48" rx="8" fill="#161b22" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="60" y="166" fill="#a371f7" font-family="JetBrains Mono" font-size="12" font-weight="600">3.</text>
+  <text x="80" y="166" fill="#e6edf3" font-family="Inter" font-size="13">Bert Canopy: new BertProp flags computed for the edition's crum</text>
+  <text x="80" y="182" fill="#8b949e" font-family="Inter" font-size="11">compute_join() propagates flags upward to root</text>
+
+  <rect x="40" y="206" width="720" height="48" rx="8" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+  <text x="60" y="228" fill="#d29922" font-family="JetBrains Mono" font-size="12" font-weight="600">4.</text>
+  <text x="80" y="228" fill="#e6edf3" font-family="Inter" font-size="13">Sensor Canopy: check for matching recorders at ancestors</text>
+  <text x="80" y="244" fill="#8b949e" font-family="Inter" font-size="11">If IS_SENSOR_WAITING_FLAG is set, trigger matching recorders</text>
+
+  <rect x="40" y="268" width="720" height="48" rx="8" fill="#161b22" stroke="#f85149" stroke-width="1.5"/>
+  <text x="60" y="290" fill="#f85149" font-family="JetBrains Mono" font-size="12" font-weight="600">5.</text>
+  <text x="80" y="290" fill="#e6edf3" font-family="Inter" font-size="13">RecorderTrigger fires: new RecordedResult added to Fossil</text>
+  <text x="80" y="306" fill="#8b949e" font-family="Inter" font-size="11">Deduplicated by BLAKE3 fingerprint — each unique element recorded once</text>
+
+  <rect x="40" y="330" width="720" height="48" rx="8" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="60" y="352" fill="#3fb950" font-family="JetBrains Mono" font-size="12" font-weight="600">6.</text>
+  <text x="80" y="352" fill="#e6edf3" font-family="Inter" font-size="13">RecorderHoister propagates new recorders up the canopy tree</text>
+  <text x="80" y="368" fill="#8b949e" font-family="Inter" font-size="11">O(log n) nodes touched — only the path from leaf to root</text>
+
+  <rect x="40" y="392" width="720" height="48" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="60" y="414" fill="#58a6ff" font-family="JetBrains Mono" font-size="12" font-weight="600">7.</text>
+  <text x="80" y="414" fill="#e6edf3" font-family="Inter" font-size="13">Content-watch subscribers notified (WebSocket push to clients)</text>
+  <text x="80" y="430" fill="#8b949e" font-family="Inter" font-size="11">Real-time notification: "New content match found in Doc B for your watch on Doc A"</text>
+
+  <rect x="40" y="454" width="720" height="48" rx="8" fill="#161b22" stroke="#8b949e" stroke-width="1"/>
+  <text x="60" y="476" fill="#8b949e" font-family="JetBrains Mono" font-size="12" font-weight="600">8.</text>
+  <text x="80" y="476" fill="#e6edf3" font-family="Inter" font-size="13">Attribution panel shows "via work:XXXX" for the transcluded passage</text>
+  <text x="80" y="492" fill="#8b949e" font-family="Inter" font-size="11">Ed25519-signed provenance chain traces content back to original author</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 3: End-to-end transclusion flow when content is pasted between documents.</p>
+
+<h2 id="enhancements">8. Modern Enhancements Over Udanax-Gold</h2>
+<table>
+  <tr><th>Aspect</th><th>Udanax-Gold (C++)</th><th>Xudanu (Rust)</th></tr>
+  <tr><td>Content hashing</td><td>Basic FNV hash</td><td>BLAKE3 (256-bit, SIMD-optimized, collision-resistant)</td></tr>
+  <tr><td>Thread safety</td><td>Single-threaded, no concurrency</td><td><code>Arc&lt;Mutex&gt;</code> throughout; concurrent queries</td></tr>
+  <tr><td>Memory model</td><td>Manual <code>Heaper</code> allocation with garbage collection</td><td>Rust ownership + <code>Arc</code> reference counting</td></tr>
+  <tr><td>Recorder dedup</td><td>No fingerprint deduplication</td><td>BLAKE3-based dedup in <code>Fossil::record()</code></td></tr>
+  <tr><td>Provenance</td><td>No cryptographic signing</td><td>Ed25519-signed element and span provenance</td></tr>
+  <tr><td>Real-time push</td><td>No live updates (batch only)</td><td>WebSocket content-watch notifications</td></tr>
+  <tr><td>Persistence</td><td>In-memory only (no disk)</td><td>WAL + dual manifest + chunk store</td></tr>
+  <tr><td>Query API</td><td>Internal C++ API, no network access</td><td>140+ WebSocket operations with JSON/binary codecs</td></tr>
+</table>
+
+<h2 id="performance">9. Performance Characteristics</h2>
+<table>
+  <tr><th>Operation</th><th>Complexity</th><th>Notes</th></tr>
+  <tr><td>Register edition (fingerprint indexing)</td><td class="accent-blue">O(n)</td><td>n = elements in edition. One HashMap insert per element.</td></tr>
+  <tr><td>Canopy flag propagation</td><td class="accent-blue">O(log N)</td><td>N = total editions. Only path from leaf to root.</td></tr>
+  <tr><td>Recorder hoist</td><td class="accent-blue">O(log N)</td><td>Walk from affected crum to root, O(log N) steps.</td></tr>
+  <tr><td>Backfollow query (single edition)</td><td class="accent-blue">O(k &middot; log N)</td><td>k = unique fingerprints in edition, each with canopy pruning.</td></tr>
+  <tr><td>Full cross-reference (all works)</td><td class="accent-amber">O(N &middot; k_avg)</td><td>Linear in corpus size, mitigated by canopy pruning.</td></tr>
+  <tr><td>Recorder trigger (new match)</td><td class="accent-green">O(1)</td><td>Single fingerprint lookup + fossil insert.</td></tr>
+  <tr><td>Fossil dedup check</td><td class="accent-green">O(1)</td><td>HashSet lookup by BLAKE3 fingerprint.</td></tr>
+</table>
+
+<div class="note">
+  <strong>Key insight:</strong> The Bert Canopy's flag-based pruning is what makes transclusion queries feasible at scale. Without it, every query would need to scan all editions. With it, only editions in subtrees whose flags overlap with the query are visited.
+</div>
+
+<div class="footer">
+  <a href="index.html">Back to Documentation</a> &mdash; Xudanu v0.7.0 &mdash; <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a>
+</div>
+</div>
+</body>
+</html>
