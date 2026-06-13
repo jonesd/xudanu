@@ -127,6 +127,7 @@ pub struct Server {
     starred_works: HashMap<BeId, HashSet<BeId>>,
     trails: HashMap<BeId, TrailState>,
     trail_counter: BeId,
+    wal: crate::persist::wal::WalLog,
 }
 
 #[derive(Debug, Clone)]
@@ -288,6 +289,7 @@ impl Server {
                 starred_works: HashMap::new(),
                 trails: HashMap::new(),
                 trail_counter: 10_000,
+                wal: crate::persist::wal::WalLog::disabled(),
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
             // transclusion survival, and materialize_annotation_indexed support.
@@ -3155,6 +3157,9 @@ impl Server {
         let club_id = self.resolve_author_club(session_id)
             .ok_or(ServerError::NotAuthorized)?;
         self.starred_works.entry(club_id).or_default().insert(work_id);
+        if let Err(e) = self.wal.append_star(club_id, work_id) {
+            tracing::warn!("WAL write failed for star: {}", e);
+        }
         self.auto_checkpoint();
         Ok(())
     }
@@ -3165,6 +3170,9 @@ impl Server {
             .ok_or(ServerError::NotAuthorized)?;
         if let Some(set) = self.starred_works.get_mut(&club_id) {
             set.remove(&work_id);
+        }
+        if let Err(e) = self.wal.append_unstar(club_id, work_id) {
+            tracing::warn!("WAL write failed for unstar: {}", e);
         }
         self.auto_checkpoint();
         Ok(())
@@ -3182,6 +3190,62 @@ impl Server {
         self.resolve_author_club(session_id)
             .and_then(|cid| self.starred_works.get(&cid).cloned())
             .unwrap_or_default()
+    }
+
+    pub(crate) fn wal_replay_star(&mut self, club_id: BeId, work_id: BeId) {
+        self.starred_works.entry(club_id).or_default().insert(work_id);
+    }
+
+    pub(crate) fn wal_replay_unstar(&mut self, club_id: BeId, work_id: BeId) {
+        if let Some(set) = self.starred_works.get_mut(&club_id) {
+            set.remove(&work_id);
+        }
+    }
+
+    pub(crate) fn wal_replay_trail_create(&mut self, owner_club: BeId, trail_id: BeId, name: &str) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.trails.insert(trail_id, TrailState {
+            trail_id,
+            owner_club,
+            name: name.to_string(),
+            stops: Vec::new(),
+            created_at: now,
+            updated_at: now,
+        });
+        if trail_id >= self.trail_counter {
+            self.trail_counter = trail_id + 1;
+        }
+    }
+
+    pub(crate) fn wal_replay_trail_delete(&mut self, trail_id: BeId) {
+        self.trails.remove(&trail_id);
+    }
+
+    pub(crate) fn wal_replay_trail_add_stop(
+        &mut self,
+        trail_id: BeId,
+        work_id: BeId,
+        char_start: Option<u64>,
+        char_end: Option<u64>,
+        note: Option<String>,
+    ) {
+        if let Some(t) = self.trails.get_mut(&trail_id) {
+            t.stops.push(TrailStop {
+                work_id,
+                char_start,
+                char_end,
+                note,
+            });
+        }
+    }
+
+    pub(crate) fn wal_replay_trail_remove_stop(&mut self, trail_id: BeId, work_id: BeId) {
+        if let Some(t) = self.trails.get_mut(&trail_id) {
+            t.stops.retain(|s| s.work_id != work_id);
+        }
     }
 
     pub fn build_work_graph(
@@ -3269,11 +3333,14 @@ impl Server {
         self.trails.insert(trail_id, TrailState {
             trail_id,
             owner_club: owner,
-            name,
+            name: name.clone(),
             stops: Vec::new(),
             created_at: now,
             updated_at: now,
         });
+        if let Err(e) = self.wal.append_trail_create(owner, trail_id, &name) {
+            tracing::warn!("WAL write failed for trail_create: {}", e);
+        }
         Ok(trail_id)
     }
 
@@ -3286,6 +3353,9 @@ impl Server {
             return Err(ServerError::InvalidArgument("not your trail".into()));
         }
         self.trails.remove(&trail_id);
+        if let Err(e) = self.wal.append_trail_delete(trail_id) {
+            tracing::warn!("WAL write failed for trail_delete: {}", e);
+        }
         Ok(())
     }
 
@@ -3297,11 +3367,15 @@ impl Server {
         if t.owner_club != owner {
             return Err(ServerError::InvalidArgument("not your trail".into()));
         }
-        t.name = name;
+        let old_name = t.name.clone();
+        t.name = name.clone();
         t.updated_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        if let Err(e) = self.wal.append_trail_rename(trail_id, &old_name, &name) {
+            tracing::warn!("WAL write failed for trail_rename: {}", e);
+        }
         Ok(())
     }
 
@@ -3322,11 +3396,14 @@ impl Server {
         if t.owner_club != owner {
             return Err(ServerError::InvalidArgument("not your trail".into()));
         }
-        t.stops.push(TrailStop { work_id, char_start, char_end, note });
+        t.stops.push(TrailStop { work_id, char_start, char_end, note: note.clone() });
         t.updated_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        if let Err(e) = self.wal.append_trail_add_stop(trail_id, work_id, char_start, char_end, note.as_deref()) {
+            tracing::warn!("WAL write failed for trail_add_stop: {}", e);
+        }
         Ok(())
     }
 
@@ -3342,11 +3419,15 @@ impl Server {
         if idx >= t.stops.len() {
             return Err(ServerError::InvalidArgument("stop index out of range".into()));
         }
+        let work_id = t.stops[idx].work_id;
         t.stops.remove(idx);
         t.updated_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        if let Err(e) = self.wal.append_trail_remove_stop(trail_id, work_id) {
+            tracing::warn!("WAL write failed for trail_remove_stop: {}", e);
+        }
         Ok(())
     }
 
@@ -4054,6 +4135,8 @@ impl Server {
         self.checkpoint_path = Some(manifest_path);
         self.attribution_log =
             crate::server::transport::attribution_log::AttributionLog::open(data_dir).ok();
+        self.wal = crate::persist::wal::WalLog::open(data_dir)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         self.checkpoint_to_store()?;
 
         tracing::info!("Initialized xudanu data directory: {}", data_dir.display());
@@ -4436,6 +4519,24 @@ impl Server {
         self.manifest_sequence = manifest.sequence;
         self.attribution_log =
             crate::server::transport::attribution_log::AttributionLog::open(data_dir).ok();
+        self.wal = crate::persist::wal::WalLog::open(data_dir)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+        let wal_path = data_dir.join("wal.log");
+        if wal_path.exists() {
+            match crate::persist::wal::WalLog::read_entries(&wal_path) {
+                Ok(entries) => {
+                    if !entries.is_empty() {
+                        tracing::info!("WAL: replaying {} entries", entries.len());
+                        let replayed = crate::persist::wal::WalLog::replay_entries(self, &entries);
+                        tracing::info!("WAL: replayed {} of {} entries", replayed, entries.len());
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("WAL: failed to read entries: {}", e);
+                }
+            }
+        }
 
         self.restore_blob_metas(blob_metas_from_chunk);
 
@@ -8940,6 +9041,7 @@ pub(crate) mod persist_snapshot {
                 trail_counter: snapshot.trail_counter,
                 consequence_tracker: Arc::new(ConsequenceTracker::new()),
                 write_barrier: Arc::new(WriteBarrier::new()),
+                wal: crate::persist::wal::WalLog::disabled(),
             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap
@@ -9453,6 +9555,10 @@ pub(crate) mod persist_snapshot {
 
             if let Err(e) = self.gc_orphaned_chunks() {
                 tracing::warn!("Chunk GC failed: {}", e);
+            }
+
+            if let Err(e) = self.wal.truncate() {
+                tracing::warn!("WAL truncate failed after checkpoint: {}", e);
             }
 
             tracing::info!(
@@ -16876,6 +16982,316 @@ mod tests {
             !data_dir.join("manifest.json.tmp").exists(),
             "stale tmp file should be cleaned up"
         );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_records_star_operations() {
+        let (mut server, data_dir) = setup_chunk_store_server("wal_star");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let doc = server.create_work(sid, Edition::from_text("test")).unwrap();
+
+        server.work_star(sid, doc).unwrap();
+        assert!(server.wal.is_enabled());
+        assert_eq!(server.wal.seq(), 1, "star should write WAL entry");
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_records_unstar_operations() {
+        let (mut server, data_dir) = setup_chunk_store_server("wal_unstar");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let doc = server.create_work(sid, Edition::from_text("test")).unwrap();
+
+        server.work_star(sid, doc).unwrap();
+        server.work_unstar(sid, doc).unwrap();
+        assert_eq!(server.wal.seq(), 2, "star + unstar should write 2 WAL entries");
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_truncated_after_checkpoint() {
+        let (mut server, data_dir) = setup_chunk_store_server("wal_truncate");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let doc = server.create_work(sid, Edition::from_text("test")).unwrap();
+
+        server.work_star(sid, doc).unwrap();
+        assert_eq!(server.wal.seq(), 1);
+
+        server.checkpoint_to_store().unwrap();
+        assert_eq!(server.wal.seq(), 0, "WAL should be truncated after checkpoint");
+
+        let wal_path = data_dir.join("wal.log");
+        let entries = crate::persist::wal::WalLog::read_entries(&wal_path).unwrap();
+        assert!(entries.is_empty(), "WAL file should be empty after checkpoint");
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_replays_star_after_crash() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_star_replay_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        let club_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc_id = server.create_work(sid, Edition::from_text("test")).unwrap();
+            club_id = server.resolve_author_club(sid).unwrap();
+
+            server.checkpoint_to_store().unwrap();
+            assert_eq!(server.wal.seq(), 0, "WAL empty after checkpoint");
+
+            server.work_star(sid, doc_id).unwrap();
+            assert_eq!(server.wal.seq(), 1, "WAL has 1 entry after star");
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let starred = server.starred_works.get(&club_id);
+            assert!(
+                starred.is_some() && starred.unwrap().contains(&doc_id),
+                "star should be recovered via WAL replay"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_replays_trail_after_crash() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_trail_replay_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc1;
+        let doc2;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc1 = server.create_work(sid, Edition::from_text("doc1")).unwrap();
+            doc2 = server.create_work(sid, Edition::from_text("doc2")).unwrap();
+
+            server.checkpoint_to_store().unwrap();
+
+            let trail = server.trail_create(sid, "My Trail".to_string()).unwrap();
+            server.trail_add_stop(sid, trail, doc1, None, None, None).unwrap();
+            server.trail_add_stop(sid, trail, doc2, Some(5), Some(10), Some("note".to_string())).unwrap();
+
+            assert!(server.wal.seq() >= 3, "trail ops should write WAL entries");
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let trails = server.trail_list(sid).unwrap();
+            assert_eq!(trails.len(), 1, "trail should be recovered via WAL replay");
+            assert_eq!(trails[0].name, "My Trail");
+            assert_eq!(trails[0].stops.len(), 2);
+            assert_eq!(trails[0].stops[1].char_start, Some(5));
+            assert_eq!(trails[0].stops[1].note, Some("note".to_string()));
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_replays_trail_delete_after_crash() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_trail_del_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            server.create_work(sid, Edition::from_text("doc")).unwrap();
+
+            let trail = server.trail_create(sid, "Delete Me".to_string()).unwrap();
+            server.checkpoint_to_store().unwrap();
+
+            server.trail_delete(sid, trail).unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let trails = server.trail_list(sid).unwrap();
+            assert!(
+                trails.is_empty(),
+                "trail should be deleted via WAL replay"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_replays_unstar_after_crash() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_unstar_replay_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc_id = server.create_work(sid, Edition::from_text("test")).unwrap();
+
+            server.work_star(sid, doc_id).unwrap();
+            server.checkpoint_to_store().unwrap();
+
+            server.work_unstar(sid, doc_id).unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let starred = server.starred_for_session(sid);
+            assert!(
+                !starred.contains(&doc_id),
+                "star should be removed via WAL replay of unstar"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_replays_multiple_operations_in_order() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_multi_ops_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc1;
+        let doc2;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc1 = server.create_work(sid, Edition::from_text("doc1")).unwrap();
+            doc2 = server.create_work(sid, Edition::from_text("doc2")).unwrap();
+
+            server.checkpoint_to_store().unwrap();
+
+            server.work_star(sid, doc1).unwrap();
+            server.work_star(sid, doc2).unwrap();
+            server.work_unstar(sid, doc1).unwrap();
+
+            let trail = server.trail_create(sid, "Trail".to_string()).unwrap();
+            server.trail_add_stop(sid, trail, doc1, None, None, None).unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            let starred = server.starred_for_session(sid);
+            assert!(!starred.contains(&doc1), "doc1 star should be undone");
+            assert!(starred.contains(&doc2), "doc2 star should be preserved");
+
+            let trails = server.trail_list(sid).unwrap();
+            assert_eq!(trails.len(), 1);
+            assert_eq!(trails[0].stops.len(), 1);
+            assert_eq!(trails[0].stops[0].work_id, doc1);
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_empty_after_clean_checkpoint_cycle() {
+        let (mut server, data_dir) = setup_chunk_store_server("wal_clean_cycle");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let doc = server.create_work(sid, Edition::from_text("test")).unwrap();
+
+        server.work_star(sid, doc).unwrap();
+        assert!(server.wal.seq() > 0);
+
+        server.checkpoint_to_store().unwrap();
+        assert_eq!(server.wal.seq(), 0, "WAL should be empty after checkpoint");
+
+        server.work_star(sid, doc).unwrap();
+        assert!(server.wal.seq() > 0, "WAL should accept new entries after truncate");
+
+        server.checkpoint_to_store().unwrap();
+        assert_eq!(server.wal.seq(), 0, "WAL should be empty after second checkpoint");
 
         let _ = std::fs::remove_dir_all(&data_dir);
     }
