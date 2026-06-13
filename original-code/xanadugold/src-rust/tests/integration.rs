@@ -20,7 +20,7 @@ struct TestServer {
     addr: SocketAddr,
 }
 
-const ADMIN_PASSWORD: &[u8] = b"admin123";
+const ADMIN_PASSWORD: &[u8] = b"admin12345";
 
 fn password_credential(pw: &[u8]) -> serde_json::Value {
     serde_json::json!({"password": pw.iter().map(|&b| serde_json::Value::from(b)).collect::<Vec<_>>()})

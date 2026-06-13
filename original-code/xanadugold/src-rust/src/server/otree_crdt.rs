@@ -365,6 +365,20 @@ pub fn apply_text_delta_to_edition(
 
     flush_batched_insert(&mut pending_insert, &prov, &mut new_entries, &mut new_pos);
 
+    if current_entry_idx < old_entries.len() {
+        let entry_start = entry_char_start[current_entry_idx];
+        let within = old_char_pos.saturating_sub(entry_start);
+        if within > 0 {
+            if let Some(carrier) =
+                split_text_carrier(&old_entries[current_entry_idx].1, within, old_entries[current_entry_idx].1.char_len())
+            {
+                new_entries.push((new_pos, Arc::new(carrier)));
+                new_pos += 1;
+            }
+            current_entry_idx += 1;
+        }
+    }
+
     while current_entry_idx < old_entries.len() {
         let entry = &old_entries[current_entry_idx];
         new_entries.push((new_pos, entry.1.clone()));

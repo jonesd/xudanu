@@ -242,6 +242,44 @@ export interface WorkListEntry {
   content_end_line?: number;
   source_author_id?: number;
   source_edition_info?: string;
+  is_starred?: boolean;
+}
+
+export interface GraphNode {
+  work_id: number;
+  title: string;
+  is_starred: boolean;
+  is_source: boolean;
+  revision_count: number;
+  author_type?: string;
+}
+
+export interface GraphEdge {
+  source: number;
+  target: number;
+  edge_type: string;
+  weight: number;
+}
+
+export interface WorkGraphPayload {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface TrailStop {
+  work_id: number;
+  char_start?: number;
+  char_end?: number;
+  note?: string;
+  title: string;
+}
+
+export interface TrailPayload {
+  trail_id: number;
+  name: string;
+  stops: TrailStop[];
+  created_at: number;
+  updated_at: number;
 }
 
 type IdentityListener = (identity: WhoAmIEntry | null) => void;
@@ -740,6 +778,63 @@ export class CrdtSyncClient {
     if (Array.isArray(val)) return val as WorkListEntry[];
     const rec = val as Record<string, unknown>;
     return (rec.work_list as WorkListEntry[]) || [];
+  }
+
+  async workStar(workId: number): Promise<void> {
+    await this.sendRequest("work_star", { work_id: workId });
+  }
+
+  async workUnstar(workId: number): Promise<void> {
+    await this.sendRequest("work_unstar", { work_id: workId });
+  }
+
+  async workIsStarred(workId: number): Promise<boolean> {
+    const resp = await this.sendRequest("work_is_starred", { work_id: workId });
+    return extractValue(resp) as boolean;
+  }
+
+  async workGraph(): Promise<WorkGraphPayload> {
+    const resp = await this.sendRequest("work_graph");
+    return extractValue(resp) as WorkGraphPayload;
+  }
+
+  async trailCreate(name: string): Promise<number> {
+    const resp = await this.sendRequest("trail_create", { name });
+    return extractValue(resp) as number;
+  }
+
+  async trailDelete(trailId: number): Promise<void> {
+    await this.sendRequest("trail_delete", { trail_id: trailId });
+  }
+
+  async trailRename(trailId: number, name: string): Promise<void> {
+    await this.sendRequest("trail_rename", { trail_id: trailId, name });
+  }
+
+  async trailAddStop(trailId: number, workId: number, charStart?: number, charEnd?: number, note?: string): Promise<void> {
+    const payload: Record<string, unknown> = { trail_id: trailId, work_id: workId };
+    if (charStart !== undefined) payload.char_start = charStart;
+    if (charEnd !== undefined) payload.char_end = charEnd;
+    if (note) payload.note = note;
+    await this.sendRequest("trail_add_stop", payload);
+  }
+
+  async trailRemoveStop(trailId: number, stopIndex: number): Promise<void> {
+    await this.sendRequest("trail_remove_stop", { trail_id: trailId, stop_index: stopIndex });
+  }
+
+  async trailReorderStops(trailId: number, stopOrder: number[]): Promise<void> {
+    await this.sendRequest("trail_reorder_stops", { trail_id: trailId, stop_order: stopOrder });
+  }
+
+  async trailList(): Promise<TrailPayload[]> {
+    const resp = await this.sendRequest("trail_list");
+    return extractValue(resp) as TrailPayload[];
+  }
+
+  async trailGet(trailId: number): Promise<TrailPayload> {
+    const resp = await this.sendRequest("trail_get", { trail_id: trailId });
+    return extractValue(resp) as TrailPayload;
   }
 
   async workSummary(workId: number): Promise<WorkSummary> {

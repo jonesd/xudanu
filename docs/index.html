@@ -113,12 +113,17 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
 <div class="content-wrap">
 
 <h1>Xudanu Documentation</h1>
-<p class="subtitle">A conflict-preserving hypertext document store, initially migrated from Udanax Gold and significantly evolved with BLAKE3 content addressing, CRDT collaborative editing, cryptographic author attribution, and real-time transclusion queries.</p>
+<p class="subtitle">A conflict-preserving hypertext document store, initially migrated from Udanax Gold and significantly evolved with BLAKE3 content addressing, CRDT collaborative editing, cryptographic author attribution, real-time transclusion queries, trails, document map, and content similarity.</p>
 
 <!-- Getting Started -->
 <div class="section">
   <h2>Getting Started <span class="badge badge-green">START HERE</span></h2>
   <div class="doc-grid">
+    <div class="doc-card">
+      <h3><a href="user-guide.html">User Guide (v0.7.0)</a></h3>
+      <p>Complete guide to the web UI: editing, stars, trails, document map, transclusion, attribution, revisions, and persistence.</p>
+      <span class="tag tag-html">html</span> <span class="tag tag-featured">new in 0.7.0</span>
+    </div>
     <div class="doc-card">
       <h3><a href="https://github.com/jonesd/xudanu/blob/main/README.md">README</a></h3>
       <p>Quick Start guide, prerequisites, CLI reference, security notes, and macOS Gatekeeper instructions.</p>
@@ -134,10 +139,42 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
       <p>Configure HTTPS and WSS for encrypted connections. Self-signed certs, Caddy reverse proxy, and Safari compatibility.</p>
       <span class="tag tag-md">markdown</span>
     </div>
+  </div>
+</div>
+
+<!-- What's New -->
+<div class="section">
+  <h2>What's New in v0.7.0 <span class="badge badge-amber">RELEASE</span></h2>
+  <div class="doc-grid">
     <div class="doc-card">
-      <h3><a href="dev/test-registry.md">Test Registry</a></h3>
-      <p>How to run the 1,664 tests (unit, integration, TLS, proptest). Stress testing and coverage expectations.</p>
-      <span class="tag tag-md">markdown</span>
+      <h3><a href="user-guide.html#stars">Stars / Favorites</a></h3>
+      <p>Star documents to mark them as favorites. Starred docs appear in a dedicated sidebar section and as amber nodes in the Document Map.</p>
+      <span class="tag tag-featured">new</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="user-guide.html#trails">Trails</a></h3>
+      <p>Create ordered reading paths through your documents &mdash; Nelson's original concept of guided sequences through hypertext.</p>
+      <span class="tag tag-featured">new</span>
+    </div>
+    <div class="doc-card">
+      <h3><a href="user-guide.html#document-map">Document Map</a></h3>
+      <p>Force-directed graph showing all documents, transclusion links (solid lines), and content similarity (dashed lines). Click nodes to navigate.</p>
+      <span class="tag tag-featured">new</span>
+    </div>
+    <div class="doc-card">
+      <h3>Content Similarity</a></h3>
+      <p>Documents with overlapping vocabulary (>15% Jaccard similarity) are connected with dashed lines and drift together in the Document Map.</p>
+      <span class="tag tag-featured">new</span>
+    </div>
+    <div class="doc-card">
+      <h3>Hardened Persistence</h3>
+      <p>Three-layer data protection: Write-Ahead Log, dual manifest slots (A/B), and atomic fsync+rename checkpoints every 5 seconds.</p>
+      <span class="tag tag-featured">new</span>
+    </div>
+    <div class="doc-card">
+      <h3>Xanadu Gold Foundations</h3>
+      <p>Progressive implementation of Udanax Gold: transclusion with provenance, content addressing, clubs/permissions, cryptographic attribution, and trails.</p>
+      <span class="tag tag-featured">enhanced</span>
     </div>
   </div>
 </div>
@@ -336,7 +373,7 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
 </div>
 
 <div class="footer">
-  Xudanu Documentation &mdash; v0.1.1 &mdash; <a href="https://dgjones.info/xudanu/">dgjones.info/xudanu</a>
+  Xudanu Documentation &mdash; v0.7.0 &mdash; <a href="https://dgjones.info/xudanu/">dgjones.info/xudanu</a>
 </div>
 
 </div>
