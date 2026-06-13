@@ -18192,4 +18192,314 @@ mod tests {
         let r3 = server.resolve_compound_edition(doc_b).unwrap();
         assert_eq!(r3.flat_text(), "Secon", "span [0,5) of 'Second revision'");
     }
+
+    fn setup_two_session_server() -> (Server, SessionId, SessionId) {
+        let mut server = Server::new();
+        let sid_a = server.connect();
+        server.login_public(sid_a).unwrap();
+        let sid_b = server.connect();
+        server.login_public(sid_b).unwrap();
+        (server, sid_a, sid_b)
+    }
+
+    #[test]
+    fn compound_cross_session_edit_source_visible_to_other() {
+        let (mut server, sid_a, sid_b) = setup_two_session_server();
+
+        let source = server
+            .create_work(sid_a, Edition::from_text("Original Source Text"))
+            .unwrap();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("Quote: "),
+            crate::edition::compound::CompoundElement::span(source, 0, 8),
+            crate::edition::compound::CompoundElement::text("."),
+        ]);
+        let doc_b = server
+            .create_work(sid_b, Edition::from_text("placeholder"))
+            .unwrap();
+        server.set_compound_edition(doc_b, compound, sid_b).unwrap();
+
+        let resolved_before = server.resolve_compound_edition(doc_b).unwrap();
+        assert_eq!(resolved_before.flat_text(), "Quote: Original.");
+
+        server.work_grab(sid_a, source).unwrap();
+        server
+            .work_revise(sid_a, source, Edition::from_text("CHANGED!"))
+            .unwrap();
+
+        let resolved_after = server.resolve_compound_edition(doc_b).unwrap();
+        assert_eq!(
+            resolved_after.flat_text(),
+            "Quote: CHANGED!.",
+            "session B's compound should reflect session A's edit"
+        );
+
+        assert!(
+            server.is_compound_dirty(doc_b),
+            "compound should be marked dirty after source revised by other session"
+        );
+    }
+
+    #[test]
+    fn compound_concurrent_both_sessions_set_compound_different_docs() {
+        let (mut server, sid_a, sid_b) = setup_two_session_server();
+
+        let src = server
+            .create_work(sid_a, Edition::from_text("Shared Source"))
+            .unwrap();
+
+        let doc_a = server
+            .create_work(sid_a, Edition::from_text("doc-a"))
+            .unwrap();
+        let doc_b = server
+            .create_work(sid_b, Edition::from_text("doc-b"))
+            .unwrap();
+
+        let compound_a = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::span(src, 0, 6),
+        ]);
+        server
+            .set_compound_edition(doc_a, compound_a, sid_a)
+            .unwrap();
+
+        let compound_b = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("ref: "),
+            crate::edition::compound::CompoundElement::span(src, 7, 13),
+        ]);
+        server
+            .set_compound_edition(doc_b, compound_b, sid_b)
+            .unwrap();
+
+        let ra = server.resolve_compound_edition(doc_a).unwrap();
+        assert_eq!(ra.flat_text(), "Shared");
+        let rb = server.resolve_compound_edition(doc_b).unwrap();
+        assert_eq!(rb.flat_text(), "ref: Source");
+
+        server.work_grab(sid_a, src).unwrap();
+        server
+            .work_revise(sid_a, src, Edition::from_text("Updated Content"))
+            .unwrap();
+
+        assert!(server.is_compound_dirty(doc_a));
+        assert!(server.is_compound_dirty(doc_b));
+
+        let ra2 = server.resolve_compound_edition(doc_a).unwrap();
+        assert_eq!(ra2.flat_text(), "Update");
+        let rb2 = server.resolve_compound_edition(doc_b).unwrap();
+        assert_eq!(
+            rb2.flat_text(),
+            "ref:  Conte",
+            "span [7,13) of 'Updated Content' = ' Conte' (pos 7 is space)"
+        );
+    }
+
+    #[test]
+    fn compound_session_b_resolves_then_source_changes_then_resolves_again() {
+        let (mut server, sid_a, sid_b) = setup_two_session_server();
+
+        let source = server
+            .create_work(sid_a, Edition::from_text("Version 1 text here"))
+            .unwrap();
+        let doc = server.create_work(sid_b, Edition::from_text("x")).unwrap();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::span(source, 0, 9),
+        ]);
+        server.set_compound_edition(doc, compound, sid_b).unwrap();
+
+        let r1 = server.resolve_compound_edition(doc).unwrap();
+        assert_eq!(r1.flat_text(), "Version 1");
+
+        server.work_grab(sid_a, source).unwrap();
+        server
+            .work_revise(sid_a, source, Edition::from_text("Version 2 is different"))
+            .unwrap();
+
+        assert!(
+            server.is_compound_dirty(doc),
+            "dirty flag should be set after source revision"
+        );
+        server.clear_compound_dirty(doc);
+        assert!(!server.is_compound_dirty(doc));
+
+        let r2 = server.resolve_compound_edition(doc).unwrap();
+        assert_eq!(r2.flat_text(), "Version 2");
+
+        assert!(
+            !server.is_compound_dirty(doc),
+            "resolving should not set dirty; only source revision sets it"
+        );
+    }
+
+    #[test]
+    fn compound_cross_session_rapid_alternating_revisions() {
+        let (mut server, sid_a, _sid_b) = setup_two_session_server();
+
+        let source = server.create_work(sid_a, Edition::from_text("T0")).unwrap();
+        let doc = server.create_work(sid_a, Edition::from_text("x")).unwrap();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::span(source, 0, 2),
+        ]);
+        server.set_compound_edition(doc, compound, sid_a).unwrap();
+
+        server.work_grab(sid_a, source).unwrap();
+
+        for i in 1..=5 {
+            let new_text = format!("T{}", i);
+            server
+                .work_revise(sid_a, source, Edition::from_text(&new_text))
+                .unwrap();
+
+            let resolved = server.resolve_compound_edition(doc).unwrap();
+            assert_eq!(
+                resolved.flat_text(),
+                &new_text,
+                "iteration {} should reflect revision",
+                i
+            );
+            assert!(server.is_compound_dirty(doc), "dirty after iteration {}", i);
+            server.clear_compound_dirty(doc);
+        }
+    }
+
+    #[test]
+    fn compound_cross_session_chained_transclusion() {
+        let (mut server, sid_a, sid_b) = setup_two_session_server();
+
+        let root = server
+            .create_work(sid_a, Edition::from_text("Root Content ABC"))
+            .unwrap();
+        let mid = server
+            .create_work(sid_a, Edition::from_text("placeholder"))
+            .unwrap();
+
+        let mid_compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("Mid: "),
+            crate::edition::compound::CompoundElement::span(root, 0, 12),
+        ]);
+        server
+            .set_compound_edition(mid, mid_compound, sid_a)
+            .unwrap();
+
+        let doc = server.create_work(sid_b, Edition::from_text("x")).unwrap();
+
+        let doc_compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("Doc: ["),
+            crate::edition::compound::CompoundElement::span(mid, 0, 5),
+            crate::edition::compound::CompoundElement::text("] end"),
+        ]);
+        server
+            .set_compound_edition(doc, doc_compound, sid_b)
+            .unwrap();
+
+        // doc's span reads mid's O-tree text (not recursively resolving mid's compound).
+        // mid's O-tree text is "placeholder", so span(0,5) = "place"
+        let resolved = server.resolve_compound_edition(doc).unwrap();
+        assert_eq!(
+            resolved.flat_text(),
+            "Doc: [place] end",
+            "doc spans into mid's raw O-tree text, not recursively through compound"
+        );
+
+        // When we resolve mid directly, it DOES expand root's content via compound
+        let resolved_mid = server.resolve_compound_edition(mid).unwrap();
+        assert_eq!(resolved_mid.flat_text(), "Mid: Root Content");
+
+        server.work_grab(sid_a, root).unwrap();
+        server
+            .work_revise(sid_a, root, Edition::from_text("NEWROOTCONTENT"))
+            .unwrap();
+
+        assert!(
+            server.is_compound_dirty(mid),
+            "mid is dirty because root changed"
+        );
+        assert!(
+            !server.is_compound_dirty(doc),
+            "doc references mid's O-tree text, not root — should not be dirty"
+        );
+
+        let resolved2 = server.resolve_compound_edition(mid).unwrap();
+        assert_eq!(resolved2.flat_text(), "Mid: NEWROOTCONTE");
+
+        let resolved3 = server.resolve_compound_edition(doc).unwrap();
+        assert_eq!(
+            resolved3.flat_text(),
+            "Doc: [place] end",
+            "doc unchanged because mid's O-tree text is still 'placeholder'"
+        );
+    }
+
+    #[test]
+    fn compound_cross_session_read_permission_dispatch_layer() {
+        let (mut server, sid_a, sid_b) = setup_two_session_server();
+
+        let source = server
+            .create_work(sid_a, Edition::from_text("Secret Content"))
+            .unwrap();
+        let doc = server.create_work(sid_b, Edition::from_text("x")).unwrap();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::span(source, 0, 6),
+        ]);
+        server.set_compound_edition(doc, compound, sid_b).unwrap();
+
+        let result = server.resolve_compound_edition(doc);
+        assert!(result.is_ok(), "both public sessions can read");
+
+        server
+            .work_set_read_club(sid_a, source, Some(server.empty_club_id()))
+            .unwrap();
+
+        let resolve_result = server.resolve_compound_edition(doc);
+        assert!(
+            resolve_result.is_ok(),
+            "resolve_compound_edition uses work_text which does not check permissions; \
+             dispatch layer enforces read access"
+        );
+        assert_eq!(
+            resolve_result.unwrap().flat_text(),
+            "Secret",
+            "server-level resolve succeeds; permission enforced at wire protocol layer"
+        );
+    }
+
+    #[test]
+    fn compound_dirty_works_list_tracks_all_affected() {
+        let (mut server, sid_a, _sid_b) = setup_two_session_server();
+
+        let source = server
+            .create_work(sid_a, Edition::from_text("Source"))
+            .unwrap();
+        let doc1 = server.create_work(sid_a, Edition::from_text("d1")).unwrap();
+        let doc2 = server.create_work(sid_a, Edition::from_text("d2")).unwrap();
+        let doc3 = server.create_work(sid_a, Edition::from_text("d3")).unwrap();
+
+        for doc in [&doc1, &doc2, &doc3] {
+            server
+                .set_compound_edition(
+                    *doc,
+                    crate::edition::compound::CompoundEdition::new(vec![
+                        crate::edition::compound::CompoundElement::span(source, 0, 3),
+                    ]),
+                    sid_a,
+                )
+                .unwrap();
+        }
+
+        assert!(server.compound_dirty_works().is_empty());
+
+        server.work_grab(sid_a, source).unwrap();
+        server
+            .work_revise(sid_a, source, Edition::from_text("Modified"))
+            .unwrap();
+
+        let dirty = server.compound_dirty_works();
+        assert_eq!(dirty.len(), 3, "all 3 compound docs should be dirty");
+        assert!(dirty.contains(&doc1));
+        assert!(dirty.contains(&doc2));
+        assert!(dirty.contains(&doc3));
+    }
 }
