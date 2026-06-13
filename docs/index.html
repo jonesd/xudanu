@@ -198,7 +198,7 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
       <span class="hero-tag">10 slides</span>
     </div>
   </div>
-  <div class="hero-grid-2">
+  <div class="hero-grid-2" style="margin-top:16px">
     <div class="hero-card hero-editions">
       <h3><a href="editions-and-works.html">Editions &amp; Works</a></h3>
       <p>How documents are structured as versioned editions with per-line attribution, three-way merge, and the O-tree data model. Essential reading for understanding Xudanu's core abstractions.</p>
@@ -210,8 +210,36 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
       <span class="hero-tag">interactive</span>
     </div>
   </div>
-</div>
-<div class="section">
+
+  <!-- Udanax-Gold Subsystems -->
+  <div class="section" style="margin-top:32px">
+    <h2>Udanax-Gold Subsystems <span class="badge badge-purple">DEEP DIVES</span></h2>
+    <p style="color:#8b949e;font-size:13px;margin-bottom:16px">Detailed documentation of the Udanax-Gold subsystems implemented in Rust, with modern enhancements.</p>
+    <div class="hero-grid-2">
+      <div class="hero-card hero-diagram">
+        <h3><a href="transclusion-engine.html">Transclusion Engine</a></h3>
+        <p>How content reuse is detected, indexed, and queried across documents: BLAKE3 fingerprinting, Bert Canopy tree, Recorder pub/sub, Hoist propagation, and Backfollow queries. The core intellectual property of Xanadu.</p>
+        <span class="hero-tag">9 sections &middot; 3 diagrams</span>
+      </div>
+      <div class="hero-card hero-arch">
+        <h3><a href="collaborative-editing.html">Collaborative Editing</a></h3>
+        <p>Real-time multi-user editing with O-tree CRDT, Ed25519-signed author attribution, awareness state (cursors/selections), three-way merge fallback, and LLM-assisted change narration.</p>
+        <span class="hero-tag">8 sections &middot; 1 diagram</span>
+      </div>
+      <div class="hero-card hero-notif">
+        <h3><a href="identity-auth.html">Identity &amp; Authentication</a></h3>
+        <p>Clubs (the Udanax-Gold identity model), the lock hierarchy (Boo/Wall/Challenge/Match/Multi), KeyMaster authority tracking, Ed25519 provenance, and per-session security monitoring.</p>
+        <span class="hero-tag">8 sections &middot; 1 diagram</span>
+      </div>
+      <div class="hero-card hero-slides">
+        <h3><a href="wire-protocol.html">Wire Protocol</a></h3>
+        <p>The complete 140+ operation WebSocket API: message framing, JSON and binary codecs, connection lifecycle, real-time subscriptions, and security features. The integration surface for building clients.</p>
+        <span class="hero-tag">8 sections &middot; 1 diagram</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
   <h2>Architecture &amp; Design <span class="badge badge-blue">DEEP DIVES</span></h2>
   <div class="doc-grid">
     <div class="doc-card">
