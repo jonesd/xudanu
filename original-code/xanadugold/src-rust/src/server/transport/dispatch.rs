@@ -3,6 +3,7 @@ use super::shared::{AppState, ServerHandle, SharedState};
 use crate::edition::{BeId, Edition};
 use crate::server::lock::LockCredential;
 use crate::server::Server;
+use std::collections::HashMap;
 
 pub fn dispatch(
     state: &SharedState,
@@ -1523,8 +1524,59 @@ fn dispatch_inner(
             for work_id in edition.referenced_works() {
                 srv.ensure_can_read(session_id, work_id)?;
             }
-            let text = srv.resolve_compound_edition(&edition)?;
+            let text = srv.resolve_compound_to_text(&edition)?;
             Ok(ResponseValue::CompoundResolveResult { text })
+        }
+        WireRequest::CompoundGetEdition { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let payload = srv
+                .get_compound_edition(work_id)
+                .map(|c| CompoundEditionPayload::from_compound(c));
+            Ok(ResponseValue::CompoundGetEditionResult { compound: payload })
+        }
+        WireRequest::CompoundSetEdition { work_id, compound } => {
+            srv.ensure_can_edit(session_id, work_id)?;
+            let edition = compound.to_compound();
+            srv.set_compound_edition(work_id, edition, session_id)?;
+            Ok(ResponseValue::CompoundSetEditionResult { ok: true })
+        }
+        WireRequest::CompoundResolveWork { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let resolved = srv.resolve_compound_edition(work_id)?;
+
+            for elem in resolved.elements() {
+                if let crate::edition::compound::ResolvedElement::Span { source_work_id, .. } = elem
+                {
+                    srv.ensure_can_read(session_id, *source_work_id)?;
+                }
+            }
+
+            let elements: Vec<ResolvedElementPayload> = resolved
+                .elements()
+                .iter()
+                .map(ResolvedElementPayload::from_resolved)
+                .collect();
+            let span_ranges: Vec<SpanRangePayload> = resolved
+                .span_ranges()
+                .iter()
+                .map(SpanRangePayload::from_span_range)
+                .collect();
+
+            let mut source_titles: HashMap<BeId, String> = HashMap::new();
+            for sr in resolved.span_ranges() {
+                if !source_titles.contains_key(&sr.source_work_id) {
+                    if let Some(title) = srv.compound_source_title(sr.source_work_id) {
+                        source_titles.insert(sr.source_work_id, title);
+                    }
+                }
+            }
+
+            Ok(ResponseValue::CompoundResolveWorkResult {
+                elements,
+                flat_text: resolved.flat_text().to_string(),
+                span_ranges,
+                source_titles,
+            })
         }
         WireRequest::AdminRecorderCreate {
             kind,

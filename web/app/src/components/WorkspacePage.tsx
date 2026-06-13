@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useCrdtSync } from "../hooks/useCrdtSync";
 import { useTransclusion } from "../hooks/useTransclusion";
+import { useCompoundEdition } from "../hooks/useCompoundEdition";
 import { authorColor } from "../author-color";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
 import { SourceTextViewer } from "../components/SourceTextViewer";
@@ -83,6 +84,7 @@ export function WorkspacePage() {
   const sourceViewerRef = useRef<HTMLDivElement>(null);
 
   const transclusion = useTransclusion();
+  const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId);
   const [backlinks, setBacklinks] = useState<BacklinkEntry[]>([]);
   const [endorsementCount, setEndorsementCount] = useState(0);
   const [hasEndorsed, setHasEndorsed] = useState(false);
@@ -379,6 +381,14 @@ export function WorkspacePage() {
     const excerpt = pending.text;
     const newText = text.slice(0, position) + excerpt + text.slice(position);
     setText(newText);
+    compound.addSpan(
+      newText,
+      position,
+      excerpt,
+      pending.sourceWorkId,
+      pending.start,
+      pending.end,
+    );
     const linkId = await transclusion.placeTransclusion(clientRef.current, workBeId, position);
     if (linkId !== null) {
       if (clientRef.current) {
@@ -386,7 +396,7 @@ export function WorkspacePage() {
         await transclusion.loadLinks(clientRef.current, workBeId, works);
       }
     }
-  }, [clientRef, workBeId, transclusion, works, text, setText]);
+  }, [clientRef, workBeId, transclusion, works, text, setText, compound]);
 
   useEffect(() => {
     if (!isSourceWork) return;
@@ -1181,11 +1191,13 @@ export function WorkspacePage() {
                    editable={canEdit}
                      contentStartLine={currentWorkMeta?.content_start_line}
                      contentEndLine={currentWorkMeta?.content_end_line}
-                     transclusionMarkers={transclusion.markers}
-                     pendingTransclusion={transclusion.pending}
-                     onPlaceTransclusion={handlePlaceTransclusion}
-                      selectionRange={selectionRange}
-                     onNavigateToWork={selectWork}
+                    transclusionMarkers={transclusion.markers}
+                    pendingTransclusion={transclusion.pending}
+                    onPlaceTransclusion={handlePlaceTransclusion}
+                    selectionRange={selectionRange}
+                    onNavigateToWork={selectWork}
+                    compoundSpanRanges={compound.spanRanges}
+                    compoundSourceTitles={compound.sourceTitles}
                      onPasteText={handlePasteText}
                       fontSize={docPrefs.fontSize}
                       lineHeight={docPrefs.lineHeight}
@@ -1205,12 +1217,14 @@ export function WorkspacePage() {
                     editable={canEdit}
                     contentStartLine={isSourceWork ? undefined : currentWorkMeta?.content_start_line}
                     contentEndLine={isSourceWork ? undefined : currentWorkMeta?.content_end_line}
-                   transclusionMarkers={transclusion.markers}
-                   pendingTransclusion={transclusion.pending}
-                   onPlaceTransclusion={handlePlaceTransclusion}
-                   selectionRange={selectionRange}
-                   onNavigateToWork={selectWork}
-                    onPasteText={canEdit ? handlePasteText : undefined}
+                    transclusionMarkers={transclusion.markers}
+                    pendingTransclusion={transclusion.pending}
+                    onPlaceTransclusion={handlePlaceTransclusion}
+                    selectionRange={selectionRange}
+                    onNavigateToWork={selectWork}
+                    compoundSpanRanges={compound.spanRanges}
+                    compoundSourceTitles={compound.sourceTitles}
+                     onPasteText={canEdit ? handlePasteText : undefined}
                     fontSize={docPrefs.fontSize}
                     lineHeight={docPrefs.lineHeight}
                    annotations={annotations}

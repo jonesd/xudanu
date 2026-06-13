@@ -212,6 +212,8 @@ pub struct Manifest {
     pub trails: Vec<TrailManifestEntry>,
     #[serde(default)]
     pub trail_counter: BeId,
+    #[serde(default)]
+    pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
 }
 
 #[derive(Debug)]
@@ -905,6 +907,7 @@ pub fn create_empty_manifest(
         starred_works: std::collections::HashMap::new(),
         trails: Vec::new(),
         trail_counter: 10_000,
+        compound_editions: Vec::new(),
     }
 }
 

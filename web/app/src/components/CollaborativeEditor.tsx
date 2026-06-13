@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from "react";
-import type { AttributionSpan, TransclusionMarker, AnnotationEntry } from "../api/crdt_sync";
+import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePayload } from "../api/crdt_sync";
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { TextBuffer } from "../api/text_buffer";
@@ -47,6 +47,8 @@ interface CollaborativeEditorProps {
   lineHeight?: number;
   annotations?: AnnotationEntry[];
   onCreateAnnotation?: (charStart: number, charEnd: number) => void;
+  compoundSpanRanges?: SpanRangePayload[];
+  compoundSourceTitles?: Record<number, string>;
 }
 
 const CHUNK_SIZE = 50_000;
@@ -79,13 +81,14 @@ function drawOverlay(
   editor: HTMLElement | null,
   canvas: HTMLCanvasElement | null,
   spans: AttributionSpan[],
-  colorMap: Map<string, AuthorStyle>,
+  authorColorMap: Map<number, string>,
   markers: TransclusionMarker[] = [],
   annotations: AnnotationEntry[] = [],
+  compoundSpans: SpanRangePayload[] = [],
 ): MarkerHitZone[] {
   const hitZones: MarkerHitZone[] = [];
   if (!editor || !canvas) return hitZones;
-  if (spans.length === 0 && markers.length === 0 && annotations.length === 0) {
+  if (spans.length === 0 && markers.length === 0 && annotations.length === 0 && compoundSpans.length === 0) {
     canvas.style.pointerEvents = "none";
     return hitZones;
   }
@@ -164,6 +167,42 @@ function drawOverlay(
         ctx.fillStyle = style.color + "60";
         ctx.fillRect(x, y + r.height - 2, r.width, 2);
       }
+    }
+  }
+
+  for (const cs of compoundSpans) {
+    const drawStart = Math.max(cs.flat_start, 0);
+    const drawEnd = Math.min(cs.flat_end, textLen);
+    if (drawStart >= drawEnd) continue;
+
+    const range = document.createRange();
+    try {
+      if (singleNode) {
+        range.setStart(textNode as Text, drawStart);
+        range.setEnd(textNode as Text, drawEnd);
+      } else {
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
+        if (!sn || !en) continue;
+        range.setStart(sn.node, sn.offset);
+        range.setEnd(en.node, en.offset + 1);
+      }
+    } catch {
+      continue;
+    }
+
+    const rangeRects = range.getClientRects();
+    for (const r of rangeRects) {
+      const x = r.left - rect.left;
+      const y = r.top - rect.top;
+      ctx.fillStyle = "#f59e0b14";
+      ctx.fillRect(x, y, r.width, r.height);
+      ctx.save();
+      ctx.strokeStyle = "#f59e0b50";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 2]);
+      ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
+      ctx.restore();
     }
   }
 
@@ -294,6 +333,8 @@ export function CollaborativeEditor({
   lineHeight,
   annotations = [],
   onCreateAnnotation,
+  compoundSpanRanges = [],
+  compoundSourceTitles = {},
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -411,11 +452,11 @@ export function CollaborativeEditor({
     const redraw = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers, annotations);
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers, annotations, compoundSpanRanges);
       });
     };
 
-    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers);
+    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers, [], compoundSpanRanges);
 
     const ro = new ResizeObserver(redraw);
     ro.observe(container);

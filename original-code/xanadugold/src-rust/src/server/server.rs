@@ -127,6 +127,8 @@ pub struct Server {
     starred_works: HashMap<BeId, HashSet<BeId>>,
     trails: HashMap<BeId, TrailState>,
     trail_counter: BeId,
+    compound_editions: HashMap<BeId, crate::edition::compound::CompoundEdition>,
+    compound_dirty: HashSet<BeId>,
     wal: crate::persist::wal::WalLog,
 }
 
@@ -289,6 +291,8 @@ impl Server {
             starred_works: HashMap::new(),
             trails: HashMap::new(),
             trail_counter: 10_000,
+            compound_editions: HashMap::new(),
+            compound_dirty: HashSet::new(),
             wal: crate::persist::wal::WalLog::disabled(),
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
@@ -931,6 +935,7 @@ impl Server {
         self.backfollow
             .update_work_with_parent(work_be_id, work_be_id, &old_edition, &new_work);
         self.trigger_planted_recorders(work_be_id);
+        self.mark_compound_dirty(work_be_id);
         self.reconcile_record_local_revision(
             work_be_id,
             &updated_edition,
@@ -3324,6 +3329,14 @@ impl Server {
         }
     }
 
+    pub(crate) fn wal_replay_set_compound_edition(
+        &mut self,
+        work_id: BeId,
+        compound: crate::edition::compound::CompoundEdition,
+    ) {
+        self.compound_editions.insert(work_id, compound);
+    }
+
     pub fn build_work_graph(
         &self,
         session_id: SessionId,
@@ -4508,6 +4521,7 @@ impl Server {
                 },
             );
         }
+        self.compound_editions = manifest.compound_editions.into_iter().collect();
         self.reconcile_store = manifest.reconcile_store;
         self.reconcile_counter = manifest.reconcile_counter;
         self.content_address = if let Some(hash) = manifest.content_address_hash {
@@ -6404,7 +6418,7 @@ impl Server {
         positions
     }
 
-    pub fn resolve_compound_edition(
+    pub fn resolve_compound_to_text(
         &self,
         compound: &crate::edition::compound::CompoundEdition,
     ) -> Result<String, ServerError> {
@@ -6448,6 +6462,99 @@ impl Server {
             .filter_map(|(_, c)| c.element.as_text())
             .collect();
         Ok(text)
+    }
+
+    pub fn get_compound_edition(
+        &self,
+        work_id: BeId,
+    ) -> Option<&crate::edition::compound::CompoundEdition> {
+        self.compound_editions.get(&work_id)
+    }
+
+    pub fn set_compound_edition(
+        &mut self,
+        work_id: BeId,
+        compound: crate::edition::compound::CompoundEdition,
+        session_id: SessionId,
+    ) -> Result<(), ServerError> {
+        if !self.works.contains_key(&work_id) {
+            return Err(ServerError::WorkNotFound(work_id));
+        }
+        self.compound_editions.insert(work_id, compound.clone());
+        let compound_json = serde_json::to_string(&compound)
+            .map_err(|_| ServerError::Internal("compound serde failed".into()))?;
+        let _ = self.wal.append(
+            "set_compound_edition",
+            serde_json::json!({
+                "work_id": work_id,
+                "compound": compound_json,
+            }),
+        );
+        let _ = session_id;
+        Ok(())
+    }
+
+    pub fn resolve_compound_edition(
+        &self,
+        work_id: BeId,
+    ) -> Result<crate::edition::compound::ResolvedCompoundEdition, ServerError> {
+        let compound = self
+            .compound_editions
+            .get(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
+        compound
+            .resolve(|src_id| {
+                self.work_text(src_id).map_err(|_| {
+                    crate::edition::compound::ResolveError::SourceNotFound { work_id: src_id }
+                })
+            })
+            .map_err(|e| match e {
+                crate::edition::compound::ResolveError::SourceNotFound { work_id } => {
+                    ServerError::WorkNotFound(work_id)
+                }
+                crate::edition::compound::ResolveError::SourceFetchFailed { work_id } => {
+                    ServerError::WorkNotFound(work_id)
+                }
+            })
+    }
+
+    pub fn compound_source_title(&self, work_id: BeId) -> Option<String> {
+        self.works.get(&work_id).map(|ws| ws.cached_title.clone())
+    }
+
+    pub fn works_with_compound_referencing(&self, source_work_id: BeId) -> Vec<BeId> {
+        self.compound_editions
+            .iter()
+            .filter_map(|(wid, compound)| {
+                if compound
+                    .referenced_works()
+                    .contains(&(source_work_id as u64))
+                {
+                    Some(*wid)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn mark_compound_dirty(&mut self, revised_work_id: BeId) {
+        let affected: Vec<BeId> = self.works_with_compound_referencing(revised_work_id);
+        for wid in affected {
+            self.compound_dirty.insert(wid);
+        }
+    }
+
+    pub fn compound_dirty_works(&self) -> Vec<BeId> {
+        self.compound_dirty.iter().copied().collect()
+    }
+
+    pub fn is_compound_dirty(&self, work_id: BeId) -> bool {
+        self.compound_dirty.contains(&work_id)
+    }
+
+    pub fn clear_compound_dirty(&mut self, work_id: BeId) {
+        self.compound_dirty.remove(&work_id);
     }
 
     pub fn content_address_lookup(&self, element: &RangeElement) -> Option<BeId> {
@@ -7008,7 +7115,11 @@ impl Server {
         }
     }
 
-    fn ensure_can_edit(&self, session_id: SessionId, work_be_id: BeId) -> Result<(), ServerError> {
+    pub(crate) fn ensure_can_edit(
+        &self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
         let ws = self
             .works
@@ -9040,6 +9151,8 @@ pub(crate) mod persist_snapshot {
         trails: Vec<TrailSnapshot>,
         #[serde(default)]
         trail_counter: BeId,
+        #[serde(default)]
+        compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -9223,6 +9336,11 @@ pub(crate) mod persist_snapshot {
                     })
                     .collect(),
                 trail_counter: self.trail_counter,
+                compound_editions: self
+                    .compound_editions
+                    .iter()
+                    .map(|(id, c)| (*id, c.clone()))
+                    .collect(),
             }
         }
 
@@ -9320,6 +9438,8 @@ pub(crate) mod persist_snapshot {
                     })
                     .collect(),
                 trail_counter: snapshot.trail_counter,
+                compound_editions: snapshot.compound_editions.iter().cloned().collect(),
+                compound_dirty: HashSet::new(),
                 consequence_tracker: Arc::new(ConsequenceTracker::new()),
                 write_barrier: Arc::new(WriteBarrier::new()),
                 wal: crate::persist::wal::WalLog::disabled(),
@@ -9791,6 +9911,11 @@ pub(crate) mod persist_snapshot {
                     })
                     .collect(),
                 trail_counter: self.trail_counter,
+                compound_editions: self
+                    .compound_editions
+                    .iter()
+                    .map(|(id, c)| (*id, c.clone()))
+                    .collect(),
             };
 
             let data_dir = match self.data_dir.as_ref() {
@@ -17711,5 +17836,360 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    fn compound_test_setup() -> (Server, SessionId, BeId, BeId) {
+        let (mut server, sid) = setup_logged_in_server();
+        let source_a = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+        let doc_b = server
+            .create_work(sid, Edition::from_text("Start. End."))
+            .unwrap();
+        (server, sid, source_a, doc_b)
+    }
+
+    #[test]
+    fn compound_set_and_get_edition() {
+        let (mut server, sid, source_a, doc_b) = compound_test_setup();
+        assert!(server.get_compound_edition(doc_b).is_none());
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("Start. "),
+            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
+            crate::edition::compound::CompoundElement::text(" End."),
+        ]);
+        server
+            .set_compound_edition(doc_b, compound.clone(), sid)
+            .unwrap();
+
+        let retrieved = server.get_compound_edition(doc_b).unwrap();
+        assert_eq!(retrieved.elements().len(), 3);
+        assert_eq!(retrieved.span_count(), 1);
+        assert_eq!(retrieved.referenced_works(), vec![source_a]);
+    }
+
+    #[test]
+    fn compound_resolve_work_returns_resolved_text() {
+        let (mut server, sid, source_a, doc_b) = compound_test_setup();
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("Start. "),
+            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
+            crate::edition::compound::CompoundElement::text(" End."),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        let resolved = server.resolve_compound_edition(doc_b).unwrap();
+        assert_eq!(resolved.flat_text(), "Start. Hello End.");
+        assert_eq!(resolved.span_ranges().len(), 1);
+        assert_eq!(resolved.span_ranges()[0].source_work_id, source_a);
+        assert_eq!(resolved.span_ranges()[0].flat_start, 7);
+        assert_eq!(resolved.span_ranges()[0].flat_end, 12);
+    }
+
+    #[test]
+    fn compound_resolve_updates_after_source_revision() {
+        let (mut server, sid, source_a, doc_b) = compound_test_setup();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("Intro: "),
+            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
+            crate::edition::compound::CompoundElement::text(". Done."),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        let resolved1 = server.resolve_compound_edition(doc_b).unwrap();
+        assert_eq!(resolved1.flat_text(), "Intro: Hello. Done.");
+
+        server.work_grab(sid, source_a).unwrap();
+        server
+            .work_revise(sid, source_a, Edition::from_text("Greetings World"))
+            .unwrap();
+
+        let resolved2 = server.resolve_compound_edition(doc_b).unwrap();
+        assert_eq!(
+            resolved2.flat_text(),
+            "Intro: Greet. Done.",
+            "compound should reflect source revision"
+        );
+    }
+
+    #[test]
+    fn compound_resolve_multiple_sources() {
+        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
+        let src1 = server.create_work(sid, Edition::from_text("AAA")).unwrap();
+        let src2 = server.create_work(sid, Edition::from_text("BBB")).unwrap();
+        let doc = server
+            .create_work(sid, Edition::from_text("placeholder"))
+            .unwrap();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::span(src1, 0, 3),
+            crate::edition::compound::CompoundElement::text("-"),
+            crate::edition::compound::CompoundElement::span(src2, 0, 3),
+        ]);
+        server.set_compound_edition(doc, compound, sid).unwrap();
+
+        let resolved = server.resolve_compound_edition(doc).unwrap();
+        assert_eq!(resolved.flat_text(), "AAA-BBB");
+        assert_eq!(resolved.span_ranges().len(), 2);
+        assert_eq!(resolved.span_ranges()[0].source_work_id, src1);
+        assert_eq!(resolved.span_ranges()[1].source_work_id, src2);
+    }
+
+    #[test]
+    fn compound_resolve_work_not_found() {
+        let (server, _sid, _source_a, _doc_b) = compound_test_setup();
+        let result = server.resolve_compound_edition(999_999);
+        assert!(matches!(result, Err(ServerError::WorkNotFound(_))));
+    }
+
+    #[test]
+    fn compound_resolve_source_deleted_returns_error() {
+        let (mut server, sid, source_a, doc_b) = compound_test_setup();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        server.works.remove(&source_a);
+
+        let result = server.resolve_compound_edition(doc_b);
+        assert!(
+            result.is_err(),
+            "resolution should fail when source work is gone"
+        );
+    }
+
+    #[test]
+    fn compound_resolve_unicode_source() {
+        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
+        let unicode_src = server
+            .create_work(sid, Edition::from_text("日本語のテスト"))
+            .unwrap();
+        let doc = server.create_work(sid, Edition::from_text("x")).unwrap();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("Text: "),
+            crate::edition::compound::CompoundElement::span(unicode_src, 0, 3),
+            crate::edition::compound::CompoundElement::text("!"),
+        ]);
+        server.set_compound_edition(doc, compound, sid).unwrap();
+
+        let resolved = server.resolve_compound_edition(doc).unwrap();
+        assert_eq!(resolved.flat_text(), "Text: 日本語!");
+    }
+
+    #[test]
+    fn compound_set_on_nonexistent_work_fails() {
+        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
+        let compound = crate::edition::compound::CompoundEdition::empty();
+        let result = server.set_compound_edition(999_999, compound, sid);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn compound_referencing_works_reverse_lookup() {
+        let (mut server, sid, source_a, doc_b) = compound_test_setup();
+        let doc_c = server
+            .create_work(sid, Edition::from_text("doc-c"))
+            .unwrap();
+
+        let compound_b = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::span(source_a, 0, 3),
+        ]);
+        server.set_compound_edition(doc_b, compound_b, sid).unwrap();
+
+        let compound_c = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("prefix"),
+            crate::edition::compound::CompoundElement::span(source_a, 2, 5),
+        ]);
+        server.set_compound_edition(doc_c, compound_c, sid).unwrap();
+
+        let referencing = server.works_with_compound_referencing(source_a);
+        assert_eq!(referencing.len(), 2);
+        assert!(referencing.contains(&doc_b));
+        assert!(referencing.contains(&doc_c));
+    }
+
+    #[test]
+    fn compound_persistence_survives_snapshot_roundtrip() {
+        let (mut server, sid, source_a, doc_b) = compound_test_setup();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("Hello "),
+            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        let snapshot = server.to_snapshot();
+        let restored = Server::from_snapshot(&snapshot);
+
+        let retrieved = restored.get_compound_edition(doc_b);
+        assert!(
+            retrieved.is_some(),
+            "compound should survive snapshot roundtrip"
+        );
+        assert_eq!(retrieved.unwrap().elements().len(), 2);
+    }
+
+    #[test]
+    fn compound_resolve_clamps_span_beyond_source_length() {
+        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
+        let short_src = server.create_work(sid, Edition::from_text("hi")).unwrap();
+        let doc = server.create_work(sid, Edition::from_text("x")).unwrap();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::span(short_src, 0, 100),
+        ]);
+        server.set_compound_edition(doc, compound, sid).unwrap();
+
+        let resolved = server.resolve_compound_edition(doc).unwrap();
+        assert_eq!(
+            resolved.flat_text(),
+            "hi",
+            "span should clamp to source length"
+        );
+    }
+
+    #[test]
+    fn compound_resolve_empty_compound() {
+        let (mut server, sid, _source_a, doc_b) = compound_test_setup();
+        server
+            .set_compound_edition(
+                doc_b,
+                crate::edition::compound::CompoundEdition::empty(),
+                sid,
+            )
+            .unwrap();
+
+        let resolved = server.resolve_compound_edition(doc_b).unwrap();
+        assert!(resolved.flat_text().is_empty());
+        assert!(resolved.elements().is_empty());
+    }
+
+    #[test]
+    fn compound_resolve_text_only_compound() {
+        let (mut server, sid, _source_a, doc_b) = compound_test_setup();
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("just "),
+            crate::edition::compound::CompoundElement::text("text"),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        let resolved = server.resolve_compound_edition(doc_b).unwrap();
+        assert_eq!(resolved.flat_text(), "just text");
+        assert_eq!(resolved.span_ranges().len(), 0);
+        assert_eq!(resolved.elements().len(), 2);
+    }
+
+    #[test]
+    fn compound_source_title_lookup() {
+        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
+        let src = server
+            .create_work(sid, Edition::from_text("content"))
+            .unwrap();
+        server.set_work_title(src, "My Source Doc".to_string());
+
+        let title = server.compound_source_title(src);
+        assert_eq!(title.as_deref(), Some("My Source Doc"));
+    }
+
+    #[test]
+    fn compound_dirty_tracking_on_revision() {
+        let (mut server, sid, source_a, doc_b) = compound_test_setup();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("intro: "),
+            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        assert!(
+            !server.is_compound_dirty(doc_b),
+            "compound should not be dirty before revision"
+        );
+
+        server.work_grab(sid, source_a).unwrap();
+        server
+            .work_revise(sid, source_a, Edition::from_text("Changed"))
+            .unwrap();
+
+        assert!(
+            server.is_compound_dirty(doc_b),
+            "compound doc should be dirty after source revised"
+        );
+
+        server.clear_compound_dirty(doc_b);
+        assert!(
+            !server.is_compound_dirty(doc_b),
+            "compound should not be dirty after clear"
+        );
+    }
+
+    #[test]
+    fn compound_dirty_only_affects_referencing_docs() {
+        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
+        let src1 = server.create_work(sid, Edition::from_text("src1")).unwrap();
+        let src2 = server.create_work(sid, Edition::from_text("src2")).unwrap();
+        let doc1 = server.create_work(sid, Edition::from_text("d1")).unwrap();
+        let doc2 = server.create_work(sid, Edition::from_text("d2")).unwrap();
+
+        server
+            .set_compound_edition(
+                doc1,
+                crate::edition::compound::CompoundEdition::new(vec![
+                    crate::edition::compound::CompoundElement::span(src1, 0, 4),
+                ]),
+                sid,
+            )
+            .unwrap();
+        server
+            .set_compound_edition(
+                doc2,
+                crate::edition::compound::CompoundEdition::new(vec![
+                    crate::edition::compound::CompoundElement::span(src2, 0, 4),
+                ]),
+                sid,
+            )
+            .unwrap();
+
+        server.work_grab(sid, src1).unwrap();
+        server
+            .work_revise(sid, src1, Edition::from_text("modified"))
+            .unwrap();
+
+        assert!(server.is_compound_dirty(doc1));
+        assert!(
+            !server.is_compound_dirty(doc2),
+            "doc2 references src2, should not be dirty when src1 changes"
+        );
+    }
+
+    #[test]
+    fn compound_resolution_reflects_multiple_revisions() {
+        let (mut server, sid, source_a, doc_b) = compound_test_setup();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::span(source_a, 0, 5),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        let r1 = server.resolve_compound_edition(doc_b).unwrap();
+        assert_eq!(r1.flat_text(), "Hello");
+
+        server.work_grab(sid, source_a).unwrap();
+        server
+            .work_revise(sid, source_a, Edition::from_text("First"))
+            .unwrap();
+        let r2 = server.resolve_compound_edition(doc_b).unwrap();
+        assert_eq!(r2.flat_text(), "First");
+
+        server
+            .work_revise(sid, source_a, Edition::from_text("Second revision"))
+            .unwrap();
+        let r3 = server.resolve_compound_edition(doc_b).unwrap();
+        assert_eq!(r3.flat_text(), "Secon", "span [0,5) of 'Second revision'");
     }
 }

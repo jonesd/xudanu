@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::edition::{BeId, Bundle, Edition, ImageOp, RangeElement, XnRegion};
@@ -227,6 +229,9 @@ pub enum OperationCode {
     ProvenanceAncestry,
 
     CompoundResolve,
+    CompoundGetEdition,
+    CompoundSetEdition,
+    CompoundResolveWork,
 
     AdminRecorderCreate,
     AdminRecorderRecord,
@@ -533,6 +538,10 @@ impl OperationCode {
 
             0x1C0B => Some(OperationCode::CrdtRegisterAuthor),
 
+            0x1D01 => Some(OperationCode::CompoundGetEdition),
+            0x1D02 => Some(OperationCode::CompoundSetEdition),
+            0x1D03 => Some(OperationCode::CompoundResolveWork),
+
             0x0D01 => Some(OperationCode::AttributionQuery),
             0x0D02 => Some(OperationCode::AttributionVerify),
             0x0D03 => Some(OperationCode::AttributionLogStatus),
@@ -777,6 +786,10 @@ impl OperationCode {
             OperationCode::CrdtAwarenessGet => 0x1C09,
 
             OperationCode::CrdtRegisterAuthor => 0x1C0B,
+
+            OperationCode::CompoundGetEdition => 0x1D01,
+            OperationCode::CompoundSetEdition => 0x1D02,
+            OperationCode::CompoundResolveWork => 0x1D03,
 
             OperationCode::AttributionQuery => 0x0D01,
             OperationCode::AttributionVerify => 0x0D02,
@@ -1343,6 +1356,16 @@ pub enum WireRequest {
     CompoundResolve {
         compound: CompoundEditionPayload,
     },
+    CompoundGetEdition {
+        work_id: BeId,
+    },
+    CompoundSetEdition {
+        work_id: BeId,
+        compound: CompoundEditionPayload,
+    },
+    CompoundResolveWork {
+        work_id: BeId,
+    },
 
     AdminRecorderCreate {
         kind: String,
@@ -1782,6 +1805,18 @@ pub enum ResponseValue {
     },
     CompoundResolveResult {
         text: String,
+    },
+    CompoundGetEditionResult {
+        compound: Option<CompoundEditionPayload>,
+    },
+    CompoundSetEditionResult {
+        ok: bool,
+    },
+    CompoundResolveWorkResult {
+        elements: Vec<ResolvedElementPayload>,
+        flat_text: String,
+        span_ranges: Vec<SpanRangePayload>,
+        source_titles: HashMap<BeId, String>,
     },
     RecorderCreateResult {
         recorder_id: u64,
@@ -2366,6 +2401,78 @@ impl CompoundEditionPayload {
             })
             .collect();
         CompoundEdition::new(elements)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ResolvedElementPayload {
+    Text {
+        content: String,
+        flat_start: usize,
+        flat_end: usize,
+    },
+    Span {
+        source_work_id: BeId,
+        content: String,
+        flat_start: usize,
+        flat_end: usize,
+        original_char_start: usize,
+        original_char_end: usize,
+    },
+}
+
+impl ResolvedElementPayload {
+    pub fn from_resolved(elem: &crate::edition::compound::ResolvedElement) -> Self {
+        match elem {
+            crate::edition::compound::ResolvedElement::Text {
+                content,
+                flat_start,
+                flat_end,
+            } => ResolvedElementPayload::Text {
+                content: content.clone(),
+                flat_start: *flat_start,
+                flat_end: *flat_end,
+            },
+            crate::edition::compound::ResolvedElement::Span {
+                source_work_id,
+                content,
+                flat_start,
+                flat_end,
+                original_char_start,
+                original_char_end,
+            } => ResolvedElementPayload::Span {
+                source_work_id: *source_work_id,
+                content: content.clone(),
+                flat_start: *flat_start,
+                flat_end: *flat_end,
+                original_char_start: *original_char_start,
+                original_char_end: *original_char_end,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpanRangePayload {
+    pub source_work_id: BeId,
+    pub char_start: usize,
+    pub char_end: usize,
+    pub flat_start: usize,
+    pub flat_end: usize,
+    pub content_len: usize,
+}
+
+impl SpanRangePayload {
+    pub fn from_span_range(sr: &crate::edition::compound::SpanRange) -> Self {
+        SpanRangePayload {
+            source_work_id: sr.source_work_id,
+            char_start: sr.char_start,
+            char_end: sr.char_end,
+            flat_start: sr.flat_start,
+            flat_end: sr.flat_end,
+            content_len: sr.content_len,
+        }
     }
 }
 
