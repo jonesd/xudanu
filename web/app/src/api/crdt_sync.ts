@@ -842,6 +842,24 @@ export class CrdtSyncClient {
     return extractValue(resp) as WorkSummary;
   }
 
+  async versionAncestors(workId: number): Promise<number[]> {
+    const resp = await this.sendRequest("version_ancestors", { work_id: workId });
+    const v = extractValue(resp) as { ancestors: number[] };
+    return v.ancestors;
+  }
+
+  async versionDescendants(workId: number): Promise<number[]> {
+    const resp = await this.sendRequest("version_descendants", { work_id: workId });
+    const v = extractValue(resp) as { descendants: number[] };
+    return v.descendants;
+  }
+
+  async workTitle(workId: number): Promise<string> {
+    const resp = await this.sendRequest("work_get", { work_be_id: workId });
+    const v = extractValue(resp) as { title?: string };
+    return v.title || "";
+  }
+
   async workVersionTimeline(workId: number): Promise<WorkVersionTimeline> {
     const resp = await this.sendRequest("work_version_timeline", { work_id: workId });
     return extractValue(resp) as WorkVersionTimeline;

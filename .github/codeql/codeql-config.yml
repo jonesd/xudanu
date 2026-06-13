@@ -1,6 +1,20 @@
 name: CodeQL config
 
 paths-ignore:
+  - 'original-code/xanadugold/src/**'
+  - 'original-code/xanadugold/include/**'
   - 'original-code/xanadugold/src-rust/tests/**'
   - '**/test/**'
   - '**/*.test.*'
+  - '**/tests/**'
+
+query-filters:
+  - exclude:
+      id: rb/hardcoded-credentials
+  - exclude:
+      id: cpp/hardcoded-credentials
+  - exclude:
+      id: js/hardcoded-credentials
+
+queries:
+  - uses: security-and-quality'

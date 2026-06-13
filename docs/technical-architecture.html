@@ -103,6 +103,9 @@ pre{
 }
 .note strong{color:#58a6ff}
 
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+
 .warning{
   background:rgba(210,153,34,0.06);
   border-left:3px solid #d29922;
@@ -227,7 +230,7 @@ td{
 <div class="content-wrap">
 
 <h1>Xudanu Technical Architecture</h1>
-<p class="subtitle">A deep dive into the data structures, algorithms, and performance characteristics of the Udanax Gold hypertext engine, reimplemented in Rust.</p>
+<p class="subtitle">A deep dive into the data structures, algorithms, and performance characteristics of the Udanax-Gold hypertext engine, reimplemented in Rust.</p>
 
 <div class="toc">
   <a class="toc-section" href="#s1">1. Introduction</a>
@@ -253,8 +256,12 @@ td{
 <h2 id="s1">1. Introduction</h2>
 
 <p>
-Xudanu is a Rust implementation of the <strong>Udanax Gold</strong> hypertext document store &mdash; a system originally designed by Ted Nelson's team in the 1980s and mechanically translated from Smalltalk to C++ in 1989. The original ~200,000-line C++ codebase was a faithful but <em>disconnected</em> port: every component existed, but the paths between them were dead code. Transclusion queries never executed. H-tree canopy flags were allocated but never checked. The BackfollowEngine had no callers.
+Xudanu is a Rust implementation of the <strong>Udanax-Gold</strong> hypertext document store &mdash; a system originally designed by Ted Nelson's team in the 1980s and mechanically translated from Smalltalk to C++ in 1989. The original ~200,000-line C++ codebase was a faithful but <em>disconnected</em> port: every component existed, but the paths between them were dead code. Transclusion queries never executed. H-tree canopy flags were allocated but never checked. The BackfollowEngine had no callers.
 </p>
+
+<div class="gold">
+  <strong>The name &ldquo;Xudanu&rdquo;</strong> inverts the syllables of &ldquo;Udanax&rdquo; (the open-sourced variant of Project Xanadu), keeping the &ldquo;nu&rdquo; ending to signal something new for the 2020s &mdash; a working implementation of Ted Nelson's transclusion vision, built on the codebase he open-sourced in 1999.
+</div>
 
 <p>
 Xudanu reconnects these components into a working system and optimizes the critical paths. The result is a server that stores documents as content-addressed trees, tracks which documents share which text (transclusion), and answers queries like &ldquo;find every document that contains this paragraph&rdquo; in <span class="fast">O(log n)</span> instead of <span class="naive">O(n)</span>.
@@ -1016,7 +1023,8 @@ Xudanu implements two canopy variants that serve different purposes:
 <div class="two-col">
   <div class="example-block">
     <div class="example-label"><span class="accent-purple">BertCanopy</span> &mdash; Query Optimization</div>
-    <p>Static flag bits computed when an edition is registered. Used to prune H-tree traversal during transclusion queries. Named after the original Udanax Gold concept of a "Bert" (backwards edge tracker).</p>
+    <p>Static flag bits computed when an edition is registered. Used to prune H-tree traversal during transclusion queries. Named after the original Udanax-Gold concept of a "Bert" (backwards edge tracker).</p>
+    <div class="gold" style="margin:8px 0;padding:8px 12px;font-size:13px"><strong>Udanax-Gold origin:</strong> The Bert/Sensor canopy is directly from the original C++ codebase. The splay-tree structure and flag-based pruning are unchanged; only the memory model (Arc vs Heaper) and threading (Mutex vs single-threaded) differ.</div>
     <p><strong>Updated:</strong> when editions are created or revised</p>
   </div>
   <div class="example-block">
@@ -1462,7 +1470,7 @@ When concurrent edits need to be reconciled, Xudanu's current strategy is <stron
 <h2 id="s9">9. Big-O Performance Summary</h2>
 
 <p>
-This section consolidates the performance characteristics of every major operation. The "naive" column shows what the C++ Udanax Gold code would have done if the disconnected components had been wired together with simple loops. The "Xudanu" column shows what the optimized Rust implementation achieves.
+This section consolidates the performance characteristics of every major operation. The "naive" column shows what the C++ Udanax-Gold code would have done if the disconnected components had been wired together with simple loops. The "Xudanu" column shows what the optimized Rust implementation achieves.
 </p>
 
 <table>
@@ -1576,7 +1584,7 @@ Edition for "Getting Started Guide":
 <h3>Paths and Tumblers</h3>
 
 <p>
-The Udanax Gold addressing model uses <strong>tumblers</strong> &mdash; hierarchical numeric paths that identify a position within a document, within a work, within the global namespace. Xudanu implements this via:
+The Udanax-Gold addressing model uses <strong>tumblers</strong> &mdash; hierarchical numeric paths that identify a position within a document, within a work, within the global namespace. Xudanu implements this via:
 </p>
 
 <ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
@@ -2196,7 +2204,7 @@ Xudanu's design draws on ideas from several systems. Here's how it compares:
 <h3>Primary Sources</h3>
 
 <ul style="margin-left:24px;margin-bottom:16px;list-style:disc">
-  <li><strong>Udanax Gold Source Code</strong> &mdash; the original C++ codebase (~200k LOC), mechanically translated from Smalltalk-80 in 1989. Available at <code>original-code/xanadugold/</code> in the workspace repository.</li>
+  <li><strong>Udanax-Gold Source Code</strong> &mdash; the original C++ codebase (~200k LOC), mechanically translated from Smalltalk-80 in 1989. Available at <code>original-code/xanadugold/</code> in the workspace repository.</li>
   <li><strong>Ted Nelson, "Literary Machines"</strong> (1981, 1993) &mdash; the original specification of the Xanadu hypertext system, including transclusion, tumblers, and micropayments.</li>
   <li><strong>Ted Nelson, "The Xanadu 17 Rules"</strong> &mdash; the design constraints that define Xanadu-compatible systems. Summarized in <code>docs/xanadu-17-rules.md</code>.</li>
 </ul>

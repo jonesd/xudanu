@@ -18,6 +18,7 @@ import { TransclusionBadge } from "../components/TransclusionBadge";
 import { WorkSummaryPanel } from "../components/WorkSummaryPanel";
 import { DocumentMapPanel } from "../components/DocumentMapPanel";
 import { TrailsPanel } from "../components/TrailsPanel";
+import { VersionGenealogyPanel } from "../components/VersionGenealogyPanel";
 import { SharePanel } from "../components/SharePanel";
 import { ReadingView } from "./reading/ReadingView";
 import { DocumentSettings, loadDocPreferences, saveDocPreferences } from "../components/DocumentSettings";
@@ -67,6 +68,7 @@ export function WorkspacePage() {
   const [showRevisions, setShowRevisions] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [showTrails, setShowTrails] = useState(false);
+  const [showGenealogy, setShowGenealogy] = useState(false);
   const [revisionList, setRevisionList] = useState<string[]>([]);
   const [revisionIndex, setRevisionIndex] = useState(0);
   const [similarWorks, setSimilarWorks] = useState<{ query: string; workIds: number[] } | null>(null);
@@ -685,6 +687,12 @@ export function WorkspacePage() {
                     onClick={() => { setShowTrails(true); close(); }}
                   >
                     Trails
+                  </DropdownItem>
+                  <DropdownItem
+                    disabled={!connected || !workBeId}
+                    onClick={() => { setShowGenealogy(true); close(); }}
+                  >
+                    Version Genealogy
                   </DropdownItem>
                   <DropdownSeparator />
                   <DropdownItem
@@ -1402,6 +1410,15 @@ export function WorkspacePage() {
           currentWorkId={workBeId}
           onSelectWork={(id) => selectWork(id)}
           onClose={() => setShowTrails(false)}
+        />
+      )}
+
+      {showGenealogy && workBeId && (
+        <VersionGenealogyPanel
+          client={clientRef.current}
+          currentWorkId={workBeId}
+          onSelectWork={(id) => selectWork(id)}
+          onClose={() => setShowGenealogy(false)}
         />
       )}
 
