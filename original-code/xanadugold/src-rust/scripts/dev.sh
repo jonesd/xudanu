@@ -38,7 +38,18 @@ cleanup() {
     [ -n "$WATCH_PID" ] && kill "$WATCH_PID" 2>/dev/null || true
     [ -n "$VITE_PID" ] && kill "$VITE_PID" 2>/dev/null || true
     PID=$(lsof -ti:"${PORT}" 2>/dev/null || true)
-    [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
+    if [ -n "$PID" ]; then
+        echo "  Server: sending SIGTERM, waiting for checkpoint..."
+        kill "$PID" 2>/dev/null || true
+        for i in $(seq 1 30); do
+            if ! kill -0 "$PID" 2>/dev/null; then break; fi
+            sleep 0.5
+        done
+        if kill -0 "$PID" 2>/dev/null; then
+            echo "  Server: force killing (checkpoint may not have completed)"
+            kill -9 "$PID" 2>/dev/null || true
+        fi
+    fi
     exit 0
 }
 trap cleanup INT TERM
