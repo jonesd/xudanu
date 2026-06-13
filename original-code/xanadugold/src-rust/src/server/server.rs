@@ -3157,6 +3157,13 @@ impl Server {
         let club_id = self.resolve_author_club(session_id)
             .ok_or(ServerError::NotAuthorized)?;
         self.starred_works.entry(club_id).or_default().insert(work_id);
+        tracing::info!(
+            "[star] club_id={} work_id={} total_clubs_with_stars={} wal_enabled={}",
+            club_id,
+            work_id,
+            self.starred_works.len(),
+            self.wal.is_enabled(),
+        );
         if let Err(e) = self.wal.append_star(club_id, work_id) {
             tracing::warn!("WAL write failed for star: {}", e);
         }
@@ -3171,6 +3178,11 @@ impl Server {
         if let Some(set) = self.starred_works.get_mut(&club_id) {
             set.remove(&work_id);
         }
+        tracing::info!(
+            "[unstar] club_id={} work_id={}",
+            club_id,
+            work_id,
+        );
         if let Err(e) = self.wal.append_unstar(club_id, work_id) {
             tracing::warn!("WAL write failed for unstar: {}", e);
         }
@@ -4261,6 +4273,13 @@ impl Server {
         self.system_clubs = manifest.system_clubs;
         self.link_counter = manifest.link_counter;
         self.starred_works = manifest.starred_works;
+        {
+            let total: usize = self.starred_works.values().map(|s| s.len()).sum();
+            tracing::info!(
+                "[restore] starred_works: {} clubs, {} total stars",
+                self.starred_works.len(), total
+            );
+        }
         self.trail_counter = manifest.trail_counter;
         for t in manifest.trails {
             self.trails.insert(t.trail_id, TrailState {
@@ -9479,7 +9498,17 @@ pub(crate) mod persist_snapshot {
                         Some(hash)
                     }
                 },
-                starred_works: self.starred_works.clone(),
+                starred_works: {
+                    let sw = self.starred_works.clone();
+                    if !sw.is_empty() {
+                        let total: usize = sw.values().map(|s| s.len()).sum();
+                        tracing::info!(
+                            "[checkpoint] serializing starred_works: {} clubs, {} total stars",
+                            sw.len(), total
+                        );
+                    }
+                    sw
+                },
                 trails: self.trails.values().map(|t| {
                     crate::persist::manifest::TrailManifestEntry {
                         trail_id: t.trail_id,

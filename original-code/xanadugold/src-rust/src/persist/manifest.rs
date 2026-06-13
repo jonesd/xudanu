@@ -791,13 +791,64 @@ pub fn preflight_check(data_dir: &Path) -> PreflightReport {
     }
 
     report.errors.push(format!(
-        "Checksum mismatch: stored {} but file content hashes to {}. \
-         The manifest may be corrupt. Options: \
-         (1) Restore from backup (manifest_v*.json files in the data directory), \
-         (2) Run 'xudanu-server rebuild-manifest {}', or \
-         (3) Delete the data directory to start fresh (all data will be lost).",
-        stored_checksum, raw_computed, data_dir.display()
+        "Primary manifest checksum mismatch: stored {} but content hashes to {}. \
+         Checking backups...",
+        stored_checksum, raw_computed
     ));
+
+    let mut backup_entries: Vec<(u64, std::path::PathBuf)> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(data_dir) {
+        for entry in rd.flatten() {
+            let name = entry.file_name();
+            let name_str = match name.to_str() {
+                Some(s) => s,
+                None => continue,
+            };
+            if let Some(rest) = name_str.strip_prefix("manifest_v") {
+                if let Some(seq_str) = rest.strip_suffix(".json") {
+                    if let Ok(seq) = seq_str.parse::<u64>() {
+                        backup_entries.push((seq, entry.path()));
+                    }
+                }
+            }
+        }
+    }
+    backup_entries.sort_by(|a, b| b.0.cmp(&a.0));
+
+    let mut found_valid_backup = false;
+    for (seq, backup_path) in &backup_entries {
+        tracing::info!("Preflight: trying backup manifest_v{}.json", seq);
+        match read_manifest(backup_path) {
+            Ok(_m) => {
+                tracing::info!(
+                    "Preflight: backup manifest_v{}.json is valid. \
+                     Primary will be restored from backup on startup.",
+                    seq
+                );
+                report.errors.clear();
+                report.warnings.push(format!(
+                    "Primary manifest corrupt, but backup manifest_v{}.json is valid. \
+                     Server will restore from backup automatically.",
+                    seq
+                ));
+                report.can_start = true;
+                found_valid_backup = true;
+                break;
+            }
+            Err(e) => {
+                tracing::warn!("Preflight: backup manifest_v{}.json also failed: {}", seq, e);
+            }
+        }
+    }
+
+    if !found_valid_backup {
+        report.errors.push(format!(
+            "No valid backup found either. Options: \
+             (1) Run 'xudanu-server rebuild-manifest {}', or \
+             (2) Delete the data directory to start fresh (all data will be lost).",
+            data_dir.display()
+        ));
+    }
 
     let _ = manifest;
     report

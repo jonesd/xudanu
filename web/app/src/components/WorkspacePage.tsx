@@ -16,6 +16,8 @@ import { IdentityPanel } from "../components/IdentityPanel";
 import { ImportWizard } from "../components/ImportWizard";
 import { TransclusionBadge } from "../components/TransclusionBadge";
 import { WorkSummaryPanel } from "../components/WorkSummaryPanel";
+import { DocumentMapPanel } from "../components/DocumentMapPanel";
+import { TrailsPanel } from "../components/TrailsPanel";
 import { SharePanel } from "../components/SharePanel";
 import { ReadingView } from "./reading/ReadingView";
 import { DocumentSettings, loadDocPreferences, saveDocPreferences } from "../components/DocumentSettings";
@@ -63,6 +65,8 @@ export function WorkspacePage() {
   const [showShare, setShowShare] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showRevisions, setShowRevisions] = useState(false);
+  const [showMap, setShowMap] = useState(false);
+  const [showTrails, setShowTrails] = useState(false);
   const [revisionList, setRevisionList] = useState<string[]>([]);
   const [revisionIndex, setRevisionIndex] = useState(0);
   const [similarWorks, setSimilarWorks] = useState<{ query: string; workIds: number[] } | null>(null);
@@ -130,6 +134,28 @@ export function WorkspacePage() {
     connectionEpoch,
     canEdit,
   } = useCrdtSync(WS_URL, workBeId);
+
+  const toggleStar = useCallback(async (workId: number, current: boolean) => {
+    if (!clientRef.current) {
+      console.warn("toggleStar: no client");
+      return;
+    }
+    try {
+      if (current) {
+        await clientRef.current.workUnstar(workId);
+      } else {
+        await clientRef.current.workStar(workId);
+      }
+      console.log("toggleStar: success", workId, !current);
+      setWorks((prev) =>
+        prev.map((w) =>
+          w.work_id === workId ? { ...w, is_starred: !current } : w
+        )
+      );
+    } catch (e) {
+      console.error("toggleStar failed:", e);
+    }
+  }, [clientRef]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -203,7 +229,19 @@ export function WorkspacePage() {
 
   const loadWorks = useCallback(async () => {
     const list = await fetchWorkList();
-    setWorks([...list].sort((a, b) => a.work_id - b.work_id));
+    setWorks((prev) => {
+      const sorted = [...list].sort((a, b) => a.work_id - b.work_id);
+      const prevStarred = new Map<number, boolean>();
+      for (const w of prev) {
+        if (w.is_starred) prevStarred.set(w.work_id, true);
+      }
+      if (prevStarred.size === 0) return sorted;
+      return sorted.map((w) => {
+        if (w.is_starred) return w;
+        if (prevStarred.has(w.work_id)) return { ...w, is_starred: true };
+        return w;
+      });
+    });
   }, [fetchWorkList]);
 
   const loadAuthors = useCallback(async () => {
@@ -453,10 +491,21 @@ export function WorkspacePage() {
         </span>
 
         {workIdDisplay && (
-          <>
-            <div className="header-separator" />
-            <span className="work-id-label">{workIdDisplay}</span>
-            <span className="work-title-label">
+           <>
+             <div className="header-separator" />
+             <span className="work-id-label">{workIdDisplay}</span>
+             {workBeId !== null && (
+               <span
+                 className={`header-star ${currentWorkMeta?.is_starred ? "starred" : ""}`}
+                 onClick={() => toggleStar(workBeId, !!currentWorkMeta?.is_starred)}
+                 title={currentWorkMeta?.is_starred ? "Remove from favorites" : "Add to favorites"}
+                 role="button"
+                 style={{ cursor: "pointer" }}
+               >
+                 {currentWorkMeta?.is_starred ? "\u2605" : "\u2606"}
+               </span>
+             )}
+             <span className="work-title-label">
               {currentWorkMeta?.title || "Untitled"}
               {isSourceWork && <span className="work-list-badge badge-public" style={{ fontSize: "10px", verticalAlign: "middle", marginLeft: 6 }}>pub src</span>}
             </span>
@@ -624,6 +673,18 @@ export function WorkspacePage() {
                     onClick={() => { setShowCompare((c) => !c); }}
                   >
                     Compare
+                  </DropdownItem>
+                  <DropdownItem
+                    disabled={!connected || works.length === 0}
+                    onClick={() => { setShowMap(true); close(); }}
+                  >
+                    Document Map
+                  </DropdownItem>
+                  <DropdownItem
+                    disabled={!connected || !authenticated}
+                    onClick={() => { setShowTrails(true); close(); }}
+                  >
+                    Trails
                   </DropdownItem>
                   <DropdownSeparator />
                   <DropdownItem
@@ -812,56 +873,72 @@ export function WorkspacePage() {
               const outgoing = transclusion.links.filter((l) => l.origin === workBeId);
               const incoming = transclusion.links.filter((l) => l.destination === workBeId);
 
-              const renderWork = (w: WorkListEntry) => (
-                <div
-                  key={w.work_id}
-                  className={`work-list-item ${w.work_id === workBeId ? "active" : ""}`}
-                  onClick={() => selectWork(w.work_id)}
-                >
-                  <div className="work-list-meta">
-                    <span className="work-list-id">
-                      {w.work_id.toString(16).padStart(4, "0")}
-                    </span>
-                    <span className={`work-list-badge ${w.read_club === publicClubId ? "badge-public" : "badge-private"}`}>
-                      {w.read_club === publicClubId ? "pub" : "priv"}
-                    </span>
-                    <span className="work-list-rev">r{w.revision_count}</span>
-                  </div>
-                  <span className="work-list-title">
-                    {w.title
-                      ? w.title.length > 30
-                        ? w.title.slice(0, 30) + "..."
-                        : w.title
-                      : "Untitled"}
-                  </span>
-                </div>
-              );
+               const renderWork = (w: WorkListEntry) => (
+                 <div
+                   key={w.work_id}
+                   className={`work-list-item ${w.work_id === workBeId ? "active" : ""}`}
+                   onClick={() => selectWork(w.work_id)}
+                 >
+                   <div className="work-list-meta">
+                     <button
+                       type="button"
+                       className={`star-btn ${w.is_starred ? "starred" : ""}`}
+                       onClick={(e) => { e.stopPropagation(); toggleStar(w.work_id, !!w.is_starred); }}
+                       title={w.is_starred ? "Remove from favorites" : "Add to favorites"}
+                     >
+                       {w.is_starred ? "\u2605" : "\u2606"}
+                     </button>
+                     <span className="work-list-id">
+                       {w.work_id.toString(16).padStart(4, "0")}
+                     </span>
+                     <span className={`work-list-badge ${w.read_club === publicClubId ? "badge-public" : "badge-private"}`}>
+                       {w.read_club === publicClubId ? "pub" : "priv"}
+                     </span>
+                     <span className="work-list-rev">r{w.revision_count}</span>
+                   </div>
+                   <span className="work-list-title">
+                     {w.title
+                       ? w.title.length > 30
+                         ? w.title.slice(0, 30) + "..."
+                         : w.title
+                       : "Untitled"}
+                   </span>
+                 </div>
+               );
 
-              const renderSourceWork = (w: WorkListEntry) => (
-                <div
-                  key={w.work_id}
-                  className={`work-list-item source-work-item ${w.work_id === workBeId ? "active" : ""}`}
-                  onClick={() => selectWork(w.work_id)}
-                >
-                  <div className="work-list-meta">
-                    <span className="work-list-id">
-                      {w.work_id.toString(16).padStart(4, "0")}
-                    </span>
-                    <span className="work-list-badge badge-public">pub src</span>
-                    <span className="work-list-rev">r{w.revision_count}</span>
-                  </div>
-                  <span className="work-list-title">
-                    {w.title
-                      ? w.title.length > 30
-                        ? w.title.slice(0, 30) + "..."
-                        : w.title
-                      : "Untitled"}
-                  </span>
-                  {w.source_edition_info && (
-                    <span className="author-work-info">{w.source_edition_info}</span>
-                  )}
-                </div>
-              );
+               const renderSourceWork = (w: WorkListEntry) => (
+                 <div
+                   key={w.work_id}
+                   className={`work-list-item source-work-item ${w.work_id === workBeId ? "active" : ""}`}
+                   onClick={() => selectWork(w.work_id)}
+                 >
+                   <div className="work-list-meta">
+                     <button
+                       type="button"
+                       className={`star-btn ${w.is_starred ? "starred" : ""}`}
+                       onClick={(e) => { e.stopPropagation(); toggleStar(w.work_id, !!w.is_starred); }}
+                       title={w.is_starred ? "Remove from favorites" : "Add to favorites"}
+                     >
+                       {w.is_starred ? "\u2605" : "\u2606"}
+                     </button>
+                     <span className="work-list-id">
+                       {w.work_id.toString(16).padStart(4, "0")}
+                     </span>
+                     <span className="work-list-badge badge-public">pub src</span>
+                     <span className="work-list-rev">r{w.revision_count}</span>
+                   </div>
+                   <span className="work-list-title">
+                     {w.title
+                       ? w.title.length > 30
+                         ? w.title.slice(0, 30) + "..."
+                         : w.title
+                       : "Untitled"}
+                   </span>
+                   {w.source_edition_info && (
+                     <span className="author-work-info">{w.source_edition_info}</span>
+                   )}
+                 </div>
+               );
 
               const renderLinkItem = (link: typeof transclusion.links[0], arrow: string) => {
                 const isOrigin = link.origin === workBeId;
@@ -914,6 +991,13 @@ export function WorkspacePage() {
 
               return (
                 <>
+                  {!searchQuery && works.some((w) => w.is_starred) && (
+                    <SidebarSection title={`Favorites (${works.filter((w) => w.is_starred).length})`} defaultOpen={true}>
+                      {works.filter((w) => w.is_starred).map((w) => (
+                        w.is_source ? renderSourceWork(w) : renderWork(w)
+                      ))}
+                    </SidebarSection>
+                  )}
                   {docs.length > 0 && (
                     <div className="sidebar-section">
                       <div className="link-section-label">Documents ({docs.length})</div>
@@ -1300,6 +1384,24 @@ export function WorkspacePage() {
           connected={connected}
           onClose={() => setShowSummary(false)}
           onNavigateToWork={selectWork}
+        />
+      )}
+
+      {showMap && (
+        <DocumentMapPanel
+          client={clientRef.current}
+          onSelectWork={(id) => { selectWork(id); setShowMap(false); }}
+          currentWorkId={workBeId}
+          onClose={() => setShowMap(false)}
+        />
+      )}
+
+      {showTrails && (
+        <TrailsPanel
+          client={clientRef.current}
+          currentWorkId={workBeId}
+          onSelectWork={(id) => selectWork(id)}
+          onClose={() => setShowTrails(false)}
         />
       )}
 
