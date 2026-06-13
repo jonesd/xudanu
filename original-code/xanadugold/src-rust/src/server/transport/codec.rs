@@ -2679,73 +2679,128 @@ impl JsonCodec {
             }
             OperationCode::WorkStar => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkStar { work_id: args.work_id })
+                Ok(WireRequest::WorkStar {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkUnstar => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkUnstar { work_id: args.work_id })
+                Ok(WireRequest::WorkUnstar {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::WorkIsStarred => {
                 #[derive(Deserialize)]
-                struct Args { work_id: BeId }
+                struct Args {
+                    work_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::WorkIsStarred { work_id: args.work_id })
+                Ok(WireRequest::WorkIsStarred {
+                    work_id: args.work_id,
+                })
             }
             OperationCode::TrailCreate => {
                 #[derive(Deserialize)]
-                struct Args { name: String }
+                struct Args {
+                    name: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::TrailCreate { name: args.name })
             }
             OperationCode::TrailDelete => {
                 #[derive(Deserialize)]
-                struct Args { trail_id: BeId }
+                struct Args {
+                    trail_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::TrailDelete { trail_id: args.trail_id })
+                Ok(WireRequest::TrailDelete {
+                    trail_id: args.trail_id,
+                })
             }
             OperationCode::TrailRename => {
                 #[derive(Deserialize)]
-                struct Args { trail_id: BeId, name: String }
+                struct Args {
+                    trail_id: BeId,
+                    name: String,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::TrailRename { trail_id: args.trail_id, name: args.name })
+                Ok(WireRequest::TrailRename {
+                    trail_id: args.trail_id,
+                    name: args.name,
+                })
             }
             OperationCode::TrailAddStop => {
                 #[derive(Deserialize)]
-                struct Args { trail_id: BeId, work_id: BeId, #[serde(default)] char_start: Option<u64>, #[serde(default)] char_end: Option<u64>, #[serde(default)] note: Option<String> }
+                struct Args {
+                    trail_id: BeId,
+                    work_id: BeId,
+                    #[serde(default)]
+                    char_start: Option<u64>,
+                    #[serde(default)]
+                    char_end: Option<u64>,
+                    #[serde(default)]
+                    note: Option<String>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::TrailAddStop { trail_id: args.trail_id, work_id: args.work_id, char_start: args.char_start, char_end: args.char_end, note: args.note })
+                Ok(WireRequest::TrailAddStop {
+                    trail_id: args.trail_id,
+                    work_id: args.work_id,
+                    char_start: args.char_start,
+                    char_end: args.char_end,
+                    note: args.note,
+                })
             }
             OperationCode::TrailRemoveStop => {
                 #[derive(Deserialize)]
-                struct Args { trail_id: BeId, stop_index: u64 }
+                struct Args {
+                    trail_id: BeId,
+                    stop_index: u64,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::TrailRemoveStop { trail_id: args.trail_id, stop_index: args.stop_index })
+                Ok(WireRequest::TrailRemoveStop {
+                    trail_id: args.trail_id,
+                    stop_index: args.stop_index,
+                })
             }
             OperationCode::TrailReorderStops => {
                 #[derive(Deserialize)]
-                struct Args { trail_id: BeId, stop_order: Vec<u64> }
+                struct Args {
+                    trail_id: BeId,
+                    stop_order: Vec<u64>,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::TrailReorderStops { trail_id: args.trail_id, stop_order: args.stop_order })
+                Ok(WireRequest::TrailReorderStops {
+                    trail_id: args.trail_id,
+                    stop_order: args.stop_order,
+                })
             }
             OperationCode::TrailGet => {
                 #[derive(Deserialize)]
-                struct Args { trail_id: BeId }
+                struct Args {
+                    trail_id: BeId,
+                }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::TrailGet { trail_id: args.trail_id })
+                Ok(WireRequest::TrailGet {
+                    trail_id: args.trail_id,
+                })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }

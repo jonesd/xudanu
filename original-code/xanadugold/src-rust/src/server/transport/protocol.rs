@@ -945,14 +945,35 @@ pub enum WireRequest {
     },
     WorkGraph,
 
-    TrailCreate { name: String },
-    TrailDelete { trail_id: BeId },
-    TrailRename { trail_id: BeId, name: String },
-    TrailAddStop { trail_id: BeId, work_id: BeId, char_start: Option<u64>, char_end: Option<u64>, note: Option<String> },
-    TrailRemoveStop { trail_id: BeId, stop_index: u64 },
-    TrailReorderStops { trail_id: BeId, stop_order: Vec<u64> },
+    TrailCreate {
+        name: String,
+    },
+    TrailDelete {
+        trail_id: BeId,
+    },
+    TrailRename {
+        trail_id: BeId,
+        name: String,
+    },
+    TrailAddStop {
+        trail_id: BeId,
+        work_id: BeId,
+        char_start: Option<u64>,
+        char_end: Option<u64>,
+        note: Option<String>,
+    },
+    TrailRemoveStop {
+        trail_id: BeId,
+        stop_index: u64,
+    },
+    TrailReorderStops {
+        trail_id: BeId,
+        stop_order: Vec<u64>,
+    },
     TrailList,
-    TrailGet { trail_id: BeId },
+    TrailGet {
+        trail_id: BeId,
+    },
 
     WorkSetReadClub {
         work_id: BeId,
@@ -2446,10 +2467,8 @@ impl HyperRefPayload {
             .as_deref()
             .map(crate::edition::Edition::from_text);
         let path_context = self.path_context.as_ref().and_then(|labels| {
-            let elems: Vec<crate::edition::RangeElement> = labels
-                .iter()
-                .filter_map(|l| l.to_range_element())
-                .collect();
+            let elems: Vec<crate::edition::RangeElement> =
+                labels.iter().filter_map(|l| l.to_range_element()).collect();
             if elems.is_empty() {
                 None
             } else {
@@ -2461,9 +2480,7 @@ impl HyperRefPayload {
             .iter()
             .map(|hop| ProvenanceHop::new(hop.source_work_id, hop.link_id))
             .collect();
-        let work_context = self
-            .work_context
-            .or_else(|| Some(fallback_work_id));
+        let work_context = self.work_context.or_else(|| Some(fallback_work_id));
         let mut hr = HyperRef::single(excerpt, work_context, self.original_context, path_context);
         if !provenance_chain.is_empty() {
             hr = hr.with_provenance_chain(provenance_chain);

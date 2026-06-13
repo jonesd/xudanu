@@ -64,7 +64,11 @@ pub struct OtreeAuthorIdentity {
 
 impl OtreeAuthorIdentity {
     pub fn new(public_key: [u8; 32], display_name: String, club_be_id: BeId) -> Self {
-        Self { public_key, display_name, club_be_id }
+        Self {
+            public_key,
+            display_name,
+            club_be_id,
+        }
     }
 }
 
@@ -369,9 +373,11 @@ pub fn apply_text_delta_to_edition(
         let entry_start = entry_char_start[current_entry_idx];
         let within = old_char_pos.saturating_sub(entry_start);
         if within > 0 {
-            if let Some(carrier) =
-                split_text_carrier(&old_entries[current_entry_idx].1, within, old_entries[current_entry_idx].1.char_len())
-            {
+            if let Some(carrier) = split_text_carrier(
+                &old_entries[current_entry_idx].1,
+                within,
+                old_entries[current_entry_idx].1.char_len(),
+            ) {
                 new_entries.push((new_pos, Arc::new(carrier)));
                 new_pos += 1;
             }
@@ -602,14 +608,20 @@ impl OtreeCrdtManager {
         let expected_len = if was_merged {
             0
         } else {
-            let insert_len: usize = ops.iter().map(|op| match op {
-                TextDeltaOp::Insert { text } => text.len(),
-                _ => 0,
-            }).sum();
-            let delete_sum: u64 = ops.iter().map(|op| match op {
-                TextDeltaOp::Delete { count } => *count,
-                _ => 0,
-            }).sum();
+            let insert_len: usize = ops
+                .iter()
+                .map(|op| match op {
+                    TextDeltaOp::Insert { text } => text.len(),
+                    _ => 0,
+                })
+                .sum();
+            let delete_sum: u64 = ops
+                .iter()
+                .map(|op| match op {
+                    TextDeltaOp::Delete { count } => *count,
+                    _ => 0,
+                })
+                .sum();
             let old_len = wd.current_edition.to_text().len() as u64;
             (old_len + insert_len as u64).saturating_sub(delete_sum) as usize
         };
@@ -618,7 +630,9 @@ impl OtreeCrdtManager {
         wd.base_edition = wd.current_edition.clone();
         if !was_merged && expected_len > 0 {
             let actual_len = wd.current_edition.to_text().len();
-            if actual_len > expected_len * 2 || (expected_len > 100 && actual_len > expected_len + expected_len / 2) {
+            if actual_len > expected_len * 2
+                || (expected_len > 100 && actual_len > expected_len + expected_len / 2)
+            {
                 tracing::error!(
                     "[crdt] possible duplication: expected ~{} chars, got {}",
                     expected_len,

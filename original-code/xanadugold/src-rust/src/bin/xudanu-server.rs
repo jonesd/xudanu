@@ -277,7 +277,10 @@ fn cmd_verify_security_log(data_dir: &str) {
 
 fn cmd_preflight(data_dir: &str) {
     let path = PathBuf::from(data_dir);
-    println!("xudanu-server {} preflight check", env!("CARGO_PKG_VERSION"));
+    println!(
+        "xudanu-server {} preflight check",
+        env!("CARGO_PKG_VERSION")
+    );
     println!();
     let report = xudanu::persist::manifest::preflight_check(&path);
     println!("{}", report);
@@ -310,7 +313,9 @@ async fn main() {
                     }
                 })
             }),
-       "init" | "verify" | "rebuild-manifest" | "verify-security-log" | "preflight" => args.get(2).cloned(),
+        "init" | "verify" | "rebuild-manifest" | "verify-security-log" | "preflight" => {
+            args.get(2).cloned()
+        }
         _ => None,
     };
     init_tracing(data_dir_for_tracing.as_deref());
@@ -694,24 +699,22 @@ async fn main() {
                     let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
                     loop {
                         interval.tick().await;
-                        let saved = autosave_state
-                            .server
-                            .with_server(|srv| {
-                                let count = srv.materialize_all_pending();
-                                if let Some(cs) = srv.chunk_store() {
-                                    let now = std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_secs();
-                                    let elapsed = now.saturating_sub(srv.last_checkpoint_time());
-                                    if elapsed >= 5 {
-                                        if let Err(e) = srv.checkpoint_to_store() {
-                                            tracing::error!("periodic checkpoint failed: {}", e);
-                                        }
+                        let saved = autosave_state.server.with_server(|srv| {
+                            let count = srv.materialize_all_pending();
+                            if let Some(cs) = srv.chunk_store() {
+                                let now = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs();
+                                let elapsed = now.saturating_sub(srv.last_checkpoint_time());
+                                if elapsed >= 5 {
+                                    if let Err(e) = srv.checkpoint_to_store() {
+                                        tracing::error!("periodic checkpoint failed: {}", e);
                                     }
                                 }
-                                count
-                            });
+                            }
+                            count
+                        });
                         if saved > 0 {
                             tracing::info!("auto-save: materialized {} work(s)", saved);
                         }

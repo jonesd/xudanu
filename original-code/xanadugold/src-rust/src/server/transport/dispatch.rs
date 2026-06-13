@@ -397,7 +397,9 @@ fn dispatch_inner(
                     )
                 });
                 let new_ed = crate::server::otree_crdt::apply_text_delta_to_edition(
-                    &current_ed, &ops, author.as_ref(),
+                    &current_ed,
+                    &ops,
+                    author.as_ref(),
                 );
                 let rev = srv.work_revise(session_id, work_id, new_ed)?;
                 Ok(ResponseValue::Humber(rev))
@@ -499,16 +501,18 @@ fn dispatch_inner(
                 .collect();
             let edges: Vec<super::protocol::GraphEdgePayload> = raw_edges
                 .into_iter()
-                .map(|(source, target, edge_type, weight)| {
-                    super::protocol::GraphEdgePayload {
+                .map(
+                    |(source, target, edge_type, weight)| super::protocol::GraphEdgePayload {
                         source,
                         target,
                         edge_type,
                         weight,
-                    }
-                })
+                    },
+                )
                 .collect();
-            Ok(ResponseValue::WorkGraphResult(super::protocol::GraphPayload { nodes, edges }))
+            Ok(ResponseValue::WorkGraphResult(
+                super::protocol::GraphPayload { nodes, edges },
+            ))
         }
         WireRequest::TrailCreate { name } => {
             srv.ensure_authenticated(session_id)?;
@@ -525,17 +529,29 @@ fn dispatch_inner(
             srv.trail_rename(session_id, trail_id, name)?;
             Ok(ResponseValue::Void)
         }
-        WireRequest::TrailAddStop { trail_id, work_id, char_start, char_end, note } => {
+        WireRequest::TrailAddStop {
+            trail_id,
+            work_id,
+            char_start,
+            char_end,
+            note,
+        } => {
             srv.ensure_authenticated(session_id)?;
             srv.trail_add_stop(session_id, trail_id, work_id, char_start, char_end, note)?;
             Ok(ResponseValue::Void)
         }
-        WireRequest::TrailRemoveStop { trail_id, stop_index } => {
+        WireRequest::TrailRemoveStop {
+            trail_id,
+            stop_index,
+        } => {
             srv.ensure_authenticated(session_id)?;
             srv.trail_remove_stop(session_id, trail_id, stop_index)?;
             Ok(ResponseValue::Void)
         }
-        WireRequest::TrailReorderStops { trail_id, stop_order } => {
+        WireRequest::TrailReorderStops {
+            trail_id,
+            stop_order,
+        } => {
             srv.ensure_authenticated(session_id)?;
             srv.trail_reorder_stops(session_id, trail_id, stop_order)?;
             Ok(ResponseValue::Void)
@@ -941,7 +957,8 @@ fn dispatch_inner(
                 let d_final = d_ref.unwrap_or_else(|| {
                     crate::edition::links::HyperRef::single(None, Some(destination), None, None)
                 });
-                let link = crate::edition::links::HyperLink::make(link_types, o_with_chain, d_final);
+                let link =
+                    crate::edition::links::HyperLink::make(link_types, o_with_chain, d_final);
                 srv.create_link_with_hyperlink(session_id, link)?
             };
             Ok(ResponseValue::Id(link_id))

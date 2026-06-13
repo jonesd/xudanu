@@ -280,9 +280,10 @@ impl WalLog {
         for entry in entries {
             let result = match entry.op.as_str() {
                 "star" => {
-                    if let (Some(club_id), Some(work_id)) =
-                        (entry.args.get("club_id").and_then(|v| v.as_u64()), entry.args.get("work_id").and_then(|v| v.as_u64()))
-                    {
+                    if let (Some(club_id), Some(work_id)) = (
+                        entry.args.get("club_id").and_then(|v| v.as_u64()),
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                    ) {
                         server.wal_replay_star(club_id, work_id);
                         true
                     } else {
@@ -290,9 +291,10 @@ impl WalLog {
                     }
                 }
                 "unstar" => {
-                    if let (Some(club_id), Some(work_id)) =
-                        (entry.args.get("club_id").and_then(|v| v.as_u64()), entry.args.get("work_id").and_then(|v| v.as_u64()))
-                    {
+                    if let (Some(club_id), Some(work_id)) = (
+                        entry.args.get("club_id").and_then(|v| v.as_u64()),
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                    ) {
                         server.wal_replay_unstar(club_id, work_id);
                         true
                     } else {
@@ -300,9 +302,11 @@ impl WalLog {
                     }
                 }
                 "trail_create" => {
-                    if let (Some(owner_club), Some(trail_id), Some(name)) =
-                        (entry.args.get("owner_club").and_then(|v| v.as_u64()), entry.args.get("trail_id").and_then(|v| v.as_u64()), entry.args.get("name").and_then(|v| v.as_str()))
-                    {
+                    if let (Some(owner_club), Some(trail_id), Some(name)) = (
+                        entry.args.get("owner_club").and_then(|v| v.as_u64()),
+                        entry.args.get("trail_id").and_then(|v| v.as_u64()),
+                        entry.args.get("name").and_then(|v| v.as_str()),
+                    ) {
                         server.wal_replay_trail_create(owner_club, trail_id, name);
                         true
                     } else {
@@ -318,12 +322,17 @@ impl WalLog {
                     }
                 }
                 "trail_add_stop" => {
-                    if let (Some(trail_id), Some(work_id)) =
-                        (entry.args.get("trail_id").and_then(|v| v.as_u64()), entry.args.get("work_id").and_then(|v| v.as_u64()))
-                    {
+                    if let (Some(trail_id), Some(work_id)) = (
+                        entry.args.get("trail_id").and_then(|v| v.as_u64()),
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                    ) {
                         let cs = entry.args.get("char_start").and_then(|v| v.as_u64());
                         let ce = entry.args.get("char_end").and_then(|v| v.as_u64());
-                        let note = entry.args.get("note").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        let note = entry
+                            .args
+                            .get("note")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
                         server.wal_replay_trail_add_stop(trail_id, work_id, cs, ce, note);
                         true
                     } else {
@@ -331,9 +340,10 @@ impl WalLog {
                     }
                 }
                 "trail_remove_stop" => {
-                    if let (Some(trail_id), Some(work_id)) =
-                        (entry.args.get("trail_id").and_then(|v| v.as_u64()), entry.args.get("work_id").and_then(|v| v.as_u64()))
-                    {
+                    if let (Some(trail_id), Some(work_id)) = (
+                        entry.args.get("trail_id").and_then(|v| v.as_u64()),
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                    ) {
                         server.wal_replay_trail_remove_stop(trail_id, work_id);
                         true
                     } else {
@@ -364,11 +374,7 @@ mod tests {
     fn temp_dir() -> PathBuf {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "xudanu_wal_test_{}_{}",
-            std::process::id(),
-            id
-        ))
+        std::env::temp_dir().join(format!("xudanu_wal_test_{}_{}", std::process::id(), id))
     }
 
     #[test]
@@ -393,11 +399,15 @@ mod tests {
         let mut wal = WalLog::open(&dir).unwrap();
         assert_eq!(wal.seq(), 0);
 
-        let s1 = wal.append("test_op", serde_json::json!({"key": 1})).unwrap();
+        let s1 = wal
+            .append("test_op", serde_json::json!({"key": 1}))
+            .unwrap();
         assert_eq!(s1, 1);
         assert_eq!(wal.seq(), 1);
 
-        let s2 = wal.append("test_op", serde_json::json!({"key": 2})).unwrap();
+        let s2 = wal
+            .append("test_op", serde_json::json!({"key": 2}))
+            .unwrap();
         assert_eq!(s2, 2);
         assert_eq!(wal.seq(), 2);
 
@@ -484,7 +494,8 @@ mod tests {
 
         let mut wal = WalLog::open(&dir).unwrap();
         wal.append_trail_create(100, 500, "test trail").unwrap();
-        wal.append_trail_add_stop(500, 600, Some(10), Some(50), Some("note")).unwrap();
+        wal.append_trail_add_stop(500, 600, Some(10), Some(50), Some("note"))
+            .unwrap();
         wal.append_trail_remove_stop(500, 600).unwrap();
         wal.append_trail_rename(500, "old", "new").unwrap();
         wal.append_trail_delete(500).unwrap();
@@ -515,7 +526,11 @@ mod tests {
         let entries = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
         assert_eq!(entries[0].op, "text_edit");
         let preview = entries[0].args["text_preview"].as_str().unwrap();
-        assert_eq!(preview.len(), 200, "preview should be truncated to 200 chars");
+        assert_eq!(
+            preview.len(),
+            200,
+            "preview should be truncated to 200 chars"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

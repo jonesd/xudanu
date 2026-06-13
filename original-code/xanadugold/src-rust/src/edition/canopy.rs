@@ -530,11 +530,7 @@ impl SensorCanopy {
         crum: &Arc<Mutex<CanopyCrumData>>,
         recorder_id: RecorderId,
     ) -> Option<Box<dyn super::recorder::AgendaItem>> {
-        let already_present = crum
-            .lock()
-            .unwrap()
-            .recorders()
-            .contains(&recorder_id);
+        let already_present = crum.lock().unwrap().recorders().contains(&recorder_id);
         if already_present {
             return None;
         }

@@ -646,7 +646,10 @@ impl std::fmt::Display for PreflightReport {
                 .unwrap_or_else(|| "?".to_string())
         )?;
         if self.checksum_schema_drift {
-            writeln!(f, "  checksum: SCHEMA DRIFT (new default fields, will self-heal on checkpoint)")?;
+            writeln!(
+                f,
+                "  checksum: SCHEMA DRIFT (new default fields, will self-heal on checkpoint)"
+            )?;
         } else if self.checksum_ok {
             writeln!(f, "  checksum: OK")?;
         } else {
@@ -691,7 +694,8 @@ pub fn preflight_check(data_dir: &Path) -> PreflightReport {
         Err(e) => {
             report.errors.push(format!(
                 "Cannot read {}: {}. Check file permissions.",
-                path.display(), e
+                path.display(),
+                e
             ));
             return report;
         }
@@ -703,7 +707,9 @@ pub fn preflight_check(data_dir: &Path) -> PreflightReport {
             report.errors.push(format!(
                 "Invalid JSON in {}: {}. \
                  Run 'xudanu-server rebuild-manifest {}' or restore from a backup.",
-                path.display(), e, data_dir.display()
+                path.display(),
+                e,
+                data_dir.display()
             ));
             return report;
         }
@@ -715,9 +721,7 @@ pub fn preflight_check(data_dir: &Path) -> PreflightReport {
         .map(|v| v as u32);
     report.manifest_version = version;
 
-    report.manifest_sequence = raw_value
-        .get("sequence")
-        .and_then(|v| v.as_u64());
+    report.manifest_sequence = raw_value.get("sequence").and_then(|v| v.as_u64());
 
     let stored_checksum = raw_value
         .get("checksum")
@@ -742,16 +746,16 @@ pub fn preflight_check(data_dir: &Path) -> PreflightReport {
             ));
         }
     } else {
-        report.errors.push(
-            "Manifest has no format_version field. File may be corrupt.".to_string()
-        );
+        report
+            .errors
+            .push("Manifest has no format_version field. File may be corrupt.".to_string());
         return report;
     }
 
     if stored_checksum.is_empty() {
-        report.warnings.push(
-            "Manifest has no checksum — skipping validation.".to_string()
-        );
+        report
+            .warnings
+            .push("Manifest has no checksum — skipping validation.".to_string());
         report.checksum_ok = true;
         report.can_start = true;
         return report;
@@ -764,7 +768,8 @@ pub fn preflight_check(data_dir: &Path) -> PreflightReport {
                 "Manifest parsed as raw JSON but failed struct deserialization: {}. \
                  A field may have an incompatible type. \
                  Run 'xudanu-server rebuild-manifest {}' to rebuild.",
-                e, data_dir.display()
+                e,
+                data_dir.display()
             ));
             return report;
         }
@@ -785,7 +790,8 @@ pub fn preflight_check(data_dir: &Path) -> PreflightReport {
         report.warnings.push(
             "Checksum matches raw content but differs after deserialization — \
              this is normal after a schema upgrade. \
-             The checksum will self-heal on the next checkpoint.".to_string()
+             The checksum will self-heal on the next checkpoint."
+                .to_string(),
         );
         return report;
     }
@@ -836,7 +842,11 @@ pub fn preflight_check(data_dir: &Path) -> PreflightReport {
                 break;
             }
             Err(e) => {
-                tracing::warn!("Preflight: backup manifest_v{}.json also failed: {}", seq, e);
+                tracing::warn!(
+                    "Preflight: backup manifest_v{}.json also failed: {}",
+                    seq,
+                    e
+                );
             }
         }
     }
@@ -1396,7 +1406,10 @@ mod tests {
 
         let backup = dir.join("backup_test.json");
         write_backup_with_fsync(&path, &backup).unwrap();
-        assert!(!dir.join("backup_test.baktmp").exists(), "tmp file should be cleaned up");
+        assert!(
+            !dir.join("backup_test.baktmp").exists(),
+            "tmp file should be cleaned up"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1423,7 +1436,10 @@ mod tests {
         }
 
         let result = read_manifest_dual(&dir).unwrap();
-        assert_eq!(result.grand_map_id_counter, 200, "should pick manifest_b (higher sequence)");
+        assert_eq!(
+            result.grand_map_id_counter, 200,
+            "should pick manifest_b (higher sequence)"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1470,7 +1486,10 @@ mod tests {
         std::fs::write(&slot_b, b"BAD_B").unwrap();
 
         let result = read_manifest_dual(&dir).unwrap();
-        assert_eq!(result.grand_map_id_counter, 100, "should recover from versioned backup");
+        assert_eq!(
+            result.grand_map_id_counter, 100,
+            "should recover from versioned backup"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1597,8 +1616,14 @@ mod tests {
         std::fs::write(&path, &legacy_content).unwrap();
 
         let restored = read_manifest(&path).unwrap();
-        assert_eq!(restored.grand_map_id_counter, 100, "should read legacy manifest");
-        assert_eq!(restored.manifest_slot, '\0', "missing field defaults to null");
+        assert_eq!(
+            restored.grand_map_id_counter, 100,
+            "should read legacy manifest"
+        );
+        assert_eq!(
+            restored.manifest_slot, '\0',
+            "missing field defaults to null"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
