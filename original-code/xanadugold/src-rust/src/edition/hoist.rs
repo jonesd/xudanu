@@ -169,10 +169,7 @@ impl AgendaItem for RecorderHoister {
     }
 }
 
-pub fn check_recorders<F>(
-    crum: &Arc<Mutex<CanopyCrumData>>,
-    mut check_fn: F,
-) -> Vec<RecorderId>
+pub fn check_recorders<F>(crum: &Arc<Mutex<CanopyCrumData>>, mut check_fn: F) -> Vec<RecorderId>
 where
     F: FnMut(RecorderId) -> bool,
 {
@@ -221,7 +218,9 @@ mod tests {
     use crate::edition::canopy::SensorCanopy;
     use crate::edition::props::IS_SENSOR_WAITING_FLAG;
 
-    fn build_tree(canopy: &SensorCanopy) -> (Arc<Mutex<CanopyCrumData>>, Vec<Arc<Mutex<CanopyCrumData>>>) {
+    fn build_tree(
+        canopy: &SensorCanopy,
+    ) -> (Arc<Mutex<CanopyCrumData>>, Vec<Arc<Mutex<CanopyCrumData>>>) {
         let a = canopy.make_crum(0);
         let b = canopy.make_crum(0);
         let c = canopy.make_crum(0);

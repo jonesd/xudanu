@@ -169,10 +169,7 @@ impl Sequence {
     pub fn first(&self) -> Sequence {
         for (i, &v) in self.numbers.iter().enumerate() {
             if v == 0 {
-                return Sequence::from_numbers_with_shift(
-                    self.numbers[..i].to_vec(),
-                    self.shift,
-                );
+                return Sequence::from_numbers_with_shift(self.numbers[..i].to_vec(), self.shift);
             }
         }
         self.clone()
@@ -182,10 +179,7 @@ impl Sequence {
         for (i, &v) in self.numbers.iter().enumerate() {
             if v == 0 {
                 let rest = &self.numbers[i + 1..];
-                return Sequence::from_numbers_with_shift(
-                    rest.to_vec(),
-                    self.shift + i as i64 + 1,
-                );
+                return Sequence::from_numbers_with_shift(rest.to_vec(), self.shift + i as i64 + 1);
             }
         }
         Sequence::zero()
@@ -277,10 +271,7 @@ impl Sequence {
     }
 
     pub fn from_dotted(s: &str) -> Self {
-        let parts: Vec<i64> = s
-            .split('.')
-            .filter_map(|p| p.parse().ok())
-            .collect();
+        let parts: Vec<i64> = s.split('.').filter_map(|p| p.parse().ok()).collect();
         if parts.is_empty() {
             return Sequence::zero();
         }

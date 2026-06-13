@@ -587,11 +587,7 @@ impl RecorderSystem {
         (fossils, self.next_id)
     }
 
-    pub fn restore_from_snapshots(
-        &mut self,
-        snapshots: Vec<Fossil>,
-        next_id: RecorderId,
-    ) {
+    pub fn restore_from_snapshots(&mut self, snapshots: Vec<Fossil>, next_id: RecorderId) {
         if next_id > self.next_id {
             self.next_id = next_id;
         }
@@ -613,9 +609,9 @@ impl RecorderSystem {
 
 #[cfg(feature = "serde")]
 mod hashset_bytes {
-    use std::collections::HashSet;
-    use serde::ser::SerializeSeq;
     use serde::de::{SeqAccess, Visitor};
+    use serde::ser::SerializeSeq;
+    use std::collections::HashSet;
 
     pub fn serialize<S>(set: &HashSet<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
     where

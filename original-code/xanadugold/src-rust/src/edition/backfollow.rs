@@ -652,10 +652,8 @@ impl BackfollowEngine {
             let span_id = SpanId::new(self.next_span_id);
             self.next_span_id += 1;
             spans.push(span_id);
-            self.assertion_store.add(
-                tp,
-                AssertionPayload::CreateSpan { span_id },
-            );
+            self.assertion_store
+                .add(tp, AssertionPayload::CreateSpan { span_id });
             self.assertion_store.add(
                 tp,
                 AssertionPayload::AttachSpanToNode {
@@ -669,13 +667,8 @@ impl BackfollowEngine {
         for (i, (_, carrier)) in entries.iter().enumerate() {
             let span_id = spans[i];
             let text = carrier.element.as_text().unwrap_or("").to_string();
-            self.assertion_store.add(
-                tp,
-                AssertionPayload::SetSpanText {
-                    span_id,
-                    text,
-                },
-            );
+            self.assertion_store
+                .add(tp, AssertionPayload::SetSpanText { span_id, text });
         }
 
         self.work_spans.insert(work_id, spans);
@@ -793,7 +786,11 @@ impl BackfollowEngine {
         hoist_item
     }
 
-    pub fn register_fossil_fingerprints(&mut self, fossil_id: RecorderId, content: &[RangeElement]) {
+    pub fn register_fossil_fingerprints(
+        &mut self,
+        fossil_id: RecorderId,
+        content: &[RangeElement],
+    ) {
         for elem in content {
             let fp = elem.content_fingerprint();
             self.fossil_by_fingerprint
@@ -803,7 +800,9 @@ impl BackfollowEngine {
         }
     }
 
-    pub fn fossil_fingerprints(&self) -> &std::collections::HashMap<[u8; 32], std::collections::HashSet<RecorderId>> {
+    pub fn fossil_fingerprints(
+        &self,
+    ) -> &std::collections::HashMap<[u8; 32], std::collections::HashSet<RecorderId>> {
         &self.fossil_by_fingerprint
     }
 
@@ -817,27 +816,42 @@ impl BackfollowEngine {
             Some(m) => m,
             None => return fossil_ids.to_vec(),
         };
-        let meta_flags = meta.bert_crum.lock().unwrap_or_else(|e| e.into_inner()).flags();
-        fossil_ids.iter().copied().filter(|fid| {
-            if let Some((authority_clubs, _endo_filter)) = queries.get(fid) {
-                if authority_clubs.is_empty() {
-                    return true;
+        let meta_flags = meta
+            .bert_crum
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .flags();
+        fossil_ids
+            .iter()
+            .copied()
+            .filter(|fid| {
+                if let Some((authority_clubs, _endo_filter)) = queries.get(fid) {
+                    if authority_clubs.is_empty() {
+                        return true;
+                    }
+                    let query_flags = crate::edition::props::permissions_flags(
+                        &authority_clubs
+                            .iter()
+                            .map(|&c| super::grandmap::Id::global(c as i64))
+                            .collect::<Vec<_>>(),
+                    );
+                    (query_flags & meta_flags) != 0
+                } else {
+                    true
                 }
-                let query_flags = crate::edition::props::permissions_flags(
-                    &authority_clubs.iter().map(|&c| super::grandmap::Id::global(c as i64)).collect::<Vec<_>>(),
-                );
-                (query_flags & meta_flags) != 0
-            } else {
-                true
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     pub fn is_sensor_waiting(&self, edition_id: u64) -> bool {
         self.edition_metas
             .get(&edition_id)
             .map(|m| {
-                let flags = m.sensor_crum.lock().unwrap_or_else(|e| e.into_inner()).flags();
+                let flags = m
+                    .sensor_crum
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .flags();
                 (flags & crate::edition::props::IS_SENSOR_WAITING_FLAG) != 0
             })
             .unwrap_or(false)
@@ -1867,9 +1881,8 @@ mod tests {
         assert!(all_results.len() >= 2, "unfiltered should find both works");
 
         let perm_region = crate::edition::props::permissions_region(&[club_a]);
-        let q_filtered = TransclusionQuery::all().with_permissions(
-            crate::edition::props::FilterRegion::new(perm_region),
-        );
+        let q_filtered = TransclusionQuery::all()
+            .with_permissions(crate::edition::props::FilterRegion::new(perm_region));
         let filtered_results = engine.find_transcluders(&shared, &q_filtered);
         assert!(
             !filtered_results.is_empty(),

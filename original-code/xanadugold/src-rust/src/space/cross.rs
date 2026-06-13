@@ -82,7 +82,9 @@ impl<R1: Region, R2: Region> CrossRegion2<R1, R2> {
         if r1.is_empty() || r2.is_empty() {
             return CrossRegion2 { boxes: Vec::new() };
         }
-        CrossRegion2 { boxes: vec![(r1, r2)] }
+        CrossRegion2 {
+            boxes: vec![(r1, r2)],
+        }
     }
 
     pub fn projection_a(&self) -> R1
@@ -141,7 +143,9 @@ impl<R1: Region, R2: Region> Region for CrossRegion2<R1, R2> {
     }
 
     fn contains(&self, pos: &Self::Position) -> bool {
-        self.boxes.iter().any(|(r1, r2)| r1.contains(&pos.0) && r2.contains(&pos.1))
+        self.boxes
+            .iter()
+            .any(|(r1, r2)| r1.contains(&pos.0) && r2.contains(&pos.1))
     }
 
     fn intersects(&self, other: &Self) -> bool {
@@ -206,16 +210,20 @@ impl<R1: Region, R2: Region> Region for CrossRegion2<R1, R2> {
     }
 
     fn is_simple(&self) -> bool {
-        self.boxes.len() <= 1 && self.boxes.iter().all(|(r1, r2)| r1.is_simple() && r2.is_simple())
+        self.boxes.len() <= 1
+            && self
+                .boxes
+                .iter()
+                .all(|(r1, r2)| r1.is_simple() && r2.is_simple())
     }
 
     fn count(&self) -> Option<usize> {
-        self.boxes.iter().try_fold(0usize, |acc, (r1, r2)| {
-            match (r1.count(), r2.count()) {
+        self.boxes
+            .iter()
+            .try_fold(0usize, |acc, (r1, r2)| match (r1.count(), r2.count()) {
                 (Some(a), Some(b)) => Some(acc + a * b),
                 _ => None,
-            }
-        })
+            })
     }
 }
 

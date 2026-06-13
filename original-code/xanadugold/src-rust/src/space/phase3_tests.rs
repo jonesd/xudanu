@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
+    use crate::space::arrangement::Arrangement;
     use crate::space::cross::*;
     use crate::space::cross_n::*;
     use crate::space::integer::*;
     use crate::space::sequence::*;
     use crate::space::traits::*;
-    use crate::space::arrangement::Arrangement;
 
     // =========================================================
     // Part 1: Tumbler Addressing
@@ -155,10 +155,8 @@ mod tests {
     fn prefix_intersect_with_range() {
         let space = SequenceSpace::new();
         let prefix = space.prefixed_by(&Sequence::one(1), 0);
-        let range = SequenceRegion::interval(
-            Sequence::from_dotted("1.5"),
-            Sequence::from_dotted("1.10"),
-        );
+        let range =
+            SequenceRegion::interval(Sequence::from_dotted("1.5"), Sequence::from_dotted("1.10"));
         let intersection = prefix.intersect(&range);
 
         assert!(intersection.contains_sequence(&Sequence::from_dotted("1.7")));
@@ -200,10 +198,7 @@ mod tests {
             SequencePos(Sequence::from_dotted("1.2")),
             SequencePos(Sequence::from_dotted("2.7")),
         ];
-        let arr = Arrangement::new(
-            |a, b| a.0.compare_to(&b.0),
-            positions,
-        );
+        let arr = Arrangement::new(|a, b| a.0.compare_to(&b.0), positions);
         assert_eq!(arr.position_at(0).unwrap().0, Sequence::from_dotted("1.2"));
         assert_eq!(arr.position_at(1).unwrap().0, Sequence::from_dotted("1.5"));
         assert_eq!(arr.position_at(2).unwrap().0, Sequence::from_dotted("2.7"));
@@ -214,10 +209,8 @@ mod tests {
 
     #[test]
     fn tumbler_interval_excludes_endpoints() {
-        let r = SequenceRegion::interval(
-            Sequence::from_dotted("1.2"),
-            Sequence::from_dotted("1.5"),
-        );
+        let r =
+            SequenceRegion::interval(Sequence::from_dotted("1.2"), Sequence::from_dotted("1.5"));
         assert!(r.contains_sequence(&Sequence::from_dotted("1.3")));
         assert!(!r.contains_sequence(&Sequence::from_dotted("1.5")));
         assert!(!r.contains_sequence(&Sequence::from_dotted("1.1")));
@@ -225,10 +218,7 @@ mod tests {
 
     #[test]
     fn tumbler_region_complement() {
-        let r = SequenceRegion::interval(
-            Sequence::from_dotted("2"),
-            Sequence::from_dotted("5"),
-        );
+        let r = SequenceRegion::interval(Sequence::from_dotted("2"), Sequence::from_dotted("5"));
         let c = r.complement();
         assert!(c.contains_sequence(&Sequence::from_dotted("1")));
         assert!(c.contains_sequence(&Sequence::from_dotted("5")));
@@ -237,14 +227,10 @@ mod tests {
 
     #[test]
     fn tumbler_region_union_disjoint() {
-        let a = SequenceRegion::interval(
-            Sequence::from_dotted("1.2"),
-            Sequence::from_dotted("1.4"),
-        );
-        let b = SequenceRegion::interval(
-            Sequence::from_dotted("1.7"),
-            Sequence::from_dotted("1.9"),
-        );
+        let a =
+            SequenceRegion::interval(Sequence::from_dotted("1.2"), Sequence::from_dotted("1.4"));
+        let b =
+            SequenceRegion::interval(Sequence::from_dotted("1.7"), Sequence::from_dotted("1.9"));
         let u = a.union_with(&b);
         assert!(u.contains_sequence(&Sequence::from_dotted("1.3")));
         assert!(u.contains_sequence(&Sequence::from_dotted("1.8")));
@@ -254,10 +240,8 @@ mod tests {
     #[test]
     fn tumbler_region_minus() {
         let full = SequenceRegion::above(Sequence::one(1), true);
-        let excluded = SequenceRegion::interval(
-            Sequence::from_dotted("1.5"),
-            Sequence::from_dotted("1.10"),
-        );
+        let excluded =
+            SequenceRegion::interval(Sequence::from_dotted("1.5"), Sequence::from_dotted("1.10"));
         let result = full.minus(&excluded);
         assert!(result.contains_sequence(&Sequence::from_dotted("1.3")));
         assert!(!result.contains_sequence(&Sequence::from_dotted("1.7")));
@@ -405,14 +389,8 @@ mod tests {
     #[test]
     fn endorsement_2d_union_preserves_both() {
         let space = CrossSpace2::new(IntegerSpace::new(), IntegerSpace::new());
-        let a = space.box_region(
-            IntegerRegion::interval(1, 3),
-            IntegerRegion::singleton(10),
-        );
-        let b = space.box_region(
-            IntegerRegion::singleton(5),
-            IntegerRegion::interval(20, 30),
-        );
+        let a = space.box_region(IntegerRegion::interval(1, 3), IntegerRegion::singleton(10));
+        let b = space.box_region(IntegerRegion::singleton(5), IntegerRegion::interval(20, 30));
         let u = a.union_with(&b);
         assert!(u.contains(&Tuple2(IntegerPos(2), IntegerPos(10))));
         assert!(u.contains(&Tuple2(IntegerPos(5), IntegerPos(25))));
@@ -438,10 +416,7 @@ mod tests {
             IntegerRegion::interval(1, 10),
             IntegerRegion::interval(1, 100),
         );
-        let b = space.box_region(
-            IntegerRegion::singleton(5),
-            IntegerRegion::interval(20, 30),
-        );
+        let b = space.box_region(IntegerRegion::singleton(5), IntegerRegion::interval(20, 30));
         let diff = a.minus(&b);
         assert!(diff.contains(&Tuple2(IntegerPos(4), IntegerPos(25))));
         assert!(!diff.contains(&Tuple2(IntegerPos(5), IntegerPos(25))));
@@ -451,10 +426,7 @@ mod tests {
     #[test]
     fn endorsement_2d_count_finite() {
         let space = CrossSpace2::new(IntegerSpace::new(), IntegerSpace::new());
-        let r = space.box_region(
-            IntegerRegion::interval(0, 3),
-            IntegerRegion::interval(0, 5),
-        );
+        let r = space.box_region(IntegerRegion::interval(0, 3), IntegerRegion::interval(0, 5));
         assert_eq!(r.count(), Some(15));
     }
 
@@ -463,19 +435,13 @@ mod tests {
     #[test]
     fn endorsement_tumbler_token_space() {
         let space = CrossSpace2::new(SequenceSpace::new(), IntegerSpace::new());
-        let pos = space.position(
-            SequencePos(Sequence::from_dotted("1.5.3")),
-            IntegerPos(42),
-        );
+        let pos = space.position(SequencePos(Sequence::from_dotted("1.5.3")), IntegerPos(42));
         let region = space.box_region(
             SequenceRegion::prefixed_by(&Sequence::one(1), 0),
             IntegerRegion::interval(10, 100),
         );
         assert!(region.contains(&pos));
-        let outside = space.position(
-            SequencePos(Sequence::from_dotted("2.1")),
-            IntegerPos(50),
-        );
+        let outside = space.position(SequencePos(Sequence::from_dotted("2.1")), IntegerPos(50));
         assert!(!region.contains(&outside));
     }
 
@@ -524,21 +490,30 @@ mod tests {
             CrossRegionN::axis_integer(IntegerRegion::interval(10, 20)),
             CrossRegionN::axis_integer(IntegerRegion::interval(100, 200)),
         ]);
-        assert!(space.contains(&region, &[
-            DynPosition::integer(3),
-            DynPosition::integer(15),
-            DynPosition::integer(150),
-        ]));
-        assert!(!space.contains(&region, &[
-            DynPosition::integer(0),
-            DynPosition::integer(15),
-            DynPosition::integer(150),
-        ]));
-        assert!(!space.contains(&region, &[
-            DynPosition::integer(3),
-            DynPosition::integer(25),
-            DynPosition::integer(150),
-        ]));
+        assert!(space.contains(
+            &region,
+            &[
+                DynPosition::integer(3),
+                DynPosition::integer(15),
+                DynPosition::integer(150),
+            ]
+        ));
+        assert!(!space.contains(
+            &region,
+            &[
+                DynPosition::integer(0),
+                DynPosition::integer(15),
+                DynPosition::integer(150),
+            ]
+        ));
+        assert!(!space.contains(
+            &region,
+            &[
+                DynPosition::integer(3),
+                DynPosition::integer(25),
+                DynPosition::integer(150),
+            ]
+        ));
     }
 
     #[test]
@@ -559,21 +534,30 @@ mod tests {
             CrossRegionN::axis_integer(IntegerRegion::interval(5, 8)),
         ]);
         let c = a.intersect(&b);
-        assert!(space.contains(&c, &[
-            DynPosition::integer(7),
-            DynPosition::integer(5),
-            DynPosition::integer(6),
-        ]));
-        assert!(!space.contains(&c, &[
-            DynPosition::integer(2),
-            DynPosition::integer(5),
-            DynPosition::integer(6),
-        ]));
-        assert!(!space.contains(&c, &[
-            DynPosition::integer(7),
-            DynPosition::integer(8),
-            DynPosition::integer(6),
-        ]));
+        assert!(space.contains(
+            &c,
+            &[
+                DynPosition::integer(7),
+                DynPosition::integer(5),
+                DynPosition::integer(6),
+            ]
+        ));
+        assert!(!space.contains(
+            &c,
+            &[
+                DynPosition::integer(2),
+                DynPosition::integer(5),
+                DynPosition::integer(6),
+            ]
+        ));
+        assert!(!space.contains(
+            &c,
+            &[
+                DynPosition::integer(7),
+                DynPosition::integer(8),
+                DynPosition::integer(6),
+            ]
+        ));
     }
 
     #[test]
@@ -594,16 +578,22 @@ mod tests {
             CrossRegionN::axis_integer(IntegerRegion::singleton(200)),
         ]);
         let u = a.union_with(&b);
-        assert!(space.contains(&u, &[
-            DynPosition::integer(3),
-            DynPosition::integer(1),
-            DynPosition::integer(100),
-        ]));
-        assert!(space.contains(&u, &[
-            DynPosition::integer(12),
-            DynPosition::integer(2),
-            DynPosition::integer(200),
-        ]));
+        assert!(space.contains(
+            &u,
+            &[
+                DynPosition::integer(3),
+                DynPosition::integer(1),
+                DynPosition::integer(100),
+            ]
+        ));
+        assert!(space.contains(
+            &u,
+            &[
+                DynPosition::integer(12),
+                DynPosition::integer(2),
+                DynPosition::integer(200),
+            ]
+        ));
     }
 
     #[test]
@@ -619,11 +609,14 @@ mod tests {
             CrossRegionN::axis_integer(IntegerRegion::interval(0, 10)),
         ]);
         let c = r.complement();
-        assert!(!space.contains(&c, &[
-            DynPosition::integer(5),
-            DynPosition::integer(5),
-            DynPosition::integer(5),
-        ]));
+        assert!(!space.contains(
+            &c,
+            &[
+                DynPosition::integer(5),
+                DynPosition::integer(5),
+                DynPosition::integer(5),
+            ]
+        ));
     }
 
     #[test]
@@ -644,16 +637,22 @@ mod tests {
             CrossRegionN::axis_integer(IntegerRegion::interval(0, 100)),
         ]);
         let diff = a.minus(&b);
-        assert!(space.contains(&diff, &[
-            DynPosition::integer(25),
-            DynPosition::integer(50),
-            DynPosition::integer(50),
-        ]));
-        assert!(!space.contains(&diff, &[
-            DynPosition::integer(50),
-            DynPosition::integer(50),
-            DynPosition::integer(50),
-        ]));
+        assert!(space.contains(
+            &diff,
+            &[
+                DynPosition::integer(25),
+                DynPosition::integer(50),
+                DynPosition::integer(50),
+            ]
+        ));
+        assert!(!space.contains(
+            &diff,
+            &[
+                DynPosition::integer(50),
+                DynPosition::integer(50),
+                DynPosition::integer(50),
+            ]
+        ));
     }
 
     // 2D. Mixed axis types (Integer × Sequence × Real)
@@ -684,33 +683,41 @@ mod tests {
         let region = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(1, 5)),
             CrossRegionN::axis_sequence(SequenceRegion::prefixed_by(&Sequence::one(1), 0)),
-            CrossRegionN::axis_real(crate::space::real::RealRegion::interval(0.0, 1.0, true, true)),
+            CrossRegionN::axis_real(crate::space::real::RealRegion::interval(
+                0.0, 1.0, true, true,
+            )),
         ]);
-        assert!(space.contains(&region, &[
-            DynPosition::integer(3),
-            DynPosition::sequence(Sequence::from_dotted("1.5")),
-            DynPosition::real(0.5),
-        ]));
-        assert!(!space.contains(&region, &[
-            DynPosition::integer(0),
-            DynPosition::sequence(Sequence::from_dotted("1.5")),
-            DynPosition::real(0.5),
-        ]));
-        assert!(!space.contains(&region, &[
-            DynPosition::integer(3),
-            DynPosition::sequence(Sequence::from_dotted("2.5")),
-            DynPosition::real(0.5),
-        ]));
+        assert!(space.contains(
+            &region,
+            &[
+                DynPosition::integer(3),
+                DynPosition::sequence(Sequence::from_dotted("1.5")),
+                DynPosition::real(0.5),
+            ]
+        ));
+        assert!(!space.contains(
+            &region,
+            &[
+                DynPosition::integer(0),
+                DynPosition::sequence(Sequence::from_dotted("1.5")),
+                DynPosition::real(0.5),
+            ]
+        ));
+        assert!(!space.contains(
+            &region,
+            &[
+                DynPosition::integer(3),
+                DynPosition::sequence(Sequence::from_dotted("2.5")),
+                DynPosition::real(0.5),
+            ]
+        ));
     }
 
     // 2E. Nested cross products (Cross inside CrossSpaceN)
 
     #[test]
     fn nested_cross_space_4d_via_nesting() {
-        let inner = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let inner = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let outer = CrossSpaceN::new(vec![
             CrossSpaceNSlot::integer(),
             CrossSpaceNSlot::Cross(Box::new(inner)),
@@ -723,25 +730,25 @@ mod tests {
 
     #[test]
     fn cross_region_n_double_complement() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let r = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(1, 10)),
             CrossRegionN::axis_integer(IntegerRegion::interval(5, 20)),
         ]);
         let double = r.complement().complement();
-        assert!(space.contains(&double, &[DynPosition::integer(5), DynPosition::integer(10)]));
-        assert!(!space.contains(&double, &[DynPosition::integer(0), DynPosition::integer(10)]));
+        assert!(space.contains(
+            &double,
+            &[DynPosition::integer(5), DynPosition::integer(10)]
+        ));
+        assert!(!space.contains(
+            &double,
+            &[DynPosition::integer(0), DynPosition::integer(10)]
+        ));
     }
 
     #[test]
     fn cross_region_n_union_complement_is_full() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let r = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(1, 10)),
             CrossRegionN::axis_integer(IntegerRegion::interval(5, 20)),
@@ -754,10 +761,7 @@ mod tests {
 
     #[test]
     fn cross_region_n_intersect_complement_is_empty() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let r = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(1, 10)),
             CrossRegionN::axis_integer(IntegerRegion::interval(5, 20)),
@@ -768,10 +772,7 @@ mod tests {
 
     #[test]
     fn cross_region_n_minus_self_is_empty() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let r = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(1, 10)),
             CrossRegionN::axis_integer(IntegerRegion::interval(5, 20)),
@@ -782,10 +783,7 @@ mod tests {
 
     #[test]
     fn cross_region_n_intersect_identity() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let r = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(1, 10)),
             CrossRegionN::axis_integer(IntegerRegion::interval(5, 20)),
@@ -795,10 +793,7 @@ mod tests {
 
     #[test]
     fn cross_region_n_union_identity() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let r = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(1, 10)),
             CrossRegionN::axis_integer(IntegerRegion::interval(5, 20)),
@@ -810,10 +805,7 @@ mod tests {
 
     #[test]
     fn cross_region_n_intersect_commutative() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let a = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(0, 10)),
             CrossRegionN::axis_integer(IntegerRegion::interval(0, 10)),
@@ -827,10 +819,7 @@ mod tests {
 
     #[test]
     fn cross_region_n_union_commutative() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let a = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(0, 5)),
             CrossRegionN::axis_integer(IntegerRegion::interval(0, 5)),
@@ -852,34 +841,34 @@ mod tests {
     #[test]
     fn per_club_endorsement_region() {
         let club_id = 42u64;
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let region = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::singleton(club_id as i64)),
             CrossRegionN::axis_integer(IntegerRegion::interval(100, 200)),
         ]);
-        assert!(space.contains(&region, &[
-            DynPosition::integer(club_id as i64),
-            DynPosition::integer(150),
-        ]));
-        assert!(!space.contains(&region, &[
-            DynPosition::integer(99),
-            DynPosition::integer(150),
-        ]));
-        assert!(!space.contains(&region, &[
-            DynPosition::integer(club_id as i64),
-            DynPosition::integer(99),
-        ]));
+        assert!(space.contains(
+            &region,
+            &[
+                DynPosition::integer(club_id as i64),
+                DynPosition::integer(150),
+            ]
+        ));
+        assert!(!space.contains(
+            &region,
+            &[DynPosition::integer(99), DynPosition::integer(150),]
+        ));
+        assert!(!space.contains(
+            &region,
+            &[
+                DynPosition::integer(club_id as i64),
+                DynPosition::integer(99),
+            ]
+        ));
     }
 
     #[test]
     fn per_club_endorsement_intersect_two_clubs() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let club_a = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::singleton(1)),
             CrossRegionN::axis_integer(IntegerRegion::interval(0, 100)),
@@ -904,9 +893,9 @@ mod tests {
     fn space_1d_integer() {
         let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer()]);
         assert_eq!(space.dimension(), 1);
-        let region = space.box_region(vec![
-            CrossRegionN::axis_integer(IntegerRegion::interval(0, 10)),
-        ]);
+        let region = space.box_region(vec![CrossRegionN::axis_integer(IntegerRegion::interval(
+            0, 10,
+        ))]);
         assert!(space.contains(&region, &[DynPosition::integer(5)]));
         assert!(!space.contains(&region, &[DynPosition::integer(15)]));
     }
@@ -929,20 +918,26 @@ mod tests {
             CrossRegionN::axis_integer(IntegerRegion::interval(0, 10)),
             CrossRegionN::axis_integer(IntegerRegion::interval(0, 10)),
         ]);
-        assert!(space.contains(&region, &[
-            DynPosition::integer(5),
-            DynPosition::integer(3),
-            DynPosition::integer(7),
-            DynPosition::integer(1),
-            DynPosition::integer(9),
-        ]));
-        assert!(!space.contains(&region, &[
-            DynPosition::integer(5),
-            DynPosition::integer(3),
-            DynPosition::integer(11),
-            DynPosition::integer(1),
-            DynPosition::integer(9),
-        ]));
+        assert!(space.contains(
+            &region,
+            &[
+                DynPosition::integer(5),
+                DynPosition::integer(3),
+                DynPosition::integer(7),
+                DynPosition::integer(1),
+                DynPosition::integer(9),
+            ]
+        ));
+        assert!(!space.contains(
+            &region,
+            &[
+                DynPosition::integer(5),
+                DynPosition::integer(3),
+                DynPosition::integer(11),
+                DynPosition::integer(1),
+                DynPosition::integer(9),
+            ]
+        ));
     }
 
     // 3C. Mixed types: Integer × Real × Sequence
@@ -955,25 +950,35 @@ mod tests {
         ]);
         let a = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(0, 10)),
-            CrossRegionN::axis_real(crate::space::real::RealRegion::interval(0.0, 1.0, true, true)),
+            CrossRegionN::axis_real(crate::space::real::RealRegion::interval(
+                0.0, 1.0, true, true,
+            )),
             CrossRegionN::axis_sequence(SequenceRegion::prefixed_by(&Sequence::one(1), 0)),
         ]);
         let b = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(5, 15)),
-            CrossRegionN::axis_real(crate::space::real::RealRegion::interval(0.5, 2.0, true, true)),
+            CrossRegionN::axis_real(crate::space::real::RealRegion::interval(
+                0.5, 2.0, true, true,
+            )),
             CrossRegionN::axis_sequence(SequenceRegion::prefixed_by(&Sequence::one(1), 0)),
         ]);
         let c = a.intersect(&b);
-        assert!(space.contains(&c, &[
-            DynPosition::integer(7),
-            DynPosition::real(0.7),
-            DynPosition::sequence(Sequence::from_dotted("1.3")),
-        ]));
-        assert!(!space.contains(&c, &[
-            DynPosition::integer(3),
-            DynPosition::real(0.7),
-            DynPosition::sequence(Sequence::from_dotted("1.3")),
-        ]));
+        assert!(space.contains(
+            &c,
+            &[
+                DynPosition::integer(7),
+                DynPosition::real(0.7),
+                DynPosition::sequence(Sequence::from_dotted("1.3")),
+            ]
+        ));
+        assert!(!space.contains(
+            &c,
+            &[
+                DynPosition::integer(3),
+                DynPosition::real(0.7),
+                DynPosition::sequence(Sequence::from_dotted("1.3")),
+            ]
+        ));
     }
 
     // 3D. Dynamic position type dispatch
@@ -992,10 +997,7 @@ mod tests {
         assert_eq!(seq_pos.as_integer(), None);
         assert!(seq_pos.as_composite().is_none());
 
-        let comp = DynPosition::composite(vec![
-            DynPosition::integer(1),
-            DynPosition::real(2.0),
-        ]);
+        let comp = DynPosition::composite(vec![DynPosition::integer(1), DynPosition::real(2.0)]);
         let parts = comp.as_composite().unwrap();
         assert_eq!(parts.len(), 2);
     }
@@ -1024,9 +1026,21 @@ mod tests {
     #[test]
     fn cross_order_n_lexicographic() {
         let order = CrossOrderN::ascending(3);
-        let a = vec![DynPosition::integer(1), DynPosition::integer(2), DynPosition::integer(3)];
-        let b = vec![DynPosition::integer(1), DynPosition::integer(3), DynPosition::integer(0)];
-        let c = vec![DynPosition::integer(2), DynPosition::integer(0), DynPosition::integer(0)];
+        let a = vec![
+            DynPosition::integer(1),
+            DynPosition::integer(2),
+            DynPosition::integer(3),
+        ];
+        let b = vec![
+            DynPosition::integer(1),
+            DynPosition::integer(3),
+            DynPosition::integer(0),
+        ];
+        let c = vec![
+            DynPosition::integer(2),
+            DynPosition::integer(0),
+            DynPosition::integer(0),
+        ];
         assert_eq!(order.compare(&a, &b), Some(std::cmp::Ordering::Less));
         assert_eq!(order.compare(&b, &c), Some(std::cmp::Ordering::Less));
     }
@@ -1062,10 +1076,7 @@ mod tests {
 
     #[test]
     fn endorsement_region_from_club_token_pairs() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let mut region = space.empty_region();
         let pairs = [(1i64, 10i64), (1, 20), (2, 30), (3, 40)];
         for &(club, token) in &pairs {
@@ -1076,23 +1087,20 @@ mod tests {
             region = region.union_with(&single);
         }
         for &(club, token) in &pairs {
-            assert!(space.contains(&region, &[
-                DynPosition::integer(club),
-                DynPosition::integer(token),
-            ]));
+            assert!(space.contains(
+                &region,
+                &[DynPosition::integer(club), DynPosition::integer(token),]
+            ));
         }
-        assert!(!space.contains(&region, &[
-            DynPosition::integer(4),
-            DynPosition::integer(50),
-        ]));
+        assert!(!space.contains(
+            &region,
+            &[DynPosition::integer(4), DynPosition::integer(50),]
+        ));
     }
 
     #[test]
     fn endorsement_region_intersect_two_sets() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let set_a = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(1, 5)),
             CrossRegionN::axis_integer(IntegerRegion::interval(10, 50)),
@@ -1102,26 +1110,23 @@ mod tests {
             CrossRegionN::axis_integer(IntegerRegion::interval(20, 60)),
         ]);
         let shared = set_a.intersect(&set_b);
-        assert!(space.contains(&shared, &[
-            DynPosition::integer(4),
-            DynPosition::integer(30),
-        ]));
-        assert!(!space.contains(&shared, &[
-            DynPosition::integer(2),
-            DynPosition::integer(30),
-        ]));
-        assert!(!space.contains(&shared, &[
-            DynPosition::integer(4),
-            DynPosition::integer(15),
-        ]));
+        assert!(space.contains(
+            &shared,
+            &[DynPosition::integer(4), DynPosition::integer(30),]
+        ));
+        assert!(!space.contains(
+            &shared,
+            &[DynPosition::integer(2), DynPosition::integer(30),]
+        ));
+        assert!(!space.contains(
+            &shared,
+            &[DynPosition::integer(4), DynPosition::integer(15),]
+        ));
     }
 
     #[test]
     fn endorsement_region_filter_by_club() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let all_endorsements = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(1, 10)),
             CrossRegionN::axis_integer(IntegerRegion::interval(100, 500)),
@@ -1131,22 +1136,19 @@ mod tests {
             CrossRegionN::axis_integer(IntegerRegion::full()),
         ]);
         let filtered = all_endorsements.intersect(&club_filter);
-        assert!(space.contains(&filtered, &[
-            DynPosition::integer(3),
-            DynPosition::integer(200),
-        ]));
-        assert!(!space.contains(&filtered, &[
-            DynPosition::integer(5),
-            DynPosition::integer(200),
-        ]));
+        assert!(space.contains(
+            &filtered,
+            &[DynPosition::integer(3), DynPosition::integer(200),]
+        ));
+        assert!(!space.contains(
+            &filtered,
+            &[DynPosition::integer(5), DynPosition::integer(200),]
+        ));
     }
 
     #[test]
     fn endorsement_region_exclude_club() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let all_endorsements = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::interval(1, 10)),
             CrossRegionN::axis_integer(IntegerRegion::interval(100, 500)),
@@ -1156,22 +1158,19 @@ mod tests {
             CrossRegionN::axis_integer(IntegerRegion::full()),
         ]);
         let remaining = all_endorsements.minus(&excluded);
-        assert!(space.contains(&remaining, &[
-            DynPosition::integer(3),
-            DynPosition::integer(200),
-        ]));
-        assert!(!space.contains(&remaining, &[
-            DynPosition::integer(5),
-            DynPosition::integer(200),
-        ]));
+        assert!(space.contains(
+            &remaining,
+            &[DynPosition::integer(3), DynPosition::integer(200),]
+        ));
+        assert!(!space.contains(
+            &remaining,
+            &[DynPosition::integer(5), DynPosition::integer(200),]
+        ));
     }
 
     #[test]
     fn endorsement_region_token_range_per_club() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let club_1_tokens = space.box_region(vec![
             CrossRegionN::axis_integer(IntegerRegion::singleton(1)),
             CrossRegionN::axis_integer(IntegerRegion::interval(100, 200)),
@@ -1181,18 +1180,18 @@ mod tests {
             CrossRegionN::axis_integer(IntegerRegion::interval(300, 400)),
         ]);
         let combined = club_1_tokens.union_with(&club_2_tokens);
-        assert!(space.contains(&combined, &[
-            DynPosition::integer(1),
-            DynPosition::integer(150),
-        ]));
-        assert!(space.contains(&combined, &[
-            DynPosition::integer(2),
-            DynPosition::integer(350),
-        ]));
-        assert!(!space.contains(&combined, &[
-            DynPosition::integer(1),
-            DynPosition::integer(350),
-        ]));
+        assert!(space.contains(
+            &combined,
+            &[DynPosition::integer(1), DynPosition::integer(150),]
+        ));
+        assert!(space.contains(
+            &combined,
+            &[DynPosition::integer(2), DynPosition::integer(350),]
+        ));
+        assert!(!space.contains(
+            &combined,
+            &[DynPosition::integer(1), DynPosition::integer(350),]
+        ));
     }
 
     #[test]
@@ -1259,9 +1258,11 @@ mod tests {
         }
         assert_eq!(parts.len(), 10);
 
-        let rebuilt = parts.iter().rev().skip(1).fold(parts[9].clone(), |acc, p| {
-            p.with_rest(&acc)
-        });
+        let rebuilt = parts
+            .iter()
+            .rev()
+            .skip(1)
+            .fold(parts[9].clone(), |acc, p| p.with_rest(&acc));
         assert_eq!(rebuilt, addr);
     }
 
@@ -1296,7 +1297,23 @@ mod tests {
         assert!(!r.is_full());
         let c = r.complement();
         let back = c.complement();
-        assert!(space.contains(&back, &[DynPosition::integer(50), DynPosition::integer(50), DynPosition::integer(50), DynPosition::integer(50)]));
-        assert!(!space.contains(&back, &[DynPosition::integer(200), DynPosition::integer(50), DynPosition::integer(50), DynPosition::integer(50)]));
+        assert!(space.contains(
+            &back,
+            &[
+                DynPosition::integer(50),
+                DynPosition::integer(50),
+                DynPosition::integer(50),
+                DynPosition::integer(50)
+            ]
+        ));
+        assert!(!space.contains(
+            &back,
+            &[
+                DynPosition::integer(200),
+                DynPosition::integer(50),
+                DynPosition::integer(50),
+                DynPosition::integer(50)
+            ]
+        ));
     }
 }

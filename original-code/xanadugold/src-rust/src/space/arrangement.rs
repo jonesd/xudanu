@@ -10,11 +10,7 @@ impl<P: PartialEq + Clone> Arrangement<P> {
     pub fn new(order: impl Fn(&P, &P) -> std::cmp::Ordering, positions: Vec<P>) -> Self {
         let mut sorted = positions;
         sorted.sort_by(order);
-        let index: HashMap<usize, usize> = sorted
-            .iter()
-            .enumerate()
-            .map(|(i, _)| (i, i))
-            .collect();
+        let index: HashMap<usize, usize> = sorted.iter().enumerate().map(|(i, _)| (i, i)).collect();
         Arrangement {
             positions: sorted,
             index,
@@ -96,10 +92,7 @@ mod tests {
 
     #[test]
     fn arrangement_sorted_order() {
-        let arr = Arrangement::new(
-            |a: &i64, b: &i64| a.cmp(b),
-            vec![50i64, 30, 10, 40, 20],
-        );
+        let arr = Arrangement::new(|a: &i64, b: &i64| a.cmp(b), vec![50i64, 30, 10, 40, 20]);
         assert_eq!(arr.position_at(0), Some(&10));
         assert_eq!(arr.position_at(4), Some(&50));
     }

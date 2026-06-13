@@ -46,7 +46,6 @@ pub use bundle_stepper::{
     loaf_bundle_stepper, loaf_merge_stepper, BundleStepper, MergeBundleStepper,
 };
 pub use canopy::{BertCanopy, CanopyCrumData, CanopyCrumKind, SensorCanopy};
-pub use hoist::{RecorderHoister, check_recorders, collect_all_recorders};
 #[cfg(feature = "serde")]
 pub use compound::{CompoundEdition, CompoundElement, CompoundSpan};
 pub use content_address::ContentAddressIndex;
@@ -57,6 +56,7 @@ pub use endorsement::{
 };
 pub use fetext::{FeText, FeTextError};
 pub use grandmap::{GrandMap, Id, IdSpace, IdSpaceId};
+pub use hoist::{check_recorders, collect_all_recorders, RecorderHoister};
 pub use label::{
     can_make_identical, make_range_identical, CanMakeIdenticalResult, ElementIdentity, IdentityMap,
     Label, LabelId, LabelledCarrier, LabelledEdition, MakeIdenticalError,

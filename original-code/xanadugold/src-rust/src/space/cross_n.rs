@@ -129,9 +129,11 @@ pub enum CrossSpaceNSlot {
 impl PartialEq for CrossSpaceN {
     fn eq(&self, other: &Self) -> bool {
         self.spaces.len() == other.spaces.len()
-            && self.spaces.iter().zip(other.spaces.iter()).all(|(a, b)| {
-                std::mem::discriminant(a) == std::mem::discriminant(b)
-            })
+            && self
+                .spaces
+                .iter()
+                .zip(other.spaces.iter())
+                .all(|(a, b)| std::mem::discriminant(a) == std::mem::discriminant(b))
     }
 }
 
@@ -148,7 +150,10 @@ impl std::hash::Hash for CrossSpaceN {
 
 impl CrossSpaceN {
     pub fn new(spaces: Vec<CrossSpaceNSlot>) -> Self {
-        assert!(!spaces.is_empty(), "CrossSpaceN requires at least one dimension");
+        assert!(
+            !spaces.is_empty(),
+            "CrossSpaceN requires at least one dimension"
+        );
         CrossSpaceN { spaces }
     }
 
@@ -251,30 +256,21 @@ impl CrossSpaceNSlot {
 
     fn contains(&self, region: &CrossRegionN, pos: &DynPosition) -> bool {
         let check = |bx: &Vec<CrossRegionAxis>| match (self, &pos.0) {
-            (
-                CrossSpaceNSlot::Integer(_),
-                DynPositionInner::Integer(p),
-            ) => {
+            (CrossSpaceNSlot::Integer(_), DynPositionInner::Integer(p)) => {
                 if let Some(CrossRegionAxis::Integer(r)) = bx.first() {
                     r.contains(p)
                 } else {
                     false
                 }
             }
-            (
-                CrossSpaceNSlot::Real(_),
-                DynPositionInner::Real(p),
-            ) => {
+            (CrossSpaceNSlot::Real(_), DynPositionInner::Real(p)) => {
                 if let Some(CrossRegionAxis::Real(r)) = bx.first() {
                     r.contains(p)
                 } else {
                     false
                 }
             }
-            (
-                CrossSpaceNSlot::Sequence(_),
-                DynPositionInner::Sequence(p),
-            ) => {
+            (CrossSpaceNSlot::Sequence(_), DynPositionInner::Sequence(p)) => {
                 if let Some(CrossRegionAxis::Sequence(r)) = bx.first() {
                     r.contains_sequence(p)
                 } else {
@@ -308,15 +304,19 @@ fn extract_axis(slot: &CrossSpaceNSlot, region: &CrossRegionN) -> CrossRegionAxi
 
 fn axis_contains(slot: &CrossSpaceNSlot, axis: &CrossRegionAxis, pos: &DynPosition) -> bool {
     match (slot, axis, &pos.0) {
-        (CrossSpaceNSlot::Integer(_), CrossRegionAxis::Integer(r), DynPositionInner::Integer(p)) => {
-            r.contains(p)
-        }
+        (
+            CrossSpaceNSlot::Integer(_),
+            CrossRegionAxis::Integer(r),
+            DynPositionInner::Integer(p),
+        ) => r.contains(p),
         (CrossSpaceNSlot::Real(_), CrossRegionAxis::Real(r), DynPositionInner::Real(p)) => {
             r.contains(p)
         }
-        (CrossSpaceNSlot::Sequence(_), CrossRegionAxis::Sequence(r), DynPositionInner::Sequence(p)) => {
-            r.contains_sequence(p)
-        }
+        (
+            CrossSpaceNSlot::Sequence(_),
+            CrossRegionAxis::Sequence(r),
+            DynPositionInner::Sequence(p),
+        ) => r.contains_sequence(p),
         (_, CrossRegionAxis::Full, _) => true,
         (_, CrossRegionAxis::Empty, _) => false,
         _ => false,
@@ -403,8 +403,11 @@ impl CrossRegionN {
         for ba in &self.boxes {
             for bb in &other.boxes {
                 if ba.len() == bb.len() {
-                    let axes: Vec<CrossRegionAxis> =
-                        ba.iter().zip(bb.iter()).map(|(a, b)| intersect_axis(a, b)).collect();
+                    let axes: Vec<CrossRegionAxis> = ba
+                        .iter()
+                        .zip(bb.iter())
+                        .map(|(a, b)| intersect_axis(a, b))
+                        .collect();
                     let any_empty = axes.iter().any(|a| match a {
                         CrossRegionAxis::Empty => true,
                         CrossRegionAxis::Integer(r) => r.is_empty(),
@@ -434,7 +437,8 @@ impl CrossRegionN {
         let mut result: Option<CrossRegionN> = None;
         for bx in &self.boxes {
             let dims = bx.len();
-            let full_axes: Vec<CrossRegionAxis> = (0..dims).map(|_| CrossRegionAxis::Full).collect();
+            let full_axes: Vec<CrossRegionAxis> =
+                (0..dims).map(|_| CrossRegionAxis::Full).collect();
             let mut comp_boxes = Vec::new();
             for (i, axis) in bx.iter().enumerate() {
                 let c = complement_axis(axis);
@@ -646,16 +650,10 @@ mod tests {
 
     #[test]
     fn cross_space_n_2d_integer() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         assert_eq!(space.dimension(), 2);
 
-        let pos = space.position(vec![
-            DynPosition::integer(3),
-            DynPosition::integer(7),
-        ]);
+        let pos = space.position(vec![DynPosition::integer(3), DynPosition::integer(7)]);
         let coords = pos.as_composite().unwrap();
         assert_eq!(coords[0].as_integer().unwrap(), 3);
         assert_eq!(coords[1].as_integer().unwrap(), 7);
@@ -679,25 +677,14 @@ mod tests {
 
     #[test]
     fn cross_region_intersect() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let a = space.box_region(vec![
-            CrossRegionN::axis_integer(
-                super::super::integer::IntegerRegion::interval(0, 10),
-            ),
-            CrossRegionN::axis_integer(
-                super::super::integer::IntegerRegion::interval(0, 10),
-            ),
+            CrossRegionN::axis_integer(super::super::integer::IntegerRegion::interval(0, 10)),
+            CrossRegionN::axis_integer(super::super::integer::IntegerRegion::interval(0, 10)),
         ]);
         let b = space.box_region(vec![
-            CrossRegionN::axis_integer(
-                super::super::integer::IntegerRegion::interval(5, 15),
-            ),
-            CrossRegionN::axis_integer(
-                super::super::integer::IntegerRegion::interval(3, 7),
-            ),
+            CrossRegionN::axis_integer(super::super::integer::IntegerRegion::interval(5, 15)),
+            CrossRegionN::axis_integer(super::super::integer::IntegerRegion::interval(3, 7)),
         ]);
         let c = a.intersect(&b);
         assert!(c.axis_count() == 2, "intersect should have 2 axes");
@@ -709,35 +696,19 @@ mod tests {
             space.contains(&c, &[DynPosition::integer(9), DynPosition::integer(6)]),
             "intersect should contain (9, 6)"
         );
-        assert!(!space.contains(
-            &c,
-            &[DynPosition::integer(2), DynPosition::integer(5)],
-        ));
-        assert!(!space.contains(
-            &c,
-            &[DynPosition::integer(7), DynPosition::integer(8)],
-        ));
+        assert!(!space.contains(&c, &[DynPosition::integer(2), DynPosition::integer(5)],));
+        assert!(!space.contains(&c, &[DynPosition::integer(7), DynPosition::integer(8)],));
     }
 
     #[test]
     fn cross_region_complement() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let r = space.box_region(vec![
-            CrossRegionN::axis_integer(
-                super::super::integer::IntegerRegion::interval(0, 10),
-            ),
-            CrossRegionN::axis_integer(
-                super::super::integer::IntegerRegion::interval(0, 10),
-            ),
+            CrossRegionN::axis_integer(super::super::integer::IntegerRegion::interval(0, 10)),
+            CrossRegionN::axis_integer(super::super::integer::IntegerRegion::interval(0, 10)),
         ]);
         let c = r.complement();
-        assert!(!space.contains(
-            &c,
-            &[DynPosition::integer(5), DynPosition::integer(5)],
-        ));
+        assert!(!space.contains(&c, &[DynPosition::integer(5), DynPosition::integer(5)],));
     }
 
     #[test]
@@ -750,10 +721,7 @@ mod tests {
 
     #[test]
     fn cross_dsp_inverse() {
-        let space = CrossSpaceN::new(vec![
-            CrossSpaceNSlot::integer(),
-            CrossSpaceNSlot::integer(),
-        ]);
+        let space = CrossSpaceN::new(vec![CrossSpaceNSlot::integer(), CrossSpaceNSlot::integer()]);
         let dsp = space.identity_dsp();
         let inv = dsp.inverse();
         assert_eq!(dsp.axis_count(), 2);
