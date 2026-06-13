@@ -39,8 +39,16 @@ cleanup() {
     for pid in "${PIDS[@]}"; do
         kill "$pid" 2>/dev/null || true
     done
+    echo "  Waiting for checkpoints..."
     for pid in "${PIDS[@]}"; do
-        wait "$pid" 2>/dev/null || true
+        for i in $(seq 1 30); do
+            if ! kill -0 "$pid" 2>/dev/null; then break; fi
+            sleep 0.5
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "  Force killing pid $pid"
+            kill -9 "$pid" 2>/dev/null || true
+        fi
     done
     echo "Done."
 }
