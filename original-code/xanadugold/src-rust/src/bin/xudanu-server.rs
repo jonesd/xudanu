@@ -615,6 +615,7 @@ async fn main() {
 
             let shutdown_state = state.clone();
             let shutdown_data_dir = data_dir.clone();
+            let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
             let shutdown_handler = tokio::spawn(async move {
                 let sigint = async {
                     tokio::signal::ctrl_c()
@@ -657,7 +658,7 @@ async fn main() {
                         }
                     });
                 }
-                std::process::exit(0);
+                let _ = shutdown_tx.send(());
             });
 
             {
@@ -668,7 +669,22 @@ async fn main() {
                         interval.tick().await;
                         let saved = autosave_state
                             .server
-                            .with_server(|srv| srv.materialize_all_pending());
+                            .with_server(|srv| {
+                                let count = srv.materialize_all_pending();
+                                if let Some(cs) = srv.chunk_store() {
+                                    let now = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs();
+                                    let elapsed = now.saturating_sub(srv.last_checkpoint_time());
+                                    if elapsed >= 5 {
+                                        if let Err(e) = srv.checkpoint_to_store() {
+                                            tracing::error!("periodic checkpoint failed: {}", e);
+                                        }
+                                    }
+                                }
+                                count
+                            });
                         if saved > 0 {
                             tracing::info!("auto-save: materialized {} work(s)", saved);
                         }
@@ -720,8 +736,9 @@ async fn main() {
                 tracing::info!("TLS enabled");
                 let handle = axum_server::Handle::new();
                 let shutdown_handle = handle.clone();
+                let tls_shutdown_rx = shutdown_rx;
                 tokio::spawn(async move {
-                    shutdown_handler.await.ok();
+                    let _ = tls_shutdown_rx.await;
                     shutdown_handle.shutdown();
                 });
                 axum_server::bind_rustls(addr.parse().unwrap(), config)
@@ -736,7 +753,7 @@ async fn main() {
                     app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
                 )
                 .with_graceful_shutdown(async {
-                    shutdown_handler.await.ok();
+                    let _ = shutdown_rx.await;
                 })
                 .await
                 .unwrap();
