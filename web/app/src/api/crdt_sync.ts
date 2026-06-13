@@ -135,6 +135,26 @@ export interface CompoundEditionPayload {
   elements: CompoundElementPayload[];
 }
 
+export type ResolvedElementPayload =
+  | { type: "text"; content: string; flat_start: number; flat_end: number }
+  | { type: "span"; source_work_id: number; content: string; flat_start: number; flat_end: number; original_char_start: number; original_char_end: number };
+
+export interface SpanRangePayload {
+  source_work_id: number;
+  char_start: number;
+  char_end: number;
+  flat_start: number;
+  flat_end: number;
+  content_len: number;
+}
+
+export interface CompoundResolveWorkResult {
+  elements: ResolvedElementPayload[];
+  flat_text: string;
+  span_ranges: SpanRangePayload[];
+  source_titles: Record<number, string>;
+}
+
 export interface AuthorContribution {
   club_id: number;
   display_name: string;
@@ -761,6 +781,23 @@ export class CrdtSyncClient {
     const resp = await this.sendRequest("compound_resolve", { compound });
     const val = extractValue(resp) as Record<string, unknown>;
     return (val.text as string) || "";
+  }
+
+  async compoundGetEdition(workId: number): Promise<CompoundEditionPayload | null> {
+    const resp = await this.sendRequest("compound_get_edition", { work_id: workId });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.compound as CompoundEditionPayload) || null;
+  }
+
+  async compoundSetEdition(workId: number, compound: CompoundEditionPayload): Promise<boolean> {
+    const resp = await this.sendRequest("compound_set_edition", { work_id: workId, compound });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.ok as boolean) || false;
+  }
+
+  async compoundResolveWork(workId: number): Promise<CompoundResolveWorkResult> {
+    const resp = await this.sendRequest("compound_resolve_work", { work_id: workId });
+    return extractValue(resp) as CompoundResolveWorkResult;
   }
 
   async rangeTranscluders(workId: number): Promise<{ edition_ids: number[]; work_ids: number[] }> {

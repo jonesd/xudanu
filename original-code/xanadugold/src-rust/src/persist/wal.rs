@@ -350,6 +350,24 @@ impl WalLog {
                         false
                     }
                 }
+                "set_compound_edition" => {
+                    if let (Some(work_id), Some(compound_json)) = (
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                        entry.args.get("compound").and_then(|v| v.as_str()),
+                    ) {
+                        if let Ok(compound) = serde_json::from_str::<
+                            crate::edition::compound::CompoundEdition,
+                        >(compound_json)
+                        {
+                            server.wal_replay_set_compound_edition(work_id, compound);
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
                 _ => false,
             };
             if result {

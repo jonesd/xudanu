@@ -1,5 +1,26 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResolveError {
+    SourceNotFound { work_id: u64 },
+    SourceFetchFailed { work_id: u64 },
+}
+
+impl std::fmt::Display for ResolveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResolveError::SourceNotFound { work_id } => {
+                write!(f, "source work {} not found", work_id)
+            }
+            ResolveError::SourceFetchFailed { work_id } => {
+                write!(f, "failed to fetch text from source work {}", work_id)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ResolveError {}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompoundSpan {
     source_work_id: u64,
@@ -129,6 +150,138 @@ impl CompoundEdition {
             .filter(|e| matches!(e, CompoundElement::Text { .. }))
             .count()
     }
+
+    pub fn resolve<F>(&self, fetcher: F) -> Result<ResolvedCompoundEdition, ResolveError>
+    where
+        F: Fn(u64) -> Result<String, ResolveError>,
+    {
+        let mut resolved_elements = Vec::with_capacity(self.elements.len());
+        let mut flat_text = String::new();
+        let mut span_ranges = Vec::new();
+
+        for elem in &self.elements {
+            match elem {
+                CompoundElement::Text { content } => {
+                    let start = flat_text.chars().count();
+                    flat_text.push_str(content);
+                    let end = flat_text.chars().count();
+                    resolved_elements.push(ResolvedElement::Text {
+                        content: content.clone(),
+                        flat_start: start,
+                        flat_end: end,
+                    });
+                }
+                CompoundElement::Span { span } => {
+                    let source_text = fetcher(span.source_work_id())?;
+                    let src_chars: Vec<char> = source_text.chars().collect();
+                    let start = span.char_start().min(src_chars.len());
+                    let end = span.char_end().min(src_chars.len());
+                    let content: String = src_chars[start..end].iter().collect();
+
+                    let flat_start = flat_text.chars().count();
+                    flat_text.push_str(&content);
+                    let flat_end = flat_text.chars().count();
+
+                    span_ranges.push(SpanRange {
+                        source_work_id: span.source_work_id(),
+                        char_start: span.char_start(),
+                        char_end: span.char_end(),
+                        flat_start,
+                        flat_end,
+                        content_len: content.chars().count(),
+                    });
+
+                    resolved_elements.push(ResolvedElement::Span {
+                        source_work_id: span.source_work_id(),
+                        content,
+                        flat_start,
+                        flat_end,
+                        original_char_start: span.char_start(),
+                        original_char_end: span.char_end(),
+                    });
+                }
+            }
+        }
+
+        Ok(ResolvedCompoundEdition {
+            elements: resolved_elements,
+            flat_text,
+            span_ranges,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpanRange {
+    pub source_work_id: u64,
+    pub char_start: usize,
+    pub char_end: usize,
+    pub flat_start: usize,
+    pub flat_end: usize,
+    pub content_len: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ResolvedElement {
+    Text {
+        content: String,
+        flat_start: usize,
+        flat_end: usize,
+    },
+    Span {
+        source_work_id: u64,
+        content: String,
+        flat_start: usize,
+        flat_end: usize,
+        original_char_start: usize,
+        original_char_end: usize,
+    },
+}
+
+impl ResolvedElement {
+    pub fn flat_start(&self) -> usize {
+        match self {
+            ResolvedElement::Text { flat_start, .. } => *flat_start,
+            ResolvedElement::Span { flat_start, .. } => *flat_start,
+        }
+    }
+
+    pub fn flat_end(&self) -> usize {
+        match self {
+            ResolvedElement::Text { flat_end, .. } => *flat_end,
+            ResolvedElement::Span { flat_end, .. } => *flat_end,
+        }
+    }
+
+    pub fn is_span(&self) -> bool {
+        matches!(self, ResolvedElement::Span { .. })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResolvedCompoundEdition {
+    elements: Vec<ResolvedElement>,
+    flat_text: String,
+    span_ranges: Vec<SpanRange>,
+}
+
+impl ResolvedCompoundEdition {
+    pub fn elements(&self) -> &[ResolvedElement] {
+        &self.elements
+    }
+
+    pub fn flat_text(&self) -> &str {
+        &self.flat_text
+    }
+
+    pub fn span_ranges(&self) -> &[SpanRange] {
+        &self.span_ranges
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -214,5 +367,114 @@ mod tests {
         let json = serde_json::to_string(&ed).unwrap();
         let restored: CompoundEdition = serde_json::from_str(&json).unwrap();
         assert_eq!(ed, restored);
+    }
+
+    #[test]
+    fn resolve_text_only() {
+        let ed = CompoundEdition::new(vec![
+            CompoundElement::text("hello "),
+            CompoundElement::text("world"),
+        ]);
+        let resolved = ed
+            .resolve(|_| Err(ResolveError::SourceNotFound { work_id: 0 }))
+            .unwrap();
+        assert_eq!(resolved.flat_text(), "hello world");
+        assert!(resolved.span_ranges().is_empty());
+        assert_eq!(resolved.elements().len(), 2);
+    }
+
+    #[test]
+    fn resolve_mixed_content() {
+        let ed = CompoundEdition::new(vec![
+            CompoundElement::text("prefix "),
+            CompoundElement::span(1, 0, 5),
+            CompoundElement::text(" suffix"),
+        ]);
+        let resolved = ed
+            .resolve(|wid| {
+                assert_eq!(wid, 1);
+                Ok("ABCDEFGHIJ".to_string())
+            })
+            .unwrap();
+        assert_eq!(resolved.flat_text(), "prefix ABCDE suffix");
+        assert_eq!(resolved.span_ranges().len(), 1);
+        let sr = &resolved.span_ranges()[0];
+        assert_eq!(sr.source_work_id, 1);
+        assert_eq!(sr.flat_start, 7);
+        assert_eq!(sr.flat_end, 12);
+    }
+
+    #[test]
+    fn resolve_span_clamps_to_source_length() {
+        let ed = CompoundEdition::new(vec![CompoundElement::span(1, 0, 100)]);
+        let resolved = ed.resolve(|_| Ok("short".to_string())).unwrap();
+        assert_eq!(resolved.flat_text(), "short");
+        assert_eq!(resolved.span_ranges()[0].content_len, 5);
+    }
+
+    #[test]
+    fn resolve_source_not_found() {
+        let ed = CompoundEdition::new(vec![CompoundElement::span(99, 0, 5)]);
+        let result = ed.resolve(|wid| {
+            assert_eq!(wid, 99);
+            Err(ResolveError::SourceNotFound { work_id: wid })
+        });
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_unicode_content() {
+        let ed = CompoundEdition::new(vec![
+            CompoundElement::text("café "),
+            CompoundElement::span(1, 0, 3),
+        ]);
+        let resolved = ed.resolve(|_| Ok("日本語テスト".to_string())).unwrap();
+        assert_eq!(resolved.flat_text(), "café 日本語");
+        assert_eq!(resolved.span_ranges()[0].flat_start, 5);
+        assert_eq!(resolved.span_ranges()[0].flat_end, 8);
+    }
+
+    #[test]
+    fn resolve_multiple_spans_same_source() {
+        let ed = CompoundEdition::new(vec![
+            CompoundElement::span(1, 0, 3),
+            CompoundElement::text("-"),
+            CompoundElement::span(1, 3, 6),
+        ]);
+        let resolved = ed.resolve(|_| Ok("ABCDEF".to_string())).unwrap();
+        assert_eq!(resolved.flat_text(), "ABC-DEF");
+        assert_eq!(resolved.span_ranges().len(), 2);
+        assert_eq!(resolved.span_ranges()[0].flat_start, 0);
+        assert_eq!(resolved.span_ranges()[1].flat_start, 4);
+    }
+
+    #[test]
+    fn resolved_element_helpers() {
+        let ed = CompoundEdition::new(vec![
+            CompoundElement::text("ab"),
+            CompoundElement::span(1, 0, 3),
+        ]);
+        let resolved = ed.resolve(|_| Ok("XYZ".to_string())).unwrap();
+        assert!(!resolved.elements()[0].is_span());
+        assert!(resolved.elements()[1].is_span());
+        assert_eq!(resolved.elements()[0].flat_start(), 0);
+        assert_eq!(resolved.elements()[0].flat_end(), 2);
+        assert_eq!(resolved.elements()[1].flat_start(), 2);
+        assert_eq!(resolved.elements()[1].flat_end(), 5);
+    }
+
+    #[test]
+    fn resolved_compound_serde_roundtrip() {
+        let ed = CompoundEdition::new(vec![
+            CompoundElement::text("hello "),
+            CompoundElement::span(42, 10, 20),
+            CompoundElement::text(" world"),
+        ]);
+        let resolved = ed
+            .resolve(|_| Ok("0123456789ABCDEFGHIJ".to_string()))
+            .unwrap();
+        let json = serde_json::to_string(&resolved).unwrap();
+        let restored: ResolvedCompoundEdition = serde_json::from_str(&json).unwrap();
+        assert_eq!(resolved, restored);
     }
 }
