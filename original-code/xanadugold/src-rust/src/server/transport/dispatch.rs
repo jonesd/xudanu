@@ -1578,6 +1578,44 @@ fn dispatch_inner(
                 source_titles,
             })
         }
+        WireRequest::CompoundResolveRecursive { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let resolved = srv.resolve_compound_recursive(work_id)?;
+
+            for elem in resolved.elements() {
+                if let crate::edition::compound::ResolvedElement::Span { source_work_id, .. } = elem
+                {
+                    srv.ensure_can_read(session_id, *source_work_id)?;
+                }
+            }
+
+            let elements: Vec<ResolvedElementPayload> = resolved
+                .elements()
+                .iter()
+                .map(ResolvedElementPayload::from_resolved)
+                .collect();
+            let span_ranges: Vec<SpanRangePayload> = resolved
+                .span_ranges()
+                .iter()
+                .map(SpanRangePayload::from_span_range)
+                .collect();
+
+            let mut source_titles: HashMap<BeId, String> = HashMap::new();
+            for sr in resolved.span_ranges() {
+                if !source_titles.contains_key(&sr.source_work_id) {
+                    if let Some(title) = srv.compound_source_title(sr.source_work_id) {
+                        source_titles.insert(sr.source_work_id, title);
+                    }
+                }
+            }
+
+            Ok(ResponseValue::CompoundResolveWorkResult {
+                elements,
+                flat_text: resolved.flat_text().to_string(),
+                span_ranges,
+                source_titles,
+            })
+        }
         WireRequest::AdminRecorderCreate {
             kind,
             direct_only,

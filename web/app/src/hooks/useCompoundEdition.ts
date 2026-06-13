@@ -67,7 +67,7 @@ export function useCompoundEdition(
       const edition = await client.compoundGetEdition(workBeId);
       if (edition && edition.elements.length > 0) {
         setHasCompound(true);
-        const result = await client.compoundResolveWork(workBeId);
+        const result = await client.compoundResolveRecursive(workBeId);
         setSpanRanges(result.span_ranges || []);
         setSourceTitles(result.source_titles || {});
         setResolvedText(result.flat_text || "");
@@ -90,7 +90,7 @@ export function useCompoundEdition(
     if (hasCompound && client && workBeId !== null) {
       pollRef.current = setInterval(() => {
         client
-          .compoundResolveWork(workBeId)
+          .compoundResolveRecursive(workBeId)
           .then((result: CompoundResolveWorkResult) => {
             setSpanRanges(result.span_ranges || []);
             setSourceTitles(result.source_titles || {});

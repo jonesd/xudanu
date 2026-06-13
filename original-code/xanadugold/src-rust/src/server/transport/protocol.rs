@@ -232,6 +232,7 @@ pub enum OperationCode {
     CompoundGetEdition,
     CompoundSetEdition,
     CompoundResolveWork,
+    CompoundResolveRecursive,
 
     AdminRecorderCreate,
     AdminRecorderRecord,
@@ -541,6 +542,7 @@ impl OperationCode {
             0x1D01 => Some(OperationCode::CompoundGetEdition),
             0x1D02 => Some(OperationCode::CompoundSetEdition),
             0x1D03 => Some(OperationCode::CompoundResolveWork),
+            0x1D04 => Some(OperationCode::CompoundResolveRecursive),
 
             0x0D01 => Some(OperationCode::AttributionQuery),
             0x0D02 => Some(OperationCode::AttributionVerify),
@@ -790,6 +792,7 @@ impl OperationCode {
             OperationCode::CompoundGetEdition => 0x1D01,
             OperationCode::CompoundSetEdition => 0x1D02,
             OperationCode::CompoundResolveWork => 0x1D03,
+            OperationCode::CompoundResolveRecursive => 0x1D04,
 
             OperationCode::AttributionQuery => 0x0D01,
             OperationCode::AttributionVerify => 0x0D02,
@@ -1364,6 +1367,9 @@ pub enum WireRequest {
         compound: CompoundEditionPayload,
     },
     CompoundResolveWork {
+        work_id: BeId,
+    },
+    CompoundResolveRecursive {
         work_id: BeId,
     },
 

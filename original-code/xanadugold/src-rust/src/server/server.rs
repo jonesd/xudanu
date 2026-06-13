@@ -6518,6 +6518,90 @@ impl Server {
             })
     }
 
+    const COMPOUND_MAX_DEPTH: usize = 32;
+
+    fn resolve_text_recursive(
+        &self,
+        work_id: BeId,
+        cache: &std::cell::RefCell<HashMap<BeId, String>>,
+        stack: &std::cell::RefCell<Vec<BeId>>,
+    ) -> Result<String, ServerError> {
+        {
+            let cache_ref = cache.borrow();
+            if let Some(cached) = cache_ref.get(&work_id) {
+                return Ok(cached.clone());
+            }
+        }
+
+        {
+            let stack_ref = stack.borrow();
+            if stack_ref.len() >= Self::COMPOUND_MAX_DEPTH {
+                return self.work_text(work_id);
+            }
+            if stack_ref.contains(&work_id) {
+                return self.work_text(work_id);
+            }
+        }
+
+        if let Some(compound) = self.compound_editions.get(&work_id).cloned() {
+            stack.borrow_mut().push(work_id);
+
+            let mut flat_text = String::new();
+            for elem in compound.elements() {
+                match elem {
+                    crate::edition::compound::CompoundElement::Text { content } => {
+                        flat_text.push_str(content);
+                    }
+                    crate::edition::compound::CompoundElement::Span { span } => {
+                        let source_text =
+                            self.resolve_text_recursive(span.source_work_id(), cache, stack)?;
+                        let chars: Vec<char> = source_text.chars().collect();
+                        let start = span.char_start().min(chars.len());
+                        let end = span.char_end().min(chars.len());
+                        flat_text.extend(&chars[start..end]);
+                    }
+                }
+            }
+
+            stack.borrow_mut().pop();
+            cache.borrow_mut().insert(work_id, flat_text.clone());
+            Ok(flat_text)
+        } else {
+            let text = self.work_text(work_id)?;
+            cache.borrow_mut().insert(work_id, text.clone());
+            Ok(text)
+        }
+    }
+
+    pub fn resolve_compound_recursive(
+        &self,
+        work_id: BeId,
+    ) -> Result<crate::edition::compound::ResolvedCompoundEdition, ServerError> {
+        let compound = self
+            .compound_editions
+            .get(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
+
+        let cache = std::cell::RefCell::new(HashMap::new());
+        let stack = std::cell::RefCell::new(Vec::new());
+
+        compound
+            .resolve(|src_id| {
+                self.resolve_text_recursive(src_id, &cache, &stack)
+                    .map_err(|_| crate::edition::compound::ResolveError::SourceNotFound {
+                        work_id: src_id,
+                    })
+            })
+            .map_err(|e| match e {
+                crate::edition::compound::ResolveError::SourceNotFound { work_id } => {
+                    ServerError::WorkNotFound(work_id)
+                }
+                crate::edition::compound::ResolveError::SourceFetchFailed { work_id } => {
+                    ServerError::WorkNotFound(work_id)
+                }
+            })
+    }
+
     pub fn compound_source_title(&self, work_id: BeId) -> Option<String> {
         self.works.get(&work_id).map(|ws| ws.cached_title.clone())
     }
@@ -18501,5 +18585,332 @@ mod tests {
         assert!(dirty.contains(&doc1));
         assert!(dirty.contains(&doc2));
         assert!(dirty.contains(&doc3));
+    }
+
+    fn make_compound_work(
+        server: &mut Server,
+        sid: SessionId,
+        placeholder: &str,
+        compound: crate::edition::compound::CompoundEdition,
+    ) -> BeId {
+        let wid = server
+            .create_work(sid, Edition::from_text(placeholder))
+            .unwrap();
+        server.set_compound_edition(wid, compound, sid).unwrap();
+        wid
+    }
+
+    fn span_el(src: u64, s: usize, e: usize) -> crate::edition::compound::CompoundElement {
+        crate::edition::compound::CompoundElement::span(src, s, e)
+    }
+
+    fn text_el(s: &str) -> crate::edition::compound::CompoundElement {
+        crate::edition::compound::CompoundElement::text(s)
+    }
+
+    #[test]
+    fn compound_recursive_simple_chain() {
+        let (mut server, sid, _) = setup_two_session_server();
+
+        let root = server.create_work(sid, Edition::from_text("ROOT")).unwrap();
+        let mid = make_compound_work(
+            &mut server,
+            sid,
+            "mid-otree",
+            crate::edition::compound::CompoundEdition::new(vec![
+                text_el("mid:"),
+                span_el(root, 0, 4),
+            ]),
+        );
+        let doc = make_compound_work(
+            &mut server,
+            sid,
+            "doc-otree",
+            crate::edition::compound::CompoundEdition::new(vec![
+                text_el("doc["),
+                span_el(mid, 0, 4),
+                text_el("]"),
+            ]),
+        );
+
+        let resolved = server.resolve_compound_recursive(doc).unwrap();
+        assert_eq!(
+            resolved.flat_text(),
+            "doc[mid:]",
+            "recursive: span(mid,0,4) of mid's resolved 'mid:ROOT' = 'mid:'"
+        );
+
+        let non_recursive = server.resolve_compound_edition(doc).unwrap();
+        assert_eq!(
+            non_recursive.flat_text(),
+            "doc[mid-]",
+            "non-recursive: span(mid,0,4) of mid's O-tree 'mid-otree' = 'mid-'"
+        );
+    }
+
+    #[test]
+    fn compound_recursive_direct_cycle() {
+        let (mut server, sid, _) = setup_two_session_server();
+
+        let a = make_compound_work(
+            &mut server,
+            sid,
+            "raw-a",
+            crate::edition::compound::CompoundEdition::new(vec![
+                text_el("A["),
+                span_el(0, 0, 3),
+                text_el("]"),
+            ]),
+        );
+        let b = make_compound_work(
+            &mut server,
+            sid,
+            "raw-b",
+            crate::edition::compound::CompoundEdition::new(vec![
+                text_el("B["),
+                span_el(a, 0, 3),
+                text_el("]"),
+            ]),
+        );
+
+        server
+            .set_compound_edition(
+                a,
+                crate::edition::compound::CompoundEdition::new(vec![
+                    text_el("A["),
+                    span_el(b, 0, 3),
+                    text_el("]"),
+                ]),
+                sid,
+            )
+            .unwrap();
+
+        let resolved = server.resolve_compound_recursive(a).unwrap();
+        assert!(
+            !resolved.flat_text().is_empty(),
+            "cycle should resolve gracefully without hanging"
+        );
+        assert!(
+            resolved.flat_text().contains("A["),
+            "should contain A's own text"
+        );
+    }
+
+    #[test]
+    fn compound_recursive_self_cycle() {
+        let (mut server, sid, _) = setup_two_session_server();
+
+        let a = make_compound_work(
+            &mut server,
+            sid,
+            "self-raw",
+            crate::edition::compound::CompoundEdition::new(vec![
+                text_el("A["),
+                span_el(0, 0, 3),
+                text_el("]"),
+            ]),
+        );
+
+        server
+            .set_compound_edition(
+                a,
+                crate::edition::compound::CompoundEdition::new(vec![
+                    text_el("prefix "),
+                    span_el(a, 0, 4),
+                    text_el(" suffix"),
+                ]),
+                sid,
+            )
+            .unwrap();
+
+        let resolved = server.resolve_compound_recursive(a).unwrap();
+        assert!(
+            !resolved.flat_text().is_empty(),
+            "self-cycle should not hang"
+        );
+        assert!(
+            resolved.flat_text().contains("prefix"),
+            "should contain A's own text"
+        );
+    }
+
+    #[test]
+    fn compound_recursive_diamond() {
+        let (mut server, sid, _) = setup_two_session_server();
+
+        let d = server
+            .create_work(sid, Edition::from_text("DIAMOND"))
+            .unwrap();
+        let b = make_compound_work(
+            &mut server,
+            sid,
+            "b-raw",
+            crate::edition::compound::CompoundEdition::new(vec![text_el("b:"), span_el(d, 0, 7)]),
+        );
+        let c = make_compound_work(
+            &mut server,
+            sid,
+            "c-raw",
+            crate::edition::compound::CompoundEdition::new(vec![text_el("c:"), span_el(d, 0, 7)]),
+        );
+        let a = make_compound_work(
+            &mut server,
+            sid,
+            "a-raw",
+            crate::edition::compound::CompoundEdition::new(vec![
+                span_el(b, 0, 2),
+                text_el("-"),
+                span_el(c, 0, 2),
+            ]),
+        );
+
+        let resolved = server.resolve_compound_recursive(a).unwrap();
+        assert_eq!(
+            resolved.flat_text(),
+            "b:-c:",
+            "diamond: both paths resolve D, memoization ensures consistency"
+        );
+    }
+
+    #[test]
+    fn compound_recursive_depth_limit() {
+        let (mut server, sid, _) = setup_two_session_server();
+
+        let base = server.create_work(sid, Edition::from_text("BASE")).unwrap();
+        let mut prev = base;
+
+        for i in 0..50 {
+            let placeholder = format!("level{}", i);
+            let wrapper = make_compound_work(
+                &mut server,
+                sid,
+                &placeholder,
+                crate::edition::compound::CompoundEdition::new(vec![
+                    text_el(&format!("L{}:", i)),
+                    span_el(prev, 0, 4),
+                ]),
+            );
+            prev = wrapper;
+        }
+
+        let resolved = server.resolve_compound_recursive(prev).unwrap();
+        assert!(
+            !resolved.flat_text().is_empty(),
+            "deep nesting should not cause stack overflow or hang"
+        );
+    }
+
+    #[test]
+    fn compound_recursive_mixed_compound_and_plain() {
+        let (mut server, sid, _) = setup_two_session_server();
+
+        let plain = server
+            .create_work(sid, Edition::from_text("PLAIN"))
+            .unwrap();
+        let comp = make_compound_work(
+            &mut server,
+            sid,
+            "comp-raw",
+            crate::edition::compound::CompoundEdition::new(vec![
+                text_el("comp:"),
+                span_el(plain, 0, 5),
+            ]),
+        );
+        let doc = make_compound_work(
+            &mut server,
+            sid,
+            "doc-raw",
+            crate::edition::compound::CompoundEdition::new(vec![
+                text_el("["),
+                span_el(comp, 0, 5),
+                text_el("|"),
+                span_el(plain, 0, 3),
+                text_el("]"),
+            ]),
+        );
+
+        let resolved = server.resolve_compound_recursive(doc).unwrap();
+        assert_eq!(
+            resolved.flat_text(),
+            "[comp:|PLA]",
+            "mix of compound and plain sources resolves correctly"
+        );
+    }
+
+    #[test]
+    fn compound_recursive_live_update_propagates() {
+        let (mut server, sid_a, _sid_b) = setup_two_session_server();
+
+        let root = server
+            .create_work(sid_a, Edition::from_text("v1text"))
+            .unwrap();
+        let mid = make_compound_work(
+            &mut server,
+            sid_a,
+            "mid-raw",
+            crate::edition::compound::CompoundEdition::new(vec![
+                text_el("["),
+                span_el(root, 0, 2),
+                text_el("]"),
+            ]),
+        );
+        let doc = make_compound_work(
+            &mut server,
+            sid_a,
+            "doc-raw",
+            crate::edition::compound::CompoundEdition::new(vec![
+                text_el("<"),
+                span_el(mid, 0, 3),
+                text_el(">"),
+            ]),
+        );
+
+        let r1 = server.resolve_compound_recursive(doc).unwrap();
+        assert_eq!(r1.flat_text(), "<[v1>");
+
+        server.work_grab(sid_a, root).unwrap();
+        server
+            .work_revise(sid_a, root, Edition::from_text("v2text"))
+            .unwrap();
+
+        let r2 = server.resolve_compound_recursive(doc).unwrap();
+        assert_eq!(
+            r2.flat_text(),
+            "<[v2>",
+            "recursive resolution propagates live edits through the chain"
+        );
+    }
+
+    #[test]
+    fn compound_recursive_vs_non_recursive_comparison() {
+        let (mut server, sid, _) = setup_two_session_server();
+
+        let src = server.create_work(sid, Edition::from_text("SRC")).unwrap();
+        let mid = make_compound_work(
+            &mut server,
+            sid,
+            "mid-otree-text",
+            crate::edition::compound::CompoundEdition::new(vec![text_el("M:"), span_el(src, 0, 3)]),
+        );
+        let doc = make_compound_work(
+            &mut server,
+            sid,
+            "doc-otree-text",
+            crate::edition::compound::CompoundEdition::new(vec![span_el(mid, 0, 2)]),
+        );
+
+        let non_recur = server.resolve_compound_edition(doc).unwrap();
+        assert_eq!(
+            non_recur.flat_text(),
+            "mi",
+            "non-recursive reads mid's O-tree: 'mid-otree-text'[0:2]"
+        );
+
+        let recur = server.resolve_compound_recursive(doc).unwrap();
+        assert_eq!(
+            recur.flat_text(),
+            "M:",
+            "recursive reads mid's compound resolution: 'M:SRC'[0:2]"
+        );
     }
 }
