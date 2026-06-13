@@ -67,6 +67,7 @@ fn usage() {
     eprintln!("  verify <data-dir>        Verify data integrity");
     eprintln!("  rebuild-manifest <dir>   Rebuild manifest from chunks");
     eprintln!("  verify-security-log <dir> Verify security log chain integrity");
+    eprintln!("  preflight <data-dir>     Check data dir is safe to start (no port binding)");
     eprintln!();
     eprintln!("Run options:");
     eprintln!("  --static-dir <dir>       Serve frontend from directory instead of embedded HTML");
@@ -274,6 +275,19 @@ fn cmd_verify_security_log(data_dir: &str) {
     }
 }
 
+fn cmd_preflight(data_dir: &str) {
+    let path = PathBuf::from(data_dir);
+    println!("xudanu-server {} preflight check", env!("CARGO_PKG_VERSION"));
+    println!();
+    let report = xudanu::persist::manifest::preflight_check(&path);
+    println!("{}", report);
+    if report.can_start {
+        std::process::exit(0);
+    } else {
+        std::process::exit(1);
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -296,7 +310,7 @@ async fn main() {
                     }
                 })
             }),
-        "init" | "verify" | "rebuild-manifest" | "verify-security-log" => args.get(2).cloned(),
+       "init" | "verify" | "rebuild-manifest" | "verify-security-log" | "preflight" => args.get(2).cloned(),
         _ => None,
     };
     init_tracing(data_dir_for_tracing.as_deref());
@@ -324,6 +338,10 @@ async fn main() {
         "verify-security-log" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
             cmd_verify_security_log(data_dir);
+        }
+        "preflight" => {
+            let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
+            cmd_preflight(data_dir);
         }
         "run" => {
             let mut addr = "127.0.0.1:8080".to_string();
@@ -470,6 +488,15 @@ async fn main() {
 
                 if manifest_path.exists() {
                     tracing::info!("Restoring from {}", manifest_path.display());
+
+                    let preflight = xudanu::persist::manifest::preflight_check(&path);
+                    tracing::info!("{}", preflight);
+                    if !preflight.can_start {
+                        eprintln!("Error: Preflight check failed — cannot start server.");
+                        eprintln!("{}", preflight);
+                        std::process::exit(1);
+                    }
+
                     let start = std::time::Instant::now();
                     let mut s = Server::new();
                     if let Err(e) = s.restore_from_data_dir(&path, pass_bytes) {

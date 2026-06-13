@@ -293,6 +293,24 @@ fn compute_manifest_checksum(manifest: &Manifest) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+fn compute_manifest_checksum_from_raw(content: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut value: serde_json::Value = match serde_json::from_str(content) {
+        Ok(v) => v,
+        Err(_) => return String::new(),
+    };
+    if let serde_json::Value::Object(ref mut map) = value {
+        map.remove("checksum");
+        map.remove("created_at");
+        map.remove("server_version");
+    }
+    sort_json_value(&mut value);
+    let json_str = serde_json::to_string(&value).unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(json_str.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
 fn iso_now() -> String {
     chrono::Utc::now().to_rfc3339()
 }
@@ -538,7 +556,11 @@ pub fn read_manifest_dual(data_dir: &Path) -> Result<Manifest, ManifestError> {
 
 pub fn read_manifest(path: &Path) -> Result<Manifest, ManifestError> {
     let content = std::fs::read_to_string(path)?;
-    let manifest: Manifest = serde_json::from_str(&content)?;
+    read_manifest_from_str(&content)
+}
+
+fn read_manifest_from_str(content: &str) -> Result<Manifest, ManifestError> {
+    let manifest: Manifest = serde_json::from_str(content)?;
 
     if manifest.format_version > CURRENT_MANIFEST_VERSION {
         return Err(ManifestError::InvalidVersion {
@@ -557,6 +579,26 @@ pub fn read_manifest(path: &Path) -> Result<Manifest, ManifestError> {
     let stored_checksum = manifest.checksum.clone();
     let computed = compute_manifest_checksum(&manifest);
     if stored_checksum != computed && !stored_checksum.is_empty() {
+        let raw_computed = compute_manifest_checksum_from_raw(content);
+        if raw_computed == stored_checksum {
+            tracing::warn!(
+                "Manifest checksum mismatch due to schema evolution (new default fields). \
+                 Accepting manifest — checksum will be corrected on next checkpoint."
+            );
+            return Ok(manifest);
+        }
+
+        tracing::error!(
+            "Manifest checksum mismatch: stored={}, recompute={}, raw={}. \
+             The manifest may be genuinely corrupt. \
+             Possible fixes: \
+             (1) restore from a backup in the data directory, \
+             (2) run 'xudanu-server rebuild-manifest <data-dir>', or \
+             (3) delete the data directory to start fresh.",
+            stored_checksum,
+            computed,
+            raw_computed,
+        );
         return Err(ManifestError::ChecksumMismatch {
             expected: stored_checksum,
             actual: computed,
@@ -568,6 +610,197 @@ pub fn read_manifest(path: &Path) -> Result<Manifest, ManifestError> {
 
 pub fn manifest_path(data_dir: &Path) -> std::path::PathBuf {
     data_dir.join("manifest.json")
+}
+
+#[derive(Debug)]
+pub struct PreflightReport {
+    pub manifest_found: bool,
+    pub manifest_version: Option<u32>,
+    pub manifest_sequence: Option<u64>,
+    pub checksum_ok: bool,
+    pub checksum_schema_drift: bool,
+    pub can_start: bool,
+    pub warnings: Vec<String>,
+    pub errors: Vec<String>,
+}
+
+impl std::fmt::Display for PreflightReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Preflight check for data directory:")?;
+        if !self.manifest_found {
+            writeln!(f, "  manifest.json: NOT FOUND (will initialize)")?;
+            return Ok(());
+        }
+        writeln!(
+            f,
+            "  manifest version: {}",
+            self.manifest_version
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "?".to_string())
+        )?;
+        writeln!(
+            f,
+            "  manifest sequence: {}",
+            self.manifest_sequence
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "?".to_string())
+        )?;
+        if self.checksum_schema_drift {
+            writeln!(f, "  checksum: SCHEMA DRIFT (new default fields, will self-heal on checkpoint)")?;
+        } else if self.checksum_ok {
+            writeln!(f, "  checksum: OK")?;
+        } else {
+            writeln!(f, "  checksum: FAILED (corrupt or tampered)")?;
+        }
+        for w in &self.warnings {
+            writeln!(f, "  WARNING: {}", w)?;
+        }
+        for e in &self.errors {
+            writeln!(f, "  ERROR: {}", e)?;
+        }
+        if self.can_start {
+            writeln!(f, "  result: OK — safe to start")?;
+        } else {
+            writeln!(f, "  result: BLOCKED — fix errors before starting")?;
+        }
+        Ok(())
+    }
+}
+
+pub fn preflight_check(data_dir: &Path) -> PreflightReport {
+    let mut report = PreflightReport {
+        manifest_found: false,
+        manifest_version: None,
+        manifest_sequence: None,
+        checksum_ok: false,
+        checksum_schema_drift: false,
+        can_start: false,
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+
+    let path = manifest_path(data_dir);
+    if !path.exists() {
+        report.can_start = true;
+        return report;
+    }
+    report.manifest_found = true;
+
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            report.errors.push(format!(
+                "Cannot read {}: {}. Check file permissions.",
+                path.display(), e
+            ));
+            return report;
+        }
+    };
+
+    let raw_value: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            report.errors.push(format!(
+                "Invalid JSON in {}: {}. \
+                 Run 'xudanu-server rebuild-manifest {}' or restore from a backup.",
+                path.display(), e, data_dir.display()
+            ));
+            return report;
+        }
+    };
+
+    let version = raw_value
+        .get("format_version")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+    report.manifest_version = version;
+
+    report.manifest_sequence = raw_value
+        .get("sequence")
+        .and_then(|v| v.as_u64());
+
+    let stored_checksum = raw_value
+        .get("checksum")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if let Some(v) = version {
+        if v > CURRENT_MANIFEST_VERSION {
+            report.errors.push(format!(
+                "Manifest format_version {} is NEWER than this binary supports ({}). \
+                 You need to upgrade xudanu-server to a newer version. \
+                 Downgrade is not supported.",
+                v, CURRENT_MANIFEST_VERSION
+            ));
+            return report;
+        }
+        if v < CURRENT_MANIFEST_VERSION {
+            report.warnings.push(format!(
+                "Manifest format_version {} will be auto-upgraded to {} on next checkpoint.",
+                v, CURRENT_MANIFEST_VERSION
+            ));
+        }
+    } else {
+        report.errors.push(
+            "Manifest has no format_version field. File may be corrupt.".to_string()
+        );
+        return report;
+    }
+
+    if stored_checksum.is_empty() {
+        report.warnings.push(
+            "Manifest has no checksum — skipping validation.".to_string()
+        );
+        report.checksum_ok = true;
+        report.can_start = true;
+        return report;
+    }
+
+    let manifest: Manifest = match serde_json::from_str(&content) {
+        Ok(m) => m,
+        Err(e) => {
+            report.errors.push(format!(
+                "Manifest parsed as raw JSON but failed struct deserialization: {}. \
+                 A field may have an incompatible type. \
+                 Run 'xudanu-server rebuild-manifest {}' to rebuild.",
+                e, data_dir.display()
+            ));
+            return report;
+        }
+    };
+
+    let computed = compute_manifest_checksum(&manifest);
+    if computed == stored_checksum {
+        report.checksum_ok = true;
+        report.can_start = true;
+        return report;
+    }
+
+    let raw_computed = compute_manifest_checksum_from_raw(&content);
+    if raw_computed == stored_checksum {
+        report.checksum_schema_drift = true;
+        report.checksum_ok = true;
+        report.can_start = true;
+        report.warnings.push(
+            "Checksum matches raw content but differs after deserialization — \
+             this is normal after a schema upgrade. \
+             The checksum will self-heal on the next checkpoint.".to_string()
+        );
+        return report;
+    }
+
+    report.errors.push(format!(
+        "Checksum mismatch: stored {} but file content hashes to {}. \
+         The manifest may be corrupt. Options: \
+         (1) Restore from backup (manifest_v*.json files in the data directory), \
+         (2) Run 'xudanu-server rebuild-manifest {}', or \
+         (3) Delete the data directory to start fresh (all data will be lost).",
+        stored_checksum, raw_computed, data_dir.display()
+    ));
+
+    let _ = manifest;
+    report
 }
 
 pub fn create_empty_manifest(
@@ -1315,6 +1548,148 @@ mod tests {
         let restored = read_manifest(&path).unwrap();
         assert_eq!(restored.grand_map_id_counter, 100, "should read legacy manifest");
         assert_eq!(restored.manifest_slot, '\0', "missing field defaults to null");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preflight_empty_dir_is_ok() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let report = preflight_check(&dir);
+        assert!(report.can_start);
+        assert!(!report.manifest_found);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preflight_valid_manifest_is_ok() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let report = preflight_check(&dir);
+        assert!(report.can_start);
+        assert!(report.manifest_found);
+        assert!(report.checksum_ok);
+        assert!(!report.checksum_schema_drift);
+        assert!(report.errors.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preflight_null_slot_valid_manifest_is_ok() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        m.manifest_slot = '\0';
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !content.contains("manifest_slot"),
+            "null slot should not appear in file"
+        );
+
+        let report = preflight_check(&dir);
+        assert!(report.can_start, "valid manifest should pass");
+        assert!(report.checksum_ok);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preflight_detects_real_corruption() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let corrupted = content.replace("100", "99999");
+        std::fs::write(&path, &corrupted).unwrap();
+
+        let report = preflight_check(&dir);
+        assert!(!report.can_start, "genuine corruption should block startup");
+        assert!(!report.errors.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preflight_corrupt_manifest_is_blocked() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let corrupted = content.replace(
+            "\"grand_map_id_counter\": 100",
+            "\"grand_map_id_counter\": 999",
+        );
+        std::fs::write(&path, &corrupted).unwrap();
+
+        let report = preflight_check(&dir);
+        assert!(!report.can_start, "corrupt manifest should block startup");
+        assert!(!report.errors.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preflight_future_version_is_blocked() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let modified = content.replace(
+            &format!("\"format_version\": {}", CURRENT_MANIFEST_VERSION),
+            "\"format_version\": 999",
+        );
+        std::fs::write(&path, &modified).unwrap();
+
+        let report = preflight_check(&dir);
+        assert!(!report.can_start, "future version should block startup");
+        assert!(report.errors.iter().any(|e| e.contains("NEWER")));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn preflight_invalid_json_is_blocked() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let path = manifest_path(&dir);
+        std::fs::write(&path, b"{not valid json}").unwrap();
+
+        let report = preflight_check(&dir);
+        assert!(!report.can_start);
+        assert!(report.errors.iter().any(|e| e.contains("Invalid JSON")));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
