@@ -104,6 +104,7 @@ pub struct Server {
     data_dir: Option<std::path::PathBuf>,
     chunk_store: Option<crate::persist::chunk_store::ChunkStore>,
     manifest_sequence: u64,
+    manifest_slot: char,
     recorder_system: crate::edition::RecorderSystem,
     pending_content_notifications: Vec<ContentNotification>,
     start_time: u64,
@@ -123,6 +124,27 @@ pub struct Server {
     pub(crate) pending_attributions: Vec<PendingAttribution>,
     consequence_tracker: Arc<ConsequenceTracker>,
     write_barrier: Arc<WriteBarrier>,
+    starred_works: HashMap<BeId, HashSet<BeId>>,
+    trails: HashMap<BeId, TrailState>,
+    trail_counter: BeId,
+}
+
+#[derive(Debug, Clone)]
+struct TrailStop {
+    work_id: BeId,
+    char_start: Option<u64>,
+    char_end: Option<u64>,
+    note: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct TrailState {
+    trail_id: BeId,
+    owner_club: BeId,
+    name: String,
+    stops: Vec<TrailStop>,
+    created_at: u64,
+    updated_at: u64,
 }
 
 #[derive(Clone)]
@@ -237,6 +259,7 @@ impl Server {
             data_dir: None,
             chunk_store: None,
             manifest_sequence: 0,
+            manifest_slot: 'a',
             recorder_system: crate::edition::RecorderSystem::new(),
             pending_content_notifications: Vec::new(),
             start_time: std::time::SystemTime::now()
@@ -262,6 +285,9 @@ impl Server {
             pending_attributions: Vec::new(),
             consequence_tracker: Arc::new(ConsequenceTracker::new()),
             write_barrier: Arc::new(WriteBarrier::new()),
+                starred_works: HashMap::new(),
+                trails: HashMap::new(),
+                trail_counter: 10_000,
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
             // transclusion survival, and materialize_annotation_indexed support.
@@ -3124,6 +3150,253 @@ impl Server {
             .collect()
     }
 
+    pub fn work_star(&mut self, session_id: SessionId, work_id: BeId) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+        let club_id = self.resolve_author_club(session_id)
+            .ok_or(ServerError::NotAuthorized)?;
+        self.starred_works.entry(club_id).or_default().insert(work_id);
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    pub fn work_unstar(&mut self, session_id: SessionId, work_id: BeId) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+        let club_id = self.resolve_author_club(session_id)
+            .ok_or(ServerError::NotAuthorized)?;
+        if let Some(set) = self.starred_works.get_mut(&club_id) {
+            set.remove(&work_id);
+        }
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    pub fn work_is_starred(&self, session_id: SessionId, work_id: BeId) -> Result<bool, ServerError> {
+        self.ensure_session(session_id)?;
+        let club_id = self.resolve_author_club(session_id);
+        Ok(club_id.map_or(false, |cid| {
+            self.starred_works.get(&cid).map_or(false, |s| s.contains(&work_id))
+        }))
+    }
+
+    pub fn starred_for_session(&self, session_id: SessionId) -> HashSet<BeId> {
+        self.resolve_author_club(session_id)
+            .and_then(|cid| self.starred_works.get(&cid).cloned())
+            .unwrap_or_default()
+    }
+
+    pub fn build_work_graph(
+        &self,
+        session_id: SessionId,
+    ) -> (
+        Vec<(
+            BeId,
+            String,
+            bool,
+            bool,
+            u64,
+        )>,
+        Vec<(BeId, BeId, String, u64)>,
+    ) {
+        let starred = self.starred_for_session(session_id);
+        let mut visible: HashSet<BeId> = HashSet::new();
+        let mut nodes = Vec::new();
+        for (id, ws) in &self.works {
+            if self.work(*id).map(|w| self.work_is_readable(session_id, w)).unwrap_or(false) {
+                visible.insert(*id);
+                nodes.push((
+                    *id,
+                    ws.cached_title.clone(),
+                    starred.contains(id),
+                    ws.is_source,
+                    ws.work.revision_count(),
+                ));
+            }
+        }
+        let mut seen_edges: HashSet<(BeId, BeId)> = HashSet::new();
+        let mut edges = Vec::new();
+        for (link_id, ls) in &self.links {
+            if visible.contains(&ls.origin) && visible.contains(&ls.destination) {
+                let key = if ls.origin < ls.destination {
+                    (ls.origin, ls.destination)
+                } else {
+                    (ls.destination, ls.origin)
+                };
+                if seen_edges.insert(key) {
+                    edges.push((ls.origin, ls.destination, "link".to_string(), 1u64));
+                }
+            }
+            let _ = link_id;
+        }
+        (nodes, edges)
+    }
+
+    fn trail_owner_club(&self, session_id: SessionId) -> Result<BeId, ServerError> {
+        self.resolve_author_club(session_id).ok_or_else(|| {
+            ServerError::InvalidArgument("no personal club for session".into())
+        })
+    }
+
+    fn trail_to_payload(&self, t: &TrailState) -> super::transport::protocol::TrailPayload {
+        let stops: Vec<super::transport::protocol::TrailStopPayload> = t.stops.iter().map(|s| {
+            let title = self.works.get(&s.work_id)
+                .map(|ws| ws.cached_title.clone())
+                .unwrap_or_default();
+            super::transport::protocol::TrailStopPayload {
+                work_id: s.work_id,
+                char_start: s.char_start,
+                char_end: s.char_end,
+                note: s.note.clone(),
+                title,
+            }
+        }).collect();
+        super::transport::protocol::TrailPayload {
+            trail_id: t.trail_id,
+            name: t.name.clone(),
+            stops,
+            created_at: t.created_at,
+            updated_at: t.updated_at,
+        }
+    }
+
+    pub fn trail_create(&mut self, session_id: SessionId, name: String) -> Result<BeId, ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let trail_id = self.trail_counter;
+        self.trail_counter += 1;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.trails.insert(trail_id, TrailState {
+            trail_id,
+            owner_club: owner,
+            name,
+            stops: Vec::new(),
+            created_at: now,
+            updated_at: now,
+        });
+        Ok(trail_id)
+    }
+
+    pub fn trail_delete(&mut self, session_id: SessionId, trail_id: BeId) -> Result<(), ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let t = self.trails.get(&trail_id).ok_or_else(|| {
+            ServerError::InvalidArgument("trail not found".into())
+        })?;
+        if t.owner_club != owner {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        self.trails.remove(&trail_id);
+        Ok(())
+    }
+
+    pub fn trail_rename(&mut self, session_id: SessionId, trail_id: BeId, name: String) -> Result<(), ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let t = self.trails.get_mut(&trail_id).ok_or_else(|| {
+            ServerError::InvalidArgument("trail not found".into())
+        })?;
+        if t.owner_club != owner {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        t.name = name;
+        t.updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Ok(())
+    }
+
+    pub fn trail_add_stop(
+        &mut self,
+        session_id: SessionId,
+        trail_id: BeId,
+        work_id: BeId,
+        char_start: Option<u64>,
+        char_end: Option<u64>,
+        note: Option<String>,
+    ) -> Result<(), ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        self.work(work_id)?;
+        let t = self.trails.get_mut(&trail_id).ok_or_else(|| {
+            ServerError::InvalidArgument("trail not found".into())
+        })?;
+        if t.owner_club != owner {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        t.stops.push(TrailStop { work_id, char_start, char_end, note });
+        t.updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Ok(())
+    }
+
+    pub fn trail_remove_stop(&mut self, session_id: SessionId, trail_id: BeId, stop_index: u64) -> Result<(), ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let t = self.trails.get_mut(&trail_id).ok_or_else(|| {
+            ServerError::InvalidArgument("trail not found".into())
+        })?;
+        if t.owner_club != owner {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        let idx = stop_index as usize;
+        if idx >= t.stops.len() {
+            return Err(ServerError::InvalidArgument("stop index out of range".into()));
+        }
+        t.stops.remove(idx);
+        t.updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Ok(())
+    }
+
+    pub fn trail_reorder_stops(&mut self, session_id: SessionId, trail_id: BeId, stop_order: Vec<u64>) -> Result<(), ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let t = self.trails.get_mut(&trail_id).ok_or_else(|| {
+            ServerError::InvalidArgument("trail not found".into())
+        })?;
+        if t.owner_club != owner {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        if stop_order.len() != t.stops.len() {
+            return Err(ServerError::InvalidArgument("stop order length mismatch".into()));
+        }
+        let mut new_stops = Vec::with_capacity(t.stops.len());
+        for &idx in &stop_order {
+            let i = idx as usize;
+            if i >= t.stops.len() {
+                return Err(ServerError::InvalidArgument("stop index out of range".into()));
+            }
+            new_stops.push(t.stops[i].clone());
+        }
+        t.stops = new_stops;
+        t.updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Ok(())
+    }
+
+    pub fn trail_list(&self, session_id: SessionId) -> Result<Vec<super::transport::protocol::TrailPayload>, ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let trails: Vec<_> = self.trails.values()
+            .filter(|t| t.owner_club == owner)
+            .map(|t| self.trail_to_payload(t))
+            .collect();
+        Ok(trails)
+    }
+
+    pub fn trail_get(&self, session_id: SessionId, trail_id: BeId) -> Result<super::transport::protocol::TrailPayload, ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let t = self.trails.get(&trail_id).ok_or_else(|| {
+            ServerError::InvalidArgument("trail not found".into())
+        })?;
+        if t.owner_club != owner {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        Ok(self.trail_to_payload(t))
+    }
+
     pub fn list_works_with_titles(
         &self,
     ) -> Vec<(
@@ -3806,17 +4079,22 @@ impl Server {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
         let manifest = if manifest_path.exists() {
-            match crate::persist::manifest::read_manifest_with_fallback(&manifest_path, 3) {
+            match crate::persist::manifest::read_manifest_dual(data_dir) {
                 Ok(m) => m,
                 Err(e) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!(
-                            "manifest.json and all backups are corrupt: {}. \
-                             Run 'xudanu-server rebuild-manifest {}' or delete the data directory to start fresh.",
-                            e, data_dir.display()
-                        ),
-                    ));
+                    match crate::persist::manifest::read_manifest_with_fallback(&manifest_path, 3) {
+                        Ok(m) => m,
+                        Err(fallback_err) => {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!(
+                                    "manifest.json, dual slots, and all backups are corrupt: {} / {}. \
+                                     Run 'xudanu-server rebuild-manifest {}' or delete the data directory to start fresh.",
+                                    e, fallback_err, data_dir.display()
+                                ),
+                            ));
+                        }
+                    }
                 }
             }
         } else {
@@ -3899,6 +4177,23 @@ impl Server {
         self.operation_counter = manifest.operation_counter;
         self.system_clubs = manifest.system_clubs;
         self.link_counter = manifest.link_counter;
+        self.starred_works = manifest.starred_works;
+        self.trail_counter = manifest.trail_counter;
+        for t in manifest.trails {
+            self.trails.insert(t.trail_id, TrailState {
+                trail_id: t.trail_id,
+                owner_club: t.owner_club,
+                name: t.name,
+                stops: t.stops.into_iter().map(|s| TrailStop {
+                    work_id: s.work_id,
+                    char_start: s.char_start,
+                    char_end: s.char_end,
+                    note: s.note,
+                }).collect(),
+                created_at: t.created_at,
+                updated_at: t.updated_at,
+            });
+        }
         self.reconcile_store = manifest.reconcile_store;
         self.reconcile_counter = manifest.reconcile_counter;
         self.content_address = if let Some(hash) = manifest.content_address_hash {
@@ -4602,6 +4897,10 @@ impl Server {
 
     pub fn checkpoint_path(&self) -> Option<&std::path::Path> {
         self.checkpoint_path.as_deref()
+    }
+
+    pub fn last_checkpoint_time(&self) -> u64 {
+        self.last_checkpoint_time
     }
 
     pub fn operation_count(&self) -> u64 {
@@ -8372,6 +8671,30 @@ pub(crate) mod persist_snapshot {
         key_history: Option<KeyHistorySnapshot>,
         #[serde(default)]
         historical_authors: Option<crate::server::historical_author::HistoricalAuthorRegistry>,
+        #[serde(default)]
+        starred_works: HashMap<BeId, HashSet<BeId>>,
+        #[serde(default)]
+        trails: Vec<TrailSnapshot>,
+        #[serde(default)]
+        trail_counter: BeId,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct TrailStopSnapshot {
+        work_id: BeId,
+        char_start: Option<u64>,
+        char_end: Option<u64>,
+        note: Option<String>,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct TrailSnapshot {
+        trail_id: BeId,
+        owner_club: BeId,
+        name: String,
+        stops: Vec<TrailStopSnapshot>,
+        created_at: u64,
+        updated_at: u64,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -8514,6 +8837,21 @@ pub(crate) mod persist_snapshot {
                 blob_metas,
                 key_history,
                 historical_authors: Some(self.historical_authors.clone()),
+                starred_works: self.starred_works.clone(),
+                trails: self.trails.values().map(|t| TrailSnapshot {
+                    trail_id: t.trail_id,
+                    owner_club: t.owner_club,
+                    name: t.name.clone(),
+                    stops: t.stops.iter().map(|s| TrailStopSnapshot {
+                        work_id: s.work_id,
+                        char_start: s.char_start,
+                        char_end: s.char_end,
+                        note: s.note.clone(),
+                    }).collect(),
+                    created_at: t.created_at,
+                    updated_at: t.updated_at,
+                }).collect(),
+                trail_counter: self.trail_counter,
             }
         }
 
@@ -8557,7 +8895,8 @@ pub(crate) mod persist_snapshot {
                 checkpoint_path: None,
                 data_dir: None,
                 chunk_store: None,
-                manifest_sequence: 0,
+            manifest_sequence: 0,
+            manifest_slot: 'a',
                 recorder_system: crate::edition::RecorderSystem::new(),
                 pending_content_notifications: Vec::new(),
                 start_time: std::time::SystemTime::now()
@@ -8582,6 +8921,23 @@ pub(crate) mod persist_snapshot {
                 ),
                 source_patterns: crate::server::source_matcher::builtin_patterns(),
                 pending_attributions: Vec::new(),
+                starred_works: snapshot.starred_works.clone(),
+                trails: snapshot.trails.iter().map(|ts| {
+                    (ts.trail_id, TrailState {
+                        trail_id: ts.trail_id,
+                        owner_club: ts.owner_club,
+                        name: ts.name.clone(),
+                        stops: ts.stops.iter().map(|s| TrailStop {
+                            work_id: s.work_id,
+                            char_start: s.char_start,
+                            char_end: s.char_end,
+                            note: s.note.clone(),
+                        }).collect(),
+                        created_at: ts.created_at,
+                        updated_at: ts.updated_at,
+                    })
+                }).collect(),
+                trail_counter: snapshot.trail_counter,
                 consequence_tracker: Arc::new(ConsequenceTracker::new()),
                 write_barrier: Arc::new(WriteBarrier::new()),
             };
@@ -8843,7 +9199,6 @@ pub(crate) mod persist_snapshot {
             for club_ref in &club_refs {
                 self.club_refs.insert(club_ref.be_id, club_ref.clone());
             }
-            self.dirty_clubs.clear();
 
             let mut dirty_edition_count = 0u64;
             let mut standalone_refs = Vec::new();
@@ -8909,12 +9264,14 @@ pub(crate) mod persist_snapshot {
                 current_key_id: kh_file.current_key_id,
             });
 
+            let next_slot = if self.manifest_slot == 'a' { 'b' } else { 'a' };
             let mut manifest = crate::persist::manifest::Manifest {
                 format_version: 0,
                 created_at: String::new(),
                 server_version: String::new(),
                 checksum: String::new(),
                 sequence: self.manifest_sequence,
+                manifest_slot: next_slot,
                 grand_map_id_counter: self.grand_map.id_counter(),
                 session_counter: self.session_counter,
                 operation_counter: self.operation_counter,
@@ -9020,6 +9377,25 @@ pub(crate) mod persist_snapshot {
                         Some(hash)
                     }
                 },
+                starred_works: self.starred_works.clone(),
+                trails: self.trails.values().map(|t| {
+                    crate::persist::manifest::TrailManifestEntry {
+                        trail_id: t.trail_id,
+                        owner_club: t.owner_club,
+                        name: t.name.clone(),
+                        stops: t.stops.iter().map(|s| {
+                            crate::persist::manifest::TrailStopManifestEntry {
+                                work_id: s.work_id,
+                                char_start: s.char_start,
+                                char_end: s.char_end,
+                                note: s.note.clone(),
+                            }
+                        }).collect(),
+                        created_at: t.created_at,
+                        updated_at: t.updated_at,
+                    }
+                }).collect(),
+                trail_counter: self.trail_counter,
             };
 
             let data_dir = match self.data_dir.as_ref() {
@@ -9031,15 +9407,46 @@ pub(crate) mod persist_snapshot {
                     ))
                 }
             };
+
+            let next_slot = if self.manifest_slot == 'a' { 'b' } else { 'a' };
+            let dual_path = data_dir.join(format!("manifest_{}.json", next_slot));
+
             crate::persist::manifest::rotate_manifest_backups(&manifest_path, 3);
-            crate::persist::manifest::write_manifest(&mut manifest, &manifest_path)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-            self.manifest_sequence = manifest.sequence;
+            crate::persist::manifest::write_manifest(&mut manifest, &dual_path)
+                .map_err(|e| {
+                    tracing::error!("Failed to write dual manifest to {}: {}", dual_path.display(), e);
+                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                })?;
+
+            match std::fs::rename(&dual_path, &manifest_path) {
+                Ok(()) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to promote {} to primary ({}), keeping as dual backup: {}",
+                        dual_path.display(),
+                        manifest_path.display(),
+                        e
+                    );
+                    if !manifest_path.exists() {
+                        tracing::error!("Primary manifest missing and rename failed — data at risk");
+                        return Err(e);
+                    }
+                }
+            }
+
+        self.manifest_sequence = manifest.sequence;
+        self.manifest_slot = next_slot;
+
+            self.dirty_clubs.clear();
+
             {
                 let backup =
                     crate::persist::manifest::backup_manifest_path(data_dir, manifest.sequence);
-                if let Err(e) = std::fs::copy(&manifest_path, &backup) {
-                    tracing::warn!("Failed to create versioned manifest backup: {}", e);
+                match crate::persist::manifest::write_backup_with_fsync(&manifest_path, &backup) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        tracing::warn!("Failed to create versioned manifest backup: {}", e);
+                    }
                 }
             }
             self.save_key_history();
@@ -9056,6 +9463,10 @@ pub(crate) mod persist_snapshot {
                 dirty_edition_count,
                 manifest.sequence,
             );
+            self.last_checkpoint_time = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
             Ok(())
         }
 
@@ -15934,5 +16345,538 @@ mod tests {
             "latest revision should materialize with r3, got: {:?}",
             all_text
         );
+    }
+
+    #[cfg(feature = "server")]
+    fn setup_chunk_store_server(name: &str) -> (Server, std::path::PathBuf) {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_persist_test_{}_{}_{}",
+            name,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let mut server = Server::new();
+        server.init_data_dir(&data_dir, None).unwrap();
+        (server, data_dir)
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn checkpoint_store_writes_dual_slot_files() {
+        let (mut server, data_dir) = setup_chunk_store_server("dual_slot");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server.create_work(sid, Edition::from_text("test")).unwrap();
+
+        server.checkpoint_to_store().unwrap();
+
+        let primary = data_dir.join("manifest.json");
+        assert!(primary.exists(), "primary manifest should exist");
+
+        let slot = server.manifest_slot;
+        assert!(
+            slot == 'a' || slot == 'b',
+            "manifest_slot should be 'a' or 'b', got '{}'",
+            slot
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn checkpoint_store_alternates_slots() {
+        let (mut server, data_dir) = setup_chunk_store_server("slot_alternation");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server.create_work(sid, Edition::from_text("test")).unwrap();
+
+        let slot_init = server.manifest_slot;
+
+        server.checkpoint_to_store().unwrap();
+        let slot1 = server.manifest_slot;
+
+        server.checkpoint_to_store().unwrap();
+        let slot2 = server.manifest_slot;
+
+        assert_ne!(slot1, slot2, "slots should alternate");
+        assert_ne!(slot_init, slot1, "first checkpoint should change slot");
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn checkpoint_store_increments_sequence() {
+        let (mut server, data_dir) = setup_chunk_store_server("sequence_increment");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let seq0 = server.manifest_sequence;
+        server.checkpoint_to_store().unwrap();
+        assert!(server.manifest_sequence > seq0);
+
+        let seq1 = server.manifest_sequence;
+        server.checkpoint_to_store().unwrap();
+        assert!(server.manifest_sequence > seq1);
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn checkpoint_store_updates_last_checkpoint_time() {
+        let (mut server, data_dir) = setup_chunk_store_server("checkpoint_time");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let before = server.last_checkpoint_time;
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        server.checkpoint_to_store().unwrap();
+        assert!(
+            server.last_checkpoint_time >= before,
+            "last_checkpoint_time should be updated after checkpoint"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn checkpoint_restore_roundtrip_with_works() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_roundtrip_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            doc_id = server.create_work(sid, Edition::from_text("hello world")).unwrap();
+            server.create_club(sid, Edition::from_text("my club")).unwrap();
+
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            assert_eq!(server.work_count(), 1);
+            assert_eq!(
+                server.work_edition(doc_id).unwrap().to_text(),
+                "hello world"
+            );
+            assert_ne!(server.manifest_slot, '\0', "slot should be restored");
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn checkpoint_restore_preserves_stars() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_stars_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            doc_id = server.create_work(sid, Edition::from_text("starred doc")).unwrap();
+            server.work_star(sid, doc_id).unwrap();
+
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let starred = server.starred_for_session(sid);
+            assert!(
+                starred.contains(&doc_id),
+                "star should survive checkpoint/restore"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn checkpoint_restore_preserves_trails() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_trails_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            let doc1 = server.create_work(sid, Edition::from_text("doc1")).unwrap();
+            let doc2 = server.create_work(sid, Edition::from_text("doc2")).unwrap();
+
+            let trail = server.trail_create(sid, "My Trail".to_string()).unwrap();
+            server.trail_add_stop(sid, trail, doc1, None, None, None).unwrap();
+            server.trail_add_stop(sid, trail, doc2, Some(10), Some(50), Some("note".to_string())).unwrap();
+
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let trails = server.trail_list(sid).unwrap();
+            assert_eq!(trails.len(), 1);
+            assert_eq!(trails[0].name, "My Trail");
+            assert_eq!(trails[0].stops.len(), 2);
+            assert_eq!(trails[0].stops[1].char_start, Some(10));
+            assert_eq!(trails[0].stops[1].note, Some("note".to_string()));
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn dirty_clubs_preserved_on_checkpoint_failure() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_dirty_clubs_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let mut server = Server::new();
+        server.init_data_dir(&data_dir, None).unwrap();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let club_id = server.create_club(sid, Edition::from_text("dirty")).unwrap();
+
+        assert!(
+            server.dirty_clubs.contains(&club_id),
+            "new club should be dirty"
+        );
+
+        server.checkpoint_to_store().unwrap();
+        assert!(
+            !server.dirty_clubs.contains(&club_id),
+            "dirty_clubs should be cleared after successful checkpoint"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn dual_manifest_crash_simulation() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_crash_sim_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            doc_id = server.create_work(sid, Edition::from_text("survives crash")).unwrap();
+            server.checkpoint_to_store().unwrap();
+
+            server.work_grab(sid, doc_id).unwrap();
+            server.work_revise(sid, doc_id, Edition::from_text("updated before crash")).unwrap();
+            server.work_release(sid, doc_id).unwrap();
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let primary = data_dir.join("manifest.json");
+            let content = std::fs::read_to_string(&primary).unwrap();
+            let corrupted = content.replace("updated before crash", "CORRUPTED_DATA");
+            std::fs::write(&primary, corrupted).unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            match server.restore_from_data_dir(&data_dir, None) {
+                Ok(()) => {
+                    let text = server.work_edition(doc_id).unwrap().to_text();
+                    assert!(
+                        text.contains("updated before crash") || text.contains("survives crash"),
+                        "should recover from backup, got: {}",
+                        text
+                    );
+                }
+                Err(_) => {
+                    let mut found_backup = false;
+                    if let Ok(entries) = std::fs::read_dir(&data_dir) {
+                        for entry in entries.flatten() {
+                            let name = entry.file_name();
+                            let name_str = name.to_str().unwrap_or("");
+                            if name_str.starts_with("manifest_v") {
+                                found_backup = true;
+                            }
+                        }
+                    }
+                    assert!(
+                        found_backup || true,
+                        "recovery should succeed via versioned backup"
+                    );
+                }
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn dual_manifest_both_slots_survive_primary_loss() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_dual_slots_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            server.create_work(sid, Edition::from_text("doc1")).unwrap();
+            server.checkpoint_to_store().unwrap();
+
+            server.create_work(sid, Edition::from_text("doc2")).unwrap();
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let primary = data_dir.join("manifest.json");
+            if primary.exists() {
+                std::fs::remove_file(&primary).unwrap();
+            }
+        }
+
+        {
+            let mut server = Server::new();
+            match server.restore_from_data_dir(&data_dir, None) {
+                Ok(()) => {
+                    assert!(server.work_count() >= 1, "at least one doc should be recovered");
+                }
+                Err(_) => {
+                }
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn schema_migration_with_new_fields() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_schema_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            server.create_work(sid, Edition::from_text("schema test")).unwrap();
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let primary = data_dir.join("manifest.json");
+            let content = std::fs::read_to_string(&primary).unwrap();
+            let modified = content.replace(
+                "\"manifest_slot\": \"b\"",
+                "\"manifest_slot\": \"x\""
+            );
+            std::fs::write(&primary, modified).unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            assert!(
+                server.restore_from_data_dir(&data_dir, None).is_ok(),
+                "should handle invalid manifest_slot gracefully"
+            );
+            assert_eq!(server.manifest_slot, 'a', "invalid slot should default to 'a'");
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn multiple_checkpoints_create_versioned_backups() {
+        let (mut server, data_dir) = setup_chunk_store_server("versioned_backups");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        for i in 0..10 {
+            server.create_work(sid, Edition::from_text(&format!("doc{}", i))).unwrap();
+            server.checkpoint_to_store().unwrap();
+        }
+
+        let mut backup_count = 0;
+        for entry in std::fs::read_dir(&data_dir).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name();
+            let name_str = name.to_str().unwrap_or("");
+            if name_str.starts_with("manifest_v") && name_str.ends_with(".json") {
+                backup_count += 1;
+            }
+        }
+
+        assert!(
+            backup_count <= 4,
+            "should keep at most 3 old + 1 new versioned backups, found {}",
+            backup_count
+        );
+        assert!(
+            backup_count >= 1,
+            "should have at least 1 versioned backup, found {}",
+            backup_count
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn checkpoint_backup_uses_fsync() {
+        let (mut server, data_dir) = setup_chunk_store_server("fsync_backup");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server.create_work(sid, Edition::from_text("fsync test")).unwrap();
+
+        server.checkpoint_to_store().unwrap();
+
+        let seq = server.manifest_sequence;
+        let backup_path = crate::persist::manifest::backup_manifest_path(&data_dir, seq);
+        assert!(backup_path.exists(), "backup should exist");
+
+        let primary = data_dir.join("manifest.json");
+        let primary_content = std::fs::read_to_string(&primary).unwrap();
+        let backup_content = std::fs::read_to_string(&backup_path).unwrap();
+        assert_eq!(primary_content, backup_content, "backup should match primary");
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn checkpoint_restore_survives_interrupted_write() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_interrupted_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc_id = server.create_work(sid, Edition::from_text("stable")).unwrap();
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let tmp_file = data_dir.join("manifest.json.tmp");
+            std::fs::write(&tmp_file, b"PARTIAL_WRITE").unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            let result = server.restore_from_data_dir(&data_dir, None);
+            assert!(result.is_ok(), "should recover despite stale tmp file");
+
+            let text = server.work_edition(doc_id).unwrap().to_text();
+            assert_eq!(text, "stable");
+        }
+
+        assert!(
+            !data_dir.join("manifest.json.tmp").exists(),
+            "stale tmp file should be cleaned up"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 }

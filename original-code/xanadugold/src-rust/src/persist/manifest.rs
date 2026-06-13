@@ -93,6 +93,27 @@ pub struct AdminEntry {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TrailStopManifestEntry {
+    pub work_id: BeId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub char_start: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub char_end: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TrailManifestEntry {
+    pub trail_id: BeId,
+    pub owner_club: BeId,
+    pub name: String,
+    pub stops: Vec<TrailStopManifestEntry>,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BlobMetaEntry {
     pub content_hash: Vec<u8>,
     pub hash_u64: u64,
@@ -137,6 +158,8 @@ pub struct Manifest {
     pub checksum: String,
     #[serde(default)]
     pub sequence: u64,
+    #[serde(default)]
+    pub manifest_slot: char,
 
     pub grand_map_id_counter: BeId,
     pub session_counter: u64,
@@ -179,6 +202,12 @@ pub struct Manifest {
     pub annotations_hash: Option<[u8; 32]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fossil_snapshots_hash: Option<[u8; 32]>,
+    #[serde(default)]
+    pub starred_works: std::collections::HashMap<BeId, std::collections::HashSet<BeId>>,
+    #[serde(default)]
+    pub trails: Vec<TrailManifestEntry>,
+    #[serde(default)]
+    pub trail_counter: BeId,
 }
 
 #[derive(Debug)]
@@ -403,6 +432,106 @@ pub fn write_manifest(manifest: &mut Manifest, path: &Path) -> Result<(), Manife
     Ok(())
 }
 
+pub fn write_backup_with_fsync(src: &Path, dst: &Path) -> Result<(), ManifestError> {
+    let tmp_path = dst.with_extension("baktmp");
+    {
+        let mut src_file = std::fs::File::open(src)?;
+        let mut dst_file = std::fs::File::create(&tmp_path)?;
+        std::io::copy(&mut src_file, &mut dst_file)?;
+        dst_file.sync_all()?;
+    }
+    if tmp_path != dst {
+        std::fs::rename(&tmp_path, dst)?;
+    }
+    if let Some(parent) = dst.parent() {
+        if let Ok(dir) = std::fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+    Ok(())
+}
+
+pub fn read_manifest_dual(data_dir: &Path) -> Result<Manifest, ManifestError> {
+    let primary = data_dir.join("manifest.json");
+    let slot_a = data_dir.join("manifest_a.json");
+    let slot_b = data_dir.join("manifest_b.json");
+
+    let primary_result = if primary.exists() {
+        read_manifest(&primary).ok()
+    } else {
+        None
+    };
+
+    let slot_a_result = if slot_a.exists() {
+        read_manifest(&slot_a).ok()
+    } else {
+        None
+    };
+
+    let slot_b_result = if slot_b.exists() {
+        read_manifest(&slot_b).ok()
+    } else {
+        None
+    };
+
+    let best = match (primary_result, slot_a_result, slot_b_result) {
+        (Some(p), Some(a), Some(b)) => {
+            if p.sequence >= a.sequence && p.sequence >= b.sequence {
+                Some(p)
+            } else if a.sequence >= b.sequence {
+                Some(a)
+            } else {
+                Some(b)
+            }
+        }
+        (Some(p), Some(a), None) => {
+            if p.sequence >= a.sequence {
+                Some(p)
+            } else {
+                Some(a)
+            }
+        }
+        (Some(p), None, Some(b)) => {
+            if p.sequence >= b.sequence {
+                Some(p)
+            } else {
+                Some(b)
+            }
+        }
+        (Some(p), None, None) => Some(p),
+        (None, Some(a), Some(b)) => {
+            if a.sequence >= b.sequence {
+                Some(a)
+            } else {
+                Some(b)
+            }
+        }
+        (None, Some(a), None) => Some(a),
+        (None, None, Some(b)) => Some(b),
+        (None, None, None) => None,
+    };
+
+    match best {
+        Some(manifest) => {
+            let slot = if manifest.manifest_slot == 'a' || manifest.manifest_slot == 'b' {
+                manifest.manifest_slot
+            } else {
+                'a'
+            };
+            let _ = std::fs::copy(
+                match slot {
+                    'a' => &slot_a,
+                    'b' => &slot_b,
+                    _ => &slot_a,
+                },
+                &primary,
+            );
+            Ok(manifest)
+        }
+        None => read_manifest_with_fallback(&primary, 3),
+    }
+}
+
 pub fn read_manifest(path: &Path) -> Result<Manifest, ManifestError> {
     let content = std::fs::read_to_string(path)?;
     let manifest: Manifest = serde_json::from_str(&content)?;
@@ -447,6 +576,7 @@ pub fn create_empty_manifest(
         server_version: server_version(),
         checksum: String::new(),
         sequence: 0,
+        manifest_slot: 'a',
         grand_map_id_counter,
         session_counter: 0,
         operation_counter: 0,
@@ -474,6 +604,9 @@ pub fn create_empty_manifest(
         historical_authors: None,
         annotations_hash: None,
         fossil_snapshots_hash: None,
+        starred_works: std::collections::HashMap::new(),
+        trails: Vec::new(),
+        trail_counter: 10_000,
     }
 }
 
@@ -913,6 +1046,220 @@ mod tests {
         let restored = read_manifest(&path).unwrap();
         assert_eq!(restored.sequence, 1);
         assert!(!restored.checksum.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn manifest_slot_roundtrip() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        assert_eq!(m.manifest_slot, 'a');
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let restored = read_manifest(&path).unwrap();
+        assert_eq!(restored.manifest_slot, 'a');
+
+        m.manifest_slot = 'b';
+        write_manifest(&mut m, &path).unwrap();
+        let restored = read_manifest(&path).unwrap();
+        assert_eq!(restored.manifest_slot, 'b');
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_backup_with_fsync_creates_identical_copy() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let backup = dir.join("backup_manifest.json");
+        write_backup_with_fsync(&path, &backup).unwrap();
+
+        assert!(backup.exists());
+        let original = std::fs::read_to_string(&path).unwrap();
+        let backup_content = std::fs::read_to_string(&backup).unwrap();
+        assert_eq!(original, backup_content);
+
+        let restored = read_manifest(&backup).unwrap();
+        assert_eq!(restored.sequence, m.sequence);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_backup_with_fsync_uses_tmp_then_rename() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let backup = dir.join("backup_test.json");
+        write_backup_with_fsync(&path, &backup).unwrap();
+        assert!(!dir.join("backup_test.baktmp").exists(), "tmp file should be cleaned up");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dual_manifest_recovery_prefers_higher_sequence() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m_a = create_empty_manifest(test_system_clubs(), 100);
+        m_a.manifest_slot = 'a';
+        let path_a = dir.join("manifest_a.json");
+        write_manifest(&mut m_a, &path_a).unwrap();
+
+        let mut m_b = create_empty_manifest(test_system_clubs(), 200);
+        m_b.manifest_slot = 'b';
+        m_b.sequence = m_a.sequence + 10;
+        m_b.checksum = compute_manifest_checksum(&m_b);
+        let path_b = dir.join("manifest_b.json");
+        {
+            let json = serde_json::to_string_pretty(&m_b).unwrap();
+            std::fs::write(&path_b, json).unwrap();
+        }
+
+        let result = read_manifest_dual(&dir).unwrap();
+        assert_eq!(result.grand_map_id_counter, 200, "should pick manifest_b (higher sequence)");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dual_manifest_primary_corrupt_falls_back_to_slot() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        m.manifest_slot = 'a';
+        let slot_a = dir.join("manifest_a.json");
+        write_manifest(&mut m, &slot_a).unwrap();
+
+        let primary = manifest_path(&dir);
+        std::fs::copy(&slot_a, &primary).unwrap();
+
+        std::fs::write(&primary, b"CORRUPTED").unwrap();
+
+        let result = read_manifest_dual(&dir).unwrap();
+        assert_eq!(result.grand_map_id_counter, 100);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dual_manifest_all_corrupt_falls_back_to_versioned() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let backup = backup_manifest_path(&dir, m.sequence);
+        std::fs::copy(&path, &backup).unwrap();
+
+        let slot_a = dir.join("manifest_a.json");
+        let slot_b = dir.join("manifest_b.json");
+        std::fs::write(&path, b"BAD_PRIMARY").unwrap();
+        std::fs::write(&slot_a, b"BAD_A").unwrap();
+        std::fs::write(&slot_b, b"BAD_B").unwrap();
+
+        let result = read_manifest_dual(&dir).unwrap();
+        assert_eq!(result.grand_map_id_counter, 100, "should recover from versioned backup");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dual_manifest_no_slots_uses_primary() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let result = read_manifest_dual(&dir).unwrap();
+        assert_eq!(result.grand_map_id_counter, 100);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dual_manifest_empty_dir_returns_error() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let result = read_manifest_dual(&dir);
+        assert!(result.is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn backup_rotation_keeps_newest_first() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let path = manifest_path(&dir);
+
+        let mut m1 = create_empty_manifest(test_system_clubs(), 100);
+        write_manifest(&mut m1, &path).unwrap();
+        let b1 = backup_manifest_path(&dir, m1.sequence);
+        std::fs::copy(&path, &b1).unwrap();
+
+        let mut m2 = create_empty_manifest(test_system_clubs(), 200);
+        m2.sequence = 5;
+        m2.checksum = compute_manifest_checksum(&m2);
+        let b5 = backup_manifest_path(&dir, 5);
+        let json = serde_json::to_string_pretty(&m2).unwrap();
+        std::fs::write(&b5, json).unwrap();
+
+        let mut m3 = create_empty_manifest(test_system_clubs(), 300);
+        m3.sequence = 10;
+        m3.checksum = compute_manifest_checksum(&m3);
+        let b10 = backup_manifest_path(&dir, 10);
+        let json3 = serde_json::to_string_pretty(&m3).unwrap();
+        std::fs::write(&b10, json3).unwrap();
+
+        let mut m4 = create_empty_manifest(test_system_clubs(), 400);
+        m4.sequence = 15;
+        m4.checksum = compute_manifest_checksum(&m4);
+        let b15 = backup_manifest_path(&dir, 15);
+        let json4 = serde_json::to_string_pretty(&m4).unwrap();
+        std::fs::write(&b15, json4).unwrap();
+
+        assert!(b1.exists());
+        assert!(b5.exists());
+        assert!(b10.exists());
+        assert!(b15.exists());
+
+        rotate_manifest_backups(&path, 2);
+
+        assert!(!b1.exists(), "v1 should be removed");
+        assert!(!b5.exists(), "v5 should be removed");
+        assert!(b10.exists(), "v10 should survive");
+        assert!(b15.exists(), "v15 should survive");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
