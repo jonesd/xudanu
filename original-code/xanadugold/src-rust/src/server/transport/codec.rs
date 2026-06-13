@@ -378,6 +378,8 @@ impl BinaryCodec {
             }),
             OperationCode::BlobStats => Ok(WireRequest::BlobStats),
             OperationCode::LabelCreate => Ok(WireRequest::LabelCreate),
+            OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
+            OperationCode::TrailList => Ok(WireRequest::TrailList),
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
@@ -608,6 +610,8 @@ impl JsonCodec {
             OperationCode::SourcePatternList,
             OperationCode::ClubNames,
             OperationCode::WorkList,
+            OperationCode::WorkGraph,
+            OperationCode::TrailList,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -649,6 +653,8 @@ impl JsonCodec {
                     offset: None,
                     limit: None,
                 }),
+                OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
+                OperationCode::TrailList => Ok(WireRequest::TrailList),
                 _ => unreachable!(),
             };
         }
@@ -2670,6 +2676,76 @@ impl JsonCodec {
                     start: args.start,
                     end: args.end,
                 })
+            }
+            OperationCode::WorkStar => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkStar { work_id: args.work_id })
+            }
+            OperationCode::WorkUnstar => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkUnstar { work_id: args.work_id })
+            }
+            OperationCode::WorkIsStarred => {
+                #[derive(Deserialize)]
+                struct Args { work_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkIsStarred { work_id: args.work_id })
+            }
+            OperationCode::TrailCreate => {
+                #[derive(Deserialize)]
+                struct Args { name: String }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailCreate { name: args.name })
+            }
+            OperationCode::TrailDelete => {
+                #[derive(Deserialize)]
+                struct Args { trail_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailDelete { trail_id: args.trail_id })
+            }
+            OperationCode::TrailRename => {
+                #[derive(Deserialize)]
+                struct Args { trail_id: BeId, name: String }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailRename { trail_id: args.trail_id, name: args.name })
+            }
+            OperationCode::TrailAddStop => {
+                #[derive(Deserialize)]
+                struct Args { trail_id: BeId, work_id: BeId, #[serde(default)] char_start: Option<u64>, #[serde(default)] char_end: Option<u64>, #[serde(default)] note: Option<String> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailAddStop { trail_id: args.trail_id, work_id: args.work_id, char_start: args.char_start, char_end: args.char_end, note: args.note })
+            }
+            OperationCode::TrailRemoveStop => {
+                #[derive(Deserialize)]
+                struct Args { trail_id: BeId, stop_index: u64 }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailRemoveStop { trail_id: args.trail_id, stop_index: args.stop_index })
+            }
+            OperationCode::TrailReorderStops => {
+                #[derive(Deserialize)]
+                struct Args { trail_id: BeId, stop_order: Vec<u64> }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailReorderStops { trail_id: args.trail_id, stop_order: args.stop_order })
+            }
+            OperationCode::TrailGet => {
+                #[derive(Deserialize)]
+                struct Args { trail_id: BeId }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TrailGet { trail_id: args.trail_id })
             }
             _ => Err(FrameParseError::MissingPayload.into()),
         }

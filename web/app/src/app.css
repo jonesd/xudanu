@@ -536,6 +536,42 @@ body {
   color: #8b7340;
 }
 
+.star-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: #ccc;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.star-btn:hover {
+  color: #f59e0b;
+}
+
+.star-btn.starred {
+  color: #f59e0b;
+}
+
+.header-star {
+  font-size: 16px;
+  line-height: 1;
+  color: #ccc;
+  transition: color 0.15s;
+  user-select: none;
+}
+
+.header-star:hover {
+  color: #f59e0b;
+}
+
+.header-star.starred {
+  color: #f59e0b;
+}
+
 .branch-panel {
   width: 220px;
   border-right: 1px solid #e0e0e0;
@@ -3477,3 +3513,253 @@ canvas._bridge {
 
 .share-readonly { color: #b45309; background: #fef3cd; border-radius: 4px; margin-bottom: 12px; }
 .share-error { color: #c44; background: #fee; border-radius: 4px; margin-bottom: 12px; }
+
+.document-map-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.document-map-panel {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: 860px;
+  max-width: 95vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.document-map-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.document-map-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.document-map-stats {
+  font-size: 12px;
+  color: #888;
+}
+
+.document-map-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #666;
+  line-height: 1;
+}
+
+.document-map-close:hover { color: #333; }
+
+.document-map-loading {
+  padding: 60px;
+  text-align: center;
+  color: #888;
+  font-size: 14px;
+}
+
+.document-map-svg {
+  flex: 1;
+  width: 100%;
+  min-height: 400px;
+}
+
+.panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.panel-dialog {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+  width: 540px;
+  max-width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.panel-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.panel-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #666;
+}
+
+.panel-body {
+  padding: 12px 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.panel-empty {
+  text-align: center;
+  color: #888;
+  font-size: 13px;
+  padding: 20px 0;
+}
+
+.trail-create-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.trail-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.trail-create-btn {
+  padding: 6px 14px;
+  background: #4361ee;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.trail-create-btn:disabled { opacity: 0.5; }
+
+.trail-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.trail-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: #fafafa;
+}
+
+.trail-card-header:hover { background: #f0f0ff; }
+
+.trail-card-arrow { font-size: 12px; color: #888; }
+
+.trail-card-name { font-weight: 500; font-size: 13px; flex: 1; }
+
+.trail-card-count { font-size: 11px; color: #888; }
+
+.trail-add-stop-btn {
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  font-size: 14px;
+  cursor: pointer;
+  color: #4361ee;
+  padding: 0 6px;
+  line-height: 1;
+}
+
+.trail-delete-btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: #c44;
+  line-height: 1;
+}
+
+.trail-stops { padding: 4px 0; }
+
+.trail-stop-empty { padding: 8px 16px; color: #aaa; font-size: 12px; }
+
+.trail-stop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.trail-stop-number {
+  font-size: 11px;
+  color: #aaa;
+  font-weight: 600;
+  min-width: 16px;
+}
+
+.trail-stop-title {
+  font-size: 12px;
+  color: #333;
+  cursor: pointer;
+  flex: 1;
+}
+
+.trail-stop-title:hover { color: #4361ee; text-decoration: underline; }
+.trail-stop-title.active { color: #4361ee; font-weight: 600; }
+
+.trail-stop-note {
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+}
+
+.trail-stop-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.trail-move-btn {
+  background: none;
+  border: none;
+  font-size: 10px;
+  cursor: pointer;
+  color: #999;
+  padding: 0 2px;
+}
+
+.trail-move-btn:hover { color: #4361ee; }
+
+.trail-remove-stop-btn {
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  color: #c44;
+  padding: 0 2px;
+  line-height: 1;
+}

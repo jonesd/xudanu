@@ -114,6 +114,18 @@ pub enum OperationCode {
     WorkSponsor,
     WorkUnsponsor,
     WorkSponsors,
+    WorkStar,
+    WorkUnstar,
+    WorkIsStarred,
+    WorkGraph,
+    TrailCreate,
+    TrailDelete,
+    TrailRename,
+    TrailAddStop,
+    TrailRemoveStop,
+    TrailReorderStops,
+    TrailList,
+    TrailGet,
     WorkOwner,
     WorkPublish,
     WorkUnpublish,
@@ -358,6 +370,18 @@ impl OperationCode {
             0x0314 => Some(OperationCode::WorkList),
             0x0315 => Some(OperationCode::WorkListByOwner),
             0x0316 => Some(OperationCode::WorkReviseDelta),
+            0x0335 => Some(OperationCode::WorkStar),
+            0x0336 => Some(OperationCode::WorkUnstar),
+            0x0337 => Some(OperationCode::WorkIsStarred),
+            0x0338 => Some(OperationCode::WorkGraph),
+            0x0339 => Some(OperationCode::TrailCreate),
+            0x033a => Some(OperationCode::TrailDelete),
+            0x033b => Some(OperationCode::TrailRename),
+            0x033c => Some(OperationCode::TrailAddStop),
+            0x033d => Some(OperationCode::TrailRemoveStop),
+            0x033e => Some(OperationCode::TrailReorderStops),
+            0x033f => Some(OperationCode::TrailList),
+            0x0340 => Some(OperationCode::TrailGet),
             0x031C => Some(OperationCode::WorkDiffNarration),
             0x031D => Some(OperationCode::WorkWritingFeedback),
             0x031E => Some(OperationCode::WorkBacklinks),
@@ -582,6 +606,18 @@ impl OperationCode {
             OperationCode::WorkSponsor => 0x0310,
             OperationCode::WorkUnsponsor => 0x0311,
             OperationCode::WorkSponsors => 0x0312,
+            OperationCode::WorkStar => 0x0335,
+            OperationCode::WorkUnstar => 0x0336,
+            OperationCode::WorkIsStarred => 0x0337,
+            OperationCode::WorkGraph => 0x0338,
+            OperationCode::TrailCreate => 0x0339,
+            OperationCode::TrailDelete => 0x033a,
+            OperationCode::TrailRename => 0x033b,
+            OperationCode::TrailAddStop => 0x033c,
+            OperationCode::TrailRemoveStop => 0x033d,
+            OperationCode::TrailReorderStops => 0x033e,
+            OperationCode::TrailList => 0x033f,
+            OperationCode::TrailGet => 0x0340,
             OperationCode::WorkOwner => 0x0313,
             OperationCode::WorkPublish => 0x0317,
             OperationCode::WorkUnpublish => 0x0318,
@@ -898,6 +934,26 @@ pub enum WireRequest {
     WorkCanRevise {
         work_id: BeId,
     },
+    WorkStar {
+        work_id: BeId,
+    },
+    WorkUnstar {
+        work_id: BeId,
+    },
+    WorkIsStarred {
+        work_id: BeId,
+    },
+    WorkGraph,
+
+    TrailCreate { name: String },
+    TrailDelete { trail_id: BeId },
+    TrailRename { trail_id: BeId, name: String },
+    TrailAddStop { trail_id: BeId, work_id: BeId, char_start: Option<u64>, char_end: Option<u64>, note: Option<String> },
+    TrailRemoveStop { trail_id: BeId, stop_index: u64 },
+    TrailReorderStops { trail_id: BeId, stop_order: Vec<u64> },
+    TrailList,
+    TrailGet { trail_id: BeId },
+
     WorkSetReadClub {
         work_id: BeId,
         club_id: Option<BeId>,
@@ -1603,6 +1659,9 @@ pub enum ResponseValue {
     ServerInfo(ServerInfoPayload),
     Grants(Vec<GrantPayload>),
     WorkList(Vec<WorkListEntry>),
+    WorkGraphResult(GraphPayload),
+    TrailResult(TrailPayload),
+    TrailListResult(Vec<TrailPayload>),
     WorkBacklinksResult(Vec<BacklinkEntryPayload>),
     PaginatedWorkList {
         entries: Vec<WorkListEntry>,
@@ -2120,6 +2179,8 @@ pub struct WorkListEntry {
     pub source_author_id: Option<BeId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_edition_info: Option<String>,
+    #[serde(default)]
+    pub is_starred: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2140,6 +2201,57 @@ pub struct BacklinkEntryPayload {
     pub excerpt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphNodePayload {
+    pub work_id: BeId,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    #[serde(default)]
+    pub is_starred: bool,
+    #[serde(default)]
+    pub is_source: bool,
+    pub revision_count: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphEdgePayload {
+    pub source: BeId,
+    pub target: BeId,
+    pub edge_type: String,
+    #[serde(default)]
+    pub weight: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphPayload {
+    pub nodes: Vec<GraphNodePayload>,
+    pub edges: Vec<GraphEdgePayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrailStopPayload {
+    pub work_id: BeId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub char_start: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub char_end: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrailPayload {
+    pub trail_id: BeId,
+    pub name: String,
+    pub stops: Vec<TrailStopPayload>,
+    pub created_at: u64,
+    pub updated_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

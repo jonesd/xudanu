@@ -3303,6 +3303,46 @@ impl Server {
             }
             let _ = link_id;
         }
+
+        let stop_words: HashSet<&str> = [
+            "the","a","an","and","or","but","in","on","at","to","for","of","with",
+            "by","from","is","was","are","were","be","been","being","have","has",
+            "had","do","does","did","will","would","could","should","may","might",
+            "shall","can","not","no","it","its","this","that","these","those","as",
+            "if","then","than","so","such","up","out","about","into","over","after",
+        ].iter().copied().collect();
+
+        let word_sets: Vec<(BeId, HashSet<String>)> = nodes.iter()
+            .filter_map(|(id, _, _, _, _)| {
+                let text = self.work_text((*id).into()).ok()?;
+                let words: HashSet<String> = text
+                    .to_ascii_lowercase()
+                    .split(|c: char| !c.is_alphanumeric())
+                    .filter(|w| w.len() >= 3)
+                    .filter(|w| !stop_words.contains(*w))
+                    .map(|w| w.to_string())
+                    .collect();
+                if words.is_empty() { None } else { Some((*id, words)) }
+            })
+            .collect();
+
+        for i in 0..word_sets.len() {
+            for j in (i + 1)..word_sets.len() {
+                let (id_a, ref set_a) = word_sets[i];
+                let (id_b, ref set_b) = word_sets[j];
+                let intersection = set_a.intersection(set_b).count() as u64;
+                let union = set_a.union(set_b).count() as u64;
+                if union == 0 { continue; }
+                let similarity = intersection as f64 / union as f64;
+                if similarity > 0.15 {
+                    let key = if id_a < id_b { (id_a, id_b) } else { (id_b, id_a) };
+                    if seen_edges.insert(key) {
+                        edges.push((id_a, id_b, "similarity".to_string(), (similarity * 100.0) as u64));
+                    }
+                }
+            }
+        }
+
         (nodes, edges)
     }
 

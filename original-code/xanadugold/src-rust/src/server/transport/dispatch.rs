@@ -463,6 +463,93 @@ fn dispatch_inner(
             let can = srv.work_can_revise(session_id, work_id)?;
             Ok(ResponseValue::Boolean(can))
         }
+        WireRequest::WorkStar { work_id } => {
+            srv.work_star(session_id, work_id)?;
+            if let Err(e) = srv.checkpoint_to_store() {
+                tracing::warn!("[work_star] checkpoint failed: {}", e);
+            }
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkUnstar { work_id } => {
+            srv.work_unstar(session_id, work_id)?;
+            if let Err(e) = srv.checkpoint_to_store() {
+                tracing::warn!("[work_unstar] checkpoint failed: {}", e);
+            }
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkIsStarred { work_id } => {
+            let starred = srv.work_is_starred(session_id, work_id)?;
+            Ok(ResponseValue::Boolean(starred))
+        }
+        WireRequest::WorkGraph => {
+            srv.ensure_authenticated(session_id)?;
+            let (raw_nodes, raw_edges) = srv.build_work_graph(session_id);
+            let nodes: Vec<super::protocol::GraphNodePayload> = raw_nodes
+                .into_iter()
+                .map(|(work_id, title, is_starred, is_source, revision_count)| {
+                    super::protocol::GraphNodePayload {
+                        work_id,
+                        title,
+                        is_starred,
+                        is_source,
+                        revision_count,
+                        author_type: None,
+                    }
+                })
+                .collect();
+            let edges: Vec<super::protocol::GraphEdgePayload> = raw_edges
+                .into_iter()
+                .map(|(source, target, edge_type, weight)| {
+                    super::protocol::GraphEdgePayload {
+                        source,
+                        target,
+                        edge_type,
+                        weight,
+                    }
+                })
+                .collect();
+            Ok(ResponseValue::WorkGraphResult(super::protocol::GraphPayload { nodes, edges }))
+        }
+        WireRequest::TrailCreate { name } => {
+            srv.ensure_authenticated(session_id)?;
+            let trail_id = srv.trail_create(session_id, name)?;
+            Ok(ResponseValue::Id(trail_id))
+        }
+        WireRequest::TrailDelete { trail_id } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.trail_delete(session_id, trail_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::TrailRename { trail_id, name } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.trail_rename(session_id, trail_id, name)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::TrailAddStop { trail_id, work_id, char_start, char_end, note } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.trail_add_stop(session_id, trail_id, work_id, char_start, char_end, note)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::TrailRemoveStop { trail_id, stop_index } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.trail_remove_stop(session_id, trail_id, stop_index)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::TrailReorderStops { trail_id, stop_order } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.trail_reorder_stops(session_id, trail_id, stop_order)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::TrailList => {
+            srv.ensure_authenticated(session_id)?;
+            let trails = srv.trail_list(session_id)?;
+            Ok(ResponseValue::TrailListResult(trails))
+        }
+        WireRequest::TrailGet { trail_id } => {
+            srv.ensure_authenticated(session_id)?;
+            let trail = srv.trail_get(session_id, trail_id)?;
+            Ok(ResponseValue::TrailResult(trail))
+        }
         WireRequest::WorkSetReadClub { work_id, club_id } => {
             srv.ensure_authenticated(session_id)?;
             srv.work_set_read_club(session_id, work_id, club_id)?;
@@ -698,6 +785,7 @@ fn dispatch_inner(
         )),
 
         WireRequest::WorkList { offset, limit } => {
+            let starred = srv.starred_for_session(session_id);
             let all: Vec<_> = srv
                 .list_works_with_titles()
                 .into_iter()
@@ -732,6 +820,7 @@ fn dispatch_inner(
                             content_end_line,
                             source_author_id,
                             source_edition_info,
+                            is_starred: starred.contains(&work_id),
                         }
                     },
                 )
@@ -752,6 +841,7 @@ fn dispatch_inner(
             offset,
             limit,
         } => {
+            let starred = srv.starred_for_session(session_id);
             let all: Vec<_> = srv
                 .list_works_by_owner(owner)
                 .into_iter()
@@ -773,6 +863,7 @@ fn dispatch_inner(
                         content_end_line: None,
                         source_author_id: None,
                         source_edition_info: None,
+                        is_starred: starred.contains(&work_id),
                     }
                 })
                 .collect();
@@ -2414,6 +2505,7 @@ fn dispatch_inner(
             Ok(ResponseValue::SourcePatternListResult { patterns: entries })
         }
         WireRequest::WorkListByAuthor { author_id } => {
+            let starred = srv.starred_for_session(session_id);
             let entries = srv.list_works_by_historical_author(author_id);
             let list: Vec<super::protocol::WorkListEntry> = entries
                 .into_iter()
@@ -2444,6 +2536,7 @@ fn dispatch_inner(
                             content_end_line: None,
                             source_author_id: Some(author_id),
                             source_edition_info,
+                            is_starred: starred.contains(&work_id),
                         }
                     },
                 )

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xudanu User Guide &mdash; v0.7.0</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+.content-wrap{max-width:800px;margin:0 auto;padding:48px 32px 80px}
+h1{font-size:32px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing:-0.5px}
+.subtitle{font-size:16px;color:#8b949e;font-weight:300;margin-bottom:48px}
+h2{font-size:22px;font-weight:700;margin:40px 0 16px;padding-bottom:8px;border-bottom:1px solid #21262d;color:#e6edf3}
+h3{font-size:16px;font-weight:600;margin:24px 0 8px;color:#e6edf3}
+p{margin-bottom:12px}
+ul,ol{margin:8px 0 16px 24px}
+li{margin-bottom:6px}
+code{font-family:'JetBrains Mono',monospace;background:#161b22;padding:2px 6px;border-radius:4px;font-size:13px;color:#79c0ff}
+kbd{font-family:'JetBrains Mono',monospace;background:#21262d;padding:2px 8px;border-radius:4px;font-size:12px;border:1px solid #30363d;color:#c9d1d9}
+.screenshot{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px;margin:16px 0;font-size:14px;line-height:1.8}
+.screenshot .bar{background:#0d1117;padding:8px 12px;border-radius:4px;margin-bottom:12px;display:flex;align-items:center;gap:12px;font-size:13px}
+.screenshot .star{color:#f59e0b}
+.screenshot .link{color:#58a6ff}
+.screenshot .purple{color:#a371f7}
+.tip{background:rgba(63,185,80,0.08);border-left:3px solid #3fb950;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px}
+.tip strong{color:#3fb950}
+.warn{background:rgba(210,153,34,0.08);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px}
+.warn strong{color:#d29922}
+.feature-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
+.feature-card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px}
+.feature-card h4{font-size:14px;font-weight:600;margin-bottom:4px;color:#e6edf3}
+.feature-card p{font-size:13px;color:#8b949e;margin:0}
+.footer{margin-top:64px;padding-top:20px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}.feature-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Xudanu User Guide</h1>
+<p class="subtitle">Version 0.7.0 &mdash; Stars, Trails, Document Map, Content Similarity, and hardened persistence</p>
+
+<h2>Xanadu Gold Foundations</h2>
+<p>Xudanu builds directly on the Udanax Gold hypertext model, progressively implementing Ted Nelson's original design. The features in this release rest on core Gold abstractions:</p>
+<ul>
+  <li><strong>Works &amp; Editions</strong> &mdash; Documents are Works containing versioned Editions. Each Edition captures a complete snapshot with per-line attribution, three-way merge, and the O-tree CRDT data model.</li>
+  <li><strong>Transclusion</strong> &mdash; The foundational Xanadu concept: content is linked, not copied. When you transclude text from one document into another, provenance is preserved &mdash; the attribution panel shows <code>via work:XXXX</code> for every transcluded passage.</li>
+  <li><strong>Content Addressing</strong> &mdash; Every piece of text has a BLAKE3 content hash. Identical content shares the same address, enabling automatic transclusion detection and deduplication across documents and revisions.</li>
+  <li><strong>Clubs &amp; Permissions</strong> &mdash; The Gold club hierarchy controls read/write access. Personal clubs own your edits; groups enable collaboration; the public club allows anonymous access.</li>
+  <li><strong>Cryptographic Attribution</strong> &mdash; Every edit is signed with Ed25519. The attribution system traces every character back to its author, distinguishing human input, LLM-generated text, historical imports, and transcluded passages.</li>
+  <li><strong>Trails</strong> &mdash; Ordered paths through documents, directly implementing Nelson's concept of guided reading sequences through a hypertext corpus.</li>
+  <li><strong>Document Map</strong> &mdash; Visualization of the transclusion and similarity graph, showing how documents relate to each other across the entire corpus.</li>
+</ul>
+
+<h2>Quick Start</h2>
+<ol>
+  <li>Download the release for your platform from <a href="https://github.com/jonesd/xudanu/releases">GitHub Releases</a></li>
+  <li>Extract the archive: <code>tar -xzf xudanu-v0.7.0-*.tar.gz</code></li>
+  <li>Initialize a data directory: <code>./xudanu-server init ./data</code></li>
+  <li>Start the server: <code>./xudanu-server run 127.0.0.1:8080 ./data --static-dir ./dist</code></li>
+  <li>Open <code>http://127.0.0.1:8080</code> in your browser</li>
+  <li>Click <strong>Sign In</strong> and enter credentials (default admin password is set via <code>ADMIN_PASSWORD</code> env var)</li>
+</ol>
+
+<h2>Document Editing</h2>
+<p>Create documents from the sidebar. Click a document to open it in the editor. All edits are saved automatically &mdash; there is no Save button. Every keystroke is recorded as a CRDT operation with cryptographic attribution.</p>
+
+<h3>Attribution</h3>
+<p>Click the <strong>Attribution</strong> button (or use the More menu) to see who wrote each section of text. Attribution spans are color-coded:</p>
+<div class="feature-grid">
+  <div class="feature-card">
+    <h4><span style="color:#22c55e">&#9632;</span> Green &mdash; Human</h4>
+    <p>Text typed directly by a logged-in user</p>
+  </div>
+  <div class="feature-card">
+    <h4><span style="color:#a855f7">&#9632;</span> Purple &mdash; LLM</h4>
+    <p>Text generated by the AI assistant</p>
+  </div>
+  <div class="feature-card">
+    <h4><span style="color:#f59e0b">&#9632;</span> Amber &mdash; Historical</h4>
+    <p>Text from imported or source documents</p>
+  </div>
+  <div class="feature-card">
+    <h4><span style="color:#6b7280">&#9632;</span> Gray &mdash; Unattributed</h4>
+    <p>Text with no provenance information</p>
+  </div>
+</div>
+
+<h3>Transclusion</h3>
+<p>Select text in a document, then click the <strong>Transclude</strong> button that appears. Choose a target document. The selected text is copied into the target with full provenance tracking &mdash; the attribution panel will show <code>via work:XXXX</code> for transcluded passages.</p>
+
+<h2 id="stars">Stars (Favorites)</h2>
+<p>Star documents to mark them as favorites. Starred documents appear in a dedicated <strong>Favorites</strong> section at the top of the sidebar, and are shown as amber circles in the Document Map.</p>
+
+<h3>How to star a document</h3>
+<ul>
+  <li>Open a document and click the <span class="star">&#9733;</span> star icon in the header bar</li>
+  <li>Or hover over a document in the sidebar and click the star icon</li>
+</ul>
+
+<div class="tip">
+  <strong>Tip:</strong> Stars are saved immediately and survive server restarts. They are persisted via the WAL (Write-Ahead Log) and included in every checkpoint.
+</div>
+
+<h2 id="trails">Trails</h2>
+<p>Trails are ordered sequences of documents &mdash; curated reading paths through your hypertext corpus. Each trail has a name and an ordered list of stops (documents).</p>
+
+<h3>Creating a trail</h3>
+<ol>
+  <li>Open the <strong>More &#9662;</strong> menu and select <strong>Trails</strong></li>
+  <li>Type a name in the "New trail name..." field and click <strong>Create</strong></li>
+</ol>
+
+<h3>Adding documents to a trail</h3>
+<ol>
+  <li>Open the document you want to add (click it in the sidebar)</li>
+  <li>Open the Trails panel (More &#9662; &rarr; Trails)</li>
+  <li>Click the <strong>+</strong> button on the trail card</li>
+</ol>
+
+<div class="screenshot">
+  <div class="bar">
+    <span class="star">&#9733; My Document</span>
+    <span>More &#9662;</span>
+  </div>
+  <div style="padding-left:20px">
+    <strong>Trails Panel</strong><br>
+    &#9662; Research Trail &nbsp; <span style="color:#8b949e">3 stops</span> &nbsp; <span style="color:#3fb950">[+]</span> &nbsp; <span style="color:#f85149">[&times;]</span><br>
+    &nbsp;&nbsp;&nbsp;1. <span class="link">Introduction</span><br>
+    &nbsp;&nbsp;&nbsp;2. <span class="link">Methods</span><br>
+    &nbsp;&nbsp;&nbsp;3. <span class="link">Conclusion</span>
+  </div>
+</div>
+
+<h3>Managing trail stops</h3>
+<ul>
+  <li><strong>Reorder:</strong> Use the &#9650; / &#9660; arrows to move stops up or down</li>
+  <li><strong>Remove:</strong> Click the &times; button on a stop</li>
+  <li><strong>Navigate:</strong> Click a stop's title to open that document</li>
+  <li><strong>Delete trail:</strong> Click the &times; button on the trail card header</li>
+</ul>
+
+<div class="tip">
+  <strong>Tip:</strong> All trail operations auto-save immediately. There is no Save button &mdash; every add, remove, and reorder is persisted via WAL and checkpointed.
+</div>
+
+<h2 id="document-map">Document Map</h2>
+<p>The Document Map is a force-directed graph visualization showing all readable documents and their relationships.</p>
+
+<h3>Opening the map</h3>
+<p>Open the <strong>More &#9662;</strong> menu and select <strong>Document Map</strong>.</p>
+
+<h3>What you see</h3>
+<div class="feature-grid">
+  <div class="feature-card">
+    <h4><span style="color:#4361ee">&#9679;</span> Blue nodes</h4>
+    <p>The currently open document</p>
+  </div>
+  <div class="feature-card">
+    <h4><span style="color:#f59e0b">&#9679;</span> Amber nodes</h4>
+    <p>Starred documents or source (imported) works</p>
+  </div>
+  <div class="feature-card">
+    <h4><span style="color:#6b7280">&#9679;</span> Gray nodes</h4>
+    <p>Regular documents</p>
+  </div>
+  <div class="feature-card">
+    <h4>Node size</h4>
+    <p>Current doc is largest, starred/source medium, regular smallest</p>
+  </div>
+</div>
+
+<h3>Connections</h3>
+<ul>
+  <li><strong>Solid lines with arrows</strong> &mdash; Transclusion links. Documents that transclude content from each other are connected. These pull together with strong force.</li>
+  <li><strong>Dashed lines</strong> &mdash; Content similarity. Documents that share significant word overlap (>15% Jaccard similarity) are connected. These pull together with weaker force, so similar documents drift nearby without clustering as tightly as transcluded documents.</li>
+</ul>
+
+<h3>Interactions</h3>
+<ul>
+  <li><strong>Click a node</strong> to navigate to that document (closes the map)</li>
+  <li><strong>Drag a node</strong> to rearrange the layout</li>
+  <li>The physics simulation runs for 300 frames on load</li>
+</ul>
+
+<div class="tip">
+  <strong>Tip:</strong> Documents that share vocabulary naturally cluster together. If you see a tight cluster of dashed lines, those documents cover similar topics and may benefit from being organized into a Trail.
+</div>
+
+<h2 id="revisions">Revisions</h2>
+<p>Every edit creates a new revision. Open the <strong>More &#9662;</strong> menu and select <strong>Revisions</strong> to browse the history. You can compare any two revisions side by side.</p>
+
+<h2 id="compare">Compare</h2>
+<p>Select two documents and open <strong>More &#9662; &rarr; Compare</strong> to see a side-by-side diff with attribution coloring. Requires at least 2 documents to exist.</p>
+
+<h2 id="persistence">Persistence</h2>
+<p>v0.7.0 includes a hardened persistence layer with three layers of protection:</p>
+<ol>
+  <li><strong>WAL (Write-Ahead Log)</strong> &mdash; Every star, trail, and manifest mutation is appended to <code>wal.log</code> before the operation completes. On restart, the WAL is replayed to recover any operations that happened after the last checkpoint.</li>
+  <li><strong>Dual Manifest</strong> &mdash; The manifest is written to alternating slots (<code>manifest_a.json</code> / <code>manifest_b.json</code>) before being renamed to <code>manifest.json</code>. If the primary is corrupt, the server falls back to the higher-sequence backup slot.</li>
+  <li><strong>Atomic Checkpoints</strong> &mdash; Manifest writes use the tmp+fsync+rename pattern for crash safety. Auto-checkpoint runs every 5 seconds when changes are pending.</li>
+</ol>
+
+<div class="warn">
+  <strong>Note:</strong> If you upgrade from a previous version, delete old data and re-initialize: <code>rm -rf data/manifest*.json data/chunks/*</code> then <code>./xudanu-server init data</code>. The manifest schema has changed.
+</div>
+
+<h2>Keyboard Shortcuts</h2>
+<table style="width:100%;border-collapse:collapse;margin:16px 0">
+  <tr style="border-bottom:1px solid #21262d">
+    <td style="padding:8px"><kbd>Ctrl+S</kbd></td>
+    <td style="padding:8px;color:#8b949e">Force checkpoint (no-op in browser, handled by server)</td>
+  </tr>
+  <tr style="border-bottom:1px solid #21262d">
+    <td style="padding:8px"><kbd>Ctrl+K</kbd></td>
+    <td style="padding:8px;color:#8b949e">Open command bar</td>
+  </tr>
+  <tr style="border-bottom:1px solid #21262d">
+    <td style="padding:8px"><kbd>Ctrl+/</kbd></td>
+    <td style="padding:8px;color:#8b949e">Search within document</td>
+  </tr>
+</table>
+
+<h2>CLI Reference</h2>
+<div class="screenshot">
+  <code>./xudanu-server init &lt;data-dir&gt;</code> &mdash; Initialize a new data directory<br>
+  <code>./xudanu-server run &lt;addr&gt; &lt;data-dir&gt; [options]</code> &mdash; Start the server<br>
+  <code>./xudanu-server preflight &lt;data-dir&gt;</code> &mdash; Validate data integrity<br><br>
+  <strong>Options for <code>run</code>:</strong><br>
+  <code>--static-dir &lt;path&gt;</code> &mdash; Serve static files from directory (the web UI)<br>
+  <code>--csrf-token</code> &mdash; Enable CSRF token validation<br>
+  <code>--admin-password &lt;pw&gt;</code> &mdash; Set admin password (min 10 chars)<br>
+  <code>ADMIN_PASSWORD</code> &mdash; Env var alternative for admin password
+</div>
+
+<div class="footer">
+  Xudanu User Guide &mdash; v0.7.0 &mdash; <a href="index.html">Back to Documentation</a>
+</div>
+
+</div>
+</body>
+</html>
