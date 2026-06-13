@@ -150,6 +150,10 @@ pub struct KeyHistoryEntry {
 /// struct, you must also add it here (with `#[serde(default)]` for backward
 /// compat) and wire it through `checkpoint_to_store()` / `restore_from_data_dir()`.
 /// See `WorkEntry` for the per-field checklist.
+fn is_null_char(c: &char) -> bool {
+    *c == '\0'
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Manifest {
     pub format_version: u32,
@@ -158,7 +162,7 @@ pub struct Manifest {
     pub checksum: String,
     #[serde(default)]
     pub sequence: u64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_null_char")]
     pub manifest_slot: char,
 
     pub grand_map_id_counter: BeId,
@@ -1260,6 +1264,57 @@ mod tests {
         assert!(!b5.exists(), "v5 should be removed");
         assert!(b10.exists(), "v10 should survive");
         assert!(b15.exists(), "v15 should survive");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn old_manifest_without_manifest_slot_passes_checksum() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        let path = manifest_path(&dir);
+
+        m.manifest_slot = '\0';
+        write_manifest(&mut m, &path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !content.contains("manifest_slot"),
+            "null slot should be skipped during serialization"
+        );
+
+        let restored = read_manifest(&path).unwrap();
+        assert_eq!(restored.manifest_slot, '\0');
+        assert_eq!(restored.grand_map_id_counter, 100);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn legacy_manifest_without_slot_field_is_readable() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        m.manifest_slot = '\0';
+        let path = manifest_path(&dir);
+        write_manifest(&mut m, &path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let legacy_content = content.replace("\"manifest_slot\": \"\\u0000\",\n", "");
+        assert!(
+            !legacy_content.contains("manifest_slot"),
+            "should have no manifest_slot field"
+        );
+        std::fs::write(&path, &legacy_content).unwrap();
+
+        let restored = read_manifest(&path).unwrap();
+        assert_eq!(restored.grand_map_id_counter, 100, "should read legacy manifest");
+        assert_eq!(restored.manifest_slot, '\0', "missing field defaults to null");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
