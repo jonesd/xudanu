@@ -1978,6 +1978,52 @@ impl JsonCodec {
                     compound: args.compound,
                 })
             }
+            OperationCode::CompoundGetEdition => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CompoundGetEdition {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::CompoundSetEdition => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    compound: super::protocol::CompoundEditionPayload,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CompoundSetEdition {
+                    work_id: args.work_id,
+                    compound: args.compound,
+                })
+            }
+            OperationCode::CompoundResolveWork => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CompoundResolveWork {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::CompoundResolveRecursive => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CompoundResolveRecursive {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::AdminRecorderCreate => {
                 #[derive(Deserialize)]
                 struct Args {
