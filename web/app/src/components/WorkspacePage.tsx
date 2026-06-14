@@ -6,7 +6,7 @@ import { authorColor } from "../author-color";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
 import { SourceTextViewer } from "../components/SourceTextViewer";
 import { VirtualizedEditor } from "../components/VirtualizedEditor";
-import type { BacklinkEntry, AttributionSpan as AttribSpan } from "../api/crdt_sync";
+import type { BacklinkEntry } from "../api/crdt_sync";
 import { DropdownMenu, DropdownItem, DropdownSeparator, DropdownLabel } from "../components/DropdownMenu";
 import { AwarenessIndicators } from "../components/AwarenessIndicators";
 import { DebugPanel } from "../components/DebugPanel";
@@ -22,7 +22,7 @@ import { TrailsPanel } from "../components/TrailsPanel";
 import { VersionGenealogyPanel } from "../components/VersionGenealogyPanel";
 import { SharePanel } from "../components/SharePanel";
 import { ReadingView } from "./reading/ReadingView";
-import { DocumentSettings, loadDocPreferences, saveDocPreferences } from "../components/DocumentSettings";
+import { DocumentSettings, loadDocPreferences } from "../components/DocumentSettings";
 import type { DocPreferences } from "../components/DocumentSettings";
 import type { WorkListEntry, HistoricalAuthorEntry } from "../api/crdt_sync";
 
@@ -134,7 +134,7 @@ export function WorkspacePage() {
     refreshAnnotations,
     createAnnotation,
     deleteAnnotation,
-    connectionEpoch,
+    connectionEpoch: _connectionEpoch,
     canEdit,
   } = useCrdtSync(WS_URL, workBeId);
 
@@ -708,7 +708,7 @@ export function WorkspacePage() {
                   <DropdownSeparator />
                   <DropdownItem
                     onClick={async () => {
-                      setLlmMenuOpen(false);
+                      close();
                       setNarrating(true);
                       setNarration(null);
                       setNarrationModel("");

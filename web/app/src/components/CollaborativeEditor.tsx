@@ -28,7 +28,7 @@ interface AuthorStyle {
 
 interface CollaborativeEditorProps {
   text: string;
-  onTextChange: (text: string) => void;
+  onTextChange?: (text: string) => void;
   onCursorChange: (index: number | null) => void;
   onSelectionChange: (start: number | null, end: number | null) => void;
   connected: boolean;
@@ -81,7 +81,7 @@ function drawOverlay(
   editor: HTMLElement | null,
   canvas: HTMLCanvasElement | null,
   spans: AttributionSpan[],
-  authorColorMap: Map<number, string>,
+  colorMap: Map<string, AuthorStyle>,
   markers: TransclusionMarker[] = [],
   annotations: AnnotationEntry[] = [],
   compoundSpans: SpanRangePayload[] = [],
@@ -334,7 +334,7 @@ export function CollaborativeEditor({
   annotations = [],
   onCreateAnnotation,
   compoundSpanRanges = [],
-  compoundSourceTitles = {},
+  compoundSourceTitles: _compoundSourceTitles = {},
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -532,7 +532,7 @@ export function CollaborativeEditor({
       return;
     }
     if (e.detail === 2 && onShowBacklinks) {
-      const excerpt = (hit.marker as Record<string, unknown>).excerpt as string || "";
+      const excerpt = (hit.marker as unknown as Record<string, unknown>).excerpt as string || "";
       onShowBacklinks(hit.marker.otherWorkId, excerpt);
     } else if (e.detail === 1 && onNavigateToWork) {
       onNavigateToWork(hit.marker.otherWorkId);
@@ -583,7 +583,7 @@ export function CollaborativeEditor({
       el.textContent = entry.text;
     }
     lastText.current = entry.text;
-    onTextChange(entry.text);
+    onTextChange?.(entry.text);
     const textNode = el.firstChild;
     if (textNode) {
       try {
@@ -614,7 +614,7 @@ export function CollaborativeEditor({
     if (newText !== lastText.current) {
       pushUndo(lastText.current);
       lastText.current = newText;
-      onTextChange(newText);
+      onTextChange?.(newText);
     }
   }, [onTextChange, editable, pushUndo]);
 
@@ -831,7 +831,6 @@ export function CollaborativeEditor({
             <div
               className="marker-tooltip"
               onMouseEnter={cancelHideTooltip}
-              onMouseEnter={cancelHideTooltip}
               onMouseLeave={scheduleHideTooltip}
               style={{
                 position: "fixed",
@@ -889,7 +888,7 @@ export function CollaborativeEditor({
           <OutlinePanel
             buffer={buffer}
             onJumpTo={jumpToCharOffset}
-            onMoveSection={(newText) => onTextChange(newText)}
+            onMoveSection={(newText) => onTextChange?.(newText)}
             onClose={() => setOutlineOpen(false)}
           />
         )}

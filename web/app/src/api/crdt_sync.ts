@@ -322,7 +322,7 @@ export class CrdtSyncClient {
   private workBeId: number;
   private sessionId: number | null = null;
   private crdtReady = false;
-  private currentIdentity: WhoAmIEntry | null = null;
+  currentIdentity: WhoAmIEntry | null = null;
   private skipCrdt = false;
 
   constructor(url: string, workBeId: number) {
@@ -749,18 +749,6 @@ export class CrdtSyncClient {
     const resp = await this.sendRequest("version_is_before", { work_a: workA, work_b: workB });
     const val = extractValue(resp) as Record<string, unknown>;
     return (val.is_before as boolean | null) ?? null;
-  }
-
-  async versionAncestors(workId: number): Promise<number[]> {
-    const resp = await this.sendRequest("version_ancestors", { work_id: workId });
-    const val = extractValue(resp) as Record<string, unknown>;
-    return (val.ancestors as number[]) || [];
-  }
-
-  async versionDescendants(workId: number): Promise<number[]> {
-    const resp = await this.sendRequest("version_descendants", { work_id: workId });
-    const val = extractValue(resp) as Record<string, unknown>;
-    return (val.descendants as number[]) || [];
   }
 
   async versionTracePosition(workId: number): Promise<{ branchId: number; position: number } | null> {
@@ -1371,7 +1359,7 @@ export class CrdtSyncClient {
           return el?.Text || el?.text || "";
         }).join("");
       }
-      return ed?.Text || ed?.text || JSON.stringify(ed) || "";
+      return String(ed?.Text || ed?.text || JSON.stringify(ed) || "");
     });
   }
 

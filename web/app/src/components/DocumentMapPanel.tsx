@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { CrdtSyncClient, GraphNode, GraphEdge } from "../api/crdt_sync";
+import type { CrdtSyncClient, GraphEdge } from "../api/crdt_sync";
 
 interface Props {
   client: CrdtSyncClient | null;

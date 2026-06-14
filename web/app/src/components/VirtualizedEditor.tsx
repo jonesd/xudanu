@@ -160,7 +160,7 @@ function VirtualizedEditorInner({
       skipNextTextProp.current = false;
       return;
     }
-    const buf = bufferRef.current;
+    const buf = bufferRef.current!;
     if (buf.getText() !== displayText) {
       if (undoTimer.current !== null) {
         clearTimeout(undoTimer.current);
@@ -176,7 +176,7 @@ function VirtualizedEditorInner({
   useEffect(() => {
     const hash = window.location.hash;
     if (!hash || displayText.length === 0) return;
-    const buf = bufferRef.current;
+    const buf = bufferRef.current!;
     const container = containerRef.current;
     if (!container) return;
 
@@ -227,7 +227,7 @@ function VirtualizedEditorInner({
 
   const renderVisible = useCallback(() => {
     const el = editorRef.current;
-    const buf = bufferRef.current;
+    const buf = bufferRef.current!;
     if (!el || buf.getLineCount() === 0) return;
 
     const { start: vs, end: ve } = lastViewRange.current;
@@ -268,7 +268,7 @@ function VirtualizedEditorInner({
 
   const updateViewport = useCallback(() => {
     const container = containerRef.current;
-    const buf = bufferRef.current;
+    const buf = bufferRef.current!;
     if (!container || !buf || buf.getLineCount() === 0) return;
 
     const scrollTop = container.scrollTop;
@@ -365,7 +365,7 @@ function VirtualizedEditorInner({
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, rect.width, rect.height);
 
-    const buf = bufferRef.current;
+    const buf = bufferRef.current!;
     const viewportCharStart = buf.getCharOffset(viewStart);
     const viewportCharEnd = buf.getCharOffset(viewEnd);
     const viewportTextLen = viewportCharEnd - viewportCharStart;
@@ -496,7 +496,7 @@ function VirtualizedEditorInner({
 
   const restoreUndoEntry = useCallback((entry: UndoEntry, stack: "undo" | "redo") => {
     isUndoRedoing.current = true;
-    const prevText = bufferRef.current.getText();
+    const prevText = bufferRef.current!.getText();
     bufferRef.current = new TextBuffer(entry.text);
     skipNextTextProp.current = true;
     onTextChange(entry.text);
@@ -512,7 +512,7 @@ function VirtualizedEditorInner({
     if (!el) return;
 
     const visibleText = el.textContent || "";
-    const buf = bufferRef.current;
+    const buf = bufferRef.current!;
     const oldFullText = buf.getText();
 
     const { start: vs, end: ve } = lastViewRange.current;
@@ -601,9 +601,10 @@ function VirtualizedEditorInner({
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
       const el = editorRef.current;
+      if (!el) return;
       const range = sel.getRangeAt(0);
 
-      const buf = bufferRef.current;
+      const buf = bufferRef.current!;
       const { start: vs } = lastViewRange.current;
       const viewportCharStart = buf.getCharOffset(vs);
       const pre = document.createRange();
@@ -631,7 +632,7 @@ function VirtualizedEditorInner({
     if (!sel || sel.rangeCount === 0 || !el?.contains(sel.anchorNode)) return;
 
     const range = sel.getRangeAt(0);
-    const buf = bufferRef.current;
+    const buf = bufferRef.current!;
     const { start: vs } = lastViewRange.current;
     const viewportCharStart = buf.getCharOffset(vs);
 
@@ -661,7 +662,7 @@ function VirtualizedEditorInner({
     if (!el) return;
     if (!el.contains(e.target as Node)) return;
 
-    const buf = bufferRef.current;
+    const buf = bufferRef.current!;
     const { start: vs } = lastViewRange.current;
     const viewportCharStart = buf.getCharOffset(vs);
 
@@ -695,7 +696,7 @@ function VirtualizedEditorInner({
 
   const jumpToCharOffset = useCallback((charOffset: number) => {
     const container = containerRef.current;
-    const buf = bufferRef.current;
+    const buf = bufferRef.current!;
     if (!container) return;
     const line = buf.getLineForChar(charOffset);
     const lh = lineHeightRef.current;
@@ -714,7 +715,7 @@ function VirtualizedEditorInner({
     return () => document.removeEventListener("keydown", handleKey);
   }, []);
 
-  const buf = bufferRef.current;
+  const buf = bufferRef.current!;
 
   return (
     <div className="collaborative-editor virtualized">

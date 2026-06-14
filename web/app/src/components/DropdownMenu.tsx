@@ -5,7 +5,7 @@ interface DropdownMenuProps {
   className?: string;
   disabled?: boolean;
   active?: boolean;
-  children: ReactNode;
+  children: ReactNode | ((close: () => void) => ReactNode);
 }
 
 export function DropdownMenu({ label, className, disabled, active, children }: DropdownMenuProps) {

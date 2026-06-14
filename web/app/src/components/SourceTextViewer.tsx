@@ -16,7 +16,7 @@ const OVERSCAN = 10;
 const DEFAULT_FONT_SIZE = 15;
 const DEFAULT_LINE_HEIGHT = 1.7;
 
-export function SourceTextViewer({ workId, clientRef, connected, fontSize = DEFAULT_FONT_SIZE, lineHeight = DEFAULT_LINE_HEIGHT, onSelectionChange }: SourceTextViewerProps) {
+export function SourceTextViewer({ workId, clientRef, connected: _connected, fontSize = DEFAULT_FONT_SIZE, lineHeight = DEFAULT_LINE_HEIGHT, onSelectionChange }: SourceTextViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const topSpacerRef = useRef<HTMLDivElement>(null);
