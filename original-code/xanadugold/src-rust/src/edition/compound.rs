@@ -148,8 +148,7 @@ impl CompoundSpan {
     }
 
     pub fn migrate_for_delta(&mut self, ops: &[DeltaOp]) {
-        let (new_start, new_end) =
-            map_span_through_delta(self.char_start, self.char_end, ops);
+        let (new_start, new_end) = map_span_through_delta(self.char_start, self.char_end, ops);
         self.char_start = new_start;
         self.char_end = new_end;
     }
@@ -594,11 +593,7 @@ mod tests {
     #[test]
     fn span_migrate_insert_before_span() {
         let mut span = CompoundSpan::new(1, 10, 19);
-        span.migrate_for_delta(&[
-            DeltaOp::Retain(5),
-            DeltaOp::Insert(2),
-            DeltaOp::Retain(35),
-        ]);
+        span.migrate_for_delta(&[DeltaOp::Retain(5), DeltaOp::Insert(2), DeltaOp::Retain(35)]);
         assert_eq!(span.char_start(), 12);
         assert_eq!(span.char_end(), 21);
     }
@@ -606,11 +601,7 @@ mod tests {
     #[test]
     fn span_migrate_insert_at_start() {
         let mut span = CompoundSpan::new(1, 10, 19);
-        span.migrate_for_delta(&[
-            DeltaOp::Retain(10),
-            DeltaOp::Insert(2),
-            DeltaOp::Retain(30),
-        ]);
+        span.migrate_for_delta(&[DeltaOp::Retain(10), DeltaOp::Insert(2), DeltaOp::Retain(30)]);
         assert_eq!(span.char_start(), 12);
         assert_eq!(span.char_end(), 21);
     }
@@ -618,11 +609,7 @@ mod tests {
     #[test]
     fn span_migrate_insert_at_end() {
         let mut span = CompoundSpan::new(1, 10, 19);
-        span.migrate_for_delta(&[
-            DeltaOp::Retain(19),
-            DeltaOp::Insert(2),
-            DeltaOp::Retain(21),
-        ]);
+        span.migrate_for_delta(&[DeltaOp::Retain(19), DeltaOp::Insert(2), DeltaOp::Retain(21)]);
         assert_eq!(span.char_start(), 10);
         assert_eq!(span.char_end(), 19);
     }
@@ -630,11 +617,7 @@ mod tests {
     #[test]
     fn span_migrate_insert_inside_span() {
         let mut span = CompoundSpan::new(1, 10, 19);
-        span.migrate_for_delta(&[
-            DeltaOp::Retain(15),
-            DeltaOp::Insert(3),
-            DeltaOp::Retain(22),
-        ]);
+        span.migrate_for_delta(&[DeltaOp::Retain(15), DeltaOp::Insert(3), DeltaOp::Retain(22)]);
         assert_eq!(span.char_start(), 10);
         assert_eq!(span.char_end(), 22);
     }
@@ -642,11 +625,7 @@ mod tests {
     #[test]
     fn span_migrate_delete_before_span() {
         let mut span = CompoundSpan::new(1, 10, 19);
-        span.migrate_for_delta(&[
-            DeltaOp::Retain(5),
-            DeltaOp::Delete(3),
-            DeltaOp::Retain(32),
-        ]);
+        span.migrate_for_delta(&[DeltaOp::Retain(5), DeltaOp::Delete(3), DeltaOp::Retain(32)]);
         assert_eq!(span.char_start(), 7);
         assert_eq!(span.char_end(), 16);
     }
@@ -654,11 +633,7 @@ mod tests {
     #[test]
     fn span_migrate_delete_entire_span() {
         let mut span = CompoundSpan::new(1, 10, 19);
-        span.migrate_for_delta(&[
-            DeltaOp::Retain(10),
-            DeltaOp::Delete(9),
-            DeltaOp::Retain(25),
-        ]);
+        span.migrate_for_delta(&[DeltaOp::Retain(10), DeltaOp::Delete(9), DeltaOp::Retain(25)]);
         assert_eq!(span.char_len(), 0);
         assert_eq!(span.char_start(), 10);
     }
@@ -690,11 +665,7 @@ mod tests {
     fn span_migrate_delete_partial_start() {
         // Delete overlaps span start: delete 5..12, span is 10..19
         let mut span = CompoundSpan::new(1, 10, 19);
-        span.migrate_for_delta(&[
-            DeltaOp::Retain(5),
-            DeltaOp::Delete(7),
-            DeltaOp::Retain(28),
-        ]);
+        span.migrate_for_delta(&[DeltaOp::Retain(5), DeltaOp::Delete(7), DeltaOp::Retain(28)]);
         // Start clamps to 5 (deletion start in new text)
         assert_eq!(span.char_start(), 5);
         // End shifts left by 7: 19 - 7 = 12
@@ -705,11 +676,7 @@ mod tests {
     fn span_migrate_delete_partial_end() {
         // Delete overlaps span end: delete 15..20, span is 10..19
         let mut span = CompoundSpan::new(1, 10, 19);
-        span.migrate_for_delta(&[
-            DeltaOp::Retain(15),
-            DeltaOp::Delete(5),
-            DeltaOp::Retain(20),
-        ]);
+        span.migrate_for_delta(&[DeltaOp::Retain(15), DeltaOp::Delete(5), DeltaOp::Retain(20)]);
         // Start unchanged
         assert_eq!(span.char_start(), 10);
         // End clamps to 15 (deletion start in new text)
