@@ -84,7 +84,6 @@ export function WorkspacePage() {
   const sourceViewerRef = useRef<HTMLDivElement>(null);
 
   const transclusion = useTransclusion();
-  const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId);
   const [backlinks, setBacklinks] = useState<BacklinkEntry[]>([]);
   const [endorsementCount, setEndorsementCount] = useState(0);
   const [hasEndorsed, setHasEndorsed] = useState(false);
@@ -138,6 +137,8 @@ export function WorkspacePage() {
     connectionEpoch,
     canEdit,
   } = useCrdtSync(WS_URL, workBeId);
+
+  const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId);
 
   const toggleStar = useCallback(async (workId: number, current: boolean) => {
     if (!clientRef.current) {

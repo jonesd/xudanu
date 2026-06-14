@@ -21,6 +21,90 @@ impl std::fmt::Display for ResolveError {
 
 impl std::error::Error for ResolveError {}
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DeltaOp {
+    Retain(usize),
+    Insert(usize),
+    Delete(usize),
+}
+
+pub fn map_span_through_delta(
+    span_start: usize,
+    span_end: usize,
+    ops: &[DeltaOp],
+) -> (usize, usize) {
+    let mut old_pos: usize = 0;
+    let mut new_pos: usize = 0;
+    let mut result_start = span_start;
+    let mut result_end = span_end;
+    let mut start_mapped = false;
+    let mut end_mapped = false;
+
+    for (i, op) in ops.iter().enumerate() {
+        match *op {
+            DeltaOp::Retain(count) => {
+                if !start_mapped && span_start >= old_pos && span_start < old_pos + count {
+                    result_start = new_pos + (span_start - old_pos);
+                    start_mapped = true;
+                }
+                if !end_mapped && span_end >= old_pos && span_end < old_pos + count {
+                    result_end = new_pos + (span_end - old_pos);
+                    end_mapped = true;
+                }
+                old_pos += count;
+                new_pos += count;
+            }
+            DeltaOp::Insert(ins_len) => {
+                if !start_mapped && old_pos == span_start {
+                    result_start = new_pos + ins_len;
+                    start_mapped = true;
+                }
+                if !end_mapped && old_pos == span_end {
+                    result_end = new_pos;
+                    end_mapped = true;
+                }
+                new_pos += ins_len;
+            }
+            DeltaOp::Delete(count) => {
+                let del_start = old_pos;
+                let del_end = old_pos + count;
+
+                if !start_mapped && span_start >= del_start && span_start < del_end {
+                    result_start = new_pos;
+                    start_mapped = true;
+                }
+
+                if !end_mapped && span_end > del_start && span_end <= del_end {
+                    let mut extra = 0;
+                    for j in (i + 1)..ops.len() {
+                        match ops[j] {
+                            DeltaOp::Insert(len) => extra += len,
+                            _ => break,
+                        }
+                    }
+                    result_end = new_pos + extra;
+                    end_mapped = true;
+                }
+
+                old_pos += count;
+            }
+        }
+    }
+
+    if !start_mapped && span_start == old_pos {
+        result_start = new_pos;
+    }
+    if !end_mapped && span_end == old_pos {
+        result_end = new_pos;
+    }
+
+    if result_start > result_end {
+        result_start = result_end;
+    }
+
+    (result_start, result_end)
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompoundSpan {
     source_work_id: u64,
@@ -57,6 +141,18 @@ impl CompoundSpan {
     pub fn char_len(&self) -> usize {
         self.char_end.saturating_sub(self.char_start)
     }
+
+    pub fn set_offsets(&mut self, start: usize, end: usize) {
+        self.char_start = start;
+        self.char_end = end;
+    }
+
+    pub fn migrate_for_delta(&mut self, ops: &[DeltaOp]) {
+        let (new_start, new_end) =
+            map_span_through_delta(self.char_start, self.char_end, ops);
+        self.char_start = new_start;
+        self.char_end = new_end;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -87,6 +183,13 @@ impl CompoundElement {
     }
 
     pub fn span_content(&self) -> Option<&CompoundSpan> {
+        match self {
+            CompoundElement::Text { .. } => None,
+            CompoundElement::Span { span } => Some(span),
+        }
+    }
+
+    pub fn span_content_mut(&mut self) -> Option<&mut CompoundSpan> {
         match self {
             CompoundElement::Text { .. } => None,
             CompoundElement::Span { span } => Some(span),
@@ -135,6 +238,16 @@ impl CompoundEdition {
         works.sort();
         works.dedup();
         works
+    }
+
+    pub fn migrate_spans_for_delta(&mut self, source_work_id: u64, ops: &[DeltaOp]) {
+        for element in &mut self.elements {
+            if let Some(span) = element.span_content_mut() {
+                if span.source_work_id() == source_work_id {
+                    span.migrate_for_delta(ops);
+                }
+            }
+        }
     }
 
     pub fn span_count(&self) -> usize {
@@ -476,5 +589,168 @@ mod tests {
         let json = serde_json::to_string(&resolved).unwrap();
         let restored: ResolvedCompoundEdition = serde_json::from_str(&json).unwrap();
         assert_eq!(resolved, restored);
+    }
+
+    #[test]
+    fn span_migrate_insert_before_span() {
+        let mut span = CompoundSpan::new(1, 10, 19);
+        span.migrate_for_delta(&[
+            DeltaOp::Retain(5),
+            DeltaOp::Insert(2),
+            DeltaOp::Retain(35),
+        ]);
+        assert_eq!(span.char_start(), 12);
+        assert_eq!(span.char_end(), 21);
+    }
+
+    #[test]
+    fn span_migrate_insert_at_start() {
+        let mut span = CompoundSpan::new(1, 10, 19);
+        span.migrate_for_delta(&[
+            DeltaOp::Retain(10),
+            DeltaOp::Insert(2),
+            DeltaOp::Retain(30),
+        ]);
+        assert_eq!(span.char_start(), 12);
+        assert_eq!(span.char_end(), 21);
+    }
+
+    #[test]
+    fn span_migrate_insert_at_end() {
+        let mut span = CompoundSpan::new(1, 10, 19);
+        span.migrate_for_delta(&[
+            DeltaOp::Retain(19),
+            DeltaOp::Insert(2),
+            DeltaOp::Retain(21),
+        ]);
+        assert_eq!(span.char_start(), 10);
+        assert_eq!(span.char_end(), 19);
+    }
+
+    #[test]
+    fn span_migrate_insert_inside_span() {
+        let mut span = CompoundSpan::new(1, 10, 19);
+        span.migrate_for_delta(&[
+            DeltaOp::Retain(15),
+            DeltaOp::Insert(3),
+            DeltaOp::Retain(22),
+        ]);
+        assert_eq!(span.char_start(), 10);
+        assert_eq!(span.char_end(), 22);
+    }
+
+    #[test]
+    fn span_migrate_delete_before_span() {
+        let mut span = CompoundSpan::new(1, 10, 19);
+        span.migrate_for_delta(&[
+            DeltaOp::Retain(5),
+            DeltaOp::Delete(3),
+            DeltaOp::Retain(32),
+        ]);
+        assert_eq!(span.char_start(), 7);
+        assert_eq!(span.char_end(), 16);
+    }
+
+    #[test]
+    fn span_migrate_delete_entire_span() {
+        let mut span = CompoundSpan::new(1, 10, 19);
+        span.migrate_for_delta(&[
+            DeltaOp::Retain(10),
+            DeltaOp::Delete(9),
+            DeltaOp::Retain(25),
+        ]);
+        assert_eq!(span.char_len(), 0);
+        assert_eq!(span.char_start(), 10);
+    }
+
+    #[test]
+    fn span_migrate_replace_span_content() {
+        // Simulate: "brown fox" (9 chars at pos 10) replaced with "red fox" (7 chars)
+        let mut span = CompoundSpan::new(1, 10, 19);
+        span.migrate_for_delta(&[
+            DeltaOp::Retain(10),
+            DeltaOp::Delete(9),
+            DeltaOp::Insert(7),
+            DeltaOp::Retain(25),
+        ]);
+        assert_eq!(span.char_start(), 10);
+        assert_eq!(span.char_end(), 17);
+        assert_eq!(span.char_len(), 7);
+    }
+
+    #[test]
+    fn span_migrate_no_op() {
+        let mut span = CompoundSpan::new(1, 10, 19);
+        span.migrate_for_delta(&[DeltaOp::Retain(44)]);
+        assert_eq!(span.char_start(), 10);
+        assert_eq!(span.char_end(), 19);
+    }
+
+    #[test]
+    fn span_migrate_delete_partial_start() {
+        // Delete overlaps span start: delete 5..12, span is 10..19
+        let mut span = CompoundSpan::new(1, 10, 19);
+        span.migrate_for_delta(&[
+            DeltaOp::Retain(5),
+            DeltaOp::Delete(7),
+            DeltaOp::Retain(28),
+        ]);
+        // Start clamps to 5 (deletion start in new text)
+        assert_eq!(span.char_start(), 5);
+        // End shifts left by 7: 19 - 7 = 12
+        assert_eq!(span.char_end(), 12);
+    }
+
+    #[test]
+    fn span_migrate_delete_partial_end() {
+        // Delete overlaps span end: delete 15..20, span is 10..19
+        let mut span = CompoundSpan::new(1, 10, 19);
+        span.migrate_for_delta(&[
+            DeltaOp::Retain(15),
+            DeltaOp::Delete(5),
+            DeltaOp::Retain(20),
+        ]);
+        // Start unchanged
+        assert_eq!(span.char_start(), 10);
+        // End clamps to 15 (deletion start in new text)
+        assert_eq!(span.char_end(), 15);
+    }
+
+    #[test]
+    fn edition_migrate_spans_for_delta_matches_source() {
+        let mut ed = CompoundEdition::new(vec![
+            CompoundElement::text("prefix "),
+            CompoundElement::span(1, 5, 10),
+            CompoundElement::text(" middle "),
+            CompoundElement::span(2, 0, 3),
+            CompoundElement::text(" suffix"),
+        ]);
+
+        // Only migrate spans referencing work 1 — insert 3 chars before position 5
+        ed.migrate_spans_for_delta(
+            1,
+            &[DeltaOp::Retain(3), DeltaOp::Insert(3), DeltaOp::Retain(50)],
+        );
+
+        let s1 = ed.elements()[1].span_content().unwrap();
+        assert_eq!(s1.char_start(), 8);
+        assert_eq!(s1.char_end(), 13);
+
+        let s2 = ed.elements()[3].span_content().unwrap();
+        assert_eq!(s2.char_start(), 0);
+        assert_eq!(s2.char_end(), 3);
+    }
+
+    #[test]
+    fn map_span_through_delta_replace_at_start() {
+        // Full replace scenario: text ABCDE, span (0, 3) = "ABC"
+        // Replace "ABC" with "XYZ"
+        let (s, e) = map_span_through_delta(
+            0,
+            3,
+            &[DeltaOp::Delete(3), DeltaOp::Insert(3), DeltaOp::Retain(2)],
+        );
+        assert_eq!(s, 0);
+        assert_eq!(e, 3);
     }
 }
