@@ -561,7 +561,7 @@ fn unmatched_range_near(
 fn handle_trailing_a(
     a_matched: &std::collections::HashSet<usize>,
     a_e: &[(i64, Arc<Carrier>)],
-    base_e: &[(i64, Arc<Carrier>)],
+    _base_e: &[(i64, Arc<Carrier>)],
     segments: &mut Vec<Segment>,
 ) {
     let mut i = 0;
@@ -594,7 +594,7 @@ fn handle_trailing_a(
 fn handle_trailing_b(
     b_matched: &std::collections::HashSet<usize>,
     b_e: &[(i64, Arc<Carrier>)],
-    base_e: &[(i64, Arc<Carrier>)],
+    _base_e: &[(i64, Arc<Carrier>)],
     segments: &mut Vec<Segment>,
 ) {
     let mut i = 0;

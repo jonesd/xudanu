@@ -14,7 +14,7 @@ use super::transclusion::{
 use super::work::Work;
 use super::wrapper::{WrapperRegistry, WRAPPER_CLUB_ID};
 use crate::ent::content::{
-    AssertionPayload, AssertionStore, DocumentId, MaterializedDocument, NodeId, SpanId,
+    AssertionPayload, AssertionStore, DocumentId, MaterializedDocument, SpanId,
 };
 use crate::ent::dagwood::{DagWood, TraceView};
 use crate::ent::htree::{HPart, HUpperCrumData};

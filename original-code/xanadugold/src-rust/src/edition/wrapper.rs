@@ -1,10 +1,8 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use super::edition::Edition;
 use super::endorsement::{Endorsement, EndorsementSet};
 use super::range_element::RangeElement;
-use super::xn_region::XnRegion;
 
 pub const WRAPPER_CLUB_ID: u64 = 1;
 
@@ -332,6 +330,7 @@ impl std::error::Error for FeSetError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::edition::XnRegion;
 
     #[test]
     fn registry_has_builtin_types() {

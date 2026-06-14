@@ -648,7 +648,7 @@ async fn main() {
             let shutdown_state = state.clone();
             let shutdown_data_dir = data_dir.clone();
             let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
-            let shutdown_handler = tokio::spawn(async move {
+            let _shutdown_handler = tokio::spawn(async move {
                 let sigint = async {
                     tokio::signal::ctrl_c()
                         .await
@@ -701,7 +701,7 @@ async fn main() {
                         interval.tick().await;
                         let saved = autosave_state.server.with_server(|srv| {
                             let count = srv.materialize_all_pending();
-                            if let Some(cs) = srv.chunk_store() {
+                            if let Some(_cs) = srv.chunk_store() {
                                 let now = std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .unwrap_or_default()

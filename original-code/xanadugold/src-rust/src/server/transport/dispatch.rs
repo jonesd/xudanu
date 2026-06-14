@@ -1,7 +1,6 @@
 use super::protocol::*;
-use super::shared::{AppState, ServerHandle, SharedState};
+use super::shared::SharedState;
 use crate::edition::{BeId, Edition};
-use crate::server::lock::LockCredential;
 use crate::server::Server;
 use std::collections::HashMap;
 
@@ -1346,8 +1345,8 @@ fn dispatch_inner(
             flags,
         } => {
             srv.ensure_can_read(session_id, work_id)?;
-            use super::protocol::{BundlePayload, RetrieveFlagsPayload};
-            use crate::edition::{Bundle, RetrieveFlags};
+            use super::protocol::BundlePayload;
+            use crate::edition::RetrieveFlags;
             let rf = match flags {
                 Some(f) => RetrieveFlags {
                     ignore_total_ordering: f.ignore_total_ordering.unwrap_or(false),

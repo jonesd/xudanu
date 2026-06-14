@@ -216,12 +216,21 @@ impl WalLog {
     }
 
     pub fn truncate(&mut self) -> Result<(), WalError> {
-        let file = match self.file.as_mut() {
-            Some(f) => f,
-            None => return Ok(()),
-        };
-        file.set_len(0)?;
-        file.seek(std::io::SeekFrom::Start(0))?;
+        if self.file.is_none() {
+            return Ok(());
+        }
+        self.file = None;
+        std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&self.path)?;
+        self.file = Some(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.path)?,
+        );
         self.seq = 0;
         Ok(())
     }

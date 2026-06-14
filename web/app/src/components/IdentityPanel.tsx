@@ -120,6 +120,8 @@ export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, 
         </div>
         <input
           type="text"
+          name="username"
+          autoComplete="username"
           placeholder={isCreate ? "Display name" : "Identity name"}
           value={clubName}
           onChange={(e) => setClubName(e.target.value)}
@@ -130,7 +132,9 @@ export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, 
         <div style={{ position: "relative" }}>
           <input
             type={showPassword ? "text" : "password"}
-            placeholder={isCreate ? `Password (min ${MIN_PASSWORD_LENGTH}, mixed case + digit)` : "Password"}
+            name="password"
+            autoComplete={isCreate ? "new-password" : "current-password"}
+            placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="identity-input"

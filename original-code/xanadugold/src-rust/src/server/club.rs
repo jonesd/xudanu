@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::edition::RangeElement;
-use crate::edition::{BeId, Edition, Endorsement, EndorsementSet, Work};
+use crate::edition::{BeId, Edition, EndorsementSet, Work};
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -371,6 +370,7 @@ impl KeyMaster {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::edition::{Endorsement, RangeElement};
 
     fn make_club_hierarchy() -> HashMap<BeId, Club> {
         let mut clubs = HashMap::new();

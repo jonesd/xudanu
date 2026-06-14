@@ -1,7 +1,7 @@
 use std::io::{self, Read};
 use std::path::Path;
 
-use super::engine::{StorageEngine, StorageError, StorageResult};
+use super::engine::{StorageEngine, StorageResult};
 use super::packer::SnarfStorage;
 use super::persistent::{FlockFlags, FlockId, FlockInfo, FlockLocation};
 use super::snarf::SnarfStore;
@@ -282,6 +282,7 @@ impl StorageEngine for FileBackedStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::persist::engine::StorageError;
     use std::any::Any;
 
     struct TempDir(std::path::PathBuf);

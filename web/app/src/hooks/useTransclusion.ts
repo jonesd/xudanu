@@ -113,8 +113,7 @@ export function useTransclusion(): TransclusionState {
           }
         }
         setMarkers(newMarkers);
-      } catch (e) {
-        console.error("Failed to load links:", e);
+      } catch {
         setLinks([]);
         setMarkers([]);
       }

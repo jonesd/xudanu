@@ -1,5 +1,3 @@
-use rand::rngs::OsRng;
-use rand::RngCore;
 use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
@@ -142,6 +140,8 @@ pub fn canonical_transcript(eph_a: &[u8; 32], eph_b: &[u8; 32]) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::rngs::OsRng;
+    use rand::RngCore;
 
     fn generate_static() -> StaticSecret {
         let mut bytes = [0u8; 32];

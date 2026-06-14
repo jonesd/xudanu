@@ -1,6 +1,5 @@
 use super::traits::*;
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 type DynRegion = Arc<dyn DynRegionTrait + Send + Sync>;
@@ -370,7 +369,7 @@ impl CrossRegionN {
         }
     }
 
-    pub fn empty(dims: usize) -> Self {
+    pub fn empty(_dims: usize) -> Self {
         CrossRegionN { boxes: Vec::new() }
     }
 

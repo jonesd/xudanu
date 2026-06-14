@@ -1,10 +1,9 @@
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use zeroize::Zeroize;
 
 use super::aead::{self, SealedEnvelope};
-use super::kdf::{self, DomainLabel};
 use super::sign;
 
 #[derive(Debug)]
@@ -40,7 +39,7 @@ pub fn generate_club_keypair(
     password: &[u8],
 ) -> Result<(EncryptedSigningKey, SigningKey), ClubKeyError> {
     let signing_key = sign::generate_signing_key();
-    let verifying_key = signing_key.verifying_key();
+    let _verifying_key = signing_key.verifying_key();
     let encrypted = encrypt_signing_key(&signing_key, password)?;
     Ok((encrypted, signing_key))
 }
