@@ -37,6 +37,7 @@ export interface CrdtSyncState {
   refreshAnnotations: () => void;
   createAnnotation: (kind: string, payload: string, charStart: number, charEnd: number) => Promise<void>;
   deleteAnnotation: (annotationId: number) => Promise<void>;
+  connectionEpoch: number;
   canEdit: boolean;
 }
 
@@ -57,7 +58,6 @@ export function useCrdtSync(
   const [identity, setIdentity] = useState<WhoAmIEntry | null>(null);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [publicClubId, setPublicClubId] = useState(0);
-  const reconnectCountRef = useRef(0);
   const [authenticated, setAuthenticated] = useState(false);
   const [annotations, setAnnotations] = useState<AnnotationEntry[]>([]);
   const [connectionEpoch, setConnectionEpoch] = useState(0);

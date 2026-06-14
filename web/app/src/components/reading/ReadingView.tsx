@@ -23,7 +23,7 @@ export function ReadingView({
   text,
   title,
   attributionSpans,
-  isSource,
+  isSource: _isSource,
   clientRef,
   connected,
   onSelectionChange,
@@ -282,13 +282,6 @@ export function ReadingView({
   );
 }
 
-interface Region {
-  start: number;
-  end: number;
-  sourceCount: number;
-  sources: Set<number>;
-}
-
 function renderAnnotatedLine(
   line: string,
   charOffset: number,
@@ -301,7 +294,6 @@ function renderAnnotatedLine(
   if (regions.length === 0) return line;
 
   const spans: React.ReactNode[] = [];
-  let pos = 0;
 
   const activeRegions = regions.filter(
     (r) => r.end > charOffset && r.start < charOffset + line.length

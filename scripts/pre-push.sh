@@ -37,7 +37,7 @@ fi
 echo ""
 echo "=== 4/4 tsc --noEmit (TypeScript type check) ==="
 cd "$WEB_APP"
-if ! npx tsc --noEmit 2>&1; then
+if ! npx tsc -b 2>&1; then
     echo ""
     echo "FAIL: TypeScript errors found. These WILL fail the release build."
     exit 1
