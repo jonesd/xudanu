@@ -2676,6 +2676,8 @@ impl Server {
                 .apply_text_delta(work_be_id, session_id, ops)
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
+            self.migrate_compound_spans_for_delta(work_be_id, ops);
+
             let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
                 .relay_to
                 .into_iter()
@@ -6627,6 +6629,35 @@ impl Server {
         for wid in affected {
             self.compound_dirty.insert(wid);
         }
+    }
+
+    fn migrate_compound_spans_for_delta(
+        &mut self,
+        source_work_id: BeId,
+        ops: &[crate::server::transport::protocol::TextDeltaOp],
+    ) {
+        let delta_ops: Vec<crate::edition::compound::DeltaOp> = ops
+            .iter()
+            .map(|op| match op {
+                crate::server::transport::protocol::TextDeltaOp::Retain { count } => {
+                    crate::edition::compound::DeltaOp::Retain(*count as usize)
+                }
+                crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
+                    crate::edition::compound::DeltaOp::Insert(text.chars().count())
+                }
+                crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
+                    crate::edition::compound::DeltaOp::Delete(*count as usize)
+                }
+            })
+            .collect();
+
+        let affected: Vec<BeId> = self.works_with_compound_referencing(source_work_id);
+        for wid in affected {
+            if let Some(compound) = self.compound_editions.get_mut(&wid) {
+                compound.migrate_spans_for_delta(source_work_id, &delta_ops);
+            }
+        }
+        self.mark_compound_dirty(source_work_id);
     }
 
     pub fn compound_dirty_works(&self) -> Vec<BeId> {
