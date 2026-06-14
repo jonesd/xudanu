@@ -1,5 +1,7 @@
 # xudanu
 
+> **[Read the rendered documentation](https://dgjones.info/xudanu/)** — user guides, technical architecture, and visual diagrams.
+
 **xudanu** (Xudanu) is a modern Rust and WebAssembly implementation inspired by the Xanadu Project and its Udanax Gold (Xanadu 92.1) system.
 
 It reinterprets and evolves foundational ideas in generalized hypertext and data structures for use in contemporary systems.
