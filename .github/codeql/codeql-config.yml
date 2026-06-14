@@ -17,4 +17,4 @@ query-filters:
       id: js/hardcoded-credentials
 
 queries:
-  - uses: security-and-quality'
+  - uses: security-and-quality

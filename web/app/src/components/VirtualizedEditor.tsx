@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback, useMemo, useState } from "react";
 import { TextBuffer } from "../api/text_buffer";
-import type { AttributionSpan, TransclusionMarker } from "../api/crdt_sync";
+import type { AttributionSpan, TransclusionMarker, SpanRangePayload } from "../api/crdt_sync";
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { SearchPanel } from "./SearchPanel";
@@ -44,6 +44,8 @@ interface VirtualizedEditorProps {
   onPasteText?: (text: string, pasteStart: number) => void;
   fontSize?: number;
   lineHeight?: number;
+  compoundSpanRanges?: SpanRangePayload[];
+  compoundSourceTitles?: Record<number, string>;
 }
 
 const DEFAULT_FONT_SIZE = 15;
@@ -69,6 +71,7 @@ function VirtualizedEditorInner({
   onPasteText,
   fontSize = DEFAULT_FONT_SIZE,
   lineHeight = DEFAULT_LINE_HEIGHT,
+  compoundSpanRanges = [],
 }: VirtualizedEditorProps) {
   const bufferRef = useRef<TextBuffer | null>(null);
   if (bufferRef.current === null) bufferRef.current = new TextBuffer(text);
@@ -342,7 +345,8 @@ function VirtualizedEditorInner({
   useEffect(() => {
     const el = editorRef.current;
     const canvas = overlayRef.current;
-    if (!el || !canvas || attributionSpans.length === 0) return;
+    if (!el || !canvas) return;
+    if (attributionSpans.length === 0 && transclusionMarkers.length === 0 && compoundSpanRanges.length === 0) return;
 
     const container = containerRef.current;
     if (!container) return;
@@ -412,6 +416,39 @@ function VirtualizedEditorInner({
       }
     }
 
+    for (const cs of compoundSpanRanges) {
+      const drawStart = Math.max(cs.flat_start, viewportCharStart) - viewportCharStart;
+      const drawEnd = Math.min(cs.flat_end, viewportCharEnd) - viewportCharStart;
+      if (drawStart >= drawEnd || drawEnd <= 0 || drawStart >= viewportTextLen) continue;
+
+      const textNode = el.firstChild;
+      if (!textNode || textNode.nodeType !== Node.TEXT_NODE) continue;
+
+      const range = document.createRange();
+      try {
+        const cs2 = Math.max(0, Math.min(drawStart, viewportTextLen));
+        const ce2 = Math.max(0, Math.min(drawEnd, viewportTextLen));
+        range.setStart(textNode as Text, cs2);
+        range.setEnd(textNode as Text, ce2);
+      } catch {
+        continue;
+      }
+
+      const rangeRects = range.getClientRects();
+      for (const r of rangeRects) {
+        const x = r.left - rect.left;
+        const y = r.top - rect.top;
+        ctx.fillStyle = "#f59e0b14";
+        ctx.fillRect(x, y, r.width, r.height);
+        ctx.save();
+        ctx.strokeStyle = "#f59e0b50";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 2]);
+        ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
+        ctx.restore();
+      }
+    }
+
     for (const marker of transclusionMarkers) {
       const drawStart = Math.max(marker.start, viewportCharStart) - viewportCharStart;
       const drawEnd = Math.min(marker.end, viewportCharEnd) - viewportCharStart;
@@ -440,7 +477,7 @@ function VirtualizedEditorInner({
       ctx.fillStyle = marker.color + "60";
       ctx.fillRect(0, firstTop, 3, lastBottom - firstTop);
     }
-  }, [attributionSpans, authorColorMap, viewStart, viewEnd, transclusionMarkers]);
+  }, [attributionSpans, authorColorMap, viewStart, viewEnd, transclusionMarkers, compoundSpanRanges]);
 
   const pushUndo = useCallback((prevText: string) => {
     if (isUndoRedoing.current) return;
