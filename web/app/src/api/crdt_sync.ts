@@ -1005,18 +1005,10 @@ export class CrdtSyncClient {
     if (this.crdtReady && this.workBeId) {
       try {
         await this.sendRequest("crdt_register_author", { work_id: this.workBeId });
-      } catch (e) {
-        console.error("[loginByName] crdt_register_author failed:", e);
+      } catch {
+        // Expected during identity transitions
       }
       this.sendAwareness(null, null, false);
-    }
-
-    if (!this.crdtReady && this.workBeId && !this.skipCrdt) {
-      try {
-        await this.tryOpenWork();
-      } catch (e) {
-        console.error("[loginByName] tryOpenWork failed:", e);
-      }
     }
 
     this.identityListeners.forEach((cb) => cb(this.currentIdentity));
@@ -1068,7 +1060,7 @@ export class CrdtSyncClient {
   }
 
   sendRequest(op: string, payload?: object): Promise<unknown> {
-    return new Promise((resolve, reject) => {
+    const p = new Promise((resolve, reject) => {
       const id = this.nextId();
       const frame: Record<string, unknown> = {
         v: PROTOCOL_VERSION,
@@ -1088,6 +1080,8 @@ export class CrdtSyncClient {
       });
       this.wsSend(JSON.stringify(frame));
     });
+    p.catch(() => {});
+    return p;
   }
 
   private wsSend(data: string): void {
@@ -1161,8 +1155,7 @@ export class CrdtSyncClient {
         const states = awareVal.states as AwarenessState[] || [];
         this.awarenessListeners.forEach((cb) => cb(states));
       }).catch(() => {});
-    } catch (e) {
-      console.warn("crdt_sync_open failed, falling back to work_get_edition:", e);
+    } catch {
       try {
         const edResp = await this.sendRequest("work_get_edition", {
           work_id: this.workBeId,
@@ -1175,8 +1168,8 @@ export class CrdtSyncClient {
           this.text = edText;
           this.textListeners.forEach((cb) => cb(this.text));
         }
-      } catch (e2) {
-        console.warn("work_get_edition fallback also failed:", e2);
+      } catch {
+        // Expected during identity transitions
       }
     }
   }

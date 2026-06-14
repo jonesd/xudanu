@@ -6,18 +6,14 @@ use super::club::Club;
 use super::detector::{Detector, DetectorList, Event};
 use super::error::ServerError;
 use super::keymaster::KeyMaster;
-use super::lock::{BooLockSmith, Lock, LockCredential, LockSmith};
 use super::session::{Session, SessionId};
 use super::wait_barrier::{ConsequenceTracker, OperationGuard, WriteBarrier, WriteGuard};
 use crate::edition::backfollow::BackfollowEngine;
-use crate::edition::blob_store::{BlobMeta, BlobStore, MemoryBackend};
+use crate::edition::blob_store::{BlobMeta, BlobStore};
 use crate::edition::links::{HyperLink, HyperRef};
 use crate::edition::props::BertProp;
 use crate::edition::transclusion::{TransclusionQuery, WorkQuery};
-use crate::edition::{
-    hash_content, u64_from_hash, BeId, BeRangeElement, BeStorage, ContentAddressIndex, Edition,
-    GrandMap, InMemoryBeStorage, RangeElement, Work, XnRegion,
-};
+use crate::edition::{BeId, ContentAddressIndex, Edition, GrandMap, RangeElement, Work, XnRegion};
 use crate::ent::trace::TracePosition;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -2076,7 +2072,7 @@ impl Server {
         // content actually matches the source work. Wire this up to only attribute
         // entries whose content_fingerprint() appears in the source's fingerprint set,
         // enabling verified (not assumed) attribution.
-        let source_fingerprint_set = source_work_id.and_then(|sid| {
+        let _source_fingerprint_set = source_work_id.and_then(|sid| {
             self.works.get(&sid).map(|ws| {
                 let entries = ws.work.current_edition().all_entries();
                 let mut set = std::collections::HashSet::new();
@@ -4185,7 +4181,7 @@ impl Server {
                 ServerError::Internal("standalone edition not found after insert".to_string())
             })?
             .clone();
-        let edition_elem = RangeElement::edition(be_id);
+        let _edition_elem = RangeElement::edition(be_id);
         self.backfollow
             .register_edition(&edition, be_id, BertProp::make());
         Ok(be_id)
@@ -4836,7 +4832,7 @@ impl Server {
                             Vec<(BeId, Vec<super::otree_crdt::OtreeAnnotation>)>,
                         >(&data)
                         {
-                            for (work_id, annotations) in &all_anns {
+                            for (work_id, _annotations) in &all_anns {
                                 if let Some(ws) = self.works.get(work_id) {
                                     let edition = ws.work.current_edition();
                                     self.otree_crdt.initialize_from_edition(*work_id, &edition);
@@ -6271,7 +6267,7 @@ impl Server {
         let mut claimed_a: Vec<std::ops::Range<usize>> = Vec::new();
         let mut claimed_b: Vec<std::ops::Range<usize>> = Vec::new();
 
-        let paras_a: Vec<&str> = text_a
+        let _paras_a: Vec<&str> = text_a
             .split('\n')
             .filter(|p| p.trim().len() >= min_len)
             .collect();
@@ -7391,7 +7387,7 @@ impl Server {
     pub fn edition_relabel(
         &mut self,
         work_id: BeId,
-        label_id: u64,
+        _label_id: u64,
     ) -> Result<Edition, ServerError> {
         let ws = self
             .works
@@ -10516,6 +10512,7 @@ mod tests {
     use super::*;
     use crate::edition::RangeElement;
     use crate::server::crdt_manager::{AwarenessState, CursorPosition};
+    use crate::server::lock::Lock;
     use crate::server::lock::LockCredential;
     use crate::server::transport::protocol::TextDeltaOp;
 

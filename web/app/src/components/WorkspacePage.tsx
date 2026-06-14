@@ -329,6 +329,18 @@ export function WorkspacePage() {
     }
   }, [connected, workBeId, publicClubId, getReadClub, getEditClub]);
 
+  useEffect(() => {
+    if (!connected || workBeId === null || !clientRef.current) return;
+    clientRef.current.sendRequest("work_get", { work_be_id: workBeId })
+      .then(() => {})
+      .catch(() => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("work");
+        window.history.replaceState({}, "", url.toString());
+        setWorkBeId(null);
+      });
+  }, [connected, workBeId]);
+
   const prevTextRef = useRef(text);
   useEffect(() => { prevTextRef.current = text; }, [text]);
 

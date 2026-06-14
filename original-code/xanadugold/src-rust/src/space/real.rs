@@ -1,5 +1,4 @@
 use super::traits::*;
-use std::cmp::Ordering;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct RealSpace;
@@ -382,6 +381,7 @@ impl OrderSpec for RealDescending {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cmp::Ordering;
 
     fn space() -> RealSpace {
         RealSpace::new()

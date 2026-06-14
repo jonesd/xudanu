@@ -4,7 +4,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::{Query, State};
 use axum::response::{Html, IntoResponse, Redirect};
-use axum::Json;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 

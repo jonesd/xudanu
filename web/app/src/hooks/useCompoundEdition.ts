@@ -77,8 +77,8 @@ export function useCompoundEdition(
         setSourceTitles({});
         setResolvedText("");
       }
-    } catch (e) {
-      console.warn("useCompoundEdition: load failed", e);
+    } catch {
+      // Expected during identity transitions or connection changes
     }
   }, [client, workBeId]);
 

@@ -58,7 +58,7 @@ pub struct ServerKeyPair {
 }
 
 impl ServerKeyPair {
-    pub fn generate(server_id: &str) -> Self {
+    pub fn generate(_server_id: &str) -> Self {
         let signing_key = generate_signing_key();
         let mut kex_bytes = [0u8; 32];
         OsRng.fill_bytes(&mut kex_bytes);
@@ -566,7 +566,7 @@ impl ServerKeyPair {
         passphrase: Option<&[u8]>,
     ) -> Result<Self, KeypairFileError> {
         let json = std::fs::read_to_string(path)?;
-        if let Ok(v2) = serde_json::from_str::<KeypairFileV2>(&json) {
+        if let Ok(_v2) = serde_json::from_str::<KeypairFileV2>(&json) {
             let pass = passphrase.ok_or(KeypairFileError::WrongPassphrase)?;
             return Self::load_from_file_with_passphrase(path, pass);
         }

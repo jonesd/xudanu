@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use crate::edition::backend::BeId;
 use crate::edition::edition::Edition;
-use crate::edition::persistent::{EditionSnapshot, WorkSnapshot};
+use crate::edition::persistent::EditionSnapshot;
 use crate::edition::provenance::SpanProvenance;
 use crate::edition::work::Work;
 use crate::persist::chunk_store::ChunkStore;

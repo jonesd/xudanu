@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::session::SessionId;
 use crate::crypto::sign::{sign_bytes, verify_signature};
-use crate::edition::provenance::{sign_element, sign_span, ElementProvenance, SpanProvenance};
+use crate::edition::provenance::{sign_span, ElementProvenance, SpanProvenance};
 use crate::edition::three_way::{three_way_merge, MergeStrategy};
 use crate::edition::{BeId, Carrier, Edition, Mapping, RangeElement, XnRegion};
 use crate::server::transport::protocol::TextDeltaOp;
@@ -142,11 +142,11 @@ impl std::fmt::Display for OtreeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             OtreeError::WorkNotFound(id) => write!(f, "O-tree work not found: {:016x}", id),
-            OtreeError::NotSubscribed(work, sess) => {
+            OtreeError::NotSubscribed(work, _sess) => {
                 write!(f, "session not subscribed to work {:016x}", work)
             }
             OtreeError::InvalidUpdate(msg) => write!(f, "invalid update: {}", msg),
-            OtreeError::AuthorNotRegistered(work, sess) => {
+            OtreeError::AuthorNotRegistered(work, _sess) => {
                 write!(f, "author not registered for work {:016x}", work)
             }
             OtreeError::SigningFailed(err) => write!(f, "signing error: {}", err),
@@ -287,7 +287,7 @@ pub fn apply_text_delta_to_edition(
         entry_char_start.push(cum);
         cum += carrier.char_len();
     }
-    let total_old_chars = cum;
+    let _total_old_chars = cum;
 
     let mut old_char_pos = 0usize;
     let mut current_entry_idx = 0usize;

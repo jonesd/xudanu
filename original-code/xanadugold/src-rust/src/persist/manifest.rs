@@ -1,8 +1,6 @@
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::edition::backend::BeId;
-use crate::persist::chunk_store::ChunkStore;
 use crate::persist::edition_chunks::{EditionChunkRef, WorkChunkRef};
 
 const CURRENT_MANIFEST_VERSION: u32 = 4;
@@ -914,6 +912,7 @@ pub fn create_empty_manifest(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::persist::chunk_store::ChunkStore;
 
     fn temp_dir() -> PathBuf {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
