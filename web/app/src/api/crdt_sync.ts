@@ -318,6 +318,7 @@ export class CrdtSyncClient {
   private identityListeners = new Set<IdentityListener>();
   private connected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private url: string;
   private workBeId: number;
   private sessionId: number | null = null;
@@ -365,6 +366,10 @@ export class CrdtSyncClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
     if (this.crdtReady && this.sessionId !== null) {
       this.sendRequest("crdt_sync_close", { work_id: this.workBeId });
@@ -885,7 +890,7 @@ export class CrdtSyncClient {
   }
 
   async workTitle(workId: number): Promise<string> {
-    const resp = await this.sendRequest("work_get", { work_be_id: workId });
+    const resp = await this.sendRequest("work_get_edition", { work_id: workId });
     const v = extractValue(resp) as { title?: string };
     return v.title || "";
   }
@@ -1094,6 +1099,12 @@ export class CrdtSyncClient {
     this.connected = true;
     this.connectionListeners.forEach((cb) => cb(true));
 
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.wsSend(JSON.stringify({ v: PROTOCOL_VERSION, id: 0, type: "heartbeat" }));
+      }
+    }, 20000);
+
     try {
       const resp = await this.sendRequest("session_connect");
       this.sessionId = extractValue(resp) as number;
@@ -1135,7 +1146,11 @@ export class CrdtSyncClient {
         work_id: this.workBeId,
       });
       const inner = extractValue(openResp) as Record<string, unknown>;
-      this.text = (inner.current_text as string) || "";
+
+      const wasInitialOpen = !this.text;
+      if (wasInitialOpen) {
+        this.text = (inner.current_text as string) || "";
+      }
 
       if (this.currentIdentity) {
         try {
@@ -1146,7 +1161,9 @@ export class CrdtSyncClient {
       }
 
       this.crdtReady = true;
-      this.textListeners.forEach((cb) => cb(this.text));
+      if (wasInitialOpen) {
+        this.textListeners.forEach((cb) => cb(this.text));
+      }
 
       this.sendRequest("crdt_awareness_get", {
         work_id: this.workBeId,
@@ -1212,10 +1229,11 @@ export class CrdtSyncClient {
     const eventType = event.type as string;
 
     if (eventType === "work_revised") {
-      const payload = event.payload as Record<string, unknown> | undefined;
-      if (payload && payload.work_be_id === this.workBeId) {
-        if (!this.skipCrdt) this.refreshText();
-      }
+      // When CRDT is active, client text is authoritative.
+      // Server-side materialization fires work_revised after debounce,
+      // but our CRDT text already reflects all local edits.
+      // Remote changes arrive via crdt_text_delta from other sessions.
+      // Calling refreshText() here would clobber the editor with stale text.
     }
 
     if (eventType === "crdt_text_update") {
@@ -1274,6 +1292,10 @@ export class CrdtSyncClient {
   private onClose(): void {
     this.connected = false;
     this.crdtReady = false;
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
     this.connectionListeners.forEach((cb) => cb(false));
     this.pending.forEach((handler) => handler("connection closed", true));
     this.pending.clear();

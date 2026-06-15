@@ -7,6 +7,19 @@ import type {
   SpanRangePayload,
 } from "../api/crdt_sync";
 
+function commonPrefixLen(a: string, b: string): number {
+  const minLen = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < minLen && a.charCodeAt(i) === b.charCodeAt(i)) i++;
+  return i;
+}
+
+function commonSuffixLen(a: string, b: string): number {
+  let i = 0;
+  while (i < a.length && i < b.length && a.charCodeAt(a.length - 1 - i) === b.charCodeAt(b.length - 1 - i)) i++;
+  return i;
+}
+
 export interface CompoundSpanPlacement {
   source_work_id: number;
   char_start: number;
@@ -15,7 +28,7 @@ export interface CompoundSpanPlacement {
   flat_end: number;
 }
 
-function buildCompoundEdition(
+export function buildCompoundEdition(
   text: string,
   spans: CompoundSpanPlacement[],
 ): CompoundEditionPayload {
@@ -53,6 +66,7 @@ function buildCompoundEdition(
 export function useCompoundEdition(
   client: CrdtSyncClient | null,
   workBeId: number | null,
+  text: string,
 ) {
   const [hasCompound, setHasCompound] = useState(false);
   const [spanRanges, setSpanRanges] = useState<SpanRangePayload[]>([]);
@@ -60,6 +74,7 @@ export function useCompoundEdition(
   const [resolvedText, setResolvedText] = useState<string>("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const spansRef = useRef<CompoundSpanPlacement[]>([]);
+  const prevTextRef = useRef<string>("");
 
   const loadCompound = useCallback(async () => {
     if (!client || workBeId === null) return;
@@ -104,9 +119,64 @@ export function useCompoundEdition(
     }
   }, [hasCompound, client, workBeId]);
 
+  const sendCompound = useCallback((currentText: string, spans: CompoundSpanPlacement[]) => {
+    const compound = buildCompoundEdition(currentText, spans);
+    if (client && workBeId !== null) {
+      client
+        .compoundSetEdition(workBeId, compound)
+        .then(() => {
+          setHasCompound(true);
+          loadCompound();
+        })
+        .catch((e) =>
+          console.error("useCompoundEdition: set edition failed", e),
+        );
+    }
+  }, [client, workBeId, loadCompound]);
+
+  useEffect(() => {
+    const oldText = prevTextRef.current;
+    prevTextRef.current = text;
+
+    if (spansRef.current.length === 0 || oldText === "" || oldText === text) {
+      return;
+    }
+
+    const prefix = commonPrefixLen(oldText, text);
+    const oldRem = oldText.slice(prefix);
+    const newRem = text.slice(prefix);
+    const suffix = commonSuffixLen(oldRem, newRem);
+    const deleteLen = oldRem.length - suffix;
+    const insertLen = newRem.length - suffix;
+
+    if (deleteLen === 0 && insertLen === 0) return;
+
+    const changeStart = prefix;
+    const changeOldEnd = prefix + deleteLen;
+    const delta = insertLen - deleteLen;
+
+    let changed = false;
+    const migrated = spansRef.current.map((span) => {
+      if (span.flat_end <= changeStart) return span;
+      if (span.flat_start >= changeOldEnd) {
+        changed = true;
+        return { ...span, flat_start: span.flat_start + delta, flat_end: span.flat_end + delta };
+      }
+      changed = true;
+      const newStart = Math.min(span.flat_start, changeStart);
+      const newEnd = Math.max(span.flat_end + delta, changeStart + insertLen);
+      return { ...span, flat_start: newStart, flat_end: Math.max(newStart + 1, newEnd) };
+    });
+
+    if (!changed) return;
+
+    spansRef.current = migrated;
+    sendCompound(text, migrated);
+  }, [text, sendCompound]);
+
   const addSpan = useCallback(
     (
-      text: string,
+      currentText: string,
       position: number,
       excerpt: string,
       sourceWorkId: number,
@@ -130,27 +200,17 @@ export function useCompoundEdition(
       });
       existing.push(newSpan);
       spansRef.current = existing;
+      prevTextRef.current = currentText;
 
-      const compound = buildCompoundEdition(text, existing);
-
-      if (client && workBeId !== null) {
-        client
-          .compoundSetEdition(workBeId, compound)
-          .then(() => {
-            setHasCompound(true);
-            loadCompound();
-          })
-          .catch((e) =>
-            console.error("useCompoundEdition: set edition failed", e),
-          );
-      }
+      sendCompound(currentText, existing);
     },
-    [client, workBeId, loadCompound],
+    [sendCompound],
   );
 
   useEffect(() => {
     if (!client || workBeId === null) {
       spansRef.current = [];
+      prevTextRef.current = "";
       setHasCompound(false);
       setSpanRanges([]);
       setSourceTitles({});

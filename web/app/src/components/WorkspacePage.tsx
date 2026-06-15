@@ -138,7 +138,7 @@ export function WorkspacePage() {
     canEdit,
   } = useCrdtSync(WS_URL, workBeId);
 
-  const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId);
+  const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId, text);
 
   const toggleStar = useCallback(async (workId: number, current: boolean) => {
     if (!clientRef.current) {
@@ -331,7 +331,7 @@ export function WorkspacePage() {
 
   useEffect(() => {
     if (!connected || workBeId === null || !clientRef.current) return;
-    clientRef.current.sendRequest("work_get", { work_be_id: workBeId })
+    clientRef.current.sendRequest("work_get_edition", { work_id: workBeId })
       .then(() => {})
       .catch(() => {
         const url = new URL(window.location.href);

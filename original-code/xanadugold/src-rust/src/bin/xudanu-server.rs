@@ -655,17 +655,22 @@ async fn main() {
                         .expect("failed to listen for ctrl-c");
                     "SIGINT"
                 };
-                let sigterm = async {
-                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                        .expect("failed to listen for SIGTERM")
-                        .recv()
-                        .await;
-                    "SIGTERM"
+                #[cfg(unix)]
+                let which = {
+                    let sigterm = async {
+                        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                            .expect("failed to listen for SIGTERM")
+                            .recv()
+                            .await;
+                        "SIGTERM"
+                    };
+                    tokio::select! {
+                        s = sigint => s,
+                        s = sigterm => s,
+                    }
                 };
-                let which = tokio::select! {
-                    s = sigint => s,
-                    s = sigterm => s,
-                };
+                #[cfg(not(unix))]
+                let which = { sigint.await };
                 tracing::info!("Received {}, shutting down...", which);
                 if let Some(ref _dir) = shutdown_data_dir {
                     shutdown_state.server.with_server(|server| {
