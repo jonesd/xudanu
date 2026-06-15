@@ -89,14 +89,7 @@ function drawOverlay(
   const hitZones: MarkerHitZone[] = [];
   if (!editor || !canvas) return hitZones;
   if (spans.length === 0 && markers.length === 0 && annotations.length === 0 && compoundSpans.length === 0) {
-    canvas.style.pointerEvents = "none";
     return hitZones;
-  }
-
-  if (markers.length === 0 && annotations.length === 0) {
-    canvas.style.pointerEvents = "none";
-  } else {
-    canvas.style.pointerEvents = "auto";
   }
 
   const container = editor.parentElement;
@@ -425,6 +418,9 @@ export function CollaborativeEditor({
         el.innerHTML = "<br>";
       } else {
         el.textContent = displayText;
+        if (displayText.endsWith("\n")) {
+          el.appendChild(document.createTextNode("\u200B"));
+        }
       }
     }
     lastText.current = displayText;
@@ -467,7 +463,7 @@ export function CollaborativeEditor({
       container.removeEventListener("scroll", redraw);
       cancelAnimationFrame(rafId);
     };
-  }, [attributionSpans, authorColorMap, transclusionMarkers, annotations]);
+  }, [attributionSpans, authorColorMap, transclusionMarkers, annotations, compoundSpanRanges]);
 
   const hideTooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -483,11 +479,9 @@ export function CollaborativeEditor({
     if (hideTooltipTimer.current) { clearTimeout(hideTooltipTimer.current); hideTooltipTimer.current = null; }
   }, []);
 
-  const handleOverlayMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = overlayRef.current;
-    if (!canvas) return;
+  const handleOverlayMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (hideTooltipTimer.current) { clearTimeout(hideTooltipTimer.current); hideTooltipTimer.current = null; }
-    const rect = canvas.getBoundingClientRect();
+    const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const hit = hitZonesRef.current.find((hz) =>
@@ -496,41 +490,27 @@ export function CollaborativeEditor({
     if (hit) {
       setHoveredMarker(hit.marker);
       setTooltipPos({ x: e.clientX, y: e.clientY });
-      canvas.style.cursor = "pointer";
-    } else if (hoveredMarker) {
-      scheduleHideTooltip();
-      canvas.style.cursor = "";
+      e.currentTarget.style.cursor = "pointer";
+    } else {
+      e.currentTarget.style.cursor = pendingTransclusion ? "crosshair" : "";
+      if (hoveredMarker) {
+        scheduleHideTooltip();
+      }
     }
-  }, [hoveredMarker, scheduleHideTooltip]);
+  }, [hoveredMarker, scheduleHideTooltip, pendingTransclusion]);
 
   const handleOverlayMouseLeave = useCallback(() => {
     scheduleHideTooltip();
   }, [scheduleHideTooltip]);
 
-  const handleOverlayClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = overlayRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
+  const handleOverlayClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const hit = hitZonesRef.current.find((hz) =>
       x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
     );
-    if (!hit) {
-      const el = editorRef.current;
-      if (el) {
-        el.focus();
-        const sel = window.getSelection();
-        if (sel) {
-          const range = document.caretRangeFromPoint(e.clientX, e.clientY);
-          if (range) {
-            sel.removeAllRanges();
-            sel.addRange(range);
-          }
-        }
-      }
-      return;
-    }
+    if (!hit) return;
     if (e.detail === 2 && onShowBacklinks) {
       const excerpt = (hit.marker as unknown as Record<string, unknown>).excerpt as string || "";
       onShowBacklinks(hit.marker.otherWorkId, excerpt);
@@ -619,7 +599,7 @@ export function CollaborativeEditor({
   }, [onTextChange, editable, pushUndo]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (!editable) { e.preventDefault(); return; }
+    if (!editable) { console.warn("[EDIT-DEBUG] keydown blocked, editable=false"); e.preventDefault(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
       e.preventDefault();
       if (undoTimer.current !== null) {
@@ -660,7 +640,7 @@ export function CollaborativeEditor({
       if (!sel || sel.rangeCount === 0) return;
       const range = sel.getRangeAt(0);
       range.deleteContents();
-      const textNode = document.createTextNode("\n");
+      const textNode = document.createTextNode("\n\u200B");
       range.insertNode(textNode);
       range.setStartAfter(textNode);
       range.collapse(true);
@@ -819,13 +799,16 @@ export function CollaborativeEditor({
         />
       )}
       <div style={{ position: "relative", flex: 1, display: "flex", minHeight: 0 }}>
-        <div className="editor-container" style={pendingTransclusion ? { cursor: "crosshair" } : undefined}>
+        <div
+          className="editor-container"
+          style={pendingTransclusion ? { cursor: "crosshair" } : undefined}
+          onMouseMove={handleOverlayMouseMove}
+          onMouseLeave={handleOverlayMouseLeave}
+          onClick={handleOverlayClick}
+        >
           <canvas
             ref={overlayRef}
             className="attribution-overlay"
-            onMouseMove={handleOverlayMouseMove}
-            onMouseLeave={handleOverlayMouseLeave}
-            onClick={handleOverlayClick}
           />
           {hoveredMarker && tooltipPos && (
             <div
@@ -962,5 +945,5 @@ function getTextContent(el: HTMLElement): string {
       }
     }
   }
-  return result;
+  return result.replace(/\u200B/g, "");
 }

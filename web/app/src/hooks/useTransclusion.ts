@@ -52,11 +52,13 @@ export function useTransclusion(): TransclusionState {
   const placeTransclusion = useCallback(
     async (client: CrdtSyncClient, targetWorkId: number, targetPosition: number): Promise<number | null> => {
       if (!pending) return null;
+      const pendingData = pending;
+      setPending(null);
       try {
         const linkId = await client.linkCreate(
-          pending.sourceWorkId,
+          pendingData.sourceWorkId,
           targetWorkId,
-          { excerpt: pending.text, start: pending.start, end: pending.end },
+          { excerpt: pendingData.text, start: pendingData.start, end: pendingData.end },
           { excerpt: "", start: targetPosition, end: targetPosition },
         );
         try {
@@ -64,7 +66,6 @@ export function useTransclusion(): TransclusionState {
         } catch (e) {
           console.error("Failed to apply transclusion attribution:", e);
         }
-        setPending(null);
         return linkId;
       } catch (e) {
         console.error("Failed to create transclusion link:", e);
