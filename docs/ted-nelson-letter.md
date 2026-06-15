@@ -10,6 +10,8 @@ Create two works, select text in one, transclude it into the other, and keep edi
 
 Source code and architecture docs: **https://github.com/jonesd/xudanu** · **https://dgjones.info/xudanu/**
 
+**Step-by-step walkthrough:** https://github.com/jonesd/xudanu/blob/main/docs/walkthrough.md
+
 xudanu builds directly on the Udanax Gold (Xanadu 92.1) source code released in 1999 — reimagined in Rust with real-time collaborative editing that the original system envisioned but never had.
 
 Transclusion — content connected, not copied — is more relevant now than ever.
