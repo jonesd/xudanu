@@ -9410,8 +9410,10 @@ fn gc_aborts_on_corrupt_chunk() {
     let corrupt_hash = chunks_before[0];
     {
         let hex: String = corrupt_hash.iter().map(|b| format!("{:02x}", b)).collect();
-        let chunk_path =
-            dir.join("chunks").join(&hex[..2]).join(format!("{}.xchunk", hex));
+        let chunk_path = dir
+            .join("chunks")
+            .join(&hex[..2])
+            .join(format!("{}.xchunk", hex));
         assert!(
             chunk_path.exists(),
             "chunk file should exist at {}",
@@ -9482,8 +9484,7 @@ fn gc_preserves_backup_history_chunks() {
     // The backup manifest (manifest_v*.json) still references the full work
     // including revision history.
     {
-        let manifest_path =
-            xudanu::persist::manifest::manifest_path(&dir);
+        let manifest_path = xudanu::persist::manifest::manifest_path(&dir);
 
         // Delete dual-slot files so restore uses only manifest.json
         let _ = std::fs::remove_file(dir.join("manifest_a.json"));

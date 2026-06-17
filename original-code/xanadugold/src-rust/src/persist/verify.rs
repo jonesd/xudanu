@@ -707,10 +707,9 @@ mod tests {
 
         if let Ok(bm) = manifest::read_manifest(&b1) {
             for entry in &bm.works {
-                if let Ok(hashes) = crate::persist::edition_chunks::collect_work_hashes(
-                    &entry.work_ref,
-                    &store2,
-                ) {
+                if let Ok(hashes) =
+                    crate::persist::edition_chunks::collect_work_hashes(&entry.work_ref, &store2)
+                {
                     referenced.extend(hashes);
                 }
             }
@@ -742,10 +741,7 @@ mod tests {
         w1.revise(Edition::from_text("revision one"));
         w1.revise(Edition::from_text("revision two"));
         let wr1 = crate::persist::edition_chunks::work_to_chunks(&w1, &store).unwrap();
-        assert!(
-            !wr1.history.is_empty(),
-            "work should have history entries"
-        );
+        assert!(!wr1.history.is_empty(), "work should have history entries");
 
         // Collect all chunks for this work (current + history)
         let all_work1_hashes =
