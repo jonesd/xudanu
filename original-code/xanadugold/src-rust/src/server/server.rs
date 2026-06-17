@@ -11897,7 +11897,7 @@ mod tests {
         assert_eq!(imported, 1);
         assert_eq!(already, 0);
 
-        let content = RangeElement::text("hi".to_string());
+        let content = RangeElement::text("h".to_string());
         let fed_results = server
             .backfollow
             .transclusion_index()
