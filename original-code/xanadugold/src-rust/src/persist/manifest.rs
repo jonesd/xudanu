@@ -214,7 +214,6 @@ pub struct Manifest {
     pub trail_counter: BeId,
     #[serde(default)]
     pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
-
     // ── v5+ (future additions go here with version annotation) ──
 }
 
@@ -582,7 +581,9 @@ pub fn read_manifest(path: &Path) -> Result<Manifest, ManifestError> {
     if version < CURRENT_MANIFEST_VERSION {
         let backup_name = format!(
             "{}.v{}.bak",
-            path.file_name().and_then(|n| n.to_str()).unwrap_or("manifest.json"),
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("manifest.json"),
             version
         );
         let backup_path = path.with_file_name(backup_name);
@@ -593,9 +594,8 @@ pub fn read_manifest(path: &Path) -> Result<Manifest, ManifestError> {
             Err(e) => tracing::warn!("Failed to create manifest backup: {}", e),
         }
 
-        let migrated =
-            crate::persist::migrations::migrate_manifest_to_latest(raw, version)
-                .map_err(|e| ManifestError::Migration(e.to_string()))?;
+        let migrated = crate::persist::migrations::migrate_manifest_to_latest(raw, version)
+            .map_err(|e| ManifestError::Migration(e.to_string()))?;
 
         let migrated_json = serde_json::to_string_pretty(&migrated)?;
 

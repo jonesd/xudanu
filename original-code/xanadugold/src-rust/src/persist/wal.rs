@@ -53,7 +53,10 @@ pub struct WalLog {
 impl WalLog {
     pub fn open(data_dir: &Path) -> Result<Self, WalError> {
         let path = data_dir.join(WAL_FILENAME);
-        let needs_header = !path.exists() || std::fs::metadata(&path).map(|m| m.len() == 0).unwrap_or(true);
+        let needs_header = !path.exists()
+            || std::fs::metadata(&path)
+                .map(|m| m.len() == 0)
+                .unwrap_or(true);
         let seq = Self::read_max_seq(&path)?;
         let mut file = std::fs::OpenOptions::new()
             .create(true)

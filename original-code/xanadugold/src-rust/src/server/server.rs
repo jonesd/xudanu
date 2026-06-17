@@ -4475,30 +4475,36 @@ impl Server {
 
         let historical_authors_from_chunk = if let Some(hash) = manifest.historical_authors_hash {
             match chunk_store.read_chunk(&hash) {
-                Ok(data) => {
-                    match crate::persist::chunk_store::untag_chunk_data(&data) {
-                        Ok((format, payload)) if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON => {
-                            match serde_json::from_slice::<
-                                crate::server::historical_author::HistoricalAuthorRegistry,
-                            >(payload)
-                            {
-                                Ok(registry) => Some(registry),
-                                Err(e) => {
-                                    tracing::warn!("historical authors chunk deserialization failed: {}", e);
-                                    None
-                                }
+                Ok(data) => match crate::persist::chunk_store::untag_chunk_data(&data) {
+                    Ok((format, payload))
+                        if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON =>
+                    {
+                        match serde_json::from_slice::<
+                            crate::server::historical_author::HistoricalAuthorRegistry,
+                        >(payload)
+                        {
+                            Ok(registry) => Some(registry),
+                            Err(e) => {
+                                tracing::warn!(
+                                    "historical authors chunk deserialization failed: {}",
+                                    e
+                                );
+                                None
                             }
                         }
-                        Ok((format, _)) => {
-                            tracing::warn!("historical authors chunk has unexpected format: {:#x}", format);
-                            None
-                        }
-                        Err(e) => {
-                            tracing::warn!("historical authors chunk untag failed: {}", e);
-                            None
-                        }
                     }
-                }
+                    Ok((format, _)) => {
+                        tracing::warn!(
+                            "historical authors chunk has unexpected format: {:#x}",
+                            format
+                        );
+                        None
+                    }
+                    Err(e) => {
+                        tracing::warn!("historical authors chunk untag failed: {}", e);
+                        None
+                    }
+                },
                 Err(e) => {
                     tracing::warn!("historical authors chunk read failed: {}", e);
                     None
@@ -4511,24 +4517,24 @@ impl Server {
         let blob_metas_from_chunk: Vec<crate::persist::manifest::BlobMetaEntry> =
             if let Some(hash) = manifest.blob_metas_hash {
                 match chunk_store.read_chunk(&hash) {
-                    Ok(data) => {
-                        match crate::persist::chunk_store::untag_chunk_data(&data) {
-                            Ok((format, payload)) if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON => {
-                                serde_json::from_slice(payload).unwrap_or_else(|e| {
-                                    tracing::warn!("blob_metas deserialization failed: {}", e);
-                                    manifest.blob_metas.clone()
-                                })
-                            }
-                            Ok((format, _)) => {
-                                tracing::warn!("blob_metas chunk has unexpected format: {:#x}", format);
+                    Ok(data) => match crate::persist::chunk_store::untag_chunk_data(&data) {
+                        Ok((format, payload))
+                            if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON =>
+                        {
+                            serde_json::from_slice(payload).unwrap_or_else(|e| {
+                                tracing::warn!("blob_metas deserialization failed: {}", e);
                                 manifest.blob_metas.clone()
-                            }
-                            Err(e) => {
-                                tracing::warn!("blob_metas chunk untag failed: {}", e);
-                                manifest.blob_metas.clone()
-                            }
+                            })
                         }
-                    }
+                        Ok((format, _)) => {
+                            tracing::warn!("blob_metas chunk has unexpected format: {:#x}", format);
+                            manifest.blob_metas.clone()
+                        }
+                        Err(e) => {
+                            tracing::warn!("blob_metas chunk untag failed: {}", e);
+                            manifest.blob_metas.clone()
+                        }
+                    },
                     Err(e) => {
                         tracing::warn!("blob_metas chunk read failed: {}", e);
                         manifest.blob_metas.clone()
@@ -4580,28 +4586,36 @@ impl Server {
         self.reconcile_counter = manifest.reconcile_counter;
         self.content_address = if let Some(hash) = manifest.content_address_hash {
             match chunk_store.read_chunk(&hash) {
-                Ok(data) => {
-                    match crate::persist::chunk_store::untag_chunk_data(&data) {
-                        Ok((format, payload)) if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON => {
-                            serde_json::from_slice::<ContentAddressIndex>(payload)
-                                .unwrap_or_else(|e| {
-                                    tracing::warn!("content_address deserialization failed: {}", e);
-                                    manifest.content_address.clone()
-                                        .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
-                                })
-                        }
-                        Ok((format, _)) => {
-                            tracing::warn!("content_address chunk has unexpected format: {:#x}", format);
-                            manifest.content_address.clone()
+                Ok(data) => match crate::persist::chunk_store::untag_chunk_data(&data) {
+                    Ok((format, payload))
+                        if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON =>
+                    {
+                        serde_json::from_slice::<ContentAddressIndex>(payload).unwrap_or_else(|e| {
+                            tracing::warn!("content_address deserialization failed: {}", e);
+                            manifest
+                                .content_address
+                                .clone()
                                 .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
-                        }
-                        Err(e) => {
-                            tracing::warn!("content_address chunk untag failed: {}", e);
-                            manifest.content_address.clone()
-                                .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
-                        }
+                        })
                     }
-                }
+                    Ok((format, _)) => {
+                        tracing::warn!(
+                            "content_address chunk has unexpected format: {:#x}",
+                            format
+                        );
+                        manifest
+                            .content_address
+                            .clone()
+                            .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
+                    }
+                    Err(e) => {
+                        tracing::warn!("content_address chunk untag failed: {}", e);
+                        manifest
+                            .content_address
+                            .clone()
+                            .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
+                    }
+                },
                 Err(e) => {
                     tracing::warn!("content_address chunk read failed: {}", e);
                     manifest
@@ -4752,24 +4766,24 @@ impl Server {
         let links_from_chunk: Vec<crate::persist::manifest::LinkEntry> =
             if let Some(hash) = manifest.links_hash {
                 match chunk_store.read_chunk(&hash) {
-                    Ok(data) => {
-                        match crate::persist::chunk_store::untag_chunk_data(&data) {
-                            Ok((format, payload)) if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON => {
-                                serde_json::from_slice(payload).unwrap_or_else(|e| {
-                                    tracing::warn!("links chunk deserialization failed: {}", e);
-                                    manifest.links.clone()
-                                })
-                            }
-                            Ok((format, _)) => {
-                                tracing::warn!("links chunk has unexpected format: {:#x}", format);
+                    Ok(data) => match crate::persist::chunk_store::untag_chunk_data(&data) {
+                        Ok((format, payload))
+                            if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON =>
+                        {
+                            serde_json::from_slice(payload).unwrap_or_else(|e| {
+                                tracing::warn!("links chunk deserialization failed: {}", e);
                                 manifest.links.clone()
-                            }
-                            Err(e) => {
-                                tracing::warn!("links chunk untag failed: {}", e);
-                                manifest.links.clone()
-                            }
+                            })
                         }
-                    }
+                        Ok((format, _)) => {
+                            tracing::warn!("links chunk has unexpected format: {:#x}", format);
+                            manifest.links.clone()
+                        }
+                        Err(e) => {
+                            tracing::warn!("links chunk untag failed: {}", e);
+                            manifest.links.clone()
+                        }
+                    },
                     Err(e) => {
                         tracing::warn!("links chunk read failed: {}", e);
                         manifest.links.clone()
@@ -4852,8 +4866,13 @@ impl Server {
                         );
                         if !entries.is_empty() {
                             tracing::info!("WAL: replaying {} entries", entries.len());
-                            let replayed = crate::persist::wal::WalLog::replay_entries(self, &entries);
-                            tracing::info!("WAL: replayed {} of {} entries", replayed, entries.len());
+                            let replayed =
+                                crate::persist::wal::WalLog::replay_entries(self, &entries);
+                            tracing::info!(
+                                "WAL: replayed {} of {} entries",
+                                replayed,
+                                entries.len()
+                            );
                         }
                     } else if !entries.is_empty() {
                         tracing::info!("WAL: replaying {} entries", entries.len());
@@ -4915,9 +4934,16 @@ impl Server {
                 match cs.read_chunk(&hash) {
                     Ok(data) => {
                         let payload = match crate::persist::chunk_store::untag_chunk_data(&data) {
-                            Ok((fmt, p)) if fmt == crate::persist::chunk_store::CHUNK_FORMAT_JSON => Some(p),
+                            Ok((fmt, p))
+                                if fmt == crate::persist::chunk_store::CHUNK_FORMAT_JSON =>
+                            {
+                                Some(p)
+                            }
                             Ok((fmt, _)) => {
-                                tracing::warn!("annotations chunk has unexpected format: {:#x}", fmt);
+                                tracing::warn!(
+                                    "annotations chunk has unexpected format: {:#x}",
+                                    fmt
+                                );
                                 None
                             }
                             Err(e) => {
@@ -4962,9 +4988,16 @@ impl Server {
                 match cs.read_chunk(&hash) {
                     Ok(data) => {
                         let payload = match crate::persist::chunk_store::untag_chunk_data(&data) {
-                            Ok((fmt, p)) if fmt == crate::persist::chunk_store::CHUNK_FORMAT_JSON => Some(p),
+                            Ok((fmt, p))
+                                if fmt == crate::persist::chunk_store::CHUNK_FORMAT_JSON =>
+                            {
+                                Some(p)
+                            }
                             Ok((fmt, _)) => {
-                                tracing::warn!("fossil snapshots chunk has unexpected format: {:#x}", fmt);
+                                tracing::warn!(
+                                    "fossil snapshots chunk has unexpected format: {:#x}",
+                                    fmt
+                                );
                                 None
                             }
                             Err(e) => {
@@ -4973,8 +5006,9 @@ impl Server {
                             }
                         };
                         if let Some(payload) = payload {
-                            match serde_json::from_slice::<Vec<crate::edition::recorder::Fossil>>(payload)
-                            {
+                            match serde_json::from_slice::<Vec<crate::edition::recorder::Fossil>>(
+                                payload,
+                            ) {
                                 Ok(snapshots) => {
                                     let fossil_count = snapshots.len();
                                     let mut fingerprints_to_register: Vec<(
@@ -10294,10 +10328,8 @@ pub(crate) mod persist_snapshot {
                 std::collections::HashSet::new();
             for ws in self.works.values() {
                 if let Some(ref work_ref) = ws.chunk_ref {
-                    match crate::persist::edition_chunks::collect_work_hashes(
-                        work_ref,
-                        chunk_store,
-                    ) {
+                    match crate::persist::edition_chunks::collect_work_hashes(work_ref, chunk_store)
+                    {
                         Ok(hashes) => referenced.extend(hashes),
                         Err(e) => {
                             tracing::warn!(
@@ -10379,10 +10411,7 @@ pub(crate) mod persist_snapshot {
                 }
             }
             for ed_ref in self.standalone_edition_refs.values() {
-                match crate::persist::edition_chunks::collect_edition_hashes(
-                    ed_ref,
-                    chunk_store,
-                ) {
+                match crate::persist::edition_chunks::collect_edition_hashes(ed_ref, chunk_store) {
                     Ok(hashes) => referenced.extend(hashes),
                     Err(e) => {
                         tracing::warn!(
