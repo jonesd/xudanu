@@ -9901,7 +9901,7 @@ pub(crate) mod persist_snapshot {
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     Some(hash)
                 },
-                links: Vec::new(),
+                links: links.clone(),
                 link_counter: self.link_counter,
                 admin: crate::persist::manifest::AdminEntry {
                     accepting_connections: self.admin.is_accepting_connections(),
@@ -10138,7 +10138,18 @@ pub(crate) mod persist_snapshot {
                         ))
                     }
                 };
-                if let Ok(manifest) = crate::persist::manifest::read_manifest(manifest_path) {
+                let manifest = crate::persist::manifest::read_manifest(manifest_path);
+                let manifest = match manifest {
+                    Ok(m) => m,
+                    Err(e) => {
+                        tracing::warn!(
+                            "GC: failed to read manifest for chunk protection ({}), \
+                             skipping GC to avoid deleting valid chunks",
+                            e
+                        );
+                        return Ok(0);
+                    }
+                };
                     // CHECKLIST: every Option<[u8; 32]> field in Manifest must be
                     // inserted into `referenced` here, or the GC will delete the
                     // chunk. Current fields (as of 2026-06):
@@ -10166,7 +10177,6 @@ pub(crate) mod persist_snapshot {
                     if let Some(hash) = manifest.fossil_snapshots_hash {
                         referenced.insert(hash);
                     }
-                }
             }
             for club_ref in self.club_refs.values() {
                 if let Ok(hashes) = crate::persist::edition_chunks::collect_work_hashes(
