@@ -405,15 +405,30 @@ impl WalLog {
                         entry.args.get("origin").and_then(|v| v.as_u64()),
                         entry.args.get("destination").and_then(|v| v.as_u64()),
                     ) {
-                        let o_ref = entry.args.get("origin_ref")
-                            .and_then(|v| serde_json::from_value::<crate::server::transport::protocol::HyperRefPayload>(v.clone()).ok());
-                        let d_ref = entry.args.get("destination_ref")
-                            .and_then(|v| serde_json::from_value::<crate::server::transport::protocol::HyperRefPayload>(v.clone()).ok());
-                        let link_types: Vec<u64> = entry.args.get("link_types")
+                        let o_ref = entry.args.get("origin_ref").and_then(|v| {
+                            serde_json::from_value::<
+                                crate::server::transport::protocol::HyperRefPayload,
+                            >(v.clone())
+                            .ok()
+                        });
+                        let d_ref = entry.args.get("destination_ref").and_then(|v| {
+                            serde_json::from_value::<
+                                crate::server::transport::protocol::HyperRefPayload,
+                            >(v.clone())
+                            .ok()
+                        });
+                        let link_types: Vec<u64> = entry
+                            .args
+                            .get("link_types")
                             .and_then(|v| serde_json::from_value(v.clone()).ok())
                             .unwrap_or_default();
                         server.wal_replay_create_link(
-                            link_id, origin, destination, o_ref, d_ref, link_types,
+                            link_id,
+                            origin,
+                            destination,
+                            o_ref,
+                            d_ref,
+                            link_types,
                         );
                         true
                     } else {

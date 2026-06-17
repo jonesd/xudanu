@@ -15,3 +15,5 @@ xudanu/
 web/app/app@*
 web/app/tsc
 docs/*.bak
+original-code/xanadugold/docs/*.txt
+original-code/xanadugold/docs/*.js
