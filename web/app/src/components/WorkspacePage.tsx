@@ -210,7 +210,8 @@ export function WorkspacePage() {
 
   const currentWorkMeta = works.find(w => w.work_id === workBeId);
   const isSourceWork = currentWorkMeta?.is_source === true;
-  const displayText = text;
+  const showResolved = compound.hasCompound && compound.resolvedText && (!canEdit || viewMode === "reading");
+  const displayText = showResolved ? compound.resolvedText : text;
 
   const docAuthors = useMemo(() => {
     const seen = new Map<string, { name: string; color: string }>();
