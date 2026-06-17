@@ -17,3 +17,4 @@ web/app/tsc
 docs/*.bak
 original-code/xanadugold/docs/*.txt
 original-code/xanadugold/docs/*.js
+original-code/xanadugold/src-rust/.cargo/

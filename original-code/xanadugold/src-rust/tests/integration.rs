@@ -8925,7 +8925,15 @@ fn corrupt_chunk_detected_on_restore() {
 
     let mut srv2 = xudanu::server::Server::new();
     let result = srv2.restore_from_data_dir(&dir, None);
-    assert!(result.is_err(), "restore with corrupted chunk should fail");
+    assert!(
+        result.is_ok(),
+        "restore should succeed with partial recovery (skipping corrupt chunks): {:?}",
+        result.err()
+    );
+    assert!(
+        srv2.work(wid).is_err(),
+        "corrupt work should be skipped during restore"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -8939,7 +8947,7 @@ fn missing_chunk_detected_on_restore() {
     let sid = srv.connect();
     srv.login_public(sid).unwrap();
 
-    let _wid = srv
+    let wid = srv
         .create_work(sid, xudanu::edition::Edition::from_text("will go missing"))
         .unwrap();
     srv.checkpoint_to_store().unwrap();
@@ -8951,7 +8959,15 @@ fn missing_chunk_detected_on_restore() {
 
     let mut srv2 = xudanu::server::Server::new();
     let result = srv2.restore_from_data_dir(&dir, None);
-    assert!(result.is_err(), "restore with missing chunks should fail");
+    assert!(
+        result.is_ok(),
+        "restore should succeed with partial recovery (skipping missing chunks): {:?}",
+        result.err()
+    );
+    assert!(
+        srv2.work(wid).is_err(),
+        "work with missing chunk should be skipped during restore"
+    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }
