@@ -4476,20 +4476,27 @@ impl Server {
         let historical_authors_from_chunk = if let Some(hash) = manifest.historical_authors_hash {
             match chunk_store.read_chunk(&hash) {
                 Ok(data) => {
-                    if let Ok(registry) = serde_json::from_slice::<
-                        crate::server::historical_author::HistoricalAuthorRegistry,
-                    >(&data)
-                    {
-                        Some(registry)
-                    } else if let Ok(registry) = postcard::from_bytes::<
-                        crate::server::historical_author::HistoricalAuthorRegistry,
-                    >(&data)
-                    {
-                        tracing::info!("historical_authors: migrated from postcard to json");
-                        Some(registry)
-                    } else {
-                        tracing::warn!("historical authors chunk deserialization failed");
-                        None
+                    match crate::persist::chunk_store::untag_chunk_data(&data) {
+                        Ok((format, payload)) if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON => {
+                            match serde_json::from_slice::<
+                                crate::server::historical_author::HistoricalAuthorRegistry,
+                            >(payload)
+                            {
+                                Ok(registry) => Some(registry),
+                                Err(e) => {
+                                    tracing::warn!("historical authors chunk deserialization failed: {}", e);
+                                    None
+                                }
+                            }
+                        }
+                        Ok((format, _)) => {
+                            tracing::warn!("historical authors chunk has unexpected format: {:#x}", format);
+                            None
+                        }
+                        Err(e) => {
+                            tracing::warn!("historical authors chunk untag failed: {}", e);
+                            None
+                        }
                     }
                 }
                 Err(e) => {
@@ -4505,14 +4512,21 @@ impl Server {
             if let Some(hash) = manifest.blob_metas_hash {
                 match chunk_store.read_chunk(&hash) {
                     Ok(data) => {
-                        if let Ok(parsed) = serde_json::from_slice(&data) {
-                            parsed
-                        } else if let Ok(parsed) = postcard::from_bytes(&data) {
-                            tracing::info!("blob_metas: migrated from postcard to json");
-                            parsed
-                        } else {
-                            tracing::warn!("blob_metas chunk deserialization failed");
-                            manifest.blob_metas.clone()
+                        match crate::persist::chunk_store::untag_chunk_data(&data) {
+                            Ok((format, payload)) if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON => {
+                                serde_json::from_slice(payload).unwrap_or_else(|e| {
+                                    tracing::warn!("blob_metas deserialization failed: {}", e);
+                                    manifest.blob_metas.clone()
+                                })
+                            }
+                            Ok((format, _)) => {
+                                tracing::warn!("blob_metas chunk has unexpected format: {:#x}", format);
+                                manifest.blob_metas.clone()
+                            }
+                            Err(e) => {
+                                tracing::warn!("blob_metas chunk untag failed: {}", e);
+                                manifest.blob_metas.clone()
+                            }
                         }
                     }
                     Err(e) => {
@@ -4567,17 +4581,25 @@ impl Server {
         self.content_address = if let Some(hash) = manifest.content_address_hash {
             match chunk_store.read_chunk(&hash) {
                 Ok(data) => {
-                    if let Ok(parsed) = serde_json::from_slice::<ContentAddressIndex>(&data) {
-                        parsed
-                    } else if let Ok(parsed) = postcard::from_bytes::<ContentAddressIndex>(&data) {
-                        tracing::info!("content_address: migrated from postcard to json");
-                        parsed
-                    } else {
-                        tracing::warn!("content_address chunk deserialization failed");
-                        manifest
-                            .content_address
-                            .clone()
-                            .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
+                    match crate::persist::chunk_store::untag_chunk_data(&data) {
+                        Ok((format, payload)) if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON => {
+                            serde_json::from_slice::<ContentAddressIndex>(payload)
+                                .unwrap_or_else(|e| {
+                                    tracing::warn!("content_address deserialization failed: {}", e);
+                                    manifest.content_address.clone()
+                                        .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
+                                })
+                        }
+                        Ok((format, _)) => {
+                            tracing::warn!("content_address chunk has unexpected format: {:#x}", format);
+                            manifest.content_address.clone()
+                                .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
+                        }
+                        Err(e) => {
+                            tracing::warn!("content_address chunk untag failed: {}", e);
+                            manifest.content_address.clone()
+                                .unwrap_or_else(|| ContentAddressIndex::new(1_000_000))
+                        }
                     }
                 }
                 Err(e) => {
@@ -4731,16 +4753,21 @@ impl Server {
             if let Some(hash) = manifest.links_hash {
                 match chunk_store.read_chunk(&hash) {
                     Ok(data) => {
-                        if let Ok(parsed) = serde_json::from_slice(&data) {
-                            parsed
-                        } else if let Ok(parsed) = postcard::from_bytes(&data) {
-                            tracing::info!("links chunk: migrated from postcard to json format");
-                            parsed
-                        } else {
-                            tracing::warn!(
-                                "links chunk deserialization failed (tried json and postcard)"
-                            );
-                            manifest.links.clone()
+                        match crate::persist::chunk_store::untag_chunk_data(&data) {
+                            Ok((format, payload)) if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON => {
+                                serde_json::from_slice(payload).unwrap_or_else(|e| {
+                                    tracing::warn!("links chunk deserialization failed: {}", e);
+                                    manifest.links.clone()
+                                })
+                            }
+                            Ok((format, _)) => {
+                                tracing::warn!("links chunk has unexpected format: {:#x}", format);
+                                manifest.links.clone()
+                            }
+                            Err(e) => {
+                                tracing::warn!("links chunk untag failed: {}", e);
+                                manifest.links.clone()
+                            }
                         }
                     }
                     Err(e) => {
@@ -4870,27 +4897,40 @@ impl Server {
             if let Some(ref cs) = self.chunk_store {
                 match cs.read_chunk(&hash) {
                     Ok(data) => {
-                        if let Ok(all_anns) = serde_json::from_slice::<
-                            Vec<(BeId, Vec<super::otree_crdt::OtreeAnnotation>)>,
-                        >(&data)
-                        {
-                            for (work_id, _annotations) in &all_anns {
-                                if let Some(ws) = self.works.get(work_id) {
-                                    let edition = ws.work.current_edition();
-                                    self.otree_crdt.initialize_from_edition(*work_id, &edition);
+                        let payload = match crate::persist::chunk_store::untag_chunk_data(&data) {
+                            Ok((fmt, p)) if fmt == crate::persist::chunk_store::CHUNK_FORMAT_JSON => Some(p),
+                            Ok((fmt, _)) => {
+                                tracing::warn!("annotations chunk has unexpected format: {:#x}", fmt);
+                                None
+                            }
+                            Err(e) => {
+                                tracing::warn!("annotations chunk untag failed: {}", e);
+                                None
+                            }
+                        };
+                        if let Some(payload) = payload {
+                            if let Ok(all_anns) = serde_json::from_slice::<
+                                Vec<(BeId, Vec<super::otree_crdt::OtreeAnnotation>)>,
+                            >(payload)
+                            {
+                                for (work_id, _annotations) in &all_anns {
+                                    if let Some(ws) = self.works.get(work_id) {
+                                        let edition = ws.work.current_edition();
+                                        self.otree_crdt.initialize_from_edition(*work_id, &edition);
+                                    }
                                 }
+                                self.otree_crdt.restore_annotations(&all_anns);
+                                let total: usize = all_anns.iter().map(|(_, a)| a.len()).sum();
+                                if total > 0 {
+                                    tracing::info!(
+                                        "Restored {} annotations across {} works",
+                                        total,
+                                        all_anns.len()
+                                    );
+                                }
+                            } else {
+                                tracing::warn!("annotations chunk deserialization failed");
                             }
-                            self.otree_crdt.restore_annotations(&all_anns);
-                            let total: usize = all_anns.iter().map(|(_, a)| a.len()).sum();
-                            if total > 0 {
-                                tracing::info!(
-                                    "Restored {} annotations across {} works",
-                                    total,
-                                    all_anns.len()
-                                );
-                            }
-                        } else {
-                            tracing::warn!("annotations chunk deserialization failed");
                         }
                     }
                     Err(e) => {
@@ -4904,43 +4944,56 @@ impl Server {
             if let Some(ref cs) = self.chunk_store {
                 match cs.read_chunk(&hash) {
                     Ok(data) => {
-                        match serde_json::from_slice::<Vec<crate::edition::recorder::Fossil>>(&data)
-                        {
-                            Ok(snapshots) => {
-                                let fossil_count = snapshots.len();
-                                let mut fingerprints_to_register: Vec<(
-                                    crate::edition::recorder::RecorderId,
-                                    Vec<crate::edition::RangeElement>,
-                                )> = Vec::new();
-                                let mut next_id = 0u64;
-                                for fossil in &snapshots {
-                                    if fossil.id >= next_id {
-                                        next_id = fossil.id + 1;
-                                    }
-                                    if !fossil.is_extinct {
-                                        fingerprints_to_register.push((
-                                            fossil.id,
-                                            fossil.query.watched_content.clone(),
-                                        ));
-                                    }
-                                }
-                                self.recorder_system
-                                    .restore_from_snapshots(snapshots, next_id);
-                                for (fossil_id, content) in &fingerprints_to_register {
-                                    self.backfollow
-                                        .register_fossil_fingerprints(*fossil_id, content);
-                                }
-                                tracing::info!(
-                                    "Restored {} fossil snapshots ({} active)",
-                                    fossil_count,
-                                    fingerprints_to_register.len(),
-                                );
+                        let payload = match crate::persist::chunk_store::untag_chunk_data(&data) {
+                            Ok((fmt, p)) if fmt == crate::persist::chunk_store::CHUNK_FORMAT_JSON => Some(p),
+                            Ok((fmt, _)) => {
+                                tracing::warn!("fossil snapshots chunk has unexpected format: {:#x}", fmt);
+                                None
                             }
                             Err(e) => {
-                                tracing::warn!(
-                                    "fossil snapshots chunk deserialization failed: {}",
-                                    e
-                                );
+                                tracing::warn!("fossil snapshots chunk untag failed: {}", e);
+                                None
+                            }
+                        };
+                        if let Some(payload) = payload {
+                            match serde_json::from_slice::<Vec<crate::edition::recorder::Fossil>>(payload)
+                            {
+                                Ok(snapshots) => {
+                                    let fossil_count = snapshots.len();
+                                    let mut fingerprints_to_register: Vec<(
+                                        crate::edition::recorder::RecorderId,
+                                        Vec<crate::edition::RangeElement>,
+                                    )> = Vec::new();
+                                    let mut next_id = 0u64;
+                                    for fossil in &snapshots {
+                                        if fossil.id >= next_id {
+                                            next_id = fossil.id + 1;
+                                        }
+                                        if !fossil.is_extinct {
+                                            fingerprints_to_register.push((
+                                                fossil.id,
+                                                fossil.query.watched_content.clone(),
+                                            ));
+                                        }
+                                    }
+                                    self.recorder_system
+                                        .restore_from_snapshots(snapshots, next_id);
+                                    for (fossil_id, content) in &fingerprints_to_register {
+                                        self.backfollow
+                                            .register_fossil_fingerprints(*fossil_id, content);
+                                    }
+                                    tracing::info!(
+                                        "Restored {} fossil snapshots ({} active)",
+                                        fossil_count,
+                                        fingerprints_to_register.len(),
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "fossil snapshots chunk deserialization failed: {}",
+                                        e
+                                    );
+                                }
                             }
                         }
                     }
@@ -9976,8 +10029,12 @@ pub(crate) mod persist_snapshot {
                 links_hash: {
                     let lk_data = serde_json::to_vec(&links)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let tagged = crate::persist::chunk_store::tag_chunk_data(
+                        crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                        &lk_data,
+                    );
                     let hash = chunk_store
-                        .write_chunk(&lk_data)
+                        .write_chunk(&tagged)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     Some(hash)
                 },
@@ -10008,8 +10065,12 @@ pub(crate) mod persist_snapshot {
                 content_address_hash: {
                     let ca_data = serde_json::to_vec(&self.content_address)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let tagged = crate::persist::chunk_store::tag_chunk_data(
+                        crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                        &ca_data,
+                    );
                     let hash = chunk_store
-                        .write_chunk(&ca_data)
+                        .write_chunk(&tagged)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     Some(hash)
                 },
@@ -10017,8 +10078,12 @@ pub(crate) mod persist_snapshot {
                 blob_metas_hash: {
                     let bm_data = serde_json::to_vec(&blob_metas)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let tagged = crate::persist::chunk_store::tag_chunk_data(
+                        crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                        &bm_data,
+                    );
                     let hash = chunk_store
-                        .write_chunk(&bm_data)
+                        .write_chunk(&tagged)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     Some(hash)
                 },
@@ -10027,8 +10092,12 @@ pub(crate) mod persist_snapshot {
                 historical_authors_hash: {
                     let ha_data = serde_json::to_vec(&self.historical_authors)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let tagged = crate::persist::chunk_store::tag_chunk_data(
+                        crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                        &ha_data,
+                    );
                     let hash = chunk_store
-                        .write_chunk(&ha_data)
+                        .write_chunk(&tagged)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     Some(hash)
                 },
@@ -10043,8 +10112,12 @@ pub(crate) mod persist_snapshot {
                     );
                     let ann_data = serde_json::to_vec(&all_anns)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    let tagged = crate::persist::chunk_store::tag_chunk_data(
+                        crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                        &ann_data,
+                    );
                     let hash = chunk_store
-                        .write_chunk(&ann_data)
+                        .write_chunk(&tagged)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     tracing::info!(
                         "[checkpoint] annotations chunk hash={}",
@@ -10062,8 +10135,12 @@ pub(crate) mod persist_snapshot {
                         tracing::info!("[checkpoint] saving {} fossil snapshots", snapshots.len());
                         let fs_data = serde_json::to_vec(&snapshots)
                             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                        let tagged = crate::persist::chunk_store::tag_chunk_data(
+                            crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                            &fs_data,
+                        );
                         let hash = chunk_store
-                            .write_chunk(&fs_data)
+                            .write_chunk(&tagged)
                             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                         Some(hash)
                     }

@@ -93,13 +93,20 @@ fn u64_from_hash(hash: &[u8; 32]) -> u64 {
 }
 
 fn serialize_to_bytes<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, ChunkSerError> {
-    postcard::to_allocvec(value).map_err(|e| ChunkSerError::Serialization(e.to_string()))
+    let postcard_data =
+        postcard::to_allocvec(value).map_err(|e| ChunkSerError::Serialization(e.to_string()))?;
+    Ok(crate::persist::chunk_store::tag_chunk_data(
+        crate::persist::chunk_store::CHUNK_FORMAT_POSTCARD,
+        &postcard_data,
+    ))
 }
 
 fn deserialize_from_bytes<'a, T: serde::Deserialize<'a>>(
     bytes: &'a [u8],
 ) -> Result<T, ChunkSerError> {
-    postcard::from_bytes(bytes).map_err(|e| ChunkSerError::Serialization(e.to_string()))
+    let (_, payload) = crate::persist::chunk_store::untag_chunk_data(bytes)
+        .map_err(|e| ChunkSerError::ChunkStore(e))?;
+    postcard::from_bytes(payload).map_err(|e| ChunkSerError::Serialization(e.to_string()))
 }
 
 pub fn edition_to_chunks(
