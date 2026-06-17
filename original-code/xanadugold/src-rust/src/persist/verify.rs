@@ -684,16 +684,7 @@ mod tests {
         drop(store);
 
         let mut m = create_empty_manifest(test_system_clubs(), 100);
-        m.works.push(crate::persist::manifest::WorkEntry {
-            be_id: 1,
-            work_ref: wr1,
-            is_source: false,
-            source_author_id: None,
-            source_edition_info: None,
-            content_start_line: None,
-            content_end_line: None,
-            source_fingerprint: None,
-        });
+        m.works.push(make_work_entry(1, wr1));
         let path = manifest::manifest_path(&dir);
         manifest::write_manifest(&mut m, &path).unwrap();
 
@@ -701,16 +692,7 @@ mod tests {
         std::fs::copy(&path, &b1).unwrap();
 
         m.works.retain(|e| e.be_id != 1);
-        m.works.push(crate::persist::manifest::WorkEntry {
-            be_id: 2,
-            work_ref: wr2.clone(),
-            is_source: false,
-            source_author_id: None,
-            source_edition_info: None,
-            content_start_line: None,
-            content_end_line: None,
-            source_fingerprint: None,
-        });
+        m.works.push(make_work_entry(2, wr2.clone()));
         manifest::write_manifest(&mut m, &path).unwrap();
 
         let store2 = ChunkStore::open(&dir).unwrap();
@@ -723,8 +705,8 @@ mod tests {
 
         if let Ok(bm) = manifest::read_manifest(&b1) {
             for entry in &bm.works {
-                if let Ok(hashes) = crate::persist::edition_chunks::collect_edition_hashes(
-                    &entry.work_ref.current_root,
+                if let Ok(hashes) = crate::persist::edition_chunks::collect_work_hashes(
+                    &entry.work_ref,
                     &store2,
                 ) {
                     referenced.extend(hashes);
@@ -741,6 +723,86 @@ mod tests {
                     format_hash(hash)
                 );
             }
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn gc_preserves_backup_history_chunks() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Create a work with revision history
+        let store = ChunkStore::open(&dir).unwrap();
+        let mut w1 = Work::new(10, Edition::from_text("revision zero"));
+        w1.revise(Edition::from_text("revision one"));
+        w1.revise(Edition::from_text("revision two"));
+        let wr1 = crate::persist::edition_chunks::work_to_chunks(&w1, &store).unwrap();
+        assert!(
+            !wr1.history.is_empty(),
+            "work should have history entries"
+        );
+
+        // Collect all chunks for this work (current + history)
+        let all_work1_hashes =
+            crate::persist::edition_chunks::collect_work_hashes(&wr1, &store).unwrap();
+        let current_only_hashes =
+            crate::persist::edition_chunks::collect_edition_hashes(&wr1.current_root, &store)
+                .unwrap();
+
+        // History-only chunks are those NOT in current_only
+        let history_only: HashSet<[u8; 32]> = all_work1_hashes
+            .difference(&current_only_hashes)
+            .copied()
+            .collect();
+        assert!(
+            !history_only.is_empty(),
+            "there must be history-only chunks to test the fix"
+        );
+
+        drop(store);
+
+        // Write manifest with the work, then create a backup
+        let mut m = create_empty_manifest(test_system_clubs(), 100);
+        m.works.push(make_work_entry(10, wr1));
+        let path = manifest::manifest_path(&dir);
+        manifest::write_manifest(&mut m, &path).unwrap();
+
+        let backup = manifest::backup_manifest_path(&dir, m.sequence);
+        std::fs::copy(&path, &backup).unwrap();
+
+        // Remove the work from the current manifest (simulate deletion)
+        m.works.clear();
+        manifest::write_manifest(&mut m, &path).unwrap();
+
+        // Simulate GC mark phase: scan backup manifest
+        let store2 = ChunkStore::open(&dir).unwrap();
+        let mut referenced: HashSet<[u8; 32]> = HashSet::new();
+
+        let bm = manifest::read_manifest(&backup).unwrap();
+        for entry in &bm.works {
+            match crate::persist::edition_chunks::collect_work_hashes(&entry.work_ref, &store2) {
+                Ok(hashes) => referenced.extend(hashes),
+                Err(_) => {
+                    panic!(
+                        "collect_work_hashes on backup entry failed — \
+                         GC would abort, but should succeed"
+                    );
+                }
+            }
+        }
+
+        // Every history-only chunk must be in referenced (protected by backup)
+        for hash in &history_only {
+            assert!(
+                referenced.contains(hash),
+                "history chunk {} is NOT in referenced set — \
+                 if GC used collect_edition_hashes instead of collect_work_hashes, \
+                 this chunk would be deleted",
+                format_hash(hash)
+            );
         }
 
         let _ = std::fs::remove_dir_all(&dir);

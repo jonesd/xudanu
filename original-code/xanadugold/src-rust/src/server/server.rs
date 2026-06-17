@@ -10200,10 +10200,20 @@ pub(crate) mod persist_snapshot {
                 std::collections::HashSet::new();
             for ws in self.works.values() {
                 if let Some(ref work_ref) = ws.chunk_ref {
-                    if let Ok(hashes) =
-                        crate::persist::edition_chunks::collect_work_hashes(work_ref, chunk_store)
-                    {
-                        referenced.extend(hashes);
+                    match crate::persist::edition_chunks::collect_work_hashes(
+                        work_ref,
+                        chunk_store,
+                    ) {
+                        Ok(hashes) => referenced.extend(hashes),
+                        Err(e) => {
+                            tracing::warn!(
+                                "GC: failed to collect work {} hashes ({}), \
+                                 skipping GC to avoid deleting valid chunks",
+                                ws.work.be_id(),
+                                e
+                            );
+                            return Ok(0);
+                        }
                     }
                 }
             }
@@ -10259,18 +10269,35 @@ pub(crate) mod persist_snapshot {
                 }
             }
             for club_ref in self.club_refs.values() {
-                if let Ok(hashes) = crate::persist::edition_chunks::collect_work_hashes(
+                match crate::persist::edition_chunks::collect_work_hashes(
                     &club_ref.work_root,
                     chunk_store,
                 ) {
-                    referenced.extend(hashes);
+                    Ok(hashes) => referenced.extend(hashes),
+                    Err(e) => {
+                        tracing::warn!(
+                            "GC: failed to collect club hashes ({}), \
+                             skipping GC to avoid deleting valid chunks",
+                            e
+                        );
+                        return Ok(0);
+                    }
                 }
             }
             for ed_ref in self.standalone_edition_refs.values() {
-                if let Ok(hashes) =
-                    crate::persist::edition_chunks::collect_edition_hashes(ed_ref, chunk_store)
-                {
-                    referenced.extend(hashes);
+                match crate::persist::edition_chunks::collect_edition_hashes(
+                    ed_ref,
+                    chunk_store,
+                ) {
+                    Ok(hashes) => referenced.extend(hashes),
+                    Err(e) => {
+                        tracing::warn!(
+                            "GC: failed to collect standalone edition hashes ({}), \
+                             skipping GC to avoid deleting valid chunks",
+                            e
+                        );
+                        return Ok(0);
+                    }
                 }
             }
 
@@ -10294,33 +10321,51 @@ pub(crate) mod persist_snapshot {
                         crate::persist::manifest::read_manifest(backup_path)
                     {
                         for work_entry in &backup_manifest.works {
-                            if let Ok(hashes) =
-                                crate::persist::edition_chunks::collect_edition_hashes(
-                                    &work_entry.work_ref.current_root,
-                                    chunk_store,
-                                )
-                            {
-                                referenced.extend(hashes);
+                            match crate::persist::edition_chunks::collect_work_hashes(
+                                &work_entry.work_ref,
+                                chunk_store,
+                            ) {
+                                Ok(hashes) => referenced.extend(hashes),
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "GC: failed to collect backup work hashes ({}), \
+                                         skipping GC to avoid deleting valid chunks",
+                                        e
+                                    );
+                                    return Ok(0);
+                                }
                             }
                         }
                         for club_ref in &backup_manifest.clubs {
-                            if let Ok(hashes) =
-                                crate::persist::edition_chunks::collect_edition_hashes(
-                                    &club_ref.work_root.current_root,
-                                    chunk_store,
-                                )
-                            {
-                                referenced.extend(hashes);
+                            match crate::persist::edition_chunks::collect_work_hashes(
+                                &club_ref.work_root,
+                                chunk_store,
+                            ) {
+                                Ok(hashes) => referenced.extend(hashes),
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "GC: failed to collect backup club hashes ({}), \
+                                         skipping GC to avoid deleting valid chunks",
+                                        e
+                                    );
+                                    return Ok(0);
+                                }
                             }
                         }
                         for se_ref in &backup_manifest.standalone_editions {
-                            if let Ok(hashes) =
-                                crate::persist::edition_chunks::collect_edition_hashes(
-                                    &se_ref.edition_ref,
-                                    chunk_store,
-                                )
-                            {
-                                referenced.extend(hashes);
+                            match crate::persist::edition_chunks::collect_edition_hashes(
+                                &se_ref.edition_ref,
+                                chunk_store,
+                            ) {
+                                Ok(hashes) => referenced.extend(hashes),
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "GC: failed to collect backup standalone edition \
+                                         hashes ({}), skipping GC to avoid deleting valid chunks",
+                                        e
+                                    );
+                                    return Ok(0);
+                                }
                             }
                         }
                     }

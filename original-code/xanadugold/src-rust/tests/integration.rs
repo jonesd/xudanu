@@ -9381,6 +9381,203 @@ fn gc_removes_orphaned_chunks_after_work_changes() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[test]
+fn gc_aborts_on_corrupt_chunk() {
+    let dir = temp_chunk_data_dir("gc_corrupt_abort");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let _w1 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("document one"))
+        .unwrap();
+    let _w2 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("document two"))
+        .unwrap();
+    srv.checkpoint_to_store().unwrap();
+
+    let chunks_before = srv.chunk_store().unwrap().all_chunk_hashes().unwrap();
+    assert!(
+        !chunks_before.is_empty(),
+        "should have chunks on disk after checkpoint"
+    );
+
+    drop(srv);
+
+    // Corrupt one chunk file on disk (simulates bit-rot)
+    let corrupt_hash = chunks_before[0];
+    {
+        let hex: String = corrupt_hash.iter().map(|b| format!("{:02x}", b)).collect();
+        let chunk_path =
+            dir.join("chunks").join(&hex[..2]).join(format!("{}.xchunk", hex));
+        assert!(
+            chunk_path.exists(),
+            "chunk file should exist at {}",
+            chunk_path.display()
+        );
+        std::fs::write(&chunk_path, b"CORRUPTED_DATA_THAT_WILL_NOT_HASH_MATCH").unwrap();
+    }
+
+    // Restore: will skip the work whose chunk is corrupt
+    let mut srv2 = server_restore_chunk_store(&dir);
+
+    // Clear cache so GC reads from disk where the corruption lives
+    srv2.chunk_store().unwrap().clear_cache();
+
+    let removed = srv2.gc_orphaned_chunks().unwrap();
+    assert_eq!(
+        removed, 0,
+        "GC should abort (return 0) when a referenced chunk is corrupt, \
+         not delete chunks blindly"
+    );
+
+    // No chunks should have been deleted
+    let chunks_after = srv2.chunk_store().unwrap().all_chunk_hashes().unwrap();
+    assert_eq!(
+        chunks_after.len(),
+        chunks_before.len(),
+        "no chunks should be deleted when GC aborts due to corrupt chunk"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn gc_preserves_backup_history_chunks() {
+    let dir = temp_chunk_data_dir("gc_backup_history");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let w1 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("revision zero"))
+        .unwrap();
+
+    // Create two revisions so historical chunks exist
+    srv.work_grab(sid, w1).unwrap();
+    srv.work_revise(sid, w1, xudanu::edition::Edition::from_text("revision one"))
+        .unwrap();
+    srv.work_release(sid, w1).unwrap();
+    srv.work_grab(sid, w1).unwrap();
+    srv.work_revise(sid, w1, xudanu::edition::Edition::from_text("revision two"))
+        .unwrap();
+    srv.work_release(sid, w1).unwrap();
+
+    srv.checkpoint_to_store().unwrap();
+
+    let chunks_before = srv.chunk_store().unwrap().all_chunk_hashes().unwrap();
+    assert!(
+        chunks_before.len() >= 4,
+        "should have multiple chunks (root + entries for 3 revisions), got {}",
+        chunks_before.len()
+    );
+
+    drop(srv);
+
+    // Remove the work from the current manifest (simulate deletion).
+    // The backup manifest (manifest_v*.json) still references the full work
+    // including revision history.
+    {
+        let manifest_path =
+            xudanu::persist::manifest::manifest_path(&dir);
+
+        // Delete dual-slot files so restore uses only manifest.json
+        let _ = std::fs::remove_file(dir.join("manifest_a.json"));
+        let _ = std::fs::remove_file(dir.join("manifest_b.json"));
+
+        let mut m = xudanu::persist::manifest::read_manifest(&manifest_path).unwrap();
+        let works_before = m.works.len();
+        m.works.retain(|e| e.be_id != w1);
+        assert_eq!(
+            m.works.len(),
+            works_before - 1,
+            "should have removed exactly one work from manifest"
+        );
+        xudanu::persist::manifest::write_manifest(&mut m, &manifest_path).unwrap();
+    }
+
+    // Restore: work is NOT in self.works (removed from manifest)
+    let mut srv2 = server_restore_chunk_store(&dir);
+    assert_eq!(
+        srv2.work_count(),
+        0,
+        "work should not be in restored server state"
+    );
+
+    // GC should protect ALL chunks (including history) via backup manifest
+    let removed = srv2.gc_orphaned_chunks().unwrap();
+    assert_eq!(
+        removed, 0,
+        "GC should not remove chunks protected by backup manifest history"
+    );
+
+    let chunks_after = srv2.chunk_store().unwrap().all_chunk_hashes().unwrap();
+    assert_eq!(
+        chunks_after.len(),
+        chunks_before.len(),
+        "all chunks including revision history should survive — \
+         backup manifest must use collect_work_hashes (full history), \
+         not collect_edition_hashes (current root only)"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn gc_actually_deletes_orphaned_chunks() {
+    let dir = temp_chunk_data_dir("gc_real_orphans");
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut srv = server_init_chunk_store(&dir);
+    let sid = srv.connect();
+    srv.login_public(sid).unwrap();
+
+    let _w1 = srv
+        .create_work(sid, xudanu::edition::Edition::from_text("real work"))
+        .unwrap();
+    srv.checkpoint_to_store().unwrap();
+
+    let chunks_before = srv.chunk_store().unwrap().all_chunk_hashes().unwrap();
+
+    // Write an orphan chunk that nothing references
+    let orphan_hash = srv
+        .chunk_store()
+        .unwrap()
+        .write_chunk(b"orphan data not referenced by any work or manifest")
+        .unwrap();
+
+    let chunks_with_orphan = srv.chunk_store().unwrap().all_chunk_hashes().unwrap();
+    assert_eq!(
+        chunks_with_orphan.len(),
+        chunks_before.len() + 1,
+        "orphan chunk should be on disk"
+    );
+
+    // GC should delete the orphan
+    let removed = srv.gc_orphaned_chunks().unwrap();
+    assert_eq!(
+        removed, 1,
+        "GC should delete exactly the one orphaned chunk"
+    );
+
+    let chunks_after = srv.chunk_store().unwrap().all_chunk_hashes().unwrap();
+    assert_eq!(
+        chunks_after.len(),
+        chunks_before.len(),
+        "only the orphan should be removed; legitimate chunks must survive"
+    );
+    assert!(
+        !chunks_after.contains(&orphan_hash),
+        "orphan chunk should be gone"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ============================================================
 // Tier A: #3 Backlinks
 // ============================================================
