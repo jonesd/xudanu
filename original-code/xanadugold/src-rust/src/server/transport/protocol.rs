@@ -1660,7 +1660,7 @@ fn is_contiguous_text(entries: &[(i64, RangeElement)]) -> bool {
 impl EditionPayload {
     pub fn to_edition(&self) -> crate::edition::Edition {
         match self {
-            EditionPayload::Text(s) => Edition::from_text_batched(s),
+            EditionPayload::Text(s) => Edition::from_text(s),
             EditionPayload::Entries(entries) => {
                 let mut ed = Edition::empty();
                 for (pos, elem) in entries {

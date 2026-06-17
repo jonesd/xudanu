@@ -579,6 +579,32 @@ impl JsonCodec {
         op: OperationCode,
         payload: Option<serde_json::Value>,
     ) -> Result<WireRequest, ProtocolError> {
+        match op {
+            OperationCode::WorkList | OperationCode::ClubNames => {
+                #[derive(Deserialize)]
+                struct Pagination {
+                    #[serde(default)]
+                    offset: Option<u32>,
+                    #[serde(default)]
+                    limit: Option<u32>,
+                }
+                let (offset, limit) = match payload {
+                    Some(p) => {
+                        let args: Pagination = serde_json::from_value(p)
+                            .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                        (args.offset, args.limit)
+                    }
+                    None => (None, None),
+                };
+                return match op {
+                    OperationCode::WorkList => Ok(WireRequest::WorkList { offset, limit }),
+                    OperationCode::ClubNames => Ok(WireRequest::ClubNames { offset, limit }),
+                    _ => unreachable!(),
+                };
+            }
+            _ => {}
+        }
+
         let no_payload_ops = [
             OperationCode::SessionConnect,
             OperationCode::SessionDisconnect,
@@ -608,8 +634,6 @@ impl JsonCodec {
             OperationCode::AttributionLogStatus,
             OperationCode::HistoricalAuthorList,
             OperationCode::SourcePatternList,
-            OperationCode::ClubNames,
-            OperationCode::WorkList,
             OperationCode::WorkGraph,
             OperationCode::TrailList,
         ];
@@ -645,14 +669,6 @@ impl JsonCodec {
                 OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
                 OperationCode::HistoricalAuthorList => Ok(WireRequest::HistoricalAuthorList),
                 OperationCode::SourcePatternList => Ok(WireRequest::SourcePatternList),
-                OperationCode::ClubNames => Ok(WireRequest::ClubNames {
-                    offset: None,
-                    limit: None,
-                }),
-                OperationCode::WorkList => Ok(WireRequest::WorkList {
-                    offset: None,
-                    limit: None,
-                }),
                 OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
                 OperationCode::TrailList => Ok(WireRequest::TrailList),
                 _ => unreachable!(),
