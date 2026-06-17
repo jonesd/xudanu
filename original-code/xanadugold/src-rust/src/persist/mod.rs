@@ -5,6 +5,7 @@ pub mod engine;
 pub mod file_storage;
 pub mod manifest;
 pub mod memory;
+pub mod migrations;
 pub mod packer;
 pub mod persistent;
 pub mod snarf;

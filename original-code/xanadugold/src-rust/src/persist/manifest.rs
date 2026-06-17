@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::edition::backend::BeId;
 use crate::persist::edition_chunks::{EditionChunkRef, WorkChunkRef};
 
-const CURRENT_MANIFEST_VERSION: u32 = 4;
+pub const CURRENT_MANIFEST_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ClubChunkRef {
@@ -154,6 +154,7 @@ fn is_null_char(c: &char) -> bool {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Manifest {
+    // ── Envelope (always present) ──
     pub format_version: u32,
     pub created_at: String,
     pub server_version: String,
@@ -163,26 +164,30 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "is_null_char")]
     pub manifest_slot: char,
 
+    // ── v1 (baseline): core identity and content ──
     pub grand_map_id_counter: BeId,
     pub session_counter: u64,
     pub operation_counter: u64,
     pub system_clubs: crate::server::SystemClubs,
-
     pub works: Vec<WorkEntry>,
     pub clubs: Vec<ClubChunkRef>,
     pub standalone_editions: Vec<StandaloneEditionChunkRef>,
+    pub admin: AdminEntry,
+    pub key_history: Option<KeyHistoryEntry>,
+
+    // ── v2: links ──
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub links_hash: Option<[u8; 32]>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<LinkEntry>,
     pub link_counter: BeId,
 
-    pub admin: AdminEntry,
-
+    // ── v3: federation ──
     pub reconcile_store: crate::server::federation::ReconcileStore,
     pub reconcile_counter: u64,
     pub federation: Option<crate::server::federation::FederationSnapshot>,
 
+    // ── v4: metadata chunk references ──
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_address_hash: Option<[u8; 32]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -191,19 +196,16 @@ pub struct Manifest {
     pub blob_metas_hash: Option<[u8; 32]>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blob_metas: Vec<BlobMetaEntry>,
-    pub key_history: Option<KeyHistoryEntry>,
-    /// Hash of the historical author registry chunk in the chunk store.
-    /// Used on restore to load authors from the chunk store.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub historical_authors_hash: Option<[u8; 32]>,
-    /// Legacy inline historical author registry. Kept for backward compat with
-    /// old manifests. New checkpoints use `historical_authors_hash` instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub historical_authors: Option<crate::server::historical_author::HistoricalAuthorRegistry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations_hash: Option<[u8; 32]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fossil_snapshots_hash: Option<[u8; 32]>,
+
+    // ── v4: social ──
     #[serde(default)]
     pub starred_works: std::collections::HashMap<BeId, std::collections::HashSet<BeId>>,
     #[serde(default)]
@@ -212,6 +214,8 @@ pub struct Manifest {
     pub trail_counter: BeId,
     #[serde(default)]
     pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
+
+    // ── v5+ (future additions go here with version annotation) ──
 }
 
 #[derive(Debug)]
@@ -220,6 +224,7 @@ pub enum ManifestError {
     Json(serde_json::Error),
     ChecksumMismatch { expected: String, actual: String },
     InvalidVersion { found: u32, expected: u32 },
+    Migration(String),
 }
 
 impl std::fmt::Display for ManifestError {
@@ -240,6 +245,9 @@ impl std::fmt::Display for ManifestError {
                     "unsupported manifest version {} (expected {})",
                     found, expected
                 )
+            }
+            ManifestError::Migration(msg) => {
+                write!(f, "manifest migration error: {}", msg)
             }
         }
     }
@@ -556,6 +564,54 @@ pub fn read_manifest_dual(data_dir: &Path) -> Result<Manifest, ManifestError> {
 
 pub fn read_manifest(path: &Path) -> Result<Manifest, ManifestError> {
     let content = std::fs::read_to_string(path)?;
+
+    let raw: serde_json::Value = serde_json::from_str(&content)?;
+    let version = raw
+        .get("format_version")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .unwrap_or(0);
+
+    if version > CURRENT_MANIFEST_VERSION {
+        return Err(ManifestError::InvalidVersion {
+            found: version,
+            expected: CURRENT_MANIFEST_VERSION,
+        });
+    }
+
+    if version < CURRENT_MANIFEST_VERSION {
+        let backup_name = format!(
+            "{}.v{}.bak",
+            path.file_name().and_then(|n| n.to_str()).unwrap_or("manifest.json"),
+            version
+        );
+        let backup_path = path.with_file_name(backup_name);
+        match std::fs::copy(path, &backup_path) {
+            Ok(_) => {
+                tracing::info!("Manifest backup created: {}", backup_path.display())
+            }
+            Err(e) => tracing::warn!("Failed to create manifest backup: {}", e),
+        }
+
+        let migrated =
+            crate::persist::migrations::migrate_manifest_to_latest(raw, version)
+                .map_err(|e| ManifestError::Migration(e.to_string()))?;
+
+        let migrated_json = serde_json::to_string_pretty(&migrated)?;
+
+        let tmp_path = path.with_extension("mig.tmp");
+        std::fs::write(&tmp_path, &migrated_json)?;
+        std::fs::rename(&tmp_path, path)?;
+
+        tracing::info!(
+            "Manifest migrated v{} → v{} and saved (checksum recomputed on next checkpoint)",
+            version,
+            CURRENT_MANIFEST_VERSION
+        );
+
+        return read_manifest_from_str(&migrated_json);
+    }
+
     read_manifest_from_str(&content)
 }
 

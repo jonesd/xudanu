@@ -16,11 +16,18 @@ use serde::{Deserialize, Serialize};
 use super::shared::SharedState;
 
 const FEDERATION_PROTOCOL_VERSION: u8 = 1;
+const FEDERATION_MIN_COMPAT_VERSION: u8 = 1;
 const HANDSHAKE_TIMEOUT_SECS: u64 = 30;
+
+fn default_min_compat() -> u8 {
+    1
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FederationHello {
     pub protocol_version: u8,
+    #[serde(default = "default_min_compat")]
+    pub min_compat_version: u8,
     pub ephemeral_public_key: Vec<u8>,
     pub server_id: String,
 }
@@ -177,6 +184,7 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
 
     let my_hello = FederationHello {
         protocol_version: FEDERATION_PROTOCOL_VERSION,
+        min_compat_version: FEDERATION_MIN_COMPAT_VERSION,
         ephemeral_public_key: my_eph_bytes.to_vec(),
         server_id: my_server_id.clone(),
     };
@@ -221,12 +229,18 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
         None => return,
     };
 
-    if peer_hello.protocol_version != FEDERATION_PROTOCOL_VERSION {
+    let peer_version = peer_hello.protocol_version;
+    let peer_min = peer_hello.min_compat_version;
+    let my_version = FEDERATION_PROTOCOL_VERSION;
+    let my_min = FEDERATION_MIN_COMPAT_VERSION;
+
+    if peer_version < my_min || my_version < peer_min {
         let _ = ws_sender
             .send(Message::Text(
                 format!(
-                    "{{\"type\":\"error\",\"message\":\"unsupported version {}\"}}",
-                    peer_hello.protocol_version
+                    "{{\"type\":\"error\",\"message\":\"incompatible versions: \
+                     peer v{} (min {}), server v{} (min {})\"}}",
+                    peer_version, peer_min, my_version, my_min
                 )
                 .into(),
             ))
@@ -931,6 +945,7 @@ mod tests {
     fn federation_frame_hello_roundtrip() {
         let hello = FederationFrame::Hello(FederationHello {
             protocol_version: 1,
+            min_compat_version: 1,
             ephemeral_public_key: vec![0u8; 32],
             server_id: "test".to_string(),
         });
