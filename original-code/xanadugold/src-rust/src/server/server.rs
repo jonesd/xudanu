@@ -4837,8 +4837,25 @@ impl Server {
         let wal_path = data_dir.join("wal.log");
         if wal_path.exists() {
             match crate::persist::wal::WalLog::read_entries(&wal_path) {
-                Ok(entries) => {
-                    if !entries.is_empty() {
+                Ok((wal_version, entries)) => {
+                    if wal_version > crate::persist::wal::WAL_VERSION {
+                        tracing::warn!(
+                            "WAL version {} is newer than supported {}, skipping replay",
+                            wal_version,
+                            crate::persist::wal::WAL_VERSION
+                        );
+                    } else if wal_version < crate::persist::wal::WAL_VERSION {
+                        tracing::info!(
+                            "WAL version {} → {} (migrating entries before replay)",
+                            wal_version,
+                            crate::persist::wal::WAL_VERSION
+                        );
+                        if !entries.is_empty() {
+                            tracing::info!("WAL: replaying {} entries", entries.len());
+                            let replayed = crate::persist::wal::WalLog::replay_entries(self, &entries);
+                            tracing::info!("WAL: replayed {} of {} entries", replayed, entries.len());
+                        }
+                    } else if !entries.is_empty() {
                         tracing::info!("WAL: replaying {} entries", entries.len());
                         let replayed = crate::persist::wal::WalLog::replay_entries(self, &entries);
                         tracing::info!("WAL: replayed {} of {} entries", replayed, entries.len());
@@ -17877,7 +17894,7 @@ mod tests {
         );
 
         let wal_path = data_dir.join("wal.log");
-        let entries = crate::persist::wal::WalLog::read_entries(&wal_path).unwrap();
+        let (_ver, entries) = crate::persist::wal::WalLog::read_entries(&wal_path).unwrap();
         assert!(
             entries.is_empty(),
             "WAL file should be empty after checkpoint"
@@ -18320,7 +18337,7 @@ mod tests {
         );
 
         let wal_path = data_dir.join("wal.log");
-        let entries = crate::persist::wal::WalLog::read_entries(&wal_path).unwrap();
+        let (_ver, entries) = crate::persist::wal::WalLog::read_entries(&wal_path).unwrap();
         assert!(
             entries.is_empty(),
             "WAL file should be empty after checkpoint"

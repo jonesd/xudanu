@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::edition::backend::BeId;
 
 const WAL_FILENAME: &str = "wal.log";
+pub const WAL_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WalEntry {
@@ -52,11 +53,19 @@ pub struct WalLog {
 impl WalLog {
     pub fn open(data_dir: &Path) -> Result<Self, WalError> {
         let path = data_dir.join(WAL_FILENAME);
+        let needs_header = !path.exists() || std::fs::metadata(&path).map(|m| m.len() == 0).unwrap_or(true);
         let seq = Self::read_max_seq(&path)?;
-        let file = std::fs::OpenOptions::new()
+        let mut file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)?;
+        if needs_header {
+            let header = serde_json::json!({"version": WAL_VERSION});
+            let mut line = serde_json::to_string(&header)?;
+            line.push('\n');
+            file.write_all(line.as_bytes())?;
+            file.sync_all()?;
+        }
         Ok(WalLog {
             path,
             seq,
@@ -242,11 +251,18 @@ impl WalLog {
             return Ok(());
         }
         self.file = None;
-        std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&self.path)?;
+        {
+            let mut f = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&self.path)?;
+            let header = serde_json::json!({"version": WAL_VERSION});
+            let mut line = serde_json::to_string(&header)?;
+            line.push('\n');
+            f.write_all(line.as_bytes())?;
+            f.sync_all()?;
+        }
         self.file = Some(
             std::fs::OpenOptions::new()
                 .create(true)
@@ -282,16 +298,28 @@ impl WalLog {
         Ok(max_seq)
     }
 
-    pub fn read_entries(path: &Path) -> Result<Vec<WalEntry>, WalError> {
+    pub fn read_entries(path: &Path) -> Result<(u32, Vec<WalEntry>), WalError> {
         if !path.exists() {
-            return Ok(Vec::new());
+            return Ok((WAL_VERSION, Vec::new()));
         }
         let file = std::fs::File::open(path)?;
         let reader = std::io::BufReader::new(file);
         let mut entries = Vec::new();
+        let mut version: u32 = 0;
+        let mut first_line = true;
         for line in reader.lines() {
             match line {
                 Ok(l) => {
+                    if first_line {
+                        first_line = false;
+                        if let Some(v) = serde_json::from_str::<serde_json::Value>(&l)
+                            .ok()
+                            .and_then(|v| v.get("version")?.as_u64())
+                        {
+                            version = v as u32;
+                            continue;
+                        }
+                    }
                     if let Ok(entry) = serde_json::from_str::<WalEntry>(&l) {
                         entries.push(entry);
                     }
@@ -299,7 +327,7 @@ impl WalLog {
                 Err(_) => break,
             }
         }
-        Ok(entries)
+        Ok((version, entries))
     }
 
     pub fn path(&self) -> &Path {
@@ -511,7 +539,7 @@ mod tests {
             wal.append_star(100, 300).unwrap();
         }
 
-        let entries = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
+        let (_ver, entries) = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].op, "star");
         assert_eq!(entries[0].args["club_id"], 100);
@@ -540,7 +568,7 @@ mod tests {
         wal.truncate().unwrap();
         assert_eq!(wal.seq(), 0);
 
-        let entries = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
+        let (_ver, entries) = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
         assert!(entries.is_empty(), "WAL should be empty after truncate");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -564,7 +592,7 @@ mod tests {
         wal.append_star(100, 200).unwrap();
         wal.append_unstar(100, 200).unwrap();
 
-        let entries = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
+        let (_ver, entries) = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
         assert_eq!(entries[0].op, "star");
         assert_eq!(entries[1].op, "unstar");
 
@@ -585,7 +613,7 @@ mod tests {
         wal.append_trail_rename(500, "old", "new").unwrap();
         wal.append_trail_delete(500).unwrap();
 
-        let entries = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
+        let (_ver, entries) = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
         assert_eq!(entries.len(), 5);
         assert_eq!(entries[0].op, "trail_create");
         assert_eq!(entries[1].op, "trail_add_stop");
@@ -608,7 +636,7 @@ mod tests {
         let mut wal = WalLog::open(&dir).unwrap();
         wal.append_text_edit(100, 1, &long_text).unwrap();
 
-        let entries = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
+        let (_ver, entries) = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
         assert_eq!(entries[0].op, "text_edit");
         let preview = entries[0].args["text_preview"].as_str().unwrap();
         assert_eq!(
@@ -633,7 +661,7 @@ mod tests {
         writeln!(f, "{{\"seq\":2,\"op\":\"star\",\"args\":{{\"club_id\":100,\"work_id\":300}},\"ts\":1001}}").unwrap();
         drop(f);
 
-        let entries = WalLog::read_entries(&path).unwrap();
+        let (_ver, entries) = WalLog::read_entries(&path).unwrap();
         assert_eq!(entries.len(), 2, "should skip corrupt line");
 
         let wal = WalLog::open(&dir).unwrap();
@@ -648,7 +676,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        let entries = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
+        let (_ver, entries) = WalLog::read_entries(&dir.join(WAL_FILENAME)).unwrap();
         assert!(entries.is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
