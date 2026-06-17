@@ -215,6 +215,28 @@ impl WalLog {
         )
     }
 
+    pub fn append_create_link(
+        &mut self,
+        link_id: BeId,
+        origin: BeId,
+        destination: BeId,
+        origin_ref: Option<&crate::server::transport::protocol::HyperRefPayload>,
+        destination_ref: Option<&crate::server::transport::protocol::HyperRefPayload>,
+        link_types: &[u64],
+    ) -> Result<u64, WalError> {
+        self.append(
+            "create_link",
+            serde_json::json!({
+                "link_id": link_id,
+                "origin": origin,
+                "destination": destination,
+                "origin_ref": origin_ref,
+                "destination_ref": destination_ref,
+                "link_types": link_types,
+            }),
+        )
+    }
+
     pub fn truncate(&mut self) -> Result<(), WalError> {
         if self.file.is_none() {
             return Ok(());
@@ -373,6 +395,27 @@ impl WalLog {
                         } else {
                             false
                         }
+                    } else {
+                        false
+                    }
+                }
+                "create_link" => {
+                    if let (Some(link_id), Some(origin), Some(destination)) = (
+                        entry.args.get("link_id").and_then(|v| v.as_u64()),
+                        entry.args.get("origin").and_then(|v| v.as_u64()),
+                        entry.args.get("destination").and_then(|v| v.as_u64()),
+                    ) {
+                        let o_ref = entry.args.get("origin_ref")
+                            .and_then(|v| serde_json::from_value::<crate::server::transport::protocol::HyperRefPayload>(v.clone()).ok());
+                        let d_ref = entry.args.get("destination_ref")
+                            .and_then(|v| serde_json::from_value::<crate::server::transport::protocol::HyperRefPayload>(v.clone()).ok());
+                        let link_types: Vec<u64> = entry.args.get("link_types")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                        server.wal_replay_create_link(
+                            link_id, origin, destination, o_ref, d_ref, link_types,
+                        );
+                        true
                     } else {
                         false
                     }

@@ -3335,6 +3335,48 @@ impl Server {
         self.compound_editions.insert(work_id, compound);
     }
 
+    pub(crate) fn wal_replay_create_link(
+        &mut self,
+        link_id: BeId,
+        origin: BeId,
+        destination: BeId,
+        origin_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
+        destination_ref: Option<crate::server::transport::protocol::HyperRefPayload>,
+        link_types: Vec<u64>,
+    ) {
+        if !self.links.contains_key(&link_id) {
+            let o_ref = origin_ref
+                .as_ref()
+                .map(|hr| hr.to_hyper_ref(origin))
+                .unwrap_or_else(|| {
+                    crate::edition::links::HyperRef::single(None, Some(origin), None, None)
+                });
+            let d_ref = destination_ref
+                .as_ref()
+                .map(|hr| hr.to_hyper_ref(destination))
+                .unwrap_or_else(|| {
+                    crate::edition::links::HyperRef::single(None, Some(destination), None, None)
+                });
+            let hyperlink = crate::edition::links::HyperLink::make(link_types, o_ref, d_ref);
+            self.links.insert(
+                link_id,
+                LinkState {
+                    link: hyperlink,
+                    origin,
+                    destination,
+                },
+            );
+            self.work_to_links.entry(origin).or_default().push(link_id);
+            self.work_to_links
+                .entry(destination)
+                .or_default()
+                .push(link_id);
+            if link_id > self.link_counter {
+                self.link_counter = link_id;
+            }
+        }
+    }
+
     pub fn build_work_graph(
         &self,
         session_id: SessionId,
@@ -5308,6 +5350,23 @@ impl Server {
             .push(link_id);
         self.backfollow
             .register_link_content(&self.links[&link_id].link, link_id);
+        {
+            let ls = &self.links[&link_id];
+            let o_ref = ls.link.end_at("LeftEnd").map(
+                crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
+            );
+            let d_ref = ls.link.end_at("RightEnd").map(
+                crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
+            );
+            let _ = self.wal.append_create_link(
+                link_id,
+                origin,
+                destination,
+                o_ref.as_ref(),
+                d_ref.as_ref(),
+                ls.link.link_types(),
+            );
+        }
         self.auto_checkpoint();
         Ok(link_id)
     }
@@ -5355,6 +5414,23 @@ impl Server {
             .push(link_id);
         self.backfollow
             .register_link_content(&self.links[&link_id].link, link_id);
+        {
+            let ls = &self.links[&link_id];
+            let o_ref = ls.link.end_at("LeftEnd").map(
+                crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
+            );
+            let d_ref = ls.link.end_at("RightEnd").map(
+                crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
+            );
+            let _ = self.wal.append_create_link(
+                link_id,
+                origin,
+                destination,
+                o_ref.as_ref(),
+                d_ref.as_ref(),
+                ls.link.link_types(),
+            );
+        }
         self.auto_checkpoint();
         Ok(link_id)
     }
@@ -17956,6 +18032,227 @@ mod tests {
             0,
             "WAL should be empty after second checkpoint"
         );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_records_create_link() {
+        let (mut server, data_dir) = setup_chunk_store_server("wal_link_record");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let doc_a = server
+            .create_work(sid, Edition::from_text("document A"))
+            .unwrap();
+        let doc_b = server
+            .create_work(sid, Edition::from_text("document B"))
+            .unwrap();
+
+        server.create_link(sid, doc_a, doc_b, None, None).unwrap();
+        assert!(
+            server.wal.seq() >= 1,
+            "create_link should write a WAL entry"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_replays_link_after_crash() {
+        use crate::edition::links::{HyperLink, HyperRef, Path, ProvenanceHop};
+
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_link_replay_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let origin_work_id;
+        let dest_work_id;
+        let link_id;
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            origin_work_id = server
+                .create_work(sid, Edition::from_text("origin document"))
+                .unwrap();
+            dest_work_id = server
+                .create_work(sid, Edition::from_text("destination document"))
+                .unwrap();
+
+            server.checkpoint_to_store().unwrap();
+            assert_eq!(server.wal.seq(), 0, "WAL empty after checkpoint");
+
+            let origin_ref = HyperRef::single(
+                Some(Edition::from_text("excerpt text")),
+                Some(origin_work_id),
+                None,
+                Some(Path::new(vec![RangeElement::label(
+                    42,
+                    RangeElement::text("labelled"),
+                )])),
+            )
+            .with_provenance_chain(vec![ProvenanceHop::new(999, 888)]);
+            let dest_ref = HyperRef::single(None, Some(dest_work_id), Some(origin_work_id), None);
+            let link = HyperLink::make(vec![100, 200], origin_ref, dest_ref);
+            link_id = server.create_link_with_hyperlink(sid, link).unwrap();
+
+            assert_eq!(
+                server.wal.seq(),
+                1,
+                "WAL should have exactly 1 entry for the link"
+            );
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let ls = server
+                .links
+                .get(&link_id)
+                .expect("link must survive crash via WAL replay");
+            assert_eq!(ls.origin, origin_work_id);
+            assert_eq!(ls.destination, dest_work_id);
+            assert_eq!(
+                ls.link.link_types(),
+                &[100, 200],
+                "link_types must survive WAL replay"
+            );
+
+            let o_ref = ls.link.end_at("LeftEnd").expect("LeftEnd must exist");
+            assert_eq!(o_ref.work_context(), Some(origin_work_id));
+            assert_eq!(
+                o_ref.excerpt().unwrap().to_text().to_string(),
+                "excerpt text",
+                "excerpt must survive WAL replay"
+            );
+            assert_eq!(
+                o_ref.provenance_chain().len(),
+                1,
+                "provenance_chain must survive WAL replay"
+            );
+            assert_eq!(o_ref.provenance_chain()[0].source_work_id(), 999);
+            assert_eq!(o_ref.provenance_chain()[0].link_id(), 888);
+
+            let d_ref = ls.link.end_at("RightEnd").expect("RightEnd must exist");
+            assert_eq!(d_ref.work_context(), Some(dest_work_id));
+            assert_eq!(d_ref.original_context(), Some(origin_work_id));
+
+            let w2l = server.work_to_links.get(&origin_work_id);
+            assert!(
+                w2l.is_some() && w2l.unwrap().contains(&link_id),
+                "work_to_links must include origin"
+            );
+            let w2l2 = server.work_to_links.get(&dest_work_id);
+            assert!(
+                w2l2.is_some() && w2l2.unwrap().contains(&link_id),
+                "work_to_links must include destination"
+            );
+
+            assert!(
+                server.link_counter >= link_id,
+                "link_counter must be restored"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_link_truncated_after_checkpoint() {
+        let (mut server, data_dir) = setup_chunk_store_server("wal_link_truncate");
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let doc_a = server
+            .create_work(sid, Edition::from_text("document A"))
+            .unwrap();
+        let doc_b = server
+            .create_work(sid, Edition::from_text("document B"))
+            .unwrap();
+
+        server.create_link(sid, doc_a, doc_b, None, None).unwrap();
+        assert!(server.wal.seq() >= 1, "WAL should have link entry");
+
+        server.checkpoint_to_store().unwrap();
+        assert_eq!(
+            server.wal.seq(),
+            0,
+            "WAL should be truncated after checkpoint"
+        );
+
+        let wal_path = data_dir.join("wal.log");
+        let entries = crate::persist::wal::WalLog::read_entries(&wal_path).unwrap();
+        assert!(
+            entries.is_empty(),
+            "WAL file should be empty after checkpoint"
+        );
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_replays_link_does_not_duplicate() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_link_nodupe_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let link_id;
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            let doc_a = server
+                .create_work(sid, Edition::from_text("doc A"))
+                .unwrap();
+            let doc_b = server
+                .create_work(sid, Edition::from_text("doc B"))
+                .unwrap();
+
+            server.checkpoint_to_store().unwrap();
+
+            server.create_link(sid, doc_a, doc_b, None, None).unwrap();
+            link_id = server.link_counter;
+
+            assert_eq!(server.links.len(), 1);
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            assert_eq!(
+                server.links.len(),
+                1,
+                "link should not be duplicated after WAL replay"
+            );
+            assert!(
+                server.links.contains_key(&link_id),
+                "original link_id should exist"
+            );
+        }
 
         let _ = std::fs::remove_dir_all(&data_dir);
     }
