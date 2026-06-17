@@ -5,6 +5,23 @@ use std::sync::Mutex;
 
 const CACHE_CAPACITY: usize = 1024;
 
+pub const CHUNK_FORMAT_JSON: u8 = 0x4A;
+pub const CHUNK_FORMAT_POSTCARD: u8 = 0x50;
+
+pub fn tag_chunk_data(format: u8, data: &[u8]) -> Vec<u8> {
+    let mut result = Vec::with_capacity(1 + data.len());
+    result.push(format);
+    result.extend_from_slice(data);
+    result
+}
+
+pub fn untag_chunk_data(data: &[u8]) -> Result<(u8, &[u8]), ChunkError> {
+    if data.is_empty() {
+        return Err(ChunkError::CorruptData("empty chunk data".to_string()));
+    }
+    Ok((data[0], &data[1..]))
+}
+
 #[derive(Debug)]
 pub enum ChunkError {
     Io(String),

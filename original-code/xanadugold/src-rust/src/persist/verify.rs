@@ -85,9 +85,11 @@ fn collect_edition_ref_hashes(
 ) {
     hashes.insert(ed_ref.root_hash);
     if let Ok(data) = store.read_chunk(&ed_ref.root_hash) {
-        if let Ok(root) = postcard::from_bytes::<EditionRootChunkFull>(&data) {
-            for h in &root.entry_chunk_hashes {
-                hashes.insert(*h);
+        if let Ok((_, payload)) = crate::persist::chunk_store::untag_chunk_data(&data) {
+            if let Ok(root) = postcard::from_bytes::<EditionRootChunkFull>(payload) {
+                for h in &root.entry_chunk_hashes {
+                    hashes.insert(*h);
+                }
             }
         }
     }
