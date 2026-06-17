@@ -151,6 +151,23 @@ Go to **http://127.0.0.1:8080** — you'll see the document editor.
 
 ---
 
+## Documentation Deployment
+
+Documentation is served at **[dgjones.info/xudanu/](https://dgjones.info/xudanu/)** via GitHub Pages.
+
+- **Workflow:** `.github/workflows/deploy-docs.yml`
+- **Trigger:** Any push to `main` that changes files in `docs/**`
+- **Source:** The entire `docs/` directory is uploaded as the Pages artifact
+- **No build step** — static HTML/Markdown served as-is
+
+To add or update documentation:
+
+1. Add/edit files in `docs/` (HTML files match the dark theme; Markdown files in `docs/dev/`)
+2. If adding a new page, link it from `docs/index.html`
+3. Commit and push to `main` — GitHub Actions deploys automatically
+
+---
+
 ## License
 
 xudanu is licensed under the **Apache License 2.0**.

@@ -5352,12 +5352,14 @@ impl Server {
             .register_link_content(&self.links[&link_id].link, link_id);
         {
             let ls = &self.links[&link_id];
-            let o_ref = ls.link.end_at("LeftEnd").map(
-                crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
-            );
-            let d_ref = ls.link.end_at("RightEnd").map(
-                crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
-            );
+            let o_ref = ls
+                .link
+                .end_at("LeftEnd")
+                .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
+            let d_ref = ls
+                .link
+                .end_at("RightEnd")
+                .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
             let _ = self.wal.append_create_link(
                 link_id,
                 origin,
@@ -5416,12 +5418,14 @@ impl Server {
             .register_link_content(&self.links[&link_id].link, link_id);
         {
             let ls = &self.links[&link_id];
-            let o_ref = ls.link.end_at("LeftEnd").map(
-                crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
-            );
-            let d_ref = ls.link.end_at("RightEnd").map(
-                crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
-            );
+            let o_ref = ls
+                .link
+                .end_at("LeftEnd")
+                .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
+            let d_ref = ls
+                .link
+                .end_at("RightEnd")
+                .map(crate::server::transport::protocol::HyperRefPayload::from_hyper_ref);
             let _ = self.wal.append_create_link(
                 link_id,
                 origin,
@@ -10226,33 +10230,33 @@ pub(crate) mod persist_snapshot {
                         return Ok(0);
                     }
                 };
-                    // CHECKLIST: every Option<[u8; 32]> field in Manifest must be
-                    // inserted into `referenced` here, or the GC will delete the
-                    // chunk. Current fields (as of 2026-06):
-                    //   - historical_authors_hash
-                    //   - blob_metas_hash
-                    //   - content_address_hash
-                    //   - links_hash
-                    //   - annotations_hash
-                    //   - fossil_snapshots_hash
-                    if let Some(hash) = manifest.historical_authors_hash {
-                        referenced.insert(hash);
-                    }
-                    if let Some(hash) = manifest.blob_metas_hash {
-                        referenced.insert(hash);
-                    }
-                    if let Some(hash) = manifest.content_address_hash {
-                        referenced.insert(hash);
-                    }
-                    if let Some(hash) = manifest.links_hash {
-                        referenced.insert(hash);
-                    }
-                    if let Some(hash) = manifest.annotations_hash {
-                        referenced.insert(hash);
-                    }
-                    if let Some(hash) = manifest.fossil_snapshots_hash {
-                        referenced.insert(hash);
-                    }
+                // CHECKLIST: every Option<[u8; 32]> field in Manifest must be
+                // inserted into `referenced` here, or the GC will delete the
+                // chunk. Current fields (as of 2026-06):
+                //   - historical_authors_hash
+                //   - blob_metas_hash
+                //   - content_address_hash
+                //   - links_hash
+                //   - annotations_hash
+                //   - fossil_snapshots_hash
+                if let Some(hash) = manifest.historical_authors_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.blob_metas_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.content_address_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.links_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.annotations_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.fossil_snapshots_hash {
+                    referenced.insert(hash);
+                }
             }
             for club_ref in self.club_refs.values() {
                 if let Ok(hashes) = crate::persist::edition_chunks::collect_work_hashes(

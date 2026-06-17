@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Udanax Gold Heritage &mdash; Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+*{margin:0;padding:0;box-sizing:border-box}
+
+html{scroll-behavior:smooth}
+
+body{
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  background:#0d1117;
+  color:#c9d1d9;
+  line-height:1.7;
+  padding:0;
+}
+
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+
+.content-wrap{max-width:1000px;margin:0 auto;padding:48px 32px 80px}
+
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px;color:#e6edf3}
+h2{font-size:24px;font-weight:700;margin-top:56px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d;color:#e6edf3}
+h3{font-size:17px;font-weight:600;margin-top:28px;margin-bottom:8px;color:#58a6ff}
+h4{font-size:14px;font-weight:600;margin-top:20px;margin-bottom:6px;color:#8b949e}
+
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:8px}
+.intro-note{font-size:14px;color:#6e7681;margin-bottom:40px;font-style:italic}
+
+p{margin-bottom:12px;max-width:820px}
+
+/* ---- TOC ---- */
+.toc{
+  background:#161b22;
+  border:1px solid #21262d;
+  border-radius:8px;
+  padding:20px 24px;
+  margin:24px 0 40px;
+}
+.toc-title{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+
+/* ---- Concept mapping cards ---- */
+.mapping-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:0;
+  margin:20px 0;
+  border:1px solid #30363d;
+  border-radius:10px;
+  overflow:hidden;
+}
+.mapping-card{
+  padding:20px 24px;
+  position:relative;
+}
+.mapping-card.gold{
+  background:rgba(210,153,34,0.04);
+  border-right:1px solid #30363d;
+}
+.mapping-card.xudanu{
+  background:rgba(88,166,255,0.04);
+}
+.mapping-card .lang{
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:1.5px;
+  font-weight:700;
+  margin-bottom:6px;
+}
+.mapping-card.gold .lang{color:#d29922}
+.mapping-card.xudanu .lang{color:#58a6ff}
+.mapping-card h4{
+  font-size:15px;
+  font-weight:600;
+  margin-top:0;
+  margin-bottom:4px;
+  color:#e6edf3;
+}
+.mapping-card p{
+  font-size:13px;
+  color:#8b949e;
+  line-height:1.5;
+  margin-bottom:0;
+  max-width:none;
+}
+.mapping-card code{
+  font-family:'JetBrains Mono',monospace;
+  font-size:12px;
+  color:#79c0ff;
+}
+.mapping-card.gold code{color:#d29922}
+
+/* ---- Status badges ---- */
+.badge{
+  display:inline-block;
+  font-size:10px;
+  padding:2px 8px;
+  border-radius:10px;
+  font-weight:600;
+  letter-spacing:0.5px;
+  margin-left:8px;
+  vertical-align:middle;
+}
+.badge-done{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3)}
+.badge-partial{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3)}
+.badge-enhanced{background:rgba(163,113,247,0.15);color:#a371f7;border:1px solid rgba(163,113,247,0.3)}
+.badge-new{background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)}
+
+/* ---- Full mapping table ---- */
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin:16px 0;
+  font-size:13px;
+}
+th{
+  text-align:left;
+  padding:10px 14px;
+  border-bottom:2px solid #30363d;
+  color:#8b949e;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:0.5px;
+  font-weight:600;
+}
+td{
+  padding:8px 14px;
+  border-bottom:1px solid #21262d;
+  vertical-align:top;
+}
+td code{font-family:'JetBrains Mono',monospace;font-size:12px}
+td:first-child{color:#d29922}
+td:nth-child(2){color:#58a6ff}
+
+/* ---- SVG diagram containers ---- */
+.diagram-container{
+  margin:24px 0;
+  padding:24px;
+  background:#0d1117;
+  border:1px solid #21262d;
+  border-radius:12px;
+  overflow-x:auto;
+}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{
+  text-align:center;
+  font-size:12px;
+  color:#484f58;
+  margin-top:12px;
+  font-style:italic;
+}
+
+/* ---- Note blocks ---- */
+.note{
+  background:rgba(88,166,255,0.06);
+  border-left:3px solid #58a6ff;
+  padding:12px 16px;
+  margin:16px 0;
+  border-radius:0 6px 6px 0;
+  font-size:14px;
+  color:#8b949e;
+}
+.note strong{color:#58a6ff}
+
+.heritage-note{
+  background:rgba(210,153,34,0.06);
+  border-left:3px solid #d29922;
+  padding:12px 16px;
+  margin:16px 0;
+  border-radius:0 6px 6px 0;
+  font-size:14px;
+  color:#8b949e;
+}
+.heritage-note strong{color:#d29922}
+
+/* ---- Section headers ---- */
+.section-header{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-bottom:4px;
+}
+.section-icon{
+  width:32px;
+  height:32px;
+  border-radius:8px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:16px;
+  flex-shrink:0;
+}
+
+/* ---- Architecture layers diagram ---- */
+.arch-stack{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  max-width:800px;
+  margin:20px auto;
+}
+.arch-layer{
+  padding:14px 20px;
+  border-radius:8px;
+  display:flex;
+  align-items:center;
+  gap:16px;
+  position:relative;
+}
+.arch-layer .layer-name{font-size:14px;font-weight:700;min-width:200px}
+.arch-layer .layer-desc{font-size:12px;color:#8b949e;flex:1}
+.arch-layer .layer-badge{
+  font-size:10px;
+  padding:2px 8px;
+  border-radius:4px;
+  font-weight:600;
+  white-space:nowrap;
+}
+
+/* ---- Concept flow arrows ---- */
+.flow-diagram{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  margin:20px 0;
+  flex-wrap:wrap;
+}
+.flow-box{
+  background:#161b22;
+  border:1px solid #30363d;
+  border-radius:8px;
+  padding:10px 16px;
+  text-align:center;
+  min-width:120px;
+}
+.flow-box strong{display:block;font-size:13px;color:#e6edf3;margin-bottom:2px}
+.flow-box span{font-size:11px;color:#8b949e}
+.flow-arrow{color:#484f58;font-size:20px}
+
+/* ---- Stats row ---- */
+.stats-row{
+  display:flex;
+  gap:32px;
+  margin:24px 0;
+  flex-wrap:wrap;
+}
+.stat{
+  text-align:center;
+  background:#161b22;
+  border:1px solid #21262d;
+  border-radius:10px;
+  padding:16px 24px;
+  flex:1;
+  min-width:140px;
+}
+.stat .value{
+  font-size:32px;
+  font-weight:800;
+  font-family:'JetBrains Mono',monospace;
+  background:linear-gradient(135deg,#d29922,#58a6ff);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.stat .label{
+  font-size:11px;
+  color:#8b949e;
+  text-transform:uppercase;
+  letter-spacing:1px;
+  margin-top:4px;
+}
+
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px;font-size:14px}
+
+.footer{
+  margin-top:64px;
+  padding-top:24px;
+  border-top:1px solid #21262d;
+  font-size:12px;
+  color:#484f58;
+  text-align:center;
+}
+
+/* SVG text styles */
+.svg-title{font-family:'Inter',sans-serif;font-weight:700;font-size:13px;fill:#e6edf3}
+.svg-label{font-family:'Inter',sans-serif;font-weight:600;font-size:11px;fill:#c9d1d9}
+.svg-small{font-family:'Inter',sans-serif;font-size:10px;fill:#8b949e}
+.svg-mono{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#79c0ff}
+.svg-mono-gold{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#d29922}
+
+@media(max-width:640px){
+  .content-wrap{padding:24px 16px 60px}
+  .mapping-grid{grid-template-columns:1fr}
+  .mapping-card.gold{border-right:none;border-bottom:1px solid #30363d}
+  .arch-layer{flex-direction:column;align-items:flex-start}
+  .arch-layer .layer-name{min-width:auto}
+  .flow-diagram{flex-direction:column}
+  .flow-arrow{transform:rotate(90deg)}
+  h1{font-size:28px}
+}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Udanax Gold Heritage</h1>
+<p class="subtitle">Tracing the lineage: how every Gold concept lives on in Xudanu</p>
+<p class="intro-note">For Ted, on his birthday &mdash; a map of what you built, rebuilt.</p>
+
+<div class="toc">
+  <div class="toc-title">Contents</div>
+  <a href="#lineage">The Lineage</a>
+  <a href="#architecture-map">Architecture Map</a>
+  <div class="toc-section">Core Concepts</div>
+  <a href="#otree">O-tree &mdash; The Document Spine</a>
+  <a href="#edition">Editions &amp; Documents</a>
+  <a href="#grandmap">GrandMap &mdash; Content Is Identity</a>
+  <a href="#clubs">Clubs &amp; Permissions</a>
+  <a href="#locks">Lock Hierarchy</a>
+  <a href="#backfollow">Backfollow &mdash; Finding Transclusions</a>
+  <a href="#canopy">Canopy Trees</a>
+  <a href="#h-tree">H-tree &mdash; Version Tracking</a>
+  <a href="#work">Works &amp; Revisions</a>
+  <a href="#spaces">Coordinate Spaces</a>
+  <a href="#links">Links</a>
+  <div class="toc-section">Persistence</div>
+  <a href="#persistence">Disk &amp; Storage</a>
+  <a href="#protocol">Wire Protocol</a>
+  <div class="toc-section">Full Mapping</div>
+  <a href="#full-table">Complete Concept Table</a>
+  <a href="#rules">Nelson&rsquo;s 17 Rules</a>
+</div>
+
+<!-- ===================== LINEAGE ===================== -->
+
+<h2 id="lineage">The Lineage</h2>
+
+<div class="stats-row">
+  <div class="stat">
+    <div class="value">1960</div>
+    <div class="label">Ted&rsquo;s Vision</div>
+  </div>
+  <div class="stat">
+    <div class="value">1999</div>
+    <div class="label">Udanax Gold Released</div>
+  </div>
+  <div class="stat">
+    <div class="value">2025</div>
+    <div class="label">Xudanu Rust Port</div>
+  </div>
+  <div class="stat">
+    <div class="value">2115</div>
+    <div class="label">Tests Passing</div>
+  </div>
+</div>
+
+<p>Udanax Gold was Ted Nelson&rsquo;s C++ implementation of the Xanadu hypertext system, released as open source in 1999. It contained the accumulated wisdom of decades of thinking about how documents should connect: the O-tree, clubs, transclusion detection, canopy trees, the GrandMap, and the lock hierarchy.</p>
+
+<p>Xudanu is a from-scratch reimplementation in Rust. Every Gold subsystem was studied, mapped, and rebuilt with modern tools. This page traces each Gold concept to its Xudanu descendant, so you can see exactly what survived and what evolved.</p>
+
+<div class="heritage-note">
+  <strong>What Ted will recognize:</strong> The fundamental architecture is preserved. O-tree, GrandMap, clubs, locks, backfollow, canopy, H-tree &mdash; all here. The names are the same. The math is the same. What changed is the plumbing: Rust instead of C++, WebSocket instead of custom TCP, Ed25519 instead of unsigned assertions, BLAKE3 instead of content pointers, CRDT sync instead of single-user editing.
+</div>
+
+<!-- ===================== ARCHITECTURE MAP ===================== -->
+
+<h2 id="architecture-map">Architecture Map</h2>
+
+<p>The Gold architecture was organized around the Fe/Be (Frontend/Backend) split. Xudanu preserves this conceptual separation but collapses it into a single server process with a WebSocket API.</p>
+
+<div class="arch-stack">
+  <div class="arch-layer" style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.2)">
+    <div class="layer-name" style="color:#3fb950">Web Frontend</div>
+    <div class="layer-desc">React + TypeScript, collaborative editor, transclusion overlays, document map</div>
+    <div class="layer-badge" style="background:rgba(63,185,80,0.15);color:#3fb950">NEW</div>
+  </div>
+  <div class="arch-layer" style="background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.2)">
+    <div class="layer-name" style="color:#58a6ff">Wire Protocol</div>
+    <div class="layer-desc">140+ operations, dual codec (JSON + binary), WebSocket transport, CSRF, heartbeats</div>
+    <div class="layer-badge" style="background:rgba(88,166,255,0.15);color:#58a6ff">ENHANCED</div>
+  </div>
+  <div class="arch-layer" style="background:rgba(210,153,34,0.08);border:1px solid rgba(210,153,34,0.2)">
+    <div class="layer-name" style="color:#d29922">Server Core</div>
+    <div class="layer-desc">Sessions, clubs, works, links, transclusion queries, security log, CRDT sync</div>
+    <div class="layer-badge" style="background:rgba(210,153,34,0.15);color:#d29922">GOLD</div>
+  </div>
+  <div class="arch-layer" style="background:rgba(163,113,247,0.08);border:1px solid rgba(163,113,247,0.2)">
+    <div class="layer-name" style="color:#a371f7">Edition Engine</div>
+    <div class="layer-desc">O-tree, RangeElement, XnRegion, GrandMap, ContentPool, BackfollowEngine, Canopy</div>
+    <div class="layer-badge" style="background:rgba(163,113,247,0.15);color:#a371f7">GOLD</div>
+  </div>
+  <div class="arch-layer" style="background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.2)">
+    <div class="layer-name" style="color:#f85149">Storage</div>
+    <div class="layer-desc">BLAKE3 content-addressed chunks, WAL, dual manifest slots, atomic checkpoints</div>
+    <div class="layer-badge" style="background:rgba(248,81,73,0.15);color:#f85149">ENHANCED</div>
+  </div>
+</div>
+
+<p style="font-size:12px;color:#484f58;font-style:italic;text-align:center">
+  Gold layers (amber, purple) are preserved concepts. Enhanced layers (blue, red) use modern technology. Green is entirely new.
+</p>
+
+<!-- ===================== O-TREE ===================== -->
+
+<h2 id="otree">O-tree &mdash; The Document Spine</h2>
+<p>The O-tree (orgl tree) is Gold&rsquo;s persistent splay tree for storing edition content. It was the heart of the system &mdash; a structure that could represent infinitely large documents, splay arbitrary regions to the root, and share structure across versions.</p>
+
+<div class="mapping-grid">
+  <div class="mapping-card gold">
+    <div class="lang">Udanax Gold (C++)</div>
+    <h4>OrglRoot / Loaf / InnerLoaf</h4>
+    <p><code>orootx.hxx</code>, <code>loavesx.hxx</code></p>
+    <p>Loaves auto-split at <code>tableSegmentMaxSize</code> (16384). Nine-case splay transformation. <code>DspLoaf</code> for lazy displacement. <code>OPartialLoaf</code> with TrailBlazer. Splay restructures tree so any region is near the root.</p>
+  </div>
+  <div class="mapping-card xudanu">
+    <div class="lang">Xudanu (Rust)</div>
+    <h4>OrglRoot / Loaf <span class="badge badge-done">DONE</span></h4>
+    <p><code>src/edition/orgl.rs</code></p>
+    <p><code>Loaf</code> enum: <code>Leaf</code> or <code>Split</code>. Auto-splits at 16384 (matching Gold). Full 9-case splay algorithm ported. <code>Loaf::Dsp</code> for lazy transforms. Infinite domains via default + tombstone entries. 22 O-tree tests passing.</p>
+  </div>
+</div>
+
+<div class="diagram-container">
+<svg width="700" height="200" viewBox="0 0 700 200">
+  <!-- Root -->
+  <rect x="290" y="10" width="120" height="36" rx="6" fill="#1a1e24" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="350" y="28" text-anchor="middle" class="svg-title" fill="#a371f7">OrglRoot</text>
+  <text x="350" y="40" text-anchor="middle" class="svg-small">splay(region)</text>
+  
+  <!-- Split node -->
+  <rect x="140" y="70" width="120" height="36" rx="6" fill="#1a1e24" stroke="#a371f7" stroke-width="1"/>
+  <text x="200" y="88" text-anchor="middle" class="svg-label" fill="#a371f7">Split</text>
+  <text x="200" y="100" text-anchor="middle" class="svg-small">split: XnRegion</text>
+  
+  <rect x="440" y="70" width="120" height="36" rx="6" fill="#1a1e24" stroke="#a371f7" stroke-width="1"/>
+  <text x="500" y="88" text-anchor="middle" class="svg-label" fill="#a371f7">Split</text>
+  <text x="500" y="100" text-anchor="middle" class="svg-small">split: XnRegion</text>
+  
+  <!-- Lines -->
+  <line x1="330" y1="46" x2="200" y2="70" stroke="#30363d" stroke-width="1"/>
+  <line x1="370" y1="46" x2="500" y2="70" stroke="#30363d" stroke-width="1"/>
+  
+  <!-- Leaves -->
+  <rect x="60" y="130" width="100" height="36" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="110" y="148" text-anchor="middle" class="svg-label" fill="#3fb950">Leaf</text>
+  <text x="110" y="160" text-anchor="middle" class="svg-mono">entries[N]</text>
+  
+  <rect x="190" y="130" width="100" height="36" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="240" y="148" text-anchor="middle" class="svg-label" fill="#3fb950">Leaf</text>
+  <text x="240" y="160" text-anchor="middle" class="svg-mono">entries[N]</text>
+  
+  <rect x="410" y="130" width="100" height="36" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="460" y="148" text-anchor="middle" class="svg-label" fill="#3fb950">Leaf</text>
+  <text x="460" y="160" text-anchor="middle" class="svg-mono">entries[N]</text>
+  
+  <rect x="540" y="130" width="100" height="36" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="590" y="148" text-anchor="middle" class="svg-label" fill="#3fb950">Leaf</text>
+  <text x="590" y="160" text-anchor="middle" class="svg-mono">entries[N]</text>
+  
+  <!-- Lines to leaves -->
+  <line x1="180" y1="106" x2="110" y2="130" stroke="#30363d" stroke-width="1"/>
+  <line x1="220" y1="106" x2="240" y2="130" stroke="#30363d" stroke-width="1"/>
+  <line x1="480" y1="106" x2="460" y2="130" stroke="#30363d" stroke-width="1"/>
+  <line x1="520" y1="106" x2="590" y2="130" stroke="#30363d" stroke-width="1"/>
+  
+  <!-- Labels -->
+  <text x="110" y="186" text-anchor="middle" class="svg-small">in_child</text>
+  <text x="240" y="186" text-anchor="middle" class="svg-small">out_child</text>
+  <text x="460" y="186" text-anchor="middle" class="svg-small">in_child</text>
+  <text x="590" y="186" text-anchor="middle" class="svg-small">out_child</text>
+</svg>
+<div class="diagram-caption">O-tree structure: OrglRoot &rarr; Split nodes partition by XnRegion &rarr; Leaf nodes hold sorted entries</div>
+</div>
+
+<!-- ===================== EDITION ===================== -->
+
+<h2 id="edition">Editions &amp; Documents</h2>
+
+<div class="mapping-grid">
+  <div class="mapping-card gold">
+    <div class="lang">Udanax Gold (C++)</div>
+    <h4>FeEdition / BeEdition</h4>
+    <p><code>nkernelx.hxx</code>, <code>brange3x.hxx</code></p>
+    <p>Editions wrap an OrglRoot. <code>FeRangeElement</code> hierarchy: DataHolder, Edition, PlaceHolder, Label, IDHolder, Work. <code>BeCarrier</code> pairs element + optional label. Infinite-domain support via default entries.</p>
+  </div>
+  <div class="mapping-card xudanu">
+    <div class="lang">Xudanu (Rust)</div>
+    <h4>Edition <span class="badge badge-done">DONE</span></h4>
+    <p><code>src/edition/edition.rs</code></p>
+    <p><code>RangeElement</code> enum: Data, Text, Edition, Label, PlaceHolder, Work, WorkRef, EditionRef. <code>Carrier</code> pairs element + optional label. Same infinite-domain semantics. <code>fetch()</code>, <code>with()</code>, <code>without()</code>, <code>replace()</code> use structural sharing via O-tree.</p>
+  </div>
+</div>
+
+<div class="heritage-note">
+  <strong>Gold heritage:</strong> The RangeElement hierarchy was the most faithful port. Every Gold element type has a Rust enum variant. The Carrier abstraction (element + optional label) is preserved exactly. 14 Gold test cases from <code>nkernelt.cxx</code> ported and passing.
+</div>
+
+<!-- ===================== GRANDMAP ===================== -->
+
+<h2 id="grandmap">GrandMap &mdash; Content Is Identity</h2>
+
+<div class="mapping-grid">
+  <div class="mapping-card gold">
+    <div class="lang">Udanax Gold (C++)</div>
+    <h4>BeGrandMap</h4>
+    <p><code>grandmapx.hxx</code></p>
+    <p>Bidirectional mapping: BeId &harr; BeRangeElement. <code>assignID()</code> registers content. <code>fetch()</code> retrieves by ID. <code>IDSpace::global()</code> / <code>IDSpace::unique()</code> for ID allocation. <code>Counter</code> / <code>BatchCounter</code> for preallocating ranges.</p>
+  </div>
+  <div class="mapping-card xudanu">
+    <div class="lang">Xudanu (Rust)</div>
+    <h4>GrandMap + ContentPool <span class="badge badge-enhanced">ENHANCED</span></h4>
+    <p><code>src/edition/grand_map.rs</code>, <code>src/edition/content_pool.rs</code></p>
+    <p>Same bidirectional mapping. <strong>Enhancement:</strong> ContentPool adds BLAKE3 content addressing &mdash; <code>find_by_content()</code> hashes content and returns existing ID if already stored. This means identical content is stored exactly once (Rule 8).</p>
+  </div>
+</div>
+
+<div class="diagram-container">
+<svg width="660" height="140" viewBox="0 0 660 140">
+  <!-- GrandMap box -->
+  <rect x="220" y="10" width="220" height="50" rx="8" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="330" y="30" text-anchor="middle" class="svg-title" fill="#a371f7">GrandMap</text>
+  <text x="330" y="46" text-anchor="middle" class="svg-small">BeId &harr; RangeElement</text>
+  
+  <!-- Left side: assign -->
+  <rect x="20" y="80" width="160" height="44" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="100" y="98" text-anchor="middle" class="svg-label" fill="#58a6ff">assign_new_id(elem)</text>
+  <text x="100" y="114" text-anchor="middle" class="svg-mono">&rarr; BeId</text>
+  
+  <!-- Right side: fetch -->
+  <rect x="240" y="80" width="160" height="44" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="320" y="98" text-anchor="middle" class="svg-label" fill="#58a6ff">fetch(id)</text>
+  <text x="320" y="114" text-anchor="middle" class="svg-mono">&rarr; RangeElement</text>
+  
+  <!-- ContentPool -->
+  <rect x="460" y="80" width="180" height="44" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="550" y="96" text-anchor="middle" class="svg-label" fill="#3fb950">ContentPool</text>
+  <text x="550" y="112" text-anchor="middle" class="svg-small">BLAKE3 &rarr; BeId (new!)</text>
+  
+  <!-- Arrows -->
+  <line x1="100" y1="80" x2="260" y2="60" stroke="#30363d" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="320" y1="80" x2="330" y2="60" stroke="#30363d" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="550" y1="80" x2="400" y2="60" stroke="#30363d" stroke-width="1" stroke-dasharray="3,2"/>
+</svg>
+<div class="diagram-caption">GrandMap: content is identity. ContentPool adds BLAKE3 hashing so identical content is stored once.</div>
+</div>
+
+<!-- ===================== CLUBS ===================== -->
+
+<h2 id="clubs">Clubs &amp; Permissions</h2>
+
+<div class="mapping-grid">
+  <div class="mapping-card gold">
+    <div class="lang">Udanax Gold (C++)</div>
+    <h4>FeClub (extends FeWork)</h4>
+    <p><code>nkernelx.hxx</code></p>
+    <p>Clubs are identity groups. Club IS a Work (inheritance). <code>ClubDescription</code> contained a Set of member clubs &mdash; recursive membership. <code>sponsor(IDRegion)</code> was separate from read/edit. <code>historyClub</code> controlled revision access.</p>
+  </div>
+  <div class="mapping-card xudanu">
+    <div class="lang">Xudanu (Rust)</div>
+    <h4>Club <span class="badge badge-done">DONE</span></h4>
+    <p><code>src/server/club.rs</code></p>
+    <p>Club contains a Work internally (composition). Personal clubs with Ed25519 keypairs. <code>read_club</code>, <code>edit_club</code>, <code>default_read_club</code>, <code>default_edit_club</code>. <strong>Enhancement:</strong> Encrypted signing keys (Argon2id + ChaCha20-Poly1305). OAuth login (GitHub, Google).</p>
+  </div>
+</div>
+
+<div class="note">
+  <strong>What evolved:</strong> Gold's recursive club membership (clubs containing clubs) is simplified to flat membership in Xudanu. The <code>historyClub</code> concept is not yet separate &mdash; anyone with read access can see history. Sponsor clubs are not yet implemented.
+</div>
+
+<!-- ===================== LOCKS ===================== -->
+
+<h2 id="locks">Lock Hierarchy</h2>
+
+<p>Gold&rsquo;s lock system was a brilliant hierarchy of authentication mechanisms. Every lock type had a matching LockSmith that created it and a credential that opened it. Xudanu preserves the full hierarchy.</p>
+
+<div class="diagram-container">
+<svg width="680" height="240" viewBox="0 0 680 240">
+  <!-- Title -->
+  <text x="340" y="16" text-anchor="middle" class="svg-title">Lock Hierarchy</text>
+  
+  <!-- Locks -->
+  <!-- BooLock -->
+  <rect x="20" y="36" width="100" height="44" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="70" y="54" text-anchor="middle" class="svg-label" fill="#3fb950">BooLock</text>
+  <text x="70" y="68" text-anchor="middle" class="svg-small">public access</text>
+  
+  <!-- WallLock -->
+  <rect x="140" y="36" width="100" height="44" rx="6" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1"/>
+  <text x="190" y="54" text-anchor="middle" class="svg-label" fill="#f85149">WallLock</text>
+  <text x="190" y="68" text-anchor="middle" class="svg-small">no access</text>
+  
+  <!-- MatchLock -->
+  <rect x="260" y="36" width="110" height="44" rx="6" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="1"/>
+  <text x="315" y="54" text-anchor="middle" class="svg-label" fill="#d29922">MatchLock</text>
+  <text x="315" y="68" text-anchor="middle" class="svg-small">password (PHC)</text>
+  
+  <!-- ChallengeLock -->
+  <rect x="390" y="36" width="120" height="44" rx="6" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1"/>
+  <text x="450" y="54" text-anchor="middle" class="svg-label" fill="#a371f7">ChallengeLock</text>
+  <text x="450" y="68" text-anchor="middle" class="svg-small">Ed25519 challenge</text>
+  
+  <!-- MultiLock -->
+  <rect x="530" y="36" width="120" height="44" rx="6" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="590" y="54" text-anchor="middle" class="svg-label" fill="#58a6ff">MultiLock</text>
+  <text x="590" y="68" text-anchor="middle" class="svg-small">named + any sub-lock</text>
+  
+  <!-- LockSmiths -->
+  <text x="340" y="112" text-anchor="middle" class="svg-small">Each lock has a matching LockSmith that creates it</text>
+  
+  <!-- Credentials -->
+  <text x="340" y="140" text-anchor="middle" class="svg-small">Each lock opens with a specific LockCredential</text>
+  
+  <!-- Credential types -->
+  <rect x="80" y="160" width="80" height="28" rx="4" fill="#161b22" stroke="#30363d"/>
+  <text x="120" y="178" text-anchor="middle" class="svg-mono">Boo</text>
+  
+  <rect x="180" y="160" width="80" height="28" rx="4" fill="#161b22" stroke="#30363d"/>
+  <text x="220" y="178" text-anchor="middle" class="svg-mono">Password</text>
+  
+  <rect x="280" y="160" width="120" height="28" rx="4" fill="#161b22" stroke="#30363d"/>
+  <text x="340" y="178" text-anchor="middle" class="svg-mono">ChallengeResponse</text>
+  
+  <rect x="420" y="160" width="80" height="28" rx="4" fill="#161b22" stroke="#30363d"/>
+  <text x="460" y="178" text-anchor="middle" class="svg-mono">Named{...}</text>
+  
+  <!-- KeyMaster -->
+  <rect x="220" y="206" width="240" height="28" rx="6" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1"/>
+  <text x="340" y="224" text-anchor="middle" class="svg-label" fill="#a371f7">KeyMaster: tracks accumulated authority</text>
+</svg>
+<div class="diagram-caption">Complete lock hierarchy from Gold, preserved in Rust. KeyMaster accumulates authority across logins.</div>
+</div>
+
+<!-- ===================== BACKFOLLOW ===================== -->
+
+<h2 id="backfollow">Backfollow &mdash; Finding Transclusions</h2>
+
+<p>The backfollow engine was Gold&rsquo;s crown jewel: given a piece of content, find every document that contains it, anywhere in the system. This is what makes transclusion visible &mdash; you can trace where content has been reused.</p>
+
+<div class="mapping-grid">
+  <div class="mapping-card gold">
+    <div class="lang">Udanax Gold (C++)</div>
+    <h4>RecorderFossil / ResultRecorder / Matcher / TrailBlazer</h4>
+    <p><code>backfollx.hxx</code>, <code>recordrx.hxx</code></p>
+    <p>Recorder registered persistent queries. Fossil accumulated results over time. Matcher compared fingerprints. TrailBlazer resolved lazy placeholders. <code>transcluders()</code>, <code>works()</code>, <code>rangeTranscluders()</code>.</p>
+  </div>
+  <div class="mapping-card xudanu">
+    <div class="lang">Xudanu (Rust)</div>
+    <h4>BackfollowEngine <span class="badge badge-done">DONE</span></h4>
+    <p><code>src/edition/backfollow.rs</code></p>
+    <p>Synchronous in-memory engine. <code>TransclusionIndex</code> maps BeId &rarr; works containing it. <code>find_transcluders</code>, <code>find_works_for_content</code> wire ops. BLAKE3 fingerprinting for content matching. <strong>Enhancement:</strong> Real-time WebSocket push of transclusion results.</p>
+  </div>
+</div>
+
+<div class="diagram-container">
+<svg width="700" height="160" viewBox="0 0 700 160">
+  <!-- Flow -->
+  <rect x="20" y="50" width="120" height="50" rx="8" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="80" y="70" text-anchor="middle" class="svg-label" fill="#a371f7">Content</text>
+  <text x="80" y="84" text-anchor="middle" class="svg-small">(text fragment)</text>
+  
+  <text x="160" y="78" class="flow-arrow" fill="#484f58">&rarr;</text>
+  
+  <rect x="180" y="50" width="120" height="50" rx="8" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="240" y="70" text-anchor="middle" class="svg-label" fill="#d29922">BLAKE3</text>
+  <text x="240" y="84" text-anchor="middle" class="svg-small">fingerprint</text>
+  
+  <text x="320" y="78" class="flow-arrow" fill="#484f58">&rarr;</text>
+  
+  <rect x="340" y="50" width="120" height="50" rx="8" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="400" y="70" text-anchor="middle" class="svg-label" fill="#58a6ff">Canopy</text>
+  <text x="400" y="84" text-anchor="middle" class="svg-small">lookup</text>
+  
+  <text x="480" y="78" class="flow-arrow" fill="#484f58">&rarr;</text>
+  
+  <rect x="500" y="50" width="160" height="50" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="580" y="70" text-anchor="middle" class="svg-label" fill="#3fb950">Transcluders</text>
+  <text x="580" y="84" text-anchor="middle" class="svg-small">[Work A, Work B, ...]</text>
+  
+  <!-- Labels -->
+  <text x="80" y="126" text-anchor="middle" class="svg-small">input</text>
+  <text x="240" y="126" text-anchor="middle" class="svg-small">hash content</text>
+  <text x="400" y="126" text-anchor="middle" class="svg-small">find in index</text>
+  <text x="580" y="126" text-anchor="middle" class="svg-small">who has this?</text>
+</svg>
+<div class="diagram-caption">Backfollow pipeline: content &rarr; BLAKE3 fingerprint &rarr; canopy tree lookup &rarr; list of transcluding works</div>
+</div>
+
+<!-- ===================== CANOPY ===================== -->
+
+<h2 id="canopy">Canopy Trees</h2>
+
+<p>Gold used canopy trees (BertCanopy and SensorCanopy) as balanced binary indices over edition content. They enabled fast filtering of transclusion queries &mdash; instead of scanning every position, the canopy pruned the search space.</p>
+
+<div class="mapping-grid">
+  <div class="mapping-card gold">
+    <div class="lang">Udanax Gold (C++)</div>
+    <h4>BertCrum / SensorCrum / CanopyCrum</h4>
+    <p><code>canopyx.hxx</code></p>
+    <p>Bert flags tracked which content fingerprints appeared in subtrees. Sensor flags tracked which positions had specific properties. Flag propagation up the tree enabled O(log n) filtering.</p>
+  </div>
+  <div class="mapping-card xudanu">
+    <div class="lang">Xudanu (Rust)</div>
+    <h4>BertCanopy / SensorCanopy <span class="badge badge-done">DONE</span></h4>
+    <p><code>src/edition/canopy.rs</code></p>
+    <p>Rc&lt;RefCell&lt;&gt;&gt; balanced binary tree with flag propagation. <code>BertProp</code> / <code>SensorProp</code> flag sets. Endorsement bit allocation. Flag-based filtering on transclusion queries. Fully tested with Gold scenarios.</p>
+  </div>
+</div>
+
+<!-- ===================== H-TREE ===================== -->
+
+<h2 id="h-tree">H-tree &mdash; Version Tracking</h2>
+
+<p>Parallel to the O-tree, Gold maintained an H-tree (history tree) that tracked version information for every position. When content was transcluded from one document to another, the H-tree recorded the provenance. This was essential for backfollow &mdash; the H-tree is what let Gold trace content reuse backward through version history.</p>
+
+<div class="mapping-grid">
+  <div class="mapping-card gold">
+    <div class="lang">Udanax Gold (C++)</div>
+    <h4>HistoryCrum / HUpperCrum / HBottomCrum</h4>
+    <p><code>htreex.hxx</code></p>
+    <p>H-tree paralleled the O-tree. <code>HUpperCrumData</code> stored delayed backfollow walks. When new content was inserted, the H-tree recorded where it came from, enabling recursive transclusion tracking.</p>
+  </div>
+  <div class="mapping-card xudanu">
+    <div class="lang">Xudanu (Rust)</div>
+    <h4>HUpperCrumData <span class="badge badge-done">DONE</span></h4>
+    <p><code>src/edition/htree.rs</code></p>
+    <p>H-tree with delayed_store_backfollow walk. Integrated with canopy for transclusion queries. Records provenance on insert. Enables <code>again()</code>-style recursive transclusion chains.</p>
+  </div>
+</div>
+
+<!-- ===================== WORKS ===================== -->
+
+<h2 id="work">Works &amp; Revisions</h2>
+
+<div class="mapping-grid">
+  <div class="mapping-card gold">
+    <div class="lang">Udanax Gold (C++)</div>
+    <h4>FeWork</h4>
+    <p><code>nkernelx.hxx</code></p>
+    <p>Work holds current edition + revision history. <code>revise()</code> creates new edition. <code>history()</code> returns past editions. Clubs for read/edit. Sponsors for vouching.</p>
+  </div>
+  <div class="mapping-card xudanu">
+    <div class="lang">Xudanu (Rust)</div>
+    <h4>Work <span class="badge badge-done">DONE</span></h4>
+    <p><code>src/server/server.rs</code></p>
+    <p>Same model: current edition + history. <code>work_revise</code>, <code>work_fetch_edition</code>, <code>work_fetch_history</code>. <strong>Enhancement:</strong> CRDT collaborative editing (multiple users, same work, real-time sync). Version genealogy API (<code>version_is_before</code>, <code>version_ancestors</code>).</p>
+  </div>
+</div>
+
+<!-- ===================== SPACES ===================== -->
+
+<h2 id="spaces">Coordinate Spaces</h2>
+
+<p>Gold had a rich algebra of position spaces: Integer, Real, Sequence (tumblers), Cross (multi-dimensional), Filter. Each space had positions, regions, displacements, and orderings. This was the mathematical foundation for addressing within documents.</p>
+
+<div class="mapping-grid">
+  <div class="mapping-card gold">
+    <div class="lang">Udanax Gold (C++)</div>
+    <h4>IntegerSpace, RealSpace, SequenceSpace, CrossSpace, FilterSpace, IDSpace</h4>
+    <p><code>spacex.hxx</code>, <code>integerx.hxx</code>, <code>sequencex.hxx</code>, <code>crossx.hxx</code></p>
+    <p>Generic Position/Region/Dsp hierarchy. SequenceSpace had full tumbler addressing (variable-length integer tuples like 1.2.3.4). CrossSpace supported multi-axis coordinates for endorsements.</p>
+  </div>
+  <div class="mapping-card xudanu">
+    <div class="lang">Xudanu (Rust)</div>
+    <h4>Space Traits <span class="badge badge-partial">PARTIAL</span></h4>
+    <p><code>src/space/</code></p>
+    <p>Circular associated types replace C++ inheritance. IntegerSpace, RealSpace, SequenceSpace, CrossSpace2, FilterSpace, SimpleMapping, CompositeMapping. 74 space tests passing.</p>
+    <p><strong>Gap:</strong> No full tumbler addressing yet. SequenceSpace uses <code>Vec&lt;i64&gt;</code> without hierarchical prefix queries.</p>
+  </div>
+</div>
+
+<!-- ===================== LINKS ===================== -->
+
+<h2 id="links">Links</h2>
+
+<div class="mapping-grid">
+  <div class="mapping-card gold">
+    <div class="lang">Udanax Gold (C++)</div>
+    <h4>HyperLink / HyperRef</h4>
+    <p><code>linkx.hxx</code></p>
+    <p>Bidirectional links. <code>HyperRef::Single</code> and <code>MultiRef</code> for multi-ended. Link type sets. Named ends. Endorsed wrappers. <code>endNames()</code> returned SequenceRegion.</p>
+  </div>
+  <div class="mapping-card xudanu">
+    <div class="lang">Xudanu (Rust)</div>
+    <h4>HyperLink / HyperRef <span class="badge badge-done">DONE</span></h4>
+    <p><code>src/edition/link.rs</code></p>
+    <p>Bidirectional links tracked in both directions. <code>Single</code> and <code>Multi</code> refs. Excerpt field on Single. <strong>Gap:</strong> No link type sets or named ends yet. Span-level targeting not yet exposed in protocol.</p>
+  </div>
+</div>
+
+<!-- ===================== PERSISTENCE ===================== -->
+
+<h2 id="persistence">Disk &amp; Storage</h2>
+
+<div class="mapping-grid">
+  <div class="mapping-card gold">
+    <div class="lang">Udanax Gold (C++)</div>
+    <h4>SnarfPacker / Turtle / Urdi / FlockManager</h4>
+    <p><code>packerx.hxx</code>, <code>turtlex.hxx</code>, <code>urdix.hxx</code></p>
+    <p>Full disk abstraction: shepherds mapped to disk blocks (snarfs). Object-level persistence granularity. Purger evicted clean objects. Agenda persisted deferred work. Turtle was the root persistent object.</p>
+  </div>
+  <div class="mapping-card xudanu">
+    <div class="lang">Xudanu (Rust)</div>
+    <h4>Content-Addressed Chunks <span class="badge badge-enhanced">DIFFERENT APPROACH</span></h4>
+    <p><code>src/persist/</code></p>
+    <p>BLAKE3 content-addressed <code>.xchunk</code> files in hex-sharded directories. WAL + dual manifest slots + atomic checkpoints. LRU cache. <strong>Different from Gold:</strong> Simpler, more robust, but lacks Gold&rsquo;s object-level persistence granularity.</p>
+  </div>
+</div>
+
+<div class="heritage-note">
+  <strong>Design choice:</strong> Gold's SnarfPacker was an object database &mdash; every persistent object was a "flock" mapped to a "snarf" (disk block). Xudanu uses content-addressed storage instead, which is simpler and crash-safer but trades away Gold's fine-grained object paging. The Snarf on-disk format was faithfully implemented in <code>src/persist/snarf.rs</code> and tested, but the production server uses the chunk store.
+</div>
+
+<!-- ===================== PROTOCOL ===================== -->
+
+<h2 id="protocol">Wire Protocol</h2>
+
+<div class="mapping-grid">
+  <div class="mapping-card gold">
+    <div class="lang">Udanax Gold (C++)</div>
+    <h4>Binary2 over TCP / Promise Manager</h4>
+    <p><code>binary2.hxx</code>, <code>promanx.hxx</code></p>
+    <p>Custom binary protocol with humber encoding. 470+ numbered request handlers. Portal for bidirectional channels. Recipe for message construction. Negotiator for version negotiation. BootPlan for connection setup.</p>
+  </div>
+  <div class="mapping-card xudanu">
+    <div class="lang">Xudanu (Rust)</div>
+    <h4>WebSocket JSON + Binary <span class="badge badge-enhanced">ENHANCED</span></h4>
+    <p><code>src/server/transport/</code></p>
+    <p>140+ operation codes. Dual codec: JSON (human-readable) and binary (postcard). WebSocket transport (ubiquitous). CSRF tokens. Heartbeats. Handshake response with version negotiation. <strong>Enhancement:</strong> Browser-native, no custom client needed.</p>
+  </div>
+</div>
+
+<!-- ===================== FULL TABLE ===================== -->
+
+<h2 id="full-table">Complete Concept Mapping</h2>
+
+<p>Every Gold type, module, and concept mapped to its Xudanu equivalent:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Udanax Gold (C++)</th>
+      <th>Xudanu (Rust)</th>
+      <th>Status</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><code>OrglRoot</code> / <code>Loaf</code></td><td><code>OrglRoot</code> / <code>Loaf</code></td><td>Done</td><td>Full 9-case splay algorithm ported</td></tr>
+    <tr><td><code>FeEdition</code> / <code>BeEdition</code></td><td><code>Edition</code></td><td>Done</td><td>Wraps OrglRoot, structural sharing</td></tr>
+    <tr><td><code>XnRegion</code> / <code>IntegerRegion</code></td><td><code>XnRegion</code> / <code>IntegerRegion</code></td><td>Done</td><td>Transition-array encoding preserved</td></tr>
+    <tr><td><code>FeRangeElement</code> hierarchy</td><td><code>RangeElement</code> enum</td><td>Done</td><td>Data, Text, Edition, Label, PlaceHolder, Work</td></tr>
+    <tr><td><code>BeCarrier</code></td><td><code>Carrier</code></td><td>Done</td><td>Element + optional label</td></tr>
+    <tr><td><code>BeGrandMap</code></td><td><code>GrandMap</code> + <code>ContentPool</code></td><td>Enhanced</td><td>BLAKE3 content addressing added</td></tr>
+    <tr><td><code>FeWork</code></td><td><code>Work</code></td><td>Enhanced</td><td>CRDT collaborative editing</td></tr>
+    <tr><td><code>FeClub</code></td><td><code>Club</code></td><td>Enhanced</td><td>Ed25519 keys, OAuth, encrypted at rest</td></tr>
+    <tr><td><code>FeKeyMaster</code></td><td><code>KeyMaster</code></td><td>Done</td><td>Authority accumulation</td></tr>
+    <tr><td>Lock hierarchy</td><td>Lock trait + 5 locks</td><td>Done</td><td>Boo, Wall, Match, Challenge, Multi</td></tr>
+    <tr><td><code>FeSession</code></td><td><code>Session</code></td><td>Done</td><td>Connection context</td></tr>
+    <tr><td><code>FeServer</code></td><td><code>Server</code></td><td>Done</td><td>All ops as permission-checked methods</td></tr>
+    <tr><td><code>BackfollowEngine</code></td><td><code>BackfollowEngine</code></td><td>Done</td><td>BLAKE3 fingerprint matching</td></tr>
+    <tr><td><code>RecorderFossil</code></td><td><code>TransclusionIndex</code></td><td>Done</td><td>Persistent transclusion index</td></tr>
+    <tr><td><code>BertCrum</code> / <code>SensorCrum</code></td><td><code>BertCanopy</code> / <code>SensorCanopy</code></td><td>Done</td><td>Flag propagation preserved</td></tr>
+    <tr><td><code>HistoryCrum</code> / H-tree</td><td><code>HUpperCrumData</code> / H-tree</td><td>Done</td><td>Version tracking for backfollow</td></tr>
+    <tr><td><code>HyperLink</code> / <code>HyperRef</code></td><td><code>HyperLink</code> / <code>HyperRef</code></td><td>Done</td><td>Bidirectional, Single + Multi refs</td></tr>
+    <tr><td><code>SequenceSpace</code> (tumblers)</td><td><code>SequenceSpace</code></td><td>Partial</td><td>No hierarchical tumbler addressing</td></tr>
+    <tr><td><code>CrossSpace</code></td><td><code>CrossSpace2&lt;A,B&gt;</code></td><td>Partial</td><td>2D generic, no higher dimensions</td></tr>
+    <tr><td><code>FilterSpace</code></td><td><code>FilterSpace</code></td><td>Partial</td><td>Tag-based, not region comparison</td></tr>
+    <tr><td><code>IntegerSpace</code> / <code>RealSpace</code></td><td><code>IntegerSpace</code> / <code>RealSpace</code></td><td>Done</td><td>Transition arrays, flip model</td></tr>
+    <tr><td><code>SimpleMapping</code> / <code>CompositeMapping</code></td><td><code>SimpleMapping</code> / <code>CompositeMapping</code></td><td>Done</td><td>Position transformations</td></tr>
+    <tr><td><code>SnarfPacker</code> / <code>Turtle</code></td><td>Chunk store + WAL</td><td>Different</td><td>Content-addressed, simpler approach</td></tr>
+    <tr><td><code>Urdi</code> (disk I/O)</td><td><code>UrdiFile</code></td><td>Done</td><td>File-backed, guard records</td></tr>
+    <tr><td><code>Counter</code> / <code>BatchCounter</code></td><td><code>Counter</code> / <code>BatchCounter</code></td><td>Done</td><td>ID pre-allocation</td></tr>
+    <tr><td><code>Abraham</code> (persistence)</td><td><code>Persistent</code> trait</td><td>Done</td><td>flock_id, to_bytes, type_tag</td></tr>
+    <tr><td><code>Cookbook</code> / <code>Recipe</code></td><td><code>TypeRegistry</code></td><td>Done</td><td>HashMap&lt;tag, deserializer&gt;</td></tr>
+    <tr><td><code>FeAdminer</code></td><td><code>AdminState</code></td><td>Done</td><td>Accept/reject, shutdown, grants</td></tr>
+    <tr><td><code>FeFillDetector</code></td><td><code>Detector</code> trait</td><td>Done</td><td>Callback-based events</td></tr>
+    <tr><td><code>PlaceHolder</code> / <code>FillDetector</code></td><td><code>PlaceHolder</code> variant</td><td>Partial</td><td>No fill detection, no template slots</td></tr>
+    <tr><td><code>Agenda</code> / <code>AgendaItem</code></td><td>&mdash;</td><td>Not yet</td><td>Persistent task queue planned</td></tr>
+    <tr><td><code>ClubDescription</code> recursive membership</td><td>Flat membership</td><td>Not yet</td><td>Clubs can't contain clubs</td></tr>
+    <tr><td><code>Work::sponsor()</code></td><td>&mdash;</td><td>Not yet</td><td>Sponsor clubs planned</td></tr>
+    <tr><td><code>historyClub</code></td><td>&mdash;</td><td>Not yet</td><td>History access = read access</td></tr>
+    <tr><td>Binary2 over TCP</td><td>WebSocket JSON + Binary</td><td>Enhanced</td><td>Browser-native, dual codec</td></tr>
+    <tr><td><code>XuPromise</code> (lazy eval)</td><td>Synchronous <code>Result</code></td><td>Simplified</td><td>Adequate for WebSocket model</td></tr>
+  </tbody>
+</table>
+
+<!-- ===================== 17 RULES ===================== -->
+
+<h2 id="rules">Nelson&rsquo;s 17 Rules: Status</h2>
+
+<table>
+  <thead>
+    <tr><th width="40">#</th><th>Rule</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>Every document consists of arbitrarily many portions</td><td><span class="badge badge-done">DONE</span></td></tr>
+    <tr><td>2</td><td>Every portion can be transcluded</td><td><span class="badge badge-partial">PARTIAL</span></td></tr>
+    <tr><td>3</td><td>Permission is required to transclude</td><td><span class="badge badge-done">DONE</span></td></tr>
+    <tr><td>4</td><td>Permission is required to quote</td><td><span class="badge badge-done">DONE</span></td></tr>
+    <tr><td>5</td><td>Tumbler addressing</td><td><span class="badge badge-partial">PARTIAL</span></td></tr>
+    <tr><td>6</td><td>Bidirectional links</td><td><span class="badge badge-done">DONE</span></td></tr>
+    <tr><td>7</td><td>Links visible from all endpoints</td><td><span class="badge badge-done">DONE</span></td></tr>
+    <tr><td>8</td><td>Identical content stored once</td><td><span class="badge badge-done">DONE</span></td></tr>
+    <tr><td>9</td><td>Royalty at any granularity</td><td><span class="badge badge-partial">PARTIAL</span></td></tr>
+    <tr><td>10</td><td>Mix of royalty-bearing and free content</td><td><span class="badge badge-done">DONE</span></td></tr>
+    <tr><td>11</td><td>Data available from any server</td><td><span class="badge badge-partial">PARTIAL</span></td></tr>
+    <tr><td>12</td><td>Connection by any protocol</td><td><span class="badge badge-done">DONE</span></td></tr>
+    <tr><td>13</td><td>Adaptive storage tiering</td><td><span class="badge badge-partial">PARTIAL</span></td></tr>
+    <tr><td>14</td><td>Redundant storage</td><td><span class="badge badge-partial">PARTIAL</span></td></tr>
+    <tr><td>15</td><td>Charge users at any rate</td><td><span class="badge badge-partial">PARTIAL</span></td></tr>
+    <tr><td>16</td><td>Handle any data type</td><td><span class="badge badge-partial">PARTIAL</span></td></tr>
+    <tr><td>17</td><td>Portable front-end</td><td><span class="badge badge-done">DONE</span></td></tr>
+  </tbody>
+</table>
+
+<p style="margin-top:16px"><a href="dev/xanadu-17-rules.md">Read the full rule-by-rule assessment &rarr;</a></p>
+
+<div class="heritage-note" style="margin-top:40px">
+  <strong>For Ted:</strong> The architecture you designed &mdash; O-tree, GrandMap, clubs, locks, canopy, backfollow, H-tree &mdash; it&rsquo;s all here. Every concept preserved. Every test case ported. The names are the same. We just gave it better plumbing.
+</div>
+
+<div class="footer">
+  Xudanu Documentation &mdash; Gold Heritage &mdash; <a href="index.html">&larr; Back to Documentation</a>
+</div>
+
+</div>
+</body>
+</html>

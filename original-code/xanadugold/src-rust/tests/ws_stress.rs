@@ -38,8 +38,7 @@ impl TestServer {
             .unwrap();
         server.disconnect(setup_sid).unwrap();
         let state = AppState::new(server).shared();
-        let app =
-            build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+        let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -78,10 +77,7 @@ fn json_req(id: u16, op: &str, payload: Option<serde_json::Value>) -> serde_json
     f
 }
 
-async fn send_json(
-    sender: &mut SplitSender,
-    frame: &serde_json::Value,
-) {
+async fn send_json(sender: &mut SplitSender, frame: &serde_json::Value) {
     let text = serde_json::to_string(frame).unwrap();
     sender.send(Message::Text(text.into())).await.unwrap();
 }
@@ -136,7 +132,11 @@ async fn connect_admin(srv: &TestServer) -> (SplitSender, SplitReceiver) {
     let admin_club_id = send_recv_json(
         &mut s,
         &mut r,
-        json_req(2, "club_id_by_name", Some(serde_json::json!({"name": "admin"}))),
+        json_req(
+            2,
+            "club_id_by_name",
+            Some(serde_json::json!({"name": "admin"})),
+        ),
     )
     .await["value"]["value"]
         .as_u64()
@@ -145,7 +145,11 @@ async fn connect_admin(srv: &TestServer) -> (SplitSender, SplitReceiver) {
     let _ = send_recv_json(
         &mut s,
         &mut r,
-        json_req(3, "session_login", Some(serde_json::json!({"club_id": admin_club_id}))),
+        json_req(
+            3,
+            "session_login",
+            Some(serde_json::json!({"club_id": admin_club_id})),
+        ),
     )
     .await;
 
@@ -164,19 +168,16 @@ async fn connect_admin(srv: &TestServer) -> (SplitSender, SplitReceiver) {
 }
 
 /// Create a work as an admin client. Returns (sender, receiver, work_id).
-async fn admin_create_work(
-    srv: &TestServer,
-    text: &str,
-) -> (SplitSender, SplitReceiver, u64) {
+async fn admin_create_work(srv: &TestServer, text: &str) -> (SplitSender, SplitReceiver, u64) {
     let (mut s, mut r) = connect_admin(srv).await;
     let resp = send_recv_json(
         &mut s,
         &mut r,
-            json_req(
-                10,
-                "work_create",
-                Some(serde_json::json!({"edition": {"text": text}})),
-            ),
+        json_req(
+            10,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": text}})),
+        ),
     )
     .await;
     let work_id = resp["value"]["value"].as_u64().unwrap();
@@ -224,7 +225,8 @@ async fn stress_20_concurrent_connections() {
     }
 
     for (i, task) in tasks.into_iter().enumerate() {
-        task.await.unwrap_or_else(|e| panic!("connection {} failed: {:?}", i, e));
+        task.await
+            .unwrap_or_else(|e| panic!("connection {} failed: {:?}", i, e));
     }
 }
 
@@ -270,7 +272,11 @@ async fn stress_heartbeat_latency_under_load() {
             let _ = send_recv_json(
                 &mut s,
                 &mut r,
-                json_req(5, "subscribe", Some(serde_json::json!({"work_id": work_id}))),
+                json_req(
+                    5,
+                    "subscribe",
+                    Some(serde_json::json!({"work_id": work_id})),
+                ),
             )
             .await;
             // Heartbeat loop for ~1 second
@@ -295,7 +301,11 @@ async fn stress_heartbeat_latency_under_load() {
     let mut latencies = Vec::new();
     for _ in 0..10 {
         let start = Instant::now();
-        send_json(&mut fg_s, &serde_json::json!({"v": 2, "type": "heartbeat", "id": 0})).await;
+        send_json(
+            &mut fg_s,
+            &serde_json::json!({"v": 2, "type": "heartbeat", "id": 0}),
+        )
+        .await;
         let resp = recv_json(&mut fg_r).await;
         let elapsed = start.elapsed();
         assert_eq!(resp["type"], "heartbeat");
@@ -310,8 +320,7 @@ async fn stress_heartbeat_latency_under_load() {
         );
     }
 
-    let avg: Duration =
-        latencies.iter().sum::<Duration>() / latencies.len() as u32;
+    let avg: Duration = latencies.iter().sum::<Duration>() / latencies.len() as u32;
     eprintln!(
         "heartbeat under load: avg={:?} max={:?} min={:?}",
         avg,
@@ -342,7 +351,11 @@ async fn stress_concurrent_work_access() {
         let resp = send_recv_json(
             &mut s,
             &mut r,
-            json_req(10, "work_get_edition", Some(serde_json::json!({"work_id": work_id}))),
+            json_req(
+                10,
+                "work_get_edition",
+                Some(serde_json::json!({"work_id": work_id})),
+            ),
         )
         .await;
         assert!(resp["type"] == "response" || resp["type"] == "error");
@@ -356,7 +369,11 @@ async fn stress_concurrent_work_access() {
         let resp = send_recv_json(
             &mut s,
             &mut r,
-            json_req(10, "work_get_edition", Some(serde_json::json!({"work_id": work_id}))),
+            json_req(
+                10,
+                "work_get_edition",
+                Some(serde_json::json!({"work_id": work_id})),
+            ),
         )
         .await;
         assert!(resp["type"] == "response" || resp["type"] == "error");
@@ -387,14 +404,22 @@ async fn stress_large_payload() {
         ),
     )
     .await;
-    assert_eq!(resp["type"], "response", "large work_create should succeed: {:?}", resp);
+    assert_eq!(
+        resp["type"], "response",
+        "large work_create should succeed: {:?}",
+        resp
+    );
     let work_id = resp["value"]["value"].as_u64().unwrap();
 
     // Open and verify length
     let resp = send_recv_json(
         &mut s,
         &mut r,
-        json_req(11, "work_get_edition", Some(serde_json::json!({"work_id": work_id}))),
+        json_req(
+            11,
+            "work_get_edition",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
     )
     .await;
     assert_eq!(resp["type"], "response");
@@ -415,7 +440,11 @@ async fn stress_no_events_after_close() {
     let _ = send_recv_json(
         &mut obs_s,
         &mut obs_r,
-        json_req(5, "subscribe", Some(serde_json::json!({"work_id": work_id}))),
+        json_req(
+            5,
+            "subscribe",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
     )
     .await;
 
@@ -546,7 +575,11 @@ async fn stress_heartbeat_interleaved_with_ops() {
     // Interleave heartbeats and work operations
     for i in 0..5 {
         // Heartbeat
-        send_json(&mut s, &serde_json::json!({"v": 2, "type": "heartbeat", "id": 0})).await;
+        send_json(
+            &mut s,
+            &serde_json::json!({"v": 2, "type": "heartbeat", "id": 0}),
+        )
+        .await;
         let hb = recv_json(&mut r).await;
         assert_eq!(hb["type"], "heartbeat", "interleave {} heartbeat", i);
 
@@ -609,7 +642,12 @@ async fn stress_concurrent_work_creation() {
 
     // All work IDs should be unique
     let unique: std::collections::HashSet<u64> = work_ids.iter().copied().collect();
-    assert_eq!(unique.len(), N, "work IDs should all be unique: {:?}", work_ids);
+    assert_eq!(
+        unique.len(),
+        N,
+        "work IDs should all be unique: {:?}",
+        work_ids
+    );
 }
 
 /// Connect a client, create a work, then immediately disconnect without
@@ -649,7 +687,10 @@ async fn stress_recovery_after_unexpected_disconnect() {
         serde_json::json!({"v": 2, "type": "heartbeat", "id": 0}),
     )
     .await;
-    assert_eq!(resp["type"], "heartbeat", "server should be responsive after abrupt disconnect");
+    assert_eq!(
+        resp["type"], "heartbeat",
+        "server should be responsive after abrupt disconnect"
+    );
 
     let _ = s2.close().await;
 }
@@ -681,7 +722,11 @@ async fn stress_document_switching() {
         let resp = send_recv_json(
             &mut s,
             &mut r,
-            json_req(11, "work_get_edition", Some(serde_json::json!({"work_id": work_id}))),
+            json_req(
+                11,
+                "work_get_edition",
+                Some(serde_json::json!({"work_id": work_id})),
+            ),
         )
         .await;
         assert_eq!(resp["type"], "response", "cycle {} work_open", i);
