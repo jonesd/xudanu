@@ -4,6 +4,32 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v0.7.7) — must already exist as a git tag'
+        required: true
+        type: string
+      mac_arm:
+        description: 'macOS ARM (Apple Silicon)'
+        type: boolean
+        default: true
+      mac_intel:
+        description: 'macOS Intel'
+        type: boolean
+        default: false
+      linux:
+        description: 'Linux x86_64'
+        type: boolean
+        default: false
+      linux_arm:
+        description: 'Linux ARM64 (experimental)'
+        type: boolean
+        default: false
+      windows:
+        description: 'Windows x86_64'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -14,30 +40,68 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ── Compute which targets to build based on trigger ──────────────────────
+  matrix-prep:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      tag: ${{ steps.set-matrix.outputs.tag }}
+    steps:
+      - id: set-matrix
+        run: |
+          # Tag push → build everything; workflow_dispatch → filter by inputs
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${{ github.ref_name }}"
+            MATRIX='[
+              {"target":"x86_64-unknown-linux-musl","os":"ubuntu-latest","artifact":"xudanu-'"$TAG"'-x86_64-linux-musl.tar.gz","run_test":true},
+              {"target":"x86_64-apple-darwin","os":"macos-13","artifact":"xudanu-'"$TAG"'-x86_64-macos.tar.gz","run_test":true},
+              {"target":"aarch64-apple-darwin","os":"macos-latest","artifact":"xudanu-'"$TAG"'-aarch64-macos.tar.gz","run_test":true},
+              {"target":"aarch64-unknown-linux-musl","os":"ubuntu-latest","artifact":"xudanu-'"$TAG"'-aarch64-linux-musl.tar.gz","run_test":false,"continue_on_error":true},
+              {"target":"x86_64-pc-windows-msvc","os":"windows-latest","artifact":"xudanu-'"$TAG"'-x86_64-windows.zip","run_test":true}
+            ]'
+          else
+            TAG="${{ inputs.version }}"
+            MATRIX="["
+            SEP=""
+            if [ "${{ inputs.linux }}" = "true" ]; then
+              MATRIX+="${SEP}{\"target\":\"x86_64-unknown-linux-musl\",\"os\":\"ubuntu-latest\",\"artifact\":\"xudanu-${TAG}-x86_64-linux-musl.tar.gz\",\"run_test\":true}"
+              SEP=","
+            fi
+            if [ "${{ inputs.mac_intel }}" = "true" ]; then
+              MATRIX+="${SEP}{\"target\":\"x86_64-apple-darwin\",\"os\":\"macos-13\",\"artifact\":\"xudanu-${TAG}-x86_64-macos.tar.gz\",\"run_test\":true}"
+              SEP=","
+            fi
+            if [ "${{ inputs.mac_arm }}" = "true" ]; then
+              MATRIX+="${SEP}{\"target\":\"aarch64-apple-darwin\",\"os\":\"macos-latest\",\"artifact\":\"xudanu-${TAG}-aarch64-macos.tar.gz\",\"run_test\":true}"
+              SEP=","
+            fi
+            if [ "${{ inputs.linux_arm }}" = "true" ]; then
+              MATRIX+="${SEP}{\"target\":\"aarch64-unknown-linux-musl\",\"os\":\"ubuntu-latest\",\"artifact\":\"xudanu-${TAG}-aarch64-linux-musl.tar.gz\",\"run_test\":false,\"continue_on_error\":true}"
+              SEP=","
+            fi
+            if [ "${{ inputs.windows }}" = "true" ]; then
+              MATRIX+="${SEP}{\"target\":\"x86_64-pc-windows-msvc\",\"os\":\"windows-latest\",\"artifact\":\"xudanu-${TAG}-x86_64-windows.zip\",\"run_test\":true}"
+              SEP=","
+            fi
+            MATRIX+="]"
+            if [ "$SEP" = "" ]; then
+              echo "No platforms selected, aborting"
+              exit 1
+            fi
+          fi
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  # ── Build for each selected target ───────────────────────────────────────
   build:
+    needs: matrix-prep
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.continue_on_error || false }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            artifact: xudanu-${{ github.ref_name }}-x86_64-linux-musl.tar.gz
-          - target: x86_64-apple-darwin
-            os: macos-13
-            artifact: xudanu-${{ github.ref_name }}-x86_64-macos.tar.gz
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            artifact: xudanu-${{ github.ref_name }}-aarch64-macos.tar.gz
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
-            artifact: xudanu-${{ github.ref_name }}-aarch64-linux-musl.tar.gz
-            continue_on_error: true
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            artifact: xudanu-${{ github.ref_name }}-x86_64-windows.zip
+        include: ${{ fromJSON(needs.matrix-prep.outputs.matrix) }}
 
     steps:
       - uses: actions/checkout@v6
@@ -71,7 +135,7 @@ jobs:
           printf '[target.aarch64-unknown-linux-musl]\nlinker = "/tmp/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc"\n' > original-code/xanadugold/src-rust/.cargo/config.toml
 
       - name: Test
-        if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'x86_64-apple-darwin' || matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-pc-windows-msvc'
+        if: matrix.run_test
         run: cargo test --features server --lib --release --target ${{ matrix.target }} --manifest-path original-code/xanadugold/src-rust/Cargo.toml
 
       - name: Build
@@ -106,23 +170,24 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.matrix-prep.outputs.tag }}
           files: ${{ matrix.artifact }}
           generate_release_notes: true
           body: |
-            ## xudanu ${{ github.ref_name }}
+            ## xudanu ${{ needs.matrix-prep.outputs.tag }}
 
             Conflict-preserving hypertext document store.
 
             ### Quick Start
             ```bash
-            tar -xzf xudanu-${{ github.ref_name }}-*.tar.gz
+            tar -xzf xudanu-${{ needs.matrix-prep.outputs.tag }}-*.tar.gz
             ./xudanu-server run 127.0.0.1:8080 --static-dir dist
             ```
             Then open http://127.0.0.1:8080 in your browser.
 
             ### Verify
             ```bash
-            gh attestation verify xudanu-${{ github.ref_name }}-*.tar.gz --repo jonesd/xudanu
+            gh attestation verify xudanu-${{ needs.matrix-prep.outputs.tag }}-*.tar.gz --repo jonesd/xudanu
             ```
 
             ### Security Warning
