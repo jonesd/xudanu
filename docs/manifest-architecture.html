@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>xudanu — Manifest & Chunk Architecture</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg-panel: #111119;
+    --bg-code: #0d0d14;
+    --neon-cyan: #00f0ff;
+    --neon-magenta: #ff00ea;
+    --neon-green: #39ff14;
+    --neon-yellow: #ffe600;
+    --neon-orange: #ff8c00;
+    --neon-purple: #bf5fff;
+    --neon-blue: #4d8bff;
+    --neon-pink: #ff5f9e;
+    --text: #d0d0e0;
+    --text-dim: #8888aa;
+    --border: #1a1a2e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* ── Animated grid background ─────────────────────────────────────────────── */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image:
+      linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+    background-size: 50px 50px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── Hero ─────────────────────────────────────────────────────────────────── */
+  .hero {
+    text-align: center;
+    padding: 80px 0 60px;
+  }
+
+  .hero h1 {
+    font-size: 3.2rem;
+    font-weight: 900;
+    letter-spacing: -1px;
+    line-height: 1.1;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, var(--neon-cyan), var(--neon-magenta), var(--neon-purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: none;
+    animation: shimmer 5s ease-in-out infinite;
+    background-size: 200% 200%;
+  }
+
+  @keyframes shimmer {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  .hero .tagline {
+    font-size: 1.1rem;
+    color: var(--neon-cyan);
+    opacity: 0.8;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+
+  .hero .subtitle {
+    font-size: 0.95rem;
+    color: var(--text-dim);
+    margin-top: 12px;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* ── Section headers ──────────────────────────────────────────────────────── */
+  section {
+    padding: 40px 0;
+  }
+
+  h2 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--border);
+    position: relative;
+  }
+
+  h2::before {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 120px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--neon-cyan), transparent);
+  }
+
+  h2 .icon { font-size: 1.3rem; margin-right: 10px; }
+  h2 .accent { color: var(--neon-cyan); }
+
+  h3 {
+    font-size: 1.15rem;
+    margin-bottom: 12px;
+    color: var(--neon-green);
+  }
+
+  h4 {
+    font-size: 0.95rem;
+    color: var(--neon-yellow);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  p { margin-bottom: 12px; }
+
+  /* ── Panels ───────────────────────────────────────────────────────────────── */
+  .panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s, transform 0.2s;
+  }
+
+  .panel:hover {
+    border-color: rgba(0, 240, 255, 0.3);
+  }
+
+  .panel.glow-cyan { box-shadow: 0 0 20px rgba(0, 240, 255, 0.05); }
+  .panel.glow-magenta { box-shadow: 0 0 20px rgba(255, 0, 234, 0.05); }
+  .panel.glow-green { box-shadow: 0 0 20px rgba(57, 255, 20, 0.05); }
+
+  /* ── Code blocks ──────────────────────────────────────────────────────────── */
+  pre, code {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+  }
+
+  pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--neon-cyan);
+    border-radius: 6px;
+    padding: 16px 20px;
+    overflow-x: auto;
+    margin: 12px 0;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+
+  pre.magenta { border-left-color: var(--neon-magenta); }
+  pre.green { border-left-color: var(--neon-green); }
+  pre.yellow { border-left-color: var(--neon-yellow); }
+  pre.orange { border-left-color: var(--neon-orange); }
+  pre.purple { border-left-color: var(--neon-purple); }
+
+  code {
+    color: var(--neon-cyan);
+    font-size: 0.9em;
+  }
+
+  .keyword { color: var(--neon-magenta); }
+  .type { color: var(--neon-cyan); }
+  .field { color: var(--neon-green); }
+  .string { color: var(--neon-yellow); }
+  .comment { color: var(--text-dim); font-style: italic; }
+  .number { color: var(--neon-orange); }
+  .hash { color: var(--neon-purple); }
+
+  /* ── Component cards ──────────────────────────────────────────────────────── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    position: relative;
+    transition: all 0.3s;
+  }
+
+  .card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(0, 240, 255, 0.4);
+    box-shadow: 0 5px 30px rgba(0, 240, 255, 0.1);
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .card-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .badge-cyan { background: rgba(0,240,255,0.1); color: var(--neon-cyan); border: 1px solid rgba(0,240,255,0.3); }
+  .badge-magenta { background: rgba(255,0,234,0.1); color: var(--neon-magenta); border: 1px solid rgba(255,0,234,0.3); }
+  .badge-green { background: rgba(57,255,20,0.1); color: var(--neon-green); border: 1px solid rgba(57,255,20,0.3); }
+  .badge-yellow { background: rgba(255,230,0,0.1); color: var(--neon-yellow); border: 1px solid rgba(255,230,0,0.3); }
+  .badge-orange { background: rgba(255,140,0,0.1); color: var(--neon-orange); border: 1px solid rgba(255,140,0,0.3); }
+  .badge-purple { background: rgba(191,95,255,0.1); color: var(--neon-purple); border: 1px solid rgba(191,95,255,0.3); }
+  .badge-pink { background: rgba(255,95,158,0.1); color: var(--neon-pink); border: 1px solid rgba(255,95,158,0.3); }
+
+  .card-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .card-body {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+
+  .card-body strong { color: var(--text); }
+
+  /* ── Flow steps ───────────────────────────────────────────────────────────── */
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 16px 20px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    position: relative;
+    transition: all 0.3s;
+  }
+
+  .flow-step:hover {
+    border-color: rgba(0, 240, 255, 0.3);
+    background: #131320;
+  }
+
+  .flow-step .step-num {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 1rem;
+    border: 2px solid;
+  }
+
+  .step-1 { border-color: var(--neon-cyan); color: var(--neon-cyan); }
+  .step-2 { border-color: var(--neon-magenta); color: var(--neon-magenta); }
+  .step-3 { border-color: var(--neon-green); color: var(--neon-green); }
+  .step-4 { border-color: var(--neon-yellow); color: var(--neon-yellow); }
+  .step-5 { border-color: var(--neon-orange); color: var(--neon-orange); }
+  .step-6 { border-color: var(--neon-purple); color: var(--neon-purple); }
+
+  .step-content { flex: 1; }
+  .step-content h4 { margin-bottom: 4px; }
+  .step-content p { font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0; }
+  .step-content code { font-size: 0.85rem; }
+
+  /* ── TOC ──────────────────────────────────────────────────────────────────── */
+  .toc {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 40px;
+  }
+
+  .toc h3 { margin-bottom: 12px; }
+  .toc ul { list-style: none; }
+  .toc li {
+    padding: 4px 0;
+  }
+  .toc a {
+    color: var(--neon-cyan);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.2s;
+  }
+  .toc a:hover { color: var(--neon-magenta); }
+  .toc .num { color: var(--text-dim); margin-right: 8px; }
+
+  /* ── Inline highlights ────────────────────────────────────────────────────── */
+  .hl-cyan { color: var(--neon-cyan); }
+  .hl-magenta { color: var(--neon-magenta); }
+  .hl-green { color: var(--neon-green); }
+  .hl-yellow { color: var(--neon-yellow); }
+  .hl-orange { color: var(--neon-orange); }
+  .hl-purple { color: var(--neon-purple); }
+
+  /* ── Footer ───────────────────────────────────────────────────────────────── */
+  footer {
+    text-align: center;
+    padding: 60px 0 40px;
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+
+  footer a { color: var(--neon-cyan); text-decoration: none; }
+
+  /* ── Arrow connectors ─────────────────────────────────────────────────────── */
+  .arrow-down {
+    text-align: center;
+    color: var(--neon-cyan);
+    font-size: 1.5rem;
+    margin: 8px 0;
+    opacity: 0.5;
+  }
+
+  .layer-label {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════════════════ -->
+<!-- HERO -->
+<!-- ════════════════════════════════════════════════════════════════════════════ -->
+<div class="hero">
+  <div class="container">
+    <h1>Manifest & Chunk Architecture</h1>
+    <div class="tagline">xudanu &mdash; conflict-preserving hypertext document store</div>
+    <p class="subtitle">
+      How <code>manifest.json</code> uses hash pointers to reference document content
+      stored in the chunk store &mdash; the indirection chain from metadata to text.
+    </p>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- ── TOC ─────────────────────────────────────────────────────────────────── -->
+  <div class="toc">
+    <h3>Contents</h3>
+    <ul>
+      <li><a href="#overview"><span class="num">01</span>Architecture Overview</a></li>
+      <li><a href="#two-layer"><span class="num">02</span>Two-Layer Storage Model</a></li>
+      <li><a href="#indirection"><span class="num">03</span>The Indirection Chain</a></li>
+      <li><a href="#manifest"><span class="num">04</span>Manifest Fields</a></li>
+      <li><a href="#works"><span class="num">05</span>Work &rarr; Edition Tree</a></li>
+      <li><a href="#chunks"><span class="num">06</span>Chunk Types</a></li>
+      <li><a href="#persistence"><span class="num">07</span>Three-Layer Link Persistence</a></li>
+      <li><a href="#restart"><span class="num">08</span>What Happens on Restart</a></li>
+      <li><a href="#files"><span class="num">09</span>Data Directory Layout</a></li>
+      <li><a href="#versioning"><span class="num">10</span>Versioning & Migration</a></li>
+    </ul>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- 01. ARCHITECTURE OVERVIEW                                                -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <section id="overview">
+    <h2><span class="icon">&#9636;</span><span class="accent">01</span> &nbsp;Architecture Overview</h2>
+
+    <div class="panel glow-cyan">
+      <p>xudanu separates <strong class="hl-cyan">metadata</strong> (the manifest) from <strong class="hl-green">content</strong> (the chunk store).
+      The manifest is a single JSON file that acts as an index &mdash; it knows about every work, club, link, and edition, but it doesn't hold the actual text.
+      Instead, it stores <strong class="hl-yellow">hash pointers</strong> that reference content blocks in the chunk store.</p>
+
+      <p>This is the same principle as a database index pointing to data pages, or a Git tree object pointing to blobs &mdash; <strong>content-addressed storage</strong> where the SHA-256 hash of the data IS its address.</p>
+
+      <pre><span class="comment">┌─────────────────────────────────────────────────────────────────────┐</span>
+<span class="comment">│                        DATA DIRECTORY                               │</span>
+<span class="comment">│                                                                     │</span>
+<span class="comment">│  ┌──────────────────┐         hash pointers        ┌─────────────┐ │</span>
+<span class="comment">│  │  manifest.json   │ ──────────────────────────▶  │  chunks/    │ │</span>
+<span class="comment">│                  │         ┌───────────┐            │             │ │</span>
+<span class="comment">│  • works[]       │ ──────▶ │ WorkChunkRef           │  a1b2c3...  │ │</span>
+<span class="comment">│  • clubs[]       │         │   .current_root        │  d4e5f6...  │ │</span>
+<span class="comment">│  • links[]       │         │     .root_hash ──────▶ │  ...        │ │</span>
+<span class="comment">│  • compound_eds  │         │   .history[]           │  g7h8i9...  │ │</span>
+<span class="comment">│  • blob_metas    │         │     .root_hash ──────▶ │             │ │</span>
+<span class="comment">│  • admin state   │         └───────────┘            │  (content-  │ │</span>
+<span class="comment">│  • key_history   │                                   │   addressed)│ │</span>
+<span class="comment">│  • trails, etc.  │                                   │             │ │</span>
+<span class="comment">│  └──────────────────┘                                └─────────────┘ │</span>
+<span class="comment">│   metadata + pointers                                actual content  │</span>
+<span class="comment">└─────────────────────────────────────────────────────────────────────┘</span></pre>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- 02. TWO-LAYER MODEL                                                       -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <section id="two-layer">
+    <h2><span class="icon">&#9776;</span><span class="accent">02</span> &nbsp;Two-Layer Storage Model</h2>
+
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-cyan">Layer 1</span>
+          <span class="card-title">Manifest</span>
+        </div>
+        <div class="card-body">
+          <p><strong>File:</strong> <code>manifest.json</code></p>
+          <p><strong>Contains:</strong> IDs, club definitions, link definitions, work metadata, admin state, counters, federation state, trails, blob metadata, historical authors.</p>
+          <p><strong>Does NOT contain:</strong> The actual document text, span content, or provenance data.</p>
+          <p><strong>Format:</strong> Pretty-printed JSON with SHA-256 checksum, versioned (<code>format_version: 4</code>), atomic writes with <code>fsync</code>.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-green">Layer 2</span>
+          <span class="card-title">Chunk Store</span>
+        </div>
+        <div class="card-body">
+          <p><strong>Directory:</strong> <code>chunks/</code></p>
+          <p><strong>Contains:</strong> Content-addressed blobs &mdash; edition entries (text), provenance, edition roots, blob data.</p>
+          <p><strong>Key:</strong> SHA-256 hash of serialized content (32 bytes).</p>
+          <p><strong>Format:</strong> Tagged binary &mdash; <code>0x4A</code> for JSON, <code>0x50</code> for postcard (borsh). Old format had no tag.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h4>Why This Separation?</h4>
+      <p>The manifest is <strong>small</strong> (typically &lt; 1MB even for thousands of documents). It can be loaded entirely into memory at startup. The chunk store holds the <strong>bulk</strong> of the data &mdash; potentially gigabytes of text &mdash; and is accessed lazily. Only chunks that are actually needed (for rendering, editing, or transclusion) are loaded from disk.</p>
+
+      <p>Because chunks are content-addressed, identical content across multiple works is automatically <strong>deduplicated</strong>. If two works contain the same paragraph, there's only one copy in the chunk store.</p>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- 03. THE INDIRECTION CHAIN                                                -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <section id="indirection">
+    <h2><span class="icon">&#128279;</span><span class="accent">03</span> &nbsp;The Indirection Chain</h2>
+
+    <p>When the server renders a document, it follows a chain of pointers from the manifest down to the actual text characters. Each arrow is a hash lookup in the chunk store:</p>
+
+    <pre><span class="hl-cyan">manifest.json</span>
+  <span class="comment">│</span>
+  <span class="comment">├──</span> <span class="field">works</span>: Vec&lt;WorkEntry&gt;
+  <span class="comment">│     │</span>
+  <span class="comment">│     └──</span> WorkEntry.<span class="field">work_ref</span>: <span class="type">WorkChunkRef</span>  <span class="comment">← in-memory only, never chunked</span>
+  <span class="comment">│           │</span>
+  <span class="comment">│           ├──</span> <span class="field">current_root</span>: <span class="type">EditionChunkRef</span>  <span class="comment">──┐</span>
+  <span class="comment">│           │     ├──</span> <span class="hash">root_hash</span>: [u8; 32]       <span class="comment">│</span>
+  <span class="comment">│           │     └──</span> <span class="field">entry_count</span>: u32             <span class="comment">│</span>
+  <span class="comment">│           │                                    <span class="comment">│</span>
+  <span class="comment">│           └──</span> <span class="field">history</span>: BTreeMap&lt;u64, EditionChunkRef&gt;  <span class="comment">│  (old revisions)</span>
+  <span class="comment">│                └──</span> rev_42.current_root.root_hash  <span class="comment">│</span>
+  <span class="comment">│                                                   <span class="comment">│</span>
+  <span class="comment">└───────────────────────────────────────────────────┼──</span> hash lookup
+                                                      <span class="comment">│</span>
+                    <span class="hl-green">─── CHUNK STORE ──────────────────────────────────┘</span>
+                                                      <span class="comment">│</span>
+                                                      <span class="comment">▼</span>
+                              <span class="type">EditionRootChunk</span>  <span class="comment">(deserialized from hash)</span>
+                                <span class="comment">│</span>
+                                <span class="comment">├──</span> <span class="field">entry_chunk_hashes</span>: Vec&lt;[u8; 32]&gt;  <span class="comment">──┐</span>
+                                <span class="comment">│     (up to 256 entries per chunk)         <span class="comment">│</span></span>
+                                <span class="comment">│                                           <span class="comment">│</span></span>
+                                <span class="comment">└──</span> <span class="field">provenance_hash</span>: Option&lt;[u8; 32]&gt;  <span class="comment">─┐│</span>
+                                                                  <span class="comment">││</span>
+                    <span class="hl-yellow">─── CHUNK STORE ───────────────────────────┼┘│</span>
+                                                                  <span class="comment">│</span>
+                                                                  <span class="comment">▼</span>
+                                            <span class="type">EntryChunk</span>             <span class="type">ProvenanceChunk</span>
+                                              <span class="comment">│</span>                     <span class="comment">│</span>
+                                              <span class="comment">└──</span> <span class="field">entries</span>:           <span class="comment">└──</span> <span class="field">spans</span>:
+                                                    Vec&lt;(i64,                  Vec&lt;SpanProvenance&gt;
+                                                      RangeElement)&gt;
+                                                    <span class="comment">= the actual text</span></pre>
+
+    <div class="panel glow-magenta">
+      <h4>Key Insight</h4>
+      <p>Each box is a separate chunk in the store. The manifest only knows the <strong class="hl-yellow">hash</strong> of the root. From there, the root chunk knows the hashes of its children. This is a <strong class="hl-cyan">Merkle tree</strong> &mdash; any tampering with content changes its hash, breaking the chain.</p>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- 04. MANIFEST FIELDS                                                      -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <section id="manifest">
+    <h2><span class="icon">&#128221;</span><span class="accent">04</span> &nbsp;Manifest Fields</h2>
+
+    <p>The manifest struct (<code>src/persist/manifest.rs:156</code>) contains these top-level fields:</p>
+
+    <div class="card-grid">
+      <!-- Envelope -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-pink">Envelope</span>
+          <span class="card-title">Envelope Fields</span>
+        </div>
+        <div class="card-body">
+          <table style="width:100%; font-size:0.85rem;">
+            <tr><td><code>format_version</code></td><td>Schema version (currently <strong>4</strong>)</td></tr>
+            <tr><td><code>sequence</code></td><td>Monotonic write counter</td></tr>
+            <tr><td><code>checksum</code></td><td>SHA-256 of all fields</td></tr>
+            <tr><td><code>created_at</code></td><td>ISO timestamp</td></tr>
+            <tr><td><code>server_version</code></td><td>Cargo version that wrote this</td></tr>
+            <tr><td><code>manifest_slot</code></td><td><code>'a'</code> or <code>'b'</code> for dual-write</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- Core identity -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-cyan">v1 Core</span>
+          <span class="card-title">Identity & Content</span>
+        </div>
+        <div class="card-body">
+          <table style="width:100%; font-size:0.85rem;">
+            <tr><td><code>grand_map_id_counter</code></td><td>Next ID to allocate</td></tr>
+            <tr><td><code>session_counter</code></td><td>Session counter</td></tr>
+            <tr><td><code>operation_counter</code></td><td>Global op counter</td></tr>
+            <tr><td><code>system_clubs</code></td><td>public/admin/access/empty IDs</td></tr>
+            <tr><td><code>works</code></td><td><strong class="hl-cyan">Vec&lt;WorkEntry&gt;</strong> &rarr; see below</td></tr>
+            <tr><td><code>clubs</code></td><td>Vec&lt;ClubChunkRef&gt;</td></tr>
+            <tr><td><code>standalone_editions</code></td><td>Vec&lt;StandaloneEditionChunkRef&gt;</td></tr>
+            <tr><td><code>admin</code></td><td>accepting_connections, grants</td></tr>
+            <tr><td><code>key_history</code></td><td>Crypto key rotation history</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- Links -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-magenta">v2 Links</span>
+          <span class="card-title">Transclusion Links</span>
+        </div>
+        <div class="card-body">
+          <table style="width:100%; font-size:0.85rem;">
+            <tr><td><code>links</code></td><td><strong class="hl-magenta">Vec&lt;LinkEntry&gt;</strong> &mdash; inline</td></tr>
+            <tr><td><code>links_hash</code></td><td>Option&lt;[u8;32]&gt; &mdash; backup chunk</td></tr>
+            <tr><td><code>link_counter</code></td><td>Next link ID</td></tr>
+          </table>
+          <p style="margin-top:8px;">Each <code>LinkEntry</code> has <code>origin</code>, <code>destination</code>, optional <code>origin_ref</code> / <code>destination_ref</code> (HyperRefPayload), and <code>link_types</code>.</p>
+        </div>
+      </div>
+
+      <!-- Federation -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-purple">v3 Federation</span>
+          <span class="card-title">Multi-Server State</span>
+        </div>
+        <div class="card-body">
+          <table style="width:100%; font-size:0.85rem;">
+            <tr><td><code>reconcile_store</code></td><td>Cross-server merge state</td></tr>
+            <tr><td><code>reconcile_counter</code></td><td>Reconciliation counter</td></tr>
+            <tr><td><code>federation</code></td><td>Optional FederationSnapshot</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- v4 metadata -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-green">v4 Metadata</span>
+          <span class="card-title">Chunk-Referenced Data</span>
+        </div>
+        <div class="card-body">
+          <table style="width:100%; font-size:0.85rem;">
+            <tr><td><code>content_address</code></td><td>Content hash &rarr; work index</td></tr>
+            <tr><td><code>blob_metas</code></td><td>Binary blob metadata (inline)</td></tr>
+            <tr><td><code>blob_metas_hash</code></td><td>Backup chunk for blobs</td></tr>
+            <tr><td><code>historical_authors</code></td><td>Author registry (inline)</td></tr>
+            <tr><td><code>historical_authors_hash</code></td><td>Backup chunk for authors</td></tr>
+            <tr><td><code>annotations_hash</code></td><td>Annotation data chunk</td></tr>
+            <tr><td><code>fossil_snapshots_hash</code></td><td>Fossil snapshot chunk</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- v4 social -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-yellow">v4 Social</span>
+          <span class="card-title">Social Features</span>
+        </div>
+        <div class="card-body">
+          <table style="width:100%; font-size:0.85rem;">
+            <tr><td><code>starred_works</code></td><td>HashMap&lt;club, HashSet&lt;work&gt;&gt;</td></tr>
+            <tr><td><code>trails</code></td><td>Vec&lt;TrailManifestEntry&gt;</td></tr>
+            <tr><td><code>trail_counter</code></td><td>Next trail ID</td></tr>
+            <tr><td><code>compound_editions</code></td><td>Vec&lt;(BeId, CompoundEdition)&gt;</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- 05. WORK → EDITION TREE                                                  -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <section id="works">
+    <h2><span class="icon">&#128193;</span><span class="accent">05</span> &nbsp;Work &rarr; Edition Tree</h2>
+
+    <div class="panel glow-green">
+      <h3>WorkEntry</h3>
+      <p>Each work in the manifest has a <code>WorkEntry</code> that holds metadata about the work and a pointer (<code>WorkChunkRef</code>) to its content tree:</p>
+
+      <pre class="green"><span class="keyword">pub struct</span> <span class="type">WorkEntry</span> {
+    <span class="field">be_id</span>: <span class="type">BeId</span>,                              <span class="comment">// unique ID for this work</span>
+    <span class="field">work_ref</span>: <span class="type">WorkChunkRef</span>,                  <span class="comment">// &rarr; pointer into chunk store</span>
+    <span class="field">is_source</span>: <span class="type">bool</span>,                        <span class="comment">// imported from external source?</span>
+    <span class="field">source_author_id</span>: <span class="type">Option&lt;BeId&gt;</span>,         <span class="comment">// original author</span>
+    <span class="field">source_edition_info</span>: <span class="type">Option&lt;String&gt;</span>,     <span class="comment">// edition label</span>
+    <span class="field">content_start_line</span>: <span class="type">Option&lt;u64&gt;</span>,           <span class="comment">// for partial imports</span>
+    <span class="field">content_end_line</span>: <span class="type">Option&lt;u64&gt;</span>,
+    <span class="field">source_fingerprint</span>: <span class="type">Option&lt;Vec&lt;u64&gt;&gt;</span>,    <span class="comment">// recomputed on restore</span>
+}</pre>
+    </div>
+
+    <div class="panel glow-cyan">
+      <h3>WorkChunkRef</h3>
+      <p>The <code>WorkChunkRef</code> is the pointer. It lives <strong>only in the manifest</strong> &mdash; it's never serialized as a chunk itself. It tells the server where to find this work's content:</p>
+
+      <pre><span class="keyword">pub struct</span> <span class="type">WorkChunkRef</span> {
+    <span class="field">be_id</span>: <span class="type">BeId</span>,                              <span class="comment">// same as WorkEntry.be_id</span>
+    <span class="field">owner</span>: <span class="type">Option&lt;BeId&gt;</span>,                     <span class="comment">// owning club</span>
+    <span class="field">revision_count</span>: <span class="type">u64</span>,                   <span class="comment">// how many editions exist</span>
+    <span class="field">current_root</span>: <span class="type">EditionChunkRef</span>,          <span class="comment">// &rarr; LIVE edition (the one users see)</span>
+    <span class="field">history</span>: <span class="type">BTreeMap&lt;u64, EditionChunkRef&gt;</span>, <span class="comment">// &rarr; OLD editions (revision &rarr; ref)</span>
+    <span class="field">read_club</span>: <span class="type">Option&lt;BeId&gt;</span>,                 <span class="comment">// who can read</span>
+    <span class="field">edit_club</span>: <span class="type">Option&lt;BeId&gt;</span>,                 <span class="comment">// who can edit</span>
+    <span class="field">sponsors</span>: <span class="type">Vec&lt;BeId&gt;</span>,                   <span class="comment">// sponsoring clubs</span>
+    <span class="field">endorsements</span>: <span class="type">Vec&lt;(u64, u64)&gt;</span>,          <span class="comment">// (club_id, token_id) pairs</span>
+}</pre>
+    </div>
+
+    <div class="panel glow-magenta">
+      <h3>EditionChunkRef</h3>
+      <p>The smallest pointer unit. Just a hash and a count:</p>
+
+      <pre class="magenta"><span class="keyword">pub struct</span> <span class="type">EditionChunkRef</span> {
+    <span class="hash">root_hash</span>: [<span class="type">u8</span>; <span class="number">32</span>],      <span class="comment">// SHA-256 of the EditionRootChunk</span>
+    <span class="field">entry_count</span>: <span class="type">u32</span>,          <span class="comment">// number of entries (for sanity check)</span>
+}</pre>
+
+      <div class="arrow-down">&darr;</div>
+      <p style="text-align:center; font-size:0.85rem; color:var(--text-dim);">
+        <code>root_hash</code> is looked up in the chunk store to load the <code>EditionRootChunk</code>
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- 06. CHUNK TYPES                                                          -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <section id="chunks">
+    <h2><span class="icon">&#129518;</span><span class="accent">06</span> &nbsp;Chunk Types</h2>
+
+    <p>Three chunk types live inside the chunk store. They form a tree:</p>
+
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-cyan">Root</span>
+          <span class="card-title">EditionRootChunk</span>
+        </div>
+        <div class="card-body">
+          <pre style="font-size:0.78rem; margin-top:8px;"><span class="keyword">struct</span> <span class="type">EditionRootChunk</span> {
+  <span class="field">default</span>: <span class="type">Option&lt;RangeElement&gt;</span>,
+  <span class="field">domain_start</span>: <span class="type">Option&lt;i64&gt;</span>,
+  <span class="field">domain_infinite_above</span>: <span class="type">bool</span>,
+  <span class="field">entry_count</span>: <span class="type">u32</span>,
+  <span class="field">entry_chunk_hashes</span>: <span class="type">Vec&lt;[u8;32]&gt;</span>,
+  <span class="field">provenance_hash</span>: <span class="type">Option&lt;[u8;32]&gt;</span>,
+}</pre>
+          <p style="margin-top:8px;">The root of the edition's B-tree. Contains an array of up to 256 hashes pointing to <code>EntryChunk</code>s. Also optionally points to a <code>ProvenanceChunk</code>.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-green">Leaf</span>
+          <span class="card-title">EntryChunk</span>
+        </div>
+        <div class="card-body">
+          <pre style="font-size:0.78rem; margin-top:8px;"><span class="keyword">struct</span> <span class="type">EntryChunk</span> {
+  <span class="field">entries</span>: <span class="type">Vec&lt;(i64, RangeElement)&gt;</span>,
+  <span class="field">provenances</span>: <span class="type">Vec&lt;Option&lt;ElementProvenance&gt;&gt;</span>,
+}</pre>
+          <p style="margin-top:8px;"><strong>This is where the actual text lives.</strong> Each entry is a pair of <code>(position, RangeElement)</code> where <code>RangeElement</code> holds the character/content data. Up to <strong>256 entries</strong> per chunk.</p>
+          <p>If there are more than 256 entries, the edition splits across multiple <code>EntryChunk</code>s, all referenced by the root.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-yellow">Metadata</span>
+          <span class="card-title">ProvenanceChunk</span>
+        </div>
+        <div class="card-body">
+          <pre style="font-size:0.78rem; margin-top:8px;"><span class="keyword">struct</span> <span class="type">ProvenanceChunk</span> {
+  <span class="field">spans</span>: <span class="type">Vec&lt;SpanProvenance&gt;</span>,
+}</pre>
+          <p style="margin-top:8px;">Tracks <strong>who wrote what</strong> &mdash; which club/author created each span of text. This is the attribution data that powers the "via work:XXXX" labels and endorsement chains.</p>
+          <p>Optional: small documents may have no provenance chunk.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h4>Chunk Format Tags (v0.7.6+)</h4>
+      <p>Since v0.7.6, every chunk in the store is prefixed with a 1-byte format tag:</p>
+      <table style="width:100%; margin-top:8px;">
+        <tr style="text-align:left; color:var(--neon-cyan);">
+          <th>Tag</th><th>Hex</th><th>Serialization</th><th>Used For</th>
+        </tr>
+        <tr>
+          <td><code>0x4A</code></td><td><code>'J'</code></td><td>JSON</td><td>Metadata chunks (most types)</td>
+        </tr>
+        <tr>
+          <td><code>0x50</code></td><td><code>'P'</code></td><td>Postcard (compact binary)</td><td>Edition chunks (large, frequent)</td>
+        </tr>
+      </table>
+      <p style="margin-top:8px;">Older chunks (pre-v0.7.6) have no tag. The server detects this by trying deserialization without a tag, but v0.7.6+ is a <strong>breaking change</strong> &mdash; old data directories are not compatible with new binaries.</p>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- 07. THREE-LAYER LINK PERSISTENCE                                          -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <section id="persistence">
+    <h2><span class="icon">&#128260;</span><span class="accent">07</span> &nbsp;Three-Layer Link Persistence</h2>
+
+    <p>Transclusion links are the most safety-critical data &mdash; losing them means losing the connections between documents. xudanu stores links in <strong>three redundant layers</strong>:</p>
+
+    <div class="panel glow-magenta" style="border-left: 3px solid var(--neon-magenta);">
+      <span class="layer-label" style="background:rgba(255,0,234,0.1); color:var(--neon-magenta); border:1px solid rgba(255,0,234,0.3);">Layer 1 &mdash; WAL (Write-Ahead Log)</span>
+      <h4>wal.journal</h4>
+      <p>Every link creation is appended to the WAL <strong>before</strong> the operation is acknowledged to the client. If the server crashes mid-operation, the WAL can be replayed on restart to recover any links that were created but not yet checkpointed to the manifest.</p>
+      <pre class="magenta"><span class="comment">// WAL entry (simplified):</span>
+<span class="type">WalEntry</span> {
+    <span class="field">op</span>: <span class="type">Operation</span>,
+    <span class="field">link</span>: <span class="type">LinkEntry</span> { origin: <span class="number">42</span>, destination: <span class="number">17</span>, ... },
+    <span class="field">timestamp</span>: <span class="type">u64</span>,
+}</pre>
+    </div>
+
+    <div class="arrow-down">&darr; &nbsp; checkpoint (every ~30s or on shutdown)</div>
+
+    <div class="panel glow-cyan" style="border-left: 3px solid var(--neon-cyan);">
+      <span class="layer-label" style="background:rgba(0,240,255,0.1); color:var(--neon-cyan); border:1px solid rgba(0,240,255,0.3);">Layer 2 &mdash; Manifest Inline</span>
+      <h4>manifest.json &rarr; links: Vec&lt;LinkEntry&gt;</h4>
+      <p>Links are stored <strong>inline in the manifest JSON</strong>. This means the manifest file itself contains the full list of links. On restore, the server reads <code>manifest.links</code> directly &mdash; no chunk store lookup needed.</p>
+      <pre><span class="comment">// In manifest.json:</span>
+{
+  <span class="string">"links"</span>: [
+    {
+      <span class="string">"link_id"</span>: <span class="number">100</span>,
+      <span class="string">"origin"</span>: <span class="number">42</span>,
+      <span class="string">"destination"</span>: <span class="number">17</span>,
+      <span class="string">"origin_ref"</span>: { <span class="string">"work_id"</span>: <span class="number">42</span>, <span class="string">"char_start"</span>: <span class="number">10</span>, ... },
+      <span class="string">"link_types"</span>: [<span class="number">1</span>]
+    },
+    ...
+  ]
+}</pre>
+    </div>
+
+    <div class="arrow-down">&darr; &nbsp; checkpoint (redundant backup)</div>
+
+    <div class="panel glow-green" style="border-left: 3px solid var(--neon-green);">
+      <span class="layer-label" style="background:rgba(57,255,20,0.1); color:var(--neon-green); border:1px solid rgba(57,255,20,0.3);">Layer 3 &mdash; Manifest Hash Pointer</span>
+      <h4>manifest.json &rarr; links_hash: [u8; 32] &rarr; chunk store</h4>
+      <p>Links are <strong>also</strong> serialized as a chunk and stored in the chunk store. The manifest holds <code>links_hash</code> pointing to this chunk. This provides redundancy: if the manifest's inline <code>links</code> array is somehow corrupted but the hash is intact, the server can recover from the chunk store copy.</p>
+    </div>
+
+    <div class="panel" style="background: rgba(255,230,0,0.05); border-color: rgba(255,230,0,0.2);">
+      <h4 style="color:var(--neon-yellow);">Restore Priority</h4>
+      <p>On restart, the server restores links in this order of trust:</p>
+      <ol style="margin-left:20px; margin-top:8px; font-size:0.9rem;">
+        <li><strong class="hl-green">Manifest chunk</strong> (<code>links_hash</code> &rarr; chunk store) &mdash; most durable, content-addressed</li>
+        <li><strong class="hl-cyan">Manifest inline</strong> (<code>links</code> array) &mdash; convenient, always loaded</li>
+        <li><strong class="hl-magenta">WAL replay</strong> &mdash; catches anything written after last checkpoint</li>
+      </ol>
+      <p style="margin-top:8px;">If all three agree, you're safe. If they disagree, the chunk store copy wins (it's checksummed).</p>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- 08. WHAT HAPPENS ON RESTART                                              -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <section id="restart">
+    <h2><span class="icon">&#9881;</span><span class="accent">08</span> &nbsp;What Happens on Restart</h2>
+
+    <p>The <code>restore_from_data_dir()</code> function follows this sequence:</p>
+
+    <div class="flow-step">
+      <div class="step-num step-1">1</div>
+      <div class="step-content">
+        <h4>Read manifest.json</h4>
+        <p>Parse JSON, verify <code>checksum</code> matches content. If checksum fails, try backup manifests (<code>manifest_v{N}.json</code>) or dual-slot (<code>manifest_a/b.json</code>).</p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num step-2">2</div>
+      <div class="step-content">
+        <h4>Check format_version &amp; migrate if needed</h4>
+        <p>If <code>format_version &lt; 4</code>, run migration chain (<code>migrate_manifest_to_latest()</code>). Old version is backed up as <code>manifest.json.v{old}.bak</code>.</p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num step-3">3</div>
+      <div class="step-content">
+        <h4>Replay WAL</h4>
+        <p>Read <code>wal.journal</code>. Replay any entries with sequence number higher than the manifest's <code>sequence</code>. This catches operations that happened after the last manifest checkpoint.</p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num step-4">4</div>
+      <div class="step-content">
+        <h4>Rebuild in-memory state</h4>
+        <p>For each <code>WorkEntry</code> in the manifest, follow <code>work_ref.current_root.root_hash</code> into the chunk store to load the <code>EditionRootChunk</code>. This rebuilds the live edition tree in memory.</p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num step-5">5</div>
+      <div class="step-content">
+        <h4>Restore links</h4>
+        <p>Load <code>manifest.links</code> inline array into the link store. Cross-check against <code>links_hash</code> chunk if present.</p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="step-num step-6">6</div>
+      <div class="step-content">
+        <h4>Restore social data</h4>
+        <p>Load trails, starred works, compound editions, blob metadata, historical authors, federation state.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- 09. DATA DIRECTORY LAYOUT                                                -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <section id="files">
+    <h2><span class="icon">&#128193;</span><span class="accent">09</span> &nbsp;Data Directory Layout</h2>
+
+    <pre><span class="hl-green">my-data/</span>
+<span class="comment">│</span>
+<span class="comment">├──</span> <span class="hl-cyan">manifest.json</span>                    <span class="comment"># The index file (metadata + pointers)</span>
+<span class="comment">├──</span> <span class="hl-cyan">manifest_v{N}.json</span>               <span class="comment"># Sequence-numbered backups (keep last 3)</span>
+<span class="comment">├──</span> <span class="hl-cyan">manifest_a.json</span>                   <span class="comment"># Dual-slot A backup</span>
+<span class="comment">├──</span> <span class="hl-cyan">manifest_b.json</span>                   <span class="comment"># Dual-slot B backup</span>
+<span class="comment">│</span>
+<span class="comment">├──</span> <span class="hl-magenta">wal.journal</span>                      <span class="comment"># Write-ahead log (append-only)</span>
+<span class="comment">│</span>
+<span class="comment">├──</span> <span class="hl-green">chunks/</span>                          <span class="comment"># Content-addressed chunk store</span>
+<span class="comment">│   ├──</span> a1/b2/a1b2c3d4e5f6...        <span class="comment"># EntryChunk (text content)</span>
+<span class="comment">│   ├──</span> d4/e5/d4e5f6a7b8c9...        <span class="comment"># EditionRootChunk</span>
+<span class="comment">│   ├──</span> g7/h8/g7h8i9j0k1l2...        <span class="comment"># ProvenanceChunk</span>
+<span class="comment">│   └──</span> ...                          <span class="comment"># (sharded by first 2 bytes of hash)</span>
+<span class="comment">│</span>
+<span class="comment">├──</span> <span class="hl-yellow">blobs/</span>                           <span class="comment"># Binary blob data (images, files)</span>
+<span class="comment">│   └──</span> {hash}.bin                   <span class="comment"># Metadata in manifest.blob_metas</span>
+<span class="comment">│</span>
+<span class="comment">├──</span> <span class="hl-orange">server.key</span>                       <span class="comment"># Ed25519 signing key (encrypted)</span>
+<span class="comment">│</span>
+<span class="comment">├──</span> <span class="hl-purple">attribution.log</span>                   <span class="comment"># Tamper-evident provenance chain</span>
+<span class="comment">│</span>
+<span class="comment">└──</span> <span class="hl-pink">federation/</span>                       <span class="comment"># Federation state (if enabled)</span>
+    <span class="comment">└──</span> peers.json</pre>
+
+    <div class="panel">
+      <h4>Chunk File Naming</h4>
+      <p>Chunks are stored in a 2-level sharded directory structure based on the first 4 hex characters of the hash:</p>
+      <pre style="font-size:0.8rem;"><span class="comment"># Hash: a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890</span>
+<span class="comment"># Path: chunks/a1/b2/a1b2c3d4e5f67890...</span>
+
+<span class="comment"># This avoids having 100,000+ files in a single directory</span></pre>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- 10. VERSIONING & MIGRATION                                                -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <section id="versioning">
+    <h2><span class="icon">&#128640;</span><span class="accent">10</span> &nbsp;Versioning & Migration</h2>
+
+    <div class="panel glow-cyan">
+      <h3>Manifest Version</h3>
+      <p>The <code>format_version</code> field tracks schema changes. The migration chain lives in <code>src/persist/migrations.rs</code>:</p>
+
+      <pre><span class="keyword">pub const</span> <span class="type">CURRENT_MANIFEST_VERSION</span>: <span class="type">u32</span> = <span class="number">4</span>;
+
+<span class="comment">// Version history:</span>
+<span class="comment">// v1 — baseline: works, clubs, editions, admin, key_history</span>
+<span class="comment">// v2 — added: links, links_hash, link_counter</span>
+<span class="comment">// v3 — added: federation, reconcile_store</span>
+<span class="comment">// v4 — added: content_address, blob_metas, historical_authors,</span>
+<span class="comment">//           annotations, fossil_snapshots, social features (starred, trails)</span>
+<span class="comment">// v5+ — (future, not yet used)</span></pre>
+    </div>
+
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-cyan">Forward Only</span>
+          <span class="card-title">No Downgrade</span>
+        </div>
+        <div class="card-body">
+          <p>Migrations always go forward. If <code>format_version</code> is <strong>higher</strong> than the binary supports, startup fails with a clear error message telling you to upgrade the binary.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-green">Additive</span>
+          <span class="card-title">Serde Defaults</span>
+        </div>
+        <div class="card-body">
+          <p>Additive changes (new fields with <code>#[serde(default)]</code>) need <strong>zero migration code</strong>. Serce handles missing fields gracefully. The first checkpoint after upgrade will write the new fields and recompute the checksum.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-badge badge-yellow">Breaking</span>
+          <span class="card-title">Raw JSON Transform</span>
+        </div>
+        <div class="card-body">
+          <p>Breaking changes (renamed/removed fields, type changes) require a migration function in the chain: <code>v4_to_v5(raw_json) &rarr; raw_json</code>. The old file is backed up as <code>.v{old}.bak</code> before migration.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel glow-magenta">
+      <h3>Chunk Format Tags</h3>
+      <p>Separate from the manifest version, the chunk store has its own format versioning. Since v0.7.6, every chunk is prefixed with a format tag byte:</p>
+
+      <pre class="magenta"><span class="keyword">pub const</span> <span class="type">CHUNK_FORMAT_JSON</span>: <span class="type">u8</span> = <span class="number">0x4A</span>;     <span class="comment">// 'J' = JSON</span>
+<span class="keyword">pub const</span> <span class="type">CHUNK_FORMAT_POSTCARD</span>: <span class="type">u8</span> = <span class="number">0x50</span>; <span class="comment">// 'P' = Postcard (binary)</span></pre>
+
+      <p>The WAL journal also has a version header since v0.7.6:</p>
+      <pre class="purple"><span class="keyword">pub const</span> <span class="type">WAL_VERSION</span>: <span class="type">u32</span> = <span class="number">1</span>;
+
+<span class="comment">// WAL file format:</span>
+<span class="comment">// [4 bytes: WAL_VERSION = 1] [entries...] [entries...]</span></pre>
+    </div>
+
+    <div class="panel" style="background:rgba(57,255,20,0.05); border-color:rgba(57,255,20,0.2);">
+      <h3>Versioning Coverage Summary</h3>
+      <table style="width:100%; font-size:0.85rem;">
+        <tr style="text-align:left; color:var(--neon-green);">
+          <th>Component</th><th>Versioned?</th><th>How</th>
+        </tr>
+        <tr><td>Manifest</td><td class="hl-green">&#9989; Yes</td><td><code>format_version</code> + migration chain</td></tr>
+        <tr><td>Metadata chunks</td><td class="hl-green">&#9989; Yes</td><td>Tag byte <code>0x4A</code></td></tr>
+        <tr><td>Edition chunks</td><td class="hl-green">&#9989; Yes</td><td>Tag byte <code>0x50</code></td></tr>
+        <tr><td>WAL journal</td><td class="hl-green">&#9989; Yes</td><td><code>WAL_VERSION</code> header (u32)</td></tr>
+        <tr><td>Federation wire</td><td class="hl-green">&#9989; Yes</td><td>Compatibility window + <code>min_compat_version</code></td></tr>
+        <tr><td>Client wire</td><td class="hl-green">&#9989; Yes</td><td><code>PROTOCOL_VERSION</code></td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <!-- QUICK REFERENCE                                                          -->
+  <!-- ════════════════════════════════════════════════════════════════════════ -->
+  <section id="quick-ref">
+    <h2><span class="icon">&#9733;</span><span class="accent">11</span> &nbsp;Quick Reference: Pointer Types</h2>
+
+    <div class="panel glow-cyan">
+      <table style="width:100%; font-size:0.85rem;">
+        <tr style="text-align:left; color:var(--neon-cyan); border-bottom: 1px solid var(--border);">
+          <th>Type</th>
+          <th>Contains</th>
+          <th>Points To</th>
+          <th>Where Defined</th>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(26,26,46,0.5);">
+          <td><code class="hl-cyan">WorkChunkRef</code></td>
+          <td>current_root + history</td>
+          <td>EditionChunkRef(s)</td>
+          <td>manifest.rs</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(26,26,46,0.5);">
+          <td><code class="hl-magenta">EditionChunkRef</code></td>
+          <td>root_hash [u8;32] + entry_count</td>
+          <td>EditionRootChunk</td>
+          <td>edition_chunks.rs:14</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(26,26,46,0.5);">
+          <td><code class="hl-green">EditionRootChunk</code></td>
+          <td>entry_chunk_hashes[] + provenance_hash</td>
+          <td>EntryChunk(s) + ProvenanceChunk</td>
+          <td>edition_chunks.rs:50</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(26,26,46,0.5);">
+          <td><code class="hl-yellow">EntryChunk</code></td>
+          <td>entries: Vec&lt;(i64, RangeElement)&gt;</td>
+          <td><strong>the actual text</strong></td>
+          <td>edition_chunks.rs:36</td>
+        </tr>
+        <tr style="border-bottom: 1px solid rgba(26,26,46,0.5);">
+          <td><code class="hl-orange">ProvenanceChunk</code></td>
+          <td>spans: Vec&lt;SpanProvenance&gt;</td>
+          <td>attribution data</td>
+          <td>edition_chunks.rs:44</td>
+        </tr>
+        <tr>
+          <td><code class="hl-purple">[u8; 32]</code> hash fields</td>
+          <td>links_hash, blob_metas_hash, etc.</td>
+          <td>Backup/metadata chunks</td>
+          <td>manifest.rs</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="panel" style="background:rgba(0,240,255,0.04); border-color:rgba(0,240,255,0.15);">
+      <h4>Source Files</h4>
+      <table style="width:100%; font-size:0.85rem;">
+        <tr><td><code>src/persist/manifest.rs</code></td><td>Manifest struct, read/write, checksum, preflight</td></tr>
+        <tr><td><code>src/persist/edition_chunks.rs</code></td><td>WorkChunkRef, EditionChunkRef, chunk serialization</td></tr>
+        <tr><td><code>src/persist/chunk_store.rs</code></td><td>Content-addressed store, format tags</td></tr>
+        <tr><td><code>src/persist/wal.rs</code></td><td>Write-ahead log</td></tr>
+        <tr><td><code>src/persist/migrations.rs</code></td><td>Manifest migration chain</td></tr>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="container">
+    <p>xudanu &mdash; conflict-preserving hypertext document store</p>
+    <p style="margin-top:8px;">Source: <code>src/persist/manifest.rs</code> &middot; <code>src/persist/edition_chunks.rs</code> &middot; <code>src/persist/chunk_store.rs</code></p>
+  </div>
+</footer>
+
+</body>
+</html>
