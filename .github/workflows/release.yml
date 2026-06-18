@@ -89,7 +89,11 @@ jobs:
               exit 1
             fi
           fi
-          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          {
+            echo "matrix<<MATRIX_EOF"
+            echo "$MATRIX"
+            echo "MATRIX_EOF"
+          } >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   # ── Build for each selected target ───────────────────────────────────────
