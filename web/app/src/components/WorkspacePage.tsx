@@ -392,18 +392,24 @@ export function WorkspacePage() {
     if (!clientRef.current || workBeId === null) return;
     const pending = transclusion.pending;
     if (!pending) return;
-    const excerpt = pending.text;
+    const rawExcerpt = pending.text;
+    const needsPrefix = position > 0 && text[position - 1] !== '\n';
+    const needsSuffix = position < text.length && text[position] !== '\n';
+    const prefix = needsPrefix ? '\n' : '';
+    const suffix = needsSuffix ? '\n' : '';
+    const excerpt = prefix + rawExcerpt + suffix;
+    const spanStart = position + prefix.length;
     const newText = text.slice(0, position) + excerpt + text.slice(position);
     setText(newText);
     compound.addSpan(
       newText,
-      position,
-      excerpt,
+      spanStart,
+      rawExcerpt,
       pending.sourceWorkId,
       pending.start,
       pending.end,
     );
-    const linkId = await transclusion.placeTransclusion(clientRef.current, workBeId, position);
+    const linkId = await transclusion.placeTransclusion(clientRef.current, workBeId, spanStart);
     if (linkId !== null) {
       if (clientRef.current) {
         await new Promise((r) => setTimeout(r, 500));
@@ -1176,6 +1182,7 @@ export function WorkspacePage() {
               {transclusion.pending && (
                 <TransclusionBadge
                   pending={transclusion.pending}
+                  cursorPosition={selectionRange?.start ?? null}
                   onPlace={handlePlaceTransclusion}
                   onCancel={transclusion.clearPending}
                 />
