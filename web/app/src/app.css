@@ -2244,6 +2244,21 @@ body {
   font-size: 12px;
 }
 
+.transclusion-badge-place {
+  background: #00897b;
+  border: none;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.transclusion-badge-place:hover {
+  background: #00695c;
+}
+
 .transclusion-badge-cancel {
   background: none;
   border: 1px solid #80cbc4;
