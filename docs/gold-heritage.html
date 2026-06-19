@@ -298,7 +298,7 @@ li{margin-bottom:4px;font-size:14px}
 .svg-mono{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#79c0ff}
 .svg-mono-gold{font-family:'JetBrains Mono',monospace;font-size:10px;fill:#d29922}
 
-@media(max-width:640px){
+media(max-width:640px){
   .content-wrap{padding:24px 16px 60px}
   .mapping-grid{grid-template-columns:1fr}
   .mapping-card.gold{border-right:none;border-bottom:1px solid #30363d}
@@ -315,7 +315,6 @@ li{margin-bottom:4px;font-size:14px}
 
 <h1>Udanax Gold Heritage</h1>
 <p class="subtitle">Tracing the lineage: how every Gold concept lives on in Xudanu</p>
-<p class="intro-note">For Ted, on his birthday &mdash; a map of what you built, rebuilt.</p>
 
 <div class="toc">
   <div class="toc-title">Contents</div>
@@ -351,26 +350,18 @@ li{margin-bottom:4px;font-size:14px}
     <div class="label">Ted&rsquo;s Vision</div>
   </div>
   <div class="stat">
-    <div class="value">1999</div>
-    <div class="label">Udanax Gold Released</div>
+    <div class="value">1988 - 1995</div>
+    <div class="label">Udanax Gold Development</div>
   </div>
   <div class="stat">
-    <div class="value">2025</div>
+    <div class="value">2026</div>
     <div class="label">Xudanu Rust Port</div>
   </div>
-  <div class="stat">
-    <div class="value">2115</div>
-    <div class="label">Tests Passing</div>
-  </div>
 </div>
 
-<p>Udanax Gold was Ted Nelson&rsquo;s C++ implementation of the Xanadu hypertext system, released as open source in 1999. It contained the accumulated wisdom of decades of thinking about how documents should connect: the O-tree, clubs, transclusion detection, canopy trees, the GrandMap, and the lock hierarchy.</p>
+<p>Udanax Gold was a C++ implementation of the Xanadu hypertext system, in active development from 1988 through 1995, and released as open source in 1999. It contained the accumulated wisdom of decades of thinking about how documents should connect: the O-tree, clubs, transclusion detection, canopy trees, the GrandMap, and the lock hierarchy.</p>
 
-<p>Xudanu is a from-scratch reimplementation in Rust. Every Gold subsystem was studied, mapped, and rebuilt with modern tools. This page traces each Gold concept to its Xudanu descendant, so you can see exactly what survived and what evolved.</p>
-
-<div class="heritage-note">
-  <strong>What Ted will recognize:</strong> The fundamental architecture is preserved. O-tree, GrandMap, clubs, locks, backfollow, canopy, H-tree &mdash; all here. The names are the same. The math is the same. What changed is the plumbing: Rust instead of C++, WebSocket instead of custom TCP, Ed25519 instead of unsigned assertions, BLAKE3 instead of content pointers, CRDT sync instead of single-user editing.
-</div>
+<p>Xudanu is a Rust based implementation of Udanax Gold, migrated from the released C++ code base. Every Gold subsystem was reviewed, mapped, and rebuilt with modern tools. This page traces each Gold concept to its Xudanu descendant, so you can see exactly what survived and what evolved.</p>
 
 <!-- ===================== ARCHITECTURE MAP ===================== -->
 
