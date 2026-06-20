@@ -15561,6 +15561,294 @@ mod tests {
     }
 
     #[test]
+    fn transclusion_chain_query_resolves_registry_author_name() {
+        // Regression for the "Unknown" author bug: a 2-hop transclusion
+        // (source -> docA -> docB) must resolve the historical author name
+        // from the registry when queried through attribution_query. The bug
+        // lived in the pending-attribution overlay, which used the stamped
+        // (empty) author_display_name for non-source-work origins. The sibling
+        // test above checks only the stamped element provenance and so missed
+        // it; this one exercises the query/overlay layer.
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        server.grant_admin_authority(session).unwrap();
+        let club_id = server
+            .session(session)
+            .unwrap()
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied()
+            .unwrap();
+        let public_club = server.public_club_id();
+
+        let author = server
+            .register_historical_author(
+                "Mary Shelley".into(),
+                "Mary Shelley".into(),
+                Some(1797),
+                Some(1851),
+                std::collections::HashMap::new(),
+                "Frankenstein".into(),
+                club_id,
+            )
+            .unwrap();
+
+        let passage = "I am by birth a Genevese, and my family is one of the most distinguished of that republic.";
+        let (src_id, _, _, _) = server
+            .import_source_work(
+                session,
+                author.be_id,
+                "Frankenstein Ch.1".into(),
+                format!("{} My ancestors were counsellors.", passage),
+                "1818".into(),
+                0,
+                0,
+            )
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&src_id) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+        server
+            .apply_source_attribution(session, src_id, author.be_id, None, None, None)
+            .unwrap();
+
+        // docA: contains the passage (created with full text so the passage
+        // is attributed via transclusion, not as an admin author-edit span).
+        let doc_a_text = format!("intro {} outro", passage);
+        let doc_a = server
+            .create_work(session, Edition::from_text(&doc_a_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&doc_a) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+        let link_a = server
+            .create_link(
+                session,
+                src_id,
+                doc_a,
+                Some(crate::edition::links::HyperRef::single(
+                    Some(Edition::from_text(passage)),
+                    Some(src_id),
+                    None,
+                    None,
+                )),
+                Some(crate::edition::links::HyperRef::single(
+                    None,
+                    Some(doc_a),
+                    None,
+                    None,
+                )),
+            )
+            .unwrap();
+        server
+            .apply_transclusion_attribution(session, link_a)
+            .unwrap();
+
+        // docB: transclude the same passage FROM docA. docA is not a source
+        // work, so the overlay takes the entry_prov branch that had the bug.
+        let doc_b_text = format!("pref {} suff", passage);
+        let doc_b = server
+            .create_work(session, Edition::from_text(&doc_b_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&doc_b) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+        let link_b = server
+            .create_link(
+                session,
+                doc_a,
+                doc_b,
+                Some(crate::edition::links::HyperRef::single(
+                    Some(Edition::from_text(passage)),
+                    Some(doc_a),
+                    None,
+                    None,
+                )),
+                Some(crate::edition::links::HyperRef::single(
+                    None,
+                    Some(doc_b),
+                    None,
+                    None,
+                )),
+            )
+            .unwrap();
+        server
+            .apply_transclusion_attribution(session, link_b)
+            .unwrap();
+
+        let spans = server.attribution_query(doc_b, None, None).unwrap();
+        let names: Vec<&str> = spans
+            .iter()
+            .filter_map(|s| s.author_display_name.as_deref())
+            .collect();
+        assert!(
+            names.iter().any(|n| *n == "Mary Shelley"),
+            "2-hop transclusion must resolve the registry author name, got {:?}",
+            names
+        );
+        assert!(
+            !names.iter().any(|n| n.contains("Unknown")),
+            "no span should show Unknown, got {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn transclusion_attribution_appends_to_attribution_log() {
+        // Regression: transclusion attribution must append to the transparency
+        // log. Previously only the author-revision path logged, so transclusion
+        // events left the log at 0 entries.
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        server.grant_admin_authority(session).unwrap();
+        let club_id = server
+            .session(session)
+            .unwrap()
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied()
+            .unwrap();
+        let public_club = server.public_club_id();
+
+        let author = server
+            .register_historical_author(
+                "Bram Stoker".into(),
+                "Bram Stoker".into(),
+                Some(1847),
+                Some(1912),
+                std::collections::HashMap::new(),
+                "Dracula".into(),
+                club_id,
+            )
+            .unwrap();
+        let excerpt = "It was the best of times it was the worst of times.";
+        let (src_id, _, _, _) = server
+            .import_source_work(
+                session,
+                author.be_id,
+                "Dracula".into(),
+                format!(
+                    "{} {}",
+                    excerpt,
+                    "There were a king with a large jaw.".repeat(3)
+                ),
+                "ed".into(),
+                0,
+                0,
+            )
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&src_id) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+        server
+            .apply_source_attribution(session, src_id, author.be_id, None, None, None)
+            .unwrap();
+
+        let target_text = format!("prefix{}suffix", excerpt);
+        let target_id = server
+            .create_work(session, Edition::from_text("prefix"))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&target_id) {
+            ws.work.set_edit_club(Some(public_club));
+        }
+        server
+            .revise_work(
+                target_id,
+                session,
+                Edition::from_text(&target_text),
+                Some(club_id),
+            )
+            .unwrap();
+
+        let before = server.attribution_log.sequence();
+        let link_id = server
+            .create_link(
+                session,
+                src_id,
+                target_id,
+                Some(crate::edition::links::HyperRef::single(
+                    Some(Edition::from_text(excerpt)),
+                    Some(src_id),
+                    None,
+                    None,
+                )),
+                Some(crate::edition::links::HyperRef::single(
+                    None,
+                    Some(target_id),
+                    None,
+                    None,
+                )),
+            )
+            .unwrap();
+        server
+            .apply_transclusion_attribution(session, link_id)
+            .unwrap();
+        let after = server.attribution_log.sequence();
+        assert!(
+            after > before,
+            "transclusion attribution must append to the log (before={}, after={})",
+            before,
+            after
+        );
+    }
+
+    #[test]
+    fn enrich_provenance_hops_carries_dest_work_id() {
+        // Regression: enriched ancestry hops must carry dest_work_id so clients
+        // can distinguish parallel sources from a true chain. Previously the
+        // list was flat and link-id-sorted, making independent sources read as
+        // a linear lineage.
+        let (mut server, sid) = prov_setup();
+        let a = server
+            .create_work(sid, Edition::from_text("source a"))
+            .unwrap();
+        let b = server
+            .create_work(sid, Edition::from_text("source b"))
+            .unwrap();
+        let c = server
+            .create_work(sid, Edition::from_text("target c"))
+            .unwrap();
+
+        // Two INDEPENDENT sources into c.
+        server.create_link(sid, a, c, None, None).unwrap();
+        server.create_link(sid, b, c, None, None).unwrap();
+        let anc = server.provenance_ancestry(c);
+        let parallel = server.enrich_provenance_hops(&anc);
+        assert_eq!(parallel.len(), 2, "two independent sources into c");
+        for hop in &parallel {
+            assert_eq!(
+                hop.dest_work_id, c,
+                "independent sources must all dest on the target c, got dest={:04x}",
+                hop.dest_work_id
+            );
+        }
+
+        // A TRUE chain a -> b -> c.
+        let (mut server2, sid2) = prov_setup();
+        let ca = server2.create_work(sid2, Edition::from_text("a")).unwrap();
+        let cb = server2.create_work(sid2, Edition::from_text("b")).unwrap();
+        let cc = server2.create_work(sid2, Edition::from_text("c")).unwrap();
+        server2.create_link(sid2, ca, cb, None, None).unwrap();
+        server2.create_link(sid2, cb, cc, None, None).unwrap();
+        let chain = server2.enrich_provenance_hops(&server2.provenance_ancestry(cc));
+        let dests: std::collections::HashSet<_> = chain.iter().map(|h| h.dest_work_id).collect();
+        assert!(
+            dests.contains(&cb),
+            "chain hop a->b must dest on b, dests={:?}",
+            dests
+        );
+        assert!(
+            dests.contains(&cc),
+            "chain hop b->c must dest on c, dests={:?}",
+            dests
+        );
+    }
+
+    #[test]
     fn user_transclusion_preserves_original_author() {
         let mut server = Server::new();
         let (alice_id, alice_sid) = ac_create_user(&mut server, "alice", b"pw1");
