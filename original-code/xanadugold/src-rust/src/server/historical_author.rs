@@ -46,8 +46,8 @@ impl HistoricalAuthorRegistry {
         created_by: BeId,
         created_at: u64,
     ) -> Result<HistoricalAuthor, String> {
-        let normalizedName = name.to_lowercase();
-        if self.name_index.contains_key(&normalizedName) {
+        let normalized_name = name.to_lowercase();
+        if self.name_index.contains_key(&normalized_name) {
             return Err(format!("historical author '{}' already registered", name));
         }
 
@@ -66,7 +66,7 @@ impl HistoricalAuthorRegistry {
             created_at,
         };
 
-        self.name_index.insert(normalizedName, be_id);
+        self.name_index.insert(normalized_name, be_id);
         self.authors.insert(be_id, author.clone());
         Ok(author)
     }

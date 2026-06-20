@@ -171,7 +171,7 @@ pub fn detect_version(raw: &serde_json::Value) -> u32 {
     0
 }
 
-fn migrate_v0_to_v1(mut raw: serde_json::Value) -> Result<serde_json::Value, SnapshotError> {
+fn migrate_v0_to_v1(raw: serde_json::Value) -> Result<serde_json::Value, SnapshotError> {
     if !raw.is_object() {
         return Err(SnapshotError::Migration {
             from_version: 0,

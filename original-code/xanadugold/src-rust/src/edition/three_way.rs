@@ -1866,6 +1866,7 @@ mod tests {
             llm_model: None,
             historical_author_id: None,
             source_work_id: None,
+            transcluded_by: None,
         };
         let base = Edition::from_text_batched("hello\nworld\n");
         let mut a_entries: Vec<(i64, Arc<Carrier>)> = base.all_entries();

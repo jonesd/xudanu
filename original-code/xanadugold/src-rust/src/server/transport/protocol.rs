@@ -2148,6 +2148,10 @@ pub struct AttributionSpanPayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_work_id: Option<BeId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcluded_by_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcluded_by_club_id: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance_chain: Option<Vec<ProvenanceHopPayload>>,
 }
 
@@ -2348,6 +2352,15 @@ pub struct HyperRefPayload {
 pub struct ProvenanceHopPayload {
     pub source_work_id: BeId,
     pub link_id: BeId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_work_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_author_name: Option<String>,
+    /// The work this hop's content was transcluded *into* (the link's
+    /// destination). Lets clients reconstruct the ancestry DAG instead of
+    /// reading a flat link-id-sorted list as a linear chain.
+    #[serde(default)]
+    pub dest_work_id: BeId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2556,6 +2569,9 @@ impl HyperRefPayload {
             .map(|hop| ProvenanceHopPayload {
                 source_work_id: hop.source_work_id(),
                 link_id: hop.link_id(),
+                source_work_title: None,
+                source_author_name: None,
+                dest_work_id: 0,
             })
             .collect();
         HyperRefPayload {

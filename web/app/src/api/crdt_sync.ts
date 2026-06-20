@@ -54,6 +54,8 @@ export interface AttributionSpan {
   llm_model: string | null;
   historical_author_id: number | null;
   source_work_id?: number | null;
+  transcluded_by_name?: string | null;
+  transcluded_by_club_id?: number | null;
   provenance_chain?: ProvenanceHop[] | null;
 }
 
@@ -119,6 +121,9 @@ export interface LinkEntry {
 export interface ProvenanceHop {
   source_work_id: number;
   link_id: number;
+  source_work_title?: string | null;
+  source_author_name?: string | null;
+  dest_work_id?: number;
 }
 
 export interface CompoundSpanPayload {

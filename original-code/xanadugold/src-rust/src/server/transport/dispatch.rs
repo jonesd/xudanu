@@ -1509,13 +1509,7 @@ fn dispatch_inner(
         WireRequest::ProvenanceAncestry { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
             let chain = srv.provenance_ancestry(work_id);
-            let hops = chain
-                .into_iter()
-                .map(|hop| super::protocol::ProvenanceHopPayload {
-                    source_work_id: hop.source_work_id(),
-                    link_id: hop.link_id(),
-                })
-                .collect();
+            let hops = srv.enrich_provenance_hops(&chain);
             Ok(ResponseValue::ProvenanceAncestryResult { chain: hops })
         }
         WireRequest::CompoundResolve { compound } => {

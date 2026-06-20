@@ -1,4 +1,4 @@
-use std::io::{BufRead, Seek, Write};
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use crate::edition::backend::BeId;

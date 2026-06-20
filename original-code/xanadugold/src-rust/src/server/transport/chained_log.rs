@@ -2,6 +2,7 @@ use std::io::Write;
 
 use sha2::{Digest, Sha256};
 
+#[allow(dead_code)]
 const SEED_FILE: &str = "security.log.seed";
 
 pub struct ChainedLogWriter<W: Write> {
@@ -10,7 +11,7 @@ pub struct ChainedLogWriter<W: Write> {
 }
 
 impl<W: Write> ChainedLogWriter<W> {
-    pub fn new(mut inner: W, seed_path: &std::path::Path) -> std::io::Result<Self> {
+    pub fn new(inner: W, seed_path: &std::path::Path) -> std::io::Result<Self> {
         let prev_hash = if seed_path.exists() {
             std::fs::read_to_string(seed_path)?.trim().to_string()
         } else {
