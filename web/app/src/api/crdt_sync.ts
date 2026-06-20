@@ -116,6 +116,13 @@ export interface LinkEntry {
   destination: number;
   origin_ref: HyperRefPayload | null;
   destination_ref: HyperRefPayload | null;
+  // Ghost metadata (server-side archive state + title + owner per endpoint).
+  origin_archived?: boolean;
+  origin_title?: string | null;
+  origin_owner?: number | null;
+  destination_archived?: boolean;
+  destination_title?: string | null;
+  destination_owner?: number | null;
 }
 
 export interface ProvenanceHop {
@@ -253,6 +260,9 @@ export interface TransclusionMarker {
   otherWorkTitle: string;
   color: string;
   provenanceChain?: ProvenanceHop[];
+  // Ghost: the referenced (other) work is archived (soft-deleted).
+  otherWorkIsArchived?: boolean;
+  otherWorkOwner?: number | null;
 }
 
 export interface WorkListEntry {

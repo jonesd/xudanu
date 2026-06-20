@@ -828,6 +828,19 @@ export function CollaborativeEditor({
               <div className="marker-tooltip-direction">
                 {hoveredMarker.direction === "outgoing" ? "Transcluded to" : "Transcluded from"}
               </div>
+              {hoveredMarker.otherWorkIsArchived && (
+                <div
+                  className="marker-tooltip-archived"
+                  style={{ color: "#8a6d3b", fontWeight: 600, marginTop: 4 }}
+                >
+                  🗄 Archived work — content retained, source hidden
+                  {hoveredMarker.otherWorkOwner != null
+                    ? ` · owner: club:${hoveredMarker.otherWorkOwner
+                        .toString(16)
+                        .padStart(4, "0")}`
+                    : ""}
+                </div>
+              )}
               {hoveredMarker.provenanceChain && hoveredMarker.provenanceChain.length > 0 && (
                 <div className="marker-tooltip-chain">
                   {hoveredMarker.provenanceChain.length} provenance hop{hoveredMarker.provenanceChain.length > 1 ? "s" : ""}

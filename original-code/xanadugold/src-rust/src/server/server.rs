@@ -2560,6 +2560,24 @@ impl Server {
         Ok(ws.work.is_archived())
     }
 
+    /// `(is_archived, title, owner)` for a work — used to enrich link endpoints
+    /// so clients can render a "ghost" marker for references into archived works.
+    pub(crate) fn link_endpoint_meta(
+        &self,
+        work_be_id: BeId,
+    ) -> (bool, Option<String>, Option<BeId>) {
+        self.works
+            .get(&work_be_id)
+            .map(|ws| {
+                (
+                    ws.work.is_archived(),
+                    Some(ws.cached_title.clone()),
+                    ws.work.owner(),
+                )
+            })
+            .unwrap_or((false, None, None))
+    }
+
     pub fn work_is_published(
         &self,
         session_id: SessionId,

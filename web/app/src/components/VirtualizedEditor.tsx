@@ -474,8 +474,21 @@ function VirtualizedEditorInner({
       const lastRect = rangeRects[rangeRects.length - 1];
       const lastBottom = lastRect.bottom - rect.top;
 
-      ctx.fillStyle = marker.color + "60";
-      ctx.fillRect(0, firstTop, 3, lastBottom - firstTop);
+      if (marker.otherWorkIsArchived) {
+        // Ghost marker: dashed amber outline over a dimmed bar — signals that
+        // the content is retained but the source work is archived (soft-deleted).
+        ctx.save();
+        ctx.fillStyle = "rgba(138, 109, 59, 0.28)";
+        ctx.fillRect(0, firstTop, 3, lastBottom - firstTop);
+        ctx.strokeStyle = "rgba(138, 109, 59, 0.95)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 2]);
+        ctx.strokeRect(0.5, firstTop + 0.5, 2, lastBottom - firstTop - 1);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = marker.color + "60";
+        ctx.fillRect(0, firstTop, 3, lastBottom - firstTop);
+      }
     }
   }, [attributionSpans, authorColorMap, viewStart, viewEnd, transclusionMarkers, compoundSpanRanges]);
 

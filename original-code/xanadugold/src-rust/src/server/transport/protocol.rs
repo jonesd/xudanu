@@ -2273,6 +2273,20 @@ pub struct LinkPayload {
     pub destination: BeId,
     pub origin_ref: Option<HyperRefPayload>,
     pub destination_ref: Option<HyperRefPayload>,
+    /// Ghost metadata for the origin endpoint (archived state + title + owner),
+    /// so clients can render references into archived works distinctly.
+    #[serde(default)]
+    pub origin_archived: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_owner: Option<BeId>,
+    #[serde(default)]
+    pub destination_archived: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination_owner: Option<BeId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

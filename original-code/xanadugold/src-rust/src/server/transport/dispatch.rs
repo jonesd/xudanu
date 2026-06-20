@@ -1034,12 +1034,21 @@ fn dispatch_inner(
             let d_ref = link
                 .end_at("RightEnd")
                 .map(super::protocol::HyperRefPayload::from_hyper_ref);
+            let (origin_archived, origin_title, origin_owner) = srv.link_endpoint_meta(origin);
+            let (destination_archived, destination_title, destination_owner) =
+                srv.link_endpoint_meta(destination);
             Ok(ResponseValue::LinkInfo(super::protocol::LinkPayload {
                 link_id,
                 origin,
                 destination,
                 origin_ref: o_ref,
                 destination_ref: d_ref,
+                origin_archived,
+                origin_title,
+                origin_owner,
+                destination_archived,
+                destination_title,
+                destination_owner,
             }))
         }
         WireRequest::LinkUpdate {
@@ -1139,12 +1148,22 @@ fn dispatch_inner(
                     let d_ref = link
                         .end_at("RightEnd")
                         .map(super::protocol::HyperRefPayload::from_hyper_ref);
+                    let (origin_archived, origin_title, origin_owner) =
+                        srv.link_endpoint_meta(origin);
+                    let (destination_archived, destination_title, destination_owner) =
+                        srv.link_endpoint_meta(destination);
                     Some(super::protocol::LinkPayload {
                         link_id,
                         origin,
                         destination,
                         origin_ref: o_ref,
                         destination_ref: d_ref,
+                        origin_archived,
+                        origin_title,
+                        origin_owner,
+                        destination_archived,
+                        destination_title,
+                        destination_owner,
                     })
                 })
                 .collect();
