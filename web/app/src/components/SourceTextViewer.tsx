@@ -124,7 +124,7 @@ export function SourceTextViewer({ workId, clientRef, connected: _connected, fon
 
   useEffect(() => {
     if (!ready || !clientRef.current) return;
-    let cancelled = false;
+    let cancelledRef = { current: false };
     const client = clientRef.current;
     linesRef.current = [];
     viewRef.current = { start: 0, end: 0 };
@@ -133,15 +133,15 @@ export function SourceTextViewer({ workId, clientRef, connected: _connected, fon
     (async () => {
       try {
         const first = await client.textRange(workId, 0, CHUNK);
-        if (cancelled) return;
+        if (cancelledRef.current) return;
         let loaded = first.text;
         const total = first.totalChars;
-        while (loaded.length < total && !cancelled) {
+        while (loaded.length < total && !cancelledRef.current) {
           const next = await client.textRange(workId, loaded.length, Math.min(loaded.length + CHUNK, total));
-          if (cancelled) return;
+          if (cancelledRef.current) return;
           loaded += next.text;
         }
-        if (cancelled) return;
+        if (cancelledRef.current) return;
         linesRef.current = loaded.split("\n");
         viewRef.current = { start: 0, end: 40 };
         if (containerRef.current) containerRef.current.scrollTop = 0;
@@ -150,7 +150,7 @@ export function SourceTextViewer({ workId, clientRef, connected: _connected, fon
         console.error("[SourceTextViewer] load failed:", e);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelledRef.current = true; };
   }, [workId, ready, clientRef, renderVisible]);
 
   useEffect(() => {

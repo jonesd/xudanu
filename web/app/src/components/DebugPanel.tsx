@@ -32,6 +32,7 @@ export function DebugPanel({ workspaceId, visible }: DebugPanelProps) {
 
   useEffect(() => {
     if (!visible) return;
+    if (!/^[0-9a-f]+$/i.test(workspaceId)) return;
     fetch(`/api/workspaces/${workspaceId}/debug`)
       .then((r) => r.json())
       .then(setData)
