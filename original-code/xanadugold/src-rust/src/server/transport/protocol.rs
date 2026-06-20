@@ -132,6 +132,9 @@ pub enum OperationCode {
     WorkPublish,
     WorkUnpublish,
     WorkIrrevocablyUnpublish,
+    WorkArchive,
+    WorkUnarchive,
+    WorkListArchived,
     WorkIsPublished,
 
     WorkFetchRevisionRange,
@@ -371,6 +374,9 @@ impl OperationCode {
             0x0317 => Some(OperationCode::WorkPublish),
             0x0318 => Some(OperationCode::WorkUnpublish),
             0x0319 => Some(OperationCode::WorkIrrevocablyUnpublish),
+            0x031C => Some(OperationCode::WorkArchive),
+            0x031D => Some(OperationCode::WorkUnarchive),
+            0x031E => Some(OperationCode::WorkListArchived),
             0x031A => Some(OperationCode::WorkIsPublished),
             0x031B => Some(OperationCode::WorkFetchRevisionRange),
             0x0314 => Some(OperationCode::WorkList),
@@ -633,6 +639,9 @@ impl OperationCode {
             OperationCode::WorkPublish => 0x0317,
             OperationCode::WorkUnpublish => 0x0318,
             OperationCode::WorkIrrevocablyUnpublish => 0x0319,
+            OperationCode::WorkArchive => 0x031C,
+            OperationCode::WorkUnarchive => 0x031D,
+            OperationCode::WorkListArchived => 0x031E,
             OperationCode::WorkIsPublished => 0x031A,
             OperationCode::WorkFetchRevisionRange => 0x031B,
 
@@ -1040,6 +1049,14 @@ pub enum WireRequest {
     WorkIrrevocablyUnpublish {
         work_id: BeId,
     },
+    WorkArchive {
+        work_id: BeId,
+    },
+    WorkUnarchive {
+        work_id: BeId,
+    },
+    /// List archived (soft-deleted) works. Owner-scoped; admins see all.
+    WorkListArchived,
     WorkIsPublished {
         work_id: BeId,
     },

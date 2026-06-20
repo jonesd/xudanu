@@ -4,6 +4,22 @@ use super::backend::BeId;
 use super::edition::Edition;
 use super::endorsement::EndorsementSet;
 
+/// A lifecycle transition recorded on a Work (append-only history).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum LifecycleEventKind {
+    Archived,
+    Unarchived,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct WorkLifecycleEvent {
+    pub kind: LifecycleEventKind,
+    pub actor_club: BeId,
+    pub timestamp: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct Work {
     be_id: BeId,
@@ -15,6 +31,8 @@ pub struct Work {
     edit_club: Option<BeId>,
     sponsors: Vec<BeId>,
     endorsements: EndorsementSet,
+    is_archived: bool,
+    lifecycle_history: Vec<WorkLifecycleEvent>,
 }
 
 impl Work {
@@ -29,6 +47,8 @@ impl Work {
             edit_club: None,
             sponsors: Vec::new(),
             endorsements: EndorsementSet::new(),
+            is_archived: false,
+            lifecycle_history: Vec::new(),
         }
     }
 
@@ -43,6 +63,8 @@ impl Work {
             edit_club: None,
             sponsors: Vec::new(),
             endorsements: EndorsementSet::new(),
+            is_archived: false,
+            lifecycle_history: Vec::new(),
         }
     }
 
@@ -56,6 +78,49 @@ impl Work {
 
     pub fn set_owner(&mut self, owner: Option<BeId>) {
         self.owner = owner;
+    }
+
+    /// Current archive (soft-delete) state. Archived works are hidden from the
+    /// default work list but never destroyed — they can be unarchived.
+    pub fn is_archived(&self) -> bool {
+        self.is_archived
+    }
+
+    /// Append-only lifecycle history (archive/unarchive transitions). Replaying
+    /// it answers "was this work archived at time T?".
+    pub fn lifecycle_history(&self) -> &[WorkLifecycleEvent] {
+        &self.lifecycle_history
+    }
+
+    /// Archive (soft-delete) the work, recording who/when.
+    pub fn archive(&mut self, actor_club: BeId, timestamp: u64) {
+        self.is_archived = true;
+        self.lifecycle_history.push(WorkLifecycleEvent {
+            kind: LifecycleEventKind::Archived,
+            actor_club,
+            timestamp,
+        });
+    }
+
+    /// Unarchive (restore) the work, recording who/when.
+    pub fn unarchive(&mut self, actor_club: BeId, timestamp: u64) {
+        self.is_archived = false;
+        self.lifecycle_history.push(WorkLifecycleEvent {
+            kind: LifecycleEventKind::Unarchived,
+            actor_club,
+            timestamp,
+        });
+    }
+
+    /// Restore the archived state + lifecycle history from a persisted snapshot
+    /// (manifest). Does not push a new event.
+    pub(crate) fn restore_archived_state(
+        &mut self,
+        is_archived: bool,
+        history: Vec<WorkLifecycleEvent>,
+    ) {
+        self.is_archived = is_archived;
+        self.lifecycle_history = history;
     }
 
     pub fn edition(&self) -> &Edition {
