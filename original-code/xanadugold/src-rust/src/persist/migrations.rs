@@ -49,16 +49,20 @@ pub fn migrate_manifest_to_latest(
     mut raw: Value,
     from_version: u32,
 ) -> Result<Value, MigrationError> {
-    let mut version = from_version;
-    while version < crate::persist::manifest::CURRENT_MANIFEST_VERSION {
-        let next = version + 1;
-        raw = match version {
-            // v4 is baseline. Future migrations go here:
-            // 4 => migrate_v4_to_v5(raw)?,
-            _ => return Err(MigrationError::NoStep(version)),
-        };
-        version = next;
+    // v4 is baseline. No migration steps exist yet.
+    // When adding the first migration (v4->v5), replace this check with a loop:
+    //   let mut version = from_version;
+    //   while version < CURRENT_MANIFEST_VERSION {
+    //       raw = match version {
+    //           4 => migrate_v4_to_v5(raw)?,
+    //           _ => return Err(MigrationError::NoStep(version)),
+    //       };
+    //       version += 1;
+    //   }
+    if from_version < crate::persist::manifest::CURRENT_MANIFEST_VERSION {
+        return Err(MigrationError::NoStep(from_version));
     }
+
     raw["format_version"] = Value::Number(serde_json::Number::from(
         crate::persist::manifest::CURRENT_MANIFEST_VERSION,
     ));

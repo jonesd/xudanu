@@ -30,6 +30,15 @@ pub struct ElementProvenance {
     pub llm_model: Option<String>,
     pub historical_author_id: Option<BeId>,
     pub source_work_id: Option<BeId>,
+    pub transcluded_by: Option<TransclusionInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransclusionInfo {
+    pub club_id: BeId,
+    pub display_name: String,
+    pub public_key: [u8; 32],
+    pub timestamp: u64,
 }
 
 #[cfg(feature = "serde")]
@@ -46,7 +55,18 @@ mod element_serde_impl {
         author_type: Option<String>,
         llm_model: Option<String>,
         historical_author_id: Option<u64>,
+        #[serde(default)]
         source_work_id: Option<u64>,
+        #[serde(default)]
+        transcluded_by: Option<TransclusionInfoData>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    struct TransclusionInfoData {
+        club_id: u64,
+        display_name: String,
+        public_key: Vec<u8>,
+        timestamp: u64,
     }
 
     impl Serialize for ElementProvenance {
@@ -64,6 +84,12 @@ mod element_serde_impl {
                 llm_model: self.llm_model.clone(),
                 historical_author_id: self.historical_author_id,
                 source_work_id: self.source_work_id,
+                transcluded_by: self.transcluded_by.as_ref().map(|t| TransclusionInfoData {
+                    club_id: t.club_id,
+                    display_name: t.display_name.clone(),
+                    public_key: t.public_key.to_vec(),
+                    timestamp: t.timestamp,
+                }),
             }
             .serialize(s)
         }
@@ -81,6 +107,15 @@ mod element_serde_impl {
                 Some("historical") => AuthorType::Historical,
                 _ => AuthorType::Human,
             };
+            let transcluded_by = data.transcluded_by.map(|t| {
+                let public_key: [u8; 32] = t.public_key.try_into().unwrap_or([0u8; 32]);
+                TransclusionInfo {
+                    club_id: t.club_id,
+                    display_name: t.display_name,
+                    public_key,
+                    timestamp: t.timestamp,
+                }
+            });
             Ok(ElementProvenance {
                 author_public_key,
                 author_display_name: data.author_display_name,
@@ -90,6 +125,7 @@ mod element_serde_impl {
                 llm_model: data.llm_model,
                 historical_author_id: data.historical_author_id,
                 source_work_id: data.source_work_id,
+                transcluded_by,
             })
         }
     }

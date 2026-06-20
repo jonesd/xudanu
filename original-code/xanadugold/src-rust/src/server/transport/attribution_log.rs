@@ -4,8 +4,18 @@ use sha2::{Digest, Sha256};
 
 const SEED_FILE: &str = "attribution.log.seed";
 
-pub struct AttributionLog {
+pub enum AttributionLog {
+    File(FileAttributionLog),
+    InMemory(InMemoryAttributionLog),
+}
+
+pub struct FileAttributionLog {
     inner: std::fs::File,
+    prev_hash: String,
+    sequence: u64,
+}
+
+pub struct InMemoryAttributionLog {
     prev_hash: String,
     sequence: u64,
 }
@@ -63,13 +73,50 @@ impl AttributionLog {
             (0, prev_hash)
         };
 
-        Ok(AttributionLog {
+        Ok(AttributionLog::File(FileAttributionLog {
             inner: file,
             prev_hash,
             sequence,
+        }))
+    }
+
+    pub fn in_memory() -> Self {
+        let seed = format!(
+            "xudanu-attribution-inmemory-seed-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        AttributionLog::InMemory(InMemoryAttributionLog {
+            prev_hash: sha256_hex(seed.as_bytes()),
+            sequence: 0,
         })
     }
 
+    pub fn append(&mut self, entry: &AttributionEntry) -> Result<(), std::io::Error> {
+        match self {
+            AttributionLog::File(log) => log.append(entry),
+            AttributionLog::InMemory(log) => {
+                log.append(entry);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn sequence(&self) -> u64 {
+        match self {
+            AttributionLog::File(log) => log.sequence(),
+            AttributionLog::InMemory(log) => log.sequence(),
+        }
+    }
+
+    pub fn is_in_memory(&self) -> bool {
+        matches!(self, AttributionLog::InMemory(_))
+    }
+}
+
+impl FileAttributionLog {
     pub fn append(&mut self, entry: &AttributionEntry) -> Result<(), std::io::Error> {
         let line = format!(
             "{{\"seq\":{},\"ts\":{},\"author\":\"{}\",\"span_fp\":\"{}\",\"sig\":\"{}\",\"server\":\"{}\",\"work\":{},\"rev\":{}}}",
@@ -97,11 +144,29 @@ impl AttributionLog {
     pub fn sequence(&self) -> u64 {
         self.sequence
     }
+}
 
-    fn count_existing_lines(path: &std::path::Path) -> u64 {
-        std::fs::read_to_string(path)
-            .map(|s| s.lines().filter(|l| !l.is_empty()).count() as u64)
-            .unwrap_or(0)
+impl InMemoryAttributionLog {
+    fn append(&mut self, entry: &AttributionEntry) {
+        let line = format!(
+            "{{\"seq\":{},\"ts\":{},\"author\":\"{}\",\"span_fp\":\"{}\",\"sig\":\"{}\",\"server\":\"{}\",\"work\":{},\"rev\":{}}}",
+            entry.sequence,
+            entry.timestamp,
+            entry.author_pk_hex,
+            entry.span_fp_hex,
+            entry.signature_hex,
+            entry.server_id_hex,
+            entry.work_id,
+            entry.revision,
+        );
+
+        let chain_input = format!("{}{}", self.prev_hash, line);
+        self.prev_hash = sha256_hex(chain_input.as_bytes());
+        self.sequence += 1;
+    }
+
+    pub fn sequence(&self) -> u64 {
+        self.sequence
     }
 }
 
@@ -329,5 +394,40 @@ mod tests {
         assert_eq!(count, 2);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn in_memory_log_works() {
+        let mut log = AttributionLog::in_memory();
+        assert_eq!(log.sequence(), 0);
+        assert!(log.is_in_memory());
+
+        log.append(&AttributionEntry {
+            sequence: 0,
+            timestamp: 1000,
+            author_pk_hex: "aa".repeat(32),
+            span_fp_hex: "bb".repeat(64),
+            signature_hex: "cc".repeat(64),
+            server_id_hex: "dd".repeat(64),
+            work_id: 42,
+            revision: 1,
+        })
+        .unwrap();
+
+        assert_eq!(log.sequence(), 1);
+
+        log.append(&AttributionEntry {
+            sequence: 1,
+            timestamp: 2000,
+            author_pk_hex: "ee".repeat(32),
+            span_fp_hex: "ff".repeat(64),
+            signature_hex: "11".repeat(64),
+            server_id_hex: "22".repeat(64),
+            work_id: 43,
+            revision: 2,
+        })
+        .unwrap();
+
+        assert_eq!(log.sequence(), 2);
     }
 }

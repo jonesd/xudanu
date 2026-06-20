@@ -395,8 +395,6 @@ impl Server {
         if !authorized {
             return Err(ServerError::NotAuthorized);
         }
-        drop(session);
-        drop(club);
         let club = self.club(club_id)?;
         Ok(club.members().iter().copied().collect())
     }

@@ -1,186 +1,150 @@
-# Transclusion Attribution Suite — Feature Plan
+# Transclusion Attribution Suite — Implementation Record
 
-## Effort Assessment
+## Overview
 
-| Feature | Effort | Risk | Why |
-|---|---|---|---|
-| **Transclusion Ancestry** | Medium (3-4 days) | Low | Backend infrastructure exists (`ProvenanceHop` chain on `HyperRef`, `LinkListForWork`, `WorkBacklinks`). Mostly wiring new query endpoint + frontend panel. |
-| **Attribution Diffs** | Small (1-2 days) | Low | The `AttributionPanel` already shows per-author colored spans with timeline. What's missing is "show me what changed between revision N and N+1" which is a compare-entries-by-timestamp on the existing data. |
-| **Bidirectional Provenance** | Large (5-7 days) | Medium | Requires architectural change: when a derivative work edits transcluded content, the *source* work needs annotation. This involves new link types, reverse-propagation logic, and conflict resolution. |
-
-## Related Features Worth Including
-
-1. **Attribution Integrity Repair** — when attribution is wrong/missing, a way to re-run provenance propagation on a work
-2. **Source Work Attribution in Attribution Panel** — currently `AttributionSpanPayload` has `historical_author_id` but no `source_work_id`. Adding the source work provenance chain to each span lets the panel show "this span came from Work X via Link Y"
+Five-phase overhaul to ensure transcluded content always shows the **original author**, not the person who placed the transclusion. Each phase built on the previous one, moving from reliability fixes to rich multi-hop provenance display.
 
 ---
 
-## Phase 1: Attribution Panel Enhancement (1-2 days)
+## Phase 1: Attribution Reliability (Completed)
 
-**Goal:** Make the existing panel show transclusion source information.
+**Goal:** Fix wrong-author attribution when a source work has multiple contributors.
 
-### Tasks
+**Problem:** `apply_transclusion_attribution` picked the first entry's provenance in the source work as the author for transcluded content. If the source had mixed authors (e.g., historical author + user edits), the wrong author could be attributed.
 
-- [ ] **P1.1** Extend `ElementProvenance` with optional `source_work_id: Option<BeId>` field
-  - File: `src/edition/provenance.rs`
-  - Update serde `ElementProvenanceData` struct and Serialize/Deserialize impls
-  - Existing fields that reference `ElementProvenance` should work since it's `Option`
+**Changes:**
+- New `resolve_source_provenance()` — finds the excerpt text in the source work, walks all entries overlapping that range, picks the author with the most character overlap
+- New `fallback_source_provenance()` — fallback chain: `source_author_id` -> `last_revision_author` (club lookup with verifying key) -> None
+- Both `apply_transclusion_attribution_internal` and `apply_pending_provenance_to_edition` use these helpers
+- Debug log instead of silent skip when excerpt not yet materialized
 
-- [ ] **P1.2** Extend `AttributionSpanPayload` with optional source work fields
-  - File: `src/server/transport/protocol.rs`
-  - Add `source_work_id: Option<BeId>`
-  - Add `provenance_chain: Option<Vec<ProvenanceHopPayload>>`
-  - Define `ProvenanceHopPayload { source_work_id: BeId, link_id: BeId }`
-
-- [ ] **P1.3** Update `apply_transclusion_attribution` to store `source_work_id` in carrier provenance
-  - File: `src/server/server.rs` (~line 4022)
-  - When copying `source_prov` to matched range entries, set `source_prov.source_work_id = Some(origin_work_id)`
-
-- [ ] **P1.4** Update `attribution_query` server method to populate new fields
-  - When building `AttributionSpanPayload` from carrier provenance, include `source_work_id` and `provenance_chain` if present
-
-- [ ] **P1.5** Update frontend `AttributionSpan` / `nionSpan` type
-  - File: `web/app/src/api/crdt_sync.ts`
-  - Add `source_work_id?: number`, `provenance_chain?: ProvenanceHop[]`
-
-- [ ] **P1.6** Update `AttributionPanel` to show transclusion source
-  - File: `web/app/src/components/AttributionPanel.tsx`
-  - When a span has `historicalAuthorId` and `source_work_id`, show "via [source work]" label
-  - Distinct gold color for historical authors (already exists)
-  - Make source work clickable if possible
-
-- [ ] **P1.7** Update existing tests
-  - Verify `transclusion_attribution_propagates_historical_provenance` test checks `source_work_id` is set
-  - Add assertion that `ElementProvenance.source_work_id == Some(origin_work_id)` after attribution
+**Tests:**
+- `user_transclusion_preserves_original_author` — alice writes, bob transcludes, attribution shows alice
+- `transclusion_attribution_uses_correct_author_for_excerpt_range` — multi-author source, correct author selected
+- `transclusion_attribution_fallback_uses_last_revision_author` — missing element provenance, fallback works
 
 ---
 
-## Phase 2: Transclusion Ancestry View (3-4 days)
+## Phase 2: Always-Initialize AttributionLog (Completed)
 
-**Goal:** Show the chain of derivation from source to current document.
+**Goal:** Eliminate the "No Log" state where attribution logging silently stopped.
 
-### Tasks
+**Problem:** `AttributionLog` was `Option<AttributionLog>`. If file initialization failed (e.g., new server, permissions), the field was `None` and all attribution logging was silently skipped. The panel showed "No Log" and revision history was lost.
 
-- [ ] **P2.1** New opcode `WorkTransclusionAncestry { work_id: BeId }`
-  - File: `src/server/transport/protocol.rs`
-  - Add `OperationCode::WorkTransclusionAncestry` (pick next available 0x03xx)
-  - Add `WireRequest::WorkTransclusionAncestry { work_id: BeId }`
-  - Add `WireResponse::TransclusionAncestryResult { ancestors: Vec<AncestorNode> }`
-  - Define `AncestorNode { work_id: BeId, title: Option<String>, link_id: BeId, depth: u32, author_display_name: Option<String> }`
+**Changes:**
+- `AttributionLog` refactored to enum: `File(FileAttributionLog)` | `InMemory(InMemoryAttributionLog)`
+- Server field changed from `Option<AttributionLog>` to `AttributionLog` — always present
+- `Server::new()` and `from_snapshot()` use `AttributionLog::in_memory()`
+- `init_data_dir`/`restore_from_data_dir` use explicit error handling instead of `.ok()` swallowing
+- `attribution_log_status()` always returns `has_log: true`
+- `revise_work` always appends to attribution log (no `if let Some` guard)
 
-- [ ] **P2.2** Implement `work_transclusion_ancestry` on server
-  - File: `src/server/server.rs`
-  - Walk incoming links (where this work is destination) via link store
-  - For each link, get origin work and provenance chain from `HyperRef`
-  - Recursively walk to origin works, building ancestor tree with depth tracking
-  - Deduplicate cycles (work appearing multiple times in chain)
-
-- [ ] **P2.3** Wire codec and dispatch
-  - File: `src/server/transport/codec.rs` — parse new request
-  - File: `src/server/transport/dispatch.rs` — dispatch to server method
-
-- [ ] **P2.4** Frontend API client method
-  - File: `web/app/src/api/crdt_sync.ts`
-  - Add `getTransclusionAncestry(workId: number): Promise<AncestorNode[]>`
-
-- [ ] **P2.5** Frontend Ancestry panel component
-  - New component or section within `AttributionPanel`
-  - Collapsible tree showing work title, link type, author, depth
-  - Click to navigate to ancestor work
-  - Show "No transclusion ancestry" for original works
+**Tests:**
+- `in_memory_log_works` — new server has working in-memory log
 
 ---
 
-## Phase 3: Attribution Diffs (1-2 days)
+## Phase 3: transcluded_by Field (Completed)
 
-**Goal:** Show what changed between revisions, per author.
+**Goal:** Track who placed a transclusion, separate from who originally wrote the content.
 
-### Tasks
+**Problem:** Transcluded spans showed only the original author. There was no record of who actually performed the transclusion (the placer). This loses important provenance information — knowing who introduced content into a document is distinct from knowing who wrote it.
 
-- [ ] **P3.1** Extend `AttributionQuery` response with revision boundaries
-  - File: `src/server/transport/protocol.rs`
-  - Add `revision_boundaries: Vec<RevisionBoundary>` to `AttributionQueryResult`
-  - Define `RevisionBoundary { timestamp: u64, author_public_key: Vec<u8>, span_count: u64, char_count: u64 }`
+**Changes:**
+- New `TransclusionInfo` struct in `provenance.rs`: `{ club_id, display_name, public_key, timestamp }`
+- `ElementProvenance` gains `transcluded_by: Option<TransclusionInfo>` field with `#[serde(default)]` for backward compat
+- `PendingAttribution` gains `placed_by: Option<TransclusionInfo>` — resolved once via `resolve_transclusion_placer()` at placement time
+- `apply_transclusion_attribution_internal` accepts `placed_by` param, sets it on source provenance
+- `apply_pending_provenance_to_edition` reads `placed_by` from `PendingAttribution`
+- `AttributionSpanPayload` gains `transcluded_by_name` and `transcluded_by_club_id` fields
+- Frontend `AttributionPanel.tsx` shows "transcluded by [name]"
 
-- [ ] **P3.2** Compute revision boundaries server-side
-  - Group spans by timestamp (or timestamp windows), compute per-group stats
-
-- [ ] **P3.3** Frontend revision slider/dropdown
-  - File: `web/app/src/components/AttributionPanel.tsx`
-  - Dropdown to select revision range
-  - Filter displayed spans to selected range
-  - Summary: "Author X added N chars in this revision"
+**Tests:**
+- Extended `user_transclusion_preserves_original_author` to verify `transcluded_by.display_name == "bob"`
 
 ---
 
-## Phase 4: Bidirectional Provenance (5-7 days)
+## Phase 4: Multi-Hop Provenance Chain (Completed)
 
-**Goal:** When derivative work edits transcluded content, annotate the source work.
+**Goal:** Surface the full derivation ancestry in the attribution panel.
 
-### Tasks
+**Problem:** `provenance_chain: None` was hardcoded in `attribution_query`. The chain data existed on links (computed by `compute_provenance_chain` / `provenance_ancestry`) but was never sent to the frontend. Users couldn't trace content through multiple levels of transclusion.
 
-- [ ] **P4.1** New derivative link type / flag
-  - File: `src/edition/links.rs`
-  - Add `DerivativeEdit` variant or flag on existing link types
-  - Payload: `{ original_range, derivative_work_id, derivative_range }`
+**Changes:**
+- New `enrich_provenance_hops()` helper — looks up work title (first 60 chars) + author name for each hop
+- `ProvenanceHopPayload` gains optional `source_work_title` and `source_author_name` (`#[serde(default)]` for backward compat)
+- `attribution_query` computes `provenance_ancestry(work)` once, attaches to transcluded spans only
+- `dispatch.rs` provenance_ancestry endpoint also enriched
+- Frontend `AttributionPanel.tsx` shows "Derivation Chain" section: `[work title] (author) via link:[id] -> ... -> This document`
 
-- [ ] **P4.2** Detect derivative edits on `WorkRevise`
-  - File: `src/server/server.rs`
-  - On revision, compare old and new editions
-  - If modified content overlaps with transcluded regions (entries that have `source_work_id` set), create derivative link
-
-- [ ] **P4.3** Store and query derivative links
-  - Register in backfollow engine
-  - Return via `WorkBacklinks` for source work
-
-- [ ] **P4.4** Frontend: show derived edits in source work
-  - Badge on spans that have derivative modifications
-  - "Edited in N derivative works" indicator
+**Tests:**
+- `attribution_query_provenance_chain_multi_hop` — Alice -> Bob -> Carol chain, verifies 2-hop enriched chain
 
 ---
 
-## Phase 5: Attribution Integrity Repair (1-2 days)
+## Phase 5: Cleanup (Completed)
 
-**Goal:** Admin operation to re-run attribution propagation.
-
-### Tasks
-
-- [ ] **P5.1** New opcode `WorkRepairAttribution { work_id: BeId }`
-- [ ] **P5.2** Server method: iterate all incoming links, re-run `apply_transclusion_attribution` for each
-- [ ] **P5.3** Frontend: admin-only "Repair Attribution" button in panel
+**Goal:** Documentation update and warning fixes.
 
 ---
 
-## Dependency Graph
+## Architecture Summary
+
+### Data Flow
 
 ```
-Phase 1 (Panel Enhancement)
-    ├── Phase 2 (Ancestry View) ← depends on Phase 1 data
-    ├── Phase 3 (Attribution Diffs) ← independent of Phase 2
-    └── Phase 4 (Bidirectional Provenance) ← depends on Phase 1 data model
-        └── Phase 5 (Repair) ← depends on Phase 4
+User places transclusion
+  -> create_link() computes provenance_chain for origin ref
+  -> apply_transclusion_attribution()
+       -> resolve_transclusion_placer() -> TransclusionInfo
+       -> resolve_source_provenance() -> correct original author
+       -> fallback_source_provenance() -> if no element provenance
+       -> sets ElementProvenance { author, source_work_id, transcluded_by }
+       -> stores PendingAttribution { placed_by, ... }
+  -> setText fires (may run before attribution)
+  -> apply_pending_provenance_to_edition() -> safety net on materialization
+
+attribution_query(work)
+  -> provenance_ancestry(work) -> full derivation chain
+  -> enrich_provenance_hops() -> add titles + author names
+  -> transcluded spans get chain, original spans get None
+  -> frontend renders Derivation Chain + Author list + Timeline
 ```
 
-## Recommended Order
+### Key Types
 
-**Phase 1 → 2 → 3 → 4 → 5**
+| Type | File | Purpose |
+|---|---|---|
+| `ElementProvenance` | `provenance.rs` | Per-entry authorship + `source_work_id` + `transcluded_by` |
+| `TransclusionInfo` | `provenance.rs` | Identity of who placed a transclusion |
+| `PendingAttribution` | `server.rs` | Deferred attribution for race-condition safety |
+| `AttributionLog` | `attribution_log.rs` | Append-only revision chain (File or InMemory) |
+| `ProvenanceHop` | `links.rs` | Single hop in derivation chain |
+| `ProvenanceHopPayload` | `protocol.rs` | Wire format with enriched title/author |
+| `AttributionSpanPayload` | `protocol.rs` | Per-span attribution data sent to frontend |
 
-Phases 1-3 are additive, low-risk, and immediately useful. Phase 4 is the big one and should be designed carefully before implementation. Phase 5 is a safety net for Phase 4.
+### Key Methods
 
-## Total Estimate
+| Method | File | Purpose |
+|---|---|---|
+| `resolve_source_provenance()` | `server.rs` | Excerpt-range-aware original author lookup |
+| `fallback_source_provenance()` | `server.rs` | Fallback chain for missing element provenance |
+| `resolve_transclusion_placer()` | `server.rs` | Session -> TransclusionInfo |
+| `compute_provenance_chain()` | `server.rs` | Link-level chain (propagated on link creation) |
+| `provenance_ancestry()` | `server.rs` | Work-level recursive ancestry walk |
+| `enrich_provenance_hops()` | `server.rs` | Add work titles + author names to hops |
+| `apply_transclusion_attribution_internal()` | `server.rs` | Core attribution propagation |
+| `apply_pending_provenance_to_edition()` | `server.rs` | Safety-net re-application on materialization |
 
-- **Phases 1-3 (high-value, low-risk):** 5-8 days
-- **All phases:** 11-17 days
+---
 
-## Key Files
+## Future Enhancements (Not Yet Implemented)
 
-- `src/edition/provenance.rs` — `ElementProvenance`, `Provenance`, signing/verification
-- `src/edition/links.rs` — `ProvenanceHop`, `HyperRef`, provenance chain
-- `src/edition/backfollow.rs` — `BackfollowEngine`, `find_transcluders`, `find_transcluders_with_backfollow`
-- `src/server/server.rs` — `apply_transclusion_attribution` (~4022), `apply_source_attribution` (~1737)
-- `src/server/transport/protocol.rs` — `WireRequest`, `AttributionSpanPayload`, opcodes
-- `src/server/transport/codec.rs` — request parsing
-- `src/server/transport/dispatch.rs` — request dispatch
-- `web/app/src/components/AttributionPanel.tsx` — attribution UI
-- `web/app/src/api/crdt_sync.ts` — frontend API client
-- `web/app/src/hooks/useTransclusion.ts` — transclusion hook
+### Attribution Diffs
+Show what changed between revisions, per author. The `AttributionPanel` already shows per-author colored spans with timeline. Missing piece: "show me what changed between revision N and N+1".
+
+### Bidirectional Provenance
+When a derivative work edits transcluded content, annotate the source work. Requires new link types, reverse-propagation logic, and conflict resolution. Large effort (5-7 days).
+
+### Attribution Integrity Repair
+Admin operation to re-run provenance propagation on a work. Iterate all incoming links, re-run `apply_transclusion_attribution` for each.

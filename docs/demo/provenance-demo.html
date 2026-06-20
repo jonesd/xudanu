@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Provenance / Attribution — live scenarios</title>
+<style>
+  /* ---- page chrome (demo-only wrapper) ---- */
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f4f5f7; color: #222; line-height: 1.5;
+  }
+  .page { max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; }
+  .page > header { margin-bottom: 28px; }
+  .page > header h1 { font-size: 22px; margin: 0 0 6px; }
+  .page > header p  { margin: 0; color: #666; font-size: 14px; }
+  .meta { color:#999; font-size:12px; margin-top:8px; font-family:"SF Mono","Fira Code",monospace; }
+  .scenario {
+    background:#fff; border:1px solid #e3e5e8; border-radius:10px; padding:20px 24px;
+    margin-bottom:22px; box-shadow:0 1px 2px rgba(0,0,0,.03);
+  }
+  .scenario h2 { font-size:17px; margin:0 0 4px; }
+  .scenario .blurb { color:#666; font-size:13px; margin:0 0 16px; max-width:80ch; }
+  .scn-grid { display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start; }
+  @media (max-width: 820px) { .scn-grid { grid-template-columns: 1fr; } }
+  .doc-preview {
+    border:1px solid #e3e5e8; border-radius:8px; background:#fcfcfd; padding:14px 16px;
+    font-size:13px; color:#333;
+  }
+  .doc-preview .label { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#999; margin-bottom:8px; }
+  .doc-preview pre { margin:0; white-space:pre-wrap; word-break:break-word; font-family:"SF Mono","Fira Code",ui-monospace,monospace; font-size:12.5px; line-height:1.7; }
+  .doc-preview mark { color:inherit; padding:1px 0; border-radius:2px; border-left:3px solid; cursor:help; }
+  .legend { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; font-size:11px; color:#666; }
+  .legend .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle; }
+
+  /* ---- AttributionPanel: ported verbatim from web/app/src/app.css ---- */
+  .attribution-panel { border-top:1px solid #e0e0e0; background:#fff; padding:0; max-height:none; overflow:visible; }
+  .attribution-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .attribution-header h3 { font-size:15px; font-weight:600; color:#333; margin:0; }
+  .attribution-stats { display:flex; gap:12px; }
+  .attribution-stat { font-size:12px; color:#888; background:#f5f5f5; padding:2px 8px; border-radius:10px; }
+  .attribution-log-status { display:flex; align-items:center; gap:12px; padding:6px 12px; background:#f8f9fa; border-radius:6px; margin-bottom:12px; font-size:13px; }
+  .log-valid { color:#2e7d32; font-weight:600; }
+  .log-invalid { color:#c62828; font-weight:600; }
+  .log-none { color:#888; font-weight:600; }
+  .log-detail { color:#888; font-size:12px; }
+  .attribution-bar { position:relative; height:20px; background:#f0f0f0; border-radius:4px; margin-bottom:12px; overflow:hidden; }
+  .attribution-bar-segment { position:absolute; top:0; height:100%; transition:opacity .2s; cursor:default; }
+  .attribution-bar-segment:hover { opacity:1 !important; }
+  .attribution-derivation { margin-bottom:12px; padding:8px 10px; background:#f8f8ff; border:1px solid #e0e0f0; border-radius:6px; }
+  .attribution-derivation h4 { margin:0 0 6px 0; font-size:12px; color:#666; text-transform:uppercase; letter-spacing:.04em; }
+  .derivation-chain { display:flex; flex-wrap:wrap; align-items:center; gap:4px; font-size:12px; color:#444; }
+  .chain-hop { display:inline-flex; align-items:baseline; gap:3px; }
+  .chain-arrow { color:#999; font-size:13px; }
+  .chain-work { font-weight:600; color:#333; }
+  .chain-author { color:#777; font-size:11px; }
+  .chain-link-detail { color:#aaa; font-size:10px; font-family:monospace; }
+  .chain-current { font-weight:600; color:#4a6da7; font-style:italic; }
+  .attribution-authors { list-style:none; padding:0; margin:0 0 12px 0; }
+  .attribution-author { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #f0f0f0; font-size:13px; flex-wrap:wrap; }
+  .attribution-author:last-child { border-bottom:none; }
+  .author-color { display:inline-block; width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .author-name { font-weight:600; color:#333; min-width:80px; }
+  .historical-name { font-style:italic; font-family:Georgia,"Times New Roman",serif; color:#8b6914; }
+  .llm-name { font-style:italic; color:#7c4dff; }
+  .author-sig { font-size:11px; padding:1px 6px; border-radius:3px; font-weight:500; }
+  .sig-valid { background:#e8f5e9; color:#2e7d32; }
+  .sig-invalid { background:#ffebee; color:#c62828; }
+  .author-spans { color:#888; font-size:12px; }
+  .author-key { font-family:"SF Mono","Fira Code",monospace; font-size:11px; color:#aaa; }
+  .author-club { font-size:11px; color:#888; background:#f5f0ff; padding:1px 4px; border-radius:3px; }
+  .author-source-work { font-size:11px; color:#8b7340; background:#faf3e0; padding:1px 4px; border-radius:3px; }
+  .author-type-badge { font-size:10px; padding:1px 6px; border-radius:3px; }
+  .historical-badge { background:#fef3cd; color:#8b6914; border:1px solid #c4a35a; }
+  .llm-badge { background:#ede7f6; color:#7c4dff; border:1px solid #b39ddb; }
+  .author-transcluded-by { font-size:11px; color:#3a6b8a; background:#eaf2f8; padding:1px 6px; border-radius:3px; }
+  .timeline-via { font-size:11px; color:#8b7340; margin-left:4px; }
+  .attribution-timeline { margin-top:8px; }
+  .attribution-timeline h4 { font-size:13px; font-weight:600; color:#666; margin-bottom:6px; }
+  .attribution-timeline ul { list-style:none; padding:0; margin:0; }
+  .timeline-entry { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:12px; font-family:"SF Mono","Fira Code",monospace; }
+  .timeline-time { color:#888; min-width:80px; }
+  .timeline-range { color:#666; min-width:80px; }
+  .timeline-author { font-weight:600; }
+  .timeline-unsigned { color:#c62828; font-size:11px; }
+  .attribution-empty { color:#999; font-size:13px; text-align:center; padding:16px 0; }
+
+  details.raw { margin-top:14px; border-top:1px dashed #e0e0e0; padding-top:10px; }
+  details.raw summary { cursor:pointer; font-size:12px; color:#888; }
+  details.raw pre { background:#f6f7f9; border:1px solid #e6e8eb; border-radius:6px; padding:10px; font-size:11px; overflow:auto; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Provenance &amp; Attribution — live scenarios</h1>
+    <p>Rendered from real server responses captured against a running xudanu instance. Each panel below is produced by the same grouping / coverage / derivation-chain logic as <code>AttributionPanel.tsx</code>, driven by actual <code>attribution_query</code> + <code>provenance_ancestry</code> data.</p>
+    <div class="meta" id="meta"></div>
+  </header>
+  <div id="scenarios"></div>
+</div>
+
+<script src="scenarios.js"></script>
+<script>
+(function () {
+  "use strict";
+  const DATA = window.SCENARIOS;
+
+  // ---- exact ports of AttributionPanel.tsx helpers ----
+  function hslToHex(h, s, l) {
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => {
+      const k = (n + h / 30) % 12;
+      const c = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+      return Math.round(255 * c).toString(16).padStart(2, "0");
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
+  }
+  function seedFromBytes(bytes) { let h = 0; for (const b of bytes) h = ((h << 5) - h + b) | 0; return Math.abs(h); }
+  function authorStripeColors(seed) {
+    const hue1 = (seed * 137) % 360;
+    const hue2 = (hue1 + 40) % 360;
+    return [hslToHex(hue1, 0.45, 0.38), hslToHex(hue2, 0.35, 0.42)];
+  }
+  const bytesToHex = (b) => b.map((x) => x.toString(16).padStart(2, "0")).join("");
+  function shortKey(b) { const h = bytesToHex(b); return h.length > 16 ? `${h.slice(0, 8)}..${h.slice(-8)}` : h; }
+
+  // Reconstruct leaf->target paths from hop destinations (Fix #3).
+  function buildChainPaths(chain) {
+    if (!chain.length) return [];
+    const haveDest = chain.every((h) => h.dest_work_id != null && h.dest_work_id !== 0);
+    if (!haveDest) return [chain];
+    const byDest = new Map();
+    for (const h of chain) { const a = byDest.get(h.dest_work_id) || []; a.push(h); byDest.set(h.dest_work_id, a); }
+    const sources = new Set(chain.map((h) => h.source_work_id));
+    const targetId = chain.find((h) => !sources.has(h.dest_work_id))?.dest_work_id;
+    if (targetId == null) return [chain];
+    const paths = [];
+    const walk = (w, acc) => { const inc = byDest.get(w) || []; if (!inc.length) { paths.push(acc.slice().reverse()); return; } for (const h of inc) walk(h.source_work_id, acc.concat(h)); };
+    walk(targetId, []);
+    return paths.length ? paths : [chain];
+  }
+
+  // ---- group spans into authors (mirrors the component) ----
+  function groupAuthors(spans) {
+    const groups = new Map();
+    for (const span of spans) {
+      const isH = span.author_type === "historical";
+      const isLlm = span.author_type === "llm";
+      const key = isH && span.historical_author_id != null ? `ha:${span.historical_author_id}`
+        : isH && span.source_work_id != null ? `sw:${span.source_work_id}`
+        : bytesToHex(span.author_public_key);
+      if (!groups.has(key)) {
+        const displayName = isH ? (span.author_display_name || "Unknown Historical Author")
+          : isLlm ? (span.llm_model || "LLM")
+          : (span.author_display_name || shortKey(span.author_public_key));
+        const seed = isH ? (span.historical_author_id ?? span.source_work_id ?? 0) : seedFromBytes(span.author_public_key);
+        const stripe = authorStripeColors(seed);
+        groups.set(key, {
+          key, displayName, color: isLlm ? "#7c4dff" : stripe[0], stripeColors: stripe,
+          spans: [], allValid: true, authorType: span.author_type,
+          historicalAuthorId: span.historical_author_id, sourceWorkId: span.source_work_id ?? null,
+        });
+      }
+      const g = groups.get(key);
+      g.spans.push(span);
+      if (!span.signature_valid) g.allValid = false;
+    }
+    return Array.from(groups.values());
+  }
+
+  function coveragePct(spans, docLen) {
+    const eff = spans.length ? Math.max(docLen, spans.reduce((m, s) => Math.max(m, s.end), 0)) : docLen;
+    const sorted = [...spans].sort((a, b) => a.start - b.start);
+    let union = 0, prev = -1;
+    for (const s of sorted) { if (s.end <= prev) continue; const st = Math.max(s.start, prev); union += s.end - st; prev = s.end; }
+    return eff > 0 ? Math.round((union / eff) * 100) : 0;
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+  // ---- document preview: highlight real spans in the real text ----
+  function renderDocPreview(docText, spans, authors) {
+    const pts = new Set([0, docText.length]);
+    for (const s of spans) { pts.add(s.start); pts.add(s.end); }
+    const sorted = [...pts].filter((p) => p >= 0 && p <= docText.length).sort((a, b) => a - b);
+    function authorFor(span) {
+      const isH = span.author_type === "historical";
+      const key = isH && span.historical_author_id != null ? `ha:${span.historical_author_id}`
+        : isH && span.source_work_id != null ? `sw:${span.source_work_id}` : bytesToHex(span.author_public_key);
+      return authors.find((a) => a.key === key);
+    }
+    function spanAt(pos) { // a span covering midpoint of the segment
+      for (const s of spans) { if (pos >= s.start && pos < s.end) return s; }
+      return null;
+    }
+    let html = "";
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const p0 = sorted[i], p1 = sorted[i + 1];
+      if (p1 <= p0) continue;
+      const chunk = esc(docText.slice(p0, p1));
+      const span = spanAt((p0 + p1) >> 1);
+      if (span) {
+        const a = authorFor(span);
+        const c0 = a?.stripeColors?.[0] || "#888";
+        const c1 = a?.stripeColors?.[1] || "#666";
+        const bg = `repeating-linear-gradient(45deg, ${c0}22, ${c0}22 3px, ${c1}22 3px, ${c1}22 6px)`;
+        const title = `${a?.displayName || "unknown"} [${span.start}..${span.end}]${span.transcluded_by_name ? " · transcluded by " + span.transcluded_by_name : ""}`;
+        html += `<mark style="border-left-color:${c0};background:${bg}" title="${esc(title)}">${chunk}</mark>`;
+      } else {
+        html += chunk;
+      }
+    }
+    return html;
+  }
+
+  function legend(authors) {
+    return `<div class="legend">${authors.map((a) =>
+      `<span><span class="dot" style="background:${a.color}"></span>${esc(a.displayName)}</span>`).join("")}
+      <span style="color:#aaa">unshaded = author’s own text (no attribution)</span></div>`;
+  }
+
+  // ---- the AttributionPanel (mirrors the component's render) ----
+  function renderPanel(scenario) {
+    const spans = scenario.spans;
+    const docLen = scenario.docText.length;
+    const authors = groupAuthors(spans);
+    const coverage = coveragePct(spans, docLen);
+    const eff = spans.length ? Math.max(docLen, spans.reduce((m, s) => Math.max(m, s.end), 0)) : docLen;
+    const chain = spans.find((s) => s.provenance_chain && s.provenance_chain.length > 0)?.provenance_chain ?? [];
+
+    // log status: the real server always reports has_log=true (in-memory log → chain_valid=true)
+    const logStatus = `<div class="attribution-log-status">
+        <span class="log-valid">Chain valid</span>
+        <span class="log-detail">${spans.length} entries, seq #${spans.length} · in-memory (always-initialized)</span>
+      </div>`;
+
+    const bar = eff > 0 ? `<div class="attribution-bar">${spans.map((span) => {
+      const isH = span.author_type === "historical";
+      const key = isH && span.historical_author_id != null ? `ha:${span.historical_author_id}`
+        : isH && span.source_work_id != null ? `sw:${span.source_work_id}` : bytesToHex(span.author_public_key);
+      const a = authors.find((x) => x.key === key);
+      const c0 = a?.stripeColors?.[0] || "#888", c1 = a?.stripeColors?.[1] || "#666";
+      const bg = `repeating-linear-gradient(45deg, ${c0}, ${c0} 3px, ${c1}, ${c1} 6px)`;
+      const left = (span.start / eff) * 100, width = ((span.end - span.start) / eff) * 100;
+      return `<div class="attribution-bar-segment" style="left:${left}%;width:${width}%;background:${bg};opacity:${span.signature_valid ? 0.7 : 0.35}" title="${esc(a?.displayName || "unknown")} [${span.start}..${span.end}]${span.signature_valid ? "" : " (unsigned)"}"></div>`;
+    }).join("")}</div>` : "";
+
+    const paths = buildChainPaths(chain);
+    const chainBlock = paths.length ? `<div class="attribution-derivation"><h4>Derivation Chain${paths.length > 1 ? "s" : ""}</h4><div class="derivation-chain" style="flex-direction:column;align-items:stretch;gap:6px">
+      ${paths.map((path) => `<div class="chain-hop" style="flex-wrap:wrap;align-items:center">${path.map((hop) => `<span class="chain-hop"><span class="chain-arrow">\u2192</span>
+          <span class="chain-work">${esc(hop.source_work_title || "work:" + hop.source_work_id.toString(16).padStart(4, "0"))}</span>
+          ${hop.source_author_name ? `<span class="chain-author">(${esc(hop.source_author_name)})</span>` : ""}</span>`).join("")}
+        <span class="chain-arrow">\u2192</span><span class="chain-current">This document</span></div>`).join("")}</div></div>` : "";
+
+    const authorsList = `<ul class="attribution-authors">${authors.map((a) => {
+      const tb = a.spans.find((s) => s.transcluded_by_name);
+      return `<li class="attribution-author${a.authorType === "historical" ? " historical-author" : ""}">
+          <span class="author-color" style="${a.stripeColors ? `background:repeating-linear-gradient(45deg, ${a.stripeColors[0]}, ${a.stripeColors[0]} 3px, ${a.stripeColors[1]} 3px, ${a.stripeColors[1]} 6px)` : `background-color:${a.color}`}"></span>
+          <span class="author-name${a.authorType === "historical" ? " historical-name" : ""}${a.authorType === "llm" ? " llm-name" : ""}">${esc(a.displayName)}</span>
+          ${a.authorType === "historical" ? '<span class="author-type-badge historical-badge">historical</span>' : ""}
+          ${a.authorType === "llm" ? '<span class="author-type-badge llm-badge">LLM</span>' : ""}
+          ${a.sourceWorkId != null ? `<span class="author-source-work">via work:${a.sourceWorkId.toString(16).padStart(4, "0")}</span>` : ""}
+          ${tb ? `<span class="author-transcluded-by">transcluded by ${esc(tb.transcluded_by_name)}</span>` : ""}
+          <span class="author-sig ${a.allValid ? "sig-valid" : "sig-invalid"}">${a.authorType === "historical" ? "attested" : a.allValid ? "signed" : "unsigned"}</span>
+          <span class="author-spans">${a.spans.length} span${a.spans.length !== 1 ? "s" : ""}</span>
+          <span class="author-key" title="${esc(a.key)}">${esc(shortKey(a.spans[0].author_public_key))}</span>
+          ${a.spans[0].author_club_id != null ? `<span class="author-club">club:${a.spans[0].author_club_id.toString(16).padStart(4, "0")}</span>` : ""}
+        </li>`;
+    }).join("")}</ul>`;
+
+    const timeline = spans.length ? `<div class="attribution-timeline"><h4>Timeline</h4><ul>${
+      [...spans].sort((a, b) => a.start - b.start).map((span) => {
+        const isH = span.author_type === "historical";
+        const key = isH && span.historical_author_id != null ? `ha:${span.historical_author_id}`
+          : isH && span.source_work_id != null ? `sw:${span.source_work_id}` : bytesToHex(span.author_public_key);
+        const a = authors.find((x) => x.key === key);
+        const time = new Date(Number(span.timestamp) * 1000).toLocaleString();
+        return `<li class="timeline-entry"><span class="timeline-time">${esc(time)}</span>
+            <span class="timeline-range">[${span.start}..${span.end}]</span>
+            <span class="timeline-author" style="color:${a?.color || "#888"}">${esc(a?.displayName || "unknown")}</span>
+            ${span.source_work_id != null ? `<span class="timeline-via">via work:${span.source_work_id.toString(16).padStart(4, "0")}</span>` : ""}
+            ${span.transcluded_by_name ? `<span class="timeline-via" style="color:#3a6b8a">transcluded by ${esc(span.transcluded_by_name)}</span>` : ""}
+            ${!span.signature_valid ? '<span class="timeline-unsigned">(unsigned)</span>' : ""}</li>`;
+      }).join("")}</ul></div>` : "";
+
+    const empty = spans.length === 0 ? '<p class="attribution-empty">No attribution data yet. Make a revision to generate signed spans.</p>' : "";
+
+    return `<div class="attribution-panel">
+        <div class="attribution-header"><h3>Attribution</h3>
+          <div class="attribution-stats">
+            <span class="attribution-stat">${spans.length} spans</span>
+            <span class="attribution-stat">${authors.length} author${authors.length !== 1 ? "s" : ""}</span>
+            <span class="attribution-stat">${coverage}% coverage</span>
+          </div></div>
+        ${logStatus}${bar}${chainBlock}${authorsList}${timeline}${empty}
+      </div>`;
+  }
+
+  // ---- assemble the page ----
+  const root = document.getElementById("scenarios");
+  document.getElementById("meta").textContent =
+    `generated ${DATA.generated} · server localhost:${DATA.port} · ${DATA.scenarios.length} scenarios`;
+
+  for (const s of DATA.scenarios) {
+    const authors = groupAuthors(s.spans);
+    const preview = s.docText
+      ? `<div class="doc-preview"><div class="label">Document (work:0x${s.workId.toString(16).padStart(4, "0")}) — shaded spans = transcluded content</div><pre>${renderDocPreview(s.docText, s.spans, authors)}</pre>${legend(authors)}</div>`
+      : "";
+    const raw = `<details class="raw"><summary>raw server response (attribution_query + provenance_ancestry)</summary><pre>${esc(JSON.stringify({ spans: s.spans, chain: s.chain }, null, 2))}</pre></details>`;
+    root.insertAdjacentHTML("beforeend",
+      `<section class="scenario">
+         <h2>${esc(s.title)}</h2>
+         <p class="blurb">${esc(s.blurb)}</p>
+         <div class="scn-grid">${preview}<div>${renderPanel(s)}${raw}</div></div>
+       </section>`);
+  }
+})();
+</script>
+</body>
+</html>

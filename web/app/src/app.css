@@ -1632,6 +1632,64 @@ body {
   opacity: 1 !important;
 }
 
+.attribution-derivation {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: #f8f8ff;
+  border: 1px solid #e0e0f0;
+  border-radius: 6px;
+}
+
+.attribution-derivation h4 {
+  margin: 0 0 6px 0;
+  font-size: 12px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.derivation-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #444;
+}
+
+.chain-hop {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.chain-arrow {
+  color: #999;
+  font-size: 13px;
+}
+
+.chain-work {
+  font-weight: 600;
+  color: #333;
+}
+
+.chain-author {
+  color: #777;
+  font-size: 11px;
+}
+
+.chain-link-detail {
+  color: #aaa;
+  font-size: 10px;
+  font-family: monospace;
+}
+
+.chain-current {
+  font-weight: 600;
+  color: #4a6da7;
+  font-style: italic;
+}
+
 .attribution-authors {
   list-style: none;
   padding: 0;

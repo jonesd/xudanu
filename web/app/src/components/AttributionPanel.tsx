@@ -1,5 +1,35 @@
 import { useMemo } from "react";
-import type { AttributionSpan, AttributionLogStatus } from "../api/crdt_sync";
+import type { AttributionSpan, AttributionLogStatus, ProvenanceHop } from "../api/crdt_sync";
+
+// Reconstruct the ancestry DAG from hop destinations and return each
+// leaf→target path. Without dest_work_id (old server) it falls back to a
+// single flat path so a multi-source doc isn't misread as a linear chain.
+function buildChainPaths(chain: ProvenanceHop[]): ProvenanceHop[][] {
+  if (!chain.length) return [];
+  const haveDest = chain.every((h) => h.dest_work_id != null && h.dest_work_id !== 0);
+  if (!haveDest) return [chain];
+  const byDest = new Map<number, ProvenanceHop[]>();
+  for (const h of chain) {
+    const d = h.dest_work_id!;
+    const arr = byDest.get(d) ?? [];
+    arr.push(h);
+    byDest.set(d, arr);
+  }
+  const sources = new Set(chain.map((h) => h.source_work_id));
+  const targetId = chain.find((h) => !sources.has(h.dest_work_id!))?.dest_work_id;
+  if (targetId == null) return [chain];
+  const paths: ProvenanceHop[][] = [];
+  const walk = (workId: number, acc: ProvenanceHop[]) => {
+    const incoming = byDest.get(workId) ?? [];
+    if (incoming.length === 0) {
+      paths.push([...acc].reverse());
+      return;
+    }
+    for (const h of incoming) walk(h.source_work_id, [...acc, h]);
+  };
+  walk(targetId, []);
+  return paths.length ? paths : [chain];
+}
 
 function hslToHex(h: number, s: number, l: number): string {
   const a = s * Math.min(l, 1 - l);
@@ -99,6 +129,8 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
 
   if (!visible) return null;
 
+  const derivationChain = spans.find((s) => s.provenance_chain && s.provenance_chain.length > 0)?.provenance_chain ?? null;
+
   const effectiveLength = spans.length > 0
     ? Math.max(documentLength, spans.reduce((max, s) => Math.max(max, s.end), 0))
     : documentLength;
@@ -165,6 +197,31 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
         </div>
       )}
 
+      {derivationChain && derivationChain.length > 0 && (
+        <div className="attribution-derivation">
+          <h4>Derivation Chain{buildChainPaths(derivationChain).length > 1 ? "s" : ""}</h4>
+          <div className="derivation-chain" style={{ flexDirection: "column", alignItems: "stretch", gap: "6px" }}>
+            {buildChainPaths(derivationChain).map((path, pi) => (
+              <div key={pi} className="chain-hop" style={{ flexWrap: "wrap", alignItems: "center" }}>
+                {path.map((hop, i) => (
+                  <span key={i} className="chain-hop">
+                    {i > 0 && <span className="chain-arrow">{"\u2192"}</span>}
+                    <span className="chain-work">
+                      {hop.source_work_title || `work:${hop.source_work_id.toString(16).padStart(4, "0")}`}
+                    </span>
+                    {hop.source_author_name && (
+                      <span className="chain-author">({hop.source_author_name})</span>
+                    )}
+                  </span>
+                ))}
+                <span className="chain-arrow">{"\u2192"}</span>
+                <span className="chain-current">This document</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <ul className="attribution-authors">
         {authors.map((author) => (
           <li key={author.key} className={`attribution-author${author.authorType === "historical" ? " historical-author" : ""}`}>
@@ -182,6 +239,11 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
             )}
             {author.sourceWorkId != null && (
               <span className="author-source-work">via work:{author.sourceWorkId.toString(16).padStart(4, "0")}</span>
+            )}
+            {author.spans.some((s) => s.transcluded_by_name) && (
+              <span className="author-transcluded-by">
+                transcluded by {author.spans.find((s) => s.transcluded_by_name)?.transcluded_by_name}
+              </span>
             )}
             <span className={`author-sig ${author.allValid ? "sig-valid" : "sig-invalid"}`}>
               {author.authorType === "historical" ? "attested" : author.allValid ? "signed" : "unsigned"}

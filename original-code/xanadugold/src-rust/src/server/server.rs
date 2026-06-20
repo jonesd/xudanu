@@ -44,6 +44,7 @@ struct WorkState {
     is_source: bool,
     source_author_id: Option<BeId>,
     source_edition_info: Option<String>,
+    #[allow(dead_code)]
     imported_by: Option<BeId>,
     content_start_line: Option<u64>,
     content_end_line: Option<u64>,
@@ -114,7 +115,7 @@ pub struct Server {
     pub(crate) personal_club_count: usize,
     pub(crate) max_personal_clubs: usize,
     pub(crate) login_attempts: HashMap<BeId, crate::server::identity::ClubAttemptTracker>,
-    attribution_log: Option<crate::server::transport::attribution_log::AttributionLog>,
+    attribution_log: crate::server::transport::attribution_log::AttributionLog,
     pub(crate) historical_authors: crate::server::historical_author::HistoricalAuthorRegistry,
     pub(crate) source_patterns: Vec<crate::server::source_matcher::SourcePattern>,
     pub(crate) pending_attributions: Vec<PendingAttribution>,
@@ -152,6 +153,7 @@ pub struct PendingAttribution {
     pub origin_work_id: BeId,
     pub dest_work_id: BeId,
     pub excerpt: String,
+    pub placed_by: Option<crate::edition::provenance::TransclusionInfo>,
 }
 
 pub struct ServerHealth {
@@ -278,7 +280,7 @@ impl Server {
             personal_club_count: 0,
             max_personal_clubs: 10_000,
             login_attempts: HashMap::new(),
-            attribution_log: None,
+            attribution_log: crate::server::transport::attribution_log::AttributionLog::in_memory(),
             historical_authors: crate::server::historical_author::HistoricalAuthorRegistry::new(),
             source_patterns: crate::server::source_matcher::builtin_patterns(),
             pending_attributions: Vec::new(),
@@ -473,6 +475,29 @@ impl Server {
                 })
             })
             .or(session.initial_login())
+    }
+
+    fn resolve_transclusion_placer(
+        &self,
+        session_id: SessionId,
+    ) -> Option<crate::edition::provenance::TransclusionInfo> {
+        let club_id = self.resolve_author_club(session_id)?;
+        let display_name = self
+            .clubs
+            .get(&club_id)
+            .and_then(|c| c.display_name().map(|s| s.to_string()))
+            .unwrap_or_else(|| format!("club:{:04x}", club_id));
+        let public_key = self
+            .sessions
+            .get(&session_id)
+            .and_then(|s| s.club_signing_key().map(|k| k.verifying_key().to_bytes()))
+            .unwrap_or([0u8; 32]);
+        Some(crate::edition::provenance::TransclusionInfo {
+            club_id,
+            display_name,
+            public_key,
+            timestamp: Self::current_timestamp_secs(),
+        })
     }
 
     pub fn identity_for_session(
@@ -833,6 +858,7 @@ impl Server {
                     llm_model: None,
                     historical_author_id: None,
                     source_work_id: None,
+                    transcluded_by: None,
                 };
                 let entries = edition.all_entries();
                 let text_before = edition.to_text();
@@ -867,7 +893,8 @@ impl Server {
             }
         }
 
-        if let Some(ref mut log) = self.attribution_log {
+        {
+            let log = &mut self.attribution_log;
             let revision = self
                 .works
                 .get(&work_be_id)
@@ -1587,6 +1614,13 @@ impl Server {
             (c_start, c_end)
         };
 
+        let ancestry = self.provenance_ancestry(work_be_id);
+        let chain_payload = if ancestry.is_empty() {
+            None
+        } else {
+            Some(self.enrich_provenance_hops(&ancestry))
+        };
+
         let mut spans = Vec::new();
         for sp in &edition.span_provenance {
             if let Some(s) = start {
@@ -1653,6 +1687,17 @@ impl Server {
             let (char_start, char_end) = elem_to_char(sp.start, sp.end);
 
             let source_work_id = element_prov.and_then(|ep| ep.source_work_id);
+            let (transcluded_by_name, transcluded_by_club_id) = element_prov
+                .and_then(|ep| ep.transcluded_by.as_ref())
+                .map(|t| (Some(t.display_name.clone()), Some(t.club_id)))
+                .unwrap_or((None, None));
+
+            let is_transcluded = source_work_id.is_some() || transcluded_by_name.is_some();
+            let span_chain = if is_transcluded {
+                chain_payload.clone()
+            } else {
+                None
+            };
 
             spans.push(super::transport::protocol::AttributionSpanPayload {
                 start: char_start,
@@ -1667,7 +1712,9 @@ impl Server {
                 llm_model,
                 historical_author_id,
                 source_work_id,
-                provenance_chain: None,
+                transcluded_by_name,
+                transcluded_by_club_id,
+                provenance_chain: span_chain,
             });
         }
 
@@ -1723,7 +1770,30 @@ impl Server {
                     );
                         (name, "historical".to_string(), Some(ha_id))
                     } else if let Some(ep) = entry_prov {
-                        let name = if ep.author_display_name.is_empty() {
+                        let name = if matches!(
+                            ep.author_type,
+                            crate::edition::provenance::AuthorType::Historical
+                        ) {
+                            // Resolve from the registry by id (consistent with the
+                            // span_provenance path); the stamped author_display_name
+                            // may be empty for chained transclusions.
+                            ep.historical_author_id
+                                .and_then(|id| self.historical_authors.get(id))
+                                .map(|a| {
+                                    if a.display_name.is_empty() {
+                                        a.name.clone()
+                                    } else {
+                                        a.display_name.clone()
+                                    }
+                                })
+                                .unwrap_or_else(|| {
+                                    if ep.author_display_name.is_empty() {
+                                        "Unknown Historical Author".to_string()
+                                    } else {
+                                        ep.author_display_name.clone()
+                                    }
+                                })
+                        } else if ep.author_display_name.is_empty() {
                             "Unknown".to_string()
                         } else {
                             ep.author_display_name.clone()
@@ -1787,7 +1857,9 @@ impl Server {
                         llm_model: entry_prov.and_then(|ep| ep.llm_model.clone()),
                         historical_author_id: historical_id,
                         source_work_id: Some(pa.origin_work_id),
-                        provenance_chain: None,
+                        transcluded_by_name: pa.placed_by.as_ref().map(|t| t.display_name.clone()),
+                        transcluded_by_club_id: pa.placed_by.as_ref().map(|t| t.club_id),
+                        provenance_chain: chain_payload.clone(),
                     });
                 } else {
                     tracing::info!(
@@ -1870,23 +1942,17 @@ impl Server {
     }
 
     pub fn attribution_log_status(&self) -> super::transport::protocol::ResponseValue {
-        match &self.attribution_log {
-            Some(log) => {
-                let entry_count = log.sequence();
-                let chain_valid = self.verify_attribution_log_chain();
-                super::transport::protocol::ResponseValue::AttributionLogStatusResult {
-                    entry_count,
-                    chain_valid,
-                    last_sequence: entry_count,
-                    has_log: true,
-                }
-            }
-            None => super::transport::protocol::ResponseValue::AttributionLogStatusResult {
-                entry_count: 0,
-                chain_valid: false,
-                last_sequence: 0,
-                has_log: false,
-            },
+        let entry_count = self.attribution_log.sequence();
+        let chain_valid = if self.attribution_log.is_in_memory() {
+            true
+        } else {
+            self.verify_attribution_log_chain()
+        };
+        super::transport::protocol::ResponseValue::AttributionLogStatusResult {
+            entry_count,
+            chain_valid,
+            last_sequence: entry_count,
+            has_log: true,
         }
     }
 
@@ -2092,6 +2158,7 @@ impl Server {
             llm_model: None,
             timestamp,
             source_work_id,
+            transcluded_by: None,
         };
 
         let entries = current_edition.all_entries();
@@ -2240,6 +2307,7 @@ impl Server {
             llm_model: None,
             timestamp,
             source_work_id: None,
+            transcluded_by: None,
         };
 
         {
@@ -4403,7 +4471,13 @@ impl Server {
 
         self.checkpoint_path = Some(manifest_path);
         self.attribution_log =
-            crate::server::transport::attribution_log::AttributionLog::open(data_dir).ok();
+            match crate::server::transport::attribution_log::AttributionLog::open(data_dir) {
+                Ok(log) => log,
+                Err(e) => {
+                    tracing::warn!("failed to open attribution log: {}, using in-memory", e);
+                    crate::server::transport::attribution_log::AttributionLog::in_memory()
+                }
+            };
         self.wal = crate::persist::wal::WalLog::open(data_dir)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         self.checkpoint_to_store()?;
@@ -4844,7 +4918,13 @@ impl Server {
         self.checkpoint_path = Some(manifest_path);
         self.manifest_sequence = manifest.sequence;
         self.attribution_log =
-            crate::server::transport::attribution_log::AttributionLog::open(data_dir).ok();
+            match crate::server::transport::attribution_log::AttributionLog::open(data_dir) {
+                Ok(log) => log,
+                Err(e) => {
+                    tracing::warn!("failed to open attribution log: {}, using in-memory", e);
+                    crate::server::transport::attribution_log::AttributionLog::in_memory()
+                }
+            };
         self.wal = crate::persist::wal::WalLog::open(data_dir)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
@@ -5577,11 +5657,14 @@ impl Server {
             excerpt_text.len()
         );
 
+        let placed_by = self.resolve_transclusion_placer(session_id);
+
         let result = self.apply_transclusion_attribution_internal(
             link_id,
             origin_work_id,
             dest_work_id,
             &excerpt_text,
+            placed_by.clone(),
         );
 
         let already_pending = self
@@ -5594,6 +5677,7 @@ impl Server {
                 origin_work_id,
                 dest_work_id,
                 excerpt: excerpt_text,
+                placed_by,
             });
             tracing::info!(
                 "[apply_transclusion_attribution] stored pending attribution for link={:04x}",
@@ -5622,6 +5706,7 @@ impl Server {
                     origin_work_id: ls.origin,
                     dest_work_id: ls.destination,
                     excerpt,
+                    placed_by: None,
                 });
             }
         }
@@ -5645,49 +5730,13 @@ impl Server {
         let dest_lower = dest_text.to_lowercase();
 
         for pa in &pending {
-            let origin_ws = match self.works.get(&pa.origin_work_id) {
-                Some(ws) => ws,
-                None => continue,
-            };
-
-            let source_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
-                origin_ws.work.current_edition().all_entries();
-
-            let source_prov: Option<crate::edition::provenance::ElementProvenance> = source_entries
-                .iter()
-                .find_map(|(_, c)| c.provenance.clone());
-
-            let prov = match source_prov {
+            let prov = match self.resolve_source_provenance(pa.origin_work_id, &pa.excerpt) {
                 Some(p) => crate::edition::provenance::ElementProvenance {
                     source_work_id: Some(pa.origin_work_id),
+                    transcluded_by: pa.placed_by.clone(),
                     ..p
                 },
-                None => {
-                    let author_name = origin_ws
-                        .source_author_id
-                        .and_then(|aid| self.historical_authors.get(aid))
-                        .map(|a| {
-                            if a.display_name.is_empty() {
-                                a.name.clone()
-                            } else {
-                                a.display_name.clone()
-                            }
-                        })
-                        .unwrap_or_else(|| "Unknown".to_string());
-                    crate::edition::provenance::ElementProvenance {
-                        author_public_key: [0u8; 32],
-                        author_display_name: author_name,
-                        author_club_id: 0,
-                        timestamp: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs(),
-                        author_type: crate::edition::provenance::AuthorType::Historical,
-                        llm_model: None,
-                        historical_author_id: origin_ws.source_author_id,
-                        source_work_id: Some(pa.origin_work_id),
-                    }
-                }
+                None => continue,
             };
 
             let excerpt_lower = pa.excerpt.to_lowercase();
@@ -5723,51 +5772,142 @@ impl Server {
         }
     }
 
+    fn resolve_source_provenance(
+        &self,
+        origin_work_id: BeId,
+        excerpt_text: &str,
+    ) -> Option<crate::edition::provenance::ElementProvenance> {
+        let ws = self.works.get(&origin_work_id)?;
+        let source_edition = ws.work.current_edition();
+        let source_entries = source_edition.all_entries();
+
+        let source_text = source_edition.to_text();
+        let source_lower = source_text.to_lowercase();
+        let excerpt_lower = excerpt_text.to_lowercase();
+
+        let (ex_char_start, ex_char_end) = match source_lower.find(&excerpt_lower) {
+            Some(pos) => (pos, pos + excerpt_text.len()),
+            None => {
+                tracing::debug!(
+                    "[resolve_source_provenance] excerpt not found in source work {:04x}, using first available provenance",
+                    origin_work_id
+                );
+                return source_entries
+                    .iter()
+                    .find_map(|(_, c)| c.provenance.clone())
+                    .or_else(|| self.fallback_source_provenance(ws, origin_work_id));
+            }
+        };
+
+        let mut best_prov: Option<crate::edition::provenance::ElementProvenance> = None;
+        let mut best_overlap: usize = 0;
+        let mut cum = 0usize;
+        for (_, c) in &source_entries {
+            let entry_start = cum;
+            let entry_end = cum + c.char_len();
+            let overlap = entry_end
+                .min(ex_char_end)
+                .saturating_sub(entry_start.max(ex_char_start));
+            if overlap > 0 {
+                if let Some(ref prov) = c.provenance {
+                    if overlap > best_overlap {
+                        best_overlap = overlap;
+                        best_prov = Some(prov.clone());
+                    }
+                }
+            }
+            cum = entry_end;
+        }
+
+        best_prov.or_else(|| self.fallback_source_provenance(ws, origin_work_id))
+    }
+
+    fn fallback_source_provenance(
+        &self,
+        ws: &WorkState,
+        origin_work_id: BeId,
+    ) -> Option<crate::edition::provenance::ElementProvenance> {
+        if let Some(aid) = ws.source_author_id {
+            let author_name = self
+                .historical_authors
+                .get(aid)
+                .map(|a| {
+                    if a.display_name.is_empty() {
+                        a.name.clone()
+                    } else {
+                        a.display_name.clone()
+                    }
+                })
+                .unwrap_or_else(|| "Unknown".to_string());
+            return Some(crate::edition::provenance::ElementProvenance {
+                author_public_key: [0u8; 32],
+                author_display_name: author_name,
+                author_club_id: 0,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                author_type: crate::edition::provenance::AuthorType::Historical,
+                llm_model: None,
+                historical_author_id: Some(aid),
+                source_work_id: Some(origin_work_id),
+                transcluded_by: None,
+            });
+        }
+
+        if let Some(club_id) = ws.last_revision_author {
+            let display_name = self
+                .clubs
+                .get(&club_id)
+                .and_then(|c| c.display_name().map(|s| s.to_string()))
+                .unwrap_or_else(|| format!("club:{:04x}", club_id));
+            let pub_key = self
+                .clubs
+                .get(&club_id)
+                .and_then(|c| c.encrypted_signing_key())
+                .map(|e| e.verifying_key)
+                .unwrap_or([0u8; 32]);
+            return Some(crate::edition::provenance::ElementProvenance {
+                author_public_key: pub_key,
+                author_display_name: display_name,
+                author_club_id: club_id,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+                author_type: crate::edition::provenance::AuthorType::Human,
+                llm_model: None,
+                historical_author_id: None,
+                source_work_id: Some(origin_work_id),
+                transcluded_by: None,
+            });
+        }
+
+        None
+    }
+
     fn apply_transclusion_attribution_internal(
         &mut self,
         link_id: BeId,
         origin_work_id: BeId,
         dest_work_id: BeId,
         excerpt_text: &str,
+        placed_by: Option<crate::edition::provenance::TransclusionInfo>,
     ) -> Result<(), ServerError> {
         let _guard = OperationGuard::new(
             self.consequence_tracker.clone(),
             self.consequence_tracker.begin_operation(),
         );
-        let source_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> = {
-            let ws = self
-                .works
-                .get(&origin_work_id)
-                .ok_or(ServerError::WorkNotFound(origin_work_id))?;
-            ws.work.current_edition().all_entries()
-        };
-
-        let source_prov: Option<crate::edition::provenance::ElementProvenance> = source_entries
-            .iter()
-            .find_map(|(_, c)| c.provenance.clone());
-
-        let source_ws = self
-            .works
-            .get(&origin_work_id)
-            .ok_or(ServerError::WorkNotFound(origin_work_id))?;
-
-        let source_prov: crate::edition::provenance::ElementProvenance = match source_prov {
-            Some(p) => p,
-            None => {
-                let author_name = source_ws
-                    .source_author_id
-                    .and_then(|aid| self.historical_authors.get(aid))
-                    .map(|a| {
-                        if a.display_name.is_empty() {
-                            a.name.clone()
-                        } else {
-                            a.display_name.clone()
-                        }
-                    })
-                    .unwrap_or_else(|| "Unknown".to_string());
+        let source_prov = self
+            .resolve_source_provenance(origin_work_id, excerpt_text)
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    "[apply_transclusion_attribution_internal] no source provenance found for work {:04x}, using Unknown",
+                    origin_work_id
+                );
                 crate::edition::provenance::ElementProvenance {
                     author_public_key: [0u8; 32],
-                    author_display_name: author_name,
+                    author_display_name: "Unknown".to_string(),
                     author_club_id: 0,
                     timestamp: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -5775,13 +5915,15 @@ impl Server {
                         .as_secs(),
                     author_type: crate::edition::provenance::AuthorType::Historical,
                     llm_model: None,
-                    historical_author_id: source_ws.source_author_id,
-                    source_work_id: None,
+                    historical_author_id: None,
+                    source_work_id: Some(origin_work_id),
+                    transcluded_by: None,
                 }
-            }
-        };
+            });
+
         let source_prov = crate::edition::provenance::ElementProvenance {
             source_work_id: Some(origin_work_id),
+            transcluded_by: placed_by,
             ..source_prov
         };
 
@@ -5800,13 +5942,20 @@ impl Server {
 
         let char_start = match dest_lower.find(&excerpt_lower) {
             Some(pos) => pos,
-            None => return Ok(()),
+            None => {
+                tracing::debug!(
+                    "[apply_transclusion_attribution_internal] excerpt not yet materialized in dest {:04x}, will apply on next materialization via PendingAttribution",
+                    dest_work_id
+                );
+                return Ok(());
+            }
         };
         let char_end = char_start + excerpt_text.len();
 
         let mut any_applied = false;
         let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
             Vec::with_capacity(dest_entries.len());
+        let mut stamped_fps: Vec<[u8; 32]> = Vec::new();
 
         let mut cum = 0usize;
         for (pos, c) in &dest_entries {
@@ -5817,6 +5966,7 @@ impl Server {
             if in_range {
                 let mut carrier = (**c).clone();
                 carrier.provenance = Some(source_prov.clone());
+                stamped_fps.push(carrier.element.content_fingerprint());
                 new_entries.push((*pos, std::sync::Arc::new(carrier)));
                 any_applied = true;
                 cum = entry_end;
@@ -5835,6 +5985,39 @@ impl Server {
                 .ok_or(ServerError::WorkNotFound(dest_work_id))?;
             ws.work.revise(new_edition);
             self.auto_checkpoint();
+
+            // Record this transclusion attribution in the transparency log. The
+            // revision-path append (server.rs ~896) only covers author edits, so
+            // without this transclusion events go unaudited (log stays at 0).
+            {
+                let log = &mut self.attribution_log;
+                let revision = self
+                    .works
+                    .get(&dest_work_id)
+                    .map(|ws| ws.work.revision_count())
+                    .unwrap_or(0);
+                let server_id = self.server_keypair.signing_key.verifying_key().to_bytes();
+                let entry = crate::server::transport::attribution_log::AttributionEntry {
+                    sequence: log.sequence(),
+                    timestamp: source_prov.timestamp,
+                    author_pk_hex: crate::server::crdt_manager::bytes_to_hex(
+                        &source_prov.author_public_key,
+                    ),
+                    span_fp_hex: crate::edition::provenance::compute_span_fingerprint_hex(
+                        &stamped_fps,
+                    ),
+                    // Transclusion attribution is server-stamped from resolved
+                    // provenance, not author-signed; record a zero signature.
+                    signature_hex: "0".repeat(128),
+                    server_id_hex: crate::server::crdt_manager::bytes_to_hex(&server_id),
+                    work_id: dest_work_id,
+                    revision,
+                };
+                if let Err(e) = log.append(&entry) {
+                    tracing::warn!("[attribution_log] transclusion append failed: {}", e);
+                }
+            }
+
             tracing::info!("[pending_attribution] applied for link {:04x}", link_id);
         }
 
@@ -6224,6 +6407,73 @@ impl Server {
         }
         chain.sort_by_key(|hop| hop.link_id());
         chain
+    }
+
+    pub(crate) fn enrich_provenance_hops(
+        &self,
+        hops: &[crate::edition::links::ProvenanceHop],
+    ) -> Vec<super::transport::protocol::ProvenanceHopPayload> {
+        use super::transport::protocol::ProvenanceHopPayload;
+
+        hops.iter()
+            .map(|hop| {
+                let (source_work_title, source_author_name) =
+                    if let Some(ws) = self.works.get(&hop.source_work_id()) {
+                        let title = ws.work.current_edition().to_text();
+                        let title_preview: String = title.chars().take(60).collect();
+                        let title = if title.chars().count() > 60 {
+                            format!("{}...", title_preview.trim_end())
+                        } else if title_preview.is_empty() {
+                            format!("work:{:04x}", hop.source_work_id())
+                        } else {
+                            title_preview
+                        };
+
+                        let author_name = if let Some(ha_id) = ws.source_author_id {
+                            self.historical_authors.get(ha_id).map(|a| {
+                                if a.display_name.is_empty() {
+                                    a.name.clone()
+                                } else {
+                                    a.display_name.clone()
+                                }
+                            })
+                        } else {
+                            ws.last_revision_author
+                                .or_else(|| {
+                                    ws.work
+                                        .current_edition()
+                                        .all_entries()
+                                        .iter()
+                                        .find_map(|(_, c)| c.provenance.as_ref())
+                                        .map(|ep| ep.author_club_id)
+                                })
+                                .and_then(|cid| {
+                                    self.clubs
+                                        .get(&cid)
+                                        .and_then(|c| c.display_name().map(|s| s.to_string()))
+                                })
+                        };
+
+                        (Some(title), author_name)
+                    } else {
+                        (None, None)
+                    };
+
+                let dest_work_id = self
+                    .links
+                    .get(&hop.link_id())
+                    .map(|ls| ls.destination)
+                    .unwrap_or(0);
+
+                ProvenanceHopPayload {
+                    source_work_id: hop.source_work_id(),
+                    link_id: hop.link_id(),
+                    source_work_title,
+                    source_author_name,
+                    dest_work_id,
+                }
+            })
+            .collect()
     }
 
     pub fn blob_count(&self) -> usize {
@@ -8018,13 +8268,14 @@ impl Server {
         endorsements: crate::edition::EndorsementSet,
     ) -> Result<(), ServerError> {
         self.validate_endorsement(session_id, &endorsements)?;
-        let ws = self
-            .works
-            .get_mut(&work_id)
-            .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
-        ws.work.endorse(&endorsements);
-        ws.chunk_ref = None;
-        drop(ws);
+        {
+            let ws = self
+                .works
+                .get_mut(&work_id)
+                .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
+            ws.work.endorse(&endorsements);
+            ws.chunk_ref = None;
+        }
         tracing::info!(
             "[work_endorse] calling checkpoint_to_store for work {}",
             work_id
@@ -8042,13 +8293,14 @@ impl Server {
         endorsements: crate::edition::EndorsementSet,
     ) -> Result<(), ServerError> {
         self.validate_endorsement(session_id, &endorsements)?;
-        let ws = self
-            .works
-            .get_mut(&work_id)
-            .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
-        ws.work.retract(&endorsements);
-        ws.chunk_ref = None;
-        drop(ws);
+        {
+            let ws = self
+                .works
+                .get_mut(&work_id)
+                .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
+            ws.work.retract(&endorsements);
+            ws.chunk_ref = None;
+        }
         let _ = self.checkpoint_to_store();
         Ok(())
     }
@@ -9160,7 +9412,7 @@ impl Server {
             .map(|m| m.server_id.clone())
             .collect();
         let my_id = self.federation_server_id();
-        let mut gov = self.federation.governance_mut();
+        let gov = self.federation.governance_mut();
         gov.set_cluster_size(members.len().max(1));
         if !gov.is_leader(&my_id, &members) {
             return None;
@@ -9183,7 +9435,7 @@ impl Server {
         if !member_ids.contains(&vote.voter_id.as_str()) {
             return crate::server::federation::RoundPhase::PrePrepare;
         }
-        let mut gov = self.federation.governance_mut();
+        let gov = self.federation.governance_mut();
         gov.set_cluster_size(members.len().max(1));
         gov.receive_prepare(vote)
     }
@@ -9203,7 +9455,7 @@ impl Server {
         if !member_ids.contains(&vote.voter_id.as_str()) {
             return crate::server::federation::RoundPhase::PrePrepare;
         }
-        let mut gov = self.federation.governance_mut();
+        let gov = self.federation.governance_mut();
         gov.set_cluster_size(members.len().max(1));
         gov.receive_commit(vote)
     }
@@ -9700,7 +9952,8 @@ pub(crate) mod persist_snapshot {
                 personal_club_count: 0,
                 max_personal_clubs: 10_000,
                 login_attempts: HashMap::new(),
-                attribution_log: None,
+                attribution_log:
+                    crate::server::transport::attribution_log::AttributionLog::in_memory(),
                 historical_authors: crate::server::historical_author::HistoricalAuthorRegistry::new(
                 ),
                 source_patterns: crate::server::source_matcher::builtin_patterns(),
@@ -15308,6 +15561,556 @@ mod tests {
     }
 
     #[test]
+    fn user_transclusion_preserves_original_author() {
+        let mut server = Server::new();
+        let (alice_id, alice_sid) = ac_create_user(&mut server, "alice", b"pw1");
+        let (_bob_id, bob_sid) = ac_create_user(&mut server, "bob", b"pw2");
+        let public = server.public_club_id();
+
+        let alice_text = "The quick brown fox jumps over the lazy dog.";
+        let source_id = server
+            .create_work(alice_sid, Edition::from_text(alice_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&source_id) {
+            ws.work.set_edit_club(Some(public));
+        }
+
+        server.work_grab(alice_sid, source_id).unwrap();
+        let alice_ed = {
+            let edition = server.work_edition(source_id).unwrap();
+            let entries = edition.all_entries();
+            let alice_prov = crate::edition::provenance::ElementProvenance {
+                author_public_key: [0u8; 32],
+                author_display_name: "alice".to_string(),
+                author_club_id: alice_id,
+                timestamp: 100,
+                author_type: crate::edition::provenance::AuthorType::Human,
+                llm_model: None,
+                historical_author_id: None,
+                source_work_id: None,
+                transcluded_by: None,
+            };
+            let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
+                Vec::new();
+            for (pos, c) in &entries {
+                let mut carrier = (**c).clone();
+                carrier.provenance = Some(alice_prov.clone());
+                new_entries.push((*pos, Arc::new(carrier)));
+            }
+            crate::edition::Edition::from_entries(new_entries)
+        };
+        server.work_revise(alice_sid, source_id, alice_ed).unwrap();
+        server.work_release(alice_sid, source_id).unwrap();
+
+        let excerpt = "quick brown fox";
+        let dest_text = format!("prefix {} suffix", excerpt);
+        let dest_id = server
+            .create_work(bob_sid, Edition::from_text(&dest_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&dest_id) {
+            ws.work.set_edit_club(Some(public));
+        }
+
+        let link_id = server
+            .create_link(
+                bob_sid,
+                source_id,
+                dest_id,
+                Some(crate::edition::links::HyperRef::single(
+                    Some(Edition::from_text(excerpt)),
+                    Some(source_id),
+                    None,
+                    None,
+                )),
+                Some(crate::edition::links::HyperRef::single(
+                    None,
+                    Some(dest_id),
+                    None,
+                    None,
+                )),
+            )
+            .unwrap();
+
+        server
+            .apply_transclusion_attribution(bob_sid, link_id)
+            .unwrap();
+
+        let dest_edition = server.work(dest_id).unwrap().current_edition().clone();
+        let dest_entries = dest_edition.all_entries();
+
+        let mut alice_attributed = 0;
+        let mut other_attributed = 0;
+        for (_, carrier) in &dest_entries {
+            if let Some(ref prov) = carrier.provenance {
+                let text = carrier.element.as_text().unwrap_or("");
+                if !text.is_empty() && text.chars().any(|c: char| !c.is_whitespace()) {
+                    if prov.author_display_name == "alice" {
+                        alice_attributed += 1;
+                    } else {
+                        other_attributed += 1;
+                    }
+                }
+            }
+        }
+
+        assert!(
+            alice_attributed > 0,
+            "expected transcluded entries to show alice as author, got {} alice, {} other",
+            alice_attributed,
+            other_attributed,
+        );
+
+        for (_, carrier) in &dest_entries {
+            if let Some(ref prov) = carrier.provenance {
+                if prov.author_display_name == "alice" {
+                    assert_eq!(
+                        prov.source_work_id,
+                        Some(source_id),
+                        "alice's entries should have source_work_id set to the source work"
+                    );
+                    assert_eq!(
+                        prov.author_club_id, alice_id,
+                        "alice's entries should have alice's club_id"
+                    );
+                    assert!(
+                        prov.transcluded_by.is_some(),
+                        "transcluded entries should have transcluded_by set to the placer (bob)"
+                    );
+                    if let Some(ref tb) = prov.transcluded_by {
+                        assert_eq!(
+                            tb.display_name, "bob",
+                            "transcluded_by should show bob as placer"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn attribution_query_provenance_chain_multi_hop() {
+        let mut server = Server::new();
+        let (alice_id, alice_sid) = ac_create_user(&mut server, "alice", b"pw1");
+        let (_bob_id, bob_sid) = ac_create_user(&mut server, "bob", b"pw2");
+        let (_carol_id, carol_sid) = ac_create_user(&mut server, "carol", b"pw3");
+        let public = server.public_club_id();
+
+        let alice_text = "The quick brown fox jumps over the lazy dog.";
+        let work_a = server
+            .create_work(alice_sid, Edition::from_text(alice_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&work_a) {
+            ws.work.set_edit_club(Some(public));
+        }
+        server.work_grab(alice_sid, work_a).unwrap();
+
+        let alice_ed = {
+            let edition = server.work_edition(work_a).unwrap();
+            let entries = edition.all_entries();
+            let alice_prov = crate::edition::provenance::ElementProvenance {
+                author_public_key: [0u8; 32],
+                author_display_name: "alice".to_string(),
+                author_club_id: alice_id,
+                timestamp: 100,
+                author_type: crate::edition::provenance::AuthorType::Human,
+                llm_model: None,
+                historical_author_id: None,
+                source_work_id: None,
+                transcluded_by: None,
+            };
+            let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
+                Vec::new();
+            for (pos, c) in &entries {
+                let mut carrier = (**c).clone();
+                carrier.provenance = Some(alice_prov.clone());
+                new_entries.push((*pos, Arc::new(carrier)));
+            }
+            crate::edition::Edition::from_entries(new_entries)
+        };
+        server.work_revise(alice_sid, work_a, alice_ed).unwrap();
+        server.work_release(alice_sid, work_a).unwrap();
+
+        let excerpt_ab = "quick brown fox";
+        let work_b_text = format!("intro {} outro", excerpt_ab);
+        let work_b = server
+            .create_work(bob_sid, Edition::from_text(&work_b_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&work_b) {
+            ws.work.set_edit_club(Some(public));
+        }
+
+        let link_ab = server
+            .create_link(
+                bob_sid,
+                work_a,
+                work_b,
+                Some(crate::edition::links::HyperRef::single(
+                    Some(Edition::from_text(excerpt_ab)),
+                    Some(work_a),
+                    None,
+                    None,
+                )),
+                Some(crate::edition::links::HyperRef::single(
+                    None,
+                    Some(work_b),
+                    None,
+                    None,
+                )),
+            )
+            .unwrap();
+        server
+            .apply_transclusion_attribution(bob_sid, link_ab)
+            .unwrap();
+
+        let excerpt_bc = "quick brown fox";
+        let work_c_text = format!("prefix {} suffix", excerpt_bc);
+        let work_c = server
+            .create_work(carol_sid, Edition::from_text(&work_c_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&work_c) {
+            ws.work.set_edit_club(Some(public));
+        }
+
+        let link_bc = server
+            .create_link(
+                carol_sid,
+                work_b,
+                work_c,
+                Some(crate::edition::links::HyperRef::single(
+                    Some(Edition::from_text(excerpt_bc)),
+                    Some(work_b),
+                    None,
+                    None,
+                )),
+                Some(crate::edition::links::HyperRef::single(
+                    None,
+                    Some(work_c),
+                    None,
+                    None,
+                )),
+            )
+            .unwrap();
+        server
+            .apply_transclusion_attribution(carol_sid, link_bc)
+            .unwrap();
+
+        let spans = server.attribution_query(work_c, None, None).unwrap();
+        assert!(!spans.is_empty(), "expected attribution spans for work_c");
+
+        let transcluded_spans: Vec<_> = spans
+            .iter()
+            .filter(|s| s.source_work_id.is_some())
+            .collect();
+        assert!(
+            !transcluded_spans.is_empty(),
+            "expected at least one transcluded span with source_work_id"
+        );
+
+        for span in &transcluded_spans {
+            assert!(
+                span.provenance_chain.is_some(),
+                "transcluded span should have provenance_chain populated"
+            );
+            let chain = span.provenance_chain.as_ref().unwrap();
+            assert_eq!(
+                chain.len(),
+                2,
+                "chain should have 2 hops: A->B and B->C, got {}",
+                chain.len()
+            );
+
+            let hop_ids: Vec<(u64, u64)> = chain
+                .iter()
+                .map(|h| (h.source_work_id, h.link_id))
+                .collect();
+            assert!(
+                hop_ids.contains(&(work_a, link_ab)),
+                "chain should include hop (work_a, link_ab), got {:?}",
+                hop_ids
+            );
+            assert!(
+                hop_ids.contains(&(work_b, link_bc)),
+                "chain should include hop (work_b, link_bc), got {:?}",
+                hop_ids
+            );
+        }
+
+        for hop in transcluded_spans[0].provenance_chain.as_ref().unwrap() {
+            assert!(
+                hop.source_work_title.is_some(),
+                "hop should have enriched source_work_title"
+            );
+            assert!(
+                hop.source_author_name.is_some(),
+                "hop should have enriched source_author_name"
+            );
+        }
+
+        let original_spans: Vec<_> = spans
+            .iter()
+            .filter(|s| s.source_work_id.is_none())
+            .collect();
+        for span in &original_spans {
+            assert!(
+                span.provenance_chain.is_none(),
+                "non-transcluded span should not have provenance_chain"
+            );
+        }
+    }
+
+    #[test]
+    fn transclusion_attribution_uses_correct_author_for_excerpt_range() {
+        let mut server = Server::new();
+        let (alice_id, alice_sid) = ac_create_user(&mut server, "alice", b"pw1");
+        let (bob_id, bob_sid) = ac_create_user(&mut server, "bob", b"pw2");
+        let public = server.public_club_id();
+
+        let source_id = server
+            .create_work(alice_sid, Edition::from_text("placeholder"))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&source_id) {
+            ws.work.set_edit_club(Some(public));
+        }
+
+        server.work_grab(alice_sid, source_id).unwrap();
+        let multi_author_ed = {
+            let alice_prov = crate::edition::provenance::ElementProvenance {
+                author_public_key: [0u8; 32],
+                author_display_name: "alice".to_string(),
+                author_club_id: alice_id,
+                timestamp: 100,
+                author_type: crate::edition::provenance::AuthorType::Human,
+                llm_model: None,
+                historical_author_id: None,
+                source_work_id: None,
+                transcluded_by: None,
+            };
+            let bob_prov = crate::edition::provenance::ElementProvenance {
+                author_public_key: [0u8; 32],
+                author_display_name: "bob".to_string(),
+                author_club_id: bob_id,
+                timestamp: 200,
+                author_type: crate::edition::provenance::AuthorType::Human,
+                llm_model: None,
+                historical_author_id: None,
+                source_work_id: None,
+                transcluded_by: None,
+            };
+            let mut entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> = Vec::new();
+            let c = crate::edition::range_element::Carrier::new(
+                crate::edition::RangeElement::text("alice part".to_string()),
+            )
+            .with_provenance(alice_prov);
+            entries.push((0, Arc::new(c)));
+            let c2 = crate::edition::range_element::Carrier::new(
+                crate::edition::RangeElement::text("bob unique text".to_string()),
+            )
+            .with_provenance(bob_prov);
+            entries.push((1, Arc::new(c2)));
+            crate::edition::Edition::from_entries(entries)
+        };
+        server
+            .work_revise(alice_sid, source_id, multi_author_ed)
+            .unwrap();
+        server.work_release(alice_sid, source_id).unwrap();
+
+        let excerpt = "bob unique text";
+        let dest_text = format!("quote: {}", excerpt);
+        let dest_id = server
+            .create_work(alice_sid, Edition::from_text(&dest_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&dest_id) {
+            ws.work.set_edit_club(Some(public));
+        }
+
+        let link_id = server
+            .create_link(
+                alice_sid,
+                source_id,
+                dest_id,
+                Some(crate::edition::links::HyperRef::single(
+                    Some(Edition::from_text(excerpt)),
+                    Some(source_id),
+                    None,
+                    None,
+                )),
+                Some(crate::edition::links::HyperRef::single(
+                    None,
+                    Some(dest_id),
+                    None,
+                    None,
+                )),
+            )
+            .unwrap();
+
+        server
+            .apply_transclusion_attribution(alice_sid, link_id)
+            .unwrap();
+
+        let dest_edition = server.work(dest_id).unwrap().current_edition().clone();
+        let dest_entries = dest_edition.all_entries();
+        let dest_text = dest_edition.to_text();
+
+        let excerpt_lower = excerpt.to_lowercase();
+        let ex_start = dest_text.to_lowercase().find(&excerpt_lower).unwrap();
+        let ex_end = ex_start + excerpt.len();
+
+        let mut bob_attributed = 0;
+        let mut alice_attributed = 0;
+        let mut cum = 0usize;
+        for (_, carrier) in &dest_entries {
+            let entry_start = cum;
+            let entry_end = cum + carrier.char_len();
+            cum = entry_end;
+            let in_range = entry_end > ex_start && entry_start < ex_end;
+            if !in_range {
+                continue;
+            }
+            if let Some(ref prov) = carrier.provenance {
+                if prov.author_display_name == "bob" {
+                    bob_attributed += 1;
+                } else if prov.author_display_name == "alice" {
+                    alice_attributed += 1;
+                }
+            }
+        }
+
+        assert!(
+            bob_attributed > 0,
+            "expected transcluded entries in excerpt range to be attributed to bob, got {} bob, {} alice",
+            bob_attributed,
+            alice_attributed,
+        );
+        assert_eq!(
+            alice_attributed, 0,
+            "should not attribute bob's excerpt to alice"
+        );
+    }
+
+    #[test]
+    fn transclusion_attribution_fallback_uses_last_revision_author() {
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        server.grant_admin_authority(session).unwrap();
+        let club_id = server
+            .session(session)
+            .unwrap()
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied()
+            .unwrap();
+        let public = server.public_club_id();
+
+        let source_text = "Some content without element provenance.";
+        let source_id = server
+            .create_work(session, Edition::from_text(source_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&source_id) {
+            ws.work.set_edit_club(Some(public));
+        }
+
+        server.work_grab(session, source_id).unwrap();
+        server
+            .work_revise(session, source_id, Edition::from_text(source_text))
+            .unwrap();
+        server.work_release(session, source_id).unwrap();
+
+        if let Some(ws) = server.works.get(&source_id) {
+            for (_, c) in ws.work.current_edition().all_entries() {
+                if c.provenance.is_some() {
+                    let entries = ws.work.current_edition().all_entries();
+                    let mut clean_entries = Vec::new();
+                    for (pos, c2) in &entries {
+                        let mut carrier = (**c2).clone();
+                        carrier.provenance = None;
+                        clean_entries.push((*pos, Arc::new(carrier)));
+                    }
+                    let clean_ed = crate::edition::Edition::from_entries(clean_entries);
+                    drop(ws);
+                    server.work_grab(session, source_id).unwrap();
+                    server.work_revise(session, source_id, clean_ed).unwrap();
+                    server.work_release(session, source_id).unwrap();
+                    break;
+                }
+            }
+        }
+
+        let excerpt = "content without";
+        let dest_text = format!("intro {} outro", excerpt);
+        let dest_id = server
+            .create_work(session, Edition::from_text(&dest_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&dest_id) {
+            ws.work.set_edit_club(Some(public));
+        }
+
+        let link_id = server
+            .create_link(
+                session,
+                source_id,
+                dest_id,
+                Some(crate::edition::links::HyperRef::single(
+                    Some(Edition::from_text(excerpt)),
+                    Some(source_id),
+                    None,
+                    None,
+                )),
+                Some(crate::edition::links::HyperRef::single(
+                    None,
+                    Some(dest_id),
+                    None,
+                    None,
+                )),
+            )
+            .unwrap();
+
+        server
+            .apply_transclusion_attribution(session, link_id)
+            .unwrap();
+
+        let dest_edition = server.work(dest_id).unwrap().current_edition().clone();
+        let dest_entries = dest_edition.all_entries();
+        let dest_text = dest_edition.to_text();
+
+        let excerpt_lower = excerpt.to_lowercase();
+        let ex_start = dest_text.to_lowercase().find(&excerpt_lower).unwrap();
+        let ex_end = ex_start + excerpt.len();
+
+        let mut attributed = 0;
+        let mut cum = 0usize;
+        for (_, carrier) in &dest_entries {
+            let entry_start = cum;
+            let entry_end = cum + carrier.char_len();
+            cum = entry_end;
+            let in_range = entry_end > ex_start && entry_start < ex_end;
+            if !in_range {
+                continue;
+            }
+            if let Some(ref prov) = carrier.provenance {
+                assert_eq!(
+                    prov.source_work_id,
+                    Some(source_id),
+                    "fallback provenance should have source_work_id set"
+                );
+                assert!(
+                    !prov.author_display_name.is_empty() && prov.author_display_name != "Unknown",
+                    "fallback should resolve a real author name, got '{}'",
+                    prov.author_display_name
+                );
+                attributed += 1;
+            }
+        }
+
+        assert!(
+            attributed > 0,
+            "expected transcluded entries to be attributed via fallback, got {}",
+            attributed,
+        );
+    }
+
+    #[test]
     fn range_attribution_only_affects_pasted_range() {
         let mut server = Server::new();
         let session = server.connect();
@@ -15529,6 +16332,7 @@ mod tests {
             llm_model: None,
             historical_author_id: Some(99),
             source_work_id: Some(0xABCD),
+            transcluded_by: None,
         };
 
         let json = serde_json::to_string(&prov).unwrap();
@@ -15551,6 +16355,7 @@ mod tests {
             llm_model: None,
             historical_author_id: None,
             source_work_id: None,
+            transcluded_by: None,
         };
 
         let json = serde_json::to_string(&prov).unwrap();
@@ -15890,6 +16695,7 @@ mod tests {
                 llm_model: None,
                 historical_author_id: None,
                 source_work_id: None,
+                transcluded_by: None,
             };
             let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
                 Vec::new();
@@ -15917,6 +16723,7 @@ mod tests {
                 llm_model: None,
                 historical_author_id: None,
                 source_work_id: None,
+                transcluded_by: None,
             };
             let entries = edition.all_entries();
             let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
@@ -16131,6 +16938,7 @@ mod tests {
             llm_model: Some("gpt-4".to_string()),
             historical_author_id: None,
             source_work_id: None,
+            transcluded_by: None,
         };
         let llm_text = "AI generated text.";
         let llm_carrier = crate::edition::range_element::Carrier::new(
