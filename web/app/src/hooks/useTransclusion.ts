@@ -91,7 +91,14 @@ export function useTransclusion(): TransclusionState {
           const isOrigin = link.origin === workId;
           const otherWorkId = isOrigin ? link.destination : link.origin;
           const color = markerColorForWork(otherWorkId);
-          const title = workTitleMap.get(otherWorkId) || `Work ${otherWorkId.toString(16).padStart(4, "0")}`;
+          // Prefer the link's endpoint title (it covers archived works, which are
+          // excluded from the work list and thus absent from workTitleMap).
+          const title =
+            (isOrigin ? link.destination_title : link.origin_title) ||
+            workTitleMap.get(otherWorkId) ||
+            `Work ${otherWorkId.toString(16).padStart(4, "0")}`;
+          const otherArchived = isOrigin ? link.destination_archived : link.origin_archived;
+          const otherOwner = isOrigin ? link.destination_owner : link.origin_owner;
 
           const localRef = isOrigin ? link.origin_ref : link.destination_ref;
           const remoteRef = isOrigin ? link.destination_ref : link.origin_ref;
@@ -109,6 +116,8 @@ export function useTransclusion(): TransclusionState {
                 otherWorkTitle: title,
                 color,
                 provenanceChain: chain,
+                otherWorkIsArchived: !!otherArchived,
+                otherWorkOwner: otherOwner ?? null,
               });
             }
           }
