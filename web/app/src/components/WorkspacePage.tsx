@@ -51,6 +51,7 @@ export function WorkspacePage() {
   const [showAnnotations, setShowAnnotations] = useState(false);
   const [workBeId, setWorkBeId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [narration, setNarration] = useState<string | null>(null);
   const [narrating, setNarrating] = useState(false);
   const [narrationModel, setNarrationModel] = useState<string>("");
@@ -340,6 +341,8 @@ export function WorkspacePage() {
       window.history.replaceState({}, "", url.toString());
       setWorkBeId(null);
       loadWorks();
+      setNotice("Archived \u2014 restore it any time via More \u25BE Archived Works\u2026");
+      setTimeout(() => setNotice(null), 6000);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -923,6 +926,28 @@ export function WorkspacePage() {
       </header>
 
       {error && <div className="error">{error}</div>}
+
+      {notice && (
+        <div
+          onClick={() => setNotice(null)}
+          style={{
+            position: "fixed",
+            bottom: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#2e7d32",
+            color: "#fff",
+            padding: "10px 16px",
+            borderRadius: 6,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+            zIndex: 300,
+            fontSize: 14,
+            cursor: "pointer",
+          }}
+        >
+          {notice}
+        </div>
+      )}
 
       <div className="workspace-body">
         <aside className="document-sidebar">
