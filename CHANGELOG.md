@@ -1,0 +1,133 @@
+# Changelog
+
+All notable changes to **xudanu** — a conflict-preserving hypertext document store (Rust server + React frontend). Items are summarized from the commit history; the date beside each version is when that tag was created (some are approximate). Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
+
+GitHub releases: https://github.com/jonesd/xudanu/releases
+
+---
+
+## [Unreleased] — 2026-06-17 →
+- **feat(attribution):** transclusion placer provenance (`transcluded_by`), an always-initialized (in-memory, with on-disk fallback) attribution log, and a derivation-chain ancestry view (`provenance_ancestry` + `enrich_provenance_hops`).
+- **fix(security):** sanitize WebSocket message logging in the embedded fallback UI (CodeQL log-injection).
+- **fix(ci):** pin third-party GitHub Actions to commit SHAs (CodeQL unpinned-action).
+- **fix(deps):** bump undici 7.25.0 → 7.28.0 (6 dependabot vulns).
+- **fix(security,quality):** clear CodeQL `rust/unused-variable` + JS findings; add regression tests for the three provenance fixes.
+
+## [v0.7.7] — 2026-06-17
+- fix(ci): multiline matrix output for `GITHUB_OUTPUT`.
+
+## [v0.7.6] — 2026-06-17
+- feat: manifest migration framework + federation compatibility window.
+- feat: 1-byte format tag on all chunks (breaking on-disk format change).
+- feat: WAL version header for forward-only migration.
+- fix(gc): abort on collection errors; protect backup-history chunks.
+- fix: edition codec roundtrip + JSON pagination params.
+- fix: update vite 8.0.8 → 8.0.16 (GHSA-fx2h-pf6j-xcff, GHSA-v6wh-96g9-6wx3).
+
+## [v0.7.5] — 2026-06-16
+- Maintenance release.
+
+## [v0.7.4] — 2026-06-16
+- fix: persist transclusion links across restarts.
+- fix: WAL journaling for link creation.
+
+## [v0.7.3] — 2026-06-15
+- Maintenance/bugfix release.
+
+## [v0.7.2] — 2026-06-14
+- fix: editing UX, auth flow, Windows WAL, unused-code cleanup.
+
+## [v0.7.1] — 2026-06-14
+- feat: live transclusion rendering via the `CompoundEdition` layer.
+- feat: recursive compound resolution with cycle detection.
+- feat: delta-based span migration; pre-push validation script.
+- fix: resolve TypeScript errors that had blocked the v0.7.0 release.
+
+## [v0.7.0] — 2026-06-12
+- feat: stars, trails, document map, content similarity, hardened persistence.
+- feat: Phase A+C hardened checkpoint + dual-manifest persistence; Phase B Write-Ahead Log (WAL) for zero-loss persistence.
+- feat: preflight check + schema-tolerant checksum validation.
+- feat: CRDT duplication fix, author attribution, version timeline, document navigation.
+- fix: graceful shutdown with checkpoint wait; star persistence/flicker fixes.
+
+## [v0.6.4] — 2026-06-08
+- fix: resolve all TypeScript errors for release builds.
+
+## [v0.6.3] — 2026-06-08
+- fix: upgrade oauth2 4 → 5 (rustls-webpki vulnerabilities).
+- fix: extend a short test password to satisfy CodeQL.
+
+## [v0.6.2] — 2026-06-08
+- fix: CI test passwords and TypeScript errors for release builds.
+
+## [v0.6.1] — 2026-06-08 (includes v0.6.0)
+- feat: v0.6.0 — cookie auth, annotations, O-tree merge, private documents.
+- fix: source-work switching, scroll speed, canvas click-through.
+
+## [v0.5.0] — 2026-06-07
+- feat: backlinks, endorsements with persistence, revision browser, find-similar.
+- feat: undo/redo, text-based compare, attribution span splitting.
+- feat: OAuth2 (GitHub/Google), compare view, provenance widgets, read-first server endpoints.
+- feat: automatic source detection and attribution on paste.
+- feat: source-work read-only viewer with full provenance persistence; author persistence.
+- feat: RwLock migration (concurrent reads via `with_server_ref`).
+
+## [v0.4.3] — 2026-06-01
+- fix: raise excerpt-match limit (120 → 4096 bytes) for transclusion markers.
+
+## [v0.4.2] — 2026-06-01
+- feat: Tier A features — backlinks, annotations, link context, pagination, awareness identity.
+- fix: adapt frontend to paginated `work_list` / `link_list_for_work` responses.
+
+## [v0.4.1] — 2026-06-01
+- feat: build the React frontend and include it in release artifacts.
+- fix: persistence docs and WebSocket protocol for HTTPS.
+
+## [v0.4.0] — 2026-05-31
+- feat: Phase H — compound documents with live span resolution.
+- feat: Phase G — hover tooltips, click-to-navigate markers, backlinks sidebar.
+- feat: Phase F — provenance chain ("golden thread") for transclusion ancestry.
+- feat: Phase E — version DAG wire protocol, transitive ancestors/descendants, trace position.
+- feat: Phase C — server-side excerpt positions; Phase B — content-type endorsement stamps.
+- feat: historical-author system, source-work import, author browser.
+- feat: transclusion UI with bidirectional links and margin markers.
+- feat: run-length carrier (Phases 1/2/4) with coalescing and batched delta application.
+- feat: `.xchunk` extension, rsync backup, artifact attestations, startup verification + fsync durability.
+- release 0.3.0: panic hardening, UTF-8 safety, feature-status document.
+
+## [v0.3.5] — 2026-05-26
+- feat: content-addressed ChunkStore (Phases 1–6) replacing `server.json`; Manifest; chunk serialization.
+- feat: yrs CRDT collaboration layer with federation sync; `work_revise_delta` real-time editing.
+- feat: cryptographic author attribution with transparency log; multi-user per-author signing.
+- feat: club identity, credentials, CSRF, security logging (rate-limited login, Argon2id, ChaCha20-Poly1305 AEAD).
+- feat: collaborative editing UI with awareness indicators; attribution panel.
+- feat: content-watch with Jaccard similarity.
+- feat: LLM integration (GitHub Models Phase 6; OpenRouter), writing feedback, document sharing, ARM64 release build.
+- feat: multi-user collaborative editing with per-author attribution (Phases 4/5).
+- feat: O-tree three-way merge engine with position mapping.
+- fix: persistence hardening (atomic key history, orphaned-chunk GC, mutex-poisoning resilience).
+
+## [v0.1.1] — 2026-05-11
+- feat: federation foundation (Phases 14–18) — types/identity/wire ops, server-to-server transport, content replication (G-Set CRDT + BLAKE3), DagWood reconciliation, cross-server transclusion.
+- feat: trust & membership (Phase 19a) — web-of-trust join protocol, membership CRDT; governance & BFT (Phase 19b) — PBFT consensus.
+- feat: crash-safe persistence (Phase 21) — checkpoint, grab timeout, health endpoint, structured logging; keypair/blobs/federation state survive restart.
+- feat: modern encryption (Phase 12); endorsement authority validation + wire ops (Phase 13).
+- feat: recorder/fossil/agenda system with admin monitoring (Phase 11).
+- feat: transclusion queries + bundle stepper (Phases 8–10); shared-content mapping (Phase 9).
+- feat: label system and identity unification (Phase 7).
+- feat: Phases 1–6 — path navigation, snapshots, endorsements, mapping algebra, FeText, FeWrapper, club hierarchy.
+- feat: BackfollowEngine — unified transclusion index (Phase A); endorsement stamps, H-tree edges, trail-based backfollow (Phase B); element-level comparison (Phase C); reactive recorder (Phase D); ENT version DAG (Phase E).
+- feat: Rule 8 publication model — read-club-as-publication, read-permission gates, wire codec.
+- feat: split-pane compare view with colored shared regions; grab-request queuing, federation CLI.
+- feat: versioned snapshot data format with migration support.
+- TLS tests, Caddy auth proxy, browser fixes.
+- fix: transclusion backfollow work-club preservation; `find_text_transcluders` substring correctness.
+
+## [core-ent] — 2026-04-18
+- Initial core/entity foundations. Earliest commit history begins 2026-04-21.
+
+---
+
+### Versioning notes
+- Patch releases on the same day (e.g. v0.6.1–v0.6.4, v0.4.1–v0.4.3) were typically quick follow-up fixes to get a clean release build.
+- The v0.1.1 release encompassed the bulk of the foundational subsystem build (Phases 1–22).
