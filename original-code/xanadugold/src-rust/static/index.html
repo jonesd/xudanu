@@ -1004,6 +1004,10 @@ function App() {
     }).catch(function(){
       connect(wsUrl);
     });
+    function logSafe(v) {
+      if (v == null) return '';
+      return String(v).replace(/[\x00-\x1f\x7f]/g, ' ');
+    }
     function connect(url) {
     var ws = new WebSocket(url);
     wsRef.current = ws;
@@ -1013,7 +1017,7 @@ function App() {
     ws.onmessage = function(ev) {
       var msg;
       try { msg = JSON.parse(ev.data); } catch(e) { return; }
-      console.log('msg', msg.type, msg);
+      console.log('msg', logSafe(msg.type));
 
       if (msg.type === 'handshake') {
         req('session_connect');
@@ -1021,7 +1025,7 @@ function App() {
       }
 
       if (msg.type === 'error') {
-        console.error('ws error', msg);
+        console.error('ws error', logSafe(msg.code), 'id', logSafe(msg.id));
         var errOp = pendingRef.current[msg.id];
         if (errOp === 'work_create') creatingRef.current = false;
         if (errOp === 'work_release' && msg.code === 'not_grabbed') return;
@@ -1141,7 +1145,7 @@ function App() {
         }
 
         if (v && v.type === 'shared_regions') {
-          console.log('shared_regions received:', (v.value||[]).length, 'regions', v.value);
+          console.log('shared_regions received:', (v.value||[]).length, 'regions');
           setSharedRegions(v.value || []);
           setTimeout(function(){ window.dispatchEvent(new Event('resize')); }, 100);
           return;
