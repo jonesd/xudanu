@@ -847,7 +847,7 @@ mod tests {
         engine.register_work_with_prop(&work, 1, None, prop);
 
         let mut matcher = Matcher::new(1, RecorderQuery::transcluders(), Some(1));
-        let results = matcher.execute(|query, target| {
+        let results = matcher.execute(|_query, target| {
             let tq = crate::edition::TransclusionQuery::all();
             let found = engine.find_transcluders(&shared, &tq);
             found

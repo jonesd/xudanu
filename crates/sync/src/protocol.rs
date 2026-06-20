@@ -45,7 +45,7 @@ impl SyncProtocol {
             _ => return self.create_empty_ack(msg.sender_site, [0u8; 32]),
         };
 
-        let missing_changes: Vec<Change> = local_changes
+        let _missing_changes: Vec<Change> = local_changes
             .iter()
             .filter(|c| !remote_sv.knows(&c.site, c.id.iter().count() as u64))
             .cloned()
@@ -66,8 +66,8 @@ impl SyncProtocol {
     pub fn handle_sync_step2(
         &mut self,
         msg: &SyncMessage,
-        site: SiteId,
-        author: [u8; 32],
+        _site: SiteId,
+        _author: [u8; 32],
         verify_fn: impl Fn(&Change) -> bool,
     ) -> Vec<Change> {
         let changes = match &msg.message_type {
