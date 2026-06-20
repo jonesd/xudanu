@@ -81,6 +81,13 @@ pub struct WorkEntry {
     pub content_end_line: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_fingerprint: Option<Vec<u64>>,
+    /// Soft-delete (archive) state — archived works are hidden from the default
+    /// work list but never destroyed.
+    #[serde(default)]
+    pub is_archived: bool,
+    /// Append-only lifecycle history (archive/unarchive transitions).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lifecycle_history: Vec<crate::edition::work::WorkLifecycleEvent>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1090,6 +1097,8 @@ mod tests {
             content_start_line: None,
             content_end_line: None,
             source_fingerprint: None,
+            is_archived: false,
+            lifecycle_history: Vec::new(),
         });
         manifest.links.push(LinkEntry {
             link_id: 50,

@@ -640,6 +640,66 @@ fn dispatch_inner(
             srv.work_irrevocably_unpublish(session_id, work_id)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::WorkArchive { work_id } => {
+            srv.work_archive(session_id, work_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkUnarchive { work_id } => {
+            srv.work_unarchive(session_id, work_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::WorkListArchived => {
+            // Archived (soft-deleted) works. Owner-scoped; admins see all.
+            let is_admin = srv.ensure_admin(session_id).is_ok();
+            let owner_club = srv.identity_for_session(session_id).1;
+            let starred = srv.starred_for_session(session_id);
+            let entries: Vec<_> = srv
+                .list_works_with_titles()
+                .into_iter()
+                .filter(|(work_id, owner, _, _, _, _, _, _, _, _, _)| {
+                    let readable = srv
+                        .work(*work_id)
+                        .map(|w| srv.work_is_readable(session_id, w))
+                        .unwrap_or(false);
+                    let archived = srv.work_is_archived(*work_id).unwrap_or(false);
+                    if !readable || !archived {
+                        return false;
+                    }
+                    is_admin || owner_club.map_or(false, |oc| *owner == Some(oc))
+                })
+                .map(
+                    |(
+                        work_id,
+                        owner,
+                        revision_count,
+                        is_grabbed,
+                        title,
+                        read_club,
+                        is_source,
+                        content_start_line,
+                        content_end_line,
+                        source_author_id,
+                        source_edition_info,
+                    )| {
+                        super::protocol::WorkListEntry {
+                            work_id,
+                            owner,
+                            revision_count,
+                            is_grabbed,
+                            title,
+                            read_club,
+                            is_source,
+                            content_start_line,
+                            content_end_line,
+                            source_author_id,
+                            source_edition_info,
+                            is_starred: starred.contains(&work_id),
+                        }
+                    },
+                )
+                .collect();
+            Ok(ResponseValue::WorkList(entries))
+        }
         WireRequest::WorkIsPublished { work_id } => {
             let published = srv.work_is_published(session_id, work_id)?;
             Ok(ResponseValue::Boolean(published))
@@ -809,6 +869,7 @@ fn dispatch_inner(
                     srv.work(*work_id)
                         .map(|w| srv.work_is_readable(session_id, w))
                         .unwrap_or(false)
+                        && !srv.work_is_archived(*work_id).unwrap_or(false)
                 })
                 .map(
                     |(

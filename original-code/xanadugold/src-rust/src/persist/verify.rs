@@ -18,6 +18,8 @@ fn make_work_entry(
         content_start_line: None,
         content_end_line: None,
         source_fingerprint: None,
+        is_archived: false,
+        lifecycle_history: Vec::new(),
     }
 }
 
@@ -584,6 +586,8 @@ mod tests {
             content_start_line: None,
             content_end_line: None,
             source_fingerprint: None,
+            is_archived: false,
+            lifecycle_history: Vec::new(),
         });
         let path = manifest::manifest_path(&dir);
 
@@ -606,6 +610,8 @@ mod tests {
             content_start_line: None,
             content_end_line: None,
             source_fingerprint: None,
+            is_archived: false,
+            lifecycle_history: Vec::new(),
         });
         manifest::write_manifest(&mut m, &path).unwrap();
         let b2 = manifest::backup_manifest_path(&dir, m.sequence);
@@ -647,6 +653,8 @@ mod tests {
             content_start_line: None,
             content_end_line: None,
             source_fingerprint: None,
+            is_archived: false,
+            lifecycle_history: Vec::new(),
         });
         let path = manifest::manifest_path(&dir);
         manifest::write_manifest(&mut m, &path).unwrap();

@@ -2504,6 +2504,62 @@ impl Server {
         Ok(())
     }
 
+    /// Archive (soft-delete) a work. Archived works are hidden from the default
+    /// work list but are never destroyed; they can be unarchived. The transition
+    /// is recorded in the work's lifecycle history. Requires edit authority.
+    pub fn work_archive(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(
+            self.consequence_tracker.clone(),
+            self.consequence_tracker.begin_operation(),
+        );
+        self.ensure_can_edit(session_id, work_be_id)?;
+        let actor = self.resolve_author_club(session_id).unwrap_or(0);
+        let ts = Self::current_timestamp_secs();
+        let ws = self
+            .works
+            .get_mut(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        ws.work.archive(actor, ts);
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    /// Unarchive (restore) a work. Recorded in the lifecycle history.
+    /// Requires edit authority.
+    pub fn work_unarchive(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(
+            self.consequence_tracker.clone(),
+            self.consequence_tracker.begin_operation(),
+        );
+        self.ensure_can_edit(session_id, work_be_id)?;
+        let actor = self.resolve_author_club(session_id).unwrap_or(0);
+        let ts = Self::current_timestamp_secs();
+        let ws = self
+            .works
+            .get_mut(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        ws.work.unarchive(actor, ts);
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    /// Current archive state of a work.
+    pub fn work_is_archived(&self, work_be_id: BeId) -> Result<bool, ServerError> {
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        Ok(ws.work.is_archived())
+    }
+
     pub fn work_is_published(
         &self,
         session_id: SessionId,
@@ -3460,6 +3516,7 @@ impl Server {
                 .work(*id)
                 .map(|w| self.work_is_readable(session_id, w))
                 .unwrap_or(false)
+                && !ws.work.is_archived()
             {
                 visible.insert(*id);
                 nodes.push((
@@ -4785,6 +4842,11 @@ impl Server {
                                 None
                             }
                         });
+                    let mut work = work;
+                    work.restore_archived_state(
+                        work_entry.is_archived,
+                        work_entry.lifecycle_history.clone(),
+                    );
                     let ws = WorkState {
                         work: work.clone(),
                         chunk_ref: Some(work_entry.work_ref.clone()),
@@ -9620,6 +9682,12 @@ pub(crate) mod persist_snapshot {
         content_start_line: Option<u64>,
         #[serde(default)]
         content_end_line: Option<u64>,
+        /// Soft-delete (archive) state.
+        #[serde(default)]
+        is_archived: bool,
+        /// Append-only lifecycle history.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        lifecycle_history: Vec<crate::edition::work::WorkLifecycleEvent>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -9756,6 +9824,8 @@ pub(crate) mod persist_snapshot {
                             source_edition_info: ws.source_edition_info.clone(),
                             content_start_line: ws.content_start_line,
                             content_end_line: ws.content_end_line,
+                            is_archived: ws.work.is_archived(),
+                            lifecycle_history: ws.work.lifecycle_history().to_vec(),
                         },
                     )
                 })
@@ -10023,11 +10093,12 @@ pub(crate) mod persist_snapshot {
             server.personal_club_count = server.clubs.values().filter(|c| c.is_personal()).count();
 
             for (id, ws_snap) in &snapshot.works {
-                let work = ws_snap
+                let mut work = ws_snap
                     .work
                     .to_work(crate::persist::FlockId::new(*id, 0), None)
                     .work()
                     .clone();
+                work.restore_archived_state(ws_snap.is_archived, ws_snap.lifecycle_history.clone());
                 let ws = WorkState {
                     work: work.clone(),
                     chunk_ref: None,
@@ -10206,6 +10277,8 @@ pub(crate) mod persist_snapshot {
                     content_start_line: ws.content_start_line,
                     content_end_line: ws.content_end_line,
                     source_fingerprint: ws.source_fingerprint.map(|fp| fp.to_vec()),
+                    is_archived: ws.work.is_archived(),
+                    lifecycle_history: ws.work.lifecycle_history().to_vec(),
                 });
             }
 
@@ -11827,6 +11900,130 @@ mod tests {
             assert_eq!(
                 server.work_edition(doc_id).unwrap().to_text(),
                 "hello world"
+            );
+        }
+    }
+
+    #[test]
+    fn work_archive_toggles_state_and_records_history() {
+        let mut server = Server::new();
+        let (alice, alice_sid) = ac_create_user(&mut server, "alice", b"alice-pass-1");
+        let work = server
+            .create_work(alice_sid, Edition::from_text("hello"))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&work) {
+            ws.work.set_edit_club(Some(alice));
+            ws.work.set_owner(Some(alice));
+        }
+
+        assert!(!server.work_is_archived(work).unwrap());
+        assert!(server
+            .works
+            .get(&work)
+            .unwrap()
+            .work
+            .lifecycle_history()
+            .is_empty());
+
+        server.work_archive(alice_sid, work).unwrap();
+        assert!(server.work_is_archived(work).unwrap());
+        let h = server.works.get(&work).unwrap().work.lifecycle_history();
+        assert_eq!(h.len(), 1);
+        assert_eq!(
+            h[0].kind,
+            crate::edition::work::LifecycleEventKind::Archived
+        );
+        assert_eq!(h[0].actor_club, alice);
+
+        server.work_unarchive(alice_sid, work).unwrap();
+        assert!(!server.work_is_archived(work).unwrap());
+        assert_eq!(
+            server
+                .works
+                .get(&work)
+                .unwrap()
+                .work
+                .lifecycle_history()
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn work_archive_requires_edit_authority() {
+        let mut server = Server::new();
+        let (alice, alice_sid) = ac_create_user(&mut server, "alice", b"alice-pass-1");
+        let (_bob, bob_sid) = ac_create_user(&mut server, "bob", b"bobby-pass-1");
+        let work = server
+            .create_work(alice_sid, Edition::from_text("secret doc"))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&work) {
+            ws.work.set_edit_club(Some(alice)); // only alice can edit
+        }
+
+        // A non-editor (bob) must not be able to archive.
+        let err = server.work_archive(bob_sid, work).unwrap_err();
+        assert!(
+            matches!(err, ServerError::NotAuthorized),
+            "non-editor must not archive, got {:?}",
+            err
+        );
+        assert!(
+            !server.work_is_archived(work).unwrap(),
+            "state must be unchanged after a denied archive"
+        );
+
+        // The editor (alice) can.
+        server.work_archive(alice_sid, work).unwrap();
+        assert!(server.work_is_archived(work).unwrap());
+    }
+
+    #[test]
+    fn archived_state_and_history_survive_checkpoint_restore() {
+        let dir = TempDir::new("archive_persist");
+        let work_id;
+        {
+            let mut server = Server::new();
+            let (alice, alice_sid) = ac_create_user(&mut server, "alice", b"alice-pass-1");
+            work_id = server
+                .create_work(alice_sid, Edition::from_text("persist me"))
+                .unwrap();
+            if let Some(ws) = server.works.get_mut(&work_id) {
+                ws.work.set_edit_club(Some(alice));
+                ws.work.set_owner(Some(alice));
+            }
+            // archive -> unarchive -> archive leaves 3 lifecycle events.
+            server.work_archive(alice_sid, work_id).unwrap();
+            server.work_unarchive(alice_sid, work_id).unwrap();
+            server.work_archive(alice_sid, work_id).unwrap();
+            assert_eq!(
+                server
+                    .works
+                    .get(&work_id)
+                    .unwrap()
+                    .work
+                    .lifecycle_history()
+                    .len(),
+                3
+            );
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+        }
+        {
+            let server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+            assert!(
+                server.work_is_archived(work_id).unwrap(),
+                "archived state must survive restart"
+            );
+            assert_eq!(
+                server
+                    .works
+                    .get(&work_id)
+                    .unwrap()
+                    .work
+                    .lifecycle_history()
+                    .len(),
+                3,
+                "lifecycle history must survive restart"
             );
         }
     }
