@@ -828,6 +828,20 @@ export class CrdtSyncClient {
     await this.sendRequest("work_unstar", { work_id: workId });
   }
 
+  async workArchive(workId: number): Promise<void> {
+    await this.sendRequest("work_archive", { work_id: workId });
+  }
+
+  async workUnarchive(workId: number): Promise<void> {
+    await this.sendRequest("work_unarchive", { work_id: workId });
+  }
+
+  async listArchivedWorks(): Promise<WorkListEntry[]> {
+    const resp = await this.sendRequest("work_list_archived");
+    const val = extractValue(resp);
+    return (val as WorkListEntry[]) || [];
+  }
+
   async workIsStarred(workId: number): Promise<boolean> {
     const resp = await this.sendRequest("work_is_starred", { work_id: workId });
     return extractValue(resp) as boolean;

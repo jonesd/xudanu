@@ -70,6 +70,8 @@ export function WorkspacePage() {
   const [showMap, setShowMap] = useState(false);
   const [showTrails, setShowTrails] = useState(false);
   const [showGenealogy, setShowGenealogy] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedWorks, setArchivedWorks] = useState<WorkListEntry[]>([]);
   const [revisionList, setRevisionList] = useState<string[]>([]);
   const [revisionIndex, setRevisionIndex] = useState(0);
   const [similarWorks, setSimilarWorks] = useState<{ query: string; workIds: number[] } | null>(null);
@@ -318,6 +320,44 @@ export function WorkspacePage() {
     setNarration(null);
     setFeedback(null);
   }, []);
+
+  const refreshArchived = useCallback(async () => {
+    if (!clientRef.current) return;
+    try {
+      setArchivedWorks(await clientRef.current.listArchivedWorks());
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleArchive = useCallback(async () => {
+    if (workBeId === null || !clientRef.current) return;
+    try {
+      await clientRef.current.workArchive(workBeId);
+      // Archived works are hidden from the list — navigate away.
+      const url = new URL(window.location.href);
+      url.searchParams.delete("work");
+      window.history.replaceState({}, "", url.toString());
+      setWorkBeId(null);
+      loadWorks();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [workBeId, loadWorks]);
+
+  const handleUnarchive = useCallback(
+    async (id: number) => {
+      if (!clientRef.current) return;
+      try {
+        await clientRef.current.workUnarchive(id);
+        setArchivedWorks(await clientRef.current.listArchivedWorks());
+        loadWorks();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [loadWorks],
+  );
 
   useEffect(() => {
     if (connected && workBeId !== null && publicClubId > 0) {
@@ -723,6 +763,18 @@ export function WorkspacePage() {
                     onClick={() => { setShowGenealogy(true); close(); }}
                   >
                     Version Genealogy
+                  </DropdownItem>
+                  <DropdownItem
+                    disabled={!connected || !authenticated || workBeId === null}
+                    onClick={async () => { await handleArchive(); close(); }}
+                  >
+                    Archive…
+                  </DropdownItem>
+                  <DropdownItem
+                    disabled={!connected || !authenticated}
+                    onClick={() => { refreshArchived(); setShowArchived(true); close(); }}
+                  >
+                    Archived Works…
                   </DropdownItem>
                   <DropdownSeparator />
                   <DropdownItem
@@ -1310,6 +1362,89 @@ export function WorkspacePage() {
         documentLength={displayText.length}
         visible={showAttribution && workBeId !== null}
       />
+
+      {showArchived && (
+        <div
+          onClick={() => setShowArchived(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.4)",
+            zIndex: 200,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              borderRadius: 8,
+              padding: 20,
+              minWidth: 360,
+              maxWidth: 480,
+              maxHeight: "70vh",
+              overflowY: "auto",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 12,
+              }}
+            >
+              <h3 style={{ margin: 0 }}>Archived works</h3>
+              <button
+                type="button"
+                onClick={() => setShowArchived(false)}
+                style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer" }}
+              >
+                ×
+              </button>
+            </div>
+            {archivedWorks.length === 0 ? (
+              <p style={{ color: "#888" }}>No archived works.</p>
+            ) : (
+              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                {archivedWorks.map((w) => (
+                  <li
+                    key={w.work_id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "8px 0",
+                      borderBottom: "1px solid #eee",
+                      gap: 8,
+                    }}
+                  >
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {w.title || `work:${w.work_id.toString(16)}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleUnarchive(w.work_id)}
+                      style={{ padding: "4px 10px", cursor: "pointer" }}
+                    >
+                      Unarchive
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
 
       {showAnnotations && authenticated && workBeId !== null && (
         <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: "260px", background: "var(--bg, #fff)", borderLeft: "1px solid var(--border, #ddd)", overflowY: "auto", zIndex: 100, padding: "8px" }}>
