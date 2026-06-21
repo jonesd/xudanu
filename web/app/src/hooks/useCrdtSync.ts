@@ -123,7 +123,20 @@ export function useCrdtSync(
       client.disconnect();
       clientRef.current = null;
     };
-  }, [wsUrl, workBeId]);
+    // Intentionally [wsUrl] only — NOT workBeId. The WebSocket connection
+    // persists across document switches. Work switching is handled by the
+    // switchWork effect below (crdt_sync_close + crdt_sync_open on the same
+    // connection), which eliminates the reconnect gap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsUrl]);
+
+  // Switch works on the persistent connection (no WebSocket reconnect).
+  // Replaces the old behavior of tearing down + recreating the entire
+  // connection on every document switch.
+  useEffect(() => {
+    if (!connected || workBeId === null) return;
+    clientRef.current?.switchWork(workBeId);
+  }, [workBeId, connected]);
 
   useEffect(() => {
     if (!connected) {
