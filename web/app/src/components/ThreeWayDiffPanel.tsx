@@ -3,7 +3,7 @@ import type { CrdtSyncClient, WorkListEntry } from "../api/crdt_sync";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
-type SegmentKind = "unchanged" | "a_only" | "b_only" | "conflict" | "a_added" | "b_added";
+type SegmentKind = "unchanged" | "a_only" | "b_only" | "auto_merged" | "conflict" | "a_added" | "b_added";
 type Resolution = "a" | "b" | "base";
 
 interface MergeSegment {
@@ -11,6 +11,7 @@ interface MergeSegment {
   baseText: string;
   aText: string;
   bText: string;
+  mergedText: string;
   resolution: Resolution;
   isConflict: boolean;
 }
@@ -23,6 +24,50 @@ function paragraphs(text: string): string[] {
 
 function wordsMatch(a: string, b: string): boolean {
   return a.trim() === b.trim();
+}
+
+function splitSentences(text: string): string[] {
+  const parts = text.match(/[^.!?]+[.!?]+\s*|[^.!?]+$/g);
+  return parts || [text];
+}
+
+/// Try to auto-merge a paragraph where both A and B changed, by splitting
+/// into sentences. Returns {ok: true, merged} if the changes don't overlap
+/// at the sentence level (A changed some sentences, B changed others).
+/// Returns {ok: false} if any sentence was changed by both sides differently.
+function trySentenceMerge(
+  basePara: string,
+  aPara: string,
+  bPara: string,
+): { ok: boolean; merged: string } {
+  const baseSents = splitSentences(basePara);
+  const aSents = splitSentences(aPara);
+  const bSents = splitSentences(bPara);
+  const maxLen = Math.max(baseSents.length, aSents.length, bSents.length);
+  const result: string[] = [];
+
+  for (let i = 0; i < maxLen; i++) {
+    const bs = baseSents[i] ?? "";
+    const as = aSents[i] ?? "";
+    const bs2 = bSents[i] ?? "";
+
+    const aChanged = bs.trim() !== as.trim();
+    const bChanged = bs.trim() !== bs2.trim();
+
+    if (!aChanged && !bChanged) {
+      result.push(bs);
+    } else if (aChanged && !bChanged) {
+      result.push(as);
+    } else if (!aChanged && bChanged) {
+      result.push(bs2);
+    } else if (as.trim() === bs2.trim()) {
+      result.push(as);
+    } else {
+      return { ok: false, merged: "" };
+    }
+  }
+
+  return { ok: true, merged: result.join("") };
 }
 
 function computeThreeWay(baseText: string, aText: string, bText: string): MergeSegment[] {
@@ -63,8 +108,17 @@ function computeThreeWay(baseText: string, aText: string, bText: string): MergeS
       kind = "b_added";
       resolution = "b";
     } else {
-      kind = "conflict";
-      resolution = "base"; // default resolution
+      // Both changed this paragraph — try sentence-level auto-merge.
+      // If A and B changed different sentences, we can combine them.
+      // Only flag a conflict if they changed the SAME sentence differently.
+      const merge = trySentenceMerge(bp, ap, bp2);
+      if (merge.ok) {
+        kind = "auto_merged";
+        resolution = "a";
+      } else {
+        kind = "conflict";
+        resolution = "base";
+      }
     }
 
     segments.push({
@@ -72,6 +126,7 @@ function computeThreeWay(baseText: string, aText: string, bText: string): MergeS
       baseText: bp,
       aText: ap,
       bText: bp2,
+      mergedText: kind === "auto_merged" ? trySentenceMerge(bp, ap, bp2).merged : "",
       resolution,
       isConflict: kind === "conflict",
     });
@@ -81,6 +136,7 @@ function computeThreeWay(baseText: string, aText: string, bText: string): MergeS
 }
 
 function resolveSegment(seg: MergeSegment): string {
+  if (seg.kind === "auto_merged") return seg.mergedText;
   switch (seg.resolution) {
     case "a":
       return seg.aText;
@@ -107,6 +163,7 @@ const KIND_STYLES: Record<SegmentKind, { border: string; bg: string; label: stri
   unchanged: { border: "#e8e8e8", bg: "#fafafa", label: "Common", labelColor: "#999" },
   a_only: { border: "#1a7f37", bg: "#f6fff8", label: "A only (auto)", labelColor: "#1a7f37" },
   b_only: { border: "#0969da", bg: "#f5faff", label: "B only (auto)", labelColor: "#0969da" },
+  auto_merged: { border: "#7c3aed", bg: "#faf5ff", label: "Auto-merged (A+B)", labelColor: "#7c3aed" },
   conflict: { border: "#d1242f", bg: "#fff5f5", label: "CONFLICT", labelColor: "#d1242f" },
   a_added: { border: "#1a7f37", bg: "#f6fff8", label: "Added by A (auto)", labelColor: "#1a7f37" },
   b_added: { border: "#0969da", bg: "#f5faff", label: "Added by B (auto)", labelColor: "#0969da" },
@@ -130,6 +187,7 @@ export function ThreeWayDiffPanel({ client, currentWorkId, works, onClose }: Pro
   const [loading, setLoading] = useState(false);
   const [segments, setSegments] = useState<MergeSegment[]>([]);
   const [creating, setCreating] = useState(false);
+  const [mergedWorkId, setMergedWorkId] = useState<number | null>(null);
 
   const otherWorks = useMemo(
     () => works.filter((w) => w.work_id !== currentWorkId),
@@ -208,7 +266,7 @@ export function ThreeWayDiffPanel({ client, currentWorkId, works, onClose }: Pro
       const val = (resp as any)?.value;
       const newId = (val?.value ?? val) as number;
       if (newId) {
-        alert("Merged document created: work 0x" + newId.toString(16));
+        setMergedWorkId(newId);
       }
     } catch (e) {
       alert("Failed to create merged document: " + (e instanceof Error ? e.message : String(e)));
@@ -345,6 +403,11 @@ export function ThreeWayDiffPanel({ client, currentWorkId, works, onClose }: Pro
                         ))}
                       </div>
                     </div>
+                  ) : seg.kind === "auto_merged" ? (
+                    /* Auto-merged: show the combined result */
+                    <div style={{ fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", fontFamily: "monospace", color: "#7c3aed" }}>
+                      {seg.mergedText.slice(0, 200)}{seg.mergedText.length > 200 ? "…" : ""}
+                    </div>
                   ) : (
                     /* A-only / B-only / added: show the chosen version */
                     <div style={{ fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", fontFamily: "monospace", color: st.labelColor === "#1a7f37" ? "#1a7f37" : "#0969da" }}>
@@ -355,48 +418,93 @@ export function ThreeWayDiffPanel({ client, currentWorkId, works, onClose }: Pro
               );
             })}
 
-            {/* Merged preview + create button */}
+              {/* Merged preview + create button */}
             <div style={{ marginTop: 12, borderTop: "2px solid #e0e0e0", paddingTop: 12 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <strong style={{ fontSize: 13 }}>Merged Result</strong>
-                <span style={{ fontSize: 11, color: "#888" }}>{mergedPreview.length} chars</span>
-                <button
-                  type="button"
-                  onClick={createMerged}
-                  disabled={creating || (conflictCount > 0 && unresolvedCount > 0)}
-                  style={{
-                    marginLeft: "auto",
-                    padding: "4px 14px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    border: "none",
-                    borderRadius: 4,
-                    cursor: creating || (conflictCount > 0 && unresolvedCount > 0) ? "not-allowed" : "pointer",
-                    background: creating || (conflictCount > 0 && unresolvedCount > 0) ? "#ccc" : "#2da44e",
-                    color: "#fff",
-                  }}
-                  title={conflictCount > 0 && unresolvedCount > 0 ? "Resolve all conflicts first" : "Create a new work from the merged result"}
-                >
-                  {creating ? "Creating…" : "Create Merged Document"}
-                </button>
-              </div>
-              <div
-                style={{
-                  background: "#f8f9fa",
-                  border: "1px solid #e0e0e0",
-                  borderRadius: 4,
-                  padding: 12,
-                  maxHeight: 200,
-                  overflowY: "auto",
-                  fontSize: 12,
-                  lineHeight: 1.6,
-                  whiteSpace: "pre-wrap",
-                  fontFamily: "SF Mono, Fira Code, ui-monospace, monospace",
-                  color: "#333",
-                }}
-              >
-                {mergedPreview || "(empty)"}
-              </div>
+              {mergedWorkId !== null ? (
+                /* Success state */
+                <div style={{ textAlign: "center", padding: 16 }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>✓</div>
+                  <strong style={{ fontSize: 14, color: "#1a7f37" }}>Merged document created!</strong>
+                  <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                    Work 0x{mergedWorkId.toString(16).padStart(4, "0")} (ID {mergedWorkId})
+                  </div>
+                  <div style={{ marginTop: 12, display: "flex", gap: 8, justifyContent: "center" }}>
+                    <a
+                      href={`/?work=${mergedWorkId}`}
+                      style={{
+                        padding: "4px 14px",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        border: "1px solid #2da44e",
+                        borderRadius: 4,
+                        background: "#2da44e",
+                        color: "#fff",
+                        textDecoration: "none",
+                      }}
+                    >
+                      Open merged document
+                    </a>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      style={{
+                        padding: "4px 14px",
+                        fontSize: 12,
+                        border: "1px solid #ccc",
+                        borderRadius: 4,
+                        background: "#fff",
+                        color: "#666",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <strong style={{ fontSize: 13 }}>Merged Result</strong>
+                    <span style={{ fontSize: 11, color: "#888" }}>{mergedPreview.length} chars</span>
+                    <button
+                      type="button"
+                      onClick={createMerged}
+                      disabled={creating || (conflictCount > 0 && unresolvedCount > 0)}
+                      style={{
+                        marginLeft: "auto",
+                        padding: "4px 14px",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        border: "none",
+                        borderRadius: 4,
+                        cursor: creating || (conflictCount > 0 && unresolvedCount > 0) ? "not-allowed" : "pointer",
+                        background: creating || (conflictCount > 0 && unresolvedCount > 0) ? "#ccc" : "#2da44e",
+                        color: "#fff",
+                      }}
+                      title={conflictCount > 0 && unresolvedCount > 0 ? "Resolve all conflicts first" : "Create a new work from the merged result"}
+                    >
+                      {creating ? "Creating…" : "Create Merged Document"}
+                    </button>
+                  </div>
+                  <div
+                    style={{
+                      background: "#f8f9fa",
+                      border: "1px solid #e0e0e0",
+                      borderRadius: 4,
+                      padding: 12,
+                      maxHeight: 200,
+                      overflowY: "auto",
+                      fontSize: 12,
+                      lineHeight: 1.6,
+                      whiteSpace: "pre-wrap",
+                      fontFamily: "SF Mono, Fira Code, ui-monospace, monospace",
+                      color: "#333",
+                    }}
+                  >
+                    {mergedPreview || "(empty)"}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         ) : (
