@@ -86,11 +86,21 @@ export function useCompoundEdition(
         setSpanRanges(result.span_ranges || []);
         setSourceTitles(result.source_titles || {});
         setResolvedText(result.flat_text || "");
+        // Sync spansRef from the server so the text-migration effect has the
+        // correct spans for THIS work (not stale spans from a previous work).
+        spansRef.current = (result.span_ranges || []).map((sr) => ({
+          source_work_id: sr.source_work_id,
+          char_start: sr.char_start,
+          char_end: sr.char_end,
+          flat_start: sr.flat_start,
+          flat_end: sr.flat_end,
+        }));
       } else {
         setHasCompound(false);
         setSpanRanges([]);
         setSourceTitles({});
         setResolvedText("");
+        spansRef.current = [];
       }
     } catch {
       // Expected during identity transitions or connection changes
@@ -208,9 +218,11 @@ export function useCompoundEdition(
   );
 
   useEffect(() => {
+    // Reset compound state on EVERY work switch — prevents stale spans from
+    // a previous work contaminating the new work's compound edition.
+    spansRef.current = [];
+    prevTextRef.current = "";
     if (!client || workBeId === null) {
-      spansRef.current = [];
-      prevTextRef.current = "";
       setHasCompound(false);
       setSpanRanges([]);
       setSourceTitles({});
