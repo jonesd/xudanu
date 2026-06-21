@@ -166,6 +166,19 @@ export function useCompare(
     }
   }, [visible]);
 
+  // Recompute paragraph matching whenever fuzzy changes or texts change.
+  // This is what makes the Fuzzy/Exact toggle actually do something.
+  useEffect(() => {
+    if (!targetText || !currentText) return;
+    const { leftRegions: lr, rightRegions: rr } = findParagraphMatches(
+      currentText,
+      targetText,
+      fuzzy,
+    );
+    setLeftRegions(lr);
+    setRightRegions(rr);
+  }, [fuzzy, targetText, currentText]);
+
   const openDocumentCompare = useCallback(
     async (wid: number) => {
       if (!client || !currentWorkId || wid === currentWorkId) return;
