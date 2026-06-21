@@ -56,9 +56,19 @@ export function highlightRegions(
   return html;
 }
 
+function wordSimilarity(a: string, b: string): number {
+  const wa = new Set(a.toLowerCase().split(/\s+/).filter((w) => w.length > 2));
+  const wb = new Set(b.toLowerCase().split(/\s+/).filter((w) => w.length > 2));
+  if (wa.size === 0 || wb.size === 0) return 0;
+  let intersection = 0;
+  for (const w of wa) if (wb.has(w)) intersection++;
+  return intersection / (wa.size + wb.size - intersection);
+}
+
 function findParagraphMatches(
   leftText: string,
-  rightText: string
+  rightText: string,
+  fuzzy: boolean,
 ): { leftRegions: TextRegion[]; rightRegions: TextRegion[] } {
   const leftParas = leftText.split(/\n\s*\n/);
   const rightParas = rightText.split(/\n\s*\n/);
@@ -69,19 +79,34 @@ function findParagraphMatches(
   let leftOffset = 0;
   for (let li = 0; li < leftParas.length; li++) {
     const lTrim = leftParas[li].trim();
-    if (lTrim.length < 10) { leftOffset += leftParas[li].length + (li < leftParas.length - 1 ? 1 : 0); continue; }
+    if (lTrim.length < 10) {
+      leftOffset += leftParas[li].length + (li < leftParas.length - 1 ? 1 : 0);
+      continue;
+    }
+    let bestRi = -1;
+    let bestSim = 0;
     let rightOffset = 0;
+    const offsets: number[] = [];
     for (let ri = 0; ri < rightParas.length; ri++) {
-      if (rightUsed.has(ri)) { rightOffset += rightParas[ri].length + (ri < rightParas.length - 1 ? 1 : 0); continue; }
-      const rTrim = rightParas[ri].trim();
-      if (rTrim === lTrim) {
-        rightUsed.add(ri);
-        const cidx = leftRegions.length % 8;
-        leftRegions.push({ start: leftOffset, end: leftOffset + leftParas[li].length, cidx });
-        rightRegions.push({ start: rightOffset, end: rightOffset + rightParas[ri].length, cidx });
-        break;
-      }
+      offsets.push(rightOffset);
       rightOffset += rightParas[ri].length + (ri < rightParas.length - 1 ? 1 : 0);
+      if (rightUsed.has(ri)) continue;
+      const rTrim = rightParas[ri].trim();
+      const sim = rTrim === lTrim ? 1.0 : fuzzy ? wordSimilarity(lTrim, rTrim) : 0;
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestRi = ri;
+      }
+    }
+    if (bestRi >= 0 && bestSim >= 0.35) {
+      rightUsed.add(bestRi);
+      const cidx = leftRegions.length % 8;
+      leftRegions.push({ start: leftOffset, end: leftOffset + leftParas[li].length, cidx });
+      rightRegions.push({
+        start: offsets[bestRi],
+        end: offsets[bestRi] + rightParas[bestRi].length,
+        cidx,
+      });
     }
     leftOffset += leftParas[li].length + (li < leftParas.length - 1 ? 1 : 0);
   }
@@ -99,6 +124,8 @@ export interface CompareState {
   loading: boolean;
   regionCount: number;
   clearTarget: () => void;
+  fuzzy: boolean;
+  setFuzzy: (f: boolean) => void;
 }
 
 export function useCompare(
@@ -108,6 +135,7 @@ export function useCompare(
   client: CrdtSyncClient | null,
 ): CompareState {
   const [mode, setModeRaw] = useState<CompareMode>("document");
+  const [fuzzy, setFuzzy] = useState(true);
   const [targetText, setTargetText] = useState("");
   const [targetLabel, setTargetLabel] = useState("");
   const [leftRegions, setLeftRegions] = useState<TextRegion[]>([]);
@@ -173,7 +201,7 @@ export function useCompare(
       try {
         const text = await client.fetchRevision(currentWorkId, revision);
         setTargetText(text || "");
-        const { leftRegions: lr, rightRegions: rr } = findParagraphMatches(currentText, text || "");
+        const { leftRegions: lr, rightRegions: rr } = findParagraphMatches(currentText, text || "", fuzzy);
         setLeftRegions(lr);
         setRightRegions(rr);
       } catch (e) {
@@ -184,7 +212,7 @@ export function useCompare(
       }
       setLoading(false);
     },
-    [client, currentWorkId, currentText]
+    [client, currentWorkId, currentText, fuzzy]
   );
 
   (useCompare as any)._openDocument = openDocumentCompare;
@@ -201,6 +229,8 @@ export function useCompare(
     loading,
     regionCount: Math.max(leftRegions.length, rightRegions.length),
     clearTarget,
+    fuzzy,
+    setFuzzy,
   };
 }
 
@@ -239,6 +269,23 @@ export function CompareHeader({ visible, state, currentWorkId, works, revisionCo
           vs Revision
         </button>
       </div>
+      <button
+        type="button"
+        onClick={() => state.setFuzzy(!state.fuzzy)}
+        title={state.fuzzy ? "Fuzzy matching: paragraphs sharing >=35% words are linked. Click for exact-only matching." : "Exact matching: only identical paragraphs are linked. Click for fuzzy matching."}
+        style={{
+          padding: "2px 8px",
+          fontSize: 11,
+          border: "1px solid #d0d0d0",
+          borderRadius: 3,
+          background: state.fuzzy ? "#e8f0fe" : "#fff",
+          color: state.fuzzy ? "#1a73e8" : "#888",
+          cursor: "pointer",
+          fontWeight: 500,
+        }}
+      >
+        {state.fuzzy ? "Fuzzy" : "Exact"}
+      </button>
       {state.mode === "document" && !state.hasTarget && (
         <select
           value=""
@@ -284,25 +331,99 @@ export function CompareHeader({ visible, state, currentWorkId, works, revisionCo
           </button>
         </span>
       )}
-      <div className="compare-legend">
-        {state.regionCount > 0 && (
-          <>
-            <span className="compare-legend-item">
-              <span className="compare-swatch" style={{ background: BRIDGE_COLORS[0] + "30", borderBottom: `2px solid ${BRIDGE_COLORS[0]}` }} />
-              Shared ({state.regionCount})
-            </span>
-            <span className="compare-legend-item">
-              <span className="compare-swatch unique-left-swatch" />
-              Left only
-            </span>
-            <span className="compare-legend-item">
-              <span className="compare-swatch unique-right-swatch" />
-              Right only
-            </span>
-          </>
-        )}
-      </div>
       <button type="button" className="compare-close" onClick={onClose}>x</button>
+    </div>
+  );
+}
+
+// ── Inline diff (word-level LCS) ─────────────────────────────────────────
+
+interface DiffSegment {
+  type: "common" | "added" | "removed";
+  text: string;
+}
+
+function tokenize(text: string): string[] {
+  return text.match(/\S+|\s+/g) || [text];
+}
+
+function computeDiff(textA: string, textB: string): DiffSegment[] {
+  const a = tokenize(textA);
+  const b = tokenize(textB);
+  const m = a.length;
+  const n = b.length;
+
+  // LCS DP table
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+
+  // Backtrack
+  const raw: DiffSegment[] = [];
+  let i = m;
+  let j = n;
+  while (i > 0 && j > 0) {
+    if (a[i - 1] === b[j - 1]) {
+      raw.unshift({ type: "common", text: a[i - 1] });
+      i--;
+      j--;
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      raw.unshift({ type: "removed", text: a[i - 1] });
+      i--;
+    } else {
+      raw.unshift({ type: "added", text: b[j - 1] });
+      j--;
+    }
+  }
+  while (i > 0) raw.unshift({ type: "removed", text: a[--i] });
+  while (j > 0) raw.unshift({ type: "added", text: b[--j] });
+
+  // Merge consecutive same-type segments
+  const merged: DiffSegment[] = [];
+  for (const seg of raw) {
+    const last = merged[merged.length - 1];
+    if (last && last.type === seg.type) last.text += seg.text;
+    else merged.push({ ...seg });
+  }
+  return merged;
+}
+
+function DiffView({ segments }: { segments: DiffSegment[] }) {
+  return (
+    <div
+      style={{
+        whiteSpace: "pre-wrap",
+        fontFamily: "SF Mono, Fira Code, ui-monospace, monospace",
+        fontSize: 13,
+        lineHeight: 1.7,
+        padding: 16,
+        overflow: "auto",
+        maxHeight: "55vh",
+      }}
+    >
+      {segments.map((seg, i) => {
+        if (seg.type === "added")
+          return (
+            <span key={i} style={{ background: "#e6ffed", color: "#1a7f37", borderRadius: 2 }}>
+              {seg.text}
+            </span>
+          );
+        if (seg.type === "removed")
+          return (
+            <span
+              key={i}
+              style={{ background: "#ffebe9", color: "#d1242f", textDecoration: "line-through", borderRadius: 2 }}
+            >
+              {seg.text}
+            </span>
+          );
+        return <span key={i}>{seg.text}</span>;
+      })}
     </div>
   );
 }
@@ -326,6 +447,12 @@ export function CompareSplitView({ currentText, state }: CompareSplitViewProps) 
     if (!state.targetText) return '<span style="color:#888">Loading...</span>';
     return highlightRegions(state.targetText, state.rightRegions, "compare-hl", "compare-unique-right");
   }, [state.targetText, state.rightRegions]);
+
+  const [viewMode, setViewMode] = useState<"split" | "diff">("split");
+  const diffSegments = useMemo(() => {
+    if (viewMode !== "diff" || !state.targetText) return [];
+    return computeDiff(currentText, state.targetText);
+  }, [viewMode, currentText, state.targetText]);
 
   useEffect(() => {
     if (!state.leftRegions.length && !state.rightRegions.length) return;
@@ -393,19 +520,74 @@ export function CompareSplitView({ currentText, state }: CompareSplitViewProps) 
 
   return (
     <div className="compare-split" ref={areaRef}>
-      <div className="compare-pane" ref={leftWrapRef}>
-        <div className="compare-pane-label">Current</div>
-        <div className="compare-content" dangerouslySetInnerHTML={{ __html: leftHtml }} />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 0,
+          borderBottom: "1px solid #e0e0e0",
+          background: "#fafafa",
+          fontSize: 12,
+        }}
+      >
+        {(["split", "diff"] as const).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => setViewMode(mode)}
+            style={{
+              padding: "4px 10px",
+              border: "none",
+              borderRight: "1px solid #e0e0e0",
+              background: viewMode === mode ? "#fff" : "transparent",
+              borderBottom: viewMode === mode ? "2px solid #4a6da7" : "2px solid transparent",
+              fontWeight: viewMode === mode ? 600 : 400,
+              color: viewMode === mode ? "#333" : "#999",
+              cursor: "pointer",
+              fontSize: 12,
+            }}
+          >
+            {mode === "split" ? "Split" : "Diff"}
+          </button>
+        ))}
+        {viewMode === "diff" ? (
+          <span style={{ marginLeft: "auto", paddingRight: 10, color: "#aaa" }}>
+            <span style={{ background: "#e6ffed", color: "#1a7f37", padding: "0 3px", borderRadius: 2 }}>+added</span>{" "}
+            <span style={{ background: "#ffebe9", color: "#d1242f", padding: "0 3px", borderRadius: 2, textDecoration: "line-through" }}>-removed</span>
+          </span>
+        ) : state.regionCount > 0 ? (
+          <span style={{ marginLeft: "auto", paddingRight: 10, color: "#999", fontSize: 11 }}>
+            <span style={{ background: BRIDGE_COLORS[0] + "30", borderBottom: `2px solid ${BRIDGE_COLORS[0]}`, padding: "0 3px", borderRadius: 2 }}>
+              Shared ({state.regionCount})
+            </span>{" "}
+            <span style={{ opacity: 0.5 }}>Left only</span>{" "}
+            <span style={{ opacity: 0.5 }}>Right only</span>
+          </span>
+        ) : null}
       </div>
-      <canvas className="_bridge" />
-      <div className="compare-pane" ref={rightWrapRef}>
-        <div className="compare-pane-label">{state.targetLabel}</div>
-        {state.loading ? (
-          <div className="compare-loading">Loading...</div>
+      {viewMode === "diff" ? (
+        state.loading ? (
+          <div style={{ padding: 24, color: "#888" }}>Loading...</div>
         ) : (
-          <div className="compare-content" dangerouslySetInnerHTML={{ __html: rightHtml }} />
-        )}
-      </div>
+          <DiffView segments={diffSegments} />
+        )
+      ) : (
+        <>
+          <div className="compare-pane" ref={leftWrapRef}>
+            <div className="compare-pane-label">Current</div>
+            <div className="compare-content" dangerouslySetInnerHTML={{ __html: leftHtml }} />
+          </div>
+          <canvas className="_bridge" />
+          <div className="compare-pane" ref={rightWrapRef}>
+            <div className="compare-pane-label">{state.targetLabel}</div>
+            {state.loading ? (
+              <div className="compare-loading">Loading...</div>
+            ) : (
+              <div className="compare-content" dangerouslySetInnerHTML={{ __html: rightHtml }} />
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

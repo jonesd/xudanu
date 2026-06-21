@@ -2563,7 +2563,8 @@ body {
 }
 .compare-split {
   display: flex;
-  height: 300px;
+  flex: 1;
+  min-height: 300px;
   position: relative;
 }
 .compare-pane {
