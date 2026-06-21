@@ -422,7 +422,7 @@ function DiffView({ segments }: { segments: DiffSegment[] }) {
       {segments.map((seg, i) => {
         if (seg.type === "added")
           return (
-            <span key={i} style={{ background: "#e6ffed", color: "#1a7f37", borderRadius: 2 }}>
+            <span key={i} style={{ background: "#f0f9f0", color: "#3a7a3a", borderRadius: 2 }}>
               {seg.text}
             </span>
           );
@@ -430,7 +430,7 @@ function DiffView({ segments }: { segments: DiffSegment[] }) {
           return (
             <span
               key={i}
-              style={{ background: "#ffebe9", color: "#d1242f", textDecoration: "line-through", borderRadius: 2 }}
+              style={{ background: "#fdf2f2", color: "#a04040", textDecoration: "line-through", borderRadius: 2 }}
             >
               {seg.text}
             </span>
@@ -565,8 +565,8 @@ export function CompareSplitView({ currentText, state }: CompareSplitViewProps) 
         ))}
         {viewMode === "diff" ? (
           <span style={{ marginLeft: "auto", paddingRight: 10, color: "#aaa" }}>
-            <span style={{ background: "#e6ffed", color: "#1a7f37", padding: "0 3px", borderRadius: 2 }}>+added</span>{" "}
-            <span style={{ background: "#ffebe9", color: "#d1242f", padding: "0 3px", borderRadius: 2, textDecoration: "line-through" }}>-removed</span>
+            <span style={{ background: "#f0f9f0", color: "#3a7a3a", padding: "0 3px", borderRadius: 2 }}>+added</span>{" "}
+            <span style={{ background: "#fdf2f2", color: "#a04040", padding: "0 3px", borderRadius: 2, textDecoration: "line-through" }}>-removed</span>
           </span>
         ) : state.regionCount > 0 ? (
           <span style={{ marginLeft: "auto", paddingRight: 10, color: "#999", fontSize: 11 }}>
