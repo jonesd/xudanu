@@ -260,14 +260,25 @@ export function ThreeWayDiffPanel({ client, currentWorkId, works, onClose }: Pro
     setCreating(true);
     const mergedText = buildMergedText(segments);
     try {
-      const resp = await (client as any).sendRequest("work_create", {
+      // Create an empty work, then revise it with the merged text.
+      // work_revise stamps element provenance (author + signature) onto
+      // every element — so the curator gets attribution for the merge.
+      const createResp = await (client as any).sendRequest("work_create", {
+        edition: { text: " " },
+      });
+      const createVal = (createResp as any)?.value;
+      const newId = (createVal?.value ?? createVal) as number;
+      if (!newId) throw new Error("work_create returned no id");
+
+      // Grab → Revise → Release stamps curator provenance
+      await (client as any).sendRequest("work_grab", { work_id: newId });
+      await (client as any).sendRequest("work_revise", {
+        work_id: newId,
         edition: { text: mergedText },
       });
-      const val = (resp as any)?.value;
-      const newId = (val?.value ?? val) as number;
-      if (newId) {
-        setMergedWorkId(newId);
-      }
+      await (client as any).sendRequest("work_release", { work_id: newId });
+
+      setMergedWorkId(newId);
     } catch (e) {
       alert("Failed to create merged document: " + (e instanceof Error ? e.message : String(e)));
     }
