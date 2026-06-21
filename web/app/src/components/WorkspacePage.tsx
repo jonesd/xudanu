@@ -375,7 +375,8 @@ export function WorkspacePage() {
 
   useEffect(() => {
     if (!connected || workBeId === null || !clientRef.current) return;
-    clientRef.current.sendRequest("work_get_edition", { work_id: workBeId })
+    clientRef.current
+      .sendRequest("work_get_edition", { work_id: workBeId })
       .then(() => {})
       .catch(() => {
         const url = new URL(window.location.href);

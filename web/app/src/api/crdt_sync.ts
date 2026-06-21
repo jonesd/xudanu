@@ -1220,6 +1220,36 @@ export class CrdtSyncClient {
     }
   }
 
+  /**
+   * Switch to a different work WITHOUT reconnecting the WebSocket.
+   * Closes the old work's CRDT channel and opens the new one on the same
+   * persistent connection — eliminates the reconnect gap that caused the
+   * two-click bug and transclusion race conditions.
+   */
+  async switchWork(newWorkId: number): Promise<void> {
+    if (this.workBeId === newWorkId && this.crdtReady) return;
+    if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    // Close the old work's CRDT channel (keeps the WebSocket alive)
+    if (this.crdtReady && this.workBeId) {
+      try {
+        await this.sendRequest("crdt_sync_close", { work_id: this.workBeId });
+      } catch {
+        // ignore close errors during switch
+      }
+      this.crdtReady = false;
+    }
+
+    // Clear local state for the new work
+    this.text = "";
+    this.skipCrdt = false;
+    this.textListeners.forEach((cb) => cb(""));
+
+    // Open the new work's CRDT channel on the SAME connection
+    this.workBeId = newWorkId;
+    await this.tryOpenWork();
+  }
+
   private onMessage(data: unknown): void {
     let text: string;
     if (data instanceof ArrayBuffer) {
