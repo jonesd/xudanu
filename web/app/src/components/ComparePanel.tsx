@@ -98,7 +98,7 @@ function findParagraphMatches(
         bestRi = ri;
       }
     }
-    if (bestRi >= 0 && bestSim >= 0.35) {
+    if (bestRi >= 0 && bestSim >= 0.20) {
       rightUsed.add(bestRi);
       const cidx = leftRegions.length % 8;
       leftRegions.push({ start: leftOffset, end: leftOffset + leftParas[li].length, cidx });
