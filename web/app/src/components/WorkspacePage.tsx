@@ -20,6 +20,7 @@ import { WorkSummaryPanel } from "../components/WorkSummaryPanel";
 import { DocumentMapPanel } from "../components/DocumentMapPanel";
 import { TrailsPanel } from "../components/TrailsPanel";
 import { VersionGenealogyPanel } from "../components/VersionGenealogyPanel";
+import { ThreeWayDiffPanel } from "../components/ThreeWayDiffPanel";
 import { SharePanel } from "../components/SharePanel";
 import { ReadingView } from "./reading/ReadingView";
 import { DocumentSettings, loadDocPreferences } from "../components/DocumentSettings";
@@ -71,6 +72,7 @@ export function WorkspacePage() {
   const [showMap, setShowMap] = useState(false);
   const [showTrails, setShowTrails] = useState(false);
   const [showGenealogy, setShowGenealogy] = useState(false);
+  const [showThreeWayDiff, setShowThreeWayDiff] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [archivedWorks, setArchivedWorks] = useState<WorkListEntry[]>([]);
   const [revisionList, setRevisionList] = useState<string[]>([]);
@@ -766,7 +768,13 @@ export function WorkspacePage() {
                     disabled={!connected || !workBeId}
                     onClick={() => { setShowGenealogy(true); close(); }}
                   >
-                    Version Genealogy
+                     Version Genealogy
+                  </DropdownItem>
+                  <DropdownItem
+                    disabled={!connected || works.length < 3}
+                    onClick={() => { setShowThreeWayDiff(true); close(); }}
+                  >
+                    3-Way Diff
                   </DropdownItem>
                   <DropdownItem
                     disabled={!connected || !authenticated || workBeId === null}
@@ -1615,6 +1623,15 @@ export function WorkspacePage() {
           currentWorkId={workBeId}
           onSelectWork={(id) => selectWork(id)}
           onClose={() => setShowGenealogy(false)}
+        />
+      )}
+
+      {showThreeWayDiff && workBeId && (
+        <ThreeWayDiffPanel
+          client={clientRef.current}
+          currentWorkId={workBeId}
+          works={works}
+          onClose={() => setShowThreeWayDiff(false)}
         />
       )}
 
