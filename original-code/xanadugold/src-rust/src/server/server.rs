@@ -6412,6 +6412,7 @@ impl Server {
                     char_end: a.char_end,
                     created_by: a.created_by,
                     created_by_name,
+                    created_at: a.created_at,
                 }
             }))
     }
@@ -6453,6 +6454,7 @@ impl Server {
                     char_end: a.char_end,
                     created_by: a.created_by,
                     created_by_name,
+                    created_at: a.created_at,
                 }
             })
             .collect())

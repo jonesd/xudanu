@@ -110,6 +110,7 @@ pub struct OtreeAnnotation {
     pub char_start: usize,
     pub char_end: usize,
     pub created_by: Option<BeId>,
+    pub created_at: u64,
 }
 
 struct OtreeWorkDoc {
@@ -1302,6 +1303,7 @@ impl OtreeCrdtManager {
             char_start,
             char_end,
             created_by,
+            created_at: current_timestamp_secs(),
         });
         Ok(())
     }
@@ -2019,6 +2021,7 @@ mod tests {
                 char_start: 0,
                 char_end: 5,
                 created_by: Some(7),
+                created_at: 0,
             }],
         )];
 
