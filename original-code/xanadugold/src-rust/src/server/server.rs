@@ -5172,7 +5172,16 @@ impl Server {
                                     );
                                 }
                             } else {
-                                tracing::warn!("annotations chunk deserialization failed");
+                                // DO NOT silently continue with 0 annotations.
+                                // The old chunk is still on disk — preserve it
+                                // so it can be migrated/retried. Auto-checkpoint
+                                // would otherwise overwrite it with empty data.
+                                // See OtreeAnnotation schema evolution rules.
+                                tracing::error!(
+                                    "annotations chunk deserialization failed — \
+                                     preserving old chunk, will retry on next restart. \
+                                     If this persists, run a migration (see persist/migrations.rs)."
+                                );
                             }
                         }
                     }
