@@ -725,18 +725,19 @@ export function WorkspacePage() {
                    >
                       Annotations
                     </DropdownItem>
-                    <DropdownItem
-                      disabled={!selectionRange || !authenticated}
-                      onClick={() => {
-                        if (!selectionRange) return;
-                        const note = prompt("Annotation note:");
-                        if (note) {
-                          createAnnotation("note", note, selectionRange.start, selectionRange.end);
-                          setShowAnnotations(true);
-                        }
-                        close();
-                      }}
-                    >
+                     <DropdownItem
+                       disabled={!selectionRange || !authenticated}
+                       onClick={() => {
+                         if (!selectionRange) return;
+                         const selectedText = displayText.slice(selectionRange.start, selectionRange.end).trim();
+                         const note = prompt("Annotation note (leave as-is to quote the selection):", selectedText);
+                         if (note !== null) {
+                           createAnnotation("note", note, selectionRange.start, selectionRange.end);
+                           setShowAnnotations(true);
+                         }
+                         close();
+                       }}
+                     >
                        Annotate Selection
                      </DropdownItem>
                      <DropdownItem
@@ -1508,8 +1509,9 @@ export function WorkspacePage() {
                   preRange.setEnd(sel.anchorNode!, sel.anchorOffset);
                   const start = preRange.toString().length;
                   const end = start + sel.toString().length;
-                  const note = prompt("Annotation note:");
-                  if (note) createAnnotation("note", note, start, end);
+                  const selectedText = sel.toString().trim();
+                  const note = prompt("Annotation note (leave as-is to quote the selection):", selectedText);
+                  if (note !== null) createAnnotation("note", note, start, end);
                 }}
                 style={{
                   background: "#4a6da7",
