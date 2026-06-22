@@ -1492,7 +1492,41 @@ export function WorkspacePage() {
         <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: "260px", background: "var(--bg, #fff)", borderLeft: "1px solid var(--border, #ddd)", overflowY: "auto", zIndex: 100, padding: "8px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
             <strong>Annotations</strong>
-            <button type="button" onClick={() => setShowAnnotations(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.2em" }}>&times;</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const sel = window.getSelection();
+                  if (!sel || sel.isCollapsed) {
+                    alert("Select text in the document first, then click Annotate.");
+                    return;
+                  }
+                  const el = document.querySelector('[contenteditable="true"]');
+                  if (!el) return;
+                  const preRange = document.createRange();
+                  preRange.setStart(el, 0);
+                  preRange.setEnd(sel.anchorNode!, sel.anchorOffset);
+                  const start = preRange.toString().length;
+                  const end = start + sel.toString().length;
+                  const note = prompt("Annotation note:");
+                  if (note) createAnnotation("note", note, start, end);
+                }}
+                style={{
+                  background: "#4a6da7",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 3,
+                  padding: "2px 10px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}
+                title="Annotate selected text"
+              >
+                + Annotate
+              </button>
+              <button type="button" onClick={() => setShowAnnotations(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.2em" }}>&times;</button>
+            </div>
           </div>
           <AnnotationPanel
             annotations={annotations}
