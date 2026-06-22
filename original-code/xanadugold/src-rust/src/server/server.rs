@@ -19477,6 +19477,116 @@ mod tests {
     }
 
     #[test]
+    fn trail_crud_full_lifecycle() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        // Create
+        let t1 = server.trail_create(sid, "Trail One".to_string()).unwrap();
+        let t2 = server.trail_create(sid, "Trail Two".to_string()).unwrap();
+
+        // List
+        let trails = server.trail_list(sid).unwrap();
+        assert_eq!(trails.len(), 2);
+
+        // Create works
+        let doc1 = server.create_work(sid, Edition::from_text("doc1")).unwrap();
+        let doc2 = server.create_work(sid, Edition::from_text("doc2")).unwrap();
+        let doc3 = server.create_work(sid, Edition::from_text("doc3")).unwrap();
+
+        // Add stops
+        server
+            .trail_add_stop(sid, t1, doc1, None, None, None)
+            .unwrap();
+        server
+            .trail_add_stop(sid, t1, doc2, Some(5), Some(20), Some("middle".into()))
+            .unwrap();
+        server
+            .trail_add_stop(sid, t1, doc3, None, None, Some("end".into()))
+            .unwrap();
+
+        // Get
+        let trail = server.trail_get(sid, t1).unwrap();
+        assert_eq!(trail.name, "Trail One");
+        assert_eq!(trail.stops.len(), 3);
+        assert_eq!(trail.stops[0].work_id, doc1);
+        assert_eq!(trail.stops[1].note.as_deref(), Some("middle"));
+        assert_eq!(trail.stops[2].note.as_deref(), Some("end"));
+
+        // Rename
+        server
+            .trail_rename(sid, t1, "Renamed Trail".to_string())
+            .unwrap();
+        let trail = server.trail_get(sid, t1).unwrap();
+        assert_eq!(trail.name, "Renamed Trail");
+
+        // Remove stop
+        server.trail_remove_stop(sid, t1, 1).unwrap();
+        let trail = server.trail_get(sid, t1).unwrap();
+        assert_eq!(trail.stops.len(), 2);
+
+        // Reorder
+        let trail = server.trail_get(sid, t1).unwrap();
+        let first_work = trail.stops[0].work_id;
+        server.trail_reorder_stops(sid, t1, vec![1, 0]).unwrap();
+        let trail = server.trail_get(sid, t1).unwrap();
+        assert_eq!(trail.stops.len(), 2);
+        assert_eq!(trail.stops[0].work_id, doc3); // swapped
+        assert_ne!(trail.stops[0].work_id, first_work);
+
+        // Delete
+        server.trail_delete(sid, t2).unwrap();
+        let trails = server.trail_list(sid).unwrap();
+        assert_eq!(trails.len(), 1);
+        assert_eq!(trails[0].name, "Renamed Trail"); // t1 survived, t2 gone
+    }
+
+    #[test]
+    fn trail_stop_preserves_selection_range() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let doc = server
+            .create_work(sid, Edition::from_text("Hello world."))
+            .unwrap();
+        let trail = server.trail_create(sid, "Selections".to_string()).unwrap();
+        server
+            .trail_add_stop(
+                sid,
+                trail,
+                doc,
+                Some(6),
+                Some(11),
+                Some("the word 'world'".to_string()),
+            )
+            .unwrap();
+
+        let trail = server.trail_get(sid, trail).unwrap();
+        assert_eq!(trail.stops[0].char_start, Some(6));
+        assert_eq!(trail.stops[0].char_end, Some(11));
+        assert_eq!(trail.stops[0].note.as_deref(), Some("the word 'world'"));
+    }
+
+    #[test]
+    fn trail_updated_on_stop_modification() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let doc = server.create_work(sid, Edition::from_text("doc")).unwrap();
+        let trail = server.trail_create(sid, "T".to_string()).unwrap();
+
+        let before = server.trail_get(sid, trail).unwrap().updated_at;
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        server
+            .trail_add_stop(sid, trail, doc, None, None, None)
+            .unwrap();
+        let after = server.trail_get(sid, trail).unwrap().updated_at;
+        assert!(after > before, "updated_at should change on modification");
+    }
+
+    #[test]
     #[cfg(feature = "server")]
     fn dirty_clubs_preserved_on_checkpoint_failure() {
         let data_dir = std::env::temp_dir().join(format!(
