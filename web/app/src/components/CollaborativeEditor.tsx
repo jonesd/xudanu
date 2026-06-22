@@ -89,6 +89,13 @@ function drawOverlay(
   const hitZones: MarkerHitZone[] = [];
   if (!editor || !canvas) return hitZones;
   if (spans.length === 0 && markers.length === 0 && annotations.length === 0 && compoundSpans.length === 0) {
+    // Still need to clear the canvas of any previous content
+    const container = editor.parentElement;
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      const ctx = canvas.getContext("2d");
+      if (ctx && rect.width > 0) ctx.clearRect(0, 0, rect.width, rect.height);
+    }
     return hitZones;
   }
 
