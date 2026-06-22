@@ -110,6 +110,7 @@ pub struct OtreeAnnotation {
     pub char_start: usize,
     pub char_end: usize,
     pub created_by: Option<BeId>,
+    #[serde(default)]
     pub created_at: u64,
 }
 
