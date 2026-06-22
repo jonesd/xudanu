@@ -2388,6 +2388,8 @@ pub struct AnnotationPayload {
     pub created_by: Option<BeId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_by_name: Option<String>,
+    #[serde(default)]
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

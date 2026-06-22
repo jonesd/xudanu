@@ -249,6 +249,7 @@ export interface AnnotationEntry {
   char_end: number;
   created_by: number | null;
   created_by_name: string | null;
+  created_at?: number;
 }
 
 export interface TransclusionMarker {
