@@ -102,6 +102,31 @@ impl std::fmt::Display for OtreeSigningError {
     }
 }
 
+/// A single annotation on a work.
+///
+/// Serialized to a JSON chunk via serde and persisted in the chunk store
+/// (see `Server::restore_annotations` in server.rs and the annotations
+/// checkpoint path). The chunk hash is recorded in the manifest's
+/// `annotations_hash` field.
+///
+/// SCHEMA EVOLUTION RULES:
+///
+/// 1. Adding a new field: ALWAYS use `#[serde(default)]`. Old annotation
+///    chunks on disk won't have the field; serde fills the default.
+///    This is sufficient — no migration needed.
+///
+/// 2. Renaming/removing/restructuring a field (breaking change): you MUST
+///    add a migration step in `persist/migrations.rs` that transforms the
+///    annotation chunk JSON from the old format to the new format before
+///    deserialization. Bump `CURRENT_MANIFEST_VERSION` and add a step in
+///    `migrate_manifest_to_latest`. Without this, old annotation chunks
+///    will fail to deserialize and the server will silently lose data.
+///
+/// 3. Safety: the restore path in server.rs (line ~5155) must NEVER
+///    overwrite a chunk that failed to deserialize. If deserialization
+///    fails, preserve the old chunk on disk so it can be migrated later.
+///    A failed deserialization that leads to 0 in-memory annotations +
+///    auto-checkpoint = permanent data loss.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OtreeAnnotation {
     pub annotation_id: u64,
