@@ -576,6 +576,10 @@ fn dispatch_inner(
             srv.work_set_edit_club(session_id, work_id, club_id)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::WorkSetHistoryClub { work_id, club_id } => {
+            srv.work_set_history_club(session_id, work_id, club_id)?;
+            Ok(ResponseValue::Void)
+        }
         WireRequest::WorkReadClub { work_id } => {
             let club = srv.work_read_club(work_id)?;
             Ok(ResponseValue::Humber(club.unwrap_or(0)))
@@ -584,19 +588,23 @@ fn dispatch_inner(
             let club = srv.work_edit_club(work_id)?;
             Ok(ResponseValue::Humber(club.unwrap_or(0)))
         }
+        WireRequest::WorkHistoryClub { work_id } => {
+            let club = srv.work_history_club(work_id)?;
+            Ok(ResponseValue::Humber(club.unwrap_or(0)))
+        }
         WireRequest::WorkRevisionCount { work_id } => {
             let count = srv.work_revision_count(work_id)?;
             Ok(ResponseValue::Humber(count))
         }
         WireRequest::WorkFetchRevision { work_id, number } => {
-            srv.ensure_can_read(session_id, work_id)?;
+            srv.ensure_can_read_history(session_id, work_id)?;
             match srv.work_fetch_revision(work_id, number)? {
                 Some(ed) => Ok(ResponseValue::Edition(EditionPayload::from_edition(&ed))),
                 None => Ok(ResponseValue::Void),
             }
         }
         WireRequest::WorkFetchRevisionRange { work_id, from, to } => {
-            srv.ensure_can_read(session_id, work_id)?;
+            srv.ensure_can_read_history(session_id, work_id)?;
             let revisions = srv.work_fetch_revision_range(work_id, from, to)?;
             let payload: Vec<(u64, EditionPayload)> = revisions
                 .into_iter()
@@ -1546,13 +1554,13 @@ fn dispatch_inner(
             Ok(ResponseValue::TransclusionDepthResult { depth })
         }
         WireRequest::VersionIsBefore { work_a, work_b } => {
-            srv.ensure_can_read(session_id, work_a)?;
-            srv.ensure_can_read(session_id, work_b)?;
+            srv.ensure_can_read_history(session_id, work_a)?;
+            srv.ensure_can_read_history(session_id, work_b)?;
             let is_before = srv.version_is_before(work_a, work_b);
             Ok(ResponseValue::VersionIsBeforeResult { is_before })
         }
         WireRequest::VersionAncestors { work_id } => {
-            srv.ensure_can_read(session_id, work_id)?;
+            srv.ensure_can_read_history(session_id, work_id)?;
             let ancestors = srv.version_ancestors_transitive(work_id);
             let ancestors: Vec<_> = ancestors
                 .into_iter()
@@ -1565,7 +1573,7 @@ fn dispatch_inner(
             Ok(ResponseValue::VersionAncestorsResult { ancestors })
         }
         WireRequest::VersionDescendants { work_id } => {
-            srv.ensure_can_read(session_id, work_id)?;
+            srv.ensure_can_read_history(session_id, work_id)?;
             let descendants = srv.version_descendants(work_id);
             let descendants: Vec<_> = descendants
                 .into_iter()

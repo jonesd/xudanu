@@ -400,6 +400,7 @@ impl BinaryCodec {
             OperationCode::WorkCanRevise => Ok(WireRequest::WorkCanRevise { work_id: id }),
             OperationCode::WorkReadClub => Ok(WireRequest::WorkReadClub { work_id: id }),
             OperationCode::WorkEditClub => Ok(WireRequest::WorkEditClub { work_id: id }),
+            OperationCode::WorkHistoryClub => Ok(WireRequest::WorkHistoryClub { work_id: id }),
             OperationCode::WorkRevisionCount => Ok(WireRequest::WorkRevisionCount { work_id: id }),
             OperationCode::WorkSponsors => Ok(WireRequest::WorkSponsors { work_id: id }),
             OperationCode::WorkOwner => Ok(WireRequest::WorkOwner { work_id: id }),
@@ -985,6 +986,19 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::WorkSetEditClub {
+                    work_id: args.work_id,
+                    club_id: args.club_id,
+                })
+            }
+            OperationCode::WorkSetHistoryClub => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    club_id: Option<BeId>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkSetHistoryClub {
                     work_id: args.work_id,
                     club_id: args.club_id,
                 })

@@ -29,6 +29,7 @@ pub struct Work {
     revision_history: BTreeMap<u64, Edition>,
     read_club: Option<BeId>,
     edit_club: Option<BeId>,
+    history_club: Option<BeId>,
     sponsors: Vec<BeId>,
     endorsements: EndorsementSet,
     is_archived: bool,
@@ -45,6 +46,7 @@ impl Work {
             revision_history: BTreeMap::new(),
             read_club: None,
             edit_club: None,
+            history_club: None,
             sponsors: Vec::new(),
             endorsements: EndorsementSet::new(),
             is_archived: false,
@@ -61,6 +63,7 @@ impl Work {
             revision_history: BTreeMap::new(),
             read_club: None,
             edit_club: None,
+            history_club: None,
             sponsors: Vec::new(),
             endorsements: EndorsementSet::new(),
             is_archived: false,
@@ -185,6 +188,16 @@ impl Work {
 
     pub fn set_edit_club(&mut self, club: Option<BeId>) {
         self.edit_club = club;
+    }
+
+    /// Club that controls access to revision history. If None, falls back to
+    /// read_club (backward-compatible: anyone who can read can see history).
+    pub fn history_club(&self) -> Option<BeId> {
+        self.history_club
+    }
+
+    pub fn set_history_club(&mut self, club: Option<BeId>) {
+        self.history_club = club;
     }
 
     pub fn sponsors(&self) -> &[BeId] {

@@ -20,6 +20,7 @@ fn make_work_entry(
         source_fingerprint: None,
         is_archived: false,
         lifecycle_history: Vec::new(),
+        history_club: None,
     }
 }
 
@@ -588,6 +589,7 @@ mod tests {
             source_fingerprint: None,
             is_archived: false,
             lifecycle_history: Vec::new(),
+            history_club: None,
         });
         let path = manifest::manifest_path(&dir);
 
@@ -612,6 +614,7 @@ mod tests {
             source_fingerprint: None,
             is_archived: false,
             lifecycle_history: Vec::new(),
+            history_club: None,
         });
         manifest::write_manifest(&mut m, &path).unwrap();
         let b2 = manifest::backup_manifest_path(&dir, m.sequence);
@@ -655,6 +658,7 @@ mod tests {
             source_fingerprint: None,
             is_archived: false,
             lifecycle_history: Vec::new(),
+            history_club: None,
         });
         let path = manifest::manifest_path(&dir);
         manifest::write_manifest(&mut m, &path).unwrap();
