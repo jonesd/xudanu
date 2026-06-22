@@ -137,6 +137,11 @@ pub struct Server {
     compound_editions: HashMap<BeId, crate::edition::compound::CompoundEdition>,
     compound_dirty: HashSet<BeId>,
     wal: crate::persist::wal::WalLog,
+    /// Errors encountered during data restoration. When non-empty,
+    /// auto_checkpoint is SUPPRESSED to prevent overwriting good on-disk
+    /// data with incomplete in-memory state (data loss prevention).
+    /// Cleared by an explicit admin action once the root cause is fixed.
+    restore_errors: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -302,6 +307,7 @@ impl Server {
             compound_editions: HashMap::new(),
             compound_dirty: HashSet::new(),
             wal: crate::persist::wal::WalLog::disabled(),
+            restore_errors: Vec::new(),
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
             // transclusion survival, and materialize_annotation_indexed support.
@@ -4708,7 +4714,8 @@ impl Server {
                             if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON =>
                         {
                             serde_json::from_slice(payload).unwrap_or_else(|e| {
-                                tracing::warn!("blob_metas deserialization failed: {}", e);
+                                tracing::error!("blob_metas deserialization failed: {}", e);
+                                self.restore_errors.push(format!("blob_metas: {}", e));
                                 manifest.blob_metas.clone()
                             })
                         }
@@ -4777,7 +4784,8 @@ impl Server {
                         if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON =>
                     {
                         serde_json::from_slice::<ContentAddressIndex>(payload).unwrap_or_else(|e| {
-                            tracing::warn!("content_address deserialization failed: {}", e);
+                            tracing::error!("content_address deserialization failed: {}", e);
+                            self.restore_errors.push(format!("content_address: {}", e));
                             manifest
                                 .content_address
                                 .clone()
@@ -4965,7 +4973,8 @@ impl Server {
                             if format == crate::persist::chunk_store::CHUNK_FORMAT_JSON =>
                         {
                             serde_json::from_slice(payload).unwrap_or_else(|e| {
-                                tracing::warn!("links chunk deserialization failed: {}", e);
+                                tracing::error!("links chunk deserialization failed: {}", e);
+                                self.restore_errors.push(format!("links: {}", e));
                                 manifest.links.clone()
                             })
                         }
@@ -5182,6 +5191,7 @@ impl Server {
                                      preserving old chunk, will retry on next restart. \
                                      If this persists, run a migration (see persist/migrations.rs)."
                                 );
+                                self.restore_errors.push("annotations chunk".into());
                             }
                         }
                     }
@@ -5512,6 +5522,12 @@ impl Server {
     fn auto_checkpoint(&mut self) {
         #[cfg(feature = "server")]
         {
+            // CRITICAL: suppress checkpoint if restore had errors.
+            // Writing now would overwrite good on-disk chunks with
+            // incomplete in-memory state — permanent data loss.
+            if !self.restore_errors.is_empty() {
+                return;
+            }
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
@@ -5532,6 +5548,27 @@ impl Server {
                     }
                 }
             }
+        }
+    }
+
+    /// Returns true if the server started with restore errors.
+    /// When true, auto_checkpoint is suppressed to prevent data loss.
+    pub fn has_restore_errors(&self) -> bool {
+        !self.restore_errors.is_empty()
+    }
+
+    /// Returns the list of restore errors encountered at startup.
+    pub fn restore_errors(&self) -> &[String] {
+        &self.restore_errors
+    }
+
+    /// Clears restore errors, re-enabling auto_checkpoint.
+    /// Use ONLY after the root cause has been fixed (e.g., a migration
+    /// has been applied or the corrupted chunk has been repaired).
+    pub fn clear_restore_errors(&mut self) {
+        if !self.restore_errors.is_empty() {
+            tracing::info!("restore errors cleared — auto_checkpoint re-enabled");
+            self.restore_errors.clear();
         }
     }
 
@@ -10283,6 +10320,7 @@ pub(crate) mod persist_snapshot {
                 consequence_tracker: Arc::new(ConsequenceTracker::new()),
                 write_barrier: Arc::new(WriteBarrier::new()),
                 wal: crate::persist::wal::WalLog::disabled(),
+                restore_errors: Vec::new(),
             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap
