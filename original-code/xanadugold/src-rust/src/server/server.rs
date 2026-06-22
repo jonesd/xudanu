@@ -1320,6 +1320,33 @@ impl Server {
         Ok(())
     }
 
+    /// Set the history club — controls who can access revision history.
+    /// Requires owner permission (stricter than edit: changing who can see
+    /// history is a governance decision).
+    pub fn work_set_history_club(
+        &mut self,
+        session_id: SessionId,
+        work_be_id: BeId,
+        club_id: Option<BeId>,
+    ) -> Result<(), ServerError> {
+        self.ensure_owner(session_id, work_be_id)?;
+        let ws = self
+            .works
+            .get_mut(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        ws.work.set_history_club(club_id);
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    pub fn work_history_club(&self, work_be_id: BeId) -> Result<Option<BeId>, ServerError> {
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        Ok(ws.work.history_club())
+    }
+
     pub fn work_read_club(&self, work_be_id: BeId) -> Result<Option<BeId>, ServerError> {
         let ws = self
             .works
@@ -4865,6 +4892,9 @@ impl Server {
                         work_entry.is_archived,
                         work_entry.lifecycle_history.clone(),
                     );
+                    if let Some(hc) = work_entry.history_club {
+                        work.set_history_club(Some(hc));
+                    }
                     let ws = WorkState {
                         work: work.clone(),
                         chunk_ref: Some(work_entry.work_ref.clone()),
@@ -7824,6 +7854,46 @@ impl Server {
         }
     }
 
+    /// Check that the session can access revision history for a work.
+    /// If `history_club` is set, checks against it. If None, falls back
+    /// to normal read permission (backward-compatible).
+    pub(crate) fn ensure_can_read_history(
+        &self,
+        session_id: SessionId,
+        work_be_id: BeId,
+    ) -> Result<(), ServerError> {
+        self.ensure_session(session_id)?;
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        match ws.work.history_club() {
+            Some(club_id) => {
+                if club_id == self.system_clubs.public_club {
+                    return Ok(());
+                }
+                let has_auth = self
+                    .sessions
+                    .get(&session_id)
+                    .map(|s| s.has_authority(club_id))
+                    .unwrap_or(false);
+                if has_auth {
+                    Ok(())
+                } else {
+                    Err(ServerError::NotAuthorized)
+                }
+            }
+            None => {
+                // No history_club set — fall back to read permission
+                if self.work_is_readable(session_id, &ws.work) {
+                    Ok(())
+                } else {
+                    Err(ServerError::NotAuthorized)
+                }
+            }
+        }
+    }
+
     pub(crate) fn check_edit_permission(&self, session_id: SessionId, work: &Work) -> bool {
         match work.edit_club() {
             Some(club_id) => {
@@ -9706,6 +9776,8 @@ pub(crate) mod persist_snapshot {
         /// Append-only lifecycle history.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         lifecycle_history: Vec<crate::edition::work::WorkLifecycleEvent>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        history_club: Option<BeId>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -9844,6 +9916,7 @@ pub(crate) mod persist_snapshot {
                             content_end_line: ws.content_end_line,
                             is_archived: ws.work.is_archived(),
                             lifecycle_history: ws.work.lifecycle_history().to_vec(),
+                            history_club: ws.work.history_club(),
                         },
                     )
                 })
@@ -10117,6 +10190,9 @@ pub(crate) mod persist_snapshot {
                     .work()
                     .clone();
                 work.restore_archived_state(ws_snap.is_archived, ws_snap.lifecycle_history.clone());
+                if let Some(hc) = ws_snap.history_club {
+                    work.set_history_club(Some(hc));
+                }
                 let ws = WorkState {
                     work: work.clone(),
                     chunk_ref: None,
@@ -10297,6 +10373,7 @@ pub(crate) mod persist_snapshot {
                     source_fingerprint: ws.source_fingerprint.map(|fp| fp.to_vec()),
                     is_archived: ws.work.is_archived(),
                     lifecycle_history: ws.work.lifecycle_history().to_vec(),
+                    history_club: ws.work.history_club(),
                 });
             }
 
@@ -15246,6 +15323,109 @@ mod tests {
         assert!(
             !server.work_can_read(stranger_sid, work_id).unwrap(),
             "unpublished work should not be readable by strangers"
+        );
+    }
+
+    #[test]
+    fn history_club_requires_owner_to_set() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("v1"))
+            .unwrap();
+        server.work_publish(owner_sid, work_id).unwrap();
+
+        // Owner can set history_club
+        server
+            .work_set_history_club(owner_sid, work_id, Some(owner_club))
+            .unwrap();
+        assert_eq!(server.work_history_club(work_id).unwrap(), Some(owner_club));
+
+        // Stranger cannot set history_club (not owner)
+        let (stranger_club, _) = ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+        let err = server
+            .work_set_history_club(stranger_sid, work_id, Some(stranger_club))
+            .unwrap_err();
+        assert!(
+            matches!(err, ServerError::NotOwner(_)),
+            "non-owner must not set history_club, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn history_club_gates_revision_access() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("v1"))
+            .unwrap();
+        // Revise to create history
+        server.work_grab(owner_sid, work_id).unwrap();
+        server
+            .work_revise(owner_sid, work_id, Edition::from_text("v2"))
+            .unwrap();
+        server.work_release(owner_sid, work_id).unwrap();
+        server.work_publish(owner_sid, work_id).unwrap();
+
+        // Create a private history club (just the owner)
+        server
+            .work_set_history_club(owner_sid, work_id, Some(owner_club))
+            .unwrap();
+
+        // Owner can read history
+        assert!(
+            server.ensure_can_read_history(owner_sid, work_id).is_ok(),
+            "owner should access history"
+        );
+        // Owner can fetch revision 1
+        assert!(
+            server.work_fetch_revision(work_id, 1).is_ok(),
+            "owner should fetch revisions"
+        );
+
+        // Stranger can read the work (published) but NOT its history
+        let (stranger_club, _) = ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+        assert!(
+            server.work_can_read(stranger_sid, work_id).unwrap(),
+            "published work should be readable by strangers"
+        );
+        let err = server
+            .ensure_can_read_history(stranger_sid, work_id)
+            .unwrap_err();
+        assert!(
+            matches!(err, ServerError::NotAuthorized),
+            "stranger must not access history when history_club is set, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn history_club_none_falls_back_to_read() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("v1"))
+            .unwrap();
+        server.work_publish(owner_sid, work_id).unwrap();
+
+        // history_club is None by default
+        assert_eq!(server.work_history_club(work_id).unwrap(), None);
+
+        // Stranger can read → can also read history (backward-compatible)
+        let (stranger_club, _) = ac_create_user(&mut server, "stranger", TEST_OTHER_CREDENTIAL);
+        let stranger_sid = ac_login_as(&mut server, stranger_club, TEST_OTHER_CREDENTIAL);
+        assert!(
+            server.work_can_read(stranger_sid, work_id).unwrap(),
+            "published work should be readable"
+        );
+        assert!(
+            server
+                .ensure_can_read_history(stranger_sid, work_id)
+                .is_ok(),
+            "with no history_club, read permission should grant history access"
         );
     }
 

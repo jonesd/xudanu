@@ -88,6 +88,8 @@ pub struct WorkEntry {
     /// Append-only lifecycle history (archive/unarchive transitions).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lifecycle_history: Vec<crate::edition::work::WorkLifecycleEvent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_club: Option<BeId>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1099,6 +1101,7 @@ mod tests {
             source_fingerprint: None,
             is_archived: false,
             lifecycle_history: Vec::new(),
+            history_club: None,
         });
         manifest.links.push(LinkEntry {
             link_id: 50,
