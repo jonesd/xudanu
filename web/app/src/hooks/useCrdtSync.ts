@@ -138,6 +138,16 @@ export function useCrdtSync(
     clientRef.current?.switchWork(workBeId);
   }, [workBeId, connected]);
 
+  // Clear per-work state when switching works — prevents stale highlights,
+  // annotations, attribution spans, and awareness from the previous work
+  // rendering during the gap before the new work's data arrives.
+  useEffect(() => {
+    setAnnotations([]);
+    setAttributionSpans([]);
+    setAttributionLogStatus(null);
+    setAwareness([]);
+  }, [workBeId]);
+
   useEffect(() => {
     if (!connected) {
       setAuthenticated(false);
