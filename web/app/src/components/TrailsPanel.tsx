@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { CrdtSyncClient, TrailPayload } from "../api/crdt_sync";
+import { useDraggable } from "../hooks/useDraggable";
 
 interface Props {
   client: CrdtSyncClient | null;
@@ -13,6 +14,7 @@ function hexId(id: number): string {
 }
 
 export function TrailsPanel({ client, currentWorkId, onSelectWork, onClose }: Props) {
+  const { drag, onMouseDown, dialogRef } = useDraggable();
   const [trails, setTrails] = useState<TrailPayload[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -78,8 +80,18 @@ export function TrailsPanel({ client, currentWorkId, onSelectWork, onClose }: Pr
 
   return (
     <div className="panel-overlay" onClick={onClose}>
-      <div className="panel-dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="panel-header">
+      <div
+        ref={dialogRef}
+        className="panel-dialog"
+        style={{
+          transform: `translate(${drag.offsetX}px, ${drag.offsetY}px)`,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="panel-header"
+          onMouseDown={onMouseDown}
+          style={{ cursor: "grab", userSelect: "none" }}>
           <span className="panel-title">Trails</span>
           <button type="button" className="panel-close" onClick={onClose}>{"\u00d7"}</button>
         </div>
