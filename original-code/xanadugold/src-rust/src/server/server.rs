@@ -15032,6 +15032,137 @@ mod tests {
     }
 
     #[test]
+    fn sponsor_multiple_clubs_independent() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (_owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("multi-sponsor"))
+            .unwrap();
+
+        let club_a = server
+            .create_named_club(owner_sid, "club_a", Edition::empty())
+            .unwrap();
+        let club_b = server
+            .create_named_club(owner_sid, "club_b", Edition::empty())
+            .unwrap();
+        let club_c = server
+            .create_named_club(owner_sid, "club_c", Edition::empty())
+            .unwrap();
+
+        // Sponsor with all three
+        server.work_sponsor(owner_sid, work_id, club_a).unwrap();
+        server.work_sponsor(owner_sid, work_id, club_b).unwrap();
+        server.work_sponsor(owner_sid, work_id, club_c).unwrap();
+
+        let sponsors = server.work_sponsors(work_id).unwrap();
+        assert_eq!(sponsors.len(), 3, "should have 3 sponsors");
+        assert!(sponsors.contains(&club_a));
+        assert!(sponsors.contains(&club_b));
+        assert!(sponsors.contains(&club_c));
+
+        // Unsponsor only club_b
+        server.work_unsponsor(owner_sid, work_id, club_b).unwrap();
+        let sponsors = server.work_sponsors(work_id).unwrap();
+        assert_eq!(
+            sponsors.len(),
+            2,
+            "should have 2 sponsors after removing club_b"
+        );
+        assert!(sponsors.contains(&club_a));
+        assert!(!sponsors.contains(&club_b), "club_b should be gone");
+        assert!(sponsors.contains(&club_c));
+    }
+
+    #[test]
+    fn sponsor_is_idempotent() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (_owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("dedup"))
+            .unwrap();
+        let club = server
+            .create_named_club(owner_sid, "re_sponsor", Edition::empty())
+            .unwrap();
+
+        // Sponsor the same club twice — should not duplicate
+        server.work_sponsor(owner_sid, work_id, club).unwrap();
+        server.work_sponsor(owner_sid, work_id, club).unwrap();
+        assert_eq!(
+            server.work_sponsors(work_id).unwrap().len(),
+            1,
+            "double-sponsor should be idempotent"
+        );
+
+        // Unsponsor, re-sponsor, should still be 1
+        server.work_unsponsor(owner_sid, work_id, club).unwrap();
+        assert!(server.work_sponsors(work_id).unwrap().is_empty());
+        server.work_sponsor(owner_sid, work_id, club).unwrap();
+        assert_eq!(server.work_sponsors(work_id).unwrap(), &[club]);
+    }
+
+    #[test]
+    fn sponsors_publicly_queryable() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", TEST_OWNER_CREDENTIAL);
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text("public sponsor"))
+            .unwrap();
+        server.work_publish(owner_sid, work_id).unwrap();
+
+        let sponsor_club = server
+            .create_named_club(owner_sid, "vouch_club", Edition::empty())
+            .unwrap();
+        server
+            .work_sponsor(owner_sid, work_id, sponsor_club)
+            .unwrap();
+
+        // A completely unauthenticated stranger session should be able to
+        // query sponsors (sponsors are public reputation, not secret).
+        let stranger_sid = server.connect();
+        server.login_public(stranger_sid).unwrap();
+        let sponsors = server.work_sponsors(work_id).unwrap();
+        assert!(
+            sponsors.contains(&sponsor_club),
+            "stranger should see sponsors on a public work"
+        );
+    }
+
+    #[test]
+    fn sponsors_survive_checkpoint_restore() {
+        let dir = TempDir::new("sponsor_persist");
+        let work_id;
+        let club_a;
+        let club_b;
+        {
+            let mut server = Server::new();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            work_id = server
+                .create_work(sid, Edition::from_text("persist sponsors"))
+                .unwrap();
+            club_a = server.create_club(sid, Edition::empty()).unwrap();
+            club_b = server.create_club(sid, Edition::empty()).unwrap();
+
+            server.work_sponsor(sid, work_id, club_a).unwrap();
+            server.work_sponsor(sid, work_id, club_b).unwrap();
+            assert_eq!(server.work_sponsors(work_id).unwrap().len(), 2);
+
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+        }
+        {
+            let server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+            let sponsors = server.work_sponsors(work_id).unwrap();
+            assert_eq!(
+                sponsors.len(),
+                2,
+                "sponsors must survive checkpoint/restore"
+            );
+            assert!(sponsors.contains(&club_a));
+            assert!(sponsors.contains(&club_b));
+        }
+    }
+
+    #[test]
     fn crdt_two_users_concurrent_edit() {
         let (mut server, sid1) = ac_setup();
         let work_id = server
