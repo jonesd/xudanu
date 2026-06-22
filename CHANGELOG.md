@@ -6,6 +6,47 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v0.7.9] — 2026-06-22
+
+### Archive / Soft-Delete (#25)
+- feat(work): `is_archived` + append-only `lifecycle_history` on `Work` (Archived/Unarchived events with actor + timestamp).
+- feat(web): Archive/Unarchive in the More menu + Archived Works restore panel + confirmation toast.
+- feat(archive): ghost rendering — references into archived works show dashed amber markers + "Archived work" tooltip.
+- New ops: `WorkArchive` (0x031C), `WorkUnarchive` (0x031D), `WorkListArchived` (0x031E).
+- Persisted via both manifest `WorkEntry` and snapshot `WorkStateSnapshot`.
+
+### Comparison & Merge Tools (#21, #29)
+- feat(web): visual diff UI — word-level LCS diff with green/red highlights.
+- feat(web): fuzzy/exact paragraph matching toggle (Jaccard word similarity).
+- feat(web): three-way merge tool — paragraph-level conflict detection with sentence-level auto-merge, per-segment resolution (Accept A/B/Base), bulk accept-all, and "Create Merged Document" with curator provenance.
+- fix(web): split panes now use full height (was fixed 300px).
+- style(web): softened diff highlight colors.
+
+### Persistent WebSocket (major UX fix)
+- fix(ws): single WebSocket connection persists across document switches — was tearing down + reconnecting on every click, causing the two-click bug and transclusion race conditions.
+- CrdtSyncClient.switchWork(): closes old CRDT channel + opens new on the same connection.
+- fix(compound): reset spansRef on work switch + sync from server — prevents compound edition corruption.
+
+### Provenance & Attribution
+- feat(attribution): transclusion placer provenance (`transcluded_by`), always-initialized attribution log, derivation-chain ancestry view.
+- test(attribution): 3 regression tests (toggle+history, permission, persistence).
+
+### Security
+- fix(deps): bump undici 7.25.0 → 7.28.0 (6 dependabot vulns).
+- fix(security): sanitize WS message logging in embedded fallback UI.
+- fix(ci): pin third-party GitHub Actions to commit SHAs.
+- fix(security,quality): clear CodeQL rust/unused-variable + JS findings.
+- CodeQL report: 0 open alerts.
+
+### Documentation
+- docs: CHANGELOG.md (v0.1.1 → v0.7.7 history).
+- docs: comparison-and-merge-guide.md (walkthrough of all comparison tools).
+- docs: attribution-updates.md (provenance mechanism documentation).
+- 19 GitHub releases populated with complete release notes.
+- 26 Udanax-Gold feature-gap issues filed with effort estimates.
+
+---
+
 ## [Unreleased] — 2026-06-17 →
 - **feat(attribution):** transclusion placer provenance (`transcluded_by`), an always-initialized (in-memory, with on-disk fallback) attribution log, and a derivation-chain ancestry view (`provenance_ancestry` + `enrich_provenance_hops`).
 - **fix(security):** sanitize WebSocket message logging in the embedded fallback UI (CodeQL log-injection).
