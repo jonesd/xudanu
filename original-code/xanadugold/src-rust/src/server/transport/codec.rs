@@ -1003,6 +1003,21 @@ impl JsonCodec {
                     club_id: args.club_id,
                 })
             }
+            OperationCode::WorkTransclusionChain => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    char_start: usize,
+                    char_end: usize,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkTransclusionChain {
+                    work_id: args.work_id,
+                    char_start: args.char_start,
+                    char_end: args.char_end,
+                })
+            }
             OperationCode::WorkPublish => {
                 #[derive(Deserialize)]
                 struct Args {
