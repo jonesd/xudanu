@@ -75,6 +75,16 @@ pub struct ContentNotification {
     pub title: Option<String>,
 }
 
+/// One hop in a transclusion `again()` chain.
+pub struct AgainHop {
+    pub work_id: BeId,
+    pub work_title: String,
+    pub element_text: String,
+    pub author_name: String,
+    pub author_type: String,
+    pub is_original: bool,
+}
+
 pub struct Server {
     pub(crate) grand_map: GrandMap,
     pub(crate) sessions: HashMap<SessionId, Session>,
@@ -6450,6 +6460,116 @@ impl Server {
 
     pub fn link_count(&self) -> usize {
         self.links.len()
+    }
+
+    /// Gold's `again()` — walks the transclusion chain for a specific element,
+    /// returning each hop (work → source work → ... → original) with text +
+    /// author info. Lets a reader trace any passage back to its ultimate source.
+    pub fn transclusion_again_chain(
+        &self,
+        work_id: BeId,
+        char_start: usize,
+        char_end: usize,
+    ) -> Vec<AgainHop> {
+        let mut chain = Vec::new();
+        let mut current_work = work_id;
+        let mut current_start = char_start;
+        let mut current_end = char_end;
+        let mut visited = std::collections::HashSet::new();
+
+        loop {
+            if !visited.insert(current_work) {
+                break; // cycle guard
+            }
+
+            let ws = match self.works.get(&current_work) {
+                Some(ws) => ws,
+                None => break,
+            };
+
+            let edition = ws.work.current_edition();
+            let entries = edition.cached_entries();
+
+            // Find the element overlapping [current_start, current_end)
+            let mut cum = 0usize;
+            let mut element_text = String::new();
+            let mut prov: Option<&crate::edition::provenance::ElementProvenance> = None;
+
+            for (_, carrier) in entries {
+                let entry_len = carrier.char_len();
+                let entry_start = cum;
+                let entry_end = cum + entry_len;
+                cum = entry_end;
+
+                if entry_end > current_start && entry_start < current_end {
+                    if let Some(s) = carrier.element.as_text() {
+                        element_text.push_str(s);
+                    }
+                    if prov.is_none() {
+                        prov = carrier.provenance.as_ref();
+                    }
+                }
+            }
+
+            if element_text.is_empty() && prov.is_none() {
+                break;
+            }
+
+            let is_original = prov.map(|p| p.source_work_id.is_none()).unwrap_or(true);
+
+            let author_name = prov
+                .map(|p| p.author_display_name.clone())
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            let author_type = prov
+                .map(|p| match p.author_type {
+                    crate::edition::provenance::AuthorType::Human => "human",
+                    crate::edition::provenance::AuthorType::Llm => "llm",
+                    crate::edition::provenance::AuthorType::Historical => "historical",
+                })
+                .unwrap_or("unknown");
+
+            chain.push(AgainHop {
+                work_id: current_work,
+                work_title: ws.cached_title.clone(),
+                element_text: if element_text.len() > 200 {
+                    format!("{}...", &element_text[..200])
+                } else {
+                    element_text
+                },
+                author_name,
+                author_type: author_type.to_string(),
+                is_original,
+            });
+
+            match prov.and_then(|p| p.source_work_id) {
+                Some(source_work_id) => {
+                    // Resolve the excerpt text in the source work to get
+                    // the character range for the next hop.
+                    if let Some(source_ws) = self.works.get(&source_work_id) {
+                        let source_edition = source_ws.work.current_edition();
+                        let source_text = source_edition.to_text().to_lowercase();
+                        let excerpt_lower = chain
+                            .last()
+                            .map(|h| h.element_text.to_lowercase())
+                            .unwrap_or_default();
+                        if let Some(pos) =
+                            source_text.find(&excerpt_lower[..excerpt_lower.len().min(100)])
+                        {
+                            current_start = pos;
+                            current_end = pos + excerpt_lower.len().min(200);
+                        } else {
+                            current_start = 0;
+                            current_end = 100;
+                        }
+                    }
+                    current_work = source_work_id;
+                }
+                None => break, // original source reached
+            }
+        }
+
+        chain
     }
 
     pub(crate) fn compute_provenance_chain(
@@ -15427,6 +15547,141 @@ mod tests {
                 .is_ok(),
             "with no history_club, read permission should grant history access"
         );
+    }
+
+    #[test]
+    fn again_chain_returns_original_for_untouched_content() {
+        let (mut server, sid) = prov_setup();
+        let work = server
+            .create_work(sid, Edition::from_text("original content"))
+            .unwrap();
+        // No links, no transclusion — chain should have one hop marked original.
+        let chain = server.transclusion_again_chain(work, 0, 10);
+        assert_eq!(chain.len(), 1, "should have exactly one hop");
+        assert!(chain[0].is_original, "should be marked original");
+        assert_eq!(chain[0].work_id, work);
+    }
+
+    #[test]
+    fn again_chain_walks_two_hop_transclusion() {
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        server.grant_admin_authority(session).unwrap();
+        let club_id = server
+            .session(session)
+            .unwrap()
+            .authority_clubs()
+            .iter()
+            .next()
+            .copied()
+            .unwrap();
+        let public_club = server.public_club_id();
+
+        // Register a historical author (import_source_work needs one)
+        let author = server
+            .register_historical_author(
+                "Test Author".into(),
+                "Test Author".into(),
+                Some(1900),
+                Some(1970),
+                std::collections::HashMap::new(),
+                "test".into(),
+                club_id,
+            )
+            .unwrap();
+
+        // Source work with known text
+        let passage = "The quick brown fox jumps over the lazy dog.";
+        let src_text = format!("{} That is all.", passage);
+        let (src_id, _, _, _) = server
+            .import_source_work(
+                session,
+                author.be_id,
+                "test-src".into(),
+                src_text,
+                "ed".into(),
+                0,
+                0,
+            )
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&src_id) {
+            ws.work.set_edit_club(Some(public_club));
+            ws.work.set_read_club(Some(public_club));
+        }
+        server
+            .apply_source_attribution(session, src_id, author.be_id, None, None, None)
+            .unwrap();
+
+        // Doc A: transclude passage from source
+        let doc_a_text = format!("intro {} outro", passage);
+        let doc_a = server
+            .create_work(session, Edition::from_text(&doc_a_text))
+            .unwrap();
+        if let Some(ws) = server.works.get_mut(&doc_a) {
+            ws.work.set_edit_club(Some(public_club));
+            ws.work.set_read_club(Some(public_club));
+        }
+        let link_a = server
+            .create_link(
+                session,
+                src_id,
+                doc_a,
+                Some(crate::edition::links::HyperRef::single(
+                    Some(Edition::from_text(passage)),
+                    Some(src_id),
+                    None,
+                    None,
+                )),
+                Some(crate::edition::links::HyperRef::single(
+                    None,
+                    Some(doc_a),
+                    None,
+                    None,
+                )),
+            )
+            .unwrap();
+        server
+            .apply_transclusion_attribution(session, link_a)
+            .unwrap();
+
+        // Query the again() chain for the transcluded passage in doc_a
+        let passage_start = doc_a_text.find(passage).unwrap();
+        let passage_end = passage_start + passage.len();
+        let chain = server.transclusion_again_chain(doc_a, passage_start, passage_end);
+
+        assert!(
+            chain.len() >= 2,
+            "should have at least 2 hops (doc_a -> source), got {}",
+            chain.len()
+        );
+        // First hop: doc_a (not original)
+        assert!(!chain[0].is_original, "first hop should not be original");
+        assert_eq!(chain[0].work_id, doc_a);
+        // Last hop: source (original)
+        let last = chain.last().unwrap();
+        assert!(last.is_original, "last hop should be marked original");
+        assert_eq!(last.work_id, src_id);
+    }
+
+    #[test]
+    fn again_chain_terminates_on_cycle() {
+        let (mut server, sid) = prov_setup();
+        // Two works linking to each other (cycle) — no provenance stamped,
+        // so again() should just return the first work as original.
+        let wa = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let wb = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let _l1 = server.create_link(sid, wa, wb, None, None).unwrap();
+        let _l2 = server.create_link(sid, wb, wa, None, None).unwrap();
+
+        // Without provenance stamped, again() should not loop.
+        let chain = server.transclusion_again_chain(wa, 0, 1);
+        assert_eq!(
+            chain.len(),
+            1,
+            "should terminate immediately — no source provenance to walk"
+        );
+        assert!(chain[0].is_original);
     }
 
     #[test]

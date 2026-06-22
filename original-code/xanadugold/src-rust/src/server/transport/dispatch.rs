@@ -592,6 +592,26 @@ fn dispatch_inner(
             let club = srv.work_history_club(work_id)?;
             Ok(ResponseValue::Humber(club.unwrap_or(0)))
         }
+        WireRequest::WorkTransclusionChain {
+            work_id,
+            char_start,
+            char_end,
+        } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let chain = srv.transclusion_again_chain(work_id, char_start, char_end);
+            let payload: Vec<super::protocol::AgainHopPayload> = chain
+                .into_iter()
+                .map(|hop| super::protocol::AgainHopPayload {
+                    work_id: hop.work_id,
+                    work_title: hop.work_title,
+                    element_text: hop.element_text,
+                    author_name: hop.author_name,
+                    author_type: hop.author_type,
+                    is_original: hop.is_original,
+                })
+                .collect();
+            Ok(ResponseValue::TransclusionChainResult { chain: payload })
+        }
         WireRequest::WorkRevisionCount { work_id } => {
             let count = srv.work_revision_count(work_id)?;
             Ok(ResponseValue::Humber(count))

@@ -113,6 +113,7 @@ pub enum OperationCode {
     WorkReadClub,
     WorkEditClub,
     WorkHistoryClub,
+    WorkTransclusionChain,
     WorkRevisionCount,
     WorkFetchRevision,
     WorkSponsor,
@@ -369,6 +370,7 @@ impl OperationCode {
             0x030C => Some(OperationCode::WorkReadClub),
             0x030D => Some(OperationCode::WorkEditClub),
             0x0320 => Some(OperationCode::WorkHistoryClub),
+            0x0321 => Some(OperationCode::WorkTransclusionChain),
             0x030E => Some(OperationCode::WorkRevisionCount),
             0x030F => Some(OperationCode::WorkFetchRevision),
             0x0310 => Some(OperationCode::WorkSponsor),
@@ -624,6 +626,7 @@ impl OperationCode {
             OperationCode::WorkReadClub => 0x030C,
             OperationCode::WorkEditClub => 0x030D,
             OperationCode::WorkHistoryClub => 0x0320,
+            OperationCode::WorkTransclusionChain => 0x0321,
             OperationCode::WorkRevisionCount => 0x030E,
             OperationCode::WorkFetchRevision => 0x030F,
             OperationCode::WorkSponsor => 0x0310,
@@ -1026,6 +1029,11 @@ pub enum WireRequest {
     },
     WorkHistoryClub {
         work_id: BeId,
+    },
+    WorkTransclusionChain {
+        work_id: BeId,
+        char_start: usize,
+        char_end: usize,
     },
     WorkRevisionCount {
         work_id: BeId,
@@ -1839,6 +1847,9 @@ pub enum ResponseValue {
     ProvenanceAncestryResult {
         chain: Vec<ProvenanceHopPayload>,
     },
+    TransclusionChainResult {
+        chain: Vec<AgainHopPayload>,
+    },
     CompoundResolveResult {
         text: String,
     },
@@ -2405,6 +2416,17 @@ pub struct ProvenanceHopPayload {
     /// reading a flat link-id-sorted list as a linear chain.
     #[serde(default)]
     pub dest_work_id: BeId,
+}
+
+/// One hop in a transclusion `again()` chain (Gold's recursive transclusion walk).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgainHopPayload {
+    pub work_id: BeId,
+    pub work_title: String,
+    pub element_text: String,
+    pub author_name: String,
+    pub author_type: String,
+    pub is_original: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
