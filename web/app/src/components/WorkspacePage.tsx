@@ -21,6 +21,7 @@ import { DocumentMapPanel } from "../components/DocumentMapPanel";
 import { TrailsPanel } from "../components/TrailsPanel";
 import { VersionGenealogyPanel } from "../components/VersionGenealogyPanel";
 import { ThreeWayDiffPanel } from "../components/ThreeWayDiffPanel";
+import { ExportPanel } from "../components/ExportPanel";
 import { SharePanel } from "../components/SharePanel";
 import { ReadingView } from "./reading/ReadingView";
 import { DocumentSettings, loadDocPreferences } from "../components/DocumentSettings";
@@ -68,6 +69,7 @@ export function WorkspacePage() {
   const [showSummary, setShowSummary] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const [showRevisions, setShowRevisions] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [showTrails, setShowTrails] = useState(false);
@@ -775,6 +777,12 @@ export function WorkspacePage() {
                     onClick={() => { setShowThreeWayDiff(true); close(); }}
                   >
                     3-Way Diff
+                  </DropdownItem>
+                  <DropdownItem
+                    disabled={!connected || workBeId === null}
+                    onClick={() => { setShowExport(true); close(); }}
+                  >
+                    Export…
                   </DropdownItem>
                   <DropdownItem
                     disabled={!connected || !authenticated || workBeId === null}
@@ -1632,6 +1640,21 @@ export function WorkspacePage() {
           currentWorkId={workBeId}
           works={works}
           onClose={() => setShowThreeWayDiff(false)}
+        />
+      )}
+
+      {showExport && workBeId && (
+        <ExportPanel
+          client={clientRef.current}
+          currentWorkId={workBeId}
+          currentWorkMeta={currentWorkMeta ?? null}
+          text={displayText}
+          attributionSpans={attributionSpans}
+          logStatus={attributionLogStatus}
+          links={transclusion.links}
+          works={works}
+          onClose={() => setShowExport(false)}
+          onWorkCreated={(id) => { setShowExport(false); selectWork(id); }}
         />
       )}
 
