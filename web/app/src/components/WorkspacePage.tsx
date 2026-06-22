@@ -418,10 +418,10 @@ export function WorkspacePage() {
   }, [showAttribution, connected, workBeId, text, refreshAttribution]);
 
   useEffect(() => {
-    if (showAnnotations && connected && workBeId !== null) {
+    if (connected && workBeId !== null) {
       refreshAnnotations();
     }
-  }, [showAnnotations, connected, workBeId, text, refreshAnnotations]);
+  }, [connected, workBeId, refreshAnnotations]);
 
   useEffect(() => {
     if (connected && workBeId !== null) {
