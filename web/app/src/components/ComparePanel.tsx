@@ -14,7 +14,7 @@ interface TextRegion {
   cidx: number;
 }
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -56,7 +56,7 @@ export function highlightRegions(
   return html;
 }
 
-function wordSimilarity(a: string, b: string): number {
+export function wordSimilarity(a: string, b: string): number {
   const wa = new Set(a.toLowerCase().split(/\s+/).filter((w) => w.length > 2));
   const wb = new Set(b.toLowerCase().split(/\s+/).filter((w) => w.length > 2));
   if (wa.size === 0 || wb.size === 0) return 0;
@@ -351,16 +351,16 @@ export function CompareHeader({ visible, state, currentWorkId, works, revisionCo
 
 // ── Inline diff (word-level LCS) ─────────────────────────────────────────
 
-interface DiffSegment {
+export interface DiffSegment {
   type: "common" | "added" | "removed";
   text: string;
 }
 
-function tokenize(text: string): string[] {
+export function tokenize(text: string): string[] {
   return text.match(/\S+|\s+/g) || [text];
 }
 
-function computeDiff(textA: string, textB: string): DiffSegment[] {
+export function computeDiff(textA: string, textB: string): DiffSegment[] {
   const a = tokenize(textA);
   const b = tokenize(textB);
   const m = a.length;

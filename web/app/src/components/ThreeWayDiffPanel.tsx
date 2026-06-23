@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import type { CrdtSyncClient, WorkListEntry } from "../api/crdt_sync";
+import { useDraggable } from "../hooks/useDraggable";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -179,6 +180,7 @@ interface Props {
 }
 
 export function ThreeWayDiffPanel({ client, currentWorkId, works, onClose }: Props) {
+  const { drag, onMouseDown, dialogRef } = useDraggable();
   const [workAId, setWorkAId] = useState<number | null>(null);
   const [workBId, setWorkBId] = useState<number | null>(null);
   const [textA, setTextA] = useState("");
@@ -298,11 +300,12 @@ export function ThreeWayDiffPanel({ client, currentWorkId, works, onClose }: Pro
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "20px 0" }}
     >
       <div
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
-        style={{ background: "#fff", borderRadius: 8, width: "92vw", maxWidth: 1000, boxShadow: "0 4px 24px rgba(0,0,0,0.2)" }}
+        style={{ background: "#fff", borderRadius: 8, width: "92vw", maxWidth: 1000, boxShadow: "0 4px 24px rgba(0,0,0,0.2)", transform: `translate(${drag.offsetX}px, ${drag.offsetY}px)` }}
       >
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: "1px solid #e0e0e0", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: "1px solid #e0e0e0", flexWrap: "wrap", cursor: "grab", userSelect: "none" }} onMouseDown={onMouseDown}>
           <strong style={{ fontSize: 15 }}>Three-Way Merge</strong>
           <span style={{ color: "#888", fontSize: 11 }}>
             Base: {currentWorkId ? `0x${currentWorkId.toString(16)}` : "—"}

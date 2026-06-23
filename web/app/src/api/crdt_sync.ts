@@ -334,6 +334,9 @@ export class CrdtSyncClient {
   private identityListeners = new Set<IdentityListener>();
   private connected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts = 0;
+  private static readonly RECONNECT_BASE_MS = 1000;
+  private static readonly RECONNECT_MAX_MS = 30000;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private url: string;
   private workBeId: number;
@@ -1127,6 +1130,7 @@ export class CrdtSyncClient {
 
   private async onOpen(): Promise<void> {
     this.connected = true;
+    this.reconnectAttempts = 0;
     this.connectionListeners.forEach((cb) => cb(true));
 
     this.heartbeatTimer = setInterval(() => {
@@ -1364,10 +1368,25 @@ export class CrdtSyncClient {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
+    const base = Math.min(
+      CrdtSyncClient.RECONNECT_BASE_MS * Math.pow(2, this.reconnectAttempts),
+      CrdtSyncClient.RECONNECT_MAX_MS,
+    );
+    const jitter = base * 0.25 * (Math.random() * 2 - 1);
+    const delay = Math.max(CrdtSyncClient.RECONNECT_BASE_MS, base + jitter);
+    this.reconnectAttempts++;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
-    }, 3000);
+    }, delay);
+  }
+
+  getReconnectDelay(attempt: number): number {
+    const base = Math.min(
+      CrdtSyncClient.RECONNECT_BASE_MS * Math.pow(2, attempt),
+      CrdtSyncClient.RECONNECT_MAX_MS,
+    );
+    return base;
   }
 
   private sendTextDelta(oldText: string, newText: string): void {

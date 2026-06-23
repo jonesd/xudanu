@@ -1,0 +1,70 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { CrdtSyncClient } from "../api/crdt_sync";
+
+describe("WS reconnect backoff (F1)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("nth reconnect delay follows exponential backoff envelope", () => {
+    const client = new CrdtSyncClient("ws://test", 1);
+
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const expectedBase = Math.min(1000 * Math.pow(2, attempt), 30000);
+
+      for (let sample = 0; sample < 50; sample++) {
+        const delaySpy = vi.spyOn(globalThis, "setTimeout");
+        vi.spyOn(client as any, "connect").mockImplementation(() => {});
+
+        (client as any).reconnectAttempts = attempt;
+        (client as any).reconnectTimer = null;
+        (client as any).scheduleReconnect();
+
+        expect(delaySpy).toHaveBeenCalledTimes(1);
+        const delay = delaySpy.mock.calls[0][1] as number;
+
+        const lowerBound = expectedBase * 0.75;
+        const upperBound = expectedBase * 1.25;
+        expect(delay).toBeGreaterThanOrEqual(lowerBound);
+        expect(delay).toBeLessThanOrEqual(upperBound);
+
+        delaySpy.mockRestore();
+        vi.clearAllTimers();
+      }
+    }
+  });
+
+  it("delay caps at 30s", () => {
+    const client = new CrdtSyncClient("ws://test", 1);
+    const base = client.getReconnectDelay(10);
+    expect(base).toBe(30000);
+  });
+
+  it("base delay grows exponentially", () => {
+    const client = new CrdtSyncClient("ws://test", 1);
+    expect(client.getReconnectDelay(0)).toBe(1000);
+    expect(client.getReconnectDelay(1)).toBe(2000);
+    expect(client.getReconnectDelay(2)).toBe(4000);
+    expect(client.getReconnectDelay(3)).toBe(8000);
+    expect(client.getReconnectDelay(4)).toBe(16000);
+  });
+
+  it("resets reconnect attempts to 0 on successful connect", async () => {
+    const client = new CrdtSyncClient("ws://test", 1);
+    (client as any).reconnectAttempts = 5;
+    (client as any).connected = false;
+
+    vi.spyOn(client as any, "sendRequest").mockResolvedValue({});
+
+    await (client as any).onOpen();
+
+    expect((client as any).reconnectAttempts).toBe(0);
+
+    const nextBase = client.getReconnectDelay(0);
+    expect(nextBase).toBe(1000);
+  });
+});
