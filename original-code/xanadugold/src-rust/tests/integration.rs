@@ -1534,7 +1534,7 @@ async fn admin_server_info() {
     let resp = send_recv_json(&mut s, &mut r, json_req(50, "admin_server_info", None)).await;
     assert_eq!(resp["type"], "response");
     assert!(resp["value"]["value"]["session_count"].as_u64().unwrap() >= 1);
-    assert!(resp["value"]["value"]["work_count"].as_u64().unwrap() >= 0);
+    assert!(resp["value"]["value"]["work_count"].as_u64().is_some());
     assert!(resp["value"]["value"]["is_accepting_connections"]
         .as_bool()
         .unwrap());
@@ -2323,7 +2323,7 @@ async fn work_list_after_create() {
     let entries = resp["value"]["value"]["entries"].as_array().unwrap();
     assert_eq!(entries.len(), 2);
     assert!(entries[0]["work_id"].as_u64().unwrap() > 0);
-    assert!(entries[0]["revision_count"].as_u64().unwrap() >= 0);
+    assert!(entries[0]["revision_count"].as_u64().is_some());
     assert_eq!(entries[0]["is_grabbed"].as_bool().unwrap(), false);
 }
 

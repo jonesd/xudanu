@@ -91,6 +91,9 @@ pub trait BlobBackend: Send + Sync + std::fmt::Debug + 'static {
     fn delete(&self, hash: &[u8; 32]) -> Result<(), BlobError>;
     fn retrieve_range(&self, hash: &[u8; 32], offset: u64, len: u64) -> Result<Vec<u8>, BlobError>;
     fn stats(&self) -> BlobBackendStats;
+    fn path_for_hash(&self, hash: &[u8; 32]) -> Option<PathBuf> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -275,6 +278,10 @@ impl BlobBackend for FilesystemBackend {
             total_bytes,
         }
     }
+
+    fn path_for_hash(&self, hash: &[u8; 32]) -> Option<PathBuf> {
+        Some(self.blob_path(hash))
+    }
 }
 
 fn hex_encode(hash: &[u8; 32]) -> String {
@@ -367,6 +374,10 @@ impl BlobStore {
 
     pub fn retrieve(&self, hash: &[u8; 32]) -> Result<Vec<u8>, BlobError> {
         self.backend.retrieve(hash)
+    }
+
+    pub fn path_for_hash(&self, hash: &[u8; 32]) -> Option<PathBuf> {
+        self.backend.path_for_hash(hash)
     }
 
     pub fn retrieve_preview(&self, meta: &BlobMeta) -> Result<Option<Vec<u8>>, BlobError> {

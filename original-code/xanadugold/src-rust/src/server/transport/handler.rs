@@ -105,9 +105,14 @@ async fn csrf_token_handler(State(state): State<SharedState>) -> impl IntoRespon
     rand::rngs::OsRng.fill_bytes(&mut bytes);
     let token = hex_encode(&bytes);
     let mut tokens = state.csrf_tokens.lock().unwrap_or_else(|e| e.into_inner());
-    tokens.push_back(token.clone());
+    tokens.insert(token.clone());
     while tokens.len() > MAX_CSRF_TOKENS {
-        tokens.pop_front();
+        let stale = tokens.iter().next().cloned();
+        if let Some(t) = stale {
+            tokens.remove(&t);
+        } else {
+            break;
+        }
     }
     drop(tokens);
 
@@ -118,7 +123,7 @@ async fn csrf_token_handler(State(state): State<SharedState>) -> impl IntoRespon
             (
                 axum::http::header::SET_COOKIE,
                 format!(
-                    "xudanu_csrf={}; HttpOnly; SameSite=Strict; Path=/csrf-token",
+                    "xudanu_csrf={}; HttpOnly; SameSite=Strict; Path=/",
                     token
                 )
                 .as_str(),
@@ -280,14 +285,26 @@ async fn ws_handler(
 
     if state.csrf_enabled {
         if let Some(ref token) = query.csrf_token {
+            let cookie_token = headers
+                .get(axum::http::header::COOKIE)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|cookies| {
+                    cookies
+                        .split(';')
+                        .find_map(|c| c.trim().strip_prefix("xudanu_csrf="))
+                });
+            if cookie_token != Some(token.as_str()) {
+                tracing::warn!(
+                    target: "xudanu::security",
+                    remote_addr = %addr,
+                    event = "SECURITY:ws_csrf_cookie_mismatch",
+                    "WebSocket CSRF token/cookie mismatch"
+                );
+                return (axum::http::StatusCode::FORBIDDEN, "Invalid CSRF token").into_response();
+            }
             let valid = {
                 let mut tokens = state.csrf_tokens.lock().unwrap_or_else(|e| e.into_inner());
-                if let Some(pos) = tokens.iter().position(|t| t == token) {
-                    tokens.remove(pos);
-                    true
-                } else {
-                    false
-                }
+                tokens.remove(token)
             };
             if !valid {
                 tracing::warn!(
@@ -342,18 +359,41 @@ async fn blob_get_handler(
         Ok(h) => h,
         Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
     };
-    let result: Option<(Vec<u8>, String)> = state.server.with_server(|srv| {
-        let meta = srv.blob_info(hash_u64).ok()?;
-        let data = srv.blob_get(hash_u64).ok()?;
-        Some((data, meta.mime_type.clone()))
+
+    let path_info: Option<(std::path::PathBuf, String)> = state.server.with_server_ref(|srv| {
+        match srv.blob_content_path(hash_u64) {
+            Ok((path, mime, _hash)) => Some((path, mime)),
+            Err(_) => None,
+        }
     });
-    match result {
-        Some((bytes, mime)) => (
-            [(axum::http::header::CONTENT_TYPE, safe_content_type(&mime))],
-            bytes,
-        )
-            .into_response(),
-        None => axum::http::StatusCode::NOT_FOUND.into_response(),
+
+    match path_info {
+        Some((path, mime)) => {
+            let bytes = tokio::task::spawn_blocking(move || std::fs::read(&path))
+                .await;
+            match bytes {
+                Ok(Ok(data)) => (
+                    [(axum::http::header::CONTENT_TYPE, safe_content_type(&mime))],
+                    data,
+                )
+                    .into_response(),
+                _ => axum::http::StatusCode::NOT_FOUND.into_response(),
+            }
+        }
+        None => {
+            let mime_and_data = state.server.with_server_ref(|srv| {
+                let mime = srv.blob_info(hash_u64).ok()?.mime_type.clone();
+                srv.blob_get(hash_u64).ok().map(|d| (mime, d))
+            });
+            match mime_and_data {
+                Some((mime, data)) => (
+                    [(axum::http::header::CONTENT_TYPE, safe_content_type(&mime))],
+                    data,
+                )
+                    .into_response(),
+                None => axum::http::StatusCode::NOT_FOUND.into_response(),
+            }
+        }
     }
 }
 
@@ -365,18 +405,41 @@ async fn blob_preview_handler(
         Ok(h) => h,
         Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
     };
-    let result: Option<(Vec<u8>, String)> = state.server.with_server(|srv| {
-        let meta = srv.blob_info(hash_u64).ok()?;
-        let preview = srv.blob_preview(hash_u64).ok()??;
-        Some((preview, meta.mime_type.clone()))
+
+    let path_info: Option<(std::path::PathBuf, String)> = state.server.with_server_ref(|srv| {
+        match srv.blob_preview_path(hash_u64) {
+            Ok((path, mime)) => Some((path, mime)),
+            Err(_) => None,
+        }
     });
-    match result {
-        Some((bytes, mime)) => (
-            [(axum::http::header::CONTENT_TYPE, safe_content_type(&mime))],
-            bytes,
-        )
-            .into_response(),
-        None => axum::http::StatusCode::NOT_FOUND.into_response(),
+
+    match path_info {
+        Some((path, mime)) => {
+            let bytes = tokio::task::spawn_blocking(move || std::fs::read(&path))
+                .await;
+            match bytes {
+                Ok(Ok(data)) => (
+                    [(axum::http::header::CONTENT_TYPE, safe_content_type(&mime))],
+                    data,
+                )
+                    .into_response(),
+                _ => axum::http::StatusCode::NOT_FOUND.into_response(),
+            }
+        }
+        None => {
+            let mime_and_data = state.server.with_server_ref(|srv| {
+                let mime = srv.blob_info(hash_u64).ok()?.mime_type.clone();
+                srv.blob_preview(hash_u64).ok().flatten().map(|d| (mime, d))
+            });
+            match mime_and_data {
+                Some((mime, data)) => (
+                    [(axum::http::header::CONTENT_TYPE, safe_content_type(&mime))],
+                    data,
+                )
+                    .into_response(),
+                None => axum::http::StatusCode::NOT_FOUND.into_response(),
+            }
+        }
     }
 }
 
@@ -634,6 +697,9 @@ async fn handle_socket(
     let mut drain_interval = tokio::time::interval(std::time::Duration::from_millis(200));
     drain_interval.tick().await;
 
+    const WS_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
+    let mut last_activity = std::time::Instant::now();
+
     loop {
         tokio::select! {
             msg_result = ws_receiver.next() => {
@@ -641,6 +707,7 @@ async fn handle_socket(
                     Some(Ok(m)) => m,
                     _ => break,
                 };
+                last_activity = std::time::Instant::now();
 
                 {
                     let shutting_down = state.server.with_server_ref(|srv| srv.is_shutdown_requested());
@@ -923,6 +990,14 @@ async fn handle_socket(
                 drain_fn(&fossil_to_sub, &out_tx, is_text_writer);
             }
             _ = drain_interval.tick() => {
+                if last_activity.elapsed() > WS_READ_TIMEOUT {
+                    tracing::info!(
+                        session_id = %session_id,
+                        idle_secs = last_activity.elapsed().as_secs(),
+                        "WebSocket idle timeout, closing"
+                    );
+                    break;
+                }
                 drain_fn(&fossil_to_sub, &out_tx, is_text_writer);
             }
         }

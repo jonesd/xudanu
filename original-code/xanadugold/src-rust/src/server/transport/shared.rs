@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -21,7 +21,7 @@ pub struct AppState {
     pub static_dir: Option<PathBuf>,
     pub allowed_origins: Option<HashSet<String>>,
     pub csrf_enabled: bool,
-    pub csrf_tokens: Arc<Mutex<VecDeque<String>>>,
+    pub csrf_tokens: Arc<Mutex<HashSet<String>>>,
     pub oauth_config: OAuthConfig,
     pub oauth_state: OAuthState,
 }
@@ -45,7 +45,7 @@ impl AppState {
             static_dir: None,
             allowed_origins: None,
             csrf_enabled: false,
-            csrf_tokens: Arc::new(Mutex::new(VecDeque::new())),
+            csrf_tokens: Arc::new(Mutex::new(HashSet::new())),
             oauth_config: OAuthConfig::default(),
             oauth_state: OAuthState::new(),
         }
@@ -178,6 +178,22 @@ impl ServerHandle {
             .unwrap_or_else(|e| e.into_inner())
             .write_barrier();
         barrier.wait_for_write_timeout(timeout)
+    }
+
+    pub async fn checkpoint_async(&self) -> std::io::Result<()> {
+        let payload = self.with_server(|srv| -> std::io::Result<_> {
+            let _ = srv.prune_disconnected_sessions();
+            srv.materialize_all_pending();
+            srv.checkpoint_prepare()
+        })?;
+
+        let result = tokio::task::spawn_blocking(move || {
+            crate::server::server::checkpoint_persist(payload)
+        })
+        .await
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))??;
+
+        self.with_server(|srv| srv.checkpoint_commit(result))
     }
 }
 

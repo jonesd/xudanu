@@ -4,6 +4,15 @@ use crate::edition::{BeId, Edition};
 use crate::server::Server;
 use std::collections::HashMap;
 
+const LLM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const LLM_MAX_CONCURRENCY: usize = 4;
+
+static LLM_SEMAPHORE: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+
+fn llm_semaphore() -> &'static tokio::sync::Semaphore {
+    LLM_SEMAPHORE.get_or_init(|| tokio::sync::Semaphore::new(LLM_MAX_CONCURRENCY))
+}
+
 pub fn dispatch(
     state: &SharedState,
     session_id: crate::server::SessionId,
@@ -22,12 +31,21 @@ pub fn dispatch(
         return dispatch_writing_feedback(state, session_id, request);
     }
 
+    let is_work_create = matches!(request, WireRequest::WorkCreate { .. });
+    let is_read = request.is_readonly();
+
     let result = {
         let guard_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            state.server.with_server(|srv| {
-                srv.bump_operation();
-                dispatch_inner(srv, session_id, request, state)
-            })
+            if is_read {
+                state.server.with_server_ref(|srv| {
+                    dispatch_inner_read(srv, session_id, request, state)
+                })
+            } else {
+                state.server.with_server(|srv| {
+                    srv.bump_operation();
+                    dispatch_inner(srv, session_id, request, state)
+                })
+            }
         }));
         match guard_result {
             Ok(r) => r,
@@ -45,8 +63,10 @@ pub fn dispatch(
         }
     };
 
-    if let Ok(ResponseValue::Id(work_id)) = &result {
-        spawn_auto_title(state, *work_id);
+    if is_work_create {
+        if let Ok(ResponseValue::Id(work_id)) = &result {
+            spawn_auto_title(state, *work_id);
+        }
     }
 
     result
@@ -108,8 +128,17 @@ fn dispatch_narration(
     );
 
     let narration = match tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current()
-            .block_on(llm.generate_tracked(crate::server::ollama::LlmFeature::Narration, &prompt))
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async {
+            let _permit = llm_semaphore().acquire().await.map_err(|e| e.to_string())?;
+            tokio::time::timeout(
+                LLM_TIMEOUT,
+                llm.generate_tracked(crate::server::ollama::LlmFeature::Narration, &prompt),
+            )
+            .await
+            .map_err(|_| format!("(LLM request timed out after {} seconds)", LLM_TIMEOUT.as_secs()))
+            .and_then(|r| r.map_err(|e| e.to_string()))
+        })
     }) {
         Ok(text) => text,
         Err(e) => format!("(LLM unavailable: {})", e),
@@ -191,9 +220,17 @@ fn dispatch_writing_feedback(
     let prompt = crate::server::ollama::build_writing_feedback_prompt(&text);
 
     let feedback = match tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(
-            llm.generate_tracked(crate::server::ollama::LlmFeature::WritingFeedback, &prompt),
-        )
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async {
+            let _permit = llm_semaphore().acquire().await.map_err(|e| e.to_string())?;
+            tokio::time::timeout(
+                LLM_TIMEOUT,
+                llm.generate_tracked(crate::server::ollama::LlmFeature::WritingFeedback, &prompt),
+            )
+            .await
+            .map_err(|_| format!("(LLM request timed out after {} seconds)", LLM_TIMEOUT.as_secs()))
+            .and_then(|r| r.map_err(|e| e.to_string()))
+        })
     }) {
         Ok(text) => text,
         Err(e) => format!("(LLM unavailable: {})", e),
@@ -890,54 +927,47 @@ fn dispatch_inner(
 
         WireRequest::WorkList { offset, limit } => {
             let starred = srv.starred_for_session(session_id);
-            let all: Vec<_> = srv
-                .list_works_with_titles()
-                .into_iter()
-                .filter(|(work_id, _, _, _, _, _, _, _, _, _, _)| {
-                    srv.work(*work_id)
-                        .map(|w| srv.work_is_readable(session_id, w))
-                        .unwrap_or(false)
-                        && !srv.work_is_archived(*work_id).unwrap_or(false)
-                })
-                .map(
-                    |(
-                        work_id,
-                        owner,
-                        revision_count,
-                        is_grabbed,
-                        title,
-                        read_club,
-                        is_source,
-                        content_start_line,
-                        content_end_line,
-                        source_author_id,
-                        source_edition_info,
-                    )| {
-                        super::protocol::WorkListEntry {
-                            work_id,
-                            owner,
-                            revision_count,
-                            is_grabbed,
-                            title,
-                            read_club,
-                            is_source,
-                            content_start_line,
-                            content_end_line,
-                            source_author_id,
-                            source_edition_info,
-                            is_starred: starred.contains(&work_id),
-                        }
-                    },
-                )
-                .collect();
-            let total_count = all.len() as u64;
+            let authority = srv.session_authority_clubs(session_id);
+            let public_club = srv.public_club_id();
             let limit_val = limit.unwrap_or(100).min(1000) as usize;
             let offset_val = offset.unwrap_or(0) as usize;
-            let has_more = offset_val + limit_val < all.len();
-            let entries: Vec<_> = all.into_iter().skip(offset_val).take(limit_val).collect();
+            let mut total: u64 = 0;
+            let mut entries: Vec<super::protocol::WorkListEntry> = Vec::new();
+            for (id, ws) in srv.works_iter() {
+                if ws.work().is_archived() {
+                    continue;
+                }
+                let read_club = ws.work().read_club();
+                let edit_club = ws.work().edit_club();
+                let readable = ws.grabber() == Some(session_id)
+                    || read_club == Some(public_club)
+                    || read_club.map(|c| authority.contains(&c)).unwrap_or(false)
+                    || edit_club.map(|c| authority.contains(&c)).unwrap_or(false);
+                if !readable {
+                    continue;
+                }
+                total += 1;
+                if total > offset_val as u64 && entries.len() < limit_val {
+                    entries.push(super::protocol::WorkListEntry {
+                        work_id: *id,
+                        owner: ws.work().owner(),
+                        revision_count: ws.work().revision_count(),
+                        is_grabbed: ws.grabber().is_some(),
+                        title: ws.cached_title().to_string(),
+                        read_club,
+                        is_source: ws.is_source(),
+                        content_start_line: ws.content_start_line(),
+                        content_end_line: ws.content_end_line(),
+                        source_author_id: ws.source_author_id(),
+                        source_edition_info: ws.source_edition_info().map(|s| s.to_string()),
+                        is_starred: starred.contains(id),
+                    });
+                }
+            }
+            let has_more = total as usize > offset_val + limit_val;
             Ok(ResponseValue::PaginatedWorkList {
                 entries,
-                total_count,
+                total_count: total,
                 has_more,
             })
         }
@@ -2511,9 +2541,15 @@ fn dispatch_inner(
                 context_start_line: start_line,
             })
         }
-        WireRequest::WorkDiffNarration { .. } => unreachable!("handled in dispatch_narration"),
+        WireRequest::WorkDiffNarration { .. } => {
+            Err(crate::server::ServerError::Internal(
+                "work_diff_narration not routed (dispatcher invariant violated)".to_string(),
+            ))
+        }
         WireRequest::WorkWritingFeedback { .. } => {
-            unreachable!("handled in dispatch_writing_feedback")
+            Err(crate::server::ServerError::Internal(
+                "work_writing_feedback not routed (dispatcher invariant violated)".to_string(),
+            ))
         }
 
         WireRequest::WorkBacklinks { work_id } => {
@@ -2811,6 +2847,756 @@ fn dispatch_inner(
     }
 }
 
+fn dispatch_inner_read(
+    srv: &Server,
+    session_id: crate::server::SessionId,
+    request: WireRequest,
+    state: &SharedState,
+) -> Result<ResponseValue, crate::server::ServerError> {
+    match request {
+        WireRequest::SessionConnect => Ok(ResponseValue::Id(session_id.as_u64())),
+        WireRequest::ClubGet { club_id } => {
+            srv.ensure_session(session_id)?;
+            let _club = srv.club(club_id)?;
+            Ok(ResponseValue::Id(club_id))
+        }
+        WireRequest::ClubNames { offset, limit } => {
+            srv.ensure_session(session_id)?;
+            let all: Vec<_> = srv
+                .club_names_list()
+                .into_iter()
+                .map(|(n, id)| (n.to_string(), id))
+                .collect();
+            let total_count = all.len() as u64;
+            let limit_val = limit.unwrap_or(100).min(1000) as usize;
+            let offset_val = offset.unwrap_or(0) as usize;
+            let has_more = offset_val + limit_val < all.len();
+            let entries: Vec<_> = all.into_iter().skip(offset_val).take(limit_val).collect();
+            Ok(ResponseValue::PaginatedClubNames {
+                entries,
+                total_count,
+                has_more,
+            })
+        }
+        WireRequest::WorkGetEdition { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let ed = srv.work_edition(work_id)?;
+            Ok(ResponseValue::Edition(EditionPayload::from_edition(&ed)))
+        }
+        WireRequest::WorkIsGrabbed { work_id } => {
+            let grabbed = srv.work_is_grabbed(work_id)?;
+            Ok(ResponseValue::Boolean(grabbed))
+        }
+        WireRequest::WorkGrabber { work_id } => {
+            let grabber = srv.work_grabber(work_id)?;
+            Ok(ResponseValue::Humber(
+                grabber.map(|s| s.as_u64()).unwrap_or(0),
+            ))
+        }
+        WireRequest::WorkGrabWaiters { work_id } => {
+            let waiters = srv.work_grab_waiters(work_id)?;
+            Ok(ResponseValue::Humber(waiters.len() as u64))
+        }
+        WireRequest::WorkCanRead { work_id } => {
+            let can = srv.work_can_read(session_id, work_id)?;
+            Ok(ResponseValue::Boolean(can))
+        }
+        WireRequest::WorkCanRevise { work_id } => {
+            let can = srv.work_can_revise(session_id, work_id)?;
+            Ok(ResponseValue::Boolean(can))
+        }
+        WireRequest::WorkIsStarred { work_id } => {
+            let starred = srv.work_is_starred(session_id, work_id)?;
+            Ok(ResponseValue::Boolean(starred))
+        }
+        WireRequest::TrailList => {
+            srv.ensure_authenticated(session_id)?;
+            let trails = srv.trail_list(session_id)?;
+            Ok(ResponseValue::TrailListResult(trails))
+        }
+        WireRequest::TrailGet { trail_id } => {
+            srv.ensure_authenticated(session_id)?;
+            let trail = srv.trail_get(session_id, trail_id)?;
+            Ok(ResponseValue::TrailResult(trail))
+        }
+        WireRequest::WorkReadClub { work_id } => {
+            let club = srv.work_read_club(work_id)?;
+            Ok(ResponseValue::Humber(club.unwrap_or(0)))
+        }
+        WireRequest::WorkEditClub { work_id } => {
+            let club = srv.work_edit_club(work_id)?;
+            Ok(ResponseValue::Humber(club.unwrap_or(0)))
+        }
+        WireRequest::WorkHistoryClub { work_id } => {
+            let club = srv.work_history_club(work_id)?;
+            Ok(ResponseValue::Humber(club.unwrap_or(0)))
+        }
+        WireRequest::WorkRevisionCount { work_id } => {
+            let count = srv.work_revision_count(work_id)?;
+            Ok(ResponseValue::Humber(count))
+        }
+        WireRequest::WorkSponsors { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let sponsors = srv.work_sponsors(work_id)?.to_vec();
+            Ok(ResponseValue::Ids(sponsors))
+        }
+        WireRequest::WorkOwner { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let owner = srv.work_owner(work_id)?;
+            Ok(ResponseValue::Humber(owner.unwrap_or(0)))
+        }
+        WireRequest::WorkListArchived => {
+            // Archived (soft-deleted) works. Owner-scoped; admins see all.
+            let is_admin = srv.ensure_admin(session_id).is_ok();
+            let owner_club = srv.identity_for_session(session_id).1;
+            let starred = srv.starred_for_session(session_id);
+            let entries: Vec<_> = srv
+                .list_works_with_titles()
+                .into_iter()
+                .filter(|(work_id, owner, _, _, _, _, _, _, _, _, _)| {
+                    let readable = srv
+                        .work(*work_id)
+                        .map(|w| srv.work_is_readable(session_id, w))
+                        .unwrap_or(false);
+                    let archived = srv.work_is_archived(*work_id).unwrap_or(false);
+                    if !readable || !archived {
+                        return false;
+                    }
+                    is_admin || owner_club.map_or(false, |oc| *owner == Some(oc))
+                })
+                .map(
+                    |(
+                        work_id,
+                        owner,
+                        revision_count,
+                        is_grabbed,
+                        title,
+                        read_club,
+                        is_source,
+                        content_start_line,
+                        content_end_line,
+                        source_author_id,
+                        source_edition_info,
+                    )| {
+                        super::protocol::WorkListEntry {
+                            work_id,
+                            owner,
+                            revision_count,
+                            is_grabbed,
+                            title,
+                            read_club,
+                            is_source,
+                            content_start_line,
+                            content_end_line,
+                            source_author_id,
+                            source_edition_info,
+                            is_starred: starred.contains(&work_id),
+                        }
+                    },
+                )
+                .collect();
+            Ok(ResponseValue::WorkList(entries))
+        }
+        WireRequest::WorkIsPublished { work_id } => {
+            let published = srv.work_is_published(session_id, work_id)?;
+            Ok(ResponseValue::Boolean(published))
+        }
+        WireRequest::ClubWhoAmI => {
+            let clubs = srv.who_am_i(session_id)?;
+            Ok(ResponseValue::ClubWhoAmIResult { clubs })
+        }
+        WireRequest::ClubMembers { club_id } => {
+            let members = srv.club_members(session_id, club_id)?;
+            Ok(ResponseValue::ClubMembersResult { members })
+        }
+        WireRequest::EditionGet { be_id } => {
+            srv.ensure_logged_in(session_id)?;
+            match srv.get_edition(be_id)? {
+                Some(ed) => Ok(ResponseValue::Edition(EditionPayload::from_edition(&ed))),
+                None => Ok(ResponseValue::Void),
+            }
+        }
+        WireRequest::AdminIsAcceptingConnections => {
+            let accepting = srv.admin_is_accepting_connections();
+            Ok(ResponseValue::Boolean(accepting))
+        }
+        WireRequest::AdminActiveSessions => {
+            let infos = srv.admin_active_sessions(session_id)?;
+            let payloads = infos
+                .into_iter()
+                .map(|si| super::protocol::SessionInfoPayload {
+                    session_id: si.session_id,
+                    is_logged_in: si.is_logged_in,
+                    authority_clubs: si.authority_clubs,
+                    initial_login: si.initial_login,
+                    grabbed_work_count: if si.has_grabbed_works { 1 } else { 0 },
+                })
+                .collect();
+            Ok(ResponseValue::SessionInfos(payloads))
+        }
+        WireRequest::AdminGrants => {
+            let grants = srv.admin_grants(session_id)?;
+            let payloads = grants
+                .iter()
+                .map(|g| {
+                    let (start, end) = g.region.as_interval().unwrap_or((0, 0));
+                    super::protocol::GrantPayload {
+                        club_id: g.club_id,
+                        region_start: start,
+                        region_end: end,
+                    }
+                })
+                .collect();
+            Ok(ResponseValue::Grants(payloads))
+        }
+        WireRequest::AdminServerInfo => {
+            srv.ensure_admin(session_id)?;
+            Ok(ResponseValue::ServerInfo(
+                super::protocol::ServerInfoPayload {
+                    version: env!("CARGO_PKG_VERSION").to_string(),
+                    session_count: srv.session_count(),
+                    work_count: srv.work_count(),
+                    club_count: srv.club_count(),
+                    edition_count: srv.edition_count(),
+                    is_accepting_connections: srv.admin_is_accepting_connections(),
+                    public_club_id: srv.public_club_id(),
+                    llm_enabled: crate::server::ollama::llm_enabled(),
+                    llm_usage: crate::server::ollama::usage_tracker().summary(),
+                },
+            ))
+        }
+        WireRequest::ServerStats => Ok(ResponseValue::ServerInfo(
+            super::protocol::ServerInfoPayload {
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                session_count: srv.session_count(),
+                work_count: srv.work_count(),
+                club_count: srv.club_count(),
+                edition_count: srv.edition_count(),
+                is_accepting_connections: srv.admin_is_accepting_connections(),
+                public_club_id: srv.public_club_id(),
+                llm_enabled: crate::server::ollama::llm_enabled(),
+                llm_usage: crate::server::ollama::usage_tracker().summary(),
+            },
+        )),
+        WireRequest::WorkList { offset, limit } => {
+            let starred = srv.starred_for_session(session_id);
+            let authority = srv.session_authority_clubs(session_id);
+            let public_club = srv.public_club_id();
+            let limit_val = limit.unwrap_or(100).min(1000) as usize;
+            let offset_val = offset.unwrap_or(0) as usize;
+            let mut total: u64 = 0;
+            let mut entries: Vec<super::protocol::WorkListEntry> = Vec::new();
+            for (id, ws) in srv.works_iter() {
+                if ws.work().is_archived() {
+                    continue;
+                }
+                let read_club = ws.work().read_club();
+                let edit_club = ws.work().edit_club();
+                let readable = ws.grabber() == Some(session_id)
+                    || read_club == Some(public_club)
+                    || read_club.map(|c| authority.contains(&c)).unwrap_or(false)
+                    || edit_club.map(|c| authority.contains(&c)).unwrap_or(false);
+                if !readable {
+                    continue;
+                }
+                total += 1;
+                if total > offset_val as u64 && entries.len() < limit_val {
+                    entries.push(super::protocol::WorkListEntry {
+                        work_id: *id,
+                        owner: ws.work().owner(),
+                        revision_count: ws.work().revision_count(),
+                        is_grabbed: ws.grabber().is_some(),
+                        title: ws.cached_title().to_string(),
+                        read_club,
+                        is_source: ws.is_source(),
+                        content_start_line: ws.content_start_line(),
+                        content_end_line: ws.content_end_line(),
+                        source_author_id: ws.source_author_id(),
+                        source_edition_info: ws.source_edition_info().map(|s| s.to_string()),
+                        is_starred: starred.contains(id),
+                    });
+                }
+            }
+            let has_more = total as usize > offset_val + limit_val;
+            Ok(ResponseValue::PaginatedWorkList {
+                entries,
+                total_count: total,
+                has_more,
+            })
+        }
+        WireRequest::WorkListByOwner {
+            owner,
+            offset,
+            limit,
+        } => {
+            let starred = srv.starred_for_session(session_id);
+            let all: Vec<_> = srv
+                .list_works_by_owner(owner)
+                .into_iter()
+                .filter(|(work_id, _, _, _, _)| {
+                    srv.work(*work_id)
+                        .map(|w| srv.work_is_readable(session_id, w))
+                        .unwrap_or(false)
+                })
+                .map(|(work_id, owner, revision_count, is_grabbed, read_club)| {
+                    super::protocol::WorkListEntry {
+                        work_id,
+                        owner,
+                        revision_count,
+                        is_grabbed,
+                        title: String::new(),
+                        read_club,
+                        is_source: false,
+                        content_start_line: None,
+                        content_end_line: None,
+                        source_author_id: None,
+                        source_edition_info: None,
+                        is_starred: starred.contains(&work_id),
+                    }
+                })
+                .collect();
+            let total_count = all.len() as u64;
+            let limit_val = limit.unwrap_or(100).min(1000) as usize;
+            let offset_val = offset.unwrap_or(0) as usize;
+            let has_more = offset_val + limit_val < all.len();
+            let entries: Vec<_> = all.into_iter().skip(offset_val).take(limit_val).collect();
+            Ok(ResponseValue::PaginatedWorkList {
+                entries,
+                total_count,
+                has_more,
+            })
+        }
+        WireRequest::LinkGet { link_id } => {
+            let (origin, destination, link) = srv.get_link(link_id)?;
+            srv.ensure_can_read(session_id, origin)?;
+            srv.ensure_can_read(session_id, destination)?;
+            let o_ref = link
+                .end_at("LeftEnd")
+                .map(super::protocol::HyperRefPayload::from_hyper_ref);
+            let d_ref = link
+                .end_at("RightEnd")
+                .map(super::protocol::HyperRefPayload::from_hyper_ref);
+            let (origin_archived, origin_title, origin_owner) = srv.link_endpoint_meta(origin);
+            let (destination_archived, destination_title, destination_owner) =
+                srv.link_endpoint_meta(destination);
+            Ok(ResponseValue::LinkInfo(super::protocol::LinkPayload {
+                link_id,
+                origin,
+                destination,
+                origin_ref: o_ref,
+                destination_ref: d_ref,
+                origin_archived,
+                origin_title,
+                origin_owner,
+                destination_archived,
+                destination_title,
+                destination_owner,
+            }))
+        }
+        WireRequest::LinkListForWork {
+            work_id,
+            offset,
+            limit,
+        } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let all: Vec<_> = srv
+                .list_links_for_work(work_id)
+                .into_iter()
+                .filter_map(|(link_id, origin, destination)| {
+                    let (_, _, link) = srv.get_link(link_id).ok()?;
+                    let o_ref = link
+                        .end_at("LeftEnd")
+                        .map(super::protocol::HyperRefPayload::from_hyper_ref);
+                    let d_ref = link
+                        .end_at("RightEnd")
+                        .map(super::protocol::HyperRefPayload::from_hyper_ref);
+                    let (origin_archived, origin_title, origin_owner) =
+                        srv.link_endpoint_meta(origin);
+                    let (destination_archived, destination_title, destination_owner) =
+                        srv.link_endpoint_meta(destination);
+                    Some(super::protocol::LinkPayload {
+                        link_id,
+                        origin,
+                        destination,
+                        origin_ref: o_ref,
+                        destination_ref: d_ref,
+                        origin_archived,
+                        origin_title,
+                        origin_owner,
+                        destination_archived,
+                        destination_title,
+                        destination_owner,
+                    })
+                })
+                .collect();
+            let total_count = all.len() as u64;
+            let limit_val = limit.unwrap_or(100).min(1000) as usize;
+            let offset_val = offset.unwrap_or(0) as usize;
+            let has_more = offset_val + limit_val < all.len();
+            let entries: Vec<_> = all.into_iter().skip(offset_val).take(limit_val).collect();
+            Ok(ResponseValue::PaginatedLinkList {
+                entries,
+                total_count,
+                has_more,
+            })
+        }
+        WireRequest::BlobGet { content_hash } => {
+            let data = srv.blob_get(content_hash)?;
+            Ok(ResponseValue::BlobData(data))
+        }
+        WireRequest::BlobGetPreview { content_hash } => match srv.blob_preview(content_hash)? {
+            Some(data) => Ok(ResponseValue::BlobData(data)),
+            None => Ok(ResponseValue::Void),
+        },
+        WireRequest::BlobExists { content_hash } => {
+            Ok(ResponseValue::Boolean(srv.blob_exists(content_hash)))
+        }
+        WireRequest::BlobInfo { content_hash } => {
+            let meta = srv.blob_info(content_hash)?;
+            Ok(ResponseValue::BlobMeta(
+                super::protocol::BlobMetaPayload::from_blob_meta(&meta),
+            ))
+        }
+        WireRequest::BlobStats => {
+            let (total_blobs, total_bytes) = srv.blob_stats();
+            Ok(ResponseValue::BlobStatsInfo(
+                super::protocol::BlobStatsPayload {
+                    total_blobs,
+                    total_bytes,
+                },
+            ))
+        }
+        WireRequest::OverlayGet { overlay_hash } => {
+            let overlay = srv.blob_get_overlay(overlay_hash)?;
+            Ok(ResponseValue::OverlayInfo(
+                super::protocol::OverlayPayload {
+                    overlay_hash,
+                    base_hash: overlay.base_hash,
+                    operations: overlay.operations,
+                    mime_type: overlay.mime_type,
+                },
+            ))
+        }
+        WireRequest::AdminRecorderList => {
+            srv.ensure_admin(session_id)?;
+            let recorders = srv
+                .recorder_list()
+                .into_iter()
+                .map(|f| super::protocol::RecorderInfoPayload {
+                    id: f.id,
+                    kind: match f.query.kind {
+                        crate::edition::RecorderKind::Transcluders => "transcluders".to_string(),
+                        crate::edition::RecorderKind::Works => "works".to_string(),
+                    },
+                    direct_only: f.query.direct_only,
+                    result_count: f.result_count(),
+                    is_extinct: f.is_extinct,
+                    reference_count: f.reference_count,
+                    created_at: f.created_at,
+                })
+                .collect();
+            Ok(ResponseValue::RecorderListResult { recorders })
+        }
+        WireRequest::AdminRecorderGet { recorder_id } => {
+            srv.ensure_admin(session_id)?;
+            let info =
+                srv.recorder_get(recorder_id)
+                    .map(|f| super::protocol::RecorderInfoPayload {
+                        id: f.id,
+                        kind: match f.query.kind {
+                            crate::edition::RecorderKind::Transcluders => {
+                                "transcluders".to_string()
+                            }
+                            crate::edition::RecorderKind::Works => "works".to_string(),
+                        },
+                        direct_only: f.query.direct_only,
+                        result_count: f.result_count(),
+                        is_extinct: f.is_extinct,
+                        reference_count: f.reference_count,
+                        created_at: f.created_at,
+                    });
+            Ok(ResponseValue::RecorderGetResult { recorder: info })
+        }
+        WireRequest::AdminServerHealth => {
+            let health = srv.server_health();
+            Ok(ResponseValue::ServerHealthResult {
+                operation_count: health.operation_count,
+                active_recorders: health.active_recorders,
+                total_recorded: health.total_recorded,
+                blob_count: health.blob_count,
+                link_count: health.link_count,
+                uptime_secs: health.uptime_secs,
+            })
+        }
+        WireRequest::CryptoGetPublicKey => {
+            let identity = srv.server_identity();
+            Ok(ResponseValue::CryptoPublicKeyResult {
+                key_id: srv.server_key_id(),
+                verifying_key: identity.signing_key_bytes().to_vec(),
+                kex_key: identity.kex_public_bytes().to_vec(),
+                server_id: identity.server_id,
+            })
+        }
+        WireRequest::CryptoKeyHistory => {
+            let history = srv.server_key_history();
+            let entries = history
+                .entries
+                .iter()
+                .map(|e| super::protocol::KeyHistoryEntryPayload {
+                    key_id: e.key_id,
+                    not_before: e.not_before,
+                    not_after: e.not_after,
+                })
+                .collect();
+            Ok(ResponseValue::CryptoKeyHistoryResult {
+                server_id: history.server_id.clone(),
+                current_key_id: history.current_key_id,
+                entry_count: history.entry_count(),
+                entries,
+            })
+        }
+        WireRequest::WorkEndorsements { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let es = srv.work_endorsements(work_id)?;
+            Ok(ResponseValue::EndorsementResult {
+                endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
+            })
+        }
+        WireRequest::EditionEndorsements { edition_id } => {
+            srv.ensure_session(session_id)?;
+            let es = srv.edition_endorsements(edition_id)?;
+            Ok(ResponseValue::EndorsementResult {
+                endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
+            })
+        }
+        WireRequest::EditionVisibleEndorsements { edition_id } => {
+            let es = srv.edition_visible_endorsements(session_id, edition_id)?;
+            Ok(ResponseValue::EndorsementResult {
+                endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
+            })
+        }
+        WireRequest::EditionTotalEndorsements { edition_id } => {
+            srv.ensure_session(session_id)?;
+            let es = srv.edition_total_endorsements(edition_id)?;
+            Ok(ResponseValue::EndorsementResult {
+                endorsements: es.iter().map(|e| (e.club_id(), e.token_id())).collect(),
+            })
+        }
+        WireRequest::FederationInfo => {
+            let info = srv.federation_info();
+            let mode_str = match info.mode {
+                crate::server::federation::FederationMode::Closed => "closed".to_string(),
+                crate::server::federation::FederationMode::Open => "open".to_string(),
+            };
+            Ok(ResponseValue::FederationInfoResult {
+                server_id: info.server_id,
+                federation_domain: info.federation_domain,
+                key_id: info.key_id,
+                verifying_key: info.verifying_key,
+                kex_key: info.kex_key,
+                mode: mode_str,
+                peers: info
+                    .peers
+                    .into_iter()
+                    .map(|p| super::protocol::FederationPeerPayload {
+                        server_id: p.server_id,
+                        address: p.address.to_string(),
+                        connected: p.connected,
+                    })
+                    .collect(),
+                work_count: info.work_count,
+                edition_count: info.edition_count,
+            })
+        }
+        WireRequest::FederationPeers => {
+            let peers = srv.federation_peers();
+            Ok(ResponseValue::FederationPeersResult {
+                peers: peers.iter().map(|p| p.to_string()).collect(),
+            })
+        }
+        WireRequest::MembershipList => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
+            }
+            srv.ensure_logged_in(session_id)?;
+            let members = srv.membership_list();
+            Ok(ResponseValue::MembershipListResult { members })
+        }
+        WireRequest::MembershipVerify { server_id } => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
+            }
+            srv.ensure_logged_in(session_id)?;
+            let verify = srv.membership_verify(&server_id);
+            Ok(ResponseValue::MembershipVerifyResult { verify })
+        }
+        WireRequest::GovernanceLog => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
+            }
+            srv.ensure_logged_in(session_id)?;
+            let log = srv.governance_log().to_vec();
+            Ok(ResponseValue::GovernanceLogResult { log })
+        }
+        WireRequest::GovernanceStatus => {
+            if !srv.federation_is_enabled() {
+                return Err(crate::server::ServerError::InvalidArgument(
+                    "federation not enabled".into(),
+                ));
+            }
+            srv.ensure_logged_in(session_id)?;
+            Ok(ResponseValue::GovernanceStatusResult {
+                view: srv.governance_current_view(),
+                sequence: srv.governance_current_sequence(),
+                cluster_size: srv.governance_cluster_size(),
+                quorum: srv.governance_quorum_size(),
+                is_leader: srv.governance_is_leader(),
+                leader_id: srv.governance_leader_id(),
+                pending: srv.governance_pending_round().is_some(),
+            })
+        }
+        WireRequest::CrdtSyncDiff {
+            work_id,
+            state_vector,
+        } => {
+            srv.ensure_logged_in(session_id)?;
+            let update = srv.crdt_get_diff(work_id, state_vector)?;
+            Ok(ResponseValue::CrdtSyncDiffResult { update })
+        }
+        WireRequest::CrdtSyncFullState { work_id } => {
+            srv.ensure_logged_in(session_id)?;
+            let state = srv.crdt_get_full_state(work_id)?;
+            Ok(ResponseValue::CrdtSyncFullStateResult { state })
+        }
+        WireRequest::CrdtSyncSubscriberCount { work_id } => {
+            srv.ensure_logged_in(session_id)?;
+            let count = srv.crdt_subscriber_count(work_id);
+            Ok(ResponseValue::CrdtSyncSubscriberCountResult { count })
+        }
+        WireRequest::CrdtSyncText { work_id } => {
+            srv.ensure_logged_in(session_id)?;
+            let text = srv.crdt_current_text(work_id)?;
+            Ok(ResponseValue::CrdtSyncTextResult { text })
+        }
+        WireRequest::CrdtAwarenessGet { work_id } => {
+            srv.ensure_logged_in(session_id)?;
+            let states = srv.crdt_get_awareness(work_id)?;
+            Ok(ResponseValue::CrdtAwarenessGetResult { states })
+        }
+        WireRequest::AttributionVerify {
+            author_public_key,
+            signature,
+            timestamp,
+            server_id,
+            span_fingerprint_hex,
+        } => {
+            let author_pk: [u8; 32] = author_public_key.try_into().map_err(|_| {
+                crate::server::ServerError::InvalidArgument(
+                    "author_public_key must be 32 bytes".into(),
+                )
+            })?;
+            let sig: [u8; 64] = signature.try_into().map_err(|_| {
+                crate::server::ServerError::InvalidArgument("signature must be 64 bytes".into())
+            })?;
+            let sid: [u8; 32] = server_id.try_into().map_err(|_| {
+                crate::server::ServerError::InvalidArgument("server_id must be 32 bytes".into())
+            })?;
+            let valid =
+                srv.attribution_verify(author_pk, sig, timestamp, sid, &span_fingerprint_hex);
+            Ok(ResponseValue::AttributionVerifyResult { valid })
+        }
+        WireRequest::AttributionLogStatus => Ok(srv.attribution_log_status()),
+        WireRequest::WorkBacklinks { work_id } => {
+            srv.ensure_session(session_id)?;
+            let backlinks = srv.find_backlinks(session_id, work_id)?;
+            Ok(ResponseValue::WorkBacklinksResult(backlinks))
+        }
+        WireRequest::AnnotationGet {
+            work_id,
+            annotation_id,
+        } => {
+            let result = srv.annotation_get(session_id, work_id, annotation_id)?;
+            match result {
+                Some(ann) => Ok(ResponseValue::AnnotationResult(ann)),
+                None => Err(crate::server::ServerError::NotFound(format!(
+                    "annotation {} on work {}",
+                    annotation_id, work_id
+                ))),
+            }
+        }
+        WireRequest::HistoricalAuthorGet { author_id } => {
+            let author = srv.get_historical_author(author_id)?;
+            Ok(ResponseValue::HistoricalAuthorResult {
+                be_id: author.be_id,
+                name: author.name,
+                display_name: author.display_name,
+                birth_year: author.birth_year,
+                death_year: author.death_year,
+                external_ids: author.external_ids,
+                source_bibliography: author.source_bibliography,
+            })
+        }
+        WireRequest::HistoricalAuthorSearch { query } => {
+            let authors = srv.search_historical_authors(&query);
+            let entries: Vec<super::protocol::HistoricalAuthorEntry> = authors
+                .into_iter()
+                .map(|a| super::protocol::HistoricalAuthorEntry {
+                    be_id: a.be_id,
+                    name: a.name,
+                    display_name: a.display_name,
+                    birth_year: a.birth_year,
+                    death_year: a.death_year,
+                })
+                .collect();
+            Ok(ResponseValue::HistoricalAuthorListResult { authors: entries })
+        }
+        WireRequest::HistoricalAuthorList => {
+            let authors = srv.list_historical_authors();
+            let entries: Vec<super::protocol::HistoricalAuthorEntry> = authors
+                .into_iter()
+                .map(|a| super::protocol::HistoricalAuthorEntry {
+                    be_id: a.be_id,
+                    name: a.name,
+                    display_name: a.display_name,
+                    birth_year: a.birth_year,
+                    death_year: a.death_year,
+                })
+                .collect();
+            Ok(ResponseValue::HistoricalAuthorListResult { authors: entries })
+        }
+        WireRequest::SourcePatternList => {
+            let patterns = srv.list_source_patterns();
+            let entries: Vec<super::protocol::SourcePatternEntry> = patterns
+                .into_iter()
+                .map(
+                    |(source_type, display_name)| super::protocol::SourcePatternEntry {
+                        source_type,
+                        display_name,
+                    },
+                )
+                .collect();
+            Ok(ResponseValue::SourcePatternListResult { patterns: entries })
+        }
+        WireRequest::WorkSummary { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            srv.work_summary(work_id)
+        }
+        WireRequest::WorkVersionTimeline { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            srv.work_version_timeline(work_id)
+        }
+        _ => Err(crate::server::ServerError::Internal(
+            "unhandled read request in dispatch_inner_read".to_string(),
+        )),
+    }
+}
+
 fn edition_to_text(edition: &Edition) -> String {
     edition
         .all_entries()
@@ -2855,4 +3641,56 @@ fn spawn_auto_title(state: &SharedState, work_id: u64) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_work_create_triggers_auto_title_gate() {
+        let cases = [
+            (WireRequest::WorkCreate { edition: EditionPayload::Empty }, true),
+            (WireRequest::ClubCreate { description: EditionPayload::Empty }, false),
+            (WireRequest::WorkRevise { work_id: 1, edition: EditionPayload::Empty }, false),
+            (WireRequest::ClubCreateNamed { name: "x".into(), description: EditionPayload::Empty }, false),
+            (WireRequest::WorkStar { work_id: 1 }, false),
+        ];
+        for (req, expected) in cases {
+            let actual = matches!(req, WireRequest::WorkCreate { .. });
+            assert_eq!(
+                actual, expected,
+                "auto-title gate wrong for {:?}: expected {}, got {}",
+                req, expected, actual
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn llm_semaphore_limits_concurrency() {
+        let sem = llm_semaphore();
+        let max = sem.available_permits().min(LLM_MAX_CONCURRENCY);
+
+        let mut handles = Vec::new();
+        for _ in 0..max {
+            let permit = sem.acquire().await.unwrap();
+            handles.push(permit);
+        }
+
+        assert_eq!(sem.available_permits(), 0);
+
+        let start = std::time::Instant::now();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            sem.acquire(),
+        ).await;
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(200),
+            "acquiring beyond limit should block, not return immediately"
+        );
+        assert!(result.is_err(), "should time out waiting for permit");
+
+        drop(handles);
+        assert_eq!(sem.available_permits(), max);
+    }
 }
