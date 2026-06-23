@@ -211,6 +211,8 @@ pub enum OperationCode {
 
     EditionRetrieve,
     EditionCost,
+    ElementInsert,
+    RenderTransclusions,
 
     AnnotationCreate,
     AnnotationDelete,
@@ -470,6 +472,8 @@ impl OperationCode {
 
             0x0c01 => Some(OperationCode::EditionRetrieve),
             0x0c02 => Some(OperationCode::EditionCost),
+            0x0c0B => Some(OperationCode::ElementInsert),
+            0x0c0C => Some(OperationCode::RenderTransclusions),
             0x0c03 => Some(OperationCode::AnnotationCreate),
             0x0c04 => Some(OperationCode::AnnotationDelete),
             0x0c05 => Some(OperationCode::AnnotationAttachNode),
@@ -726,6 +730,8 @@ impl OperationCode {
 
             OperationCode::EditionRetrieve => 0x0c01,
             OperationCode::EditionCost => 0x0c02,
+            OperationCode::ElementInsert => 0x0c0B,
+            OperationCode::RenderTransclusions => 0x0c0C,
             OperationCode::AnnotationCreate => 0x0c03,
             OperationCode::AnnotationDelete => 0x0c04,
             OperationCode::AnnotationAttachNode => 0x0c05,
@@ -1327,6 +1333,14 @@ pub enum WireRequest {
         work_id: BeId,
         method: Option<String>,
     },
+    ElementInsert {
+        work_id: BeId,
+        position: i64,
+        element: RangeElementPayload,
+    },
+    RenderTransclusions {
+        work_id: BeId,
+    },
 
     AnnotationCreate {
         work_id: BeId,
@@ -1712,6 +1726,7 @@ impl WireRequest {
                 | Self::WorkOwner { .. }
                 | Self::WorkIsPublished { .. }
                 | Self::WorkGhost { .. }
+                | Self::RenderTransclusions { .. }
                 | Self::WorkList { .. }
                 | Self::WorkListByOwner { .. }
                 | Self::WorkListArchived { .. }
@@ -1871,6 +1886,7 @@ pub enum ResponseValue {
     TransclusionResults(Vec<TransclusionResultPayload>),
     WorkIds(Vec<BeId>),
     TextTransclusionResults(Vec<TextTransclusionResultPayload>),
+    RenderedTransclusions(Vec<RenderedElementPayload>),
     SharedRegions(Vec<SharedRegionPayload>),
     BlobMeta(BlobMetaPayload),
     BlobData(Vec<u8>),
@@ -2509,6 +2525,10 @@ pub struct HyperRefPayload {
     pub excerpt: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub provenance_chain: Vec<ProvenanceHopPayload>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_position: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_position: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2697,6 +2717,18 @@ pub struct RangeElementPayload {
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label_id: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_id: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edition_id: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_holder: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blob_hash: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blob_mime: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blob_size: Option<u64>,
 }
 
 impl RangeElementPayload {
@@ -2712,6 +2744,14 @@ impl RangeElementPayload {
                     crate::edition::RangeElement::text(self.text.as_deref().unwrap_or("")),
                 )
             }),
+            "work" => self.work_id.map(crate::edition::RangeElement::work),
+            "edition" => self.edition_id.map(crate::edition::RangeElement::edition),
+            "id_holder" => self.id_holder.map(crate::edition::RangeElement::id_holder),
+            "blob" => self.blob_hash.map(|h| {
+                let mime = self.blob_mime.clone().unwrap_or_default();
+                let size = self.blob_size.unwrap_or(0);
+                crate::edition::RangeElement::blob(h, mime, size)
+            }),
             _ => None,
         }
     }
@@ -2722,16 +2762,83 @@ impl RangeElementPayload {
                 elem_type: "text".to_string(),
                 text: Some(text.clone()),
                 label_id: None,
+                work_id: None,
+                edition_id: None,
+                id_holder: None,
+                blob_hash: None,
+                blob_mime: None,
+                blob_size: None,
             },
             crate::edition::RangeElement::Label { label_id, inner } => RangeElementPayload {
                 elem_type: "label".to_string(),
                 text: inner.as_text().map(|s| s.to_string()),
                 label_id: Some(label_id.0),
+                work_id: None,
+                edition_id: None,
+                id_holder: None,
+                blob_hash: None,
+                blob_mime: None,
+                blob_size: None,
+            },
+            crate::edition::RangeElement::Work { work_id } => RangeElementPayload {
+                elem_type: "work".to_string(),
+                text: None,
+                label_id: None,
+                work_id: Some(work_id.0),
+                edition_id: None,
+                id_holder: None,
+                blob_hash: None,
+                blob_mime: None,
+                blob_size: None,
+            },
+            crate::edition::RangeElement::Edition { edition_id } => RangeElementPayload {
+                elem_type: "edition".to_string(),
+                text: None,
+                label_id: None,
+                work_id: None,
+                edition_id: Some(edition_id.0),
+                id_holder: None,
+                blob_hash: None,
+                blob_mime: None,
+                blob_size: None,
+            },
+            crate::edition::RangeElement::IDHolder { id } => RangeElementPayload {
+                elem_type: "id_holder".to_string(),
+                text: None,
+                label_id: None,
+                work_id: None,
+                edition_id: None,
+                id_holder: Some(*id),
+                blob_hash: None,
+                blob_mime: None,
+                blob_size: None,
+            },
+            crate::edition::RangeElement::Blob {
+                content_hash,
+                mime_type,
+                byte_size,
+                ..
+            } => RangeElementPayload {
+                elem_type: "blob".to_string(),
+                text: None,
+                label_id: None,
+                work_id: None,
+                edition_id: None,
+                id_holder: None,
+                blob_hash: Some(*content_hash),
+                blob_mime: Some(mime_type.clone()),
+                blob_size: Some(*byte_size),
             },
             _ => RangeElementPayload {
                 elem_type: "other".to_string(),
                 text: None,
                 label_id: None,
+                work_id: None,
+                edition_id: None,
+                id_holder: None,
+                blob_hash: None,
+                blob_mime: None,
+                blob_size: None,
             },
         }
     }
@@ -2779,6 +2886,8 @@ impl HyperRefPayload {
             path_context,
             excerpt,
             provenance_chain,
+            start_position: hr.start_position(),
+            end_position: hr.end_position(),
         }
     }
 
@@ -2805,6 +2914,7 @@ impl HyperRefPayload {
             .collect();
         let work_context = self.work_context.or_else(|| Some(fallback_work_id));
         let mut hr = HyperRef::single(excerpt, work_context, self.original_context, path_context);
+        hr = hr.with_span(self.start_position, self.end_position);
         if !provenance_chain.is_empty() {
             hr = hr.with_provenance_chain(provenance_chain);
         }
@@ -2853,6 +2963,30 @@ pub struct ExcerptPositionPayload {
 pub struct TracePositionPayload {
     pub branch_id: u64,
     pub position: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenderedElementPayload {
+    pub position: i64,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_work_id: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_author_name: Option<String>,
+    #[serde(default)]
+    pub is_transcluded: bool,
+    pub transclusion_sources: Vec<TransclusionSourcePayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransclusionSourcePayload {
+    pub work_id: BeId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author_name: Option<String>,
+    #[serde(default)]
+    pub is_direct: bool,
 }
 
 pub mod u64_hex {

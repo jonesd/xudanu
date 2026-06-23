@@ -1798,6 +1798,32 @@ impl JsonCodec {
                     method: args.method,
                 })
             }
+            OperationCode::ElementInsert => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    position: i64,
+                    element: super::protocol::RangeElementPayload,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ElementInsert {
+                    work_id: args.work_id,
+                    position: args.position,
+                    element: args.element,
+                })
+            }
+            OperationCode::RenderTransclusions => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::RenderTransclusions {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::AnnotationCreate => {
                 #[derive(Deserialize)]
                 struct Args {
