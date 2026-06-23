@@ -126,6 +126,26 @@ pub struct AgainHop {
     pub is_original: bool,
 }
 
+/// Lifecycle event info for wire serialization.
+#[derive(Debug, Clone)]
+pub struct WorkLifecycleEventInfo {
+    pub kind: String,
+    pub actor_club: BeId,
+    pub timestamp: u64,
+}
+
+/// Ghost metadata for an archived work — rendered when references
+/// point to archived content instead of a 404 or full live view.
+#[derive(Debug, Clone)]
+pub struct WorkGhostInfo {
+    pub work_id: BeId,
+    pub title: String,
+    pub owner: Option<BeId>,
+    pub archived_by: Option<BeId>,
+    pub archived_at: Option<u64>,
+    pub lifecycle_history: Vec<WorkLifecycleEventInfo>,
+}
+
 pub struct Server {
     pub(crate) grand_map: GrandMap,
     pub(crate) sessions: HashMap<SessionId, Session>,
@@ -1239,6 +1259,7 @@ impl Server {
                     historical_author_id: None,
                     source_work_id: None,
                     transcluded_by: None,
+                    derived_by: None,
                 };
                 let entries = edition.all_entries();
                 let text_before = edition.to_text();
@@ -2570,6 +2591,7 @@ impl Server {
             timestamp,
             source_work_id,
             transcluded_by: None,
+            derived_by: None,
         };
 
         let entries = current_edition.all_entries();
@@ -2719,6 +2741,7 @@ impl Server {
             timestamp,
             source_work_id: None,
             transcluded_by: None,
+            derived_by: None,
         };
 
         {
@@ -2988,6 +3011,156 @@ impl Server {
                 )
             })
             .unwrap_or((false, None, None))
+    }
+
+    /// Merge two branches (A and B) against a common base into a new work.
+    ///
+    /// Each element in the result carries:
+    /// - Its original author provenance (from whichever source edition it came from)
+    /// - The curator's identity via `derived_by` (DerivationMethod::Merge)
+    ///
+    /// Elements without existing provenance get the curator stamped as author.
+    pub fn work_merge(
+        &mut self,
+        session_id: SessionId,
+        base_work_id: BeId,
+        a_work_id: BeId,
+        b_work_id: BeId,
+    ) -> Result<BeId, ServerError> {
+        self.ensure_can_edit(session_id, a_work_id)?;
+
+        let base_edition = {
+            let ws = self
+                .works
+                .get(&base_work_id)
+                .ok_or(ServerError::WorkNotFound(base_work_id))?;
+            ws.work.current_edition().clone()
+        };
+        let a_edition = {
+            let ws = self
+                .works
+                .get(&a_work_id)
+                .ok_or(ServerError::WorkNotFound(a_work_id))?;
+            ws.work.current_edition().clone()
+        };
+        let b_edition = {
+            let ws = self
+                .works
+                .get(&b_work_id)
+                .ok_or(ServerError::WorkNotFound(b_work_id))?;
+            ws.work.current_edition().clone()
+        };
+
+        let merge_result = crate::edition::three_way::three_way_merge(
+            &base_edition,
+            &a_edition,
+            &b_edition,
+            crate::edition::three_way::MergeStrategy::LastWriterWins,
+        )
+        .map_err(|_conflicts| {
+            ServerError::Internal("merge conflicts could not be resolved".into())
+        })?;
+
+        let curator_club = self.resolve_author_club(session_id);
+        let timestamp = Self::current_timestamp_secs();
+
+        let curator_display_name = curator_club
+            .and_then(|cid| {
+                self.clubs
+                    .get(&cid)
+                    .and_then(|c| c.display_name().map(|s| s.to_string()))
+            })
+            .unwrap_or_else(|| "Unknown".to_string());
+        let curator_pub_key = self
+            .sessions
+            .get(&session_id)
+            .and_then(|s| s.club_signing_key().map(|k| k.verifying_key().to_bytes()))
+            .unwrap_or([0u8; 32]);
+
+        let derivation = crate::edition::provenance::DerivationInfo {
+            method: crate::edition::provenance::DerivationMethod::Merge,
+            curator_club_id: curator_club.unwrap_or(0),
+            curator_display_name: curator_display_name.clone(),
+            curator_public_key: curator_pub_key,
+            timestamp,
+        };
+
+        let author_prov =
+            curator_club.map(|club_id| crate::edition::provenance::ElementProvenance {
+                author_public_key: curator_pub_key,
+                author_display_name: curator_display_name.clone(),
+                author_club_id: club_id,
+                timestamp,
+                author_type: crate::edition::provenance::AuthorType::Human,
+                llm_model: None,
+                historical_author_id: None,
+                source_work_id: None,
+                transcluded_by: None,
+                derived_by: Some(derivation.clone()),
+            });
+
+        let merged_entries = merge_result.merged.all_entries();
+        let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
+            Vec::with_capacity(merged_entries.len());
+
+        for (pos, c) in &merged_entries {
+            let mut carrier = (**c).clone();
+            if carrier.provenance.is_some() {
+                carrier.provenance.as_mut().unwrap().derived_by = Some(derivation.clone());
+            } else if let Some(ref prov) = author_prov {
+                carrier.provenance = Some(prov.clone());
+            }
+            new_entries.push((*pos, Arc::new(carrier)));
+        }
+
+        let merged_edition = crate::edition::Edition::from_entries(new_entries);
+        let new_work_id = self.create_work(session_id, merged_edition)?;
+        Ok(new_work_id)
+    }
+
+    /// Ghost metadata for an archived work.
+    ///
+    /// Returns `None` if the work is not archived or doesn't exist.
+    /// When a work is archived, references to it should surface this ghost
+    /// instead of the full content.
+    pub fn work_ghost(&self, work_be_id: BeId) -> Option<WorkGhostInfo> {
+        let ws = self.works.get(&work_be_id)?;
+        if !ws.work.is_archived() {
+            return None;
+        }
+
+        let last_archive_event = ws
+            .work
+            .lifecycle_history()
+            .iter()
+            .rev()
+            .find(|e| e.kind == crate::edition::work::LifecycleEventKind::Archived)
+            .or_else(|| ws.work.lifecycle_history().last());
+
+        let archived_by = last_archive_event.map(|e| e.actor_club);
+        let archived_at = last_archive_event.map(|e| e.timestamp);
+
+        Some(WorkGhostInfo {
+            work_id: work_be_id,
+            title: ws.cached_title.clone(),
+            owner: ws.work.owner(),
+            archived_by,
+            archived_at,
+            lifecycle_history: ws
+                .work
+                .lifecycle_history()
+                .iter()
+                .map(|e| WorkLifecycleEventInfo {
+                    kind: match e.kind {
+                        crate::edition::work::LifecycleEventKind::Archived => "archived",
+                        crate::edition::work::LifecycleEventKind::Unarchived => "unarchived",
+                    }
+                    .to_string(),
+                    actor_club: e.actor_club,
+                    timestamp: e.timestamp,
+                })
+                .collect(),
+        })
     }
 
     pub fn work_is_published(
@@ -6403,6 +6576,7 @@ impl Server {
                 historical_author_id: Some(aid),
                 source_work_id: Some(origin_work_id),
                 transcluded_by: None,
+                derived_by: None,
             });
         }
 
@@ -6431,6 +6605,7 @@ impl Server {
                 historical_author_id: None,
                 source_work_id: Some(origin_work_id),
                 transcluded_by: None,
+                derived_by: None,
             });
         }
 
@@ -6469,6 +6644,7 @@ impl Server {
                     historical_author_id: None,
                     source_work_id: Some(origin_work_id),
                     transcluded_by: None,
+                    derived_by: None,
                 }
             });
 
@@ -7587,6 +7763,107 @@ impl Server {
         );
         let _ = session_id;
         Ok(())
+    }
+
+    /// Reconstruct a compound edition from a work's element provenance.
+    ///
+    /// Walks the work's current edition entries, grouping consecutive elements
+    /// by their `source_work_id` provenance. For each group, searches for the
+    /// group's text in the source work to determine the correct span range,
+    /// producing a `CompoundElement::Span`. Runs without provenance become
+    /// `CompoundElement::Text`.
+    ///
+    /// This repairs compounds that were corrupted (text-only, no spans) by
+    /// the work-switch bug fixed in commit 4c2219c6.
+    pub fn compound_rebuild(
+        &mut self,
+        work_id: BeId,
+        session_id: SessionId,
+    ) -> Result<crate::edition::compound::CompoundEdition, ServerError> {
+        self.ensure_session(session_id)?;
+
+        let edition = {
+            let ws = self
+                .works
+                .get(&work_id)
+                .ok_or(ServerError::WorkNotFound(work_id))?;
+            ws.work.current_edition().clone()
+        };
+
+        let entries = edition.all_entries();
+        let mut elements: Vec<crate::edition::compound::CompoundElement> = Vec::new();
+
+        let mut text_buf = String::new();
+        let mut span_source: Option<BeId> = None;
+        let mut span_text = String::new();
+
+        let flush_text =
+            |buf: &mut String, elems: &mut Vec<crate::edition::compound::CompoundElement>| {
+                if !buf.is_empty() {
+                    elems.push(crate::edition::compound::CompoundElement::text(
+                        buf.as_str(),
+                    ));
+                    buf.clear();
+                }
+            };
+
+        for (_, c) in &entries {
+            let src = c.provenance.as_ref().and_then(|p| p.source_work_id);
+
+            if let Some(sid) = src {
+                if span_source != Some(sid) {
+                    flush_text(&mut text_buf, &mut elements);
+                    if let Some(old_sid) = span_source.take() {
+                        self.emit_span(&mut elements, old_sid, &span_text);
+                        span_text.clear();
+                    }
+                    span_source = Some(sid);
+                }
+                if let Some(t) = c.element.as_text() {
+                    span_text.push_str(t);
+                }
+            } else {
+                if let Some(old_sid) = span_source.take() {
+                    flush_text(&mut text_buf, &mut elements);
+                    self.emit_span(&mut elements, old_sid, &span_text);
+                    span_text.clear();
+                }
+                if let Some(t) = c.element.as_text() {
+                    text_buf.push_str(t);
+                }
+            }
+        }
+
+        if let Some(sid) = span_source.take() {
+            flush_text(&mut text_buf, &mut elements);
+            self.emit_span(&mut elements, sid, &span_text);
+        }
+        flush_text(&mut text_buf, &mut elements);
+
+        let compound = crate::edition::compound::CompoundEdition::new(elements);
+        self.set_compound_edition(work_id, compound.clone(), session_id)?;
+        Ok(compound)
+    }
+
+    fn emit_span(
+        &self,
+        elements: &mut Vec<crate::edition::compound::CompoundElement>,
+        source_work_id: BeId,
+        text: &str,
+    ) {
+        if text.is_empty() {
+            return;
+        }
+        let positions = self.find_excerpt_positions(source_work_id, text);
+        if let Some(&(char_start, char_end)) = positions.first() {
+            elements.push(crate::edition::compound::CompoundElement::span(
+                source_work_id,
+                char_start,
+                char_end,
+            ));
+        } else {
+            elements.push(crate::edition::compound::CompoundElement::text(text));
+        }
     }
 
     pub fn resolve_compound_edition(
@@ -17451,6 +17728,7 @@ mod tests {
                 historical_author_id: None,
                 source_work_id: None,
                 transcluded_by: None,
+                derived_by: None,
             };
             let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
                 Vec::new();
@@ -17579,6 +17857,7 @@ mod tests {
                 historical_author_id: None,
                 source_work_id: None,
                 transcluded_by: None,
+                derived_by: None,
             };
             let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
                 Vec::new();
@@ -17746,6 +18025,7 @@ mod tests {
                 historical_author_id: None,
                 source_work_id: None,
                 transcluded_by: None,
+                derived_by: None,
             };
             let bob_prov = crate::edition::provenance::ElementProvenance {
                 author_public_key: [0u8; 32],
@@ -17757,6 +18037,7 @@ mod tests {
                 historical_author_id: None,
                 source_work_id: None,
                 transcluded_by: None,
+                derived_by: None,
             };
             let mut entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> = Vec::new();
             let c = crate::edition::range_element::Carrier::new(
@@ -18195,6 +18476,7 @@ mod tests {
             historical_author_id: Some(99),
             source_work_id: Some(0xABCD),
             transcluded_by: None,
+            derived_by: None,
         };
 
         let json = serde_json::to_string(&prov).unwrap();
@@ -18218,6 +18500,7 @@ mod tests {
             historical_author_id: None,
             source_work_id: None,
             transcluded_by: None,
+            derived_by: None,
         };
 
         let json = serde_json::to_string(&prov).unwrap();
@@ -18558,6 +18841,7 @@ mod tests {
                 historical_author_id: None,
                 source_work_id: None,
                 transcluded_by: None,
+                derived_by: None,
             };
             let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
                 Vec::new();
@@ -18586,6 +18870,7 @@ mod tests {
                 historical_author_id: None,
                 source_work_id: None,
                 transcluded_by: None,
+                derived_by: None,
             };
             let entries = edition.all_entries();
             let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
@@ -18801,6 +19086,7 @@ mod tests {
             historical_author_id: None,
             source_work_id: None,
             transcluded_by: None,
+            derived_by: None,
         };
         let llm_text = "AI generated text.";
         let llm_carrier = crate::edition::range_element::Carrier::new(
@@ -22504,6 +22790,339 @@ mod tests {
         assert!(
             ws.revision_authors.contains_key(&rev),
             "revision_authors should survive session pruning"
+        );
+    }
+
+    #[test]
+    fn compound_rebuild_from_provenance_stamped_entries() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+        let doc = server
+            .create_work(sid, Edition::from_text("prefix Hello suffix"))
+            .unwrap();
+
+        server.work_grab(sid, doc).unwrap();
+
+        let author_club = server.resolve_author_club(sid);
+        let elem_prov = crate::edition::provenance::ElementProvenance {
+            author_public_key: [0u8; 32],
+            author_display_name: "TestAuthor".to_string(),
+            author_club_id: author_club.unwrap_or(0),
+            timestamp: 1000,
+            author_type: crate::edition::provenance::AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: Some(source),
+            transcluded_by: None,
+            derived_by: None,
+        };
+
+        let edition = server.work(doc).unwrap().current_edition().clone();
+        let entries = edition.all_entries();
+        let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
+            Vec::with_capacity(entries.len());
+        let mut cum = 0usize;
+        for (pos, c) in &entries {
+            let text = c.element.as_text().unwrap_or("");
+            if cum >= 7 && cum < 12 {
+                let mut carrier = (**c).clone();
+                carrier.provenance = Some(elem_prov.clone());
+                new_entries.push((*pos, Arc::new(carrier)));
+            } else {
+                new_entries.push((*pos, c.clone()));
+            }
+            cum += c.char_len();
+        }
+        let new_edition = crate::edition::Edition::from_entries(new_entries);
+        server
+            .revise_work(doc, sid, new_edition, author_club)
+            .unwrap();
+
+        let compound = server.compound_rebuild(doc, sid).unwrap();
+        let elements = compound.elements();
+        assert!(
+            elements.len() >= 2,
+            "rebuild should produce text + span elements, got {} elements",
+            elements.len()
+        );
+
+        let has_span = elements.iter().any(|e| match e {
+            crate::edition::compound::CompoundElement::Span { span } => {
+                span.source_work_id() == source
+            }
+            _ => false,
+        });
+        assert!(has_span, "rebuild should produce a span pointing to source");
+
+        let resolved = server.resolve_compound_edition(doc).unwrap();
+        assert_eq!(
+            resolved.flat_text(),
+            "prefix Hello suffix",
+            "resolved text should match original"
+        );
+    }
+
+    #[test]
+    fn compound_rebuild_text_only_works() {
+        let (mut server, sid) = setup_logged_in_server();
+        let doc = server
+            .create_work(sid, Edition::from_text("plain text no transclusion"))
+            .unwrap();
+
+        let compound = server.compound_rebuild(doc, sid).unwrap();
+        let elements = compound.elements();
+        assert!(
+            elements
+                .iter()
+                .all(|e| matches!(e, crate::edition::compound::CompoundElement::Text { .. })),
+            "text-only work should produce only text elements"
+        );
+
+        let resolved = server.resolve_compound_edition(doc).unwrap();
+        assert_eq!(resolved.flat_text(), "plain text no transclusion");
+        assert_eq!(resolved.span_ranges().len(), 0);
+    }
+
+    #[test]
+    fn compound_rebuild_repairs_corrupted_compound() {
+        let (mut server, sid) = setup_logged_in_server();
+        let source_a = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+        let doc_b = server
+            .create_work(sid, Edition::from_text("Start. Hello End."))
+            .unwrap();
+
+        let corrupted = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("Start. Hello End."),
+        ]);
+        server.set_compound_edition(doc_b, corrupted, sid).unwrap();
+
+        let before = server.get_compound_edition(doc_b).unwrap();
+        assert_eq!(
+            before.elements().len(),
+            1,
+            "compound should be corrupted (text-only)"
+        );
+
+        server.work_grab(sid, doc_b).unwrap();
+        let author_club = server.resolve_author_club(sid);
+        let elem_prov = crate::edition::provenance::ElementProvenance {
+            author_public_key: [0u8; 32],
+            author_display_name: "TestAuthor".to_string(),
+            author_club_id: author_club.unwrap_or(0),
+            timestamp: 1000,
+            author_type: crate::edition::provenance::AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: Some(source_a),
+            transcluded_by: None,
+            derived_by: None,
+        };
+        let edition = server.work(doc_b).unwrap().current_edition().clone();
+        let entries = edition.all_entries();
+        let mut new_entries: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> =
+            Vec::with_capacity(entries.len());
+        let mut cum = 0usize;
+        for (pos, c) in &entries {
+            if cum >= 7 && cum < 12 {
+                let mut carrier = (**c).clone();
+                carrier.provenance = Some(elem_prov.clone());
+                new_entries.push((*pos, Arc::new(carrier)));
+            } else {
+                new_entries.push((*pos, c.clone()));
+            }
+            cum += c.char_len();
+        }
+        let new_edition = crate::edition::Edition::from_entries(new_entries);
+        server
+            .revise_work(doc_b, sid, new_edition, author_club)
+            .unwrap();
+
+        let compound = server.compound_rebuild(doc_b, sid).unwrap();
+        let has_span = compound.elements().iter().any(|e| match e {
+            crate::edition::compound::CompoundElement::Span { span } => {
+                span.source_work_id() == source_a
+            }
+            _ => false,
+        });
+        assert!(
+            has_span,
+            "rebuild should repair corrupted compound by adding spans from provenance"
+        );
+    }
+
+    #[test]
+    fn work_merge_preserves_source_author_and_stamps_curator() {
+        let (mut server, sid) = setup_logged_in_server();
+
+        let base = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+        let branch_a = server
+            .create_work(sid, Edition::from_text("Hello Earth"))
+            .unwrap();
+        let branch_b = server
+            .create_work(sid, Edition::from_text("Hello Mars"))
+            .unwrap();
+
+        server.work_grab(sid, branch_a).unwrap();
+        let author_club = server.resolve_author_club(sid);
+        let alice_prov = crate::edition::provenance::ElementProvenance {
+            author_public_key: [1u8; 32],
+            author_display_name: "Alice".to_string(),
+            author_club_id: author_club.unwrap_or(0),
+            timestamp: 1000,
+            author_type: crate::edition::provenance::AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: None,
+            transcluded_by: None,
+            derived_by: None,
+        };
+        let edition_a = server.work(branch_a).unwrap().current_edition().clone();
+        let entries_a = edition_a.all_entries();
+        let new_entries_a: Vec<(i64, Arc<crate::edition::range_element::Carrier>)> = entries_a
+            .iter()
+            .map(|(pos, c)| {
+                let mut carrier = (**c).clone();
+                carrier.provenance = Some(alice_prov.clone());
+                (*pos, Arc::new(carrier))
+            })
+            .collect();
+        let stamped_a = crate::edition::Edition::from_entries(new_entries_a);
+        server
+            .revise_work(branch_a, sid, stamped_a, author_club)
+            .unwrap();
+
+        let merged_id = server.work_merge(sid, base, branch_a, branch_b).unwrap();
+
+        let merged_edition = server.work(merged_id).unwrap().current_edition().clone();
+        let entries = merged_edition.all_entries();
+
+        let has_derived_by = entries.iter().any(|(_, c)| {
+            c.provenance
+                .as_ref()
+                .and_then(|p| p.derived_by.as_ref())
+                .map(|d| d.method == crate::edition::provenance::DerivationMethod::Merge)
+                .unwrap_or(false)
+        });
+        assert!(
+            has_derived_by,
+            "merged elements should carry curator provenance via derived_by"
+        );
+
+        let has_alice_author = entries.iter().any(|(_, c)| {
+            c.provenance
+                .as_ref()
+                .map(|p| p.author_display_name == "Alice")
+                .unwrap_or(false)
+        });
+        assert!(
+            has_alice_author,
+            "merged elements from branch_a should preserve Alice's author provenance"
+        );
+    }
+
+    #[test]
+    fn work_merge_creates_valid_text() {
+        let (mut server, sid) = setup_logged_in_server();
+
+        let base = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+        let branch_a = server
+            .create_work(sid, Edition::from_text("Hello Earth"))
+            .unwrap();
+        let branch_b = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+
+        let merged_id = server.work_merge(sid, base, branch_a, branch_b).unwrap();
+        let merged_text = server.work(merged_id).unwrap().current_edition().to_text();
+
+        assert!(
+            merged_text.contains("Hello"),
+            "merged text should contain common prefix"
+        );
+    }
+
+    #[test]
+    fn work_ghost_returns_none_for_non_archived() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server
+            .create_work(sid, Edition::from_text("active work"))
+            .unwrap();
+
+        assert!(
+            server.work_ghost(work).is_none(),
+            "ghost should be None for non-archived work"
+        );
+    }
+
+    #[test]
+    fn work_ghost_returns_info_for_archived() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server
+            .create_work(sid, Edition::from_text("archived work"))
+            .unwrap();
+        server.set_work_title(work, "My Archived Doc".to_string());
+
+        server.work_archive(sid, work).unwrap();
+
+        let ghost = server
+            .work_ghost(work)
+            .expect("ghost should exist for archived work");
+        assert_eq!(ghost.work_id, work);
+        assert_eq!(ghost.title, "My Archived Doc");
+        assert!(
+            ghost.archived_by.is_some(),
+            "ghost should record who archived"
+        );
+        assert!(
+            ghost.archived_at.is_some(),
+            "ghost should record when archived"
+        );
+        assert!(
+            !ghost.lifecycle_history.is_empty(),
+            "ghost should include lifecycle history"
+        );
+        assert_eq!(
+            ghost.lifecycle_history.last().unwrap().kind,
+            "archived",
+            "last lifecycle event should be 'archived'"
+        );
+    }
+
+    #[test]
+    fn work_ghost_includes_full_lifecycle_history() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server
+            .create_work(sid, Edition::from_text("cycled work"))
+            .unwrap();
+
+        server.work_archive(sid, work).unwrap();
+        server.work_unarchive(sid, work).unwrap();
+        server.work_archive(sid, work).unwrap();
+
+        let ghost = server
+            .work_ghost(work)
+            .expect("ghost should exist after re-archive");
+        assert_eq!(
+            ghost.lifecycle_history.len(),
+            3,
+            "should have 3 lifecycle events"
+        );
+        assert_eq!(ghost.lifecycle_history[0].kind, "archived");
+        assert_eq!(ghost.lifecycle_history[1].kind, "unarchived");
+        assert_eq!(ghost.lifecycle_history[2].kind, "archived");
+
+        assert_eq!(
+            ghost.archived_at,
+            Some(ghost.lifecycle_history[2].timestamp),
+            "archived_at should match last archive event"
         );
     }
 }

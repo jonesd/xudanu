@@ -305,6 +305,7 @@ pub fn apply_text_delta_to_edition(
         historical_author_id: None,
         source_work_id: None,
         transcluded_by: None,
+        derived_by: None,
     });
 
     let old_entries = edition.all_entries();
@@ -462,6 +463,7 @@ fn append_text_with_llm_provenance(
         historical_author_id: None,
         source_work_id: None,
         transcluded_by: None,
+        derived_by: None,
     };
 
     let mut start = 0usize;

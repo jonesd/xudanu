@@ -271,6 +271,7 @@ impl BinaryCodec {
             | OperationCode::WorkUnpublish
             | OperationCode::WorkIrrevocablyUnpublish
             | OperationCode::WorkIsPublished
+            | OperationCode::WorkGhost
             | OperationCode::CrdtSyncClose
             | OperationCode::CrdtSyncFullState
             | OperationCode::CrdtSyncMaterialize
@@ -412,6 +413,7 @@ impl BinaryCodec {
             OperationCode::WorkArchive => Ok(WireRequest::WorkArchive { work_id: id }),
             OperationCode::WorkUnarchive => Ok(WireRequest::WorkUnarchive { work_id: id }),
             OperationCode::WorkIsPublished => Ok(WireRequest::WorkIsPublished { work_id: id }),
+            OperationCode::WorkGhost => Ok(WireRequest::WorkGhost { work_id: id }),
             OperationCode::CrdtSyncOpen => Ok(WireRequest::CrdtSyncOpen { work_id: id }),
             OperationCode::CrdtSyncClose => Ok(WireRequest::CrdtSyncClose { work_id: id }),
             OperationCode::CrdtSyncFullState => Ok(WireRequest::CrdtSyncFullState { work_id: id }),
@@ -1114,6 +1116,32 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::WorkIsPublished {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::WorkMerge => {
+                #[derive(Deserialize)]
+                struct Args {
+                    base_work_id: BeId,
+                    a_work_id: BeId,
+                    b_work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkMerge {
+                    base_work_id: args.base_work_id,
+                    a_work_id: args.a_work_id,
+                    b_work_id: args.b_work_id,
+                })
+            }
+            OperationCode::WorkGhost => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::WorkGhost {
                     work_id: args.work_id,
                 })
             }
@@ -2092,6 +2120,17 @@ impl JsonCodec {
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::CompoundResolveRecursive {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::CompoundRebuild => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CompoundRebuild {
                     work_id: args.work_id,
                 })
             }
