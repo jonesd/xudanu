@@ -105,6 +105,42 @@ pub fn map_span_through_delta(
     (result_start, result_end)
 }
 
+pub fn compute_text_delta(old: &str, new: &str) -> Vec<DeltaOp> {
+    let old_chars: Vec<char> = old.chars().collect();
+    let new_chars: Vec<char> = new.chars().collect();
+    let old_len = old_chars.len();
+    let new_len = new_chars.len();
+
+    let prefix = old_chars
+        .iter()
+        .zip(new_chars.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let max_suffix = old_len
+        .saturating_sub(prefix)
+        .min(new_len.saturating_sub(prefix));
+    let suffix = (0..max_suffix)
+        .take_while(|&i| old_chars[old_len - 1 - i] == new_chars[new_len - 1 - i])
+        .count();
+
+    let mut ops = Vec::new();
+    if prefix > 0 {
+        ops.push(DeltaOp::Retain(prefix));
+    }
+    let delete_len = old_len - prefix - suffix;
+    if delete_len > 0 {
+        ops.push(DeltaOp::Delete(delete_len));
+    }
+    let insert_len = new_len - prefix - suffix;
+    if insert_len > 0 {
+        ops.push(DeltaOp::Insert(insert_len));
+    }
+    if suffix > 0 {
+        ops.push(DeltaOp::Retain(suffix));
+    }
+    ops
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompoundSpan {
     source_work_id: u64,

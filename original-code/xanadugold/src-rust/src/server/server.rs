@@ -1357,6 +1357,10 @@ impl Server {
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
 
         let old_edition = ws.work.edition().clone();
+        let old_text = old_edition.to_text();
+        let new_text = edition.to_text();
+        let text_delta = crate::edition::compound::compute_text_delta(&old_text, &new_text);
+        let needs_span_migration = old_text != new_text;
         ws.last_revision_author = author_club;
         ws.mark_dirty();
         ws.work.revise(edition);
@@ -1384,6 +1388,25 @@ impl Server {
             .update_work_with_parent(work_be_id, work_be_id, &old_edition, &new_work);
         self.trigger_planted_recorders(work_be_id);
         self.mark_compound_dirty(work_be_id);
+        if needs_span_migration {
+            let text_delta_ops: Vec<crate::server::transport::protocol::TextDeltaOp> = text_delta
+                .iter()
+                .map(|op| match op {
+                    crate::edition::compound::DeltaOp::Retain(n) => {
+                        crate::server::transport::protocol::TextDeltaOp::Retain { count: *n as u64 }
+                    }
+                    crate::edition::compound::DeltaOp::Insert(n) => {
+                        crate::server::transport::protocol::TextDeltaOp::Insert {
+                            text: " ".repeat(*n),
+                        }
+                    }
+                    crate::edition::compound::DeltaOp::Delete(n) => {
+                        crate::server::transport::protocol::TextDeltaOp::Delete { count: *n as u64 }
+                    }
+                })
+                .collect();
+            self.migrate_link_spans_for_delta(work_be_id, &text_delta_ops);
+        }
         self.reconcile_record_local_revision(
             work_be_id,
             &updated_edition,
@@ -3420,6 +3443,7 @@ impl Server {
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
             self.migrate_compound_spans_for_delta(work_be_id, ops);
+            self.migrate_link_spans_for_delta(work_be_id, ops);
 
             let relay_to: Vec<(SessionId, super::crdt_manager::SyncSessionId)> = result
                 .relay_to
@@ -8169,7 +8193,7 @@ impl Server {
         }
     }
 
-    fn migrate_compound_spans_for_delta(
+    pub fn migrate_compound_spans_for_delta(
         &mut self,
         source_work_id: BeId,
         ops: &[crate::server::transport::protocol::TextDeltaOp],
@@ -8196,6 +8220,68 @@ impl Server {
             }
         }
         self.mark_compound_dirty(source_work_id);
+    }
+
+    pub fn migrate_link_spans_for_delta(
+        &mut self,
+        source_work_id: BeId,
+        ops: &[crate::server::transport::protocol::TextDeltaOp],
+    ) {
+        use crate::edition::compound::{map_span_through_delta, DeltaOp};
+
+        let delta_ops: Vec<DeltaOp> = ops
+            .iter()
+            .map(|op| match op {
+                crate::server::transport::protocol::TextDeltaOp::Retain { count } => {
+                    DeltaOp::Retain(*count as usize)
+                }
+                crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
+                    DeltaOp::Insert(text.chars().count())
+                }
+                crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
+                    DeltaOp::Delete(*count as usize)
+                }
+            })
+            .collect();
+
+        let link_ids: Vec<BeId> = self
+            .work_to_links
+            .get(&source_work_id)
+            .cloned()
+            .unwrap_or_default();
+
+        for link_id in link_ids {
+            let old_link = match self.links.get(&link_id) {
+                Some(ls) => ls.link.clone(),
+                None => continue,
+            };
+            self.backfollow.unregister_link_content(&old_link, link_id);
+
+            let ls = match self.links.get_mut(&link_id) {
+                Some(ls) => ls,
+                None => continue,
+            };
+            let mut link = ls.link.clone();
+            let end_names: Vec<String> = link.end_names().iter().map(|s| s.to_string()).collect();
+            for name in end_names {
+                if let Some(hr) = link.end_at(&name) {
+                    if hr.work_context() != Some(source_work_id) {
+                        continue;
+                    }
+                    if let (Some(start), Some(end)) = (hr.start_position(), hr.end_position()) {
+                        if start < 0 || end < 0 {
+                            continue;
+                        }
+                        let (new_start, new_end) =
+                            map_span_through_delta(start as usize, end as usize, &delta_ops);
+                        let new_hr = hr.with_span(Some(new_start as i64), Some(new_end as i64));
+                        link = link.with_end(&name, new_hr);
+                    }
+                }
+            }
+            ls.link = link.clone();
+            self.backfollow.register_link_content(&ls.link, link_id);
+        }
     }
 
     pub fn compound_dirty_works(&self) -> Vec<BeId> {
@@ -23879,5 +23965,520 @@ mod tests {
         assert!(link.has_end("Target"));
         assert!(link.has_end("Evidence"));
         assert!(!link.is_two_ended());
+    }
+
+    #[test]
+    fn link_span_migrates_on_text_insert_before() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(0), Some(5));
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let new_ed = Edition::from_text("XX hello world");
+        server.work_revise(sid, work_a, new_ed).unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert_eq!(
+            o_ref.start_position(),
+            Some(3),
+            "start should shift by 3 (inserted 'XX ')"
+        );
+        assert_eq!(o_ref.end_position(), Some(8), "end should shift by 3");
+    }
+
+    #[test]
+    fn link_span_migrates_on_text_delete_before() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("XXXhello world"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(3), Some(8));
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let new_ed = Edition::from_text("hello world");
+        server.work_revise(sid, work_a, new_ed).unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert_eq!(
+            o_ref.start_position(),
+            Some(0),
+            "start should shift back by 3"
+        );
+        assert_eq!(o_ref.end_position(), Some(5), "end should shift back by 3");
+    }
+
+    #[test]
+    fn link_span_migrates_on_text_replace_middle() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("abc middle xyz"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(4), Some(10));
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let new_ed = Edition::from_text("abc LONGER xyz");
+        server.work_revise(sid, work_a, new_ed).unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert_eq!(
+            o_ref.start_position(),
+            Some(4),
+            "start should be at delete boundary"
+        );
+        assert_eq!(
+            o_ref.end_position(),
+            Some(10),
+            "end should cover the replacement (delete+insert look-ahead)"
+        );
+    }
+
+    #[test]
+    fn link_span_no_migration_when_text_unchanged() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(0), Some(5));
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let same_ed = Edition::from_text("hello world");
+        server.work_revise(sid, work_a, same_ed).unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert_eq!(o_ref.start_position(), Some(0), "start should be unchanged");
+        assert_eq!(o_ref.end_position(), Some(5), "end should be unchanged");
+    }
+
+    #[test]
+    fn link_span_migrates_via_delta_path() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(6), Some(11));
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let ops = vec![
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 6 },
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "big ".to_string(),
+            },
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 5 },
+        ];
+        server.migrate_link_spans_for_delta(work_a, &ops);
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert_eq!(
+            o_ref.start_position(),
+            Some(10),
+            "start should shift by 4 (inserted 'big ')"
+        );
+        assert_eq!(o_ref.end_position(), Some(15), "end should shift by 4");
+    }
+
+    #[test]
+    fn compute_text_delta_prefix_suffix() {
+        use crate::edition::compound::{compute_text_delta, DeltaOp};
+
+        let ops = compute_text_delta("hello world", "hello big world");
+        assert_eq!(
+            ops,
+            vec![DeltaOp::Retain(6), DeltaOp::Insert(4), DeltaOp::Retain(5),]
+        );
+    }
+
+    #[test]
+    fn compute_text_delta_delete() {
+        use crate::edition::compound::{compute_text_delta, DeltaOp};
+
+        let ops = compute_text_delta("hello world", "world");
+        assert_eq!(ops, vec![DeltaOp::Delete(6), DeltaOp::Retain(5)]);
+    }
+
+    #[test]
+    fn compute_text_delta_identical() {
+        use crate::edition::compound::{compute_text_delta, DeltaOp};
+
+        let ops = compute_text_delta("hello", "hello");
+        assert_eq!(ops, vec![DeltaOp::Retain(5)]);
+    }
+
+    #[test]
+    fn compute_text_delta_empty_old() {
+        use crate::edition::compound::{compute_text_delta, DeltaOp};
+
+        let ops = compute_text_delta("", "hello");
+        assert_eq!(ops, vec![DeltaOp::Insert(5)]);
+    }
+
+    #[test]
+    fn compute_text_delta_empty_new() {
+        use crate::edition::compound::{compute_text_delta, DeltaOp};
+
+        let ops = compute_text_delta("hello", "");
+        assert_eq!(ops, vec![DeltaOp::Delete(5)]);
+    }
+
+    #[test]
+    fn link_span_migration_multi_ended_all_ends_migrate() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+        let work_c = server.create_work(sid, Edition::from_text("ctx")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(0), Some(5));
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None)
+            .with_span(Some(0), Some(4));
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        let third = crate::edition::links::HyperRef::single(None, Some(work_c), None, None)
+            .with_span(Some(0), Some(3));
+        server.link_add_end(sid, link_id, "Context", third).unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let new_ed = Edition::from_text(">>> hello world");
+        server.work_revise(sid, work_a, new_ed).unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let left = link.end_at("LeftEnd").unwrap();
+        let right = link.end_at("RightEnd").unwrap();
+        let ctx = link.end_at("Context").unwrap();
+
+        assert_eq!(
+            left.start_position(),
+            Some(4),
+            "LeftEnd span on work_a should shift by 3"
+        );
+        assert_eq!(left.end_position(), Some(9));
+
+        assert_eq!(
+            right.start_position(),
+            Some(0),
+            "RightEnd span on work_b should be unchanged"
+        );
+        assert_eq!(right.end_position(), Some(4));
+
+        assert_eq!(
+            ctx.start_position(),
+            Some(0),
+            "Context span on work_c should be unchanged"
+        );
+        assert_eq!(ctx.end_position(), Some(3));
+    }
+
+    #[test]
+    fn link_span_collapses_when_fully_deleted() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(0), Some(5));
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let new_ed = Edition::from_text("world");
+        server.work_revise(sid, work_a, new_ed).unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert_eq!(
+            o_ref.start_position(),
+            Some(0),
+            "start should collapse to 0 when content before it is deleted"
+        );
+        assert_eq!(
+            o_ref.end_position(),
+            Some(0),
+            "end should collapse to 0 (span content fully deleted)"
+        );
+    }
+
+    #[test]
+    fn link_span_unaffected_for_other_works() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("other text"))
+            .unwrap();
+        let work_c = server
+            .create_work(sid, Edition::from_text("third"))
+            .unwrap();
+
+        let link_a = {
+            let o = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+                .with_span(Some(0), Some(5));
+            let d = crate::edition::links::HyperRef::single(None, Some(work_c), None, None);
+            server
+                .create_link(sid, work_a, work_c, Some(o), Some(d))
+                .unwrap()
+        };
+        let link_b = {
+            let o = crate::edition::links::HyperRef::single(None, Some(work_b), None, None)
+                .with_span(Some(0), Some(5));
+            let d = crate::edition::links::HyperRef::single(None, Some(work_c), None, None);
+            server
+                .create_link(sid, work_b, work_c, Some(o), Some(d))
+                .unwrap()
+        };
+
+        server.work_grab(sid, work_a).unwrap();
+        let new_ed = Edition::from_text("XXX hello world");
+        server.work_revise(sid, work_a, new_ed).unwrap();
+
+        let (_, _, link_a_data) = server.get_link(link_a).unwrap();
+        let o_a = link_a_data.end_at("LeftEnd").unwrap();
+        assert_eq!(o_a.start_position(), Some(4), "work_a link should migrate");
+        assert_eq!(o_a.end_position(), Some(9));
+
+        let (_, _, link_b_data) = server.get_link(link_b).unwrap();
+        let o_b = link_b_data.end_at("LeftEnd").unwrap();
+        assert_eq!(
+            o_b.start_position(),
+            Some(0),
+            "work_b link should NOT migrate when work_a is edited"
+        );
+        assert_eq!(
+            o_b.end_position(),
+            Some(5),
+            "work_b link span should be unchanged"
+        );
+    }
+
+    #[test]
+    fn link_span_multiple_links_same_work_all_migrate() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("dest b"))
+            .unwrap();
+        let work_c = server
+            .create_work(sid, Edition::from_text("dest c"))
+            .unwrap();
+
+        let link1 = {
+            let o = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+                .with_span(Some(0), Some(5));
+            let d = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+            server
+                .create_link(sid, work_a, work_b, Some(o), Some(d))
+                .unwrap()
+        };
+        let link2 = {
+            let o = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+                .with_span(Some(6), Some(11));
+            let d = crate::edition::links::HyperRef::single(None, Some(work_c), None, None);
+            server
+                .create_link(sid, work_a, work_c, Some(o), Some(d))
+                .unwrap()
+        };
+
+        server.work_grab(sid, work_a).unwrap();
+        let new_ed = Edition::from_text("** hello world");
+        server.work_revise(sid, work_a, new_ed).unwrap();
+
+        let (_, _, link1_data) = server.get_link(link1).unwrap();
+        let o1 = link1_data.end_at("LeftEnd").unwrap();
+        assert_eq!(
+            o1.start_position(),
+            Some(3),
+            "link1 start should shift by 3"
+        );
+        assert_eq!(o1.end_position(), Some(8), "link1 end should shift by 3");
+
+        let (_, _, link2_data) = server.get_link(link2).unwrap();
+        let o2 = link2_data.end_at("LeftEnd").unwrap();
+        assert_eq!(
+            o2.start_position(),
+            Some(9),
+            "link2 start should shift by 3"
+        );
+        assert_eq!(o2.end_position(), Some(14), "link2 end should shift by 3");
+    }
+
+    #[test]
+    fn link_span_migrates_on_pure_insertion_at_end() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(0), Some(5));
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let new_ed = Edition::from_text("hello world");
+        server.work_revise(sid, work_a, new_ed).unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert_eq!(o_ref.start_position(), Some(0), "start unchanged (append)");
+        assert_eq!(
+            o_ref.end_position(),
+            Some(5),
+            "end unchanged (span before insert)"
+        );
+    }
+
+    #[test]
+    fn link_span_migrates_on_pure_deletion_at_end() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(0), Some(5));
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let new_ed = Edition::from_text("hello");
+        server.work_revise(sid, work_a, new_ed).unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert_eq!(o_ref.start_position(), Some(0), "start unchanged");
+        assert_eq!(
+            o_ref.end_position(),
+            Some(5),
+            "end unchanged (deleted after span)"
+        );
+    }
+
+    #[test]
+    fn link_span_survives_full_text_replacement() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(0), Some(5));
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let new_ed = Edition::from_text("completely different");
+        server.work_revise(sid, work_a, new_ed).unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert_eq!(
+            o_ref.start_position(),
+            Some(0),
+            "start should be at 0 (delete boundary)"
+        );
+        assert_eq!(
+            o_ref.end_position(),
+            Some(20),
+            "end should cover replacement text (delete+insert look-ahead)"
+        );
+    }
+
+    #[test]
+    fn link_span_grows_with_insertion_inside_span() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(0), Some(11));
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let ops = vec![
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 6 },
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "big ".to_string(),
+            },
+            crate::server::transport::protocol::TextDeltaOp::Retain { count: 5 },
+        ];
+        server.migrate_link_spans_for_delta(work_a, &ops);
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").unwrap();
+        assert_eq!(
+            o_ref.start_position(),
+            Some(0),
+            "start unchanged (insert after start)"
+        );
+        assert_eq!(
+            o_ref.end_position(),
+            Some(15),
+            "end should grow by 4 (inserted 'big ' before end)"
+        );
     }
 }
