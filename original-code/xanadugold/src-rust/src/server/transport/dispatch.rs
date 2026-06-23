@@ -1071,6 +1071,8 @@ fn dispatch_inner(
                     hr.excerpt.is_some(),
                     hr.excerpt.as_deref().map(|s| s.len()).unwrap_or(0)
                 );
+                let span_start = hr.start_position;
+                let span_end = hr.end_position;
                 let excerpt = hr
                     .excerpt
                     .as_deref()
@@ -1086,8 +1088,11 @@ fn dispatch_inner(
                     hr.original_context,
                     path,
                 )
+                .with_span(span_start, span_end)
             });
             let d_ref = destination_ref.map(|hr| {
+                let span_start = hr.start_position;
+                let span_end = hr.end_position;
                 let excerpt = hr
                     .excerpt
                     .as_deref()
@@ -1103,6 +1108,7 @@ fn dispatch_inner(
                     hr.original_context,
                     path,
                 )
+                .with_span(span_start, span_end)
             });
             let link_id = if link_types.is_empty() {
                 srv.create_link(session_id, origin, destination, o_ref, d_ref)?
@@ -1170,6 +1176,8 @@ fn dispatch_inner(
                 }
             }
             let o_ref = origin_ref.map(|hr| {
+                let span_start = hr.start_position;
+                let span_end = hr.end_position;
                 let excerpt = hr
                     .excerpt
                     .as_deref()
@@ -1187,9 +1195,12 @@ fn dispatch_inner(
                     hr.original_context,
                     None,
                 )
+                .with_span(span_start, span_end)
                 .with_provenance_chain(chain)
             });
             let d_ref = destination_ref.map(|hr| {
+                let span_start = hr.start_position;
+                let span_end = hr.end_position;
                 let excerpt = hr
                     .excerpt
                     .as_deref()
@@ -1207,6 +1218,7 @@ fn dispatch_inner(
                     hr.original_context,
                     None,
                 )
+                .with_span(span_start, span_end)
                 .with_provenance_chain(chain)
             });
             srv.update_link(session_id, link_id, o_ref, d_ref)?;
@@ -1374,6 +1386,31 @@ fn dispatch_inner(
                 })
                 .collect();
             Ok(ResponseValue::SharedRegions(payloads))
+        }
+        WireRequest::RenderTransclusions { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let elements = srv.render_transclusions(work_id)?;
+            let payloads: Vec<super::protocol::RenderedElementPayload> = elements
+                .into_iter()
+                .map(|e| super::protocol::RenderedElementPayload {
+                    position: e.position,
+                    text: e.text,
+                    source_work_id: e.source_work_id,
+                    source_author_name: e.source_author_name,
+                    is_transcluded: e.is_transcluded,
+                    transclusion_sources: e
+                        .transclusion_sources
+                        .into_iter()
+                        .map(|s| super::protocol::TransclusionSourcePayload {
+                            work_id: s.work_id,
+                            title: s.title,
+                            author_name: s.author_name,
+                            is_direct: s.is_direct,
+                        })
+                        .collect(),
+                })
+                .collect();
+            Ok(ResponseValue::RenderedTransclusions(payloads))
         }
 
         WireRequest::BlobUpload { data, mime_type } => {
@@ -1555,6 +1592,22 @@ fn dispatch_inner(
                 billed_bytes: cost.billed_bytes(),
                 method: format!("{:?}", cm).to_lowercase(),
             })
+        }
+        WireRequest::ElementInsert {
+            work_id,
+            position,
+            element,
+        } => {
+            srv.ensure_authenticated(session_id)?;
+            let elem = element.to_range_element().ok_or_else(|| {
+                crate::server::ServerError::InvalidArgument(
+                    "cannot convert payload to RangeElement".into(),
+                )
+            })?;
+            let current_ed = srv.work_edition(work_id)?;
+            let new_ed = current_ed.with(position, elem);
+            let rev = srv.work_revise(session_id, work_id, new_ed)?;
+            Ok(ResponseValue::Humber(rev))
         }
         WireRequest::ContentSharedRegion { work_a, work_b } => {
             srv.ensure_can_read(session_id, work_a)?;
@@ -3065,6 +3118,31 @@ fn dispatch_inner_read(
                         .collect(),
                 });
             Ok(ResponseValue::WorkGhostResult { ghost })
+        }
+        WireRequest::RenderTransclusions { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let elements = srv.render_transclusions(work_id)?;
+            let payloads: Vec<super::protocol::RenderedElementPayload> = elements
+                .into_iter()
+                .map(|e| super::protocol::RenderedElementPayload {
+                    position: e.position,
+                    text: e.text,
+                    source_work_id: e.source_work_id,
+                    source_author_name: e.source_author_name,
+                    is_transcluded: e.is_transcluded,
+                    transclusion_sources: e
+                        .transclusion_sources
+                        .into_iter()
+                        .map(|s| super::protocol::TransclusionSourcePayload {
+                            work_id: s.work_id,
+                            title: s.title,
+                            author_name: s.author_name,
+                            is_direct: s.is_direct,
+                        })
+                        .collect(),
+                })
+                .collect();
+            Ok(ResponseValue::RenderedTransclusions(payloads))
         }
         WireRequest::ClubWhoAmI => {
             let clubs = srv.who_am_i(session_id)?;

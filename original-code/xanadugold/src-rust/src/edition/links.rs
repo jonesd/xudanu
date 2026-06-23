@@ -303,6 +303,8 @@ pub struct HyperRef {
     original_context: Option<u64>,
     path_context: Option<Path>,
     provenance_chain: Vec<ProvenanceHop>,
+    start_position: Option<i64>,
+    end_position: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -324,6 +326,8 @@ impl HyperRef {
             original_context,
             path_context,
             provenance_chain: Vec::new(),
+            start_position: None,
+            end_position: None,
         }
     }
 
@@ -339,6 +343,8 @@ impl HyperRef {
             original_context,
             path_context,
             provenance_chain: Vec::new(),
+            start_position: None,
+            end_position: None,
         }
     }
 
@@ -384,6 +390,14 @@ impl HyperRef {
         &self.provenance_chain
     }
 
+    pub fn start_position(&self) -> Option<i64> {
+        self.start_position
+    }
+
+    pub fn end_position(&self) -> Option<i64> {
+        self.end_position
+    }
+
     pub fn with_provenance_chain(&self, chain: Vec<ProvenanceHop>) -> Self {
         HyperRef {
             kind: self.kind.clone(),
@@ -391,6 +405,8 @@ impl HyperRef {
             original_context: self.original_context,
             path_context: self.path_context.clone(),
             provenance_chain: chain,
+            start_position: self.start_position,
+            end_position: self.end_position,
         }
     }
 
@@ -403,6 +419,8 @@ impl HyperRef {
             original_context: self.original_context,
             path_context: self.path_context.clone(),
             provenance_chain: self.provenance_chain.clone(),
+            start_position: self.start_position,
+            end_position: self.end_position,
         }
     }
 
@@ -413,6 +431,8 @@ impl HyperRef {
             original_context: self.original_context,
             path_context: self.path_context.clone(),
             provenance_chain: self.provenance_chain.clone(),
+            start_position: self.start_position,
+            end_position: self.end_position,
         }
     }
 
@@ -423,6 +443,8 @@ impl HyperRef {
             original_context: work_id,
             path_context: self.path_context.clone(),
             provenance_chain: self.provenance_chain.clone(),
+            start_position: self.start_position,
+            end_position: self.end_position,
         }
     }
 
@@ -433,6 +455,20 @@ impl HyperRef {
             original_context: self.original_context,
             path_context: path,
             provenance_chain: self.provenance_chain.clone(),
+            start_position: self.start_position,
+            end_position: self.end_position,
+        }
+    }
+
+    pub fn with_span(&self, start: Option<i64>, end: Option<i64>) -> Self {
+        HyperRef {
+            kind: self.kind.clone(),
+            work_context: self.work_context,
+            original_context: self.original_context,
+            path_context: self.path_context.clone(),
+            provenance_chain: self.provenance_chain.clone(),
+            start_position: start,
+            end_position: end,
         }
     }
 
@@ -450,6 +486,8 @@ impl HyperRef {
                     original_context: self.original_context,
                     path_context: self.path_context.clone(),
                     provenance_chain: self.provenance_chain.clone(),
+                    start_position: self.start_position,
+                    end_position: self.end_position,
                 }
             }
             HyperRefKind::Single { .. } => self.clone(),
@@ -467,6 +505,8 @@ impl HyperRef {
                     original_context: self.original_context,
                     path_context: self.path_context.clone(),
                     provenance_chain: self.provenance_chain.clone(),
+                    start_position: self.start_position,
+                    end_position: self.end_position,
                 }
             }
             HyperRefKind::Single { .. } => self.clone(),
@@ -488,6 +528,8 @@ impl HyperRef {
                     original_context: self.original_context,
                     path_context: self.path_context.clone(),
                     provenance_chain: self.provenance_chain.clone(),
+                    start_position: self.start_position,
+                    end_position: self.end_position,
                 }
             }
             _ => self.clone(),
@@ -508,6 +550,8 @@ impl HyperRef {
                     original_context: self.original_context,
                     path_context: self.path_context.clone(),
                     provenance_chain: self.provenance_chain.clone(),
+                    start_position: self.start_position,
+                    end_position: self.end_position,
                 }
             }
             _ => self.clone(),
@@ -528,6 +572,8 @@ impl HyperRef {
                     original_context: self.original_context,
                     path_context: self.path_context.clone(),
                     provenance_chain: self.provenance_chain.clone(),
+                    start_position: self.start_position,
+                    end_position: self.end_position,
                 }
             }
             _ => self.clone(),

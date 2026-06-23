@@ -134,6 +134,24 @@ pub struct WorkLifecycleEventInfo {
     pub timestamp: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct RenderedElement {
+    pub position: i64,
+    pub text: String,
+    pub source_work_id: Option<BeId>,
+    pub source_author_name: Option<String>,
+    pub is_transcluded: bool,
+    pub transclusion_sources: Vec<RenderedTransclusionSource>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RenderedTransclusionSource {
+    pub work_id: BeId,
+    pub title: Option<String>,
+    pub author_name: Option<String>,
+    pub is_direct: bool,
+}
+
 /// Ghost metadata for an archived work — rendered when references
 /// point to archived content instead of a 404 or full live view.
 #[derive(Debug, Clone)]
@@ -7481,6 +7499,62 @@ impl Server {
             }
         }
         results
+    }
+
+    pub fn render_transclusions(&self, work_id: BeId) -> Result<Vec<RenderedElement>, ServerError> {
+        let edition = self.work_edition(work_id)?;
+        let mut rendered = Vec::new();
+
+        for (pos, carrier) in edition.all_entries() {
+            let text = carrier.element.as_text().unwrap_or("").to_string();
+            if text.is_empty() {
+                continue;
+            }
+
+            let (source_work_id, source_author_name) = carrier
+                .provenance
+                .as_ref()
+                .map(|p| (p.source_work_id, Some(p.author_display_name.clone())))
+                .unwrap_or((None, None));
+
+            let is_transcluded = source_work_id.is_some();
+
+            let fp = carrier.element.content_fingerprint();
+            let source_work_ids = self.backfollow.find_works_by_fingerprint(&fp);
+            let transclusion_sources: Vec<RenderedTransclusionSource> = source_work_ids
+                .into_iter()
+                .filter(|&wid| wid != work_id)
+                .filter_map(|wid| {
+                    self.works.get(&wid).map(|ws| {
+                        let (_, title, owner) = self.link_endpoint_meta(wid);
+                        let author_name = owner
+                            .and_then(|oid| {
+                                self.clubs
+                                    .get(&oid)
+                                    .and_then(|c| c.display_name().map(|s| s.to_string()))
+                            })
+                            .or(title.as_ref().map(|_| "unknown".to_string()));
+                        RenderedTransclusionSource {
+                            work_id: wid,
+                            title,
+                            author_name,
+                            is_direct: true,
+                        }
+                    })
+                })
+                .collect();
+
+            rendered.push(RenderedElement {
+                position: pos,
+                text,
+                source_work_id,
+                source_author_name,
+                is_transcluded,
+                transclusion_sources,
+            });
+        }
+
+        Ok(rendered)
     }
 
     pub fn find_shared_regions(
@@ -23124,5 +23198,438 @@ mod tests {
             Some(ghost.lifecycle_history[2].timestamp),
             "archived_at should match last archive event"
         );
+    }
+
+    #[test]
+    fn element_insert_work_ref_round_trip() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("target"))
+            .unwrap();
+
+        server.work_grab(sid, work_a).unwrap();
+        let ed = server.work_edition(work_a).unwrap();
+        let new_ed = ed.with(5, RangeElement::work(work_b));
+        server.work_revise(sid, work_a, new_ed).unwrap();
+
+        let ed2 = server.work_edition(work_a).unwrap();
+        let entries = ed2.all_entries();
+        let work_elem = entries
+            .iter()
+            .find(|(p, _)| *p == 5)
+            .map(|(_, c)| &c.element);
+        assert!(work_elem.is_some(), "position 5 should have an element");
+        assert_eq!(
+            work_elem.unwrap().as_work_id(),
+            Some(work_b),
+            "element at position 5 should be a WorkRef to work_b"
+        );
+    }
+
+    #[test]
+    fn element_insert_edition_ref_round_trip() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+
+        server.work_grab(sid, work).unwrap();
+        let ed = server.work_edition(work).unwrap();
+        let new_ed = ed.with(0, RangeElement::edition(12345));
+        server.work_revise(sid, work, new_ed).unwrap();
+
+        let ed2 = server.work_edition(work).unwrap();
+        let entries = ed2.all_entries();
+        let edition_elem = entries
+            .iter()
+            .find(|(p, _)| *p == 0)
+            .map(|(_, c)| &c.element);
+        assert!(edition_elem.is_some(), "position 0 should have an element");
+        assert_eq!(
+            edition_elem.unwrap().as_edition_id(),
+            Some(12345),
+            "element at position 0 should be an EditionRef"
+        );
+    }
+
+    #[test]
+    fn element_insert_idholder_round_trip() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server
+            .create_work(sid, Edition::from_text("abcdef"))
+            .unwrap();
+
+        server.work_grab(sid, work).unwrap();
+        let ed = server.work_edition(work).unwrap();
+        let new_ed = ed.with(3, RangeElement::id_holder(999));
+        server.work_revise(sid, work, new_ed).unwrap();
+
+        let ed2 = server.work_edition(work).unwrap();
+        let entries = ed2.all_entries();
+        let idholder_elem = entries.iter().find(|(p, _)| *p == 3);
+        assert!(idholder_elem.is_some(), "position 3 should have an element");
+        assert!(
+            matches!(
+                idholder_elem.unwrap().1.element,
+                RangeElement::IDHolder { id: 999 }
+            ),
+            "element at position 3 should be IDHolder(999)"
+        );
+    }
+
+    #[test]
+    fn element_insert_preserves_surrounding_text() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+
+        server.work_grab(sid, work).unwrap();
+        let ed = server.work_edition(work).unwrap();
+        let new_ed = ed.with(100, RangeElement::work(42));
+        server.work_revise(sid, work, new_ed).unwrap();
+
+        let ed2 = server.work_edition(work).unwrap();
+        assert_eq!(
+            ed2.to_text(),
+            "hello world",
+            "existing text should be unchanged when inserting at a new position"
+        );
+        assert!(
+            ed2.all_entries()
+                .iter()
+                .any(|(p, c)| { *p == 100 && c.element.as_work_id() == Some(42) }),
+            "WorkRef element should exist at position 100"
+        );
+    }
+
+    #[test]
+    fn range_element_payload_work_ref_round_trip() {
+        use crate::server::transport::protocol::RangeElementPayload;
+        let re = RangeElement::work(42);
+        let payload = RangeElementPayload::from_range_element(&re);
+        assert_eq!(payload.elem_type, "work");
+        assert_eq!(payload.work_id, Some(42));
+        let back = payload.to_range_element().expect("should convert back");
+        assert_eq!(back.as_work_id(), Some(42));
+    }
+
+    #[test]
+    fn range_element_payload_edition_ref_round_trip() {
+        use crate::server::transport::protocol::RangeElementPayload;
+        let re = RangeElement::edition(99);
+        let payload = RangeElementPayload::from_range_element(&re);
+        assert_eq!(payload.elem_type, "edition");
+        assert_eq!(payload.edition_id, Some(99));
+        let back = payload.to_range_element().expect("should convert back");
+        assert_eq!(back.as_edition_id(), Some(99));
+    }
+
+    #[test]
+    fn range_element_payload_idholder_round_trip() {
+        use crate::server::transport::protocol::RangeElementPayload;
+        let re = RangeElement::id_holder(777);
+        let payload = RangeElementPayload::from_range_element(&re);
+        assert_eq!(payload.elem_type, "id_holder");
+        assert_eq!(payload.id_holder, Some(777));
+        let back = payload.to_range_element().expect("should convert back");
+        assert!(matches!(back, RangeElement::IDHolder { id: 777 }));
+    }
+
+    #[test]
+    fn range_element_payload_blob_round_trip() {
+        use crate::server::transport::protocol::RangeElementPayload;
+        let re = RangeElement::blob(0xABCD, "image/png", 1024);
+        let payload = RangeElementPayload::from_range_element(&re);
+        assert_eq!(payload.elem_type, "blob");
+        assert_eq!(payload.blob_hash, Some(0xABCD));
+        assert_eq!(payload.blob_mime.as_deref(), Some("image/png"));
+        assert_eq!(payload.blob_size, Some(1024));
+        let back = payload.to_range_element().expect("should convert back");
+        assert_eq!(back.as_blob_hash(), Some(0xABCD));
+    }
+
+    #[test]
+    fn range_element_payload_text_still_works() {
+        use crate::server::transport::protocol::RangeElementPayload;
+        let re = RangeElement::text("hello");
+        let payload = RangeElementPayload::from_range_element(&re);
+        assert_eq!(payload.elem_type, "text");
+        let back = payload.to_range_element().expect("should convert back");
+        assert_eq!(back.as_text(), Some("hello"));
+    }
+
+    #[test]
+    fn inter_span_link_create_and_retrieve() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("paragraph one. paragraph two."))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("response text"))
+            .unwrap();
+
+        let origin_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+            .with_span(Some(0), Some(15));
+        let dest_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None)
+            .with_span(Some(3), Some(10));
+
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(origin_ref), Some(dest_ref))
+            .unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").expect("LeftEnd must exist");
+        let d_ref = link.end_at("RightEnd").expect("RightEnd must exist");
+
+        assert_eq!(
+            o_ref.start_position(),
+            Some(0),
+            "origin ref should preserve start_position"
+        );
+        assert_eq!(
+            o_ref.end_position(),
+            Some(15),
+            "origin ref should preserve end_position"
+        );
+        assert_eq!(
+            d_ref.start_position(),
+            Some(3),
+            "destination ref should preserve start_position"
+        );
+        assert_eq!(
+            d_ref.end_position(),
+            Some(10),
+            "destination ref should preserve end_position"
+        );
+    }
+
+    #[test]
+    fn inter_span_link_via_payload_round_trip() {
+        use crate::server::transport::protocol::{HyperRefPayload, RangeElementPayload};
+
+        let mut payload = HyperRefPayload {
+            kind: "single".to_string(),
+            work_context: Some(100),
+            original_context: None,
+            path_context: None,
+            excerpt: Some("target excerpt".to_string()),
+            provenance_chain: Vec::new(),
+            start_position: Some(5),
+            end_position: Some(20),
+        };
+
+        let hr = payload.to_hyper_ref(100);
+        assert_eq!(
+            hr.start_position(),
+            Some(5),
+            "to_hyper_ref should preserve start_position"
+        );
+        assert_eq!(
+            hr.end_position(),
+            Some(20),
+            "to_hyper_ref should preserve end_position"
+        );
+        assert_eq!(hr.work_context(), Some(100));
+
+        let back = HyperRefPayload::from_hyper_ref(&hr);
+        assert_eq!(back.start_position, Some(5));
+        assert_eq!(back.end_position, Some(20));
+
+        let _ = payload;
+    }
+
+    #[test]
+    fn inter_span_link_update_preserves_span() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("origin"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+
+        let origin_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None);
+        let dest_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(origin_ref), Some(dest_ref))
+            .unwrap();
+
+        let updated_origin =
+            crate::edition::links::HyperRef::single(None, Some(work_a), None, None)
+                .with_span(Some(2), Some(4));
+        let updated_dest = crate::edition::links::HyperRef::single(None, Some(work_b), None, None)
+            .with_span(Some(0), Some(3));
+
+        server
+            .update_link(sid, link_id, Some(updated_origin), Some(updated_dest))
+            .unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").expect("LeftEnd must exist");
+        let d_ref = link.end_at("RightEnd").expect("RightEnd must exist");
+
+        assert_eq!(o_ref.start_position(), Some(2));
+        assert_eq!(o_ref.end_position(), Some(4));
+        assert_eq!(d_ref.start_position(), Some(0));
+        assert_eq!(d_ref.end_position(), Some(3));
+    }
+
+    #[test]
+    fn inter_span_link_no_span_defaults_none() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("origin"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("dest")).unwrap();
+
+        let origin_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None);
+        let dest_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(origin_ref), Some(dest_ref))
+            .unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let o_ref = link.end_at("LeftEnd").expect("LeftEnd must exist");
+        assert!(
+            o_ref.start_position().is_none(),
+            "default link should have no start_position"
+        );
+        assert!(
+            o_ref.end_position().is_none(),
+            "default link should have no end_position"
+        );
+    }
+
+    #[test]
+    fn render_transclusions_shows_shared_content_sources() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+
+        let rendered = server.render_transclusions(work_b).unwrap();
+        assert!(!rendered.is_empty(), "should have rendered elements");
+
+        let h_elem = rendered
+            .iter()
+            .find(|e| e.text == "h")
+            .expect("should find 'h'");
+        assert!(
+            h_elem
+                .transclusion_sources
+                .iter()
+                .any(|s| s.work_id == work_a),
+            "'h' should show work_a as a transclusion source"
+        );
+    }
+
+    #[test]
+    fn render_transclusions_no_sources_for_unique_content() {
+        let (mut server, sid) = setup_logged_in_server();
+        let _work_a = server.create_work(sid, Edition::from_text("aaa")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("zzz")).unwrap();
+
+        let rendered = server.render_transclusions(work_b).unwrap();
+        for e in &rendered {
+            assert!(
+                e.transclusion_sources.is_empty(),
+                "element '{}' should have no transclusion sources",
+                e.text
+            );
+        }
+    }
+
+    #[test]
+    fn render_transclusions_preserves_positions_and_text() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server.create_work(sid, Edition::from_text("abc")).unwrap();
+
+        let rendered = server.render_transclusions(work).unwrap();
+        assert_eq!(rendered.len(), 3, "should have 3 elements");
+        assert_eq!(rendered[0].position, 0);
+        assert_eq!(rendered[0].text, "a");
+        assert_eq!(rendered[1].position, 1);
+        assert_eq!(rendered[1].text, "b");
+        assert_eq!(rendered[2].position, 2);
+        assert_eq!(rendered[2].text, "c");
+    }
+
+    #[test]
+    fn render_transclusions_marks_transcluded_elements() {
+        use std::sync::Arc;
+        let (mut server, sid) = setup_logged_in_server();
+        let source_work = server
+            .create_work(sid, Edition::from_text("source text"))
+            .unwrap();
+
+        let prov = crate::edition::provenance::ElementProvenance {
+            author_public_key: [0u8; 32],
+            author_display_name: "author".to_string(),
+            author_club_id: 1,
+            timestamp: 0,
+            author_type: crate::edition::provenance::AuthorType::Human,
+            llm_model: None,
+            historical_author_id: None,
+            source_work_id: Some(source_work),
+            transcluded_by: None,
+            derived_by: None,
+        };
+        let carrier = crate::edition::range_element::Carrier::new(RangeElement::text("T"))
+            .with_provenance(prov);
+        let ed = Edition::from_entries(vec![(0, Arc::new(carrier))]);
+
+        let work = server.create_work(sid, ed).unwrap();
+        let rendered = server.render_transclusions(work).unwrap();
+        let elem = rendered.first().expect("should have at least one element");
+        assert!(
+            elem.is_transcluded,
+            "element with source_work_id should be marked transcluded"
+        );
+        assert_eq!(
+            elem.source_work_id,
+            Some(source_work),
+            "should preserve source_work_id"
+        );
+        assert_eq!(
+            elem.source_author_name.as_deref(),
+            Some("author"),
+            "should preserve source author name"
+        );
+    }
+
+    #[test]
+    fn render_transclusions_partial_overlap() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("shared unique a"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("shared unique b"))
+            .unwrap();
+
+        let rendered = server.render_transclusions(work_b).unwrap();
+        let shared_elems: Vec<_> = rendered
+            .iter()
+            .filter(|e| e.transclusion_sources.iter().any(|s| s.work_id == work_a))
+            .collect();
+        assert!(
+            !shared_elems.is_empty(),
+            "should find shared elements (s, h, a, r, e, d)"
+        );
+
+        let unique_elems: Vec<_> = rendered.iter().filter(|e| e.text == "b").collect();
+        for e in &unique_elems {
+            assert!(
+                !e.transclusion_sources.iter().any(|s| s.work_id == work_a),
+                "'b' should not show work_a as source"
+            );
+        }
     }
 }
