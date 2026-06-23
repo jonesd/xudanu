@@ -6,6 +6,7 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/deploy-docs.yml'
+      - '.github/scripts/render_docs.py'
   workflow_dispatch:
 
 permissions:
@@ -26,6 +27,17 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install renderer
+        run: python -m pip install markdown pygments
+
+      - name: Render Markdown docs to HTML
+        run: python .github/scripts/render_docs.py
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
