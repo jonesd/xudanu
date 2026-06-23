@@ -448,6 +448,8 @@ fn dispatch_inner(
                     &ops,
                     author.as_ref(),
                 );
+                srv.migrate_compound_spans_for_delta(work_id, &ops);
+                srv.migrate_link_spans_for_delta(work_id, &ops);
                 let rev = srv.work_revise(session_id, work_id, new_ed)?;
                 Ok(ResponseValue::Humber(rev))
             }
