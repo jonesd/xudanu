@@ -181,6 +181,11 @@ pub enum OperationCode {
     LinkUpdate,
     LinkDelete,
     LinkListForWork,
+    LinkAddEnd,
+    LinkRemoveEnd,
+    LinkSetTypes,
+    LinkTypeRegister,
+    LinkTypeList,
 
     FindExcerptPositions,
 
@@ -439,6 +444,11 @@ impl OperationCode {
             0x0704 => Some(OperationCode::LinkDelete),
             0x0705 => Some(OperationCode::LinkListForWork),
             0x0706 => Some(OperationCode::FindExcerptPositions),
+            0x0707 => Some(OperationCode::LinkAddEnd),
+            0x0708 => Some(OperationCode::LinkRemoveEnd),
+            0x0709 => Some(OperationCode::LinkSetTypes),
+            0x070A => Some(OperationCode::LinkTypeRegister),
+            0x070B => Some(OperationCode::LinkTypeList),
 
             0x0801 => Some(OperationCode::FindTranscluders),
             0x0802 => Some(OperationCode::FindWorksForContent),
@@ -701,6 +711,11 @@ impl OperationCode {
             OperationCode::LinkDelete => 0x0704,
             OperationCode::LinkListForWork => 0x0705,
             OperationCode::FindExcerptPositions => 0x0706,
+            OperationCode::LinkAddEnd => 0x0707,
+            OperationCode::LinkRemoveEnd => 0x0708,
+            OperationCode::LinkSetTypes => 0x0709,
+            OperationCode::LinkTypeRegister => 0x070A,
+            OperationCode::LinkTypeList => 0x070B,
 
             OperationCode::FindTranscluders => 0x0801,
             OperationCode::FindWorksForContent => 0x0802,
@@ -1220,6 +1235,24 @@ pub enum WireRequest {
         #[serde(default)]
         limit: Option<u32>,
     },
+    LinkAddEnd {
+        link_id: BeId,
+        end_name: String,
+        end_ref: HyperRefPayload,
+    },
+    LinkRemoveEnd {
+        link_id: BeId,
+        end_name: String,
+    },
+    LinkSetTypes {
+        link_id: BeId,
+        link_types: Vec<u64>,
+    },
+    LinkTypeRegister {
+        type_id: u64,
+        name: String,
+    },
+    LinkTypeList,
     FindExcerptPositions {
         work_id: BeId,
         excerpt: String,
@@ -1747,6 +1780,7 @@ impl WireRequest {
                 | Self::ServerStats
                 | Self::LinkGet { .. }
                 | Self::LinkListForWork { .. }
+                | Self::LinkTypeList
                 | Self::BlobGet { .. }
                 | Self::BlobGetPreview { .. }
                 | Self::BlobExists { .. }
@@ -1882,6 +1916,7 @@ pub enum ResponseValue {
     AnnotationListResult(Vec<AnnotationPayload>),
     LinkInfo(LinkPayload),
     LinkList(Vec<LinkPayload>),
+    LinkTypes(Vec<LinkTypeInfoPayload>),
     ExcerptPositions(Vec<ExcerptPositionPayload>),
     TransclusionResults(Vec<TransclusionResultPayload>),
     WorkIds(Vec<BeId>),
@@ -2433,6 +2468,18 @@ pub struct LinkPayload {
     pub destination_title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub destination_owner: Option<BeId>,
+    /// All named ends on the link (including LeftEnd/RightEnd + any custom ends).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub named_ends: Vec<(String, HyperRefPayload)>,
+    /// Link type IDs (e.g., citation=1, response=2, commentary=3).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub link_types: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkTypeInfoPayload {
+    pub type_id: u64,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

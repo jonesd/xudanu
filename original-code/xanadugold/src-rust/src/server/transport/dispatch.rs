@@ -1142,6 +1142,19 @@ fn dispatch_inner(
             let (origin_archived, origin_title, origin_owner) = srv.link_endpoint_meta(origin);
             let (destination_archived, destination_title, destination_owner) =
                 srv.link_endpoint_meta(destination);
+            let named_ends: Vec<(String, super::protocol::HyperRefPayload)> = link
+                .end_names()
+                .into_iter()
+                .filter_map(|name| {
+                    link.end_at(name).map(|hr| {
+                        (
+                            name.to_string(),
+                            super::protocol::HyperRefPayload::from_hyper_ref(hr),
+                        )
+                    })
+                })
+                .collect();
+            let link_types = link.link_types().to_vec();
             Ok(ResponseValue::LinkInfo(super::protocol::LinkPayload {
                 link_id,
                 origin,
@@ -1154,6 +1167,8 @@ fn dispatch_inner(
                 destination_archived,
                 destination_title,
                 destination_owner,
+                named_ends,
+                link_types,
             }))
         }
         WireRequest::LinkUpdate {
@@ -1275,6 +1290,8 @@ fn dispatch_inner(
                         destination_archived,
                         destination_title,
                         destination_owner,
+                        named_ends: Vec::new(),
+                        link_types: Vec::new(),
                     })
                 })
                 .collect();
@@ -1288,6 +1305,45 @@ fn dispatch_inner(
                 total_count,
                 has_more,
             })
+        }
+        WireRequest::LinkAddEnd {
+            link_id,
+            end_name,
+            end_ref,
+        } => {
+            srv.ensure_authenticated(session_id)?;
+            let (origin, destination, _) = srv.get_link(link_id)?;
+            srv.ensure_can_read(session_id, origin)?;
+            srv.ensure_can_read(session_id, destination)?;
+            let hr = end_ref.to_hyper_ref(origin);
+            srv.link_add_end(session_id, link_id, &end_name, hr)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LinkRemoveEnd { link_id, end_name } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.link_remove_end(session_id, link_id, &end_name)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LinkSetTypes {
+            link_id,
+            link_types,
+        } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.link_set_types(session_id, link_id, link_types)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LinkTypeRegister { type_id, name } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.register_link_type(type_id, name);
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::LinkTypeList => {
+            let types = srv
+                .list_link_types()
+                .into_iter()
+                .map(|(type_id, name)| super::protocol::LinkTypeInfoPayload { type_id, name })
+                .collect();
+            Ok(ResponseValue::LinkTypes(types))
         }
         WireRequest::FindExcerptPositions { work_id, excerpt } => {
             srv.ensure_can_read(session_id, work_id)?;
@@ -3322,6 +3378,19 @@ fn dispatch_inner_read(
             let (origin_archived, origin_title, origin_owner) = srv.link_endpoint_meta(origin);
             let (destination_archived, destination_title, destination_owner) =
                 srv.link_endpoint_meta(destination);
+            let named_ends: Vec<(String, super::protocol::HyperRefPayload)> = link
+                .end_names()
+                .into_iter()
+                .filter_map(|name| {
+                    link.end_at(name).map(|hr| {
+                        (
+                            name.to_string(),
+                            super::protocol::HyperRefPayload::from_hyper_ref(hr),
+                        )
+                    })
+                })
+                .collect();
+            let link_types = link.link_types().to_vec();
             Ok(ResponseValue::LinkInfo(super::protocol::LinkPayload {
                 link_id,
                 origin,
@@ -3334,6 +3403,8 @@ fn dispatch_inner_read(
                 destination_archived,
                 destination_title,
                 destination_owner,
+                named_ends,
+                link_types,
             }))
         }
         WireRequest::LinkListForWork {
@@ -3369,6 +3440,8 @@ fn dispatch_inner_read(
                         destination_archived,
                         destination_title,
                         destination_owner,
+                        named_ends: Vec::new(),
+                        link_types: Vec::new(),
                     })
                 })
                 .collect();
@@ -3382,6 +3455,14 @@ fn dispatch_inner_read(
                 total_count,
                 has_more,
             })
+        }
+        WireRequest::LinkTypeList => {
+            let types = srv
+                .list_link_types()
+                .into_iter()
+                .map(|(type_id, name)| super::protocol::LinkTypeInfoPayload { type_id, name })
+                .collect();
+            Ok(ResponseValue::LinkTypes(types))
         }
         WireRequest::BlobGet { content_hash } => {
             let data = srv.blob_get(content_hash)?;
