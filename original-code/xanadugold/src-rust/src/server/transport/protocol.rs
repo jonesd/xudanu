@@ -139,6 +139,8 @@ pub enum OperationCode {
     WorkUnarchive,
     WorkListArchived,
     WorkIsPublished,
+    WorkMerge,
+    WorkGhost,
 
     WorkFetchRevisionRange,
 
@@ -239,6 +241,7 @@ pub enum OperationCode {
     CompoundSetEdition,
     CompoundResolveWork,
     CompoundResolveRecursive,
+    CompoundRebuild,
 
     AdminRecorderCreate,
     AdminRecorderRecord,
@@ -383,6 +386,8 @@ impl OperationCode {
             0x031C => Some(OperationCode::WorkArchive),
             0x031D => Some(OperationCode::WorkUnarchive),
             0x031E => Some(OperationCode::WorkListArchived),
+            0x0322 => Some(OperationCode::WorkMerge),
+            0x0323 => Some(OperationCode::WorkGhost),
             0x031A => Some(OperationCode::WorkIsPublished),
             0x031B => Some(OperationCode::WorkFetchRevisionRange),
             0x0314 => Some(OperationCode::WorkList),
@@ -555,6 +560,7 @@ impl OperationCode {
             0x1D02 => Some(OperationCode::CompoundSetEdition),
             0x1D03 => Some(OperationCode::CompoundResolveWork),
             0x1D04 => Some(OperationCode::CompoundResolveRecursive),
+            0x1D05 => Some(OperationCode::CompoundRebuild),
 
             0x0D01 => Some(OperationCode::AttributionQuery),
             0x0D02 => Some(OperationCode::AttributionVerify),
@@ -651,6 +657,8 @@ impl OperationCode {
             OperationCode::WorkArchive => 0x031C,
             OperationCode::WorkUnarchive => 0x031D,
             OperationCode::WorkListArchived => 0x031E,
+            OperationCode::WorkMerge => 0x0322,
+            OperationCode::WorkGhost => 0x0323,
             OperationCode::WorkIsPublished => 0x031A,
             OperationCode::WorkFetchRevisionRange => 0x031B,
 
@@ -811,6 +819,7 @@ impl OperationCode {
             OperationCode::CompoundSetEdition => 0x1D02,
             OperationCode::CompoundResolveWork => 0x1D03,
             OperationCode::CompoundResolveRecursive => 0x1D04,
+            OperationCode::CompoundRebuild => 0x1D05,
 
             OperationCode::AttributionQuery => 0x0D01,
             OperationCode::AttributionVerify => 0x0D02,
@@ -1079,6 +1088,14 @@ pub enum WireRequest {
     /// List archived (soft-deleted) works. Owner-scoped; admins see all.
     WorkListArchived,
     WorkIsPublished {
+        work_id: BeId,
+    },
+    WorkMerge {
+        base_work_id: BeId,
+        a_work_id: BeId,
+        b_work_id: BeId,
+    },
+    WorkGhost {
         work_id: BeId,
     },
 
@@ -1410,6 +1427,9 @@ pub enum WireRequest {
     CompoundResolveRecursive {
         work_id: BeId,
     },
+    CompoundRebuild {
+        work_id: BeId,
+    },
 
     AdminRecorderCreate {
         kind: String,
@@ -1691,6 +1711,7 @@ impl WireRequest {
                 | Self::WorkSponsors { .. }
                 | Self::WorkOwner { .. }
                 | Self::WorkIsPublished { .. }
+                | Self::WorkGhost { .. }
                 | Self::WorkList { .. }
                 | Self::WorkListByOwner { .. }
                 | Self::WorkListArchived { .. }
@@ -1940,6 +1961,15 @@ pub enum ResponseValue {
         flat_text: String,
         span_ranges: Vec<SpanRangePayload>,
         source_titles: HashMap<BeId, String>,
+    },
+    CompoundRebuildResult {
+        compound: Option<CompoundEditionPayload>,
+    },
+    WorkMergeResult {
+        work_id: BeId,
+    },
+    WorkGhostResult {
+        ghost: Option<WorkGhostInfoPayload>,
     },
     RecorderCreateResult {
         recorder_id: u64,
@@ -2505,6 +2535,26 @@ pub struct AgainHopPayload {
     pub author_name: String,
     pub author_type: String,
     pub is_original: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkLifecycleEventPayload {
+    pub kind: String,
+    pub actor_club: BeId,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkGhostInfoPayload {
+    pub work_id: BeId,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived_by: Option<BeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<u64>,
+    pub lifecycle_history: Vec<WorkLifecycleEventPayload>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -31,6 +31,7 @@ pub struct ElementProvenance {
     pub historical_author_id: Option<BeId>,
     pub source_work_id: Option<BeId>,
     pub transcluded_by: Option<TransclusionInfo>,
+    pub derived_by: Option<DerivationInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +39,24 @@ pub struct TransclusionInfo {
     pub club_id: BeId,
     pub display_name: String,
     pub public_key: [u8; 32],
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DerivationMethod {
+    Transclusion,
+    Merge,
+    Import,
+    Annotation,
+    Revision,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DerivationInfo {
+    pub method: DerivationMethod,
+    pub curator_club_id: BeId,
+    pub curator_display_name: String,
+    pub curator_public_key: [u8; 32],
     pub timestamp: u64,
 }
 
@@ -59,6 +78,17 @@ mod element_serde_impl {
         source_work_id: Option<u64>,
         #[serde(default)]
         transcluded_by: Option<TransclusionInfoData>,
+        #[serde(default)]
+        derived_by: Option<DerivationInfoData>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    struct DerivationInfoData {
+        method: String,
+        curator_club_id: u64,
+        curator_display_name: String,
+        curator_public_key: Vec<u8>,
+        timestamp: u64,
     }
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +120,19 @@ mod element_serde_impl {
                     public_key: t.public_key.to_vec(),
                     timestamp: t.timestamp,
                 }),
+                derived_by: self.derived_by.as_ref().map(|d| DerivationInfoData {
+                    method: match d.method {
+                        DerivationMethod::Transclusion => "transclusion".to_string(),
+                        DerivationMethod::Merge => "merge".to_string(),
+                        DerivationMethod::Import => "import".to_string(),
+                        DerivationMethod::Annotation => "annotation".to_string(),
+                        DerivationMethod::Revision => "revision".to_string(),
+                    },
+                    curator_club_id: d.curator_club_id,
+                    curator_display_name: d.curator_display_name.clone(),
+                    curator_public_key: d.curator_public_key.to_vec(),
+                    timestamp: d.timestamp,
+                }),
             }
             .serialize(s)
         }
@@ -116,6 +159,24 @@ mod element_serde_impl {
                     timestamp: t.timestamp,
                 }
             });
+            let derived_by = data.derived_by.map(|d| {
+                let curator_public_key: [u8; 32] =
+                    d.curator_public_key.try_into().unwrap_or([0u8; 32]);
+                let method = match d.method.as_str() {
+                    "merge" => DerivationMethod::Merge,
+                    "import" => DerivationMethod::Import,
+                    "annotation" => DerivationMethod::Annotation,
+                    "revision" => DerivationMethod::Revision,
+                    _ => DerivationMethod::Transclusion,
+                };
+                DerivationInfo {
+                    method,
+                    curator_club_id: d.curator_club_id,
+                    curator_display_name: d.curator_display_name,
+                    curator_public_key,
+                    timestamp: d.timestamp,
+                }
+            });
             Ok(ElementProvenance {
                 author_public_key,
                 author_display_name: data.author_display_name,
@@ -126,6 +187,7 @@ mod element_serde_impl {
                 historical_author_id: data.historical_author_id,
                 source_work_id: data.source_work_id,
                 transcluded_by,
+                derived_by,
             })
         }
     }

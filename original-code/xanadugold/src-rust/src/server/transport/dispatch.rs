@@ -779,6 +779,37 @@ fn dispatch_inner(
             let published = srv.work_is_published(session_id, work_id)?;
             Ok(ResponseValue::Boolean(published))
         }
+        WireRequest::WorkMerge {
+            base_work_id,
+            a_work_id,
+            b_work_id,
+        } => {
+            let new_work_id = srv.work_merge(session_id, base_work_id, a_work_id, b_work_id)?;
+            Ok(ResponseValue::WorkMergeResult {
+                work_id: new_work_id,
+            })
+        }
+        WireRequest::WorkGhost { work_id } => {
+            let ghost = srv
+                .work_ghost(work_id)
+                .map(|g| super::protocol::WorkGhostInfoPayload {
+                    work_id: g.work_id,
+                    title: g.title,
+                    owner: g.owner,
+                    archived_by: g.archived_by,
+                    archived_at: g.archived_at,
+                    lifecycle_history: g
+                        .lifecycle_history
+                        .iter()
+                        .map(|e| super::protocol::WorkLifecycleEventPayload {
+                            kind: e.kind.clone(),
+                            actor_club: e.actor_club,
+                            timestamp: e.timestamp,
+                        })
+                        .collect(),
+                });
+            Ok(ResponseValue::WorkGhostResult { ghost })
+        }
 
         WireRequest::ClubSetDefaultReadClub {
             club_id,
@@ -1680,6 +1711,13 @@ fn dispatch_inner(
             let edition = compound.to_compound();
             srv.set_compound_edition(work_id, edition, session_id)?;
             Ok(ResponseValue::CompoundSetEditionResult { ok: true })
+        }
+        WireRequest::CompoundRebuild { work_id } => {
+            srv.ensure_can_edit(session_id, work_id)?;
+            let compound = srv.compound_rebuild(work_id, session_id)?;
+            Ok(ResponseValue::CompoundRebuildResult {
+                compound: Some(CompoundEditionPayload::from_compound(&compound)),
+            })
         }
         WireRequest::CompoundResolveWork { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
@@ -3006,6 +3044,27 @@ fn dispatch_inner_read(
         WireRequest::WorkIsPublished { work_id } => {
             let published = srv.work_is_published(session_id, work_id)?;
             Ok(ResponseValue::Boolean(published))
+        }
+        WireRequest::WorkGhost { work_id } => {
+            let ghost = srv
+                .work_ghost(work_id)
+                .map(|g| super::protocol::WorkGhostInfoPayload {
+                    work_id: g.work_id,
+                    title: g.title,
+                    owner: g.owner,
+                    archived_by: g.archived_by,
+                    archived_at: g.archived_at,
+                    lifecycle_history: g
+                        .lifecycle_history
+                        .iter()
+                        .map(|e| super::protocol::WorkLifecycleEventPayload {
+                            kind: e.kind.clone(),
+                            actor_club: e.actor_club,
+                            timestamp: e.timestamp,
+                        })
+                        .collect(),
+                });
+            Ok(ResponseValue::WorkGhostResult { ghost })
         }
         WireRequest::ClubWhoAmI => {
             let clubs = srv.who_am_i(session_id)?;
