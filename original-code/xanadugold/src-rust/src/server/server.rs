@@ -306,8 +306,8 @@ pub(crate) struct CheckpointResult {
 
 #[cfg(feature = "server")]
 fn tag_json(value: &impl serde::Serialize) -> std::io::Result<Vec<u8>> {
-    let data = serde_json::to_vec(value)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let data =
+        serde_json::to_vec(value).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     Ok(crate::persist::chunk_store::tag_chunk_data(
         crate::persist::chunk_store::CHUNK_FORMAT_JSON,
         &data,
@@ -414,7 +414,11 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         None
     };
 
-    let next_slot = if payload.manifest_slot == 'a' { 'b' } else { 'a' };
+    let next_slot = if payload.manifest_slot == 'a' {
+        'b'
+    } else {
+        'a'
+    };
     let manifest = crate::persist::manifest::Manifest {
         format_version: 0,
         created_at: String::new(),
@@ -481,10 +485,8 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         }
     }
 
-    let backup = crate::persist::manifest::backup_manifest_path(
-        &payload.data_dir,
-        manifest.sequence,
-    );
+    let backup =
+        crate::persist::manifest::backup_manifest_path(&payload.data_dir, manifest.sequence);
     if let Err(e) =
         crate::persist::manifest::write_backup_with_fsync(&payload.manifest_path, &backup)
     {
@@ -8134,20 +8136,31 @@ impl Server {
             .ok_or_else(|| ServerError::NotFound(format!("blob {:016x}", hash_u64)))
     }
 
-    pub fn blob_content_path(&self, hash_u64: u64) -> Result<(std::path::PathBuf, String, [u8; 32]), ServerError> {
+    pub fn blob_content_path(
+        &self,
+        hash_u64: u64,
+    ) -> Result<(std::path::PathBuf, String, [u8; 32]), ServerError> {
         let meta = self.blob_info(hash_u64)?;
         let path = self.blob_store.path_for_hash(&meta.content_hash);
         match path {
             Some(p) => Ok((p, meta.mime_type.clone(), meta.content_hash)),
-            None => Err(ServerError::Internal("blob store is not file-backed".into())),
+            None => Err(ServerError::Internal(
+                "blob store is not file-backed".into(),
+            )),
         }
     }
 
-    pub fn blob_preview_path(&self, hash_u64: u64) -> Result<(std::path::PathBuf, String), ServerError> {
+    pub fn blob_preview_path(
+        &self,
+        hash_u64: u64,
+    ) -> Result<(std::path::PathBuf, String), ServerError> {
         let meta = self.blob_info(hash_u64)?;
-        let preview_hash = meta.preview_hash
-            .ok_or_else(|| ServerError::NotFound(format!("no preview for blob {:016x}", hash_u64)))?;
-        let path = self.blob_store.path_for_hash(&preview_hash)
+        let preview_hash = meta.preview_hash.ok_or_else(|| {
+            ServerError::NotFound(format!("no preview for blob {:016x}", hash_u64))
+        })?;
+        let path = self
+            .blob_store
+            .path_for_hash(&preview_hash)
             .ok_or_else(|| ServerError::Internal("blob store is not file-backed".into()))?;
         Ok((path, meta.mime_type.clone()))
     }
@@ -10922,9 +10935,10 @@ pub(crate) mod persist_snapshot {
             let manifest_path = self.checkpoint_path.clone().ok_or_else(|| {
                 std::io::Error::new(std::io::ErrorKind::Other, "no checkpoint path configured")
             })?;
-            let data_dir = self.data_dir.clone().ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::Other, "no data dir")
-            })?;
+            let data_dir = self
+                .data_dir
+                .clone()
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no data dir"))?;
 
             let mut dirty_works = Vec::new();
             let mut clean_work_entries = Vec::new();
@@ -10983,36 +10997,35 @@ pub(crate) mod persist_snapshot {
             let mut clean_edition_refs = Vec::new();
             for (id, edition) in &self.standalone_editions {
                 if let Some(existing_ref) = self.standalone_edition_refs.get(id) {
-                    clean_edition_refs
-                        .push(crate::persist::manifest::StandaloneEditionChunkRef {
-                            be_id: *id,
-                            edition_ref: existing_ref.clone(),
-                        });
+                    clean_edition_refs.push(crate::persist::manifest::StandaloneEditionChunkRef {
+                        be_id: *id,
+                        edition_ref: existing_ref.clone(),
+                    });
                 } else {
                     dirty_editions.push((*id, edition.clone()));
                 }
             }
 
-            let links: Vec<crate::persist::manifest::LinkEntry> = self
-                .links
-                .iter()
-                .map(|(id, ls)| {
-                    let o_ref = ls.link.end_at("LeftEnd").map(
-                        crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
-                    );
-                    let d_ref = ls.link.end_at("RightEnd").map(
-                        crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
-                    );
-                    crate::persist::manifest::LinkEntry {
-                        link_id: *id,
-                        origin: ls.origin,
-                        destination: ls.destination,
-                        origin_ref: o_ref,
-                        destination_ref: d_ref,
-                        link_types: ls.link.link_types().to_vec(),
-                    }
-                })
-                .collect();
+            let links: Vec<crate::persist::manifest::LinkEntry> =
+                self.links
+                    .iter()
+                    .map(|(id, ls)| {
+                        let o_ref = ls.link.end_at("LeftEnd").map(
+                            crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
+                        );
+                        let d_ref = ls.link.end_at("RightEnd").map(
+                            crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
+                        );
+                        crate::persist::manifest::LinkEntry {
+                            link_id: *id,
+                            origin: ls.origin,
+                            destination: ls.destination,
+                            origin_ref: o_ref,
+                            destination_ref: d_ref,
+                            link_types: ls.link.link_types().to_vec(),
+                        }
+                    })
+                    .collect();
 
             let blob_metas: Vec<crate::persist::manifest::BlobMetaEntry> = self
                 .blob_store
@@ -13187,7 +13200,10 @@ mod tests {
             .blob_upload(sid, b"path test".to_vec(), "text/plain".to_string())
             .unwrap();
         let result = server.blob_content_path(meta.hash_u64());
-        assert!(result.is_err(), "in-memory blob store should not have file paths");
+        assert!(
+            result.is_err(),
+            "in-memory blob store should not have file paths"
+        );
     }
 
     #[test]
@@ -19630,8 +19646,9 @@ mod tests {
 
         {
             let mut server = Server::new();
-            server.chunk_store =
-                Some(Arc::new(crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap()));
+            server.chunk_store = Some(Arc::new(
+                crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap(),
+            ));
             server.checkpoint_path = Some(crate::persist::manifest::manifest_path(&data_dir));
             server.data_dir = Some(data_dir.clone());
 
@@ -20590,10 +20607,7 @@ mod tests {
                             }
                         }
                     }
-                    assert!(
-                        found_backup,
-                        "recovery should succeed via versioned backup"
-                    );
+                    assert!(found_backup, "recovery should succeed via versioned backup");
                 }
             }
         }
@@ -22368,13 +22382,15 @@ mod tests {
 
         let fossil_id: crate::edition::RecorderId = 999;
         for i in 0..(MAX_PENDING_NOTIFICATIONS + 500) {
-            server.pending_content_notifications.push(ContentNotification {
-                fossil_id,
-                edition_be_id: 1000 + i as u64,
-                is_direct: true,
-                work_be_id: None,
-                title: None,
-            });
+            server
+                .pending_content_notifications
+                .push(ContentNotification {
+                    fossil_id,
+                    edition_be_id: 1000 + i as u64,
+                    is_direct: true,
+                    work_be_id: None,
+                    title: None,
+                });
         }
         assert!(
             server.pending_content_notifications.len() >= MAX_PENDING_NOTIFICATIONS + 500,
@@ -22398,7 +22414,9 @@ mod tests {
 
         for i in 0..(MAX_REVISION_AUTHORS + 200) {
             let edition = crate::edition::Edition::from_text(&format!("rev {}", i));
-            server.revise_work(work_id, sid, edition, author_club).unwrap();
+            server
+                .revise_work(work_id, sid, edition, author_club)
+                .unwrap();
         }
 
         let ws = server.works.get(&work_id).expect("work should exist");
@@ -22428,7 +22446,8 @@ mod tests {
         let old = server.connect();
         server.disconnect(old).unwrap();
         let old_session = server.sessions.get_mut(&old).unwrap();
-        old_session.ended_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(120));
+        old_session.ended_at =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(120));
 
         let pruned = server.prune_disconnected_sessions();
         assert_eq!(pruned, 1, "old disconnected session pruned");
@@ -22450,7 +22469,10 @@ mod tests {
             !name.is_empty(),
             "identity_for_session should still resolve for disconnected session"
         );
-        assert!(club_id.is_some(), "club_id should be preserved while in grace period");
+        assert!(
+            club_id.is_some(),
+            "club_id should be preserved while in grace period"
+        );
     }
 
     #[test]
@@ -22461,12 +22483,15 @@ mod tests {
         let author_club = server.resolve_author_club(sid);
 
         let edition2 = crate::edition::Edition::from_text("attribution test v2");
-        server.revise_work(work_id, sid, edition2, author_club).unwrap();
+        server
+            .revise_work(work_id, sid, edition2, author_club)
+            .unwrap();
 
         server.disconnect(sid).unwrap();
 
         let old_session = server.sessions.get_mut(&sid).unwrap();
-        old_session.ended_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(120));
+        old_session.ended_at =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(120));
         let pruned = server.prune_disconnected_sessions();
         assert_eq!(pruned, 1);
 

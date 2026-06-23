@@ -37,9 +37,9 @@ pub fn dispatch(
     let result = {
         let guard_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             if is_read {
-                state.server.with_server_ref(|srv| {
-                    dispatch_inner_read(srv, session_id, request, state)
-                })
+                state
+                    .server
+                    .with_server_ref(|srv| dispatch_inner_read(srv, session_id, request, state))
             } else {
                 state.server.with_server(|srv| {
                     srv.bump_operation();
@@ -136,7 +136,12 @@ fn dispatch_narration(
                 llm.generate_tracked(crate::server::ollama::LlmFeature::Narration, &prompt),
             )
             .await
-            .map_err(|_| format!("(LLM request timed out after {} seconds)", LLM_TIMEOUT.as_secs()))
+            .map_err(|_| {
+                format!(
+                    "(LLM request timed out after {} seconds)",
+                    LLM_TIMEOUT.as_secs()
+                )
+            })
             .and_then(|r| r.map_err(|e| e.to_string()))
         })
     }) {
@@ -228,7 +233,12 @@ fn dispatch_writing_feedback(
                 llm.generate_tracked(crate::server::ollama::LlmFeature::WritingFeedback, &prompt),
             )
             .await
-            .map_err(|_| format!("(LLM request timed out after {} seconds)", LLM_TIMEOUT.as_secs()))
+            .map_err(|_| {
+                format!(
+                    "(LLM request timed out after {} seconds)",
+                    LLM_TIMEOUT.as_secs()
+                )
+            })
             .and_then(|r| r.map_err(|e| e.to_string()))
         })
     }) {
@@ -2541,16 +2551,12 @@ fn dispatch_inner(
                 context_start_line: start_line,
             })
         }
-        WireRequest::WorkDiffNarration { .. } => {
-            Err(crate::server::ServerError::Internal(
-                "work_diff_narration not routed (dispatcher invariant violated)".to_string(),
-            ))
-        }
-        WireRequest::WorkWritingFeedback { .. } => {
-            Err(crate::server::ServerError::Internal(
-                "work_writing_feedback not routed (dispatcher invariant violated)".to_string(),
-            ))
-        }
+        WireRequest::WorkDiffNarration { .. } => Err(crate::server::ServerError::Internal(
+            "work_diff_narration not routed (dispatcher invariant violated)".to_string(),
+        )),
+        WireRequest::WorkWritingFeedback { .. } => Err(crate::server::ServerError::Internal(
+            "work_writing_feedback not routed (dispatcher invariant violated)".to_string(),
+        )),
 
         WireRequest::WorkBacklinks { work_id } => {
             srv.ensure_session(session_id)?;
@@ -3650,10 +3656,32 @@ mod tests {
     #[test]
     fn only_work_create_triggers_auto_title_gate() {
         let cases = [
-            (WireRequest::WorkCreate { edition: EditionPayload::Empty }, true),
-            (WireRequest::ClubCreate { description: EditionPayload::Empty }, false),
-            (WireRequest::WorkRevise { work_id: 1, edition: EditionPayload::Empty }, false),
-            (WireRequest::ClubCreateNamed { name: "x".into(), description: EditionPayload::Empty }, false),
+            (
+                WireRequest::WorkCreate {
+                    edition: EditionPayload::Empty,
+                },
+                true,
+            ),
+            (
+                WireRequest::ClubCreate {
+                    description: EditionPayload::Empty,
+                },
+                false,
+            ),
+            (
+                WireRequest::WorkRevise {
+                    work_id: 1,
+                    edition: EditionPayload::Empty,
+                },
+                false,
+            ),
+            (
+                WireRequest::ClubCreateNamed {
+                    name: "x".into(),
+                    description: EditionPayload::Empty,
+                },
+                false,
+            ),
             (WireRequest::WorkStar { work_id: 1 }, false),
         ];
         for (req, expected) in cases {
@@ -3680,10 +3708,8 @@ mod tests {
         assert_eq!(sem.available_permits(), 0);
 
         let start = std::time::Instant::now();
-        let result = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            sem.acquire(),
-        ).await;
+        let result =
+            tokio::time::timeout(std::time::Duration::from_millis(100), sem.acquire()).await;
         assert!(
             start.elapsed() < std::time::Duration::from_millis(200),
             "acquiring beyond limit should block, not return immediately"

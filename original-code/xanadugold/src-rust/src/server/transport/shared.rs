@@ -187,11 +187,10 @@ impl ServerHandle {
             srv.checkpoint_prepare()
         })?;
 
-        let result = tokio::task::spawn_blocking(move || {
-            crate::server::server::checkpoint_persist(payload)
-        })
-        .await
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))??;
+        let result =
+            tokio::task::spawn_blocking(move || crate::server::server::checkpoint_persist(payload))
+                .await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))??;
 
         self.with_server(|srv| srv.checkpoint_commit(result))
     }

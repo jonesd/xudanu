@@ -6,9 +6,9 @@
 //! without the WebSocket / codec overhead.
 
 use xudanu::edition::{BeId, Edition};
-use xudanu::server::transport::{AppState, WireRequest};
 use xudanu::server::transport::dispatch::dispatch;
 use xudanu::server::transport::shared::SharedState;
+use xudanu::server::transport::{AppState, WireRequest};
 use xudanu::server::{Server, SessionId};
 
 /// A pre-seeded server ready for benchmarking.
@@ -88,11 +88,7 @@ impl BenchState {
 }
 
 /// Create a work via dispatch and return its id.
-pub fn create_work_via_dispatch(
-    state: &SharedState,
-    session: SessionId,
-    text: &str,
-) -> BeId {
+pub fn create_work_via_dispatch(state: &SharedState, session: SessionId, text: &str) -> BeId {
     let req = WireRequest::WorkCreate {
         edition: xudanu::server::transport::EditionPayload::Text(text.to_string()),
     };
