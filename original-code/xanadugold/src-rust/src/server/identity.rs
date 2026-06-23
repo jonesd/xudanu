@@ -34,8 +34,9 @@ pub struct ClubAttemptTracker {
 
 impl Server {
     pub fn prune_stale_login_attempts(&mut self, now: std::time::Instant) {
-        self.login_attempts
-            .retain(|_, tracker| now.duration_since(tracker.window_start) <= CLUB_LOGIN_ATTEMPT_WINDOW);
+        self.login_attempts.retain(|_, tracker| {
+            now.duration_since(tracker.window_start) <= CLUB_LOGIN_ATTEMPT_WINDOW
+        });
     }
 
     pub fn club_set_password(

@@ -122,11 +122,7 @@ async fn csrf_token_handler(State(state): State<SharedState>) -> impl IntoRespon
             (axum::http::header::CONTENT_TYPE, "application/json"),
             (
                 axum::http::header::SET_COOKIE,
-                format!(
-                    "xudanu_csrf={}; HttpOnly; SameSite=Strict; Path=/",
-                    token
-                )
-                .as_str(),
+                format!("xudanu_csrf={}; HttpOnly; SameSite=Strict; Path=/", token).as_str(),
             ),
         ],
         serde_json::to_string(&body).unwrap_or_default(),
@@ -360,17 +356,17 @@ async fn blob_get_handler(
         Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let path_info: Option<(std::path::PathBuf, String)> = state.server.with_server_ref(|srv| {
-        match srv.blob_content_path(hash_u64) {
-            Ok((path, mime, _hash)) => Some((path, mime)),
-            Err(_) => None,
-        }
-    });
+    let path_info: Option<(std::path::PathBuf, String)> =
+        state
+            .server
+            .with_server_ref(|srv| match srv.blob_content_path(hash_u64) {
+                Ok((path, mime, _hash)) => Some((path, mime)),
+                Err(_) => None,
+            });
 
     match path_info {
         Some((path, mime)) => {
-            let bytes = tokio::task::spawn_blocking(move || std::fs::read(&path))
-                .await;
+            let bytes = tokio::task::spawn_blocking(move || std::fs::read(&path)).await;
             match bytes {
                 Ok(Ok(data)) => (
                     [(axum::http::header::CONTENT_TYPE, safe_content_type(&mime))],
@@ -406,17 +402,17 @@ async fn blob_preview_handler(
         Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
     };
 
-    let path_info: Option<(std::path::PathBuf, String)> = state.server.with_server_ref(|srv| {
-        match srv.blob_preview_path(hash_u64) {
-            Ok((path, mime)) => Some((path, mime)),
-            Err(_) => None,
-        }
-    });
+    let path_info: Option<(std::path::PathBuf, String)> =
+        state
+            .server
+            .with_server_ref(|srv| match srv.blob_preview_path(hash_u64) {
+                Ok((path, mime)) => Some((path, mime)),
+                Err(_) => None,
+            });
 
     match path_info {
         Some((path, mime)) => {
-            let bytes = tokio::task::spawn_blocking(move || std::fs::read(&path))
-                .await;
+            let bytes = tokio::task::spawn_blocking(move || std::fs::read(&path)).await;
             match bytes {
                 Ok(Ok(data)) => (
                     [(axum::http::header::CONTENT_TYPE, safe_content_type(&mime))],
