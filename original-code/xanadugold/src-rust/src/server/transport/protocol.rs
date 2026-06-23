@@ -400,9 +400,9 @@ impl OperationCode {
             0x033e => Some(OperationCode::TrailReorderStops),
             0x033f => Some(OperationCode::TrailList),
             0x0340 => Some(OperationCode::TrailGet),
-            0x031C => Some(OperationCode::WorkDiffNarration),
-            0x031D => Some(OperationCode::WorkWritingFeedback),
-            0x031E => Some(OperationCode::WorkBacklinks),
+            0x0341 => Some(OperationCode::WorkDiffNarration),
+            0x0342 => Some(OperationCode::WorkWritingFeedback),
+            0x0343 => Some(OperationCode::WorkBacklinks),
 
             0x0208 => Some(OperationCode::ClubSetDefaultReadClub),
             0x0209 => Some(OperationCode::ClubSetDefaultEditClub),
@@ -679,9 +679,9 @@ impl OperationCode {
             OperationCode::WorkList => 0x0314,
             OperationCode::WorkListByOwner => 0x0315,
             OperationCode::WorkReviseDelta => 0x0316,
-            OperationCode::WorkDiffNarration => 0x031C,
-            OperationCode::WorkWritingFeedback => 0x031D,
-            OperationCode::WorkBacklinks => 0x031E,
+            OperationCode::WorkDiffNarration => 0x0341,
+            OperationCode::WorkWritingFeedback => 0x0342,
+            OperationCode::WorkBacklinks => 0x0343,
 
             OperationCode::LinkCreate => 0x0701,
             OperationCode::LinkGet => 0x0702,
@@ -1670,6 +1670,82 @@ pub enum WireRequest {
         start: u64,
         end: u64,
     },
+}
+
+impl WireRequest {
+    pub fn is_readonly(&self) -> bool {
+        matches!(
+            self,
+            Self::SessionConnect
+                | Self::WorkGetEdition { .. }
+                | Self::WorkIsGrabbed { .. }
+                | Self::WorkGrabber { .. }
+                | Self::WorkGrabWaiters { .. }
+                | Self::WorkCanRead { .. }
+                | Self::WorkCanRevise { .. }
+                | Self::WorkIsStarred { .. }
+                | Self::WorkReadClub { .. }
+                | Self::WorkEditClub { .. }
+                | Self::WorkHistoryClub { .. }
+                | Self::WorkRevisionCount { .. }
+                | Self::WorkSponsors { .. }
+                | Self::WorkOwner { .. }
+                | Self::WorkIsPublished { .. }
+                | Self::WorkList { .. }
+                | Self::WorkListByOwner { .. }
+                | Self::WorkListArchived { .. }
+                | Self::WorkBacklinks { .. }
+                | Self::WorkEndorsements { .. }
+                | Self::WorkSummary { .. }
+                | Self::WorkVersionTimeline { .. }
+                | Self::EditionGet { .. }
+                | Self::EditionEndorsements { .. }
+                | Self::EditionVisibleEndorsements { .. }
+                | Self::EditionTotalEndorsements { .. }
+                | Self::TrailList { .. }
+                | Self::TrailGet { .. }
+                | Self::ClubGet { .. }
+                | Self::ClubNames { .. }
+                | Self::ClubWhoAmI { .. }
+                | Self::ClubMembers { .. }
+                | Self::ServerStats
+                | Self::LinkGet { .. }
+                | Self::LinkListForWork { .. }
+                | Self::BlobGet { .. }
+                | Self::BlobGetPreview { .. }
+                | Self::BlobExists { .. }
+                | Self::BlobInfo { .. }
+                | Self::BlobStats
+                | Self::OverlayGet { .. }
+                | Self::CrdtSyncDiff { .. }
+                | Self::CrdtSyncFullState { .. }
+                | Self::CrdtSyncSubscriberCount { .. }
+                | Self::CrdtSyncText { .. }
+                | Self::CrdtAwarenessGet { .. }
+                | Self::AdminIsAcceptingConnections
+                | Self::AdminActiveSessions
+                | Self::AdminGrants
+                | Self::AdminServerInfo { .. }
+                | Self::AdminServerHealth { .. }
+                | Self::AdminRecorderList { .. }
+                | Self::AdminRecorderGet { .. }
+                | Self::AttributionVerify { .. }
+                | Self::AttributionLogStatus
+                | Self::AnnotationGet { .. }
+                | Self::HistoricalAuthorGet { .. }
+                | Self::HistoricalAuthorSearch { .. }
+                | Self::HistoricalAuthorList
+                | Self::SourcePatternList
+                | Self::CryptoGetPublicKey
+                | Self::CryptoKeyHistory
+                | Self::FederationInfo
+                | Self::FederationPeers
+                | Self::MembershipList { .. }
+                | Self::MembershipVerify { .. }
+                | Self::GovernanceLog { .. }
+                | Self::GovernanceStatus { .. }
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

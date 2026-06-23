@@ -36,6 +36,7 @@ pub struct Session {
     _connect_time: Instant,
     initial_login: Option<BeId>,
     active: bool,
+    pub(crate) ended_at: Option<Instant>,
     pending_lock: Option<Box<dyn Lock>>,
     pending_lock_club: Option<BeId>,
     expires_at: Option<Instant>,
@@ -50,6 +51,7 @@ impl Session {
             _connect_time: Instant::now(),
             initial_login: None,
             active: true,
+            ended_at: None,
             pending_lock: None,
             pending_lock_club: None,
             expires_at: Some(Instant::now() + DEFAULT_SESSION_TIMEOUT),
@@ -82,7 +84,12 @@ impl Session {
 
     pub fn end(&mut self) {
         self.active = false;
+        self.ended_at = Some(Instant::now());
         self.club_signing_key = None;
+    }
+
+    pub fn ended_at(&self) -> Option<Instant> {
+        self.ended_at
     }
 
     pub fn _connect_time(&self) -> Instant {

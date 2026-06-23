@@ -1410,7 +1410,7 @@ mod tests {
 
         let t4 = Instant::now();
         for _ in 0..1000 {
-            assert!(dw.is_le(dw.root(), root_merge) || true);
+            let _ = dw.is_le(dw.root(), root_merge);
         }
         eprintln!("  P2 1K is_le calls: {}", elapsed(t4));
         eprintln!("  P2 total: {}", elapsed(t));

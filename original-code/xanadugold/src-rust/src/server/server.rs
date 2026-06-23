@@ -30,9 +30,10 @@ struct GrabWaiter {
     grabbed_at: u64,
 }
 
-struct WorkState {
+pub(crate) struct WorkState {
     work: Work,
     chunk_ref: Option<crate::persist::edition_chunks::WorkChunkRef>,
+    dirty_gen: u64,
     grabber: Option<SessionId>,
     grabbed_at: Option<u64>,
     grab_waiters: Vec<GrabWaiter>,
@@ -55,6 +56,43 @@ impl WorkState {
     pub fn title(&self) -> &str {
         &self.cached_title
     }
+
+    pub(crate) fn work(&self) -> &Work {
+        &self.work
+    }
+
+    pub(crate) fn grabber(&self) -> Option<SessionId> {
+        self.grabber
+    }
+
+    pub(crate) fn cached_title(&self) -> &str {
+        &self.cached_title
+    }
+
+    pub(crate) fn is_source(&self) -> bool {
+        self.is_source
+    }
+
+    pub(crate) fn content_start_line(&self) -> Option<u64> {
+        self.content_start_line
+    }
+
+    pub(crate) fn content_end_line(&self) -> Option<u64> {
+        self.content_end_line
+    }
+
+    pub(crate) fn source_author_id(&self) -> Option<BeId> {
+        self.source_author_id
+    }
+
+    pub(crate) fn source_edition_info(&self) -> Option<&str> {
+        self.source_edition_info.as_deref()
+    }
+
+    fn mark_dirty(&mut self) {
+        self.chunk_ref = None;
+        self.dirty_gen = self.dirty_gen.wrapping_add(1);
+    }
 }
 
 impl std::fmt::Debug for WorkState {
@@ -74,6 +112,9 @@ pub struct ContentNotification {
     pub work_be_id: Option<BeId>,
     pub title: Option<String>,
 }
+
+const MAX_PENDING_NOTIFICATIONS: usize = 10_000;
+const MAX_REVISION_AUTHORS: usize = 500;
 
 /// One hop in a transclusion `again()` chain.
 pub struct AgainHop {
@@ -109,7 +150,7 @@ pub struct Server {
     blob_store: BlobStore,
     checkpoint_path: Option<std::path::PathBuf>,
     data_dir: Option<std::path::PathBuf>,
-    chunk_store: Option<crate::persist::chunk_store::ChunkStore>,
+    chunk_store: Option<Arc<crate::persist::chunk_store::ChunkStore>>,
     manifest_sequence: u64,
     manifest_slot: char,
     recorder_system: crate::edition::RecorderSystem,
@@ -191,6 +232,308 @@ impl Default for Server {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[cfg(feature = "server")]
+struct DirtyWorkData {
+    be_id: BeId,
+    work: Work,
+    is_source: bool,
+    source_author_id: Option<BeId>,
+    source_edition_info: Option<String>,
+    content_start_line: Option<u64>,
+    content_end_line: Option<u64>,
+    source_fingerprint: Option<Vec<u64>>,
+    is_archived: bool,
+    lifecycle_history: Vec<crate::edition::work::WorkLifecycleEvent>,
+    history_club: Option<BeId>,
+}
+
+#[cfg(feature = "server")]
+pub(crate) struct CheckpointPayload {
+    chunk_store: Arc<crate::persist::chunk_store::ChunkStore>,
+    manifest_path: std::path::PathBuf,
+    data_dir: std::path::PathBuf,
+
+    sub_content_address: Vec<u8>,
+    sub_historical_authors: Vec<u8>,
+    sub_annotations: Vec<u8>,
+    sub_blob_metas: Vec<u8>,
+    sub_fossil_snapshots: Option<Vec<u8>>,
+
+    links: Vec<crate::persist::manifest::LinkEntry>,
+
+    dirty_works: Vec<DirtyWorkData>,
+    dirty_work_gens: Vec<(BeId, u64)>,
+    dirty_clubs: Vec<(BeId, Club)>,
+    dirty_club_ids: HashSet<BeId>,
+    dirty_editions: Vec<(BeId, Edition)>,
+
+    clean_work_entries: Vec<crate::persist::manifest::WorkEntry>,
+    clean_club_refs: Vec<crate::persist::manifest::ClubChunkRef>,
+    clean_edition_refs: Vec<crate::persist::manifest::StandaloneEditionChunkRef>,
+
+    manifest_sequence: u64,
+    manifest_slot: char,
+    grand_map_id_counter: BeId,
+    session_counter: u64,
+    operation_counter: u64,
+    system_clubs: SystemClubs,
+    link_counter: BeId,
+    admin_entry: crate::persist::manifest::AdminEntry,
+    reconcile_store: crate::server::federation::ReconcileStore,
+    reconcile_counter: u64,
+    federation_snapshot: Option<crate::server::federation::FederationSnapshot>,
+    starred_works: HashMap<BeId, HashSet<BeId>>,
+    trails: Vec<crate::persist::manifest::TrailManifestEntry>,
+    trail_counter: BeId,
+    compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
+    key_history: Option<crate::persist::manifest::KeyHistoryEntry>,
+}
+
+#[cfg(feature = "server")]
+pub(crate) struct CheckpointResult {
+    pub manifest_sequence: u64,
+    pub manifest_slot: char,
+    pub work_refs: Vec<(BeId, crate::persist::edition_chunks::WorkChunkRef, u64)>,
+    pub club_refs: Vec<(BeId, crate::persist::manifest::ClubChunkRef)>,
+    pub edition_refs: Vec<(BeId, crate::persist::edition_chunks::EditionChunkRef)>,
+    pub dirty_club_ids: HashSet<BeId>,
+    pub dirty_work_count: u64,
+    pub dirty_club_count: u64,
+    pub dirty_edition_count: u64,
+}
+
+#[cfg(feature = "server")]
+fn tag_json(value: &impl serde::Serialize) -> std::io::Result<Vec<u8>> {
+    let data = serde_json::to_vec(value)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    Ok(crate::persist::chunk_store::tag_chunk_data(
+        crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+        &data,
+    ))
+}
+
+#[cfg(feature = "server")]
+pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<CheckpointResult> {
+    let start = std::time::Instant::now();
+    let store = &payload.chunk_store;
+
+    let dirty_work_gens = payload.dirty_work_gens;
+    let mut work_refs = Vec::with_capacity(dirty_work_gens.len());
+    let mut all_work_entries = payload.clean_work_entries;
+
+    for (dw, (gen_be_id, dirty_gen)) in payload.dirty_works.into_iter().zip(dirty_work_gens) {
+        let work_ref = crate::persist::edition_chunks::work_to_chunks(&dw.work, store)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        work_refs.push((gen_be_id, work_ref.clone(), dirty_gen));
+        all_work_entries.push(crate::persist::manifest::WorkEntry {
+            be_id: dw.be_id,
+            work_ref,
+            is_source: dw.is_source,
+            source_author_id: dw.source_author_id,
+            source_edition_info: dw.source_edition_info,
+            content_start_line: dw.content_start_line,
+            content_end_line: dw.content_end_line,
+            source_fingerprint: dw.source_fingerprint,
+            is_archived: dw.is_archived,
+            lifecycle_history: dw.lifecycle_history,
+            history_club: dw.history_club,
+        });
+    }
+
+    let mut club_refs = Vec::new();
+    let mut all_club_refs = payload.clean_club_refs;
+    for (id, club) in &payload.dirty_clubs {
+        let work = club.work();
+        let work_ref = crate::persist::edition_chunks::work_to_chunks(work, store)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let club_ref = crate::persist::manifest::ClubChunkRef {
+            be_id: *id,
+            name: club.name().map(|s| s.to_string()),
+            signature_club: club.signature_club(),
+            work_root: work_ref,
+            default_read_club: club.default_read_club(),
+            default_edit_club: club.default_edit_club(),
+            is_personal: club.is_personal(),
+            display_name: club.display_name().map(|s| s.to_string()),
+            credential: club.credential().cloned(),
+            encrypted_signing_key: club.encrypted_signing_key().cloned(),
+            members: club.members().iter().copied().collect(),
+            sponsored_works: club.sponsored_works().iter().copied().collect(),
+        };
+        club_refs.push((*id, club_ref.clone()));
+        all_club_refs.push(club_ref);
+    }
+
+    let mut edition_refs = Vec::new();
+    let mut all_edition_refs = payload.clean_edition_refs;
+    for (id, edition) in &payload.dirty_editions {
+        let ed_ref = crate::persist::edition_chunks::edition_to_chunks(edition, store)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        edition_refs.push((*id, ed_ref.clone()));
+        all_edition_refs.push(crate::persist::manifest::StandaloneEditionChunkRef {
+            be_id: *id,
+            edition_ref: ed_ref,
+        });
+    }
+
+    let links_tagged = tag_json(&payload.links)?;
+    let links_hash = Some(
+        store
+            .write_chunk(&links_tagged)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
+    );
+    let content_address_hash = Some(
+        store
+            .write_chunk(&payload.sub_content_address)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
+    );
+    let blob_metas_hash = Some(
+        store
+            .write_chunk(&payload.sub_blob_metas)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
+    );
+    let historical_authors_hash = Some(
+        store
+            .write_chunk(&payload.sub_historical_authors)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
+    );
+    let annotations_hash = Some(
+        store
+            .write_chunk(&payload.sub_annotations)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
+    );
+    let fossil_snapshots_hash = if let Some(ref fs_data) = payload.sub_fossil_snapshots {
+        Some(
+            store
+                .write_chunk(fs_data)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
+        )
+    } else {
+        None
+    };
+
+    let next_slot = if payload.manifest_slot == 'a' { 'b' } else { 'a' };
+    let manifest = crate::persist::manifest::Manifest {
+        format_version: 0,
+        created_at: String::new(),
+        server_version: String::new(),
+        checksum: String::new(),
+        sequence: payload.manifest_sequence,
+        manifest_slot: next_slot,
+        grand_map_id_counter: payload.grand_map_id_counter,
+        session_counter: payload.session_counter,
+        operation_counter: payload.operation_counter,
+        system_clubs: payload.system_clubs,
+        works: all_work_entries,
+        clubs: all_club_refs,
+        standalone_editions: all_edition_refs,
+        links_hash,
+        links: payload.links,
+        link_counter: payload.link_counter,
+        admin: payload.admin_entry,
+        reconcile_store: payload.reconcile_store,
+        reconcile_counter: payload.reconcile_counter,
+        federation: payload.federation_snapshot,
+        content_address_hash,
+        content_address: None,
+        blob_metas_hash,
+        blob_metas: Vec::new(),
+        key_history: payload.key_history,
+        historical_authors_hash,
+        historical_authors: None,
+        annotations_hash,
+        fossil_snapshots_hash,
+        starred_works: payload.starred_works,
+        trails: payload.trails,
+        trail_counter: payload.trail_counter,
+        compound_editions: payload.compound_editions,
+    };
+
+    let dual_path = payload
+        .data_dir
+        .join(format!("manifest_{}.json", next_slot));
+
+    crate::persist::manifest::rotate_manifest_backups(&payload.manifest_path, 3);
+    let mut manifest = manifest;
+    crate::persist::manifest::write_manifest(&mut manifest, &dual_path).map_err(|e| {
+        tracing::error!(
+            "Failed to write dual manifest to {}: {}",
+            dual_path.display(),
+            e
+        );
+        std::io::Error::new(std::io::ErrorKind::Other, e)
+    })?;
+
+    match std::fs::rename(&dual_path, &payload.manifest_path) {
+        Ok(()) => {}
+        Err(e) => {
+            tracing::warn!(
+                "Failed to promote {} to primary ({}), keeping as dual backup: {}",
+                dual_path.display(),
+                payload.manifest_path.display(),
+                e
+            );
+            if !payload.manifest_path.exists() {
+                return Err(e);
+            }
+        }
+    }
+
+    let backup = crate::persist::manifest::backup_manifest_path(
+        &payload.data_dir,
+        manifest.sequence,
+    );
+    if let Err(e) =
+        crate::persist::manifest::write_backup_with_fsync(&payload.manifest_path, &backup)
+    {
+        tracing::warn!("Failed to create versioned manifest backup: {}", e);
+    }
+
+    if let Some(ref kh) = manifest.key_history {
+        let kh_path = payload.data_dir.join("key_history.json");
+        match serde_json::to_string_pretty(kh) {
+            Ok(json) => {
+                let tmp_path = kh_path.with_extension("tmp");
+                if let Ok(mut f) = std::fs::File::create(&tmp_path) {
+                    if std::io::Write::write_all(&mut f, json.as_bytes()).is_ok() {
+                        let _ = f.sync_all();
+                        if std::fs::rename(&tmp_path, &kh_path).is_err() {
+                            let _ = std::fs::remove_file(&tmp_path);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to serialize key history: {}", e);
+            }
+        }
+    }
+
+    let dirty_work_count = work_refs.len() as u64;
+    let dirty_club_count = club_refs.len() as u64;
+    let dirty_edition_count = edition_refs.len() as u64;
+
+    tracing::info!(
+        "Async checkpoint persisted in {:.2}ms (dirty: {}/{}/{} works/clubs/editions)",
+        start.elapsed().as_secs_f64() * 1000.0,
+        dirty_work_count,
+        dirty_club_count,
+        dirty_edition_count,
+    );
+
+    Ok(CheckpointResult {
+        manifest_sequence: manifest.sequence,
+        manifest_slot: next_slot,
+        work_refs,
+        club_refs,
+        edition_refs,
+        dirty_club_ids: payload.dirty_club_ids,
+        dirty_work_count,
+        dirty_club_count,
+        dirty_edition_count,
+    })
 }
 
 impl Server {
@@ -396,6 +739,8 @@ impl Server {
 
     // === Session management ===
 
+    const DISCONNECTED_SESSION_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+
     pub fn connect(&mut self) -> SessionId {
         static SESSION_SECRET: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
         let secret = *SESSION_SECRET.get_or_init(|| {
@@ -468,6 +813,22 @@ impl Server {
 
     pub fn session_count(&self) -> usize {
         self.sessions.values().filter(|s| s.is_connected()).count()
+    }
+
+    pub fn prune_disconnected_sessions(&mut self) -> usize {
+        let now = std::time::Instant::now();
+        let grace = Self::DISCONNECTED_SESSION_GRACE;
+        let before = self.sessions.len();
+        self.sessions.retain(|_, s| {
+            if s.is_connected() {
+                return true;
+            }
+            match s.ended_at() {
+                Some(ended) => now.duration_since(ended) < grace,
+                None => true,
+            }
+        });
+        before - self.sessions.len()
     }
 
     pub fn display_name_for_session(&self, session_id: SessionId) -> String {
@@ -781,6 +1142,7 @@ impl Server {
         let ws = WorkState {
             work,
             chunk_ref: None,
+            dirty_gen: 0,
             grabber: None,
             grabbed_at: None,
             grab_waiters: Vec::new(),
@@ -953,12 +1315,16 @@ impl Server {
 
         let old_edition = ws.work.edition().clone();
         ws.last_revision_author = author_club;
-        ws.chunk_ref = None;
+        ws.mark_dirty();
         ws.work.revise(edition);
         ws.cached_title = Self::extract_title(ws.work.current_edition());
         let revision = ws.work.revision_count();
         if let Some(club_id) = author_club {
             ws.revision_authors.insert(revision, club_id);
+            if ws.revision_authors.len() > MAX_REVISION_AUTHORS {
+                let oldest = *ws.revision_authors.keys().min().unwrap();
+                ws.revision_authors.remove(&oldest);
+            }
         }
 
         ws.revision_detectors.fire(&Event::WorkRevised {
@@ -1315,7 +1681,7 @@ impl Server {
             return Err(ServerError::ReadClubIrrevocablyRemoved(work_be_id));
         }
         ws.work.set_read_club(club_id);
-        ws.chunk_ref = None;
+        ws.mark_dirty();
         self.auto_checkpoint();
         Ok(())
     }
@@ -1332,7 +1698,7 @@ impl Server {
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.set_edit_club(club_id);
-        ws.chunk_ref = None;
+        ws.mark_dirty();
         Ok(())
     }
 
@@ -1391,7 +1757,7 @@ impl Server {
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.add_sponsor(club_id);
-        ws.chunk_ref = None;
+        ws.mark_dirty();
         Ok(())
     }
 
@@ -1407,7 +1773,7 @@ impl Server {
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.remove_sponsor(club_id);
-        ws.chunk_ref = None;
+        ws.mark_dirty();
         Ok(())
     }
 
@@ -2414,6 +2780,7 @@ impl Server {
         let ws = WorkState {
             work,
             chunk_ref: None,
+            dirty_gen: 0,
             grabber: None,
             grabbed_at: None,
             grab_waiters: Vec::new(),
@@ -2474,7 +2841,7 @@ impl Server {
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.set_owner(owner);
-        ws.chunk_ref = None;
+        ws.mark_dirty();
         Ok(())
     }
 
@@ -2496,7 +2863,7 @@ impl Server {
             return Err(ServerError::ReadClubIrrevocablyRemoved(work_be_id));
         }
         ws.work.set_read_club(Some(self.system_clubs.public_club));
-        ws.chunk_ref = None;
+        ws.mark_dirty();
         self.update_work_prop_and_trigger(work_be_id);
         self.auto_checkpoint();
         Ok(())
@@ -2521,7 +2888,7 @@ impl Server {
         }
         let owner = ws.work.owner();
         ws.work.set_read_club(owner);
-        ws.chunk_ref = None;
+        ws.mark_dirty();
         self.update_work_prop_and_trigger(work_be_id);
         self.auto_checkpoint();
         Ok(())
@@ -2542,7 +2909,7 @@ impl Server {
             .get_mut(&work_be_id)
             .ok_or(ServerError::WorkNotFound(work_be_id))?;
         ws.work.set_read_club(None);
-        ws.chunk_ref = None;
+        ws.mark_dirty();
         self.auto_checkpoint();
         Ok(())
     }
@@ -3949,6 +4316,17 @@ impl Server {
             .collect()
     }
 
+    pub(crate) fn works_iter(&self) -> std::collections::hash_map::Iter<'_, BeId, WorkState> {
+        self.works.iter()
+    }
+
+    pub(crate) fn session_authority_clubs(&self, session_id: SessionId) -> HashSet<BeId> {
+        self.sessions
+            .get(&session_id)
+            .map(|s| s.authority_clubs())
+            .unwrap_or_default()
+    }
+
     pub fn list_works_by_owner(
         &self,
         owner: BeId,
@@ -4581,7 +4959,7 @@ impl Server {
 
         let chunk_store = crate::persist::chunk_store::ChunkStore::open(data_dir)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        self.chunk_store = Some(chunk_store);
+        self.chunk_store = Some(Arc::new(chunk_store));
         self.data_dir = Some(data_dir.to_path_buf());
 
         self.restore_keypair_from_dir(data_dir, passphrase)?;
@@ -4916,6 +5294,7 @@ impl Server {
                     let ws = WorkState {
                         work: work.clone(),
                         chunk_ref: Some(work_entry.work_ref.clone()),
+                        dirty_gen: 0,
                         grabber: None,
                         grabbed_at: None,
                         grab_waiters: Vec::new(),
@@ -5042,7 +5421,7 @@ impl Server {
             .map(|fs| crate::server::federation::FederationState::from_snapshot(fs))
             .unwrap_or_else(crate::server::federation::FederationState::disabled);
 
-        self.chunk_store = Some(chunk_store);
+        self.chunk_store = Some(Arc::new(chunk_store));
         self.data_dir = Some(data_dir.to_path_buf());
         self.checkpoint_path = Some(manifest_path);
         self.manifest_sequence = manifest.sequence;
@@ -5635,7 +6014,11 @@ impl Server {
     }
 
     pub fn chunk_store(&self) -> Option<&crate::persist::chunk_store::ChunkStore> {
-        self.chunk_store.as_ref()
+        self.chunk_store.as_deref()
+    }
+
+    pub fn chunk_store_arc(&self) -> Option<Arc<crate::persist::chunk_store::ChunkStore>> {
+        self.chunk_store.clone()
     }
 
     pub fn checkpoint_path(&self) -> Option<&std::path::Path> {
@@ -7689,6 +8072,7 @@ impl Server {
                                 .map(|(wid, t)| (Some(wid), Some(t)))
                                 .unwrap_or((None, None))
                         };
+                        self.cap_pending_notifications();
                         self.pending_content_notifications
                             .push(ContentNotification {
                                 fossil_id,
@@ -7748,6 +8132,24 @@ impl Server {
         self.blob_store
             .get_meta_by_u64(hash_u64)
             .ok_or_else(|| ServerError::NotFound(format!("blob {:016x}", hash_u64)))
+    }
+
+    pub fn blob_content_path(&self, hash_u64: u64) -> Result<(std::path::PathBuf, String, [u8; 32]), ServerError> {
+        let meta = self.blob_info(hash_u64)?;
+        let path = self.blob_store.path_for_hash(&meta.content_hash);
+        match path {
+            Some(p) => Ok((p, meta.mime_type.clone(), meta.content_hash)),
+            None => Err(ServerError::Internal("blob store is not file-backed".into())),
+        }
+    }
+
+    pub fn blob_preview_path(&self, hash_u64: u64) -> Result<(std::path::PathBuf, String), ServerError> {
+        let meta = self.blob_info(hash_u64)?;
+        let preview_hash = meta.preview_hash
+            .ok_or_else(|| ServerError::NotFound(format!("no preview for blob {:016x}", hash_u64)))?;
+        let path = self.blob_store.path_for_hash(&preview_hash)
+            .ok_or_else(|| ServerError::Internal("blob store is not file-backed".into()))?;
+        Ok((path, meta.mime_type.clone()))
     }
 
     pub fn blob_stats(&self) -> (u64, u64) {
@@ -7874,6 +8276,18 @@ impl Server {
         }
         self.pending_content_notifications = remaining;
         matching
+    }
+
+    fn cap_pending_notifications(&mut self) {
+        if self.pending_content_notifications.len() >= MAX_PENDING_NOTIFICATIONS {
+            let drop_count = self.pending_content_notifications.len() / 4;
+            self.pending_content_notifications.drain(..drop_count);
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn cap_pending_notifications_for_test(&mut self) {
+        self.cap_pending_notifications();
     }
 
     // === Private helpers ===
@@ -8190,7 +8604,7 @@ impl Server {
         );
         let old_edition = ws.work.edition().clone();
         ws.work.revise(updated.clone());
-        ws.chunk_ref = None;
+        ws.mark_dirty();
         let new_work = ws.work.clone();
         self.backfollow
             .update_work_with_parent(work_id, work_id, &old_edition, &new_work);
@@ -8592,7 +9006,7 @@ impl Server {
                 .get_mut(&work_id)
                 .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
             ws.work.endorse(&endorsements);
-            ws.chunk_ref = None;
+            ws.mark_dirty();
         }
         tracing::info!(
             "[work_endorse] calling checkpoint_to_store for work {}",
@@ -8617,7 +9031,7 @@ impl Server {
                 .get_mut(&work_id)
                 .ok_or(ServerError::NotFound(format!("work {}", work_id)))?;
             ws.work.retract(&endorsements);
-            ws.chunk_ref = None;
+            ws.mark_dirty();
         }
         let _ = self.checkpoint_to_store();
         Ok(())
@@ -8967,6 +9381,7 @@ impl Server {
                 let ws = WorkState {
                     work,
                     chunk_ref: None,
+                    dirty_gen: 0,
                     grabber: None,
                     grabbed_at: None,
                     grab_waiters: Vec::new(),
@@ -10365,6 +10780,7 @@ pub(crate) mod persist_snapshot {
                 let ws = WorkState {
                     work: work.clone(),
                     chunk_ref: None,
+                    dirty_gen: 0,
                     grabber: None,
                     grabbed_at: None,
                     grab_waiters: Vec::new(),
@@ -10496,6 +10912,274 @@ pub(crate) mod persist_snapshot {
                 "Checkpoint saved in {:.2}ms",
                 start.elapsed().as_secs_f64() * 1000.0,
             );
+            Ok(())
+        }
+
+        pub fn checkpoint_prepare(&self) -> std::io::Result<CheckpointPayload> {
+            let chunk_store = self.chunk_store_arc().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::Other, "no chunk store configured")
+            })?;
+            let manifest_path = self.checkpoint_path.clone().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::Other, "no checkpoint path configured")
+            })?;
+            let data_dir = self.data_dir.clone().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::Other, "no data dir")
+            })?;
+
+            let mut dirty_works = Vec::new();
+            let mut clean_work_entries = Vec::new();
+            let mut dirty_work_gens = Vec::new();
+
+            for (id, ws) in &self.works {
+                let is_archived = ws.work.is_archived();
+                let lifecycle_history = ws.work.lifecycle_history().to_vec();
+                let history_club = ws.work.history_club();
+                if let Some(ref existing_ref) = ws.chunk_ref {
+                    clean_work_entries.push(crate::persist::manifest::WorkEntry {
+                        be_id: *id,
+                        work_ref: existing_ref.clone(),
+                        is_source: ws.is_source,
+                        source_author_id: ws.source_author_id,
+                        source_edition_info: ws.source_edition_info.clone(),
+                        content_start_line: ws.content_start_line,
+                        content_end_line: ws.content_end_line,
+                        source_fingerprint: ws.source_fingerprint.map(|fp| fp.to_vec()),
+                        is_archived,
+                        lifecycle_history,
+                        history_club,
+                    });
+                } else {
+                    dirty_work_gens.push((*id, ws.dirty_gen));
+                    dirty_works.push(DirtyWorkData {
+                        be_id: *id,
+                        work: ws.work.clone(),
+                        is_source: ws.is_source,
+                        source_author_id: ws.source_author_id,
+                        source_edition_info: ws.source_edition_info.clone(),
+                        content_start_line: ws.content_start_line,
+                        content_end_line: ws.content_end_line,
+                        source_fingerprint: ws.source_fingerprint.map(|fp| fp.to_vec()),
+                        is_archived,
+                        lifecycle_history,
+                        history_club,
+                    });
+                }
+            }
+
+            let dirty_club_ids = self.dirty_clubs.clone();
+            let mut dirty_clubs = Vec::new();
+            let mut clean_club_refs = Vec::new();
+            for (id, club) in &self.clubs {
+                if !self.dirty_clubs.contains(id) {
+                    if let Some(existing_ref) = self.club_refs.get(id) {
+                        clean_club_refs.push(existing_ref.clone());
+                        continue;
+                    }
+                }
+                dirty_clubs.push((*id, club.clone()));
+            }
+
+            let mut dirty_editions = Vec::new();
+            let mut clean_edition_refs = Vec::new();
+            for (id, edition) in &self.standalone_editions {
+                if let Some(existing_ref) = self.standalone_edition_refs.get(id) {
+                    clean_edition_refs
+                        .push(crate::persist::manifest::StandaloneEditionChunkRef {
+                            be_id: *id,
+                            edition_ref: existing_ref.clone(),
+                        });
+                } else {
+                    dirty_editions.push((*id, edition.clone()));
+                }
+            }
+
+            let links: Vec<crate::persist::manifest::LinkEntry> = self
+                .links
+                .iter()
+                .map(|(id, ls)| {
+                    let o_ref = ls.link.end_at("LeftEnd").map(
+                        crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
+                    );
+                    let d_ref = ls.link.end_at("RightEnd").map(
+                        crate::server::transport::protocol::HyperRefPayload::from_hyper_ref,
+                    );
+                    crate::persist::manifest::LinkEntry {
+                        link_id: *id,
+                        origin: ls.origin,
+                        destination: ls.destination,
+                        origin_ref: o_ref,
+                        destination_ref: d_ref,
+                        link_types: ls.link.link_types().to_vec(),
+                    }
+                })
+                .collect();
+
+            let blob_metas: Vec<crate::persist::manifest::BlobMetaEntry> = self
+                .blob_store
+                .all_metas()
+                .iter()
+                .map(|(hash, meta)| crate::persist::manifest::BlobMetaEntry {
+                    content_hash: hash.to_vec(),
+                    hash_u64: meta.hash_u64(),
+                    byte_size: meta.byte_size,
+                    mime_type: meta.mime_type.clone(),
+                    preview_hash: meta.preview_hash.map(|ph| ph.to_vec()),
+                    metadata: meta.metadata.clone(),
+                })
+                .collect();
+
+            let kh_file = self.key_history.to_file_repr();
+            let key_history = Some(crate::persist::manifest::KeyHistoryEntry {
+                server_id: kh_file.server_id,
+                entries: kh_file.entries,
+                rotation_proofs: kh_file.rotation_proofs,
+                current_key_id: kh_file.current_key_id,
+            });
+
+            let annotations = self.otree_crdt.all_annotations();
+            let (fossil_snapshots, _next_id) = self.recorder_system.to_snapshots();
+
+            let admin_entry = crate::persist::manifest::AdminEntry {
+                accepting_connections: self.admin.is_accepting_connections(),
+                shutdown_requested: self.admin.is_shutdown_requested(),
+                grants: self
+                    .admin
+                    .grants()
+                    .iter()
+                    .map(|g| {
+                        let (start, end) = g.region.as_interval().unwrap_or_else(|| {
+                            tracing::warn!(
+                                "grant for club {} has non-interval region, saving as (0,0)",
+                                g.club_id
+                            );
+                            (0, 0)
+                        });
+                        (g.club_id, start, end)
+                    })
+                    .collect(),
+            };
+
+            let federation_snapshot = self.federation.to_snapshot();
+
+            let trails: Vec<crate::persist::manifest::TrailManifestEntry> = self
+                .trails
+                .values()
+                .map(|t| crate::persist::manifest::TrailManifestEntry {
+                    trail_id: t.trail_id,
+                    owner_club: t.owner_club,
+                    name: t.name.clone(),
+                    stops: t
+                        .stops
+                        .iter()
+                        .map(|s| crate::persist::manifest::TrailStopManifestEntry {
+                            work_id: s.work_id,
+                            char_start: s.char_start,
+                            char_end: s.char_end,
+                            note: s.note.clone(),
+                        })
+                        .collect(),
+                    created_at: t.created_at,
+                    updated_at: t.updated_at,
+                })
+                .collect();
+
+            let compound_editions: Vec<_> = self
+                .compound_editions
+                .iter()
+                .map(|(id, c)| (*id, c.clone()))
+                .collect();
+
+            let sub_content_address = tag_json(&self.content_address)?;
+            let sub_historical_authors = tag_json(&self.historical_authors)?;
+            let sub_annotations = tag_json(&annotations)?;
+            let sub_blob_metas = tag_json(&blob_metas)?;
+            let sub_fossil_snapshots = if fossil_snapshots.is_empty() {
+                None
+            } else {
+                Some(tag_json(&fossil_snapshots)?)
+            };
+
+            Ok(CheckpointPayload {
+                chunk_store,
+                manifest_path,
+                data_dir,
+                sub_content_address,
+                sub_historical_authors,
+                sub_annotations,
+                sub_blob_metas,
+                sub_fossil_snapshots,
+                links,
+                dirty_works,
+                dirty_work_gens,
+                dirty_clubs,
+                dirty_club_ids,
+                dirty_editions,
+                clean_work_entries,
+                clean_club_refs,
+                clean_edition_refs,
+                manifest_sequence: self.manifest_sequence,
+                manifest_slot: self.manifest_slot,
+                grand_map_id_counter: self.grand_map.id_counter(),
+                session_counter: self.session_counter,
+                operation_counter: self.operation_counter,
+                system_clubs: self.system_clubs,
+                link_counter: self.link_counter,
+                admin_entry,
+                reconcile_store: self.reconcile_store.clone(),
+                reconcile_counter: self.reconcile_counter,
+                federation_snapshot: Some(federation_snapshot),
+                starred_works: self.starred_works.clone(),
+                trails,
+                trail_counter: self.trail_counter,
+                compound_editions,
+                key_history,
+            })
+        }
+
+        pub fn checkpoint_commit(&mut self, result: CheckpointResult) -> std::io::Result<()> {
+            for (be_id, work_ref, dirty_gen) in &result.work_refs {
+                if let Some(ws) = self.works.get_mut(be_id) {
+                    if ws.dirty_gen == *dirty_gen && ws.chunk_ref.is_none() {
+                        ws.chunk_ref = Some(work_ref.clone());
+                    }
+                }
+            }
+
+            for (id, club_ref) in &result.club_refs {
+                self.club_refs.insert(*id, club_ref.clone());
+            }
+
+            for (id, ed_ref) in &result.edition_refs {
+                self.standalone_edition_refs.insert(*id, ed_ref.clone());
+            }
+
+            for id in &result.dirty_club_ids {
+                self.dirty_clubs.remove(id);
+            }
+
+            self.manifest_sequence = result.manifest_sequence;
+            self.manifest_slot = result.manifest_slot;
+            self.last_checkpoint_time = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+
+            if let Err(e) = self.wal.truncate() {
+                tracing::warn!("WAL truncate failed after checkpoint: {}", e);
+            }
+
+            if let Err(e) = self.gc_orphaned_chunks() {
+                tracing::warn!("Chunk GC failed: {}", e);
+            }
+
+            tracing::info!(
+                "Checkpoint #{} committed (dirty: {}/{}/{} works/clubs/editions)",
+                result.manifest_sequence,
+                result.dirty_work_count,
+                result.dirty_club_count,
+                result.dirty_edition_count,
+            );
+
             Ok(())
         }
 
@@ -12491,6 +13175,50 @@ mod tests {
     fn blob_not_found() {
         let server = Server::new();
         let result = server.blob_get(99999);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn blob_content_path_in_memory_returns_err() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let meta = server
+            .blob_upload(sid, b"path test".to_vec(), "text/plain".to_string())
+            .unwrap();
+        let result = server.blob_content_path(meta.hash_u64());
+        assert!(result.is_err(), "in-memory blob store should not have file paths");
+    }
+
+    #[test]
+    fn blob_content_path_file_backed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut server = Server::new();
+        server.init_blob_store(tmp.path()).unwrap();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let meta = server
+            .blob_upload(sid, b"file path test".to_vec(), "image/png".to_string())
+            .unwrap();
+        let (path, mime, hash) = server.blob_content_path(meta.hash_u64()).unwrap();
+        assert_eq!(mime, "image/png");
+        assert!(path.exists(), "blob file should exist on disk");
+        let data = std::fs::read(&path).unwrap();
+        assert_eq!(data, b"file path test");
+        assert_eq!(hash, meta.content_hash);
+    }
+
+    #[test]
+    fn blob_preview_path_file_backed_no_preview() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut server = Server::new();
+        server.init_blob_store(tmp.path()).unwrap();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let meta = server
+            .blob_upload(sid, b"no preview".to_vec(), "text/plain".to_string())
+            .unwrap();
+        let result = server.blob_preview_path(meta.hash_u64());
         assert!(result.is_err());
     }
 
@@ -18823,7 +19551,7 @@ mod tests {
         let work_id;
         let mut server = Server::new();
         let chunk_store = crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap();
-        server.chunk_store = Some(chunk_store);
+        server.chunk_store = Some(Arc::new(chunk_store));
         server.checkpoint_path = Some(crate::persist::manifest::manifest_path(&data_dir));
         server.data_dir = Some(data_dir.clone());
 
@@ -18903,7 +19631,7 @@ mod tests {
         {
             let mut server = Server::new();
             server.chunk_store =
-                Some(crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap());
+                Some(Arc::new(crate::persist::chunk_store::ChunkStore::open(&data_dir).unwrap()));
             server.checkpoint_path = Some(crate::persist::manifest::manifest_path(&data_dir));
             server.data_dir = Some(data_dir.clone());
 
@@ -19477,6 +20205,183 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "server")]
+    fn async_checkpoint_integrity() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_async_ckpt_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            doc_id = server
+                .create_work(sid, Edition::from_text("async checkpoint content"))
+                .unwrap();
+            server
+                .create_club(sid, Edition::from_text("club for async test"))
+                .unwrap();
+
+            let payload = server.checkpoint_prepare().unwrap();
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            assert_eq!(server.work_count(), 1);
+            assert_eq!(
+                server.work_edition(doc_id).unwrap().to_text(),
+                "async checkpoint content"
+            );
+            assert_ne!(server.manifest_slot, '\0');
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn async_checkpoint_dirty_gen_prevents_stale_ref() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_dirty_gen_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let doc_id;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            doc_id = server
+                .create_work(sid, Edition::from_text("original content"))
+                .unwrap();
+
+            let payload = server.checkpoint_prepare().unwrap();
+
+            server.works.get_mut(&doc_id).unwrap().mark_dirty();
+
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+
+            let ws = server.works.get(&doc_id).unwrap();
+            assert!(
+                ws.chunk_ref.is_none(),
+                "work should remain dirty after modification during checkpoint window"
+            );
+
+            let payload2 = server.checkpoint_prepare().unwrap();
+            let result2 = super::checkpoint_persist(payload2).unwrap();
+            server.checkpoint_commit(result2).unwrap();
+
+            let ws = server.works.get(&doc_id).unwrap();
+            assert!(
+                ws.chunk_ref.is_some(),
+                "work should be clean after second checkpoint"
+            );
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+            assert_eq!(
+                server.work_edition(doc_id).unwrap().to_text(),
+                "original content",
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn async_checkpoint_matches_sync() {
+        let data_dir_a = std::env::temp_dir().join(format!(
+            "xudanu_cmp_a_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let data_dir_b = std::env::temp_dir().join(format!(
+            "xudanu_cmp_b_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir_a);
+        let _ = std::fs::remove_dir_all(&data_dir_b);
+        std::fs::create_dir_all(&data_dir_a).unwrap();
+        std::fs::create_dir_all(&data_dir_b).unwrap();
+
+        let text = "comparison test content for sync vs async";
+
+        let doc_a;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir_a, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc_a = server.create_work(sid, Edition::from_text(text)).unwrap();
+
+            let payload = server.checkpoint_prepare().unwrap();
+            let result = super::checkpoint_persist(payload).unwrap();
+            server.checkpoint_commit(result).unwrap();
+        }
+
+        let doc_b;
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir_b, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            doc_b = server.create_work(sid, Edition::from_text(text)).unwrap();
+            server.checkpoint_to_store().unwrap();
+        }
+
+        let restored_a = {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir_a, None).unwrap();
+            server.work_edition(doc_a).unwrap().to_text()
+        };
+        let restored_b = {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir_b, None).unwrap();
+            server.work_edition(doc_b).unwrap().to_text()
+        };
+
+        assert_eq!(restored_a, restored_b);
+        assert_eq!(restored_a, text);
+
+        let _ = std::fs::remove_dir_all(&data_dir_a);
+        let _ = std::fs::remove_dir_all(&data_dir_b);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
     fn trail_crud_full_lifecycle() {
         let mut server = Server::new();
         let sid = server.connect();
@@ -19686,7 +20591,7 @@ mod tests {
                         }
                     }
                     assert!(
-                        found_backup || true,
+                        found_backup,
                         "recovery should succeed via versioned backup"
                     );
                 }
@@ -21454,6 +22359,126 @@ mod tests {
             recur.flat_text(),
             "M:",
             "recursive reads mid's compound resolution: 'M:SRC'[0:2]"
+        );
+    }
+
+    #[test]
+    fn pending_content_notifications_capped() {
+        let (mut server, _sid) = setup_logged_in_server();
+
+        let fossil_id: crate::edition::RecorderId = 999;
+        for i in 0..(MAX_PENDING_NOTIFICATIONS + 500) {
+            server.pending_content_notifications.push(ContentNotification {
+                fossil_id,
+                edition_be_id: 1000 + i as u64,
+                is_direct: true,
+                work_be_id: None,
+                title: None,
+            });
+        }
+        assert!(
+            server.pending_content_notifications.len() >= MAX_PENDING_NOTIFICATIONS + 500,
+            "precondition: vec should be overfilled"
+        );
+
+        server.cap_pending_notifications_for_test();
+        assert!(
+            server.pending_content_notifications.len() <= MAX_PENDING_NOTIFICATIONS,
+            "notifications should be capped at MAX, got {}",
+            server.pending_content_notifications.len()
+        );
+    }
+
+    #[test]
+    fn revision_authors_bounded_after_many_revisions() {
+        let (mut server, sid) = setup_logged_in_server();
+        let edition = crate::edition::Edition::from_text("initial");
+        let work_id = server.create_work(sid, edition).unwrap();
+        let author_club = server.resolve_author_club(sid);
+
+        for i in 0..(MAX_REVISION_AUTHORS + 200) {
+            let edition = crate::edition::Edition::from_text(&format!("rev {}", i));
+            server.revise_work(work_id, sid, edition, author_club).unwrap();
+        }
+
+        let ws = server.works.get(&work_id).expect("work should exist");
+        assert!(
+            ws.revision_authors.len() <= MAX_REVISION_AUTHORS,
+            "revision_authors should be bounded at {}, got {}",
+            MAX_REVISION_AUTHORS,
+            ws.revision_authors.len()
+        );
+    }
+
+    #[test]
+    fn prune_disconnected_sessions_removes_old_disconnected() {
+        let mut server = Server::new();
+        let active1 = server.connect();
+        let active2 = server.connect();
+        let disconnected = server.connect();
+        server.disconnect(disconnected).unwrap();
+
+        assert_eq!(server.sessions.len(), 3);
+        assert_eq!(server.session_count(), 2);
+
+        let pruned = server.prune_disconnected_sessions();
+        assert_eq!(pruned, 0, "within grace period, nothing pruned");
+        assert_eq!(server.sessions.len(), 3);
+
+        let old = server.connect();
+        server.disconnect(old).unwrap();
+        let old_session = server.sessions.get_mut(&old).unwrap();
+        old_session.ended_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(120));
+
+        let pruned = server.prune_disconnected_sessions();
+        assert_eq!(pruned, 1, "old disconnected session pruned");
+        assert!(!server.sessions.contains_key(&old));
+        assert!(server.sessions.contains_key(&active1));
+        assert!(server.sessions.contains_key(&active2));
+        assert!(server.sessions.contains_key(&disconnected));
+    }
+
+    #[test]
+    fn disconnected_session_identity_resolves_anonymous() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server.disconnect(sid).unwrap();
+
+        let (name, club_id, _) = server.identity_for_session(sid);
+        assert!(
+            !name.is_empty(),
+            "identity_for_session should still resolve for disconnected session"
+        );
+        assert!(club_id.is_some(), "club_id should be preserved while in grace period");
+    }
+
+    #[test]
+    fn prune_does_not_affect_attribution_history() {
+        let (mut server, sid) = setup_logged_in_server();
+        let edition = crate::edition::Edition::from_text("attribution test");
+        let work_id = server.create_work(sid, edition).unwrap();
+        let author_club = server.resolve_author_club(sid);
+
+        let edition2 = crate::edition::Edition::from_text("attribution test v2");
+        server.revise_work(work_id, sid, edition2, author_club).unwrap();
+
+        server.disconnect(sid).unwrap();
+
+        let old_session = server.sessions.get_mut(&sid).unwrap();
+        old_session.ended_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(120));
+        let pruned = server.prune_disconnected_sessions();
+        assert_eq!(pruned, 1);
+
+        let ws = server.works.get(&work_id).unwrap();
+        assert!(
+            ws.last_revision_author.is_some(),
+            "attribution history should survive session pruning"
+        );
+        let rev = ws.work.revision_count();
+        assert!(
+            ws.revision_authors.contains_key(&rev),
+            "revision_authors should survive session pruning"
         );
     }
 }

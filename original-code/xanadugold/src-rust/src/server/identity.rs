@@ -33,6 +33,11 @@ pub struct ClubAttemptTracker {
 }
 
 impl Server {
+    pub fn prune_stale_login_attempts(&mut self, now: std::time::Instant) {
+        self.login_attempts
+            .retain(|_, tracker| now.duration_since(tracker.window_start) <= CLUB_LOGIN_ATTEMPT_WINDOW);
+    }
+
     pub fn club_set_password(
         &mut self,
         session_id: SessionId,
@@ -540,6 +545,7 @@ impl Server {
             }
             Err(e) => {
                 let now = std::time::Instant::now();
+                self.prune_stale_login_attempts(now);
                 let tracker = self
                     .login_attempts
                     .entry(club_id)
@@ -1181,5 +1187,32 @@ mod tests {
         let result = server
             .authenticate_with_pending(sid2, &LockCredential::Password(b"wrongpass".to_vec()));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn prune_stale_login_attempts_removes_expired() {
+        let mut server = Server::new();
+
+        let now = std::time::Instant::now();
+        server.login_attempts.insert(
+            1001,
+            ClubAttemptTracker {
+                count: 5,
+                window_start: now - Duration::from_secs(600),
+            },
+        );
+        server.login_attempts.insert(
+            1002,
+            ClubAttemptTracker {
+                count: 2,
+                window_start: now,
+            },
+        );
+        assert_eq!(server.login_attempts.len(), 2);
+
+        server.prune_stale_login_attempts(now);
+        assert_eq!(server.login_attempts.len(), 1);
+        assert!(server.login_attempts.contains_key(&1002));
+        assert!(!server.login_attempts.contains_key(&1001));
     }
 }

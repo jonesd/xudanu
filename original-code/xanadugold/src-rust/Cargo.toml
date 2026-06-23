@@ -72,6 +72,7 @@ rustls-pemfile = "2"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 axum = { version = "0.8", features = ["ws"] }
 ring = "0.17"
+criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
 
 [[test]]
 name = "integration"
@@ -79,4 +80,9 @@ required-features = ["server"]
 
 [[test]]
 name = "tls"
+required-features = ["server"]
+
+[[bench]]
+name = "dispatch_bench"
+harness = false
 required-features = ["server"]

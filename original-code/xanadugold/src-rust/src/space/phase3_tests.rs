@@ -989,8 +989,8 @@ mod tests {
         assert_eq!(int_pos.as_real(), None);
         assert!(int_pos.as_composite().is_none());
 
-        let real_pos = DynPosition::real(3.14);
-        assert_eq!(real_pos.as_real(), Some(3.14));
+        let real_pos = DynPosition::real(3.5);
+        assert_eq!(real_pos.as_real(), Some(3.5));
         assert_eq!(real_pos.as_integer(), None);
 
         let seq_pos = DynPosition::sequence(Sequence::from_dotted("1.3.5"));
