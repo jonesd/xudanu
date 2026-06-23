@@ -183,6 +183,7 @@ pub struct Server {
     links: HashMap<BeId, LinkState>,
     work_to_links: HashMap<BeId, Vec<BeId>>,
     link_counter: BeId,
+    link_type_names: HashMap<u64, String>,
     backfollow: BackfollowEngine,
     content_address: ContentAddressIndex,
     blob_store: BlobStore,
@@ -651,6 +652,7 @@ impl Server {
             links: HashMap::new(),
             work_to_links: HashMap::new(),
             link_counter: 0,
+            link_type_names: HashMap::new(),
             backfollow: BackfollowEngine::new(),
             content_address: ContentAddressIndex::new(1_000_000),
             blob_store: BlobStore::in_memory(),
@@ -6845,6 +6847,98 @@ impl Server {
             .unwrap_or_default()
     }
 
+    pub fn link_add_end(
+        &mut self,
+        _session_id: SessionId,
+        link_id: BeId,
+        end_name: &str,
+        end_ref: HyperRef,
+    ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(
+            self.consequence_tracker.clone(),
+            self.consequence_tracker.begin_operation(),
+        );
+        self.ensure_session(_session_id)?;
+        let old_link = {
+            let ls = self
+                .links
+                .get(&link_id)
+                .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+            ls.link.clone()
+        };
+        self.backfollow.unregister_link_content(&old_link, link_id);
+        let ls = self
+            .links
+            .get_mut(&link_id)
+            .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+        ls.link = ls.link.with_end(end_name, end_ref);
+        self.backfollow.register_link_content(&ls.link, link_id);
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    pub fn link_remove_end(
+        &mut self,
+        _session_id: SessionId,
+        link_id: BeId,
+        end_name: &str,
+    ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(
+            self.consequence_tracker.clone(),
+            self.consequence_tracker.begin_operation(),
+        );
+        self.ensure_session(_session_id)?;
+        let old_link = {
+            let ls = self
+                .links
+                .get(&link_id)
+                .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+            ls.link.clone()
+        };
+        self.backfollow.unregister_link_content(&old_link, link_id);
+        let ls = self
+            .links
+            .get_mut(&link_id)
+            .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+        ls.link = ls.link.without_end(end_name);
+        self.backfollow.register_link_content(&ls.link, link_id);
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    pub fn link_set_types(
+        &mut self,
+        _session_id: SessionId,
+        link_id: BeId,
+        link_types: Vec<u64>,
+    ) -> Result<(), ServerError> {
+        let _guard = OperationGuard::new(
+            self.consequence_tracker.clone(),
+            self.consequence_tracker.begin_operation(),
+        );
+        self.ensure_session(_session_id)?;
+        let ls = self
+            .links
+            .get_mut(&link_id)
+            .ok_or(ServerError::NotFound(format!("link {}", link_id)))?;
+        ls.link = ls.link.with_link_types(link_types);
+        Ok(())
+    }
+
+    pub fn register_link_type(&mut self, type_id: u64, name: String) {
+        self.link_type_names.insert(type_id, name);
+    }
+
+    pub fn list_link_types(&self) -> Vec<(u64, String)> {
+        let mut types: Vec<(u64, String)> = self
+            .link_type_names
+            .iter()
+            .map(|(&id, name)| (id, name.clone()))
+            .collect();
+        types.sort_by_key(|(id, _)| *id);
+        types
+    }
+
     pub fn find_backlinks(
         &self,
         session_id: SessionId,
@@ -11033,6 +11127,7 @@ pub(crate) mod persist_snapshot {
                 links: HashMap::new(),
                 work_to_links: HashMap::new(),
                 link_counter: snapshot.link_counter,
+                link_type_names: HashMap::new(),
                 backfollow: BackfollowEngine::new(),
                 content_address,
                 blob_store: BlobStore::in_memory(),
@@ -23631,5 +23726,158 @@ mod tests {
                 "'b' should not show work_a as source"
             );
         }
+    }
+
+    #[test]
+    fn link_add_end_creates_multi_ended_link() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let work_c = server.create_work(sid, Edition::from_text("c")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None);
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        let third_end = crate::edition::links::HyperRef::single(None, Some(work_c), None, None);
+        server
+            .link_add_end(sid, link_id, "Context", third_end)
+            .unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        assert_eq!(link.end_count(), 3, "should have 3 ends");
+        assert!(link.has_end("LeftEnd"));
+        assert!(link.has_end("RightEnd"));
+        assert!(link.has_end("Context"));
+    }
+
+    #[test]
+    fn link_remove_end_removes_named_end() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let work_c = server.create_work(sid, Edition::from_text("c")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None);
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        let third_end = crate::edition::links::HyperRef::single(None, Some(work_c), None, None);
+        server
+            .link_add_end(sid, link_id, "Context", third_end)
+            .unwrap();
+        assert_eq!(server.get_link(link_id).unwrap().2.end_count(), 3);
+
+        server.link_remove_end(sid, link_id, "Context").unwrap();
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        assert_eq!(link.end_count(), 2, "should have 2 ends after removal");
+        assert!(!link.has_end("Context"));
+    }
+
+    #[test]
+    fn link_set_types_updates_type_set() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("b")).unwrap();
+
+        let link_id = server.create_link(sid, work_a, work_b, None, None).unwrap();
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        assert!(
+            link.link_types().is_empty(),
+            "default link should have no types"
+        );
+
+        server.link_set_types(sid, link_id, vec![1, 2]).unwrap();
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        assert_eq!(link.link_types(), &[1, 2], "types should be [1, 2]");
+
+        server.link_set_types(sid, link_id, vec![3]).unwrap();
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        assert_eq!(link.link_types(), &[3], "types should be [3] after update");
+    }
+
+    #[test]
+    fn link_type_registry_register_and_list() {
+        let (mut server, _sid) = setup_logged_in_server();
+
+        server.register_link_type(1, "citation".to_string());
+        server.register_link_type(2, "response".to_string());
+        server.register_link_type(3, "commentary".to_string());
+
+        let types = server.list_link_types();
+        assert_eq!(types.len(), 3);
+        assert_eq!(types[0], (1, "citation".to_string()));
+        assert_eq!(types[1], (2, "response".to_string()));
+        assert_eq!(types[2], (3, "commentary".to_string()));
+    }
+
+    #[test]
+    fn link_type_registry_overwrite() {
+        let (mut server, _sid) = setup_logged_in_server();
+
+        server.register_link_type(1, "old_name".to_string());
+        server.register_link_type(1, "new_name".to_string());
+
+        let types = server.list_link_types();
+        assert_eq!(types.len(), 1, "should have 1 type after overwrite");
+        assert_eq!(types[0].1, "new_name");
+    }
+
+    #[test]
+    fn link_get_returns_all_named_ends() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("b")).unwrap();
+        let work_c = server.create_work(sid, Edition::from_text("c")).unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(None, Some(work_a), None, None);
+        let d_ref = crate::edition::links::HyperRef::single(None, Some(work_b), None, None);
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        let third = crate::edition::links::HyperRef::single(None, Some(work_c), None, None);
+        server
+            .link_add_end(sid, link_id, "Footnote", third)
+            .unwrap();
+
+        let (_, _, link) = server.get_link(link_id).unwrap();
+        let end_names = link.end_names();
+        assert!(end_names.contains(&"LeftEnd"), "should have LeftEnd");
+        assert!(end_names.contains(&"RightEnd"), "should have RightEnd");
+        assert!(end_names.contains(&"Footnote"), "should have Footnote");
+        assert_eq!(end_names.len(), 3, "should have exactly 3 ends");
+    }
+
+    #[test]
+    fn hyperlink_make_with_ends_supports_arbitrary_names() {
+        use crate::edition::links::{HyperLink, HyperRef};
+        use std::collections::HashMap;
+
+        let mut ends = HashMap::new();
+        ends.insert(
+            "Source".to_string(),
+            HyperRef::single(None, Some(1), None, None),
+        );
+        ends.insert(
+            "Target".to_string(),
+            HyperRef::single(None, Some(2), None, None),
+        );
+        ends.insert(
+            "Evidence".to_string(),
+            HyperRef::single(None, Some(3), None, None),
+        );
+
+        let link = HyperLink::make_with_ends(vec![10, 20], ends);
+        assert_eq!(link.end_count(), 3);
+        assert_eq!(link.link_types(), &[10, 20]);
+        assert!(link.has_end("Source"));
+        assert!(link.has_end("Target"));
+        assert!(link.has_end("Evidence"));
+        assert!(!link.is_two_ended());
     }
 }

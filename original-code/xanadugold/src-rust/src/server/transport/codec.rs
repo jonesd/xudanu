@@ -1540,6 +1540,62 @@ impl JsonCodec {
                     limit: args.limit,
                 })
             }
+            OperationCode::LinkAddEnd => {
+                #[derive(Deserialize)]
+                struct Args {
+                    link_id: BeId,
+                    end_name: String,
+                    end_ref: super::protocol::HyperRefPayload,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkAddEnd {
+                    link_id: args.link_id,
+                    end_name: args.end_name,
+                    end_ref: args.end_ref,
+                })
+            }
+            OperationCode::LinkRemoveEnd => {
+                #[derive(Deserialize)]
+                struct Args {
+                    link_id: BeId,
+                    end_name: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkRemoveEnd {
+                    link_id: args.link_id,
+                    end_name: args.end_name,
+                })
+            }
+            OperationCode::LinkSetTypes => {
+                #[derive(Deserialize)]
+                struct Args {
+                    link_id: BeId,
+                    #[serde(default)]
+                    link_types: Vec<u64>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkSetTypes {
+                    link_id: args.link_id,
+                    link_types: args.link_types,
+                })
+            }
+            OperationCode::LinkTypeRegister => {
+                #[derive(Deserialize)]
+                struct Args {
+                    type_id: u64,
+                    name: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::LinkTypeRegister {
+                    type_id: args.type_id,
+                    name: args.name,
+                })
+            }
+            OperationCode::LinkTypeList => Ok(WireRequest::LinkTypeList),
             OperationCode::FindTranscluders => {
                 #[derive(Deserialize)]
                 struct Args {
