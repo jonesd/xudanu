@@ -89,6 +89,8 @@ export function WorkspacePage() {
   const [authorWorks, setAuthorWorks] = useState<WorkListEntry[]>([]);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const sourceViewerRef = useRef<HTMLDivElement>(null);
+  const lastTypingRef = useRef(0);
+  const awarenessRefreshedRef = useRef(false);
 
   const transclusion = useTransclusion();
   const [backlinks, setBacklinks] = useState<BacklinkEntry[]>([]);
@@ -198,21 +200,24 @@ export function WorkspacePage() {
     const myClub = clientRef.current.currentIdentity?.club_id;
     if (!myClub) return;
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const run = async () => {
-      const endorsed = new Set<number>();
-      for (const w of works) {
-        if (cancelled) return;
-        try {
-          const es = await clientRef.current!.workEndorsements(w.work_id);
-          if (es.some((e) => e[0] === myClub)) endorsed.add(w.work_id);
-        } catch { break; }
-        await new Promise<void>((r) => { timer = setTimeout(r, 50); });
+    const timer = setTimeout(async () => {
+      const results = await Promise.all(
+        works.map((w) =>
+          clientRef.current!
+            .workEndorsements(w.work_id)
+            .then((es) => ({ workId: w.work_id, endorsed: es.some((e) => e[0] === myClub) }))
+            .catch(() => ({ workId: w.work_id, endorsed: false })),
+        ),
+      );
+      if (!cancelled) {
+        const endorsed = new Set<number>();
+        for (const r of results) {
+          if (r.endorsed) endorsed.add(r.workId);
+        }
+        setEndorsedWorkIds(endorsed);
       }
-      if (!cancelled) setEndorsedWorkIds(endorsed);
-    };
-    timer = setTimeout(run, 1000);
-    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    }, 1000);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [works.length, authenticated]);
 
   const currentWorkMeta = works.find(w => w.work_id === workBeId);
@@ -295,7 +300,14 @@ export function WorkspacePage() {
   }, [connected, authenticated, loadAuthors]);
   useEffect(() => {
     if (!connected) return;
-    const interval = setInterval(loadWorks, 5000);
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const isTyping = now - lastTypingRef.current < 3000;
+      const isHidden = document.hidden;
+      if (!isTyping && !isHidden) {
+        loadWorks();
+      }
+    }, 5000);
     return () => clearInterval(interval);
   }, [connected, loadWorks]);
 
@@ -391,7 +403,12 @@ export function WorkspacePage() {
   }, [connected, workBeId]);
 
   const prevTextRef = useRef(text);
-  useEffect(() => { prevTextRef.current = text; }, [text]);
+  useEffect(() => {
+    if (text !== prevTextRef.current) {
+      lastTypingRef.current = Date.now();
+    }
+    prevTextRef.current = text;
+  }, [text]);
 
   useEffect(() => {
     if (workBeId === null || !connected || !authenticated) return;
@@ -424,11 +441,18 @@ export function WorkspacePage() {
   }, [connected, workBeId, refreshAnnotations]);
 
   useEffect(() => {
-    if (connected && workBeId !== null) {
-      const timer = setTimeout(() => { refreshAwareness(); }, 5000);
+    if (connected && workBeId !== null && !awarenessRefreshedRef.current) {
+      const timer = setTimeout(() => {
+        awarenessRefreshedRef.current = true;
+        refreshAwareness();
+      }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [connected, workBeId, awareness.length, refreshAwareness]);
+  }, [connected, workBeId, refreshAwareness]);
+
+  useEffect(() => {
+    awarenessRefreshedRef.current = false;
+  }, [workBeId]);
 
   useEffect(() => {
     if (connected && workBeId !== null && clientRef.current && identity !== null) {
@@ -557,6 +581,15 @@ export function WorkspacePage() {
       console.error("Endorse failed:", e);
     }
   }, [clientRef, workBeId, identity, hasEndorsed]);
+
+  const handleEditorSelectionChange = useCallback(
+    (s: number | null, e: number | null) => {
+      sendSelection(s, e);
+      if (s !== null && e !== null) setSelectionRange({ start: s, end: e });
+      else setSelectionRange(null);
+    },
+    [sendSelection],
+  );
 
   const workIdDisplay = workBeId !== null
     ? workBeId.toString(16).padStart(4, "0")
@@ -1297,11 +1330,7 @@ export function WorkspacePage() {
                     text={displayText}
                     onTextChange={setText}
                     onCursorChange={sendCursor}
-                    onSelectionChange={(s, e) => {
-                      sendSelection(s, e);
-                      if (s !== null && e !== null) setSelectionRange({ start: s, end: e });
-                      else setSelectionRange(null);
-                    }}
+                    onSelectionChange={handleEditorSelectionChange}
                      connected={connected}
                      attributionSpans={attributionSpans}
                    editable={canEdit}
@@ -1319,15 +1348,11 @@ export function WorkspacePage() {
                       lineHeight={docPrefs.lineHeight}
                     />
                  ) : (
-                    <CollaborativeEditor
+                     <CollaborativeEditor
                      text={displayText}
                     onTextChange={canEdit ? setText : undefined}
                    onCursorChange={sendCursor}
-                   onSelectionChange={(s, e) => {
-                     sendSelection(s, e);
-                     if (s !== null && e !== null) setSelectionRange({ start: s, end: e });
-                     else setSelectionRange(null);
-                   }}
+                   onSelectionChange={handleEditorSelectionChange}
                    connected={connected}
                    attributionSpans={attributionSpans}
                     editable={canEdit}

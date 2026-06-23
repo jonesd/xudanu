@@ -11,7 +11,7 @@ interface IdentityPanelProps {
 
 const MIN_PASSWORD_LENGTH = 10;
 
-function validatePassword(pw: string): string | null {
+export function validatePassword(pw: string): string | null {
   if (pw.length < MIN_PASSWORD_LENGTH) return `At least ${MIN_PASSWORD_LENGTH} characters`;
   if (!/[A-Z]/.test(pw)) return "Include at least one uppercase letter";
   if (!/[a-z]/.test(pw)) return "Include at least one lowercase letter";
@@ -19,7 +19,7 @@ function validatePassword(pw: string): string | null {
   return null;
 }
 
-function passwordStrength(pw: string): { score: number; label: string; color: string } {
+export function passwordStrength(pw: string): { score: number; label: string; color: string } {
   if (!pw) return { score: 0, label: "", color: "#ccc" };
   let score = 0;
   if (pw.length >= MIN_PASSWORD_LENGTH) score++;

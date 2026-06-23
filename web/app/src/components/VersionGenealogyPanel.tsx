@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { CrdtSyncClient } from "../api/crdt_sync";
+import { useDraggable } from "../hooks/useDraggable";
 
 interface Props {
   client: CrdtSyncClient | null;
@@ -19,6 +20,7 @@ function hexId(id: number): string {
 }
 
 export function VersionGenealogyPanel({ client, currentWorkId, onSelectWork, onClose }: Props) {
+  const { drag, onMouseDown, dialogRef } = useDraggable();
   const [ancestors, setAncestors] = useState<GeneNode[]>([]);
   const [descendants, setDescendants] = useState<GeneNode[]>([]);
   const [currentTitle, setCurrentTitle] = useState("");
@@ -74,8 +76,18 @@ export function VersionGenealogyPanel({ client, currentWorkId, onSelectWork, onC
 
   return (
     <div className="panel-overlay" onClick={onClose}>
-      <div className="panel-dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="panel-header">
+      <div
+        ref={dialogRef}
+        className="panel-dialog"
+        style={{
+          transform: `translate(${drag.offsetX}px, ${drag.offsetY}px)`,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="panel-header"
+          onMouseDown={onMouseDown}
+          style={{ cursor: "grab", userSelect: "none" }}>
           <span className="panel-title">Version Genealogy</span>
           <button type="button" className="panel-close" onClick={onClose}>{"\u00d7"}</button>
         </div>

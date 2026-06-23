@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback } from "react";
 import type { CrdtSyncClient, WorkListEntry, AttributionSpan, AttributionLogStatus, LinkEntry } from "../api/crdt_sync";
+import { useDraggable } from "../hooks/useDraggable";
 
 interface Props {
   client: CrdtSyncClient | null;
@@ -43,6 +44,7 @@ export function ExportPanel({
   onClose,
   onWorkCreated,
 }: Props) {
+  const { drag, onMouseDown, dialogRef } = useDraggable();
   const title = currentWorkMeta?.title || `work:${currentWorkId?.toString(16)}`;
   const fileBase = useMemo(
     () => safeName(currentWorkMeta?.title, currentWorkId ?? 0),
@@ -214,6 +216,7 @@ export function ExportPanel({
       }}
     >
       <div
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
         style={{
           background: "#fff",
@@ -222,9 +225,10 @@ export function ExportPanel({
           minWidth: 360,
           maxWidth: 480,
           boxShadow: "0 4px 24px rgba(0,0,0,0.2)",
+          transform: `translate(${drag.offsetX}px, ${drag.offsetY}px)`,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, cursor: "grab", userSelect: "none" }} onMouseDown={onMouseDown}>
           <strong style={{ fontSize: 16 }}>Export</strong>
           <button type="button" onClick={onClose} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: "#999" }}>
             ×
