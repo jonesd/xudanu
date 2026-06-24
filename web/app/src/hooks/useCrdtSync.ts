@@ -205,7 +205,7 @@ export function useCrdtSync(
 
   const sendSelection = useCallback((start: number | null, end: number | null) => {
     const sel = start !== null && end !== null ? { start, end } : null;
-    clientRef.current?.sendAwareness(null, sel, start !== null);
+    clientRef.current?.sendAwareness(start, sel, start !== null);
   }, []);
 
   const toggleWatch = useCallback(async () => {
