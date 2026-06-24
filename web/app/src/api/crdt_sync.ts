@@ -26,6 +26,19 @@ export interface SearchResult {
   totalMatches: number;
 }
 
+export interface GlobalSearchResultItem {
+  work_id: number;
+  title?: string;
+  owner?: number;
+  revision_count: number;
+  matches: SearchMatchItem[];
+}
+
+export interface GlobalSearchResults {
+  results: GlobalSearchResultItem[];
+  totalWorksMatched: number;
+}
+
 export interface GotoResult {
   line: number;
   charOffset: number;
@@ -521,6 +534,18 @@ export class CrdtSyncClient {
     return {
       matches: (val.matches as SearchMatchItem[]) || [],
       totalMatches: (val.total_matches as number) || 0,
+    };
+  }
+
+  async globalTextSearch(query: string, maxResults?: number): Promise<GlobalSearchResults> {
+    const resp = await this.sendRequest("global_text_search", {
+      query,
+      max_results: maxResults ?? null,
+    });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      results: (val.results as GlobalSearchResultItem[]) || [],
+      totalWorksMatched: (val.total_works_matched as number) || 0,
     };
   }
 

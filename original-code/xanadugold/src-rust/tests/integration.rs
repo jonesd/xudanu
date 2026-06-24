@@ -10439,3 +10439,76 @@ async fn historical_author_duplicate_rejected() {
     .await;
     assert_eq!(resp2["type"], "error");
 }
+
+#[tokio::test]
+async fn ws_auto_login_public_can_create_work() {
+    let srv = TestServer::start().await;
+    let url = format!(
+        "ws://{}/xudanu?format=json&version=2&login=public",
+        srv.addr
+    );
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+
+    let hs = r.next().await.unwrap().unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(hs.into_data().as_ref()).unwrap()["type"],
+        "handshake"
+    );
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "auto-login test"}})),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+    assert_eq!(resp["value"]["type"], "id");
+}
+
+#[tokio::test]
+async fn ws_no_login_cannot_create_work() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "should fail"}})),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "error");
+}
+
+#[tokio::test]
+async fn ws_token_query_param_connects() {
+    let srv = TestServer::start().await;
+    let url = format!(
+        "ws://{}/xudanu?format=json&version=2&token=fake-token&login=public",
+        srv.addr
+    );
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+
+    let _hs = r.next().await.unwrap().unwrap();
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "global_text_search",
+            Some(serde_json::json!({"query": "test"})),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+}
