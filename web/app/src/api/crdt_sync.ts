@@ -263,6 +263,7 @@ export interface AnnotationEntry {
   created_by: number | null;
   created_by_name: string | null;
   created_at?: number;
+  is_private?: boolean;
 }
 
 export interface TransclusionMarker {
@@ -1025,6 +1026,22 @@ export class CrdtSyncClient {
     return (val as string) || "";
   }
 
+  async fetchClubNames(offset?: number, limit?: number): Promise<[string, number][]> {
+    const resp = await this.sendRequest("club_names", {
+      offset: offset ?? null,
+      limit: limit ?? null,
+    });
+    const val = extractValue(resp) as Record<string, unknown>;
+    const entries = (val.entries as [string, number][]) || [];
+    return entries;
+  }
+
+  async getPublicClubId(): Promise<number> {
+    const resp = await this.sendRequest("server_stats");
+    const val = (resp as Record<string, unknown>)?.value as Record<string, unknown> | undefined;
+    return (val?.public_club_id as number) || 0;
+  }
+
   async createIdentity(displayName: string, password: string): Promise<WhoAmIEntry> {
     const pwBytes = Array.from(new TextEncoder().encode(password));
     const resp = await this.sendRequest("club_create_personal", {
@@ -1498,7 +1515,7 @@ export class CrdtSyncClient {
     return (rec.work_ids as number[]) || [];
   }
 
-  async annotationCreate(workId: number, annotationId: number, kind: string, payload: string, charStart: number, charEnd: number): Promise<void> {
+  async annotationCreate(workId: number, annotationId: number, kind: string, payload: string, charStart: number, charEnd: number, isPrivate?: boolean): Promise<void> {
     await this.sendRequest("annotation_create", {
       work_id: workId,
       annotation_id: annotationId,
@@ -1506,6 +1523,7 @@ export class CrdtSyncClient {
       payload,
       char_start: charStart,
       char_end: charEnd,
+      is_private: isPrivate ?? false,
     });
   }
 

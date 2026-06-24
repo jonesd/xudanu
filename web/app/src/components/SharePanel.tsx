@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { CrdtSyncClient } from "../api/crdt_sync";
+import { ClubSelector } from "./ClubSelector";
 
 interface SharePanelProps {
   workBeId: number;
@@ -18,6 +19,7 @@ export function SharePanel({ workBeId, clientRef, connected, canEdit, onClose }:
   const [readClub, setReadClub] = useState<number | null>(null);
   const [editClub, setEditClubState] = useState<number | null>(null);
   const [members, setMembers] = useState<MemberInfo[]>([]);
+  const [publicClubId, setPublicClubId] = useState(0);
   const [addName, setAddName] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -32,6 +34,8 @@ export function SharePanel({ workBeId, clientRef, connected, canEdit, onClose }:
       const ec = await client.getEditClub(workBeId);
       setReadClub(rc || null);
       setEditClubState(ec || null);
+      const stats = await client.getPublicClubId();
+      setPublicClubId(stats);
       if (ec) {
         const ids = await client.clubMembers(ec);
         const infos: MemberInfo[] = [];
@@ -152,17 +156,26 @@ export function SharePanel({ workBeId, clientRef, connected, canEdit, onClose }:
 
             <div className="share-section">
               <label className="share-label">Read Access</label>
-              <div className="share-toggle-row">
-                <button
-                  className={"share-btn" + (readClub ? " active" : "")}
-                  disabled={!canEdit || saving}
-                  onClick={() => setPublic("read", !readClub)}
-                >
-                  {readClub ? "Public" : "Private"}
-                </button>
-                <span className="share-desc">
-                  {readClub ? "Anyone can view this work" : "Only authorized users can view"}
-                </span>
+              <div style={{ marginBottom: "4px" }}>
+                <ClubSelector
+                  clientRef={clientRef}
+                  connected={connected}
+                  publicClubId={publicClubId}
+                  value={readClub}
+                  onChange={async (clubId) => {
+                    if (!clientRef.current || !canEdit) return;
+                    setSaving(true);
+                    try {
+                      await clientRef.current.setReadClub(workBeId, clubId);
+                      setReadClub(clubId);
+                    } catch (e) {
+                      setError(String(e));
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
+                  privateLabel="Owner only"
+                />
               </div>
             </div>
 
