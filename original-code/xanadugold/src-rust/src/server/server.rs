@@ -7675,6 +7675,8 @@ impl Server {
 
                 let ctx_start = char_offset.saturating_sub(40);
                 let ctx_end = (char_offset + query.len() + 40).min(text.len());
+                let ctx_start = text.floor_char_boundary(ctx_start);
+                let ctx_end = text.ceil_char_boundary(ctx_end);
                 let context = text[ctx_start..ctx_end].replace('\n', " ");
 
                 matches.push(SearchMatch {
