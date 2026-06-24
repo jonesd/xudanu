@@ -337,6 +337,7 @@ pub enum OperationCode {
     WorkSummary,
     WorkVersionTimeline,
     PassageComposition,
+    GlobalTextSearch,
 }
 
 impl OperationCode {
@@ -601,6 +602,7 @@ impl OperationCode {
             0x0D13 => Some(OperationCode::WorkSummary),
             0x0D14 => Some(OperationCode::WorkVersionTimeline),
             0x0D15 => Some(OperationCode::PassageComposition),
+            0x0D16 => Some(OperationCode::GlobalTextSearch),
 
             _ => None,
         }
@@ -864,6 +866,7 @@ impl OperationCode {
             OperationCode::WorkSummary => 0x0D13,
             OperationCode::WorkVersionTimeline => 0x0D14,
             OperationCode::PassageComposition => 0x0D15,
+            OperationCode::GlobalTextSearch => 0x0D16,
         }
     }
 }
@@ -1737,6 +1740,11 @@ pub enum WireRequest {
         start: u64,
         end: u64,
     },
+    GlobalTextSearch {
+        query: String,
+        #[serde(default)]
+        max_results: Option<u64>,
+    },
 }
 
 impl WireRequest {
@@ -1814,6 +1822,7 @@ impl WireRequest {
                 | Self::MembershipVerify { .. }
                 | Self::GovernanceLog { .. }
                 | Self::GovernanceStatus { .. }
+                | Self::GlobalTextSearch { .. }
         )
     }
 }
@@ -2313,6 +2322,11 @@ pub enum ResponseValue {
     PassageCompositionResult {
         layers: Vec<CompositionLayerEntry>,
     },
+
+    GlobalSearchResults {
+        results: Vec<GlobalSearchResultPayload>,
+        total_works_matched: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2373,6 +2387,18 @@ pub struct SearchMatchPayload {
     pub char_offset: u64,
     pub line: u64,
     pub context: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlobalSearchResultPayload {
+    pub work_id: BeId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<BeId>,
+    #[serde(default)]
+    pub revision_count: u64,
+    pub matches: Vec<SearchMatchPayload>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

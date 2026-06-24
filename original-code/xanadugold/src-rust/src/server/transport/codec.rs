@@ -2915,6 +2915,20 @@ impl JsonCodec {
                     end: args.end,
                 })
             }
+            OperationCode::GlobalTextSearch => {
+                #[derive(Deserialize)]
+                struct Args {
+                    query: String,
+                    #[serde(default)]
+                    max_results: Option<u64>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::GlobalTextSearch {
+                    query: args.query,
+                    max_results: args.max_results,
+                })
+            }
             OperationCode::WorkStar => {
                 #[derive(Deserialize)]
                 struct Args {

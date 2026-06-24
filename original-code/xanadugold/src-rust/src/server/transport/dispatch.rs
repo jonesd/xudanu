@@ -2999,6 +2999,34 @@ fn dispatch_inner(
             srv.ensure_can_read(session_id, work_id)?;
             srv.passage_composition(work_id, start, end)
         }
+        WireRequest::GlobalTextSearch { query, max_results } => {
+            srv.ensure_session(session_id)?;
+            let max = max_results.unwrap_or(50) as usize;
+            let results = srv.global_text_search(session_id, &query, max);
+            let total_works_matched = results.len() as u64;
+            let payloads: Vec<super::protocol::GlobalSearchResultPayload> = results
+                .into_iter()
+                .map(|r| super::protocol::GlobalSearchResultPayload {
+                    work_id: r.work_id,
+                    title: r.title,
+                    owner: r.owner,
+                    revision_count: r.revision_count,
+                    matches: r
+                        .matches
+                        .into_iter()
+                        .map(|m| super::protocol::SearchMatchPayload {
+                            char_offset: m.char_offset,
+                            line: m.line,
+                            context: m.context,
+                        })
+                        .collect(),
+                })
+                .collect();
+            Ok(ResponseValue::GlobalSearchResults {
+                results: payloads,
+                total_works_matched,
+            })
+        }
     }
 }
 
@@ -3816,6 +3844,34 @@ fn dispatch_inner_read(
         WireRequest::WorkVersionTimeline { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
             srv.work_version_timeline(work_id)
+        }
+        WireRequest::GlobalTextSearch { query, max_results } => {
+            srv.ensure_session(session_id)?;
+            let max = max_results.unwrap_or(50) as usize;
+            let results = srv.global_text_search(session_id, &query, max);
+            let total_works_matched = results.len() as u64;
+            let payloads: Vec<super::protocol::GlobalSearchResultPayload> = results
+                .into_iter()
+                .map(|r| super::protocol::GlobalSearchResultPayload {
+                    work_id: r.work_id,
+                    title: r.title,
+                    owner: r.owner,
+                    revision_count: r.revision_count,
+                    matches: r
+                        .matches
+                        .into_iter()
+                        .map(|m| super::protocol::SearchMatchPayload {
+                            char_offset: m.char_offset,
+                            line: m.line,
+                            context: m.context,
+                        })
+                        .collect(),
+                })
+                .collect();
+            Ok(ResponseValue::GlobalSearchResults {
+                results: payloads,
+                total_works_matched,
+            })
         }
         _ => Err(crate::server::ServerError::Internal(
             "unhandled read request in dispatch_inner_read".to_string(),
