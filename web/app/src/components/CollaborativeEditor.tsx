@@ -1,10 +1,11 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from "react";
-import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePayload } from "../api/crdt_sync";
+import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePayload, AwarenessState } from "../api/crdt_sync";
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { TextBuffer } from "../api/text_buffer";
 import { SearchPanel } from "./SearchPanel";
 import { OutlinePanel } from "./OutlinePanel";
+import { RemoteCursors } from "./RemoteCursors";
 
 interface UndoEntry {
   text: string;
@@ -48,6 +49,7 @@ interface CollaborativeEditorProps {
   annotations?: AnnotationEntry[];
   onCreateAnnotation?: (charStart: number, charEnd: number) => void;
   compoundSpanRanges?: SpanRangePayload[];
+  remoteCursors?: AwarenessState[];
   compoundSourceTitles?: Record<number, string>;
 }
 
@@ -334,6 +336,7 @@ export function CollaborativeEditor({
   annotations = [],
   onCreateAnnotation,
   compoundSpanRanges = [],
+  remoteCursors = [],
   compoundSourceTitles: _compoundSourceTitles = {},
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -886,6 +889,7 @@ export function CollaborativeEditor({
               lineHeight: lineHeight ? `${lineHeight}` : undefined,
             }}
           />
+          <RemoteCursors editorRef={editorRef} states={remoteCursors} />
         </div>
         {outlineOpen && (
           <OutlinePanel
