@@ -14,44 +14,84 @@ interface CursorPos {
 }
 
 function charIndexToPos(editor: HTMLElement, charIndex: number): CursorPos | null {
-  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
+  const walker = document.createTreeWalker(
+    editor,
+    NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+    {
+      acceptNode(node) {
+        if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+        if (node.nodeName === "BR" || node.nodeName === "DIV" || node.nodeName === "P") {
+          return NodeFilter.FILTER_ACCEPT;
+        }
+        return NodeFilter.FILTER_SKIP;
+      },
+    },
+  );
   let remaining = charIndex;
-  let node: Text | null = null;
 
   while (walker.nextNode()) {
-    const textNode = walker.currentNode as Text;
-    const len = textNode.textContent?.length ?? 0;
-    if (remaining <= len) {
-      node = textNode;
-      break;
+    const node = walker.currentNode;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const textNode = node as Text;
+      const len = textNode.textContent?.length ?? 0;
+      if (remaining <= len) {
+        try {
+          const range = document.createRange();
+          range.setStart(textNode, Math.min(remaining, len));
+          range.setEnd(textNode, Math.min(remaining, len));
+          const rect = range.getBoundingClientRect();
+          const editorRect = editor.getBoundingClientRect();
+          return {
+            x: rect.left - editorRect.left,
+            y: rect.top - editorRect.top,
+            height: rect.height || 18,
+          };
+        } catch { return null; }
+      }
+      remaining -= len;
+    } else if (node.nodeName === "BR") {
+      remaining -= 1;
+      if (remaining <= 0) {
+        try {
+          const range = document.createRange();
+          range.setStartAfter(node);
+          range.setEndAfter(node);
+          const rect = range.getBoundingClientRect();
+          const editorRect = editor.getBoundingClientRect();
+          return {
+            x: rect.left - editorRect.left,
+            y: rect.top - editorRect.top,
+            height: rect.height || 18,
+          };
+        } catch { return null; }
+      }
+    } else if (node.nodeName === "DIV" || node.nodeName === "P") {
+      const block = node as HTMLElement;
+      const blockText = block.textContent ?? "";
+      if (remaining <= blockText.length) {
+        return charIndexToPos(block, remaining);
+      }
+      remaining -= blockText.length;
+      remaining -= 1;
     }
-    remaining -= len;
   }
 
-  if (!node) {
-    const last = editor.lastChild;
-    if (last && last.nodeType === Node.TEXT_NODE) {
-      node = last as Text;
-      remaining = (node.textContent?.length ?? 0);
-    } else {
-      return null;
-    }
+  const lastChild = editor.lastChild;
+  if (lastChild) {
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      const rect = range.getBoundingClientRect();
+      const editorRect = editor.getBoundingClientRect();
+      return {
+        x: rect.left - editorRect.left,
+        y: rect.top - editorRect.top,
+        height: rect.height || 18,
+      };
+    } catch { return null; }
   }
-
-  try {
-    const range = document.createRange();
-    range.setStart(node, Math.min(remaining, node.textContent?.length ?? 0));
-    range.setEnd(node, Math.min(remaining, node.textContent?.length ?? 0));
-    const rect = range.getBoundingClientRect();
-    const editorRect = editor.getBoundingClientRect();
-    return {
-      x: rect.left - editorRect.left,
-      y: rect.top - editorRect.top,
-      height: rect.height || 18,
-    };
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 export function RemoteCursors({ editorRef, states }: RemoteCursorsProps) {

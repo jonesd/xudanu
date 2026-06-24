@@ -719,7 +719,6 @@ export function CollaborativeEditor({
       preEnd.selectNodeContents(el);
       preEnd.setEnd(range.endContainer, range.endOffset);
       const end = preEnd.toString().length;
-      onCursorChange(start);
       onSelectionChange(start, end);
     }
   }, [onCursorChange, onSelectionChange]);
