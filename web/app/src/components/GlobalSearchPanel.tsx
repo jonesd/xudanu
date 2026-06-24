@@ -8,6 +8,29 @@ interface GlobalSearchPanelProps {
   onNavigateToWork: (id: number) => void;
 }
 
+const Kbd = ({ children }: { children: React.ReactNode }) => (
+  <kbd
+    style={{
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      minWidth: "20px",
+      height: "20px",
+      padding: "0 5px",
+      borderRadius: "4px",
+      fontSize: "11px",
+      fontFamily: "ui-monospace, monospace",
+      background: "rgba(128,128,128,0.15)",
+      border: "1px solid rgba(128,128,128,0.25)",
+      boxShadow: "0 1px 0 rgba(128,128,128,0.2)",
+      color: "inherit",
+      opacity: 0.85,
+    }}
+  >
+    {children}
+  </kbd>
+);
+
 export function GlobalSearchPanel({
   clientRef,
   connected,
@@ -19,12 +42,16 @@ export function GlobalSearchPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [mounted, setMounted] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flatResultsRef = useRef<Array<{ workId: number; matchIndex: number }>>([]);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    setMounted(true);
+    const t = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(t);
   }, []);
 
   const doSearch = useCallback(
@@ -52,7 +79,7 @@ export function GlobalSearchPanel({
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setLoading(true);
-    debounceRef.current = setTimeout(() => doSearch(query), 300);
+    debounceRef.current = setTimeout(() => doSearch(query), 250);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -67,6 +94,15 @@ export function GlobalSearchPanel({
     });
     flatResultsRef.current = flat;
   }, [results]);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const el = container.querySelector(`[data-idx="${selectedIndex}"]`);
+    if (el) {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [selectedIndex]);
 
   const totalMatches = results.reduce((sum, r) => sum + r.matches.length, 0);
 
@@ -98,7 +134,15 @@ export function GlobalSearchPanel({
     return (
       <>
         {text.slice(0, idx)}
-        <mark style={{ background: "#fbbf24", padding: "0 1px", borderRadius: "2px" }}>
+        <mark
+          style={{
+            background: "rgba(251, 191, 36, 0.25)",
+            borderBottom: "1px solid rgba(251, 191, 36, 0.6)",
+            padding: "0 1px",
+            borderRadius: "2px",
+            color: "inherit",
+          }}
+        >
           {text.slice(idx, idx + q.length)}
         </mark>
         {text.slice(idx + q.length)}
@@ -110,35 +154,63 @@ export function GlobalSearchPanel({
 
   return (
     <div
-      className="modal-overlay"
       onClick={onClose}
-      style={{ justifyContent: "flex-start", paddingTop: "10vh" }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "flex-start",
+        paddingTop: "12vh",
+        background: "rgba(0, 0, 0, 0.3)",
+        backdropFilter: "blur(4px)",
+        WebkitBackdropFilter: "blur(4px)",
+        opacity: mounted ? 1 : 0,
+        transition: "opacity 120ms ease-out",
+      }}
     >
       <div
-        className="modal-content"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
         style={{
-          width: "640px",
-          maxWidth: "90vw",
-          maxHeight: "70vh",
-          padding: 0,
+          width: "600px",
+          maxWidth: "92vw",
+          maxHeight: "68vh",
           display: "flex",
           flexDirection: "column",
+          borderRadius: "16px",
+          background: "#ffffff",
+          boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.08)",
+          overflow: "hidden",
+          transform: mounted ? "scale(1) translateY(0)" : "scale(0.97) translateY(-8px)",
+          opacity: mounted ? 1 : 0,
+          transition: "all 150ms cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       >
+        {/* Search input */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "8px",
-            padding: "16px 20px",
-            borderBottom: "1px solid var(--border-color, #333)",
+            gap: "10px",
+            padding: "18px 20px",
+            borderBottom: "1px solid rgba(128,128,128,0.12)",
           }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.5 }}>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ opacity: 0.4, flexShrink: 0 }}
+          >
             <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            <path d="m21 21-4.35-4.35" />
           </svg>
           <input
             ref={inputRef}
@@ -146,61 +218,121 @@ export function GlobalSearchPanel({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search all works..."
+            placeholder="Search across all works..."
             style={{
               flex: 1,
               background: "transparent",
               border: "none",
               outline: "none",
-              fontSize: "16px",
-              color: "inherit",
+              fontSize: "17px",
+              fontFamily: "inherit",
+              color: "#1a1a2e",
             }}
           />
-          {loading && (
-            <span style={{ fontSize: "12px", opacity: 0.5 }}>searching...</span>
-          )}
-          {!loading && totalMatches > 0 && (
-            <span style={{ fontSize: "12px", opacity: 0.5 }}>
-              {totalMatches} match{totalMatches !== 1 ? "es" : ""} in {results.length} work
-              {results.length !== 1 ? "s" : ""}
+          {loading ? (
+            <div
+              style={{
+                width: "16px",
+                height: "16px",
+                borderRadius: "50%",
+                border: "2px solid rgba(128,128,128,0.2)",
+                borderTopColor: "rgba(128,128,128,0.7)",
+                animation: "spin 0.6s linear infinite",
+                flexShrink: 0,
+              }}
+            />
+          ) : totalMatches > 0 ? (
+            <span
+              style={{
+                fontSize: "12px",
+                color: "rgba(128,128,128,0.7)",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+            >
+              {totalMatches} in {results.length}
             </span>
+          ) : null}
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              style={{
+                background: "rgba(128,128,128,0.1)",
+                border: "none",
+                borderRadius: "6px",
+                color: "inherit",
+                cursor: "pointer",
+                width: "22px",
+                height: "22px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "14px",
+                opacity: 0.5,
+                flexShrink: 0,
+                padding: 0,
+              }}
+            >
+              {"\u00d7"}
+            </button>
           )}
-          <button
-            onClick={onClose}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "inherit",
-              cursor: "pointer",
-              opacity: 0.5,
-              fontSize: "18px",
-              padding: "0 4px",
-            }}
-          >
-            x
-          </button>
         </div>
 
-        <div style={{ overflowY: "auto", flex: 1 }}>
+        {/* Results */}
+        <div
+          ref={scrollRef}
+          style={{
+            overflowY: "auto",
+            flex: 1,
+            scrollbarWidth: "thin",
+          }}
+        >
           {error && (
-            <div style={{ padding: "16px 20px", color: "#ef4444", fontSize: "14px" }}>
+            <div style={{ padding: "24px 20px", color: "#ef4444", fontSize: "14px", textAlign: "center" }}>
               {error}
             </div>
           )}
 
           {!error && !loading && query.trim() && results.length === 0 && (
-            <div style={{ padding: "40px 20px", textAlign: "center", opacity: 0.5, fontSize: "14px" }}>
-              No matches found for "{query}"
+            <div
+              style={{
+                padding: "48px 20px",
+                textAlign: "center",
+                opacity: 0.4,
+              }}
+            >
+              <svg
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                style={{ marginBottom: "12px", opacity: 0.5 }}
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+              <div style={{ fontSize: "14px" }}>
+                No matches for "{query}"
+              </div>
             </div>
           )}
 
           {!error && !query.trim() && (
-            <div style={{ padding: "40px 20px", textAlign: "center", opacity: 0.4, fontSize: "14px" }}>
-              Type to search across all works
-              <br />
-              <span style={{ fontSize: "12px", marginTop: "8px", display: "inline-block" }}>
-                Use <kbd style={{ background: "var(--bg-active, #333)", padding: "1px 6px", borderRadius: "3px", fontSize: "11px" }}>Enter</kbd> to open
-              </span>
+            <div
+              style={{
+                padding: "48px 20px",
+                textAlign: "center",
+                opacity: 0.35,
+              }}
+            >
+              <div style={{ fontSize: "14px", marginBottom: "6px" }}>
+                Search across all your works
+              </div>
+              <div style={{ fontSize: "12px" }}>
+                Results update as you type
+              </div>
             </div>
           )}
 
@@ -208,48 +340,86 @@ export function GlobalSearchPanel({
             const title = result.title || `work:${result.work_id.toString(16)}`;
             return (
               <div key={result.work_id}>
+                {/* Work header */}
                 <div
                   style={{
-                    padding: "6px 20px",
-                    fontSize: "11px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "10px 20px 4px",
+                    fontSize: "12px",
                     fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
                     opacity: 0.5,
-                    background: "var(--bg-active, rgba(255,255,255,0.03))",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
                   }}
                 >
-                  {title}
-                  <span style={{ marginLeft: "8px", fontWeight: 400 }}>
-                    {result.matches.length} match{result.matches.length !== 1 ? "es" : ""}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {title}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: 500,
+                      padding: "1px 7px",
+                      borderRadius: "10px",
+                      background: "rgba(128,128,128,0.12)",
+                      opacity: 0.8,
+                    }}
+                  >
+                    {result.matches.length}
                   </span>
                 </div>
+                {/* Match entries */}
                 {result.matches.map((match, mi) => {
                   const currentFlat = flatIdx++;
                   const isSelected = currentFlat === selectedIndex;
                   return (
                     <div
                       key={`${result.work_id}-${mi}`}
+                      data-idx={currentFlat}
                       onClick={() => {
                         onClose();
                         onNavigateToWork(result.work_id);
                       }}
                       style={{
-                        padding: "8px 20px 8px 24px",
+                        margin: "0 12px",
+                        padding: "8px 12px 8px 16px",
                         cursor: "pointer",
                         fontSize: "13px",
                         lineHeight: "1.5",
-                        borderLeft: isSelected ? "3px solid #4361ee" : "3px solid transparent",
-                        background: isSelected
-                          ? "var(--bg-active, rgba(67,97,238,0.1))"
-                          : "transparent",
+                        borderRadius: "8px",
+                        position: "relative",
+                        paddingLeft: isSelected ? "20px" : "16px",
+                        transition: "all 80ms ease-out",
+                        background: isSelected ? "rgba(67,97,238,0.12)" : "transparent",
+                        color: isSelected ? "inherit" : "inherit",
                       }}
+                      onMouseEnter={() => setSelectedIndex(currentFlat)}
                     >
+                      {isSelected && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: "12px",
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            width: "3px",
+                            height: "60%",
+                            borderRadius: "2px",
+                            background: "#4361ee",
+                          }}
+                        />
+                      )}
                       <div style={{ opacity: 0.9 }}>
                         {highlightContext(match.context, query.trim())}
                       </div>
-                      <div style={{ fontSize: "11px", opacity: 0.4, marginTop: "2px" }}>
-                        line {match.line + 1}
+                      <div style={{ fontSize: "11px", opacity: 0.35, marginTop: "2px" }}>
+                        Line {match.line + 1}
                       </div>
                     </div>
                   );
@@ -259,30 +429,37 @@ export function GlobalSearchPanel({
           })}
         </div>
 
+        {/* Footer */}
         <div
           style={{
-            borderTop: "1px solid var(--border-color, #333)",
-            padding: "8px 20px",
-            fontSize: "12px",
-            opacity: 0.75,
+            borderTop: "1px solid rgba(128,128,128,0.12)",
+            padding: "10px 20px",
             display: "flex",
-            gap: "16px",
+            alignItems: "center",
+            gap: "20px",
+            fontSize: "12px",
+            opacity: 0.6,
           }}
         >
-          <span>
-            <kbd style={{ background: "var(--bg-active, rgba(255,255,255,0.1))", padding: "2px 6px", borderRadius: "3px", fontSize: "11px", border: "1px solid var(--border-color, #444)" }}>↑↓</kbd>{" "}
+          <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <Kbd>{"\u2191"}</Kbd>
+            <Kbd>{"\u2193"}</Kbd>
             navigate
           </span>
-          <span>
-            <kbd style={{ background: "var(--bg-active, rgba(255,255,255,0.1))", padding: "2px 6px", borderRadius: "3px", fontSize: "11px", border: "1px solid var(--border-color, #444)" }}>Enter</kbd>{" "}
+          <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <Kbd>{"\u23ce"}</Kbd>
             open
           </span>
-          <span>
-            <kbd style={{ background: "var(--bg-active, rgba(255,255,255,0.1))", padding: "2px 6px", borderRadius: "3px", fontSize: "11px", border: "1px solid var(--border-color, #444)" }}>Esc</kbd>{" "}
+          <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <Kbd>Esc</Kbd>
             close
+          </span>
+          <span style={{ marginLeft: "auto", fontSize: "11px", opacity: 0.5 }}>
+            {connected ? "Connected" : "Offline"}
           </span>
         </div>
       </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
   );
 }
