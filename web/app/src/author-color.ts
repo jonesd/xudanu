@@ -4,11 +4,12 @@ const AUTHOR_COLORS = [
 ];
 
 function hashString(s: string): number {
-  let h = 0;
+  let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
   }
-  return Math.abs(h);
+  return h >>> 0;
 }
 
 export function authorColor(key: string): string {
