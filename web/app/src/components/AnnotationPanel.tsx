@@ -83,6 +83,18 @@ export function AnnotationPanel({ annotations, onDelete, onNavigate, currentClub
                   <span style={{ fontWeight: 600, color: "#c4960a" }}>
                     {ann.kind || "note"}
                   </span>
+                  {ann.is_private && (
+                    <span
+                      title="Private — only visible to you"
+                      style={{
+                        fontSize: "0.8em",
+                        opacity: 0.5,
+                        marginLeft: "4px",
+                      }}
+                    >
+                      {"\u{1F512}"}
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onDelete(ann.annotation_id); }}
