@@ -31,6 +31,11 @@ pub struct WsQuery {
     pub format: Option<String>,
     pub version: Option<u8>,
     pub csrf_token: Option<String>,
+    /// Session/OAuth token for bearer-style auth. Also accepted via
+    /// `Authorization: Bearer <token>` header.
+    pub token: Option<String>,
+    /// Set to "public" to auto-login as the public user on connect.
+    pub login: Option<String>,
 }
 
 pub fn build_router(state: SharedState) -> Router {
@@ -318,15 +323,28 @@ async fn ws_handler(
 
     let format = query.format.as_deref().unwrap_or("binary").to_string();
     let client_version = query.version.unwrap_or(PROTOCOL_VERSION);
-    let oauth_club = headers
-        .get(axum::http::header::COOKIE)
+    let auto_login_public = query.login.as_deref() == Some("public");
+
+    let bearer_token = headers
+        .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-        .and_then(|cookies| {
-            cookies
-                .split(';')
-                .find_map(|c| c.trim().strip_prefix("xudanu_session="))
-        })
-        .and_then(|token| state.oauth_state.validate_session(token));
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(|s| s.to_string());
+    let auth_token = query.token.or(bearer_token);
+
+    let oauth_club = if let Some(ref token) = auth_token {
+        state.oauth_state.validate_session(token)
+    } else {
+        headers
+            .get(axum::http::header::COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|cookies| {
+                cookies
+                    .split(';')
+                    .find_map(|c| c.trim().strip_prefix("xudanu_session="))
+            })
+            .and_then(|token| state.oauth_state.validate_session(token))
+    };
     ws.max_frame_size(16 * 1024 * 1024)
         .max_message_size(64 * 1024 * 1024)
         .on_upgrade(move |socket| {
@@ -337,6 +355,7 @@ async fn ws_handler(
                 Some(addr),
                 client_version,
                 oauth_club,
+                auto_login_public,
             )
         })
         .into_response()
@@ -508,6 +527,7 @@ async fn handle_socket(
     remote_addr: Option<SocketAddr>,
     client_version: u8,
     oauth_club: Option<(u64, String, Option<Vec<u8>>)>,
+    auto_login_public: bool,
 ) {
     let is_text = format == "json";
     let codec: Box<dyn WireCodec> = if is_text {
@@ -574,6 +594,12 @@ async fn handle_socket(
                     "Failed to auto-authenticate WS session from OAuth cookie"
                 );
             }
+        });
+    }
+
+    if auto_login_public {
+        state.server.with_server(|srv| {
+            let _ = srv.login_public(session_id);
         });
     }
 

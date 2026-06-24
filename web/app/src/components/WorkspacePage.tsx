@@ -23,6 +23,7 @@ import { VersionGenealogyPanel } from "../components/VersionGenealogyPanel";
 import { ThreeWayDiffPanel } from "../components/ThreeWayDiffPanel";
 import { ExportPanel } from "../components/ExportPanel";
 import { SharePanel } from "../components/SharePanel";
+import { GlobalSearchPanel } from "../components/GlobalSearchPanel";
 import { ReadingView } from "./reading/ReadingView";
 import { DocumentSettings, loadDocPreferences } from "../components/DocumentSettings";
 import type { DocPreferences } from "../components/DocumentSettings";
@@ -75,6 +76,7 @@ export function WorkspacePage() {
   const [showTrails, setShowTrails] = useState(false);
   const [showGenealogy, setShowGenealogy] = useState(false);
   const [showThreeWayDiff, setShowThreeWayDiff] = useState(false);
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [archivedWorks, setArchivedWorks] = useState<WorkListEntry[]>([]);
   const [revisionList, setRevisionList] = useState<string[]>([]);
@@ -538,6 +540,17 @@ export function WorkspacePage() {
     return () => document.removeEventListener("keydown", handler);
   }, [transclusion]);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setShowGlobalSearch(true);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
+
   const handlePasteText = useCallback(async (pasteText: string, pasteStart: number) => {
     if (!clientRef.current || workBeId === null) return;
     try {
@@ -728,6 +741,15 @@ export function WorkspacePage() {
             <DropdownMenu label="More ▾">
               {(close) => (
                 <>
+                  <DropdownItem
+                    onClick={() => { setShowGlobalSearch(true); close(); }}
+                  >
+                    Global Search...
+                    <span style={{ marginLeft: "auto", opacity: 0.4, fontSize: "11px" }}>
+                      Ctrl+K
+                    </span>
+                  </DropdownItem>
+                  <DropdownSeparator />
                   <DropdownItem
                     checked={watchEnabled}
                     onClick={() => { toggleWatch(); }}
@@ -1726,6 +1748,14 @@ export function WorkspacePage() {
           connected={connected}
           canEdit={canEdit}
           onClose={() => setShowShare(false)}
+        />
+      )}
+      {showGlobalSearch && (
+        <GlobalSearchPanel
+          clientRef={clientRef}
+          connected={connected}
+          onClose={() => setShowGlobalSearch(false)}
+          onNavigateToWork={selectWork}
         />
       )}
     </div>

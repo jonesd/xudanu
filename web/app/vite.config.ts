@@ -12,6 +12,7 @@ export default defineConfig({
       "/xudanu": {
         target: "http://localhost:8080",
         ws: true,
+        changeOrigin: true,
       },
       "/csrf-token": {
         target: "http://localhost:8080",
