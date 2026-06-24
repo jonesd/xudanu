@@ -1388,9 +1388,10 @@ export function WorkspacePage() {
                     onPlaceTransclusion={handlePlaceTransclusion}
                     selectionRange={selectionRange}
                     onNavigateToWork={selectWork}
-                    compoundSpanRanges={compound.spanRanges}
-                    compoundSourceTitles={compound.sourceTitles}
-                     onPasteText={canEdit ? handlePasteText : undefined}
+                     compoundSpanRanges={compound.spanRanges}
+                     remoteCursors={awareness}
+                     compoundSourceTitles={compound.sourceTitles}
+                      onPasteText={canEdit ? handlePasteText : undefined}
                     fontSize={docPrefs.fontSize}
                     lineHeight={docPrefs.lineHeight}
                    annotations={annotations}
