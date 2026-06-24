@@ -3417,6 +3417,8 @@ pub struct RevisionMetaEntry {
     pub author_club_id: Option<BeId>,
     pub author_display_name: Option<String>,
     pub author_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

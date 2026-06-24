@@ -39,6 +39,7 @@ pub(crate) struct WorkState {
     grab_waiters: Vec<GrabWaiter>,
     last_revision_author: Option<BeId>,
     revision_authors: std::collections::HashMap<u64, BeId>,
+    revision_timestamps: std::collections::HashMap<u64, u64>,
     status_detectors: DetectorList,
     revision_detectors: DetectorList,
     cached_title: String,
@@ -1212,6 +1213,11 @@ impl Server {
             } else {
                 std::collections::HashMap::new()
             },
+            revision_timestamps: {
+                let mut m = std::collections::HashMap::new();
+                m.insert(0u64, Self::current_timestamp_secs());
+                m
+            },
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
             cached_title: title,
@@ -1382,6 +1388,12 @@ impl Server {
         ws.work.revise(edition);
         ws.cached_title = Self::extract_title(ws.work.current_edition());
         let revision = ws.work.revision_count();
+        let now = Self::current_timestamp_secs();
+        ws.revision_timestamps.insert(revision, now);
+        if ws.revision_timestamps.len() > MAX_REVISION_AUTHORS {
+            let oldest = *ws.revision_timestamps.keys().min().unwrap();
+            ws.revision_timestamps.remove(&oldest);
+        }
         if let Some(club_id) = author_club {
             ws.revision_authors.insert(revision, club_id);
             if ws.revision_authors.len() > MAX_REVISION_AUTHORS {
@@ -2870,6 +2882,7 @@ impl Server {
             grab_waiters: Vec::new(),
             last_revision_author: None,
             revision_authors: std::collections::HashMap::new(),
+            revision_timestamps: std::collections::HashMap::new(),
             status_detectors: DetectorList::new(),
             revision_detectors: DetectorList::new(),
             cached_title: title.clone(),
@@ -3744,14 +3757,44 @@ impl Server {
 
         let mut saved = 0;
         for work_id in work_ids {
-            if let Ok(rev) = self.crdt_materialize_any_session(work_id) {
-                if rev > 0 {
-                    saved += 1;
-                    tracing::debug!("auto-save: materialized work {} rev {}", work_id, rev);
-                }
+            let rev = self
+                .crdt_materialize_any_session(work_id)
+                .unwrap_or_else(|_| self.materialize_pending_force(work_id));
+            if rev > 0 {
+                saved += 1;
+                tracing::debug!("auto-save: materialized work {} rev {}", work_id, rev);
             }
         }
         saved
+    }
+
+    /// Force-materialize a pending CRDT edition without requiring an active session.
+    /// Used as a fallback in the autosave loop when no session is available.
+    fn materialize_pending_force(&mut self, work_be_id: BeId) -> u64 {
+        let edition = match self.otree_crdt.current_edition(work_be_id) {
+            Ok(ed) => ed,
+            Err(_) => return 0,
+        };
+        let author_club = self
+            .works
+            .get(&work_be_id)
+            .and_then(|ws| ws.last_revision_author);
+        let placeholder_session = SessionId::new(0);
+        match self.revise_work(work_be_id, placeholder_session, edition, author_club) {
+            Ok(rev) => {
+                let _ = self.otree_crdt.materialize_edition(work_be_id);
+                tracing::warn!(
+                    "force-materialized work {} rev {} (no active session)",
+                    work_be_id,
+                    rev
+                );
+                rev
+            }
+            Err(e) => {
+                tracing::error!("force-materialize failed for work {}: {}", work_be_id, e);
+                0
+            }
+        }
     }
 
     pub fn crdt_update_awareness(
@@ -4911,6 +4954,7 @@ impl Server {
                 author_club_id,
                 author_display_name,
                 author_type,
+                timestamp: ws.revision_timestamps.get(&rev_num).copied(),
             });
         }
 
@@ -5535,6 +5579,7 @@ impl Server {
                         grab_waiters: Vec::new(),
                         last_revision_author: None,
                         revision_authors: std::collections::HashMap::new(),
+                        revision_timestamps: std::collections::HashMap::new(),
                         status_detectors: DetectorList::new(),
                         revision_detectors: DetectorList::new(),
                         cached_title: Self::extract_title(work.current_edition()),
@@ -10018,6 +10063,7 @@ impl Server {
                     grab_waiters: Vec::new(),
                     last_revision_author: None,
                     revision_authors: std::collections::HashMap::new(),
+                    revision_timestamps: std::collections::HashMap::new(),
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
                     cached_title: title,
@@ -11418,6 +11464,7 @@ pub(crate) mod persist_snapshot {
                     grab_waiters: Vec::new(),
                     last_revision_author: ws_snap.last_revision_author,
                     revision_authors: ws_snap.revision_authors.clone(),
+                    revision_timestamps: std::collections::HashMap::new(),
                     status_detectors: DetectorList::new(),
                     revision_detectors: DetectorList::new(),
                     cached_title: Self::extract_title(work.current_edition()),
@@ -19539,6 +19586,48 @@ mod tests {
         let server = Server::new();
         let result = server.work_version_timeline(99999);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn work_version_timeline_includes_timestamps() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+
+        let work_id = server
+            .create_work(sid, Edition::from_text("rev zero"))
+            .unwrap();
+        server.work_grab(sid, work_id).unwrap();
+
+        let ts_before_revise = Server::current_timestamp_secs();
+        server
+            .work_revise(sid, work_id, Edition::from_text("rev one"))
+            .unwrap();
+        let ts_after_revise = Server::current_timestamp_secs();
+        server.work_release(sid, work_id).unwrap();
+
+        let result = server.work_version_timeline(work_id).unwrap();
+        match result {
+            crate::server::transport::protocol::ResponseValue::WorkVersionTimelineResult {
+                revisions,
+            } => {
+                assert_eq!(revisions.len(), 2);
+                assert!(
+                    revisions[0].timestamp.is_some(),
+                    "revision 0 should have a timestamp"
+                );
+                assert!(
+                    revisions[1].timestamp.is_some(),
+                    "revision 1 should have a timestamp"
+                );
+                let ts1 = revisions[1].timestamp.unwrap();
+                assert!(
+                    ts1 >= ts_before_revise && ts1 <= ts_after_revise,
+                    "revision 1 timestamp should be between pre- and post-revise"
+                );
+            }
+            _ => panic!("expected WorkVersionTimelineResult"),
+        }
     }
 
     #[test]
