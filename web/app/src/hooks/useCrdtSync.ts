@@ -136,6 +136,11 @@ export function useCrdtSync(
   useEffect(() => {
     if (!connected || workBeId === null) return;
     clientRef.current?.switchWork(workBeId);
+    // Send initial presence so other sessions see us immediately
+    const t = setTimeout(() => {
+      clientRef.current?.sendAwareness(null, null, false);
+    }, 500);
+    return () => clearTimeout(t);
   }, [workBeId, connected]);
 
   // Clear per-work state when switching works — prevents stale highlights,

@@ -7,28 +7,31 @@ interface AwarenessIndicatorsProps {
 }
 
 export function AwarenessIndicators({ states, connected }: AwarenessIndicatorsProps) {
-  if (!connected && states.length === 0) return null;
-
-  return (
-    <div className="awareness-indicators">
-      {states.map((state) => {
+  const indicators = !connected
+    ? [<span key="off" style={{ fontSize: "11px", opacity: 0.3 }}>Offline</span>]
+    : states.length === 0
+    ? [<span key="empty" style={{ fontSize: "11px", opacity: 0.3 }}>No other active users</span>]
+    : states.map((state) => {
         const color = authorColor(state.user_name);
         return (
           <span
             key={state.session_id}
             className="awareness-user"
-            style={{ borderColor: color }}
             title={`${state.user_name}${state.is_typing ? " (typing)" : ""}`}
           >
             <span
-              className="awareness-dot"
-              style={{ backgroundColor: color }}
+              className="awareness-pulse"
+              style={{ backgroundColor: color, color }}
             />
             {state.user_name}
             {state.is_typing && <span className="awareness-typing">...</span>}
           </span>
         );
-      })}
+      });
+
+  return (
+    <div className="awareness-indicators">
+      {indicators}
     </div>
   );
 }
