@@ -714,7 +714,6 @@ export function CollaborativeEditor({
 
     if (sel.isCollapsed) {
       onCursorChange(start);
-      onSelectionChange(null, null);
     } else {
       const preEnd = document.createRange();
       preEnd.selectNodeContents(el);

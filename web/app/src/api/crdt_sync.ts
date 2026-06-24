@@ -374,7 +374,7 @@ export class CrdtSyncClient {
     const wsUrl = `${this.url}?format=json&version=${PROTOCOL_VERSION}`;
 
     fetch("/csrf-token")
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject(new Error("csrf disabled")))
       .then((d) => {
         if (d.csrf_token) {
           this.openWs(wsUrl + "&csrf_token=" + encodeURIComponent(d.csrf_token));
