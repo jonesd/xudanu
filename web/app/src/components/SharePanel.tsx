@@ -30,20 +30,27 @@ export function SharePanel({ workBeId, clientRef, connected, canEdit, onClose }:
     if (!client || !connected) return;
     try {
       setLoading(true);
-      const rc = await client.getReadClub(workBeId);
-      const ec = await client.getEditClub(workBeId);
+      setError("");
+
+      const pubId = await client.getPublicClubId().catch(() => 0);
+      setPublicClubId(pubId);
+
+      const rc = await client.getReadClub(workBeId).catch(() => null);
       setReadClub(rc || null);
+
+      const ec = await client.getEditClub(workBeId).catch(() => null);
       setEditClubState(ec || null);
-      const stats = await client.getPublicClubId();
-      setPublicClubId(stats);
+
       if (ec) {
-        const ids = await client.clubMembers(ec);
-        const infos: MemberInfo[] = [];
-        for (const id of ids) {
-          const name = await client.clubNameById(id).catch(() => `#${id.toString(16)}`);
-          infos.push({ clubId: id, name });
-        }
-        setMembers(infos);
+        try {
+          const ids = await client.clubMembers(ec);
+          const infos: MemberInfo[] = [];
+          for (const id of ids) {
+            const name = await client.clubNameById(id).catch(() => `#${id.toString(16)}`);
+            infos.push({ clubId: id, name });
+          }
+          setMembers(infos);
+        } catch { /* ignore member load errors */ }
       }
     } catch (e) {
       setError(String(e));
