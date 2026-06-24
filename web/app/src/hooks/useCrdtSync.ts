@@ -143,6 +143,18 @@ export function useCrdtSync(
     return () => clearTimeout(t);
   }, [workBeId, connected]);
 
+  // Poll awareness every 2 seconds for live cursor updates
+  useEffect(() => {
+    if (!connected || workBeId === null) return;
+    const interval = setInterval(() => {
+      const client = clientRef.current;
+      if (client && client.isConnected()) {
+        client.refreshAwareness().then(setAwareness).catch(() => {});
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [connected, workBeId]);
+
   // Clear per-work state when switching works — prevents stale highlights,
   // annotations, attribution spans, and awareness from the previous work
   // rendering during the gap before the new work's data arrives.
