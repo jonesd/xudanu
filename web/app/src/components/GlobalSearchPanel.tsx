@@ -263,22 +263,22 @@ export function GlobalSearchPanel({
           style={{
             borderTop: "1px solid var(--border-color, #333)",
             padding: "8px 20px",
-            fontSize: "11px",
-            opacity: 0.4,
+            fontSize: "12px",
+            opacity: 0.75,
             display: "flex",
             gap: "16px",
           }}
         >
           <span>
-            <kbd style={{ background: "var(--bg-active, #333)", padding: "1px 5px", borderRadius: "3px", fontSize: "10px" }}>&uarr;&darr;</kbd>{" "}
+            <kbd style={{ background: "var(--bg-active, rgba(255,255,255,0.1))", padding: "2px 6px", borderRadius: "3px", fontSize: "11px", border: "1px solid var(--border-color, #444)" }}>↑↓</kbd>{" "}
             navigate
           </span>
           <span>
-            <kbd style={{ background: "var(--bg-active, #333)", padding: "1px 5px", borderRadius: "3px", fontSize: "10px" }}>Enter</kbd>{" "}
+            <kbd style={{ background: "var(--bg-active, rgba(255,255,255,0.1))", padding: "2px 6px", borderRadius: "3px", fontSize: "11px", border: "1px solid var(--border-color, #444)" }}>Enter</kbd>{" "}
             open
           </span>
           <span>
-            <kbd style={{ background: "var(--bg-active, #333)", padding: "1px 5px", borderRadius: "3px", fontSize: "10px" }}>Esc</kbd>{" "}
+            <kbd style={{ background: "var(--bg-active, rgba(255,255,255,0.1))", padding: "2px 6px", borderRadius: "3px", fontSize: "11px", border: "1px solid var(--border-color, #444)" }}>Esc</kbd>{" "}
             close
           </span>
         </div>
