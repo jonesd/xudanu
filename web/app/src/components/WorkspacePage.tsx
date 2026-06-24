@@ -998,6 +998,10 @@ export function WorkspacePage() {
         />
       </header>
 
+      {workBeId !== null && (
+        <AwarenessIndicators states={awareness} connected={connected} />
+      )}
+
       {error && <div className="error">{error}</div>}
 
       {notice && (
@@ -1322,7 +1326,6 @@ export function WorkspacePage() {
                 />
               ) : (
               <>
-              <AwarenessIndicators states={awareness} connected={connected} />
               {workBeId && connected && !canEdit && (
                 <div className="readonly-banner">
                   Read-only — you do not have edit permission for this work.

@@ -46,7 +46,15 @@ export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, 
       <div className="identity-panel identity-logged-in">
         <span className="identity-name">{identity.display_name}</span>
         <span className="identity-id">#{clubHex}</span>
-        <span className="identity-badge identity-verified">verified</span>
+        <span
+          className="identity-badge identity-verified"
+          title="Cryptographically verified identity"
+          style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </span>
         <button type="button" className="identity-logout" onClick={onLogout}>Sign Out</button>
       </div>
     );
