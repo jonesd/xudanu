@@ -3920,8 +3920,8 @@ fn spawn_auto_title(state: &SharedState, work_id: u64) {
                     srv.set_work_title(work_id, title);
                 });
             }
-            Err(e) => {
-                tracing::warn!(work_id, "auto-title: failed: {}", e);
+            Err(_e) => {
+                tracing::warn!(work_id, "auto-title: failed");
             }
         }
     });

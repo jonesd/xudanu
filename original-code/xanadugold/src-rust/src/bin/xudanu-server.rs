@@ -728,8 +728,8 @@ async fn main() {
                             }
                         });
                         if should_checkpoint {
-                            if let Err(e) = autosave_state.server.checkpoint_async().await {
-                                tracing::error!("periodic checkpoint failed: {}", e);
+                            if let Err(_e) = autosave_state.server.checkpoint_async().await {
+                                tracing::error!("periodic checkpoint failed");
                             }
                         }
                     }

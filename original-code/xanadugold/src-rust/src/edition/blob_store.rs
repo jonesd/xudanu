@@ -91,7 +91,7 @@ pub trait BlobBackend: Send + Sync + std::fmt::Debug + 'static {
     fn delete(&self, hash: &[u8; 32]) -> Result<(), BlobError>;
     fn retrieve_range(&self, hash: &[u8; 32], offset: u64, len: u64) -> Result<Vec<u8>, BlobError>;
     fn stats(&self) -> BlobBackendStats;
-    fn path_for_hash(&self, hash: &[u8; 32]) -> Option<PathBuf> {
+    fn path_for_hash(&self, _hash: &[u8; 32]) -> Option<PathBuf> {
         None
     }
 }

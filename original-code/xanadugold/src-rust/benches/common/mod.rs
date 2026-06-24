@@ -68,7 +68,7 @@ impl BenchState {
     }
 
     /// Dispatch a read-only request through the read lock path (for B7 comparison).
-    pub fn dispatch_read(&self, req: WireRequest) {
+    pub fn dispatch_read(&self, _req: WireRequest) {
         self.state.server.with_server_ref(|srv| {
             // Simulate the read path: just touch the data the op would read.
             // This is what B7 will route through `with_server_ref`.
