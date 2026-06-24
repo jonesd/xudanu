@@ -152,6 +152,22 @@ pub struct RenderedTransclusionSource {
     pub is_direct: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct SearchMatch {
+    pub char_offset: u64,
+    pub line: u64,
+    pub context: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct GlobalSearchResult {
+    pub work_id: BeId,
+    pub title: Option<String>,
+    pub owner: Option<BeId>,
+    pub revision_count: u64,
+    pub matches: Vec<SearchMatch>,
+}
+
 /// Ghost metadata for an archived work — rendered when references
 /// point to archived content instead of a 404 or full live view.
 #[derive(Debug, Clone)]
@@ -7616,6 +7632,75 @@ impl Server {
                 results.push((*work_id, ws.work.owner(), ws.work.revision_count(), matches));
             }
         }
+        results
+    }
+
+    pub fn global_text_search(
+        &self,
+        session_id: SessionId,
+        query: &str,
+        max_results: usize,
+    ) -> Vec<GlobalSearchResult> {
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let query_lower = query.to_ascii_lowercase();
+        let mut results = Vec::new();
+
+        for (&work_id, ws) in &self.works {
+            if !self.work_is_readable(session_id, &ws.work) {
+                continue;
+            }
+
+            let text = if self.otree_crdt.is_active(work_id) {
+                match self.otree_crdt.current_text(work_id) {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                }
+            } else {
+                let ed = ws.work.current_edition();
+                ed.all_entries()
+                    .iter()
+                    .filter_map(|(_, c)| c.element.as_text())
+                    .collect::<String>()
+            };
+
+            let text_lower = text.to_ascii_lowercase();
+            let mut matches = Vec::new();
+            let mut search_start = 0usize;
+            while let Some(rel_pos) = text_lower[search_start..].find(&query_lower) {
+                let char_offset = search_start + rel_pos;
+
+                let line = text[..char_offset].matches('\n').count() as u64;
+
+                let ctx_start = char_offset.saturating_sub(40);
+                let ctx_end = (char_offset + query.len() + 40).min(text.len());
+                let context = text[ctx_start..ctx_end].replace('\n', " ");
+
+                matches.push(SearchMatch {
+                    char_offset: char_offset as u64,
+                    line,
+                    context,
+                });
+
+                if matches.len() >= max_results {
+                    break;
+                }
+                search_start = char_offset + query.len();
+            }
+
+            if !matches.is_empty() {
+                results.push(GlobalSearchResult {
+                    work_id,
+                    title: Some(ws.cached_title.clone()),
+                    owner: ws.work.owner(),
+                    revision_count: ws.work.revision_count(),
+                    matches,
+                });
+            }
+        }
+
+        results.sort_by(|a, b| b.matches.len().cmp(&a.matches.len()));
         results
     }
 
@@ -24480,5 +24565,158 @@ mod tests {
             Some(15),
             "end should grow by 4 (inserted 'big ' before end)"
         );
+    }
+
+    #[test]
+    fn global_text_search_finds_matching_works() {
+        let (mut server, sid) = setup_logged_in_server();
+        server
+            .create_work(sid, Edition::from_text("hello world from work a"))
+            .unwrap();
+        server
+            .create_work(sid, Edition::from_text("completely different content"))
+            .unwrap();
+        server
+            .create_work(sid, Edition::from_text("hello again from work c"))
+            .unwrap();
+
+        let results = server.global_text_search(sid, "hello", 10);
+        assert_eq!(results.len(), 2, "should find 2 works containing 'hello'");
+        for r in &results {
+            assert!(
+                r.matches
+                    .iter()
+                    .any(|m| m.context.to_ascii_lowercase().contains("hello")),
+                "context should contain the query"
+            );
+        }
+    }
+
+    #[test]
+    fn global_text_search_case_insensitive() {
+        let (mut server, sid) = setup_logged_in_server();
+        server
+            .create_work(sid, Edition::from_text("The Quick Brown Fox"))
+            .unwrap();
+
+        let results = server.global_text_search(sid, "quick brown", 10);
+        assert_eq!(results.len(), 1, "should find 1 work (case-insensitive)");
+        assert_eq!(results[0].matches.len(), 1);
+        assert!(
+            results[0].matches[0]
+                .context
+                .to_ascii_lowercase()
+                .contains("quick brown"),
+            "context should contain match"
+        );
+    }
+
+    #[test]
+    fn global_text_search_no_results() {
+        let (mut server, sid) = setup_logged_in_server();
+        server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+
+        let results = server.global_text_search(sid, "nonexistent phrase", 10);
+        assert!(results.is_empty(), "should find 0 works");
+    }
+
+    #[test]
+    fn global_text_search_multiple_matches_in_same_work() {
+        let (mut server, sid) = setup_logged_in_server();
+        server
+            .create_work(sid, Edition::from_text("cat dog cat bird cat fish"))
+            .unwrap();
+
+        let results = server.global_text_search(sid, "cat", 10);
+        assert_eq!(results.len(), 1, "should find 1 work");
+        assert_eq!(
+            results[0].matches.len(),
+            3,
+            "should find 3 matches for 'cat'"
+        );
+    }
+
+    #[test]
+    fn global_text_search_respects_max_results() {
+        let (mut server, sid) = setup_logged_in_server();
+        server
+            .create_work(sid, Edition::from_text("cat dog cat bird cat fish cat"))
+            .unwrap();
+
+        let results = server.global_text_search(sid, "cat", 2);
+        assert_eq!(results.len(), 1, "should find 1 work");
+        assert_eq!(
+            results[0].matches.len(),
+            2,
+            "should cap at max_results matches"
+        );
+    }
+
+    #[test]
+    fn global_text_search_results_sorted_by_match_count() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("foo bar"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("foo foo foo bar"))
+            .unwrap();
+
+        let results = server.global_text_search(sid, "foo", 10);
+        assert_eq!(results.len(), 2, "should find 2 works");
+        assert_eq!(
+            results[0].work_id, work_b,
+            "work with more matches should be first"
+        );
+        assert_eq!(results[1].work_id, work_a);
+    }
+
+    #[test]
+    fn global_text_search_includes_work_metadata() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_id = server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+
+        let results = server.global_text_search(sid, "hello", 10);
+        assert_eq!(results.len(), 1);
+        let r = &results[0];
+        assert_eq!(r.work_id, work_id);
+        assert!(r.title.is_some(), "should include title");
+        assert!(
+            r.revision_count == 0 || r.revision_count == 1,
+            "should include revision count"
+        );
+    }
+
+    #[test]
+    fn global_text_search_correct_line_numbers() {
+        let (mut server, sid) = setup_logged_in_server();
+        server
+            .create_work(
+                sid,
+                Edition::from_text("line one\nline two\ntarget line\nline four"),
+            )
+            .unwrap();
+
+        let results = server.global_text_search(sid, "target", 10);
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].matches[0].line, 2,
+            "target is on line 2 (0-indexed)"
+        );
+    }
+
+    #[test]
+    fn global_text_search_empty_query_returns_nothing() {
+        let (mut server, sid) = setup_logged_in_server();
+        server
+            .create_work(sid, Edition::from_text("hello world"))
+            .unwrap();
+
+        let results = server.global_text_search(sid, "", 10);
+        assert!(results.is_empty(), "empty query should return no results");
     }
 }
