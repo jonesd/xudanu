@@ -7800,7 +7800,7 @@ impl Server {
                 .into_iter()
                 .filter(|&wid| wid != work_id)
                 .filter_map(|wid| {
-                    self.works.get(&wid).map(|ws| {
+                    self.works.get(&wid).map(|_ws| {
                         let (_, title, owner) = self.link_endpoint_meta(wid);
                         let author_name = owner
                             .and_then(|oid| {
