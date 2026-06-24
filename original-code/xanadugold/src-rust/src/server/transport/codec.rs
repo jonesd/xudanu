@@ -1891,6 +1891,8 @@ impl JsonCodec {
                     char_start: usize,
                     #[serde(default)]
                     char_end: usize,
+                    #[serde(default)]
+                    is_private: bool,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
@@ -1901,6 +1903,7 @@ impl JsonCodec {
                     payload: args.payload,
                     char_start: args.char_start,
                     char_end: args.char_end,
+                    is_private: args.is_private,
                 })
             }
             OperationCode::AnnotationDelete => {

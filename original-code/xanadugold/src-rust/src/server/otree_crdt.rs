@@ -137,6 +137,8 @@ pub struct OtreeAnnotation {
     pub created_by: Option<BeId>,
     #[serde(default)]
     pub created_at: u64,
+    #[serde(default)]
+    pub is_private: bool,
 }
 
 struct OtreeWorkDoc {
@@ -1319,6 +1321,7 @@ impl OtreeCrdtManager {
         char_start: usize,
         char_end: usize,
         created_by: Option<BeId>,
+        is_private: bool,
     ) -> Result<(), OtreeError> {
         let wd = self
             .docs
@@ -1332,6 +1335,7 @@ impl OtreeCrdtManager {
             char_end,
             created_by,
             created_at: current_timestamp_secs(),
+            is_private,
         });
         Ok(())
     }
@@ -1899,8 +1903,17 @@ mod tests {
         let edition = Edition::from_text("hello world");
         mgr.initialize_from_edition(work_id, &edition);
 
-        mgr.annotation_create(work_id, 1, "note".into(), "my note".into(), 0, 5, None)
-            .unwrap();
+        mgr.annotation_create(
+            work_id,
+            1,
+            "note".into(),
+            "my note".into(),
+            0,
+            5,
+            None,
+            false,
+        )
+        .unwrap();
 
         let anns = mgr.annotation_list(work_id).unwrap();
         assert_eq!(anns.len(), 1);
@@ -1930,6 +1943,7 @@ mod tests {
             2,
             4,
             Some(99),
+            false,
         )
         .unwrap();
 
@@ -1947,7 +1961,7 @@ mod tests {
         let work_id: BeId = 42;
 
         mgr.initialize_from_edition(work_id, &Edition::from_text("hello world"));
-        mgr.annotation_create(work_id, 1, "note".into(), "x".into(), 0, 5, None)
+        mgr.annotation_create(work_id, 1, "note".into(), "x".into(), 0, 5, None, false)
             .unwrap();
 
         mgr.annotation_update_range(work_id, 1, 3, 8).unwrap();
@@ -1962,7 +1976,8 @@ mod tests {
         let mut mgr = OtreeCrdtManager::new(3);
         let work_id: BeId = 99;
 
-        let result = mgr.annotation_create(work_id, 1, "note".into(), "x".into(), 0, 5, None);
+        let result =
+            mgr.annotation_create(work_id, 1, "note".into(), "x".into(), 0, 5, None, false);
         assert!(result.is_err());
     }
 
@@ -1978,7 +1993,7 @@ mod tests {
 
         assert!(mgr.docs.contains_key(&work_id));
 
-        mgr.annotation_create(work_id, 1, "note".into(), "ok".into(), 0, 5, None)
+        mgr.annotation_create(work_id, 1, "note".into(), "ok".into(), 0, 5, None, false)
             .unwrap();
         let anns = mgr.annotation_list(work_id).unwrap();
         assert_eq!(anns.len(), 1);
@@ -2017,11 +2032,11 @@ mod tests {
         mgr.initialize_from_edition(w1, &Edition::from_text("aaa"));
         mgr.initialize_from_edition(w2, &Edition::from_text("bbb"));
 
-        mgr.annotation_create(w1, 1, "note".into(), "n1".into(), 0, 1, None)
+        mgr.annotation_create(w1, 1, "note".into(), "n1".into(), 0, 1, None, false)
             .unwrap();
-        mgr.annotation_create(w1, 2, "note".into(), "n2".into(), 1, 2, None)
+        mgr.annotation_create(w1, 2, "note".into(), "n2".into(), 1, 2, None, false)
             .unwrap();
-        mgr.annotation_create(w2, 3, "note".into(), "n3".into(), 0, 1, None)
+        mgr.annotation_create(w2, 3, "note".into(), "n3".into(), 0, 1, None, false)
             .unwrap();
 
         let all = mgr.all_annotations();
@@ -2050,6 +2065,7 @@ mod tests {
                 char_end: 5,
                 created_by: Some(7),
                 created_at: 0,
+                is_private: false,
             }],
         )];
 

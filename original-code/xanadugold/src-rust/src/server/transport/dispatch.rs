@@ -2720,6 +2720,7 @@ fn dispatch_inner(
             payload,
             char_start,
             char_end,
+            is_private,
         } => {
             srv.annotation_create(
                 session_id,
@@ -2729,6 +2730,7 @@ fn dispatch_inner(
                 payload,
                 char_start,
                 char_end,
+                is_private,
             )?;
             Ok(ResponseValue::Id(annotation_id))
         }

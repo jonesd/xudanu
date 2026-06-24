@@ -1383,8 +1383,12 @@ pub enum WireRequest {
         annotation_id: u64,
         kind: String,
         payload: String,
+        #[serde(default)]
         char_start: usize,
+        #[serde(default)]
         char_end: usize,
+        #[serde(default)]
+        is_private: bool,
     },
     AnnotationDelete {
         work_id: BeId,
@@ -2585,6 +2589,8 @@ pub struct AnnotationPayload {
     pub created_by_name: Option<String>,
     #[serde(default)]
     pub created_at: u64,
+    #[serde(default)]
+    pub is_private: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

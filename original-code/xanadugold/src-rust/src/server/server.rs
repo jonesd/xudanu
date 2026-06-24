@@ -7107,6 +7107,7 @@ impl Server {
         payload: String,
         char_start: usize,
         char_end: usize,
+        is_private: bool,
     ) -> Result<(), ServerError> {
         self.ensure_authenticated(session_id)?;
         let created_by = self.sessions.get(&session_id).and_then(|s| {
@@ -7134,6 +7135,7 @@ impl Server {
                 char_start,
                 char_end,
                 created_by,
+                is_private,
             )
             .map_err(|e| ServerError::Internal(e.to_string()))?;
         if let Err(e) = self.checkpoint_to_store() {
@@ -7217,6 +7219,7 @@ impl Server {
                     created_by: a.created_by,
                     created_by_name,
                     created_at: a.created_at,
+                    is_private: a.is_private,
                 }
             }))
     }
@@ -7234,6 +7237,18 @@ impl Server {
         if !self.work_is_readable(session_id, &ws.work) {
             return Err(ServerError::NotAuthorized);
         }
+        let requester_club = self.sessions.get(&session_id).and_then(|s| {
+            let km = s._key_master()?;
+            let auth = km.actual_authority();
+            auth.iter()
+                .find(|&&id| {
+                    id != self.public_club_id()
+                        && id != self.admin_club_id()
+                        && id != self.access_club_id()
+                        && id != self.empty_club_id()
+                })
+                .copied()
+        });
         let edition = ws.work.current_edition();
         self.otree_crdt
             .ensure_doc_for_annotations(work_id, &edition);
@@ -7242,6 +7257,15 @@ impl Server {
             .annotation_list(work_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?
             .into_iter()
+            .filter(|a| {
+                if !a.is_private {
+                    return true;
+                }
+                match (a.created_by, requester_club) {
+                    (Some(creator), Some(requester)) => creator == requester,
+                    _ => false,
+                }
+            })
             .map(|a| {
                 let created_by_name = a.created_by.and_then(|cid| {
                     self.clubs.get(&cid).and_then(|c| {
@@ -7259,6 +7283,7 @@ impl Server {
                     created_by: a.created_by,
                     created_by_name,
                     created_at: a.created_at,
+                    is_private: a.is_private,
                 }
             })
             .collect())
@@ -19724,7 +19749,16 @@ mod tests {
             .unwrap();
 
         server
-            .annotation_create(sid, work_id, 1, "note".into(), "test note".into(), 0, 5)
+            .annotation_create(
+                sid,
+                work_id,
+                1,
+                "note".into(),
+                "test note".into(),
+                0,
+                5,
+                false,
+            )
             .unwrap();
 
         let anns = server.annotation_list(sid, work_id).unwrap();
@@ -19749,7 +19783,16 @@ mod tests {
         }
 
         server
-            .annotation_create(sid, work_id, 1, "note".into(), "on source".into(), 3, 10)
+            .annotation_create(
+                sid,
+                work_id,
+                1,
+                "note".into(),
+                "on source".into(),
+                3,
+                10,
+                false,
+            )
             .unwrap();
 
         let anns = server.annotation_list(sid, work_id).unwrap();
@@ -19765,10 +19808,10 @@ mod tests {
             .unwrap();
 
         server
-            .annotation_create(sid, work_id, 1, "note".into(), "a".into(), 0, 1)
+            .annotation_create(sid, work_id, 1, "note".into(), "a".into(), 0, 1, false)
             .unwrap();
         server
-            .annotation_create(sid, work_id, 2, "note".into(), "b".into(), 1, 2)
+            .annotation_create(sid, work_id, 2, "note".into(), "b".into(), 1, 2, false)
             .unwrap();
 
         server.annotation_delete(sid, work_id, 1).unwrap();
@@ -19782,7 +19825,7 @@ mod tests {
     fn annotation_requires_authentication() {
         let mut server = Server::new();
         let sid = server.connect();
-        let result = server.annotation_create(sid, 9999, 1, "note".into(), "x".into(), 0, 1);
+        let result = server.annotation_create(sid, 9999, 1, "note".into(), "x".into(), 0, 1, false);
         assert!(result.is_err());
     }
 
@@ -19815,7 +19858,16 @@ mod tests {
                 .unwrap();
 
             server
-                .annotation_create(sid, work_id, 42, "note".into(), "must survive".into(), 0, 5)
+                .annotation_create(
+                    sid,
+                    work_id,
+                    42,
+                    "note".into(),
+                    "must survive".into(),
+                    0,
+                    5,
+                    false,
+                )
                 .unwrap();
 
             server.checkpoint_to_store().unwrap();
@@ -24809,5 +24861,172 @@ mod tests {
 
         let results = server.global_text_search(sid, "", 10);
         assert!(results.is_empty(), "empty query should return no results");
+    }
+
+    #[test]
+    fn annotation_private_hidden_from_anonymous() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_id = server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
+
+        server
+            .annotation_create(
+                sid,
+                work_id,
+                1,
+                "note".into(),
+                "private note".into(),
+                0,
+                5,
+                true,
+            )
+            .unwrap();
+
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+
+        let anns = server.annotation_list(sid, work_id).unwrap();
+        assert!(
+            anns.is_empty(),
+            "private annotations from anonymous (login_public) are invisible to all — \
+             no club ID to verify ownership"
+        );
+
+        let anns2 = server.annotation_list(sid2, work_id).unwrap();
+        assert!(
+            anns2.is_empty(),
+            "other anonymous session also sees nothing"
+        );
+    }
+
+    #[test]
+    fn annotation_public_visible_to_everyone() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_id = server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
+
+        server
+            .annotation_create(
+                sid,
+                work_id,
+                1,
+                "note".into(),
+                "public note".into(),
+                0,
+                5,
+                false,
+            )
+            .unwrap();
+
+        let anns = server.annotation_list(sid, work_id).unwrap();
+        assert_eq!(anns.len(), 1, "creator sees public annotation");
+
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+
+        let anns2 = server.annotation_list(sid2, work_id).unwrap();
+        assert_eq!(anns2.len(), 1, "other session sees public annotation");
+        assert!(!anns2[0].is_private);
+    }
+
+    #[test]
+    fn annotation_default_is_public() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_id = server
+            .create_work(sid, Edition::from_text("hello"))
+            .unwrap();
+
+        server
+            .annotation_create(
+                sid,
+                work_id,
+                1,
+                "note".into(),
+                "default note".into(),
+                0,
+                5,
+                false,
+            )
+            .unwrap();
+
+        let anns = server.annotation_list(sid, work_id).unwrap();
+        assert_eq!(anns.len(), 1);
+        assert!(
+            !anns[0].is_private,
+            "annotation created with is_private=false should be public"
+        );
+    }
+
+    #[test]
+    fn annotation_private_filter_at_manager_level() {
+        use crate::server::otree_crdt::OtreeCrdtManager;
+        let mut mgr = OtreeCrdtManager::new(2);
+        let work_id: BeId = 42;
+        mgr.initialize_from_edition(work_id, &Edition::from_text("hello"));
+
+        mgr.annotation_create(
+            work_id,
+            1,
+            "note".into(),
+            "public".into(),
+            0,
+            2,
+            Some(100),
+            false,
+        )
+        .unwrap();
+        mgr.annotation_create(
+            work_id,
+            2,
+            "note".into(),
+            "private from club 100".into(),
+            3,
+            5,
+            Some(100),
+            true,
+        )
+        .unwrap();
+        mgr.annotation_create(
+            work_id,
+            3,
+            "note".into(),
+            "private from club 200".into(),
+            0,
+            1,
+            Some(200),
+            true,
+        )
+        .unwrap();
+
+        let all = mgr.annotation_list(work_id).unwrap();
+        assert_eq!(all.len(), 3, "manager returns all without filtering");
+
+        let visible_to_100: Vec<_> = all
+            .iter()
+            .filter(|a| !a.is_private || a.created_by == Some(100))
+            .collect();
+        assert_eq!(
+            visible_to_100.len(),
+            2,
+            "club 100 sees public + their own private"
+        );
+
+        let visible_to_200: Vec<_> = all
+            .iter()
+            .filter(|a| !a.is_private || a.created_by == Some(200))
+            .collect();
+        assert_eq!(
+            visible_to_200.len(),
+            2,
+            "club 200 sees public + their own private"
+        );
+
+        let visible_to_999: Vec<_> = all
+            .iter()
+            .filter(|a| !a.is_private || a.created_by == Some(999))
+            .collect();
+        assert_eq!(visible_to_999.len(), 1, "club 999 sees only public");
     }
 }
