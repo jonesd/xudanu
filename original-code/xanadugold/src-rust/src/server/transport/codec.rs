@@ -1908,6 +1908,17 @@ impl JsonCodec {
                     char_end: args.char_end,
                 })
             }
+            OperationCode::AttributionQueryResolved => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AttributionQueryResolved {
+                    work_id: args.work_id,
+                })
+            }
             OperationCode::RenderTransclusions => {
                 #[derive(Deserialize)]
                 struct Args {

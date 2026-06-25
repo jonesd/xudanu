@@ -851,9 +851,20 @@ export function CollaborativeEditor({
   }, [onCursorChange, onSelectionChange]);
 
   const handleEditorClick = useCallback((e: React.MouseEvent) => {
-    if (!pendingTransclusion || !onPlaceTransclusion) return;
     const el = editorRef.current;
     if (!el) return;
+
+    const target = e.target as HTMLElement;
+    const transclusionSpan = target.closest(".inline-transclusion");
+    if (transclusionSpan && onNavigateToWork) {
+      const sourceId = parseInt((transclusionSpan as HTMLElement).dataset.sourceWorkId || "0", 10);
+      if (sourceId) {
+        onNavigateToWork(sourceId);
+        return;
+      }
+    }
+
+    if (!pendingTransclusion || !onPlaceTransclusion) return;
     if (!el.contains(e.target as Node)) return;
 
     let range: Range | null = null;
@@ -873,7 +884,7 @@ export function CollaborativeEditor({
     pre.setEnd(range.startContainer, range.startOffset);
     const pos = pre.toString().replace(/\u200B/g, "").length;
     onPlaceTransclusion(pos);
-  }, [pendingTransclusion, onPlaceTransclusion]);
+  }, [pendingTransclusion, onPlaceTransclusion, onNavigateToWork]);
 
   useEffect(() => {
     document.addEventListener("selectionchange", handleSelectionChange);
@@ -1155,12 +1166,13 @@ function buildTransclusionDom(
       el.appendChild(document.createTextNode(resolvedText.slice(pos, sr.flat_start)));
     }
     const content = resolvedText.slice(sr.flat_start, sr.flat_end);
+    const title = sourceTitles?.[sr.source_work_id] || sr.source_work_id.toString(16);
     const span = document.createElement("span");
     span.className = "inline-transclusion";
     span.setAttribute("contenteditable", "false");
     span.textContent = content;
-    const title = sourceTitles?.[sr.source_work_id] || sr.source_work_id.toString(16);
-    span.title = `Transclusion from: ${title}`;
+    span.title = `Transclusion from: ${title} (click to navigate)`;
+    (span as HTMLElement).dataset.sourceWorkId = String(sr.source_work_id);
     el.appendChild(span);
     pos = sr.flat_end;
   }

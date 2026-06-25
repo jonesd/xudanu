@@ -2034,6 +2034,15 @@ fn dispatch_inner(
                 source_titles: result.source_titles,
             })
         }
+        WireRequest::AttributionQueryResolved { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let resolved = srv.resolve_inline_transclusions(work_id)?;
+            for sr in &resolved.span_ranges {
+                srv.ensure_can_read(session_id, sr.source_work_id)?;
+            }
+            let spans = srv.attribution_query_resolved(work_id)?;
+            Ok(ResponseValue::AttributionQueryResult { spans })
+        }
         WireRequest::MigrateCompoundToInline { work_id } => {
             srv.ensure_can_edit(session_id, work_id)?;
             let count = srv.migrate_compound_to_inline(work_id)?;
@@ -3685,6 +3694,15 @@ fn dispatch_inner_read(
                     .collect(),
                 source_titles: result.source_titles,
             })
+        }
+        WireRequest::AttributionQueryResolved { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let resolved = srv.resolve_inline_transclusions(work_id)?;
+            for sr in &resolved.span_ranges {
+                srv.ensure_can_read(session_id, sr.source_work_id)?;
+            }
+            let spans = srv.attribution_query_resolved(work_id)?;
+            Ok(ResponseValue::AttributionQueryResult { spans })
         }
         WireRequest::AdminServerHealth => {
             let health = srv.server_health();

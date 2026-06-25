@@ -241,7 +241,12 @@ export function useCrdtSync(
   const refreshAttribution = useCallback(() => {
     const client = clientRef.current;
     if (!client || !client.isConnected() || workBeId === null) return;
-    client.attributionQuery(workBeId).then(setAttributionSpans).catch(() => {});
+    client
+      .attributionQueryResolved(workBeId)
+      .then(setAttributionSpans)
+      .catch(() => {
+        client.attributionQuery(workBeId).then(setAttributionSpans).catch(() => {});
+      });
     client.attributionLogStatus().then(setAttributionLogStatus).catch(() => {});
   }, [workBeId]);
 

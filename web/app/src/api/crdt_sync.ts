@@ -527,6 +527,14 @@ export class CrdtSyncClient {
     return (val.spans as AttributionSpan[]) || [];
   }
 
+  async attributionQueryResolved(workId: number): Promise<AttributionSpan[]> {
+    const resp = await this.sendRequest("attribution_query_resolved", {
+      work_id: workId,
+    });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.spans as AttributionSpan[]) || [];
+  }
+
   async textRange(
     workId: number,
     startChar: number,
