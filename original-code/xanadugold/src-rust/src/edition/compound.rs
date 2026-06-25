@@ -256,6 +256,34 @@ impl CompoundEdition {
         self.elements.push(element);
     }
 
+    pub fn insert(&mut self, index: usize, element: CompoundElement) {
+        if index >= self.elements.len() {
+            self.elements.push(element);
+        } else {
+            self.elements.insert(index, element);
+        }
+    }
+
+    pub fn remove(&mut self, index: usize) -> Option<CompoundElement> {
+        if index < self.elements.len() {
+            Some(self.elements.remove(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn move_element(&mut self, from: usize, to: usize) {
+        if from >= self.elements.len() || to >= self.elements.len() {
+            return;
+        }
+        let elem = self.elements.remove(from);
+        self.elements.insert(to, elem);
+    }
+
+    pub fn clear(&mut self) {
+        self.elements.clear();
+    }
+
     pub fn is_empty(&self) -> bool {
         self.elements.is_empty()
     }

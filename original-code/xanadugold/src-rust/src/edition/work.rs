@@ -167,6 +167,10 @@ impl Work {
         Ok(())
     }
 
+    pub fn update_current_edition(&mut self, edition: Edition) {
+        self.current_edition = edition;
+    }
+
     pub fn fetch_revision(&self, number: u64) -> Option<&Edition> {
         if number == self.revision_count {
             return Some(&self.current_edition);

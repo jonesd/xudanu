@@ -62,6 +62,10 @@ impl WorkState {
         &self.work
     }
 
+    pub(crate) fn work_mut(&mut self) -> &mut Work {
+        &mut self.work
+    }
+
     pub(crate) fn grabber(&self) -> Option<SessionId> {
         self.grabber
     }
@@ -167,6 +171,13 @@ pub struct GlobalSearchResult {
     pub owner: Option<BeId>,
     pub revision_count: u64,
     pub matches: Vec<SearchMatch>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InlineTransclusionResult {
+    pub text: String,
+    pub span_ranges: Vec<crate::edition::compound::SpanRange>,
+    pub source_titles: HashMap<BeId, String>,
 }
 
 /// Ghost metadata for an archived work — rendered when references
@@ -814,7 +825,16 @@ impl Server {
         id
     }
 
-    pub fn disconnect(&mut self, session_id: SessionId) -> Result<(), ServerError> {
+    pub fn disconnect(
+        &mut self,
+        session_id: SessionId,
+    ) -> Result<
+        Vec<(
+            BeId,
+            Vec<(SessionId, crate::server::crdt_manager::SyncSessionId)>,
+        )>,
+        ServerError,
+    > {
         if !self.sessions.contains_key(&session_id) {
             return Err(ServerError::SessionNotFound(session_id));
         }
@@ -856,12 +876,17 @@ impl Server {
 
         let crdt_works: Vec<BeId> = self.otree_crdt.works_for_session(session_id);
 
+        let mut removal_relays = Vec::new();
         for work_id in crdt_works {
-            let _ = self.crdt_remove_awareness(session_id, work_id);
+            if let Ok(result) = self.crdt_remove_awareness(session_id, work_id) {
+                if !result.relay_to.is_empty() {
+                    removal_relays.push((work_id, result.relay_to.clone()));
+                }
+            }
             self.otree_crdt.close_session(work_id, session_id);
         }
 
-        Ok(())
+        Ok(removal_relays)
     }
 
     pub fn session(&self, session_id: SessionId) -> Result<&Session, ServerError> {
@@ -4163,6 +4188,36 @@ impl Server {
         compound: crate::edition::compound::CompoundEdition,
     ) {
         self.compound_editions.insert(work_id, compound);
+    }
+
+    pub(crate) fn wal_replay_compound_insert_element(
+        &mut self,
+        work_id: BeId,
+        index: usize,
+        element: crate::edition::compound::CompoundElement,
+    ) {
+        let compound = self
+            .compound_editions
+            .entry(work_id)
+            .or_insert_with(crate::edition::compound::CompoundEdition::empty);
+        compound.insert(index, element);
+    }
+
+    pub(crate) fn wal_replay_compound_remove_element(&mut self, work_id: BeId, index: usize) {
+        if let Some(compound) = self.compound_editions.get_mut(&work_id) {
+            compound.remove(index);
+        }
+    }
+
+    pub(crate) fn wal_replay_compound_move_element(
+        &mut self,
+        work_id: BeId,
+        from: usize,
+        to: usize,
+    ) {
+        if let Some(compound) = self.compound_editions.get_mut(&work_id) {
+            compound.move_element(from, to);
+        }
     }
 
     pub(crate) fn wal_replay_create_link(
@@ -8091,6 +8146,10 @@ impl Server {
         self.compound_editions.get(&work_id)
     }
 
+    pub fn compound_edition_work_ids(&self) -> Vec<BeId> {
+        self.compound_editions.keys().copied().collect()
+    }
+
     pub fn set_compound_edition(
         &mut self,
         work_id: BeId,
@@ -8114,7 +8173,256 @@ impl Server {
         Ok(())
     }
 
-    /// Reconstruct a compound edition from a work's element provenance.
+    pub fn element_insert(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        position: i64,
+        element: RangeElement,
+    ) -> Result<u64, ServerError> {
+        self.ensure_session(session_id)?;
+        let char_position = position.max(0) as usize;
+
+        let new_edition = {
+            let ws = self
+                .works
+                .get(&work_id)
+                .ok_or(ServerError::WorkNotFound(work_id))?;
+            let edition = ws.work().current_edition().clone();
+            let entries = edition.cached_entries();
+
+            let mut new_entries: Vec<(
+                i64,
+                std::sync::Arc<crate::edition::range_element::Carrier>,
+            )> = Vec::with_capacity(entries.len() + 1);
+            let mut cum_char = 0usize;
+            let mut inserted = false;
+            let carrier = crate::edition::range_element::Carrier::new(element);
+            let arc_carrier = std::sync::Arc::new(carrier);
+            let mut pos = 0i64;
+
+            for (_, c) in entries.iter() {
+                let entry_len = c.char_len();
+                if !inserted && cum_char >= char_position {
+                    new_entries.push((pos, arc_carrier.clone()));
+                    pos += 1;
+                    inserted = true;
+                }
+                new_entries.push((pos, c.clone()));
+                pos += 1;
+                cum_char += entry_len;
+            }
+            if !inserted {
+                new_entries.push((pos, arc_carrier));
+            }
+            crate::edition::Edition::from_entries(new_entries)
+        };
+
+        let author_club = self.resolve_author_club(session_id);
+        self.revise_work(work_id, session_id, new_edition, author_club)
+    }
+
+    pub fn element_remove_transclusion(
+        &mut self,
+        session_id: SessionId,
+        work_id: BeId,
+        source_work_id: BeId,
+        char_start: usize,
+        char_end: usize,
+    ) -> Result<bool, ServerError> {
+        self.ensure_session(session_id)?;
+
+        let new_edition = {
+            let ws = self
+                .works
+                .get(&work_id)
+                .ok_or(ServerError::WorkNotFound(work_id))?;
+            let old_edition = ws.work().current_edition().clone();
+            let entries = old_edition.cached_entries();
+
+            let mut found = false;
+            let mut new_entries: Vec<(
+                i64,
+                std::sync::Arc<crate::edition::range_element::Carrier>,
+            )> = Vec::with_capacity(entries.len());
+            let mut pos = 0i64;
+
+            for (_, carrier) in entries.iter() {
+                if !found {
+                    if let crate::edition::RangeElement::Transclusion {
+                        source_work_id: sid,
+                        char_start: cs,
+                        char_end: ce,
+                    } = &carrier.element
+                    {
+                        if *sid == source_work_id && *cs == char_start && *ce == char_end {
+                            found = true;
+                            continue;
+                        }
+                    }
+                }
+                new_entries.push((pos, carrier.clone()));
+                pos += 1;
+            }
+
+            if !found {
+                return Ok(false);
+            }
+            crate::edition::Edition::from_entries(new_entries)
+        };
+
+        let author_club = self.resolve_author_club(session_id);
+        self.revise_work(work_id, session_id, new_edition, author_club)?;
+        Ok(true)
+    }
+
+    pub fn migrate_compound_to_inline(&mut self, work_id: BeId) -> Result<usize, ServerError> {
+        let compound = match self.compound_editions.get(&work_id) {
+            Some(c) => c.clone(),
+            None => return Ok(0),
+        };
+
+        let ws = self
+            .works
+            .get_mut(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
+        let old_edition = ws.work().current_edition().clone();
+        let entries = old_edition.cached_entries();
+
+        let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::range_element::Carrier>)> =
+            Vec::new();
+        let mut text_chars_consumed = 0usize;
+        let mut compound_idx = 0;
+        let mut pos = 0i64;
+        let mut migrated_count = 0usize;
+
+        for (_, carrier) in entries.iter() {
+            let entry_len = carrier.char_len();
+            let remaining_in_entry = entry_len;
+
+            while compound_idx < compound.elements().len() {
+                let comp_elem = &compound.elements()[compound_idx];
+                match comp_elem {
+                    crate::edition::compound::CompoundElement::Text { content } => {
+                        let content_len = content.chars().count();
+                        if text_chars_consumed + remaining_in_entry >= content_len {
+                            text_chars_consumed = 0;
+                            compound_idx += 1;
+                        } else {
+                            text_chars_consumed += remaining_in_entry;
+                            break;
+                        }
+                    }
+                    crate::edition::compound::CompoundElement::Span { span } => {
+                        let tc = crate::edition::range_element::Carrier::new(
+                            RangeElement::transclusion(
+                                span.source_work_id(),
+                                span.char_start(),
+                                span.char_end(),
+                            ),
+                        );
+                        new_entries.push((pos, std::sync::Arc::new(tc)));
+                        pos += 1;
+                        compound_idx += 1;
+                        migrated_count += 1;
+                    }
+                }
+            }
+
+            new_entries.push((pos, carrier.clone()));
+            pos += 1;
+        }
+
+        let new_edition = crate::edition::Edition::from_entries(new_entries);
+        ws.work_mut().update_current_edition(new_edition);
+
+        self.compound_editions.remove(&work_id);
+        Ok(migrated_count)
+    }
+
+    pub fn compound_insert_element(
+        &mut self,
+        work_id: BeId,
+        index: usize,
+        element: crate::edition::compound::CompoundElement,
+        session_id: SessionId,
+    ) -> Result<usize, ServerError> {
+        if !self.works.contains_key(&work_id) {
+            return Err(ServerError::WorkNotFound(work_id));
+        }
+        let compound = self
+            .compound_editions
+            .entry(work_id)
+            .or_insert_with(crate::edition::compound::CompoundEdition::empty);
+        compound.insert(index, element.clone());
+        let count = compound.len();
+        let element_json = serde_json::to_string(&element)
+            .map_err(|_| ServerError::Internal("compound element serde failed".into()))?;
+        let _ = self.wal.append(
+            "compound_insert_element",
+            serde_json::json!({
+                "work_id": work_id,
+                "index": index,
+                "element": element_json,
+            }),
+        );
+        let _ = session_id;
+        Ok(count)
+    }
+
+    pub fn compound_remove_element(
+        &mut self,
+        work_id: BeId,
+        index: usize,
+        session_id: SessionId,
+    ) -> Result<usize, ServerError> {
+        if !self.works.contains_key(&work_id) {
+            return Err(ServerError::WorkNotFound(work_id));
+        }
+        let compound = self
+            .compound_editions
+            .get_mut(&work_id)
+            .ok_or(ServerError::Internal("no compound edition for work".into()))?;
+        compound.remove(index);
+        let count = compound.len();
+        let _ = self.wal.append(
+            "compound_remove_element",
+            serde_json::json!({
+                "work_id": work_id,
+                "index": index,
+            }),
+        );
+        let _ = session_id;
+        Ok(count)
+    }
+
+    pub fn compound_move_element(
+        &mut self,
+        work_id: BeId,
+        from: usize,
+        to: usize,
+        session_id: SessionId,
+    ) -> Result<usize, ServerError> {
+        if !self.works.contains_key(&work_id) {
+            return Err(ServerError::WorkNotFound(work_id));
+        }
+        let compound = self
+            .compound_editions
+            .get_mut(&work_id)
+            .ok_or(ServerError::Internal("no compound edition for work".into()))?;
+        compound.move_element(from, to);
+        let count = compound.len();
+        let _ = self.wal.append(
+            "compound_move_element",
+            serde_json::json!({
+                "work_id": work_id,
+                "from": from,
+                "to": to,
+            }),
+        );
+        let _ = session_id;
+        Ok(count)
+    }
     ///
     /// Walks the work's current edition entries, grouping consecutive elements
     /// by their `source_work_id` provenance. For each group, searches for the
@@ -8237,6 +8545,209 @@ impl Server {
                     ServerError::WorkNotFound(work_id)
                 }
             })
+    }
+
+    pub fn resolve_inline_transclusions(
+        &self,
+        work_id: BeId,
+    ) -> Result<InlineTransclusionResult, ServerError> {
+        let mut cache: HashMap<BeId, String> = HashMap::new();
+        let mut stack: Vec<BeId> = Vec::new();
+        let mut span_ranges = Vec::new();
+        let mut source_titles = HashMap::new();
+
+        let text = self.resolve_inline_recursive(
+            work_id,
+            &mut cache,
+            &mut stack,
+            &mut span_ranges,
+            &mut source_titles,
+            0,
+        )?;
+
+        Ok(InlineTransclusionResult {
+            text,
+            span_ranges,
+            source_titles,
+        })
+    }
+
+    const INLINE_MAX_DEPTH: usize = 32;
+
+    fn resolve_inline_recursive(
+        &self,
+        work_id: BeId,
+        cache: &mut HashMap<BeId, String>,
+        stack: &mut Vec<BeId>,
+        span_ranges: &mut Vec<crate::edition::compound::SpanRange>,
+        source_titles: &mut HashMap<BeId, String>,
+        depth: usize,
+    ) -> Result<String, ServerError> {
+        if depth >= Self::INLINE_MAX_DEPTH {
+            return Ok(String::new());
+        }
+        if stack.contains(&work_id) {
+            let ws = self
+                .works
+                .get(&work_id)
+                .ok_or(ServerError::WorkNotFound(work_id))?;
+            return Ok(ws.work().current_edition().to_text());
+        }
+
+        {
+            if let Some(cached) = cache.get(&work_id) {
+                return Ok(cached.clone());
+            }
+        }
+
+        stack.push(work_id);
+
+        let ws = self
+            .works
+            .get(&work_id)
+            .ok_or(ServerError::WorkNotFound(work_id))?;
+        let edition = ws.work().current_edition();
+        let entries = edition.cached_entries();
+
+        let mut text_offset = 0usize;
+        let mut resolved_text = String::new();
+
+        for (_, carrier) in entries.iter() {
+            if let crate::edition::RangeElement::Transclusion {
+                source_work_id,
+                char_start,
+                char_end,
+            } = &carrier.element
+            {
+                let src_id = *source_work_id;
+                let c_start = *char_start;
+                let c_end = *char_end;
+
+                let src_text = self.resolve_inline_recursive(
+                    src_id,
+                    cache,
+                    stack,
+                    span_ranges,
+                    source_titles,
+                    depth + 1,
+                )?;
+
+                let src_chars: Vec<char> = src_text.chars().collect();
+                let start = c_start.min(src_chars.len());
+                let end = c_end.min(src_chars.len());
+                let content: String = src_chars[start..end].iter().collect();
+                let content_len = content.chars().count();
+
+                span_ranges.push(crate::edition::compound::SpanRange {
+                    source_work_id: src_id,
+                    char_start: c_start,
+                    char_end: c_end,
+                    flat_start: text_offset,
+                    flat_end: text_offset + content_len,
+                    content_len,
+                });
+
+                if !source_titles.contains_key(&src_id) {
+                    if let Some(title) = self.compound_source_title(src_id) {
+                        source_titles.insert(src_id, title);
+                    }
+                }
+
+                resolved_text.push_str(&content);
+                text_offset += content_len;
+            } else if let Some(s) = carrier.element.as_text() {
+                resolved_text.push_str(s);
+                text_offset += s.chars().count();
+            }
+        }
+
+        stack.pop();
+        cache.insert(work_id, resolved_text.clone());
+        Ok(resolved_text)
+    }
+
+    pub fn work_has_inline_transclusions(&self, work_id: BeId) -> bool {
+        if let Some(ws) = self.works.get(&work_id) {
+            ws.work()
+                .current_edition()
+                .cached_entries()
+                .iter()
+                .any(|(_, c)| c.element.is_transclusion())
+        } else {
+            false
+        }
+    }
+
+    pub fn migrate_inline_transclusions_for_delta(
+        &mut self,
+        source_work_id: BeId,
+        ops: &[crate::server::transport::protocol::TextDeltaOp],
+    ) {
+        let delta_ops: Vec<crate::edition::compound::DeltaOp> = ops
+            .iter()
+            .map(|op| match op {
+                crate::server::transport::protocol::TextDeltaOp::Retain { count } => {
+                    crate::edition::compound::DeltaOp::Retain(*count as usize)
+                }
+                crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
+                    crate::edition::compound::DeltaOp::Insert(text.chars().count())
+                }
+                crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
+                    crate::edition::compound::DeltaOp::Delete(*count as usize)
+                }
+            })
+            .collect();
+
+        let affected: Vec<BeId> = self
+            .works
+            .iter()
+            .filter(|(_, ws)| {
+                ws.work()
+                    .current_edition()
+                    .cached_entries()
+                    .iter()
+                    .any(|(_, c)| {
+                        c.element
+                            .as_transclusion()
+                            .map(|(sid, _, _)| sid == source_work_id)
+                            .unwrap_or(false)
+                    })
+            })
+            .map(|(id, _)| *id)
+            .collect();
+
+        for wid in affected {
+            if let Some(ws) = self.works.get_mut(&wid) {
+                let old_edition = ws.work().current_edition().clone();
+                let entries = old_edition.cached_entries();
+                let mut new_entries: Vec<(i64, std::sync::Arc<crate::edition::Carrier>)> =
+                    Vec::with_capacity(entries.len());
+                let mut pos = 0i64;
+                for (_, carrier) in entries.iter() {
+                    let mut new_carrier = (**carrier).clone();
+                    if let crate::edition::RangeElement::Transclusion {
+                        source_work_id: sid,
+                        char_start,
+                        char_end,
+                    } = &new_carrier.element
+                    {
+                        if *sid == source_work_id {
+                            let (ns, ne) = crate::edition::compound::map_span_through_delta(
+                                *char_start,
+                                *char_end,
+                                &delta_ops,
+                            );
+                            new_carrier.element =
+                                crate::edition::RangeElement::transclusion(*sid, ns, ne);
+                        }
+                    }
+                    new_entries.push((pos, std::sync::Arc::new(new_carrier)));
+                    pos += 1;
+                }
+                let new_edition = crate::edition::Edition::from_entries(new_entries);
+                ws.work_mut().update_current_edition(new_edition);
+            }
+        }
     }
 
     const COMPOUND_MAX_DEPTH: usize = 32;
@@ -8451,6 +8962,45 @@ impl Server {
 
     pub fn clear_compound_dirty(&mut self, work_id: BeId) {
         self.compound_dirty.remove(&work_id);
+    }
+
+    pub fn compound_subscribers_for_source(
+        &self,
+        source_work_id: BeId,
+    ) -> Vec<(BeId, Vec<SessionId>)> {
+        let mut affected: std::collections::HashSet<BeId> = self
+            .works_with_compound_referencing(source_work_id)
+            .into_iter()
+            .collect();
+
+        for (wid, ws) in &self.works {
+            let has_inline = ws
+                .work()
+                .current_edition()
+                .cached_entries()
+                .iter()
+                .any(|(_, c)| {
+                    c.element
+                        .as_transclusion()
+                        .map(|(sid, _, _)| sid == source_work_id)
+                        .unwrap_or(false)
+                });
+            if has_inline {
+                affected.insert(*wid);
+            }
+        }
+
+        affected
+            .into_iter()
+            .filter_map(|wid| {
+                let subs = self.otree_crdt.get_subscribed_sessions(wid).ok()?;
+                if subs.is_empty() {
+                    None
+                } else {
+                    Some((wid, subs))
+                }
+            })
+            .collect()
     }
 
     pub fn content_address_lookup(&self, element: &RangeElement) -> Option<BeId> {
@@ -16917,6 +17467,113 @@ mod tests {
     }
 
     #[test]
+    fn disconnect_removes_awareness_and_returns_relay() {
+        let (mut server, sid1) = ac_setup();
+        let work_id = server
+            .create_work(sid1, Edition::from_text("disconnect-aware"))
+            .unwrap();
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        server.crdt_open_session(sid1, work_id).unwrap();
+        server.crdt_open_session(sid2, work_id).unwrap();
+        let state1 = AwarenessState {
+            session_id: sid1.as_u64(),
+            user_name: "alice".to_string(),
+            club_id: None,
+            author_public_key: None,
+            cursor: Some(CursorPosition { index: 0 }),
+            selection: None,
+            is_typing: false,
+        };
+        server.crdt_update_awareness(sid1, work_id, state1).unwrap();
+        let state2 = AwarenessState {
+            session_id: sid2.as_u64(),
+            user_name: "bob".to_string(),
+            club_id: None,
+            author_public_key: None,
+            cursor: Some(CursorPosition { index: 3 }),
+            selection: None,
+            is_typing: false,
+        };
+        server.crdt_update_awareness(sid2, work_id, state2).unwrap();
+
+        let removals = server.disconnect(sid2).unwrap();
+        assert_eq!(removals.len(), 1, "should have removal info for 1 work");
+        let (rm_work_id, relay) = &removals[0];
+        assert_eq!(*rm_work_id, work_id);
+        assert_eq!(relay.len(), 1, "should relay to 1 remaining subscriber");
+        assert_eq!(relay[0].0, sid1);
+
+        let states = server.crdt_get_awareness(work_id).unwrap();
+        assert_eq!(states.len(), 1, "only sid1 awareness should remain");
+        assert_eq!(states[0].user_name, "alice");
+    }
+
+    #[test]
+    fn disconnect_with_no_crdt_works_returns_empty() {
+        let (mut server, sid1) = ac_setup();
+        let _work_id = server
+            .create_work(sid1, Edition::from_text("no-crdt"))
+            .unwrap();
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+
+        let removals = server.disconnect(sid2).unwrap();
+        assert!(removals.is_empty(), "no CRDT sessions = no removals");
+    }
+
+    #[test]
+    fn disconnect_relay_includes_multiple_works() {
+        let (mut server, sid1) = ac_setup();
+        let work_a = server
+            .create_work(sid1, Edition::from_text("work-a"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid1, Edition::from_text("work-b"))
+            .unwrap();
+        let sid2 = server.connect();
+        server.login_public(sid2).unwrap();
+        server.crdt_open_session(sid1, work_a).unwrap();
+        server.crdt_open_session(sid2, work_a).unwrap();
+        server.crdt_open_session(sid1, work_b).unwrap();
+        server.crdt_open_session(sid2, work_b).unwrap();
+
+        server
+            .crdt_update_awareness(
+                sid2,
+                work_a,
+                AwarenessState {
+                    session_id: sid2.as_u64(),
+                    user_name: "bob".to_string(),
+                    club_id: None,
+                    author_public_key: None,
+                    cursor: None,
+                    selection: None,
+                    is_typing: false,
+                },
+            )
+            .unwrap();
+        server
+            .crdt_update_awareness(
+                sid2,
+                work_b,
+                AwarenessState {
+                    session_id: sid2.as_u64(),
+                    user_name: "bob".to_string(),
+                    club_id: None,
+                    author_public_key: None,
+                    cursor: Some(CursorPosition { index: 0 }),
+                    selection: None,
+                    is_typing: false,
+                },
+            )
+            .unwrap();
+
+        let removals = server.disconnect(sid2).unwrap();
+        assert_eq!(removals.len(), 2, "should have removals for 2 works");
+    }
+
+    #[test]
     fn crdt_author_registration_multi_user() {
         let (mut server, sid1) = ac_setup();
         let work_id = server
@@ -23435,6 +24092,585 @@ mod tests {
             has_span,
             "rebuild should repair corrupted compound by adding spans from provenance"
         );
+    }
+
+    #[test]
+    fn compound_insert_element_creates_compound_if_absent() {
+        let (mut server, sid, source_a, doc_b) = compound_test_setup();
+        assert!(server.get_compound_edition(doc_b).is_none());
+
+        let count = server
+            .compound_insert_element(
+                doc_b,
+                0,
+                crate::edition::compound::CompoundElement::span(source_a, 0, 5),
+                sid,
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let compound = server.get_compound_edition(doc_b).unwrap();
+        assert_eq!(compound.len(), 1);
+        assert_eq!(compound.span_count(), 1);
+    }
+
+    #[test]
+    fn compound_insert_element_at_various_positions() {
+        let (mut server, sid, source_a, doc_b) = compound_test_setup();
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("A"),
+            crate::edition::compound::CompoundElement::text("C"),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        server
+            .compound_insert_element(
+                doc_b,
+                1,
+                crate::edition::compound::CompoundElement::text("B"),
+                sid,
+            )
+            .unwrap();
+
+        let compound = server.get_compound_edition(doc_b).unwrap();
+        assert_eq!(compound.len(), 3);
+        let texts: Vec<&str> = compound
+            .elements()
+            .iter()
+            .filter_map(|e| e.text_content())
+            .collect();
+        assert_eq!(texts, vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn compound_insert_element_appends_when_index_out_of_range() {
+        let (mut server, sid, _source_a, doc_b) = compound_test_setup();
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("first"),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        let count = server
+            .compound_insert_element(
+                doc_b,
+                99,
+                crate::edition::compound::CompoundElement::text("second"),
+                sid,
+            )
+            .unwrap();
+        assert_eq!(count, 2);
+
+        let compound = server.get_compound_edition(doc_b).unwrap();
+        assert_eq!(compound.len(), 2);
+    }
+
+    #[test]
+    fn compound_remove_element() {
+        let (mut server, sid, source_a, doc_b) = compound_test_setup();
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("keep"),
+            crate::edition::compound::CompoundElement::span(source_a, 0, 3),
+            crate::edition::compound::CompoundElement::text("remove me"),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        let count = server.compound_remove_element(doc_b, 2, sid).unwrap();
+        assert_eq!(count, 2);
+
+        let compound = server.get_compound_edition(doc_b).unwrap();
+        assert_eq!(compound.len(), 2);
+        let texts: Vec<&str> = compound
+            .elements()
+            .iter()
+            .filter_map(|e| e.text_content())
+            .collect();
+        assert_eq!(texts, vec!["keep"]);
+    }
+
+    #[test]
+    fn compound_remove_element_out_of_range_noop() {
+        let (mut server, sid, _source_a, doc_b) = compound_test_setup();
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("only"),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        let count = server.compound_remove_element(doc_b, 99, sid).unwrap();
+        assert_eq!(count, 1, "remove out of range should not change length");
+    }
+
+    #[test]
+    fn compound_move_element_forward() {
+        let (mut server, sid, _source_a, doc_b) = compound_test_setup();
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("A"),
+            crate::edition::compound::CompoundElement::text("B"),
+            crate::edition::compound::CompoundElement::text("C"),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        server.compound_move_element(doc_b, 0, 2, sid).unwrap();
+
+        let compound = server.get_compound_edition(doc_b).unwrap();
+        let texts: Vec<&str> = compound
+            .elements()
+            .iter()
+            .filter_map(|e| e.text_content())
+            .collect();
+        assert_eq!(texts, vec!["B", "C", "A"]);
+    }
+
+    #[test]
+    fn compound_move_element_backward() {
+        let (mut server, sid, _source_a, doc_b) = compound_test_setup();
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("A"),
+            crate::edition::compound::CompoundElement::text("B"),
+            crate::edition::compound::CompoundElement::text("C"),
+        ]);
+        server.set_compound_edition(doc_b, compound, sid).unwrap();
+
+        server.compound_move_element(doc_b, 2, 0, sid).unwrap();
+
+        let compound = server.get_compound_edition(doc_b).unwrap();
+        let texts: Vec<&str> = compound
+            .elements()
+            .iter()
+            .filter_map(|e| e.text_content())
+            .collect();
+        assert_eq!(texts, vec!["C", "A", "B"]);
+    }
+
+    #[test]
+    fn compound_incremental_ops_then_resolve() {
+        let (mut server, sid, source_a, doc_b) = compound_test_setup();
+
+        server
+            .compound_insert_element(
+                doc_b,
+                0,
+                crate::edition::compound::CompoundElement::text("Intro: "),
+                sid,
+            )
+            .unwrap();
+        server
+            .compound_insert_element(
+                doc_b,
+                1,
+                crate::edition::compound::CompoundElement::span(source_a, 0, 5),
+                sid,
+            )
+            .unwrap();
+        server
+            .compound_insert_element(
+                doc_b,
+                2,
+                crate::edition::compound::CompoundElement::text(" Done."),
+                sid,
+            )
+            .unwrap();
+
+        let resolved = server.resolve_compound_edition(doc_b).unwrap();
+        assert_eq!(resolved.flat_text(), "Intro: Hello Done.");
+        assert_eq!(resolved.span_ranges().len(), 1);
+    }
+
+    #[test]
+    fn compound_insert_on_nonexistent_work_fails() {
+        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
+        let result = server.compound_insert_element(
+            999_999,
+            0,
+            crate::edition::compound::CompoundElement::text("x"),
+            sid,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn compound_remove_on_nonexistent_work_fails() {
+        let (mut server, sid, _source_a, _doc_b) = compound_test_setup();
+        let result = server.compound_remove_element(999_999, 0, sid);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn inline_transclusion_resolves_text() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("Prefix "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(src, 0, 5),
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" Suffix"),
+                )),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert_eq!(result.text, "Prefix Hello Suffix");
+        assert_eq!(result.span_ranges.len(), 1);
+        assert_eq!(result.span_ranges[0].source_work_id, src);
+        assert_eq!(result.span_ranges[0].flat_start, 7);
+        assert_eq!(result.span_ranges[0].flat_end, 12);
+    }
+
+    #[test]
+    fn inline_transclusion_detects_presence() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("source"))
+            .unwrap();
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("before "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(src, 0, 3),
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" after"),
+                )),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        assert!(server.work_has_inline_transclusions(doc));
+        assert!(!server.work_has_inline_transclusions(src));
+    }
+
+    #[test]
+    fn inline_transclusion_no_transclusions_returns_plain_text() {
+        let (mut server, sid) = setup_logged_in_server();
+        let doc = server
+            .create_work(sid, Edition::from_text("just plain text"))
+            .unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert_eq!(result.text, "just plain text");
+        assert!(result.span_ranges.is_empty());
+    }
+
+    #[test]
+    fn inline_transclusion_clamps_to_source_length() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server.create_work(sid, Edition::from_text("hi")).unwrap();
+
+        let entries = vec![(
+            0i64,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                RangeElement::transclusion(src, 0, 100),
+            )),
+        )];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert_eq!(result.text, "hi");
+    }
+
+    #[test]
+    fn inline_transclusion_multiple_sources() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src_a = server.create_work(sid, Edition::from_text("AAA")).unwrap();
+        let src_b = server.create_work(sid, Edition::from_text("BBB")).unwrap();
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(src_a, 0, 3),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("-"),
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(src_b, 0, 3),
+                )),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert_eq!(result.text, "AAA-BBB");
+        assert_eq!(result.span_ranges.len(), 2);
+    }
+
+    #[test]
+    fn inline_transclusion_migration_on_source_edit() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("Intro "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(src, 0, 5),
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" End."),
+                )),
+            ),
+        ];
+        let edition = Edition::from_entries(entries);
+        let doc = server.create_work(sid, edition).unwrap();
+
+        let before = server.resolve_inline_transclusions(doc).unwrap();
+        assert_eq!(before.text, "Intro Hello End.");
+
+        server.work_grab(sid, src).unwrap();
+        server
+            .work_revise(sid, src, Edition::from_text("GPS Hello World"))
+            .unwrap();
+
+        let delta_ops = vec![
+            crate::server::transport::protocol::TextDeltaOp::Insert {
+                text: "GPS ".to_string(),
+            },
+            crate::server::transport::protocol::TextDeltaOp::Retain {
+                count: "Hello World".chars().count() as u64,
+            },
+        ];
+
+        server.migrate_inline_transclusions_for_delta(src, &delta_ops);
+
+        let after = server.resolve_inline_transclusions(doc).unwrap();
+        assert_eq!(
+            after.text, "Intro Hello End.",
+            "transclusion should still resolve to 'Hello' after insert before it"
+        );
+    }
+
+    #[test]
+    fn inline_transclusion_recursive_chain() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+
+        let mid_entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("Middle: "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(src, 0, 5),
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" done."),
+                )),
+            ),
+        ];
+        let mid = server
+            .create_work(sid, Edition::from_entries(mid_entries))
+            .unwrap();
+
+        let doc_entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("Top: "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(mid, 0, 100),
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" end."),
+                )),
+            ),
+        ];
+        let doc = server
+            .create_work(sid, Edition::from_entries(doc_entries))
+            .unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert_eq!(
+            result.text, "Top: Middle: Hello done. end.",
+            "recursive resolution should follow transclusion chain"
+        );
+        assert_eq!(
+            result.span_ranges.len(),
+            2,
+            "should have spans for both mid and src levels"
+        );
+    }
+
+    #[test]
+    fn inline_transclusion_recursive_cycle() {
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("base")).unwrap();
+
+        let b_entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("B-"),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(a, 0, 4),
+                )),
+            ),
+        ];
+        let b = server
+            .create_work(sid, Edition::from_entries(b_entries))
+            .unwrap();
+
+        let a2_entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("A-"),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(b, 0, 100),
+                )),
+            ),
+        ];
+        server.work_grab(sid, a).unwrap();
+        server
+            .work_revise(sid, a, Edition::from_entries(a2_entries))
+            .unwrap();
+
+        let result = server.resolve_inline_transclusions(a).unwrap();
+        assert!(
+            !result.text.is_empty(),
+            "cycle should not cause infinite loop"
+        );
+        assert!(
+            result.text.contains("A-")
+                || result.text.contains("B-")
+                || result.text.contains("base"),
+            "should resolve at least one level: {}",
+            result.text
+        );
+    }
+
+    #[test]
+    fn inline_transclusion_self_transclusion_resolves() {
+        let (mut server, sid) = setup_logged_in_server();
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("Hello World"),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" - "),
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(9999, 0, 5),
+                )),
+            ),
+        ];
+        // Use a fake work ID — we'll create the work first
+        let doc = server
+            .create_work(sid, Edition::from_text("Hello World - placeholder"))
+            .unwrap();
+
+        // Now replace the edition with one that has a self-transclusion
+        let self_entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("Hello World"),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" - "),
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(doc, 0, 5),
+                )),
+            ),
+        ];
+        server.work_grab(sid, doc).unwrap();
+        server
+            .work_revise(sid, doc, Edition::from_entries(self_entries))
+            .unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert_eq!(
+            result.text, "Hello World - Hello",
+            "self-transclusion should resolve to the work's own text"
+        );
+        assert_eq!(result.span_ranges.len(), 1);
+        assert_eq!(result.span_ranges[0].source_work_id, doc);
     }
 
     #[test]

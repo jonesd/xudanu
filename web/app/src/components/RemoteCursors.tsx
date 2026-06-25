@@ -33,12 +33,20 @@ function charIndexToPos(editor: HTMLElement, charIndex: number): CursorPos | nul
     const node = walker.currentNode;
     if (node.nodeType === Node.TEXT_NODE) {
       const textNode = node as Text;
-      const len = textNode.textContent?.length ?? 0;
+      const raw = textNode.textContent ?? "";
+      const len = raw.replace(/\u200B/g, "").length;
       if (remaining <= len) {
         try {
           const range = document.createRange();
-          range.setStart(textNode, Math.min(remaining, len));
-          range.setEnd(textNode, Math.min(remaining, len));
+          let domOffset = 0;
+          let modelCount = 0;
+          for (const ch of raw) {
+            if (modelCount >= remaining) break;
+            if (ch !== "\u200B") modelCount++;
+            domOffset += ch.length;
+          }
+          range.setStart(textNode, domOffset);
+          range.setEnd(textNode, domOffset);
           const rect = range.getBoundingClientRect();
           const editorRect = editor.getBoundingClientRect();
           return {
@@ -67,7 +75,7 @@ function charIndexToPos(editor: HTMLElement, charIndex: number): CursorPos | nul
       }
     } else if (node.nodeName === "DIV" || node.nodeName === "P") {
       const block = node as HTMLElement;
-      const blockText = block.textContent ?? "";
+      const blockText = (block.textContent ?? "").replace(/\u200B/g, "");
       if (remaining <= blockText.length) {
         return charIndexToPos(block, remaining);
       }

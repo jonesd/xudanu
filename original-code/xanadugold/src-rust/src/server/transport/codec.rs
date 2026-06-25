@@ -1869,6 +1869,45 @@ impl JsonCodec {
                     element: args.element,
                 })
             }
+            OperationCode::ResolveInlineTransclusions => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ResolveInlineTransclusions {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::MigrateCompoundToInline => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::MigrateCompoundToInline {
+                    work_id: args.work_id,
+                })
+            }
+            OperationCode::ElementRemoveTransclusion => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    source_work_id: BeId,
+                    char_start: usize,
+                    char_end: usize,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ElementRemoveTransclusion {
+                    work_id: args.work_id,
+                    source_work_id: args.source_work_id,
+                    char_start: args.char_start,
+                    char_end: args.char_end,
+                })
+            }
             OperationCode::RenderTransclusions => {
                 #[derive(Deserialize)]
                 struct Args {
@@ -2217,6 +2256,49 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::CompoundRebuild {
                     work_id: args.work_id,
+                })
+            }
+            OperationCode::CompoundInsertElement => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    index: usize,
+                    element: CompoundElementPayload,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CompoundInsertElement {
+                    work_id: args.work_id,
+                    index: args.index,
+                    element: args.element,
+                })
+            }
+            OperationCode::CompoundRemoveElement => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    index: usize,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CompoundRemoveElement {
+                    work_id: args.work_id,
+                    index: args.index,
+                })
+            }
+            OperationCode::CompoundMoveElement => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: BeId,
+                    from: usize,
+                    to: usize,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CompoundMoveElement {
+                    work_id: args.work_id,
+                    from: args.from,
+                    to: args.to,
                 })
             }
             OperationCode::AdminRecorderCreate => {

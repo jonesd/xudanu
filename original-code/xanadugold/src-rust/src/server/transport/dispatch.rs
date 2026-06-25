@@ -450,7 +450,26 @@ fn dispatch_inner(
                 );
                 srv.migrate_compound_spans_for_delta(work_id, &ops);
                 srv.migrate_link_spans_for_delta(work_id, &ops);
+                srv.migrate_inline_transclusions_for_delta(work_id, &ops);
+                let compound_subs = srv.compound_subscribers_for_source(work_id);
                 let rev = srv.work_revise(session_id, work_id, new_ed)?;
+                for (compound_wid, subs) in &compound_subs {
+                    for sub_sid in subs {
+                        if *sub_sid == session_id {
+                            continue;
+                        }
+                        use super::channel::EventMessage;
+                        let ev = EventMessage {
+                            session_id: *sub_sid,
+                            subscription_id: 0,
+                            event: EventPayload::CompoundSourceChanged {
+                                compound_work_id: *compound_wid,
+                                source_work_id: work_id,
+                            },
+                        };
+                        state.send_to_session(sub_sid, ev);
+                    }
+                }
                 Ok(ResponseValue::Humber(rev))
             }
         }
@@ -1656,15 +1675,13 @@ fn dispatch_inner(
             position,
             element,
         } => {
-            srv.ensure_authenticated(session_id)?;
+            srv.ensure_can_edit(session_id, work_id)?;
             let elem = element.to_range_element().ok_or_else(|| {
                 crate::server::ServerError::InvalidArgument(
                     "cannot convert payload to RangeElement".into(),
                 )
             })?;
-            let current_ed = srv.work_edition(work_id)?;
-            let new_ed = current_ed.with(position, elem);
-            let rev = srv.work_revise(session_id, work_id, new_ed)?;
+            let rev = srv.element_insert(session_id, work_id, position, elem)?;
             Ok(ResponseValue::Humber(rev))
         }
         WireRequest::ContentSharedRegion { work_a, work_b } => {
@@ -1830,6 +1847,32 @@ fn dispatch_inner(
                 compound: Some(CompoundEditionPayload::from_compound(&compound)),
             })
         }
+        WireRequest::CompoundInsertElement {
+            work_id,
+            index,
+            element,
+        } => {
+            srv.ensure_can_edit(session_id, work_id)?;
+            let elem = element.to_compound_element();
+            let count = srv.compound_insert_element(work_id, index, elem, session_id)?;
+            Ok(ResponseValue::CompoundInsertElementResult {
+                element_count: count,
+            })
+        }
+        WireRequest::CompoundRemoveElement { work_id, index } => {
+            srv.ensure_can_edit(session_id, work_id)?;
+            let count = srv.compound_remove_element(work_id, index, session_id)?;
+            Ok(ResponseValue::CompoundRemoveElementResult {
+                element_count: count,
+            })
+        }
+        WireRequest::CompoundMoveElement { work_id, from, to } => {
+            srv.ensure_can_edit(session_id, work_id)?;
+            let count = srv.compound_move_element(work_id, from, to, session_id)?;
+            Ok(ResponseValue::CompoundMoveElementResult {
+                element_count: count,
+            })
+        }
         WireRequest::CompoundResolveWork { work_id } => {
             srv.ensure_can_read(session_id, work_id)?;
             let resolved = srv.resolve_compound_edition(work_id)?;
@@ -1974,6 +2017,45 @@ fn dispatch_inner(
                         created_at: f.created_at,
                     });
             Ok(ResponseValue::RecorderGetResult { recorder: info })
+        }
+        WireRequest::ResolveInlineTransclusions { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let result = srv.resolve_inline_transclusions(work_id)?;
+            for sr in &result.span_ranges {
+                srv.ensure_can_read(session_id, sr.source_work_id)?;
+            }
+            Ok(ResponseValue::ResolveInlineTransclusionsResult {
+                text: result.text,
+                span_ranges: result
+                    .span_ranges
+                    .iter()
+                    .map(SpanRangePayload::from_span_range)
+                    .collect(),
+                source_titles: result.source_titles,
+            })
+        }
+        WireRequest::MigrateCompoundToInline { work_id } => {
+            srv.ensure_can_edit(session_id, work_id)?;
+            let count = srv.migrate_compound_to_inline(work_id)?;
+            Ok(ResponseValue::MigrateCompoundToInlineResult {
+                migrated_count: count,
+            })
+        }
+        WireRequest::ElementRemoveTransclusion {
+            work_id,
+            source_work_id,
+            char_start,
+            char_end,
+        } => {
+            srv.ensure_can_edit(session_id, work_id)?;
+            let removed = srv.element_remove_transclusion(
+                session_id,
+                work_id,
+                source_work_id,
+                char_start,
+                char_end,
+            )?;
+            Ok(ResponseValue::ElementRemoveTransclusionResult { removed })
         }
         WireRequest::AdminServerHealth => {
             let health = srv.server_health();
@@ -2504,6 +2586,20 @@ fn dispatch_inner(
 
         WireRequest::CrdtSyncClose { work_id } => {
             srv.ensure_logged_in(session_id)?;
+            if let Ok(result) = srv.crdt_remove_awareness(session_id, work_id) {
+                for (relay_sid, _) in &result.relay_to {
+                    use super::channel::EventMessage;
+                    let ev = EventMessage {
+                        session_id: *relay_sid,
+                        subscription_id: 0,
+                        event: EventPayload::CrdtAwarenessRemove {
+                            work_id,
+                            session_id: session_id.as_u64(),
+                        },
+                    };
+                    state.send_to_session(relay_sid, ev);
+                }
+            }
             srv.crdt_close_session(session_id, work_id)?;
             Ok(ResponseValue::Void)
         }
@@ -3572,6 +3668,23 @@ fn dispatch_inner_read(
                         created_at: f.created_at,
                     });
             Ok(ResponseValue::RecorderGetResult { recorder: info })
+        }
+
+        WireRequest::ResolveInlineTransclusions { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let result = srv.resolve_inline_transclusions(work_id)?;
+            for sr in &result.span_ranges {
+                srv.ensure_can_read(session_id, sr.source_work_id)?;
+            }
+            Ok(ResponseValue::ResolveInlineTransclusionsResult {
+                text: result.text,
+                span_ranges: result
+                    .span_ranges
+                    .iter()
+                    .map(SpanRangePayload::from_span_range)
+                    .collect(),
+                source_titles: result.source_titles,
+            })
         }
         WireRequest::AdminServerHealth => {
             let health = srv.server_health();

@@ -6,6 +6,7 @@ interface GlobalSearchPanelProps {
   connected: boolean;
   onClose: () => void;
   onNavigateToWork: (id: number) => void;
+  initialQuery?: string;
 }
 
 const Kbd = ({ children }: { children: React.ReactNode }) => (
@@ -36,8 +37,9 @@ export function GlobalSearchPanel({
   connected,
   onClose,
   onNavigateToWork,
+  initialQuery = "",
 }: GlobalSearchPanelProps) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<GlobalSearchResultItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +53,9 @@ export function GlobalSearchPanel({
   useEffect(() => {
     setMounted(true);
     const t = setTimeout(() => inputRef.current?.focus(), 50);
+    if (initialQuery.trim()) {
+      setTimeout(() => doSearch(initialQuery), 100);
+    }
     return () => clearTimeout(t);
   }, []);
 

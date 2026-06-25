@@ -291,6 +291,45 @@ fn cmd_preflight(data_dir: &str) {
     }
 }
 
+fn cmd_migrate_compound(data_dir: &str) {
+    use xudanu::server::Server;
+    let path = PathBuf::from(data_dir);
+    println!("Migrating compound editions to inline transclusion elements...");
+    let mut server = Server::new();
+    if let Err(e) = server.restore_from_data_dir(&path, None) {
+        eprintln!("Error: failed to restore from {}: {}", path.display(), e);
+        std::process::exit(1);
+    }
+
+    let work_ids: Vec<xudanu::edition::BeId> = server.compound_edition_work_ids();
+
+    let mut total_migrated = 0usize;
+    for work_id in &work_ids {
+        match server.migrate_compound_to_inline(*work_id) {
+            Ok(count) => {
+                if count > 0 {
+                    println!("  work {:04x}: {} spans migrated to inline", work_id, count);
+                    total_migrated += count;
+                }
+            }
+            Err(e) => {
+                eprintln!("  work {:04x}: migration failed: {}", work_id, e);
+            }
+        }
+    }
+
+    if total_migrated > 0 {
+        let _ = server.checkpoint_to_store();
+        println!(
+            "Done: {} spans migrated across {} works",
+            total_migrated,
+            work_ids.len()
+        );
+    } else {
+        println!("No compound editions needed migration");
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -347,6 +386,10 @@ async fn main() {
         "preflight" => {
             let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
             cmd_preflight(data_dir);
+        }
+        "migrate-compound" => {
+            let data_dir = args.get(2).map(|s| s.as_str()).unwrap_or("./data");
+            cmd_migrate_compound(data_dir);
         }
         "run" => {
             let mut addr = "127.0.0.1:8080".to_string();
