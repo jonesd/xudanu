@@ -2444,6 +2444,85 @@ impl Server {
         Ok(spans)
     }
 
+    pub fn attribution_query_resolved(
+        &self,
+        work_be_id: BeId,
+    ) -> Result<Vec<super::transport::protocol::AttributionSpanPayload>, ServerError> {
+        let resolved = self.resolve_inline_transclusions(work_be_id)?;
+
+        if resolved.span_ranges.is_empty() {
+            return self.attribution_query(work_be_id, None, None);
+        }
+
+        let own_spans = self.attribution_query(work_be_id, None, None)?;
+
+        let mut otree_to_resolved: std::collections::HashMap<i64, usize> =
+            std::collections::HashMap::new();
+        let mut otree_pos: i64 = 0;
+        let mut resolved_pos: usize = 0;
+
+        for sr in &resolved.span_ranges {
+            while (resolved_pos as i64) < sr.flat_start as i64 {
+                otree_to_resolved.insert(otree_pos, resolved_pos);
+                otree_pos += 1;
+                resolved_pos += 1;
+            }
+            otree_to_resolved.insert(otree_pos, sr.flat_start);
+            resolved_pos = sr.flat_end;
+        }
+        loop {
+            otree_to_resolved.insert(otree_pos, resolved_pos);
+            if otree_pos as usize >= own_spans.len() {
+                break;
+            }
+            otree_pos += 1;
+            resolved_pos += 1;
+        }
+
+        let mut result: Vec<super::transport::protocol::AttributionSpanPayload> = Vec::new();
+
+        for span in &own_spans {
+            let mapped_start = otree_to_resolved
+                .get(&span.start)
+                .copied()
+                .unwrap_or(span.start as usize) as i64;
+            let mapped_end = otree_to_resolved
+                .get(&span.end)
+                .copied()
+                .unwrap_or(span.end as usize) as i64;
+            result.push(super::transport::protocol::AttributionSpanPayload {
+                start: mapped_start,
+                end: mapped_end,
+                ..span.clone()
+            });
+        }
+
+        for sr in &resolved.span_ranges {
+            let src_spans = self
+                .attribution_query(sr.source_work_id, None, None)
+                .unwrap_or_default();
+
+            for src_span in &src_spans {
+                if (src_span.start as usize) < sr.char_start
+                    || (src_span.end as usize) > sr.char_end
+                {
+                    continue;
+                }
+
+                let offset = sr.flat_start as i64 - sr.char_start as i64;
+                result.push(super::transport::protocol::AttributionSpanPayload {
+                    start: src_span.start + offset,
+                    end: src_span.end + offset,
+                    source_work_id: Some(sr.source_work_id),
+                    ..src_span.clone()
+                });
+            }
+        }
+
+        result.sort_by_key(|s| s.start);
+        Ok(result)
+    }
+
     pub fn attribution_verify(
         &self,
         author_public_key: [u8; 32],
@@ -7365,7 +7444,10 @@ impl Server {
 
         loop {
             if !visited.insert(current_work) {
-                break; // cycle guard
+                break;
+            }
+            if chain.len() >= 32 {
+                break;
             }
 
             let ws = match self.works.get(&current_work) {
@@ -7376,10 +7458,10 @@ impl Server {
             let edition = ws.work.current_edition();
             let entries = edition.cached_entries();
 
-            // Find the element overlapping [current_start, current_end)
             let mut cum = 0usize;
             let mut element_text = String::new();
             let mut prov: Option<&crate::edition::provenance::ElementProvenance> = None;
+            let mut inline_transclusion: Option<(BeId, usize, usize)> = None;
 
             for (_, carrier) in entries {
                 let entry_len = carrier.char_len();
@@ -7395,6 +7477,46 @@ impl Server {
                         prov = carrier.provenance.as_ref();
                     }
                 }
+
+                if let Some((src, cs, ce)) = carrier.element.as_transclusion() {
+                    if entry_start >= current_start && entry_start < current_end {
+                        inline_transclusion = Some((src, cs, ce));
+                    }
+                }
+            }
+
+            if let Some((src_id, src_start, src_end)) = inline_transclusion {
+                let src_ws = self.works.get(&src_id);
+                let src_title = src_ws
+                    .map(|w| w.cached_title.clone())
+                    .unwrap_or_else(|| format!("work-{:04x}", src_id));
+
+                let src_author = src_ws
+                    .and_then(|w| w.last_revision_author)
+                    .and_then(|cid| {
+                        self.clubs
+                            .get(&cid)
+                            .and_then(|c| c.display_name().map(|s| s.to_string()))
+                    })
+                    .unwrap_or_else(|| "Unknown".to_string());
+
+                chain.push(AgainHop {
+                    work_id: current_work,
+                    work_title: ws.cached_title.clone(),
+                    element_text: if element_text.len() > 200 {
+                        format!("{}...", &element_text[..200])
+                    } else {
+                        element_text
+                    },
+                    author_name: src_author.clone(),
+                    author_type: "human".to_string(),
+                    is_original: false,
+                });
+
+                current_work = src_id;
+                current_start = src_start;
+                current_end = src_end;
+                continue;
             }
 
             if element_text.is_empty() && prov.is_none() {

@@ -4079,9 +4079,28 @@ canvas._bridge {
   border-bottom: 1px dashed rgba(245, 158, 11, 0.5);
   border-radius: 2px;
   padding: 1px 0;
-  cursor: default;
+  cursor: pointer;
   user-select: text;
   -webkit-user-select: text;
+  position: relative;
+}
+
+.inline-transclusion::before {
+  content: "\2192";
+  font-size: 9px;
+  color: #b45309;
+  margin-right: 2px;
+  opacity: 0.6;
+  font-weight: 700;
+}
+
+.inline-transclusion:hover {
+  background: rgba(245, 158, 11, 0.2);
+  border-bottom-color: rgba(245, 158, 11, 0.8);
+}
+
+.inline-transclusion:hover::before {
+  opacity: 1;
 }
 
 .sidebar-search-global {

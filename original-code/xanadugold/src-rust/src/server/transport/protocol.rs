@@ -261,6 +261,7 @@ pub enum OperationCode {
     ResolveInlineTransclusions,
     MigrateCompoundToInline,
     ElementRemoveTransclusion,
+    AttributionQueryResolved,
     CryptoGetPublicKey,
     CryptoSignData,
     CryptoVerifySignature,
@@ -589,6 +590,7 @@ impl OperationCode {
             0x0E02 => Some(OperationCode::ResolveInlineTransclusions),
             0x0E03 => Some(OperationCode::MigrateCompoundToInline),
             0x0E04 => Some(OperationCode::ElementRemoveTransclusion),
+            0x0E05 => Some(OperationCode::AttributionQueryResolved),
 
             0x0D01 => Some(OperationCode::AttributionQuery),
             0x0D02 => Some(OperationCode::AttributionVerify),
@@ -863,6 +865,7 @@ impl OperationCode {
             OperationCode::ResolveInlineTransclusions => 0x0E02,
             OperationCode::MigrateCompoundToInline => 0x0E03,
             OperationCode::ElementRemoveTransclusion => 0x0E04,
+            OperationCode::AttributionQueryResolved => 0x0E05,
 
             OperationCode::AttributionQuery => 0x0D01,
             OperationCode::AttributionVerify => 0x0D02,
@@ -1545,6 +1548,9 @@ pub enum WireRequest {
         char_start: usize,
         char_end: usize,
     },
+    AttributionQueryResolved {
+        work_id: BeId,
+    },
     CryptoGetPublicKey,
     CryptoSignData {
         data: Vec<u8>,
@@ -1874,6 +1880,7 @@ impl WireRequest {
                 | Self::GovernanceStatus { .. }
                 | Self::GlobalTextSearch { .. }
                 | Self::ResolveInlineTransclusions { .. }
+                | Self::AttributionQueryResolved { .. }
         )
     }
 }
