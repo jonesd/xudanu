@@ -1,84 +1,33 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type {
   CrdtSyncClient,
-  CompoundEditionPayload,
   CompoundElementPayload,
   CompoundResolveWorkResult,
   SpanRangePayload,
 } from "../api/crdt_sync";
 
-function commonPrefixLen(a: string, b: string): number {
-  const minLen = Math.min(a.length, b.length);
-  let i = 0;
-  while (i < minLen && a.charCodeAt(i) === b.charCodeAt(i)) i++;
-  return i;
-}
-
-function commonSuffixLen(a: string, b: string): number {
-  let i = 0;
-  while (i < a.length && i < b.length && a.charCodeAt(a.length - 1 - i) === b.charCodeAt(b.length - 1 - i)) i++;
-  return i;
-}
-
-export interface CompoundSpanPlacement {
-  source_work_id: number;
-  char_start: number;
-  char_end: number;
-  flat_start: number;
-  flat_end: number;
-}
-
-export function buildCompoundEdition(
-  text: string,
-  spans: CompoundSpanPlacement[],
-): CompoundEditionPayload {
-  if (spans.length === 0) {
-    return { elements: [{ type: "text" as const, content: text }] };
-  }
-
-  const sorted = [...spans].sort((a, b) => a.flat_start - b.flat_start);
-  const elements: CompoundElementPayload[] = [];
-  let pos = 0;
-
-  for (const span of sorted) {
-    if (span.flat_start > pos) {
-      elements.push({
-        type: "text",
-        content: text.slice(pos, span.flat_start),
-      });
-    }
-    elements.push({
-      type: "span",
-      source_work_id: span.source_work_id,
-      char_start: span.char_start,
-      char_end: span.char_end,
-    });
-    pos = span.flat_end;
-  }
-
-  if (pos < text.length) {
-    elements.push({ type: "text", content: text.slice(pos) });
-  }
-
-  return { elements };
-}
-
 export function useCompoundEdition(
   client: CrdtSyncClient | null,
   workBeId: number | null,
-  text: string,
 ) {
   const [hasCompound, setHasCompound] = useState(false);
   const [spanRanges, setSpanRanges] = useState<SpanRangePayload[]>([]);
   const [sourceTitles, setSourceTitles] = useState<Record<number, string>>({});
   const [resolvedText, setResolvedText] = useState<string>("");
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const spansRef = useRef<CompoundSpanPlacement[]>([]);
-  const prevTextRef = useRef<string>("");
+  const lastInsertedRef = useRef<{ sourceWorkId: number; charStart: number; charEnd: number } | null>(null);
 
   const loadCompound = useCallback(async () => {
     if (!client || workBeId === null) return;
     try {
+      const inline = await client.resolveInlineTransclusions(workBeId);
+      if (inline.spanRanges.length > 0) {
+        setHasCompound(true);
+        setSpanRanges(inline.spanRanges);
+        setSourceTitles(inline.sourceTitles);
+        setResolvedText(inline.text);
+        return;
+      }
+
       const edition = await client.compoundGetEdition(workBeId);
       if (edition && edition.elements.length > 0) {
         setHasCompound(true);
@@ -86,21 +35,11 @@ export function useCompoundEdition(
         setSpanRanges(result.span_ranges || []);
         setSourceTitles(result.source_titles || {});
         setResolvedText(result.flat_text || "");
-        // Sync spansRef from the server so the text-migration effect has the
-        // correct spans for THIS work (not stale spans from a previous work).
-        spansRef.current = (result.span_ranges || []).map((sr) => ({
-          source_work_id: sr.source_work_id,
-          char_start: sr.char_start,
-          char_end: sr.char_end,
-          flat_start: sr.flat_start,
-          flat_end: sr.flat_end,
-        }));
       } else {
         setHasCompound(false);
         setSpanRanges([]);
         setSourceTitles({});
         setResolvedText("");
-        spansRef.current = [];
       }
     } catch {
       // Expected during identity transitions or connection changes
@@ -113,115 +52,100 @@ export function useCompoundEdition(
 
   useEffect(() => {
     if (hasCompound && client && workBeId !== null) {
-      pollRef.current = setInterval(() => {
+      const refresh = () => {
         client
-          .compoundResolveRecursive(workBeId)
-          .then((result: CompoundResolveWorkResult) => {
-            setSpanRanges(result.span_ranges || []);
-            setSourceTitles(result.source_titles || {});
-            setResolvedText(result.flat_text || "");
+          .resolveInlineTransclusions(workBeId!)
+          .then((result) => {
+            if (result.spanRanges.length > 0) {
+              setSpanRanges(result.spanRanges);
+              setSourceTitles(result.sourceTitles);
+              setResolvedText(result.text);
+            } else {
+              client
+                .compoundResolveRecursive(workBeId!)
+                .then((r: CompoundResolveWorkResult) => {
+                  setSpanRanges(r.span_ranges || []);
+                  setSourceTitles(r.source_titles || {});
+                  setResolvedText(r.flat_text || "");
+                })
+                .catch(() => {});
+            }
           })
           .catch(() => {});
-      }, 3000);
+      };
+
+      const unsubSourceChange = client.onCompoundSourceChange(() => {
+        refresh();
+      });
+
+      const pollRef = setInterval(refresh, 30000);
       return () => {
-        if (pollRef.current) clearInterval(pollRef.current);
+        unsubSourceChange();
+        clearInterval(pollRef);
       };
     }
   }, [hasCompound, client, workBeId]);
 
-  const sendCompound = useCallback((currentText: string, spans: CompoundSpanPlacement[]) => {
-    const compound = buildCompoundEdition(currentText, spans);
-    if (client && workBeId !== null) {
-      client
-        .compoundSetEdition(workBeId, compound)
-        .then(() => {
-          setHasCompound(true);
-          loadCompound();
-        })
-        .catch((e) =>
-          console.error("useCompoundEdition: set edition failed", e),
-        );
-    }
-  }, [client, workBeId, loadCompound]);
-
-  useEffect(() => {
-    const oldText = prevTextRef.current;
-    prevTextRef.current = text;
-
-    if (spansRef.current.length === 0 || oldText === "" || oldText === text) {
-      return;
-    }
-
-    const prefix = commonPrefixLen(oldText, text);
-    const oldRem = oldText.slice(prefix);
-    const newRem = text.slice(prefix);
-    const suffix = commonSuffixLen(oldRem, newRem);
-    const deleteLen = oldRem.length - suffix;
-    const insertLen = newRem.length - suffix;
-
-    if (deleteLen === 0 && insertLen === 0) return;
-
-    const changeStart = prefix;
-    const changeOldEnd = prefix + deleteLen;
-    const delta = insertLen - deleteLen;
-
-    let changed = false;
-    const migrated = spansRef.current.map((span) => {
-      if (span.flat_end <= changeStart) return span;
-      if (span.flat_start >= changeOldEnd) {
-        changed = true;
-        return { ...span, flat_start: span.flat_start + delta, flat_end: span.flat_end + delta };
-      }
-      changed = true;
-      const newStart = Math.min(span.flat_start, changeStart);
-      const newEnd = Math.max(span.flat_end + delta, changeStart + insertLen);
-      return { ...span, flat_start: newStart, flat_end: Math.max(newStart + 1, newEnd) };
-    });
-
-    if (!changed) return;
-
-    spansRef.current = migrated;
-    sendCompound(text, migrated);
-  }, [text, sendCompound]);
-
   const addSpan = useCallback(
-    (
-      currentText: string,
+    async (
+      _currentText: string,
       position: number,
-      excerpt: string,
+      _excerpt: string,
       sourceWorkId: number,
       charStart: number,
       charEnd: number,
     ) => {
-      const newSpan: CompoundSpanPlacement = {
-        source_work_id: sourceWorkId,
-        char_start: charStart,
-        char_end: charEnd,
-        flat_start: position,
-        flat_end: position + excerpt.length,
-      };
-
-      const existing = spansRef.current.filter((s) => {
-        return !(
-          s.flat_start === newSpan.flat_start &&
-          s.flat_end === newSpan.flat_end &&
-          s.source_work_id === newSpan.source_work_id
-        );
-      });
-      existing.push(newSpan);
-      spansRef.current = existing;
-      prevTextRef.current = currentText;
-
-      sendCompound(currentText, existing);
+      if (!client || workBeId === null) return;
+      try {
+        await client.elementInsert(workBeId, position, {
+          type: "transclusion",
+          transclusion_source: sourceWorkId,
+          transclusion_start: charStart,
+          transclusion_end: charEnd,
+        });
+        lastInsertedRef.current = { sourceWorkId, charStart, charEnd };
+        await loadCompound();
+      } catch (e) {
+        console.error("useCompoundEdition: elementInsert failed", e);
+      }
     },
-    [sendCompound],
+    [client, workBeId, loadCompound],
+  );
+
+  const undoLastInsert = useCallback(async (): Promise<boolean> => {
+    if (!client || workBeId === null || !lastInsertedRef.current) return false;
+    const { sourceWorkId, charStart, charEnd } = lastInsertedRef.current;
+    try {
+      const removed = await client.elementRemoveTransclusion(workBeId, sourceWorkId, charStart, charEnd);
+      if (removed) {
+        lastInsertedRef.current = null;
+        await loadCompound();
+      }
+      return removed;
+    } catch (e) {
+      console.error("useCompoundEdition: undo insert failed", e);
+      return false;
+    }
+  }, [client, workBeId, loadCompound]);
+
+  const removeTransclusion = useCallback(
+    async (sourceWorkId: number, charStart: number, charEnd: number): Promise<boolean> => {
+      if (!client || workBeId === null) return false;
+      try {
+        const removed = await client.elementRemoveTransclusion(workBeId, sourceWorkId, charStart, charEnd);
+        if (removed) {
+          await loadCompound();
+        }
+        return removed;
+      } catch (e) {
+        console.error("useCompoundEdition: remove transclusion failed", e);
+        return false;
+      }
+    },
+    [client, workBeId, loadCompound],
   );
 
   useEffect(() => {
-    // Reset compound state on EVERY work switch — prevents stale spans from
-    // a previous work contaminating the new work's compound edition.
-    spansRef.current = [];
-    prevTextRef.current = "";
     if (!client || workBeId === null) {
       setHasCompound(false);
       setSpanRanges([]);
@@ -230,12 +154,62 @@ export function useCompoundEdition(
     }
   }, [client, workBeId]);
 
+  const insertElement = useCallback(
+    async (index: number, element: CompoundElementPayload): Promise<number | null> => {
+      if (!client || workBeId === null) return null;
+      try {
+        const count = await client.compoundInsertElement(workBeId, index, element);
+        await loadCompound();
+        return count;
+      } catch (e) {
+        console.error("useCompoundEdition: insert element failed", e);
+        return null;
+      }
+    },
+    [client, workBeId, loadCompound],
+  );
+
+  const removeElement = useCallback(
+    async (index: number): Promise<number | null> => {
+      if (!client || workBeId === null) return null;
+      try {
+        const count = await client.compoundRemoveElement(workBeId, index);
+        await loadCompound();
+        return count;
+      } catch (e) {
+        console.error("useCompoundEdition: remove element failed", e);
+        return null;
+      }
+    },
+    [client, workBeId, loadCompound],
+  );
+
+  const moveElement = useCallback(
+    async (from: number, to: number): Promise<number | null> => {
+      if (!client || workBeId === null) return null;
+      try {
+        const count = await client.compoundMoveElement(workBeId, from, to);
+        await loadCompound();
+        return count;
+      } catch (e) {
+        console.error("useCompoundEdition: move element failed", e);
+        return null;
+      }
+    },
+    [client, workBeId, loadCompound],
+  );
+
   return {
     hasCompound,
     spanRanges,
     sourceTitles,
     resolvedText,
     addSpan,
+    undoLastInsert,
+    removeTransclusion,
     reload: loadCompound,
+    insertElement,
+    removeElement,
+    moveElement,
   };
 }

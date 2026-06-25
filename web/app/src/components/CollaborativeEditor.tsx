@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from "react";
-import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePayload, AwarenessState } from "../api/crdt_sync";
+import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePayload, AwarenessState, ChangeHighlight } from "../api/crdt_sync";
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { TextBuffer } from "../api/text_buffer";
@@ -51,6 +51,10 @@ interface CollaborativeEditorProps {
   compoundSpanRanges?: SpanRangePayload[];
   remoteCursors?: AwarenessState[];
   compoundSourceTitles?: Record<number, string>;
+  recentChanges?: ChangeHighlight[];
+  showAttributionColors?: boolean;
+  inlineResolvedText?: string;
+  onUndoLastTransclusion?: () => Promise<boolean>;
 }
 
 const CHUNK_SIZE = 50_000;
@@ -87,10 +91,12 @@ function drawOverlay(
   markers: TransclusionMarker[] = [],
   annotations: AnnotationEntry[] = [],
   compoundSpans: SpanRangePayload[] = [],
+  recentChanges: ChangeHighlight[] = [],
+  showAttribution: boolean = true,
 ): MarkerHitZone[] {
   const hitZones: MarkerHitZone[] = [];
   if (!editor || !canvas) return hitZones;
-  if (spans.length === 0 && markers.length === 0 && annotations.length === 0 && compoundSpans.length === 0) {
+  if (spans.length === 0 && markers.length === 0 && annotations.length === 0 && compoundSpans.length === 0 && recentChanges.length === 0) {
     // Still need to clear the canvas of any previous content
     const container = editor.parentElement;
     if (container) {
@@ -123,7 +129,7 @@ function drawOverlay(
   const textNode = editor.firstChild;
   const singleNode = textNode && textNode.nodeType === Node.TEXT_NODE && textNode === editor.lastChild;
 
-  for (const span of spans) {
+  for (const span of showAttribution ? spans : []) {
     const key = bytesToHex(span.author_public_key);
     const style = colorMap.get(key);
     if (!style) continue;
@@ -172,7 +178,8 @@ function drawOverlay(
     }
   }
 
-  for (const cs of compoundSpans) {
+  for (let csIndex = 0; csIndex < compoundSpans.length; csIndex++) {
+    const cs = compoundSpans[csIndex];
     const drawStart = Math.max(cs.flat_start, 0);
     const drawEnd = Math.min(cs.flat_end, textLen);
     if (drawStart >= drawEnd) continue;
@@ -205,6 +212,50 @@ function drawOverlay(
       ctx.setLineDash([3, 2]);
       ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
       ctx.restore();
+    }
+
+    if (rangeRects.length > 0) {
+      const firstTop = rangeRects[0].top - rect.top;
+      const lastRect = rangeRects[rangeRects.length - 1];
+      const barHeight = (lastRect.bottom - rect.top) - firstTop;
+      const barOffset = (csIndex % 3) * 4;
+      ctx.fillStyle = "#f59e0ba0";
+      ctx.fillRect(0 + barOffset, firstTop, 3, barHeight);
+    }
+  }
+
+  const now = Date.now();
+  for (const change of recentChanges) {
+    const age = now - change.timestamp;
+    if (age > 5000) continue;
+    const alpha = Math.max(0, 1 - age / 5000);
+    const drawStart = Math.max(change.start, 0);
+    const drawEnd = Math.min(change.end, textLen);
+    if (drawStart >= drawEnd) continue;
+
+    const range = document.createRange();
+    try {
+      if (singleNode) {
+        range.setStart(textNode as Text, drawStart);
+        range.setEnd(textNode as Text, drawEnd);
+      } else {
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
+        if (!sn || !en) continue;
+        range.setStart(sn.node, sn.offset);
+        range.setEnd(en.node, en.offset + 1);
+      }
+    } catch {
+      continue;
+    }
+
+    const rangeRects = range.getClientRects();
+    const hex = Math.round(alpha * 100).toString(16).padStart(2, "0");
+    for (const r of rangeRects) {
+      const x = r.left - rect.left;
+      const y = r.top - rect.top;
+      ctx.fillStyle = "#22c55e" + hex;
+      ctx.fillRect(x, y, r.width, r.height);
     }
   }
 
@@ -262,6 +313,42 @@ function drawOverlay(
       width: Math.max(barWidth, 12),
       height,
     });
+  }
+
+  const now2 = Date.now();
+  for (const change of recentChanges) {
+    const age = now2 - change.timestamp;
+    if (age > 5000) continue;
+    const alpha = Math.max(0, 1 - age / 5000);
+    const drawStart = Math.max(change.start, 0);
+    const drawEnd = Math.min(change.end, textLen);
+    if (drawStart >= drawEnd) continue;
+
+    const range = document.createRange();
+    try {
+      if (singleNode) {
+        range.setStart(textNode as Text, drawStart);
+        range.setEnd(textNode as Text, drawEnd);
+      } else {
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
+        if (!sn || !en) continue;
+        range.setStart(sn.node, sn.offset);
+        range.setEnd(en.node, en.offset + 1);
+      }
+    } catch {
+      continue;
+    }
+
+    const rangeRects = range.getClientRects();
+    if (rangeRects.length === 0) continue;
+    const firstTop = rangeRects[0].top - rect.top;
+    const lastRect = rangeRects[rangeRects.length - 1];
+    const height = (lastRect.bottom - rect.top) - firstTop;
+
+    const hex = Math.round(alpha * 200).toString(16).padStart(2, "0");
+    ctx.fillStyle = "#22c55e" + hex;
+    ctx.fillRect(rect.width - 3, firstTop, 3, height);
   }
 
   for (const ann of annotations) {
@@ -338,6 +425,10 @@ export function CollaborativeEditor({
   compoundSpanRanges = [],
   remoteCursors = [],
   compoundSourceTitles: _compoundSourceTitles = {},
+  recentChanges = [],
+  showAttributionColors = true,
+  inlineResolvedText,
+  onUndoLastTransclusion,
 }: CollaborativeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -403,10 +494,31 @@ export function CollaborativeEditor({
     return map;
   }, [attributionSpans]);
 
+  const hasInlineTransclusions = !!inlineResolvedText && compoundSpanRanges.length > 0;
+
   useEffect(() => {
     const el = editorRef.current;
     if (!el) return;
     if (isUndoRedoing.current) return;
+
+    if (hasInlineTransclusions && inlineResolvedText) {
+      const hasTransclusionSpans = el.querySelector(".inline-transclusion") !== null;
+      const currentFull = getTextContent(el);
+      const needsRebuild = !hasTransclusionSpans || inlineResolvedText !== currentFull;
+      if (needsRebuild) {
+        if (undoTimer.current !== null) {
+          clearTimeout(undoTimer.current);
+          undoTimer.current = null;
+          undoStack.current.push({ text: lastText.current, selStart: 0, selEnd: 0 });
+          if (undoStack.current.length > MAX_UNDO) undoStack.current.shift();
+        }
+        redoStack.current = [];
+        buildTransclusionDom(el, inlineResolvedText, compoundSpanRanges, _compoundSourceTitles);
+        lastText.current = getEditableText(el);
+      }
+      return;
+    }
+
     let currentText = getTextContent(el);
     if (currentText === "\n" && !el.querySelector("DIV") && !el.querySelector("P")) {
       currentText = "";
@@ -434,7 +546,7 @@ export function CollaborativeEditor({
       }
     }
     lastText.current = displayText;
-  }, [displayText]);
+  }, [displayText, inlineResolvedText, hasInlineTransclusions, compoundSpanRanges, _compoundSourceTitles]);
 
   useEffect(() => {
     if (text === "") {
@@ -458,11 +570,11 @@ export function CollaborativeEditor({
     const redraw = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers, annotations, compoundSpanRanges);
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors);
       });
     };
 
-    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers, [], compoundSpanRanges);
+    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers, [], compoundSpanRanges, recentChanges, showAttributionColors);
 
     const ro = new ResizeObserver(redraw);
     ro.observe(container);
@@ -473,7 +585,18 @@ export function CollaborativeEditor({
       container.removeEventListener("scroll", redraw);
       cancelAnimationFrame(rafId);
     };
-  }, [attributionSpans, authorColorMap, transclusionMarkers, annotations, compoundSpanRanges]);
+  }, [attributionSpans, authorColorMap, transclusionMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors]);
+
+  useEffect(() => {
+    if (recentChanges.length === 0) return;
+    const interval = setInterval(() => {
+      const el = editorRef.current;
+      const canvas = overlayRef.current;
+      if (!el || !canvas) return;
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors);
+    }, 200);
+    return () => clearInterval(interval);
+  }, [recentChanges, attributionSpans, authorColorMap, transclusionMarkers, annotations, compoundSpanRanges, showAttributionColors]);
 
   const hideTooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -597,7 +720,7 @@ export function CollaborativeEditor({
     if (isComposing.current || !editable) return;
     const el = editorRef.current;
     if (!el) return;
-    let newText = getTextContent(el);
+    let newText = hasInlineTransclusions ? getEditableText(el) : getTextContent(el);
     if (newText === "\n" && !el.querySelector("DIV") && !el.querySelector("P")) {
       newText = "";
     }
@@ -606,7 +729,7 @@ export function CollaborativeEditor({
       lastText.current = newText;
       onTextChange?.(newText);
     }
-  }, [onTextChange, editable, pushUndo]);
+  }, [onTextChange, editable, pushUndo, hasInlineTransclusions]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!editable) { console.warn("[EDIT-DEBUG] keydown blocked, editable=false"); e.preventDefault(); return; }
@@ -617,7 +740,11 @@ export function CollaborativeEditor({
         undoTimer.current = null;
       }
       const entry = undoStack.current.pop();
-      if (entry) restoreUndoEntry(entry, "undo");
+      if (entry) {
+        restoreUndoEntry(entry, "undo");
+      } else if (onUndoLastTransclusion) {
+        onUndoLastTransclusion();
+      }
       return;
     }
     if ((e.ctrlKey || e.metaKey) && (e.key === "Z" || e.key === "y")) {
@@ -671,7 +798,7 @@ export function CollaborativeEditor({
       sel.addRange(range);
       handleInput();
     }
-  }, [handleInput, editable, onCreateAnnotation]);
+  }, [handleInput, editable, onCreateAnnotation, onUndoLastTransclusion, restoreUndoEntry]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     if (!editable) { e.preventDefault(); return; }
@@ -968,4 +1095,80 @@ function getTextContent(el: HTMLElement): string {
     }
   }
   return result.replace(/\u200B/g, "");
+}
+
+function isReadonlyNode(node: Node | null): boolean {
+  let n = node;
+  while (n && n.nodeType !== Node.DOCUMENT_NODE) {
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      const el = n as Element;
+      if (el.getAttribute && el.getAttribute("contenteditable") === "false") return true;
+    }
+    n = n.parentNode;
+  }
+  return false;
+}
+
+function getEditableText(el: HTMLElement): string {
+  let result = "";
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (isReadonlyNode(node)) continue;
+      result += node.textContent || "";
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      if (isReadonlyNode(node)) continue;
+      const tag = (node as Element).tagName;
+      if (tag === "BR") {
+        result += "\n";
+      } else if (tag === "DIV" || tag === "P") {
+        if (result.length > 0 && !result.endsWith("\n")) {
+          result += "\n";
+        }
+      }
+    }
+  }
+  return result.replace(/\u200B/g, "");
+}
+
+function buildTransclusionDom(
+  el: HTMLElement,
+  resolvedText: string,
+  spanRanges: SpanRangePayload[],
+  sourceTitles?: Record<number, string>,
+) {
+  el.textContent = "";
+  if (spanRanges.length === 0) {
+    el.textContent = resolvedText;
+    if (resolvedText.endsWith("\n")) {
+      el.appendChild(document.createTextNode("\u200B"));
+    }
+    return;
+  }
+
+  const sorted = [...spanRanges].sort((a, b) => a.flat_start - b.flat_start);
+  let pos = 0;
+
+  for (const sr of sorted) {
+    if (sr.flat_start > pos) {
+      el.appendChild(document.createTextNode(resolvedText.slice(pos, sr.flat_start)));
+    }
+    const content = resolvedText.slice(sr.flat_start, sr.flat_end);
+    const span = document.createElement("span");
+    span.className = "inline-transclusion";
+    span.setAttribute("contenteditable", "false");
+    span.textContent = content;
+    const title = sourceTitles?.[sr.source_work_id] || sr.source_work_id.toString(16);
+    span.title = `Transclusion from: ${title}`;
+    el.appendChild(span);
+    pos = sr.flat_end;
+  }
+
+  if (pos < resolvedText.length) {
+    el.appendChild(document.createTextNode(resolvedText.slice(pos)));
+  }
+  if (resolvedText.endsWith("\n")) {
+    el.appendChild(document.createTextNode("\u200B"));
+  }
 }

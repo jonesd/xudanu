@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
 import { CrdtSyncClient } from "../api/crdt_sync";
-import { buildCompoundEdition } from "../hooks/useCompoundEdition";
 
 describe("Transclusion delta computation", () => {
   it("computes insert-only delta when excerpt is appended", () => {
@@ -305,98 +304,8 @@ describe("Event handling: crdt_text_delta applies remote deltas", () => {
   });
 });
 
-describe("Compound edition building", () => {
-  it("builds text-only compound when no spans", () => {
-    const result = buildCompoundEdition("Hello World", []);
-    expect(result).toEqual({
-      elements: [{ type: "text", content: "Hello World" }],
-    });
-  });
-
-  it("builds compound with single span in middle", () => {
-    // Text: "Hello excerpt World"
-    //                    [excerpt]
-    // Span covers "excerpt" at positions 6-13
-    const text = "Hello excerpt World";
-    const excerptLen = "excerpt".length; // 7
-    const flatStart = 6;
-    const flatEnd = flatStart + excerptLen;
-
-    const result = buildCompoundEdition(text, [
-      { source_work_id: 10, char_start: 0, char_end: excerptLen, flat_start: flatStart, flat_end: flatEnd },
-    ]);
-
-    expect(result.elements).toEqual([
-      { type: "text", content: "Hello " },
-      { type: "span", source_work_id: 10, char_start: 0, char_end: 7 },
-      { type: "text", content: " World" },
-    ]);
-  });
-
-  it("builds compound with span at start of text", () => {
-    const text = "excerpt rest";
-    const excerptLen = "excerpt".length;
-
-    const result = buildCompoundEdition(text, [
-      { source_work_id: 5, char_start: 0, char_end: excerptLen, flat_start: 0, flat_end: excerptLen },
-    ]);
-
-    expect(result.elements).toEqual([
-      { type: "span", source_work_id: 5, char_start: 0, char_end: 7 },
-      { type: "text", content: " rest" },
-    ]);
-  });
-
-  it("builds compound with span at end of text", () => {
-    const text = "prefix excerpt";
-    const excerptLen = "excerpt".length;
-    const flatStart = "prefix ".length;
-
-    const result = buildCompoundEdition(text, [
-      { source_work_id: 5, char_start: 0, char_end: excerptLen, flat_start: flatStart, flat_end: flatStart + excerptLen },
-    ]);
-
-    expect(result.elements).toEqual([
-      { type: "text", content: "prefix " },
-      { type: "span", source_work_id: 5, char_start: 0, char_end: 7 },
-    ]);
-  });
-
-  it("builds compound with multiple non-overlapping spans", () => {
-    const text = "A first B second C";
-    // 0123456789...
-    // "A " = 0-1, "first" = 2-6, " B " = 7-9, "second" = 10-15, " C" = 16-17
-    const firstLen = "first".length;
-    const secondLen = "second".length;
-
-    const result = buildCompoundEdition(text, [
-      { source_work_id: 1, char_start: 0, char_end: firstLen, flat_start: 2, flat_end: 2 + firstLen },
-      { source_work_id: 2, char_start: 0, char_end: secondLen, flat_start: 10, flat_end: 10 + secondLen },
-    ]);
-
-    expect(result.elements).toEqual([
-      { type: "text", content: "A " },
-      { type: "span", source_work_id: 1, char_start: 0, char_end: 5 },
-      { type: "text", content: " B " },
-      { type: "span", source_work_id: 2, char_start: 0, char_end: 6 },
-      { type: "text", content: " C" },
-    ]);
-  });
-
-  it("builds compound with entire text as span", () => {
-    const text = "all_excerpt";
-    const result = buildCompoundEdition(text, [
-      { source_work_id: 1, char_start: 0, char_end: text.length, flat_start: 0, flat_end: text.length },
-    ]);
-
-    expect(result.elements).toEqual([
-      { type: "span", source_work_id: 1, char_start: 0, char_end: 11 },
-    ]);
-  });
-});
-
 describe("Transclusion placement simulation", () => {
-  it("simulates full transclusion flow: insert text + compound span", () => {
+  it("simulates text insertion for transclusion placement", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     const sentFrames: Array<{ op: string; payload?: object }> = [];
     (client as any).crdtReady = true;
@@ -410,7 +319,6 @@ describe("Transclusion placement simulation", () => {
       },
     };
 
-    // --- Step 1: Insert excerpt text (as handlePlaceTransclusion does) ---
     const excerpt = "beautiful ";
     const position = 6;
     const oldText = client.getText();
@@ -425,23 +333,6 @@ describe("Transclusion placement simulation", () => {
     expect(ops).toEqual([
       { type: "retain", count: 6 },
       { type: "insert", text: "beautiful " },
-    ]);
-
-    // --- Step 2: Build compound span ---
-    const compound = buildCompoundEdition(newText, [
-      {
-        source_work_id: 10,
-        char_start: 0,
-        char_end: excerpt.length,
-        flat_start: position,
-        flat_end: position + excerpt.length,
-      },
-    ]);
-
-    expect(compound.elements).toEqual([
-      { type: "text", content: "Hello " },
-      { type: "span", source_work_id: 10, char_start: 0, char_end: 10 },
-      { type: "text", content: "World" },
     ]);
   });
 

@@ -47,6 +47,11 @@ pub enum RangeElement {
     Overlay {
         overlay: ImageOverlay,
     },
+    Transclusion {
+        source_work_id: u64,
+        char_start: usize,
+        char_end: usize,
+    },
 }
 
 impl RangeElement {
@@ -119,6 +124,19 @@ impl RangeElement {
         }
     }
 
+    pub fn transclusion(source_work_id: u64, char_start: usize, char_end: usize) -> Self {
+        let (start, end) = if char_start <= char_end {
+            (char_start, char_end)
+        } else {
+            (char_end, char_start)
+        };
+        RangeElement::Transclusion {
+            source_work_id,
+            char_start: start,
+            char_end: end,
+        }
+    }
+
     pub fn is_data(&self) -> bool {
         matches!(self, RangeElement::Data { .. })
     }
@@ -165,6 +183,21 @@ impl RangeElement {
 
     pub fn is_overlay(&self) -> bool {
         matches!(self, RangeElement::Overlay { .. })
+    }
+
+    pub fn is_transclusion(&self) -> bool {
+        matches!(self, RangeElement::Transclusion { .. })
+    }
+
+    pub fn as_transclusion(&self) -> Option<(u64, usize, usize)> {
+        match self {
+            RangeElement::Transclusion {
+                source_work_id,
+                char_start,
+                char_end,
+            } => Some((*source_work_id, *char_start, *char_end)),
+            _ => None,
+        }
     }
 
     pub fn as_label_inner(&self) -> Option<&RangeElement> {
@@ -275,6 +308,18 @@ impl RangeElement {
                 for op in &overlay.operations {
                     hasher.update(format!("{:?}", op).as_bytes());
                 }
+                *hasher.finalize().as_bytes()
+            }
+            RangeElement::Transclusion {
+                source_work_id,
+                char_start,
+                char_end,
+            } => {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(b"transclusion:");
+                hasher.update(&source_work_id.to_le_bytes());
+                hasher.update(&(*char_start as u64).to_le_bytes());
+                hasher.update(&(*char_end as u64).to_le_bytes());
                 *hasher.finalize().as_bytes()
             }
         }
@@ -484,5 +529,61 @@ mod tests {
         assert!(!RangeElement::edition(1).is_content_addressable());
         assert!(!RangeElement::placeholder(1).is_content_addressable());
         assert!(!RangeElement::work(1).is_content_addressable());
+    }
+
+    #[test]
+    fn transclusion_constructor() {
+        let e = RangeElement::transclusion(42, 10, 20);
+        assert!(e.is_transclusion());
+        assert_eq!(e.as_transclusion(), Some((42, 10, 20)));
+    }
+
+    #[test]
+    fn transclusion_swaps_reversed_offsets() {
+        let e = RangeElement::transclusion(42, 20, 10);
+        assert_eq!(e.as_transclusion(), Some((42, 10, 20)));
+    }
+
+    #[test]
+    fn transclusion_char_len_zero() {
+        let e = RangeElement::transclusion(42, 10, 20);
+        assert_eq!(e.char_len(), 0);
+    }
+
+    #[test]
+    fn transclusion_fingerprint_deterministic() {
+        let e1 = RangeElement::transclusion(42, 10, 20);
+        let e2 = RangeElement::transclusion(42, 10, 20);
+        assert_eq!(e1.content_fingerprint(), e2.content_fingerprint());
+    }
+
+    #[test]
+    fn transclusion_fingerprint_different_source() {
+        let e1 = RangeElement::transclusion(42, 10, 20);
+        let e2 = RangeElement::transclusion(99, 10, 20);
+        assert_ne!(e1.content_fingerprint(), e2.content_fingerprint());
+    }
+
+    #[test]
+    fn transclusion_fingerprint_different_offsets() {
+        let e1 = RangeElement::transclusion(42, 10, 20);
+        let e2 = RangeElement::transclusion(42, 10, 21);
+        assert_ne!(e1.content_fingerprint(), e2.content_fingerprint());
+    }
+
+    #[test]
+    fn transclusion_not_text() {
+        let e = RangeElement::transclusion(42, 0, 5);
+        assert!(!e.is_text());
+        assert_eq!(e.as_text(), None);
+    }
+
+    #[test]
+    #[cfg(feature = "serde")]
+    fn transclusion_serde_roundtrip() {
+        let e = RangeElement::transclusion(42, 10, 20);
+        let json = serde_json::to_string(&e).unwrap();
+        let e2: RangeElement = serde_json::from_str(&json).unwrap();
+        assert_eq!(e, e2);
     }
 }

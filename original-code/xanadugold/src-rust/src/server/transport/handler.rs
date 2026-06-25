@@ -1045,9 +1045,22 @@ async fn handle_socket(
             srv.drain_content_notifications_for(&remaining_fossils);
         });
     }
-    state.server.with_server(|srv| {
-        let _ = srv.disconnect(session_id);
-    });
+    let awareness_removals = state
+        .server
+        .with_server(|srv| srv.disconnect(session_id).unwrap_or_default());
+    for (work_id, relay_to) in &awareness_removals {
+        for (relay_sid, _) in relay_to {
+            let ev = EventMessage {
+                session_id: *relay_sid,
+                subscription_id: 0,
+                event: EventPayload::CrdtAwarenessRemove {
+                    work_id: *work_id,
+                    session_id: session_id.as_u64(),
+                },
+            };
+            state.send_to_session(relay_sid, ev);
+        }
+    }
     {
         let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());
         sec.on_session_closed(session_id, remote_addr, "connection closed".to_string());

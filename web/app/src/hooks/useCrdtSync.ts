@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry, type WorkListEntry, type AnnotationEntry } from "../api/crdt_sync";
+import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry, type WorkListEntry, type AnnotationEntry, type ChangeHighlight } from "../api/crdt_sync";
 
 export interface CrdtSyncState {
   text: string;
@@ -39,6 +39,7 @@ export interface CrdtSyncState {
   deleteAnnotation: (annotationId: number) => Promise<void>;
   connectionEpoch: number;
   canEdit: boolean;
+  recentChanges: ChangeHighlight[];
 }
 
 export function useCrdtSync(
@@ -63,6 +64,7 @@ export function useCrdtSync(
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const epochRef = useRef(0);
   const [canEdit, setCanEdit] = useState(false);
+  const [recentChanges, setRecentChanges] = useState<ChangeHighlight[]>([]);
 
   useEffect(() => {
     if (!wsUrl) return;
@@ -88,6 +90,7 @@ export function useCrdtSync(
       });
     });
     const unsubIdentity = client.onIdentityChange(setIdentity);
+    const unsubChanges = client.onChangeHighlights(setRecentChanges);
 
     const unsubConn2 = client.onConnectionChange((isConnected) => {
       if (isConnected) {
@@ -113,6 +116,7 @@ export function useCrdtSync(
       unsubAware();
       unsubMatch();
       unsubIdentity();
+      unsubChanges();
       if (subscriptionIdRef.current !== null) {
         client.unsubscribe(subscriptionIdRef.current);
         subscriptionIdRef.current = null;
@@ -143,7 +147,10 @@ export function useCrdtSync(
     return () => clearTimeout(t);
   }, [workBeId, connected]);
 
-  // Poll awareness every 2 seconds for live cursor updates
+  // Low-frequency awareness reconciliation (30s safety net).
+  // Primary awareness updates arrive via push events (crdt_awareness_update)
+  // handled in CrdtSyncClient.handleEvent. This poll catches any missed
+  // updates from edge cases (race conditions, dropped events).
   useEffect(() => {
     if (!connected || workBeId === null) return;
     const interval = setInterval(() => {
@@ -151,7 +158,7 @@ export function useCrdtSync(
       if (client && client.isConnected()) {
         client.refreshAwareness().then(setAwareness).catch(() => {});
       }
-    }, 2000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [connected, workBeId]);
 
@@ -163,6 +170,7 @@ export function useCrdtSync(
     setAttributionSpans([]);
     setAttributionLogStatus(null);
     setAwareness([]);
+    setRecentChanges([]);
   }, [workBeId]);
 
   useEffect(() => {
@@ -422,5 +430,6 @@ export function useCrdtSync(
     annotations, refreshAnnotations, createAnnotation, deleteAnnotation,
     connectionEpoch,
     canEdit,
+    recentChanges,
   };
 }

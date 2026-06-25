@@ -249,12 +249,18 @@ pub enum OperationCode {
     CompoundResolveWork,
     CompoundResolveRecursive,
     CompoundRebuild,
+    CompoundInsertElement,
+    CompoundRemoveElement,
+    CompoundMoveElement,
 
     AdminRecorderCreate,
     AdminRecorderRecord,
     AdminRecorderList,
     AdminRecorderGet,
     AdminServerHealth,
+    ResolveInlineTransclusions,
+    MigrateCompoundToInline,
+    ElementRemoveTransclusion,
     CryptoGetPublicKey,
     CryptoSignData,
     CryptoVerifySignature,
@@ -576,6 +582,13 @@ impl OperationCode {
             0x1D03 => Some(OperationCode::CompoundResolveWork),
             0x1D04 => Some(OperationCode::CompoundResolveRecursive),
             0x1D05 => Some(OperationCode::CompoundRebuild),
+            0x1D06 => Some(OperationCode::CompoundInsertElement),
+            0x1D07 => Some(OperationCode::CompoundRemoveElement),
+            0x1D08 => Some(OperationCode::CompoundMoveElement),
+
+            0x0E02 => Some(OperationCode::ResolveInlineTransclusions),
+            0x0E03 => Some(OperationCode::MigrateCompoundToInline),
+            0x0E04 => Some(OperationCode::ElementRemoveTransclusion),
 
             0x0D01 => Some(OperationCode::AttributionQuery),
             0x0D02 => Some(OperationCode::AttributionVerify),
@@ -843,6 +856,13 @@ impl OperationCode {
             OperationCode::CompoundResolveWork => 0x1D03,
             OperationCode::CompoundResolveRecursive => 0x1D04,
             OperationCode::CompoundRebuild => 0x1D05,
+            OperationCode::CompoundInsertElement => 0x1D06,
+            OperationCode::CompoundRemoveElement => 0x1D07,
+            OperationCode::CompoundMoveElement => 0x1D08,
+
+            OperationCode::ResolveInlineTransclusions => 0x0E02,
+            OperationCode::MigrateCompoundToInline => 0x0E03,
+            OperationCode::ElementRemoveTransclusion => 0x0E04,
 
             OperationCode::AttributionQuery => 0x0D01,
             OperationCode::AttributionVerify => 0x0D02,
@@ -1484,6 +1504,20 @@ pub enum WireRequest {
     CompoundRebuild {
         work_id: BeId,
     },
+    CompoundInsertElement {
+        work_id: BeId,
+        index: usize,
+        element: CompoundElementPayload,
+    },
+    CompoundRemoveElement {
+        work_id: BeId,
+        index: usize,
+    },
+    CompoundMoveElement {
+        work_id: BeId,
+        from: usize,
+        to: usize,
+    },
 
     AdminRecorderCreate {
         kind: String,
@@ -1499,6 +1533,18 @@ pub enum WireRequest {
         recorder_id: u64,
     },
     AdminServerHealth,
+    ResolveInlineTransclusions {
+        work_id: BeId,
+    },
+    MigrateCompoundToInline {
+        work_id: BeId,
+    },
+    ElementRemoveTransclusion {
+        work_id: BeId,
+        source_work_id: BeId,
+        char_start: usize,
+        char_end: usize,
+    },
     CryptoGetPublicKey,
     CryptoSignData {
         data: Vec<u8>,
@@ -1827,6 +1873,7 @@ impl WireRequest {
                 | Self::GovernanceLog { .. }
                 | Self::GovernanceStatus { .. }
                 | Self::GlobalTextSearch { .. }
+                | Self::ResolveInlineTransclusions { .. }
         )
     }
 }
@@ -2028,6 +2075,29 @@ pub enum ResponseValue {
     },
     CompoundRebuildResult {
         compound: Option<CompoundEditionPayload>,
+    },
+    CompoundInsertElementResult {
+        element_count: usize,
+    },
+    CompoundRemoveElementResult {
+        element_count: usize,
+    },
+    CompoundMoveElementResult {
+        element_count: usize,
+    },
+    ElementInsertResult {
+        revision: u64,
+    },
+    ResolveInlineTransclusionsResult {
+        text: String,
+        span_ranges: Vec<SpanRangePayload>,
+        source_titles: HashMap<BeId, String>,
+    },
+    MigrateCompoundToInlineResult {
+        migrated_count: usize,
+    },
+    ElementRemoveTransclusionResult {
+        removed: bool,
     },
     WorkMergeResult {
         work_id: BeId,
@@ -2674,6 +2744,20 @@ pub enum CompoundElementPayload {
     },
 }
 
+impl CompoundElementPayload {
+    pub fn to_compound_element(&self) -> crate::edition::compound::CompoundElement {
+        use crate::edition::compound::CompoundElement;
+        match self {
+            CompoundElementPayload::Text { content } => CompoundElement::text(content),
+            CompoundElementPayload::Span {
+                source_work_id,
+                char_start,
+                char_end,
+            } => CompoundElement::span(*source_work_id, *char_start, *char_end),
+        }
+    }
+}
+
 impl CompoundEditionPayload {
     pub fn from_compound(compound: &crate::edition::compound::CompoundEdition) -> Self {
         CompoundEditionPayload {
@@ -2808,6 +2892,12 @@ pub struct RangeElementPayload {
     pub blob_mime: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blob_size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transclusion_source: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transclusion_start: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transclusion_end: Option<usize>,
 }
 
 impl RangeElementPayload {
@@ -2831,6 +2921,17 @@ impl RangeElementPayload {
                 let size = self.blob_size.unwrap_or(0);
                 crate::edition::RangeElement::blob(h, mime, size)
             }),
+            "transclusion" => {
+                if let (Some(src), Some(start), Some(end)) = (
+                    self.transclusion_source,
+                    self.transclusion_start,
+                    self.transclusion_end,
+                ) {
+                    Some(crate::edition::RangeElement::transclusion(src, start, end))
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -2847,6 +2948,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                transclusion_source: None,
+                transclusion_start: None,
+                transclusion_end: None,
             },
             crate::edition::RangeElement::Label { label_id, inner } => RangeElementPayload {
                 elem_type: "label".to_string(),
@@ -2858,6 +2962,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                transclusion_source: None,
+                transclusion_start: None,
+                transclusion_end: None,
             },
             crate::edition::RangeElement::Work { work_id } => RangeElementPayload {
                 elem_type: "work".to_string(),
@@ -2869,6 +2976,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                transclusion_source: None,
+                transclusion_start: None,
+                transclusion_end: None,
             },
             crate::edition::RangeElement::Edition { edition_id } => RangeElementPayload {
                 elem_type: "edition".to_string(),
@@ -2880,6 +2990,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                transclusion_source: None,
+                transclusion_start: None,
+                transclusion_end: None,
             },
             crate::edition::RangeElement::IDHolder { id } => RangeElementPayload {
                 elem_type: "id_holder".to_string(),
@@ -2891,6 +3004,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                transclusion_source: None,
+                transclusion_start: None,
+                transclusion_end: None,
             },
             crate::edition::RangeElement::Blob {
                 content_hash,
@@ -2907,6 +3023,27 @@ impl RangeElementPayload {
                 blob_hash: Some(*content_hash),
                 blob_mime: Some(mime_type.clone()),
                 blob_size: Some(*byte_size),
+                transclusion_source: None,
+                transclusion_start: None,
+                transclusion_end: None,
+            },
+            crate::edition::RangeElement::Transclusion {
+                source_work_id,
+                char_start,
+                char_end,
+            } => RangeElementPayload {
+                elem_type: "transclusion".to_string(),
+                text: None,
+                label_id: None,
+                work_id: None,
+                edition_id: None,
+                id_holder: None,
+                blob_hash: None,
+                blob_mime: None,
+                blob_size: None,
+                transclusion_source: Some(*source_work_id),
+                transclusion_start: Some(*char_start),
+                transclusion_end: Some(*char_end),
             },
             _ => RangeElementPayload {
                 elem_type: "other".to_string(),
@@ -2918,6 +3055,9 @@ impl RangeElementPayload {
                 blob_hash: None,
                 blob_mime: None,
                 blob_size: None,
+                transclusion_source: None,
+                transclusion_start: None,
+                transclusion_end: None,
             },
         }
     }
@@ -3340,6 +3480,14 @@ pub enum EventPayload {
     CrdtAwarenessUpdate {
         work_id: BeId,
         state: crate::server::crdt_manager::AwarenessState,
+    },
+    CrdtAwarenessRemove {
+        work_id: BeId,
+        session_id: u64,
+    },
+    CompoundSourceChanged {
+        compound_work_id: BeId,
+        source_work_id: BeId,
     },
 }
 

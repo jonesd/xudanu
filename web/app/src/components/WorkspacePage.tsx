@@ -4,6 +4,7 @@ import { useTransclusion } from "../hooks/useTransclusion";
 import { useCompoundEdition } from "../hooks/useCompoundEdition";
 import { authorColor } from "../author-color";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
+import { CompoundPanel } from "../components/CompoundPanel";
 import { SourceTextViewer } from "../components/SourceTextViewer";
 import { VirtualizedEditor } from "../components/VirtualizedEditor";
 import type { BacklinkEntry } from "../api/crdt_sync";
@@ -77,6 +78,7 @@ export function WorkspacePage() {
   const [showGenealogy, setShowGenealogy] = useState(false);
   const [showThreeWayDiff, setShowThreeWayDiff] = useState(false);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [archivedWorks, setArchivedWorks] = useState<WorkListEntry[]>([]);
   const [revisionList, setRevisionList] = useState<string[]>([]);
@@ -90,6 +92,7 @@ export function WorkspacePage() {
   const [expandedAuthorId, setExpandedAuthorId] = useState<number | null>(null);
   const [authorWorks, setAuthorWorks] = useState<WorkListEntry[]>([]);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
+  const [showAttributionColors, setShowAttributionColors] = useState(true);
   const sourceViewerRef = useRef<HTMLDivElement>(null);
   const lastTypingRef = useRef(0);
   const awarenessRefreshedRef = useRef(false);
@@ -147,9 +150,10 @@ export function WorkspacePage() {
     deleteAnnotation,
     connectionEpoch: _connectionEpoch,
     canEdit,
+    recentChanges,
   } = useCrdtSync(WS_URL, workBeId);
 
-  const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId, text);
+  const compound = useCompoundEdition(connected ? clientRef.current : null, workBeId);
 
   const toggleStar = useCallback(async (workId: number, current: boolean) => {
     if (!clientRef.current) {
@@ -224,7 +228,8 @@ export function WorkspacePage() {
 
   const currentWorkMeta = works.find(w => w.work_id === workBeId);
   const isSourceWork = currentWorkMeta?.is_source === true;
-  const showResolved = compound.hasCompound && compound.resolvedText && (!canEdit || viewMode === "reading");
+  const hasInlineTransclusions = compound.hasCompound && compound.spanRanges.length > 0;
+  const showResolved = hasInlineTransclusions || (compound.hasCompound && compound.resolvedText && (!canEdit || viewMode === "reading"));
   const displayText = showResolved ? compound.resolvedText : text;
 
   const docAuthors = useMemo(() => {
@@ -467,16 +472,9 @@ export function WorkspacePage() {
     const pending = transclusion.pending;
     if (!pending) return;
     const rawExcerpt = pending.text;
-    const needsPrefix = position > 0 && text[position - 1] !== '\n';
-    const needsSuffix = position < text.length && text[position] !== '\n';
-    const prefix = needsPrefix ? '\n' : '';
-    const suffix = needsSuffix ? '\n' : '';
-    const excerpt = prefix + rawExcerpt + suffix;
-    const spanStart = position + prefix.length;
-    const newText = text.slice(0, position) + excerpt + text.slice(position);
-    setText(newText);
-    compound.addSpan(
-      newText,
+    const spanStart = position;
+    await compound.addSpan(
+      text,
       spanStart,
       rawExcerpt,
       pending.sourceWorkId,
@@ -490,7 +488,7 @@ export function WorkspacePage() {
         await transclusion.loadLinks(clientRef.current, workBeId, works);
       }
     }
-  }, [clientRef, workBeId, transclusion, works, text, setText, compound]);
+  }, [clientRef, workBeId, transclusion, works, text, compound]);
 
   useEffect(() => {
     if (!isSourceWork) return;
@@ -544,6 +542,7 @@ export function WorkspacePage() {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
+        setGlobalSearchQuery("");
         setShowGlobalSearch(true);
       }
     };
@@ -674,6 +673,15 @@ export function WorkspacePage() {
               {viewMode === "reading" ? "✏️ Edit" : "👁 View"}
             </button>
             )}
+
+            <button
+              onClick={() => setShowAttributionColors((v) => !v)}
+              type="button"
+              className={`mode-toggle-btn ${showAttributionColors ? "" : "inactive"}`}
+              title={showAttributionColors ? "Hide attribution colors" : "Show attribution colors"}
+            >
+              {showAttributionColors ? "🎨" : "🎨\u2009̸"}
+            </button>
 
             {identity && (
               <DropdownMenu
@@ -1039,11 +1047,28 @@ export function WorkspacePage() {
           <div className="sidebar-search">
             <input
               type="text"
-              placeholder="Search documents, authors..."
+              placeholder="Filter by title or ID..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && searchQuery.trim()) {
+                  setGlobalSearchQuery(searchQuery);
+                  setShowGlobalSearch(true);
+                }
+              }}
               className="sidebar-search-input"
             />
+            <button
+              type="button"
+              className="sidebar-search-global"
+              onClick={() => {
+                setGlobalSearchQuery(searchQuery);
+                setShowGlobalSearch(true);
+              }}
+              title="Search all document content (Cmd+K)"
+            >
+              &#8981; <kbd>K</kbd>
+            </button>
           </div>
           <div className="work-list">
             {(() => {
@@ -1062,8 +1087,14 @@ export function WorkspacePage() {
                     (a.display_name || a.name || "").toLowerCase().includes(q)
                   )
                 : authors;
-              const outgoing = transclusion.links.filter((l) => l.origin === workBeId);
-              const incoming = transclusion.links.filter((l) => l.destination === workBeId);
+              const seenLinkIds = new Set<number>();
+              const allLinks = transclusion.links.filter((l) => {
+                if (seenLinkIds.has(l.link_id)) return false;
+                seenLinkIds.add(l.link_id);
+                return true;
+              });
+              const outgoing = allLinks.filter((l) => l.origin === workBeId);
+              const incoming = allLinks.filter((l) => l.destination === workBeId && l.origin !== workBeId);
 
                const renderWork = (w: WorkListEntry) => (
                  <div
@@ -1140,7 +1171,7 @@ export function WorkspacePage() {
                 const ref = link.origin_ref || link.destination_ref;
                 return (
                   <div
-                    key={link.link_id}
+                    key={`${arrow}-${link.link_id}`}
                     className="link-list-item"
                     onClick={() => selectWork(otherId)}
                     title={ref?.excerpt || otherTitle}
@@ -1250,6 +1281,20 @@ export function WorkspacePage() {
                         );
                       })}
                     </SidebarSection>
+                  )}
+                  {(compound.hasCompound || canEdit) && workBeId !== null && (
+                    <CompoundPanel
+                      client={connected ? clientRef.current : null}
+                      workBeId={workBeId}
+                      canEdit={canEdit}
+                      sourceTitles={compound.sourceTitles}
+                      spanRanges={compound.spanRanges}
+                      onReload={compound.reload}
+                      onInsertElement={compound.insertElement}
+                      onRemoveElement={compound.removeElement}
+                      onMoveElement={compound.moveElement}
+                      onRemoveTransclusion={compound.removeTransclusion}
+                    />
                   )}
                   {filteredAuthors.length > 0 && (
                     <SidebarSection title={`Authors (${filteredAuthors.length})`} defaultOpen={authors.length <= 5}>
@@ -1366,15 +1411,15 @@ export function WorkspacePage() {
                     onPlaceTransclusion={handlePlaceTransclusion}
                     selectionRange={selectionRange}
                     onNavigateToWork={selectWork}
-                    compoundSpanRanges={compound.spanRanges}
-                    compoundSourceTitles={compound.sourceTitles}
+                     compoundSpanRanges={compound.spanRanges}
+                     compoundSourceTitles={compound.sourceTitles}
                      onPasteText={handlePasteText}
                       fontSize={docPrefs.fontSize}
-                      lineHeight={docPrefs.lineHeight}
-                    />
-                 ) : (
-                     <CollaborativeEditor
-                     text={displayText}
+                       lineHeight={docPrefs.lineHeight}
+                     />
+                  ) : (
+                      <CollaborativeEditor
+                      text={displayText}
                     onTextChange={canEdit ? setText : undefined}
                    onCursorChange={sendCursor}
                    onSelectionChange={handleEditorSelectionChange}
@@ -1388,13 +1433,17 @@ export function WorkspacePage() {
                     onPlaceTransclusion={handlePlaceTransclusion}
                     selectionRange={selectionRange}
                     onNavigateToWork={selectWork}
-                     compoundSpanRanges={compound.spanRanges}
-                     remoteCursors={awareness}
-                     compoundSourceTitles={compound.sourceTitles}
+                      compoundSpanRanges={compound.spanRanges}
+                      remoteCursors={awareness}
+                       compoundSourceTitles={compound.sourceTitles}
+                       inlineResolvedText={hasInlineTransclusions ? compound.resolvedText : undefined}
+                       onUndoLastTransclusion={compound.undoLastInsert}
+                       recentChanges={recentChanges}
+                      showAttributionColors={showAttributionColors}
                       onPasteText={canEdit ? handlePasteText : undefined}
-                    fontSize={docPrefs.fontSize}
-                    lineHeight={docPrefs.lineHeight}
-                   annotations={annotations}
+                      fontSize={docPrefs.fontSize}
+                      lineHeight={docPrefs.lineHeight}
+                    annotations={annotations}
                    onCreateAnnotation={(charStart, charEnd) => {
                      const note = prompt("Annotation note:");
                      if (note) createAnnotation("note", note, charStart, charEnd);
@@ -1760,6 +1809,7 @@ export function WorkspacePage() {
           connected={connected}
           onClose={() => setShowGlobalSearch(false)}
           onNavigateToWork={selectWork}
+          initialQuery={globalSearchQuery}
         />
       )}
     </div>

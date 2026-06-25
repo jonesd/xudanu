@@ -173,6 +173,10 @@ export interface SpanRangePayload {
   content_len: number;
 }
 
+export type RangeElementPayload =
+  | { type: "text"; text: string }
+  | { type: "transclusion"; transclusion_source: number; transclusion_start: number; transclusion_end: number };
+
 export interface CompoundResolveWorkResult {
   elements: ResolvedElementPayload[];
   flat_text: string;
@@ -336,6 +340,13 @@ type IdentityListener = (identity: WhoAmIEntry | null) => void;
 
 type ResponseHandler = (value: unknown, isError: boolean) => void;
 
+export interface ChangeHighlight {
+  start: number;
+  end: number;
+  timestamp: number;
+  author: string;
+}
+
 export class CrdtSyncClient {
   private ws: WebSocket | null = null;
   private requestId = 0;
@@ -345,6 +356,9 @@ export class CrdtSyncClient {
   private awarenessListeners = new Set<(states: AwarenessState[]) => void>();
   private connectionListeners = new Set<(connected: boolean) => void>();
   private contentMatchListeners = new Set<(match: ContentMatch) => void>();
+  private changeHighlightListeners = new Set<(changes: ChangeHighlight[]) => void>();
+  private compoundSourceListeners = new Set<(compoundWorkId: number, sourceWorkId: number) => void>();
+  private recentChanges: ChangeHighlight[] = [];
   private identityListeners = new Set<IdentityListener>();
   private connected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -352,6 +366,9 @@ export class CrdtSyncClient {
   private static readonly RECONNECT_BASE_MS = 1000;
   private static readonly RECONNECT_MAX_MS = 30000;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private awarenessMap = new Map<number, AwarenessState>();
+  private awarenessSendTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingAwareness: { cursor: number | null; selection: { start: number; end: number } | null; isTyping: boolean } | null = null;
   private url: string;
   private workBeId: number;
   private sessionId: number | null = null;
@@ -454,6 +471,16 @@ export class CrdtSyncClient {
   onContentMatch(cb: (match: ContentMatch) => void): () => void {
     this.contentMatchListeners.add(cb);
     return () => { this.contentMatchListeners.delete(cb); };
+  }
+
+  onChangeHighlights(cb: (changes: ChangeHighlight[]) => void): () => void {
+    this.changeHighlightListeners.add(cb);
+    return () => { this.changeHighlightListeners.delete(cb); };
+  }
+
+  onCompoundSourceChange(cb: (compoundWorkId: number, sourceWorkId: number) => void): () => void {
+    this.compoundSourceListeners.add(cb);
+    return () => { this.compoundSourceListeners.delete(cb); };
   }
 
   async subscribeContentWorks(targetId: number): Promise<number> {
@@ -594,7 +621,12 @@ export class CrdtSyncClient {
       work_id: this.workBeId,
     });
     const val = extractValue(resp) as Record<string, unknown>;
-    return (val.states as AwarenessState[]) || [];
+    const states = (val.states as AwarenessState[]) || [];
+    this.awarenessMap.clear();
+    for (const s of states) {
+      this.awarenessMap.set(s.session_id, s);
+    }
+    return states;
   }
 
   async attributionLogStatus(): Promise<AttributionLogStatus> {
@@ -841,6 +873,58 @@ export class CrdtSyncClient {
   async compoundResolveRecursive(workId: number): Promise<CompoundResolveWorkResult> {
     const resp = await this.sendRequest("compound_resolve_recursive", { work_id: workId });
     return extractValue(resp) as CompoundResolveWorkResult;
+  }
+
+  async compoundInsertElement(workId: number, index: number, element: CompoundElementPayload): Promise<number> {
+    const resp = await this.sendRequest("compound_insert_element", { work_id: workId, index, element });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.element_count as number) || 0;
+  }
+
+  async compoundRemoveElement(workId: number, index: number): Promise<number> {
+    const resp = await this.sendRequest("compound_remove_element", { work_id: workId, index });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.element_count as number) || 0;
+  }
+
+  async compoundMoveElement(workId: number, from: number, to: number): Promise<number> {
+    const resp = await this.sendRequest("compound_move_element", { work_id: workId, from, to });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.element_count as number) || 0;
+  }
+
+  async resolveInlineTransclusions(workId: number): Promise<{ text: string; spanRanges: SpanRangePayload[]; sourceTitles: Record<number, string> }> {
+    const resp = await this.sendRequest("resolve_inline_transclusions", { work_id: workId });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return {
+      text: (val.text as string) || "",
+      spanRanges: (val.span_ranges as SpanRangePayload[]) || [],
+      sourceTitles: (val.source_titles as Record<number, string>) || {},
+    };
+  }
+
+  async elementInsert(workId: number, position: number, element: RangeElementPayload): Promise<number> {
+    const resp = await this.sendRequest("element_insert", { work_id: workId, position, element });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.revision as number) || 0;
+  }
+
+  async elementRemoveTransclusion(workId: number, sourceWorkId: number, charStart: number, charEnd: number): Promise<boolean> {
+    const resp = await this.sendRequest("element_remove_transclusion", {
+      work_id: workId, source_work_id: sourceWorkId, char_start: charStart, char_end: charEnd,
+    });
+    const val = extractValue(resp) as Record<string, unknown>;
+    return (val.removed as boolean) || false;
+  }
+
+  async migrateCompoundToInline(workId: number): Promise<number | null> {
+    try {
+      const resp = await this.sendRequest("migrate_compound_to_inline", { work_id: workId });
+      const val = extractValue(resp) as Record<string, unknown>;
+      return (val.migrated_count as number) || 0;
+    } catch {
+      return null;
+    }
   }
 
   async rangeTranscluders(workId: number): Promise<{ edition_ids: number[]; work_ids: number[] }> {
@@ -1123,16 +1207,24 @@ export class CrdtSyncClient {
 
   sendAwareness(cursor: number | null, selection: { start: number; end: number } | null, isTyping: boolean): void {
     if (!this.crdtReady) return;
-    this.sendRequest("crdt_awareness_update", {
-      work_id: this.workBeId,
-      state: {
-        session_id: this.sessionId ?? 0,
-        user_name: this.currentIdentity?.display_name || `user-${(this.sessionId ?? 0).toString(16).slice(-4)}`,
-        cursor: cursor !== null ? { index: cursor } : null,
-        selection,
-        is_typing: isTyping,
-      },
-    });
+    this.pendingAwareness = { cursor, selection, isTyping };
+    if (this.awarenessSendTimer !== null) return;
+    this.awarenessSendTimer = setTimeout(() => {
+      this.awarenessSendTimer = null;
+      const p = this.pendingAwareness;
+      if (!p) return;
+      this.pendingAwareness = null;
+      this.sendRequest("crdt_awareness_update", {
+        work_id: this.workBeId,
+        state: {
+          session_id: this.sessionId ?? 0,
+          user_name: this.currentIdentity?.display_name || `user-${(this.sessionId ?? 0).toString(16).slice(-4)}`,
+          cursor: p.cursor !== null ? { index: p.cursor } : null,
+          selection: p.selection,
+          is_typing: p.isTyping,
+        },
+      });
+    }, 50);
   }
 
   private nextId(): number {
@@ -1246,7 +1338,11 @@ export class CrdtSyncClient {
       }).then((awareResp) => {
         const awareVal = extractValue(awareResp) as Record<string, unknown>;
         const states = awareVal.states as AwarenessState[] || [];
-        this.awarenessListeners.forEach((cb) => cb(states));
+        this.awarenessMap.clear();
+        for (const s of states) {
+          this.awarenessMap.set(s.session_id, s);
+        }
+        this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
       }).catch(() => {});
     } catch {
       try {
@@ -1290,6 +1386,8 @@ export class CrdtSyncClient {
     // Clear local state for the new work
     this.text = "";
     this.skipCrdt = false;
+    this.awarenessMap.clear();
+    this.recentChanges = [];
     this.textListeners.forEach((cb) => cb(""));
 
     // Open the new work's CRDT channel on the SAME connection
@@ -1357,14 +1455,57 @@ export class CrdtSyncClient {
       const payload = event.payload as Record<string, unknown> | undefined;
       if (payload && payload.work_id === this.workBeId && !this.skipCrdt) {
         const ops = payload.ops as Array<{ type: string; count?: number; text?: string }>;
+        const author = (payload.author_name as string) || "unknown";
         try {
           const newText = applyDeltaOps(this.text, ops);
           if (newText !== this.text) {
+            const changes = this.computeChangesFromDelta(ops);
+            if (changes.length > 0) {
+              const now = Date.now();
+              for (const c of changes) {
+                this.recentChanges.push({ ...c, timestamp: now, author });
+              }
+              this.recentChanges = this.recentChanges.filter(
+                (c) => now - c.timestamp < 5000,
+              );
+              this.changeHighlightListeners.forEach((cb) =>
+                cb([...this.recentChanges]),
+              );
+            }
             this.text = newText;
             this.textListeners.forEach((cb) => cb(newText));
           }
         } catch {
           this.refreshText();
+        }
+      }
+    }
+
+    if (eventType === "crdt_awareness_update") {
+      const payload = event.payload as Record<string, unknown> | undefined;
+      if (payload && payload.work_id === this.workBeId) {
+        const incoming = payload.state as AwarenessState;
+        this.awarenessMap.set(incoming.session_id, incoming);
+        this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
+      }
+    }
+
+    if (eventType === "crdt_awareness_remove") {
+      const payload = event.payload as Record<string, unknown> | undefined;
+      if (payload && payload.work_id === this.workBeId) {
+        const removedSessionId = payload.session_id as number;
+        this.awarenessMap.delete(removedSessionId);
+        this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
+      }
+    }
+
+    if (eventType === "compound_source_changed") {
+      const payload = event.payload as Record<string, unknown> | undefined;
+      if (payload) {
+        const compoundWorkId = payload.compound_work_id as number;
+        const sourceWorkId = payload.source_work_id as number;
+        if (compoundWorkId === this.workBeId) {
+          this.compoundSourceListeners.forEach((cb) => cb(compoundWorkId, sourceWorkId));
         }
       }
     }
@@ -1395,9 +1536,33 @@ export class CrdtSyncClient {
     }
   }
 
+  private computeChangesFromDelta(
+    ops: Array<{ type: string; count?: number; text?: string }>,
+  ): Array<{ start: number; end: number }> {
+    const changes: Array<{ start: number; end: number }> = [];
+    let offset = 0;
+    for (const op of ops) {
+      if (op.type === "retain") {
+        offset += op.count ?? 0;
+      } else if (op.type === "insert") {
+        const len = op.text?.length ?? 0;
+        if (len > 0) {
+          changes.push({ start: offset, end: offset + len });
+          offset += len;
+        }
+      }
+    }
+    return changes;
+  }
+
   private onClose(): void {
     this.connected = false;
     this.crdtReady = false;
+    if (this.awarenessSendTimer !== null) {
+      clearTimeout(this.awarenessSendTimer);
+      this.awarenessSendTimer = null;
+    }
+    this.pendingAwareness = null;
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;

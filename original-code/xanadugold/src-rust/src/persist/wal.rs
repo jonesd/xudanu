@@ -430,6 +430,56 @@ impl WalLog {
                         false
                     }
                 }
+                "compound_insert_element" => {
+                    if let (Some(work_id), Some(index), Some(element_json)) = (
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                        entry.args.get("index").and_then(|v| v.as_u64()),
+                        entry.args.get("element").and_then(|v| v.as_str()),
+                    ) {
+                        if let Ok(element) = serde_json::from_str::<
+                            crate::edition::compound::CompoundElement,
+                        >(element_json)
+                        {
+                            server.wal_replay_compound_insert_element(
+                                work_id,
+                                index as usize,
+                                element,
+                            );
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
+                "compound_remove_element" => {
+                    if let (Some(work_id), Some(index)) = (
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                        entry.args.get("index").and_then(|v| v.as_u64()),
+                    ) {
+                        server.wal_replay_compound_remove_element(work_id, index as usize);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "compound_move_element" => {
+                    if let (Some(work_id), Some(from), Some(to)) = (
+                        entry.args.get("work_id").and_then(|v| v.as_u64()),
+                        entry.args.get("from").and_then(|v| v.as_u64()),
+                        entry.args.get("to").and_then(|v| v.as_u64()),
+                    ) {
+                        server.wal_replay_compound_move_element(
+                            work_id,
+                            from as usize,
+                            to as usize,
+                        );
+                        true
+                    } else {
+                        false
+                    }
+                }
                 "create_link" => {
                     if let (Some(link_id), Some(origin), Some(destination)) = (
                         entry.args.get("link_id").and_then(|v| v.as_u64()),
