@@ -29,14 +29,13 @@ pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 2
 .note strong{color:#58a6ff}
 .gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
 .gold strong{color:#d29922}
-.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
-.warning strong{color:#f85149}
+.warning{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#d29922}
 .example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
 .example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
 table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
 th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
 td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
-td strong{color:#e6edf3}
 .fast{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
 .naive{color:#f85149;font-family:'JetBrains Mono',monospace}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
@@ -44,6 +43,7 @@ td strong{color:#e6edf3}
 .toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
 .toc a:hover{color:#58a6ff}
 .toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.toc .toc-sub{padding-left:16px}
 .accent-green{color:#3fb950}
 .accent-blue{color:#58a6ff}
 .accent-purple{color:#a371f7}
@@ -54,6 +54,8 @@ td strong{color:#e6edf3}
 .legend-item{display:flex;align-items:center;gap:6px}
 .legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
 .footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
 @media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}.fast{color:#16a34a}.naive{color:#dc2626}}
 @media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}.two-col{grid-template-columns:1fr}}
 </style>
@@ -62,347 +64,249 @@ td strong{color:#e6edf3}
 <div class="content-wrap">
 
 <h1>Compound Documents</h1>
-<p class="subtitle">How live transclusion works in Xudanu: documents assembled from live pieces of other documents, not copies.</p>
+<p class="subtitle">How live transclusion works in Xudanu: documents assembled from live references in the O-tree &mdash; single source of truth, no drift, no copies.</p>
 
 <div class="toc">
   <a class="toc-section" href="#s1">1. The Core Concept</a>
-  <a class="toc-section" href="#s2">2. The Three Stores</a>
-  <a class="toc-section" href="#s3">3. Mechanism 1: The O-Tree (Static Text)</a>
-  <a class="toc-section" href="#s4">4. Mechanism 2: Compound Editions (Live Spans)</a>
-  <a class="toc-section" href="#s5">5. Mechanism 3: Transclusion Links (Attribution)</a>
-  <a class="toc-section" href="#s6">6. The Placement Flow</a>
-  <a class="toc-section" href="#s7">7. Live Update Pipeline</a>
-  <a class="toc-section" href="#s8">8. The Design Tension</a>
-  <a class="toc-section" href="#s9">9. Incremental Composition</a>
-  <a class="toc-section" href="#s10">10. Use Cases: Simple to Visionary</a>
+  <a class="toc-section" href="#s2">2. Architecture: Inline Transclusion Elements</a>
+  <a class="toc-section" href="#s3">3. The O-Tree: Single Source of Truth</a>
+  <a class="toc-section" href="#s4">4. Resolution: Following the Golden Thread</a>
+  <a class="toc-section" href="#s5">5. Span Migration: Tracking Content Through Edits</a>
+  <a class="toc-section" href="#s6">6. Attribution Links (Separate from Content)</a>
+  <a class="toc-section" href="#s7">7. The Placement Flow</a>
+  <a class="toc-section" href="#s8">8. Live Update Pipeline</a>
+  <a class="toc-section" href="#s9">9. Self-Transclusions</a>
+  <a class="toc-section" href="#s10">10. Editor Rendering</a>
+  <a class="toc-section" href="#s11">11. Use Cases: Simple to Visionary</a>
+  <a class="toc-section" href="#s12">12. What Was Deprecated</a>
 </div>
 
 <!-- ============================================================ -->
 <h2 id="s1">1. The Core Concept</h2>
 
 <p>
-A <strong>compound document</strong> is a document whose content is assembled from <em>live pieces of other documents</em>. When a source document changes, every compound document that references it automatically reflects the change. This is Ted Nelson's original vision for transclusion: the same content can appear in multiple places simultaneously, always in sync, without duplication.
-</p>
-
-<div class="diagram-container">
-<svg viewBox="0 0 780 360" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
-  <defs>
-    <marker id="arr1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
-    <marker id="arr2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#a371f7"/></marker>
-  </defs>
-  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">A Compound Document Assembles Content from Multiple Sources</text>
-
-  <!-- Source A -->
-  <rect x="30" y="60" width="200" height="90" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="130" y="84" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">SOURCE WORK A</text>
-  <text x="50" y="108" fill="#8b949e" font-size="10">"The quick brown fox</text>
-  <text x="50" y="124" fill="#8b949e" font-size="10">jumps over the lazy</text>
-  <text x="50" y="140" fill="#8b949e" font-size="10">dog"</text>
-
-  <!-- Source B -->
-  <rect x="30" y="170" width="200" height="90" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="130" y="194" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">SOURCE WORK B</text>
-  <text x="50" y="218" fill="#8b949e" font-size="10">"Seseparrendipity</text>
-  <text x="50" y="234" fill="#8b949e" font-size="10">happens when you</text>
-  <text x="50" y="250" fill="#8b949e" font-size="10">least expect it"</text>
-
-  <!-- Arrows to compound -->
-  <line x1="230" y1="105" x2="300" y2="140" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr1)"/>
-  <line x1="230" y1="215" x2="300" y2="200" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr1)"/>
-
-  <!-- Compound doc -->
-  <rect x="300" y="100" width="460" height="180" rx="10" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="2"/>
-  <text x="530" y="126" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">COMPOUND DOCUMENT</text>
-
-  <rect x="320" y="140" width="120" height="24" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
-  <text x="330" y="156" fill="#d29922" font-size="10">Text: "Intro "</text>
-
-  <rect x="450" y="140" width="180" height="24" rx="3" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>
-  <text x="460" y="156" fill="#58a6ff" font-size="10">Span: Work A [0:15] "The quick brown"</text>
-
-  <rect x="320" y="174" width="180" height="24" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
-  <text x="330" y="190" fill="#d29922" font-size="10">Text: " and then "</text>
-
-  <rect x="510" y="174" width="180" height="24" rx="3" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>
-  <text x="520" y="190" fill="#58a6ff" font-size="10">Span: Work B [4:20] "rendipity happens"</text>
-
-  <rect x="320" y="208" width="120" height="24" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
-  <text x="330" y="224" fill="#d29922" font-size="10">Text: " the end."</text>
-
-  <text x="530" y="262" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">Resolved: "Intro The quick brown and then rendipity happens the end."</text>
-  <text x="530" y="276" text-anchor="middle" fill="#484f58" font-size="9">Dashed borders = live references. Solid borders = literal text.</text>
-</svg>
-</div>
-<p class="diagram-caption">Figure 1: A compound document references live content from source works. Editing a source updates all compounds that reference it.</p>
-
-<!-- ============================================================ -->
-<h2 id="s2">2. The Three Stores</h2>
-
-<p>
-Every work in Xudanu has up to <strong>three separate data stores</strong> that can hold text content. Understanding how they interact is the key to understanding the system:
-</p>
-
-<div class="diagram-container">
-<svg viewBox="0 0 780 340" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
-  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Three Data Stores Inside Every Work</text>
-
-  <!-- O-Tree -->
-  <rect x="20" y="60" width="230" height="250" rx="8" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1.5"/>
-  <text x="135" y="84" text-anchor="middle" fill="#d29922" font-size="11" font-weight="700">1. O-TREE / CRDT</text>
-  <line x1="40" y1="96" x2="230" y2="96" stroke="#21262d" stroke-width="1"/>
-  <text x="40" y="116" fill="#8b949e" font-size="10">The work's primary text</text>
-  <text x="40" y="132" fill="#8b949e" font-size="10">buffer. What you edit.</text>
-  <text x="40" y="156" fill="#8b949e" font-size="10">Type: <tspan font-family="'JetBrains Mono',monospace" fill="#79c0ff">Edition</tspan></text>
-  <text x="40" y="172" fill="#8b949e" font-size="10">Persisted as revisions.</text>
-  <text x="40" y="196" fill="#d29922" font-size="10" font-weight="600">STATIC COPY</text>
-  <text x="40" y="214" fill="#8b949e" font-size="10">Pasted text becomes a</text>
-  <text x="40" y="230" fill="#8b949e" font-size="10">copy. Does NOT update</text>
-  <text x="40" y="246" fill="#8b949e" font-size="10">when sources change.</text>
-  <text x="40" y="278" fill="#484f58" font-size="9">Source: edition/edition.rs</text>
-  <text x="40" y="294" fill="#484f58" font-size="9">CRDT: server/otree_crdt.rs</text>
-
-  <!-- Compound Edition -->
-  <rect x="275" y="60" width="230" height="250" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="390" y="84" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700">2. Compound Edition</text>
-  <line x1="295" y1="96" x2="485" y2="96" stroke="#21262d" stroke-width="1"/>
-  <text x="295" y="116" fill="#8b949e" font-size="10">Side-table of elements:</text>
-  <text x="295" y="132" fill="#8b949e" font-size="10">text literals + span refs.</text>
-  <text x="295" y="156" fill="#8b949e" font-size="10">Type: <tspan font-family="'JetBrains Mono',monospace" fill="#79c0ff">CompoundEdition</tspan></text>
-  <text x="295" y="172" fill="#8b949e" font-size="10">WAL-persisted, optional.</text>
-  <text x="295" y="196" fill="#3fb950" font-size="10" font-weight="600">LIVE REFERENCES</text>
-  <text x="295" y="214" fill="#8b949e" font-size="10">Spans point to source</text>
-  <text x="295" y="230" fill="#8b949e" font-size="10">works. Resolution fetches</text>
-  <text x="295" y="246" fill="#8b949e" font-size="10">current text on demand.</text>
-  <text x="295" y="278" fill="#484f58" font-size="9">Source: edition/compound.rs</text>
-  <text x="295" y="294" fill="#484f58" font-size="9">Server: server.rs:8040+</text>
-
-  <!-- Links -->
-  <rect x="530" y="60" width="230" height="250" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
-  <text x="645" y="84" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="700">3. Transclusion Links</text>
-  <line x1="550" y1="96" x2="740" y2="96" stroke="#21262d" stroke-width="1"/>
-  <text x="550" y="116" fill="#8b949e" font-size="10">Inter-document hyperlinks</text>
-  <text x="550" y="132" fill="#8b949e" font-size="10">with attribution chains.</text>
-  <text x="550" y="156" fill="#8b949e" font-size="10">Type: <tspan font-family="'JetBrains Mono',monospace" fill="#79c0ff">HyperLink</tspan></text>
-  <text x="550" y="172" fill="#8b949e" font-size="10">BLAKE3 fingerprint-based.</text>
-  <text x="550" y="196" fill="#a371f7" font-size="10" font-weight="600">ATTRIBUTION</text>
-  <text x="550" y="214" fill="#8b949e" font-size="10">Tracks WHO put content</text>
-  <text x="550" y="230" fill="#8b949e" font-size="10">WHERE and the derivation</text>
-  <text x="550" y="246" fill="#8b949e" font-size="10">chain (golden thread).</text>
-  <text x="550" y="278" fill="#484f58" font-size="9">Source: edition/links.rs</text>
-  <text x="550" y="294" fill="#484f58" font-size="9">Backfollow: server.rs</text>
-</svg>
-</div>
-<p class="diagram-caption">Figure 2: Three stores coexist inside each work. They overlap but serve different purposes.</p>
-
-<div class="warning">
-  <strong>Why it's confusing:</strong> Placing a transclusion writes all three stores simultaneously. The O-tree gets a text copy, the compound edition gets a span reference, and the link system gets an attribution record. They can drift apart if edited independently.
-</div>
-
-<!-- ============================================================ -->
-<h2 id="s3">3. Mechanism 1: The O-Tree (Static Text)</h2>
-
-<p>
-This is the <strong>primary content store</strong>. When you type in the editor, you're modifying the O-tree. It's a CRDT &mdash; conflict-free, supports concurrent editing, and persists as numbered revisions.
-</p>
-
-<pre>
-Edition {
-    orgl_root: OrglRoot,      // the ordered tree (o-tree)
-    endorsements: [...],      // who has vouched for this
-    // entries: [(position, RangeElement)] &mdash; text characters at positions
-}
-
-// What you see in the editor IS the O-tree text
-editor.textContent === otree.get_text()
-</pre>
-
-<p>
-When text from another work is pasted into the O-tree, it becomes a <strong>copy</strong>. It does not update when the source changes. This is just like copying text in a normal editor.
-</p>
-
-<!-- ============================================================ -->
-<h2 id="s4">4. Mechanism 2: Compound Editions (Live Spans)</h2>
-
-<p>
-A compound edition is an ordered list of elements, each either literal text or a live span reference:
-</p>
-
-<pre>
-CompoundEdition {
-    elements: [
-        Text { content: "Introduction. " },
-        Span  { span: CompoundSpan {
-            source_work_id: 1006,   // which work to reference
-            char_start: 0,          // character offset in source
-            char_end: 46,           // end offset (exclusive)
-        }},
-        Text { content: " Conclusion." },
-    ]
-}
-</pre>
-
-<p>
-The span doesn't store text. It stores a pointer <code>(work_id, char_start, char_end)</code>. When you <em>resolve</em> the compound, the system fetches current text from each source and assembles the result:
+A <strong>compound document</strong> is a document whose content includes <em>live references to other documents</em>. When a source document changes, every compound document that references it automatically reflects the change. This is Ted Nelson's transclusion: the same content can appear in multiple places simultaneously, always in sync, without duplication.
 </p>
 
 <div class="diagram-container">
 <svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
   <defs>
-    <marker id="arrRes" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#39d2c0"/></marker>
+    <marker id="arr1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
   </defs>
-  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Resolution: Fetching Live Content from Sources</text>
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">A Compound Document with Live Transclusion References</text>
 
-  <!-- Compound edition -->
-  <rect x="20" y="60" width="200" height="200" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="120" y="84" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700">COMPOUND EDITION</text>
+  <!-- Source A -->
+  <rect x="20" y="55" width="200" height="80" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="120" y="78" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">SOURCE WORK A</text>
+  <text x="40" y="100" fill="#8b949e" font-size="10">"The quick brown fox</text>
+  <text x="40" y="116" fill="#8b949e" font-size="10">jumps over the lazy dog"</text>
 
-  <rect x="40" y="100" width="160" height="28" rx="4" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
-  <text x="50" y="118" fill="#d29922" font-size="10">Text: "Intro "</text>
+  <!-- Source B -->
+  <rect x="20" y="155" width="200" height="80" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="120" y="178" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">SOURCE WORK B</text>
+  <text x="40" y="200" fill="#8b949e" font-size="10">"Seseparrendipity</text>
+  <text x="40" y="216" fill="#8b949e" font-size="10">happens every day"</text>
 
-  <rect x="40" y="136" width="160" height="28" rx="4" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>
-  <text x="50" y="154" fill="#58a6ff" font-size="10">Span: W1006 [0:5]</text>
+  <!-- Arrows -->
+  <line x1="220" y1="95" x2="300" y2="130" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr1)"/>
+  <line x1="220" y1="195" x2="300" y2="175" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr1)"/>
 
-  <rect x="40" y="172" width="160" height="28" rx="4" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
-  <text x="50" y="190" fill="#d29922" font-size="10">Text: " End."</text>
+  <!-- Compound O-Tree -->
+  <rect x="300" y="90" width="460" height="160" rx="10" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="2"/>
+  <text x="530" y="114" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">COMPOUND WORK (O-TREE)</text>
 
-  <!-- Arrow -->
-  <line x1="220" y1="160" x2="290" y2="160" stroke="#39d2c0" stroke-width="2" marker-end="url(#arrRes)"/>
-  <text x="255" y="150" text-anchor="middle" fill="#39d2c0" font-size="10">resolve()</text>
+  <rect x="320" y="128" width="120" height="24" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="330" y="144" fill="#d29922" font-size="10">Text: "Intro "</text>
 
-  <!-- Source fetch -->
-  <rect x="290" y="100" width="200" height="120" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
-  <text x="390" y="124" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">FETCH FROM W1006</text>
-  <text x="310" y="148" fill="#8b949e" font-size="10">Current text: "Hello World!!!"</text>
-  <text x="310" y="168" fill="#8b949e" font-size="10">chars [0:5]</text>
-  <text x="310" y="192" fill="#3fb950" font-size="11" font-weight="600">= "Hello"</text>
+  <rect x="450" y="128" width="180" height="24" rx="3" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="460" y="144" fill="#58a6ff" font-size="10">Transclusion(WorkA, 0:15)</text>
 
-  <!-- Arrow -->
-  <line x1="490" y1="160" x2="560" y2="160" stroke="#39d2c0" stroke-width="2" marker-end="url(#arrRes)"/>
+  <rect x="320" y="160" width="180" height="24" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="330" y="176" fill="#d29922" font-size="10">Text: " and then "</text>
 
-  <!-- Resolved -->
-  <rect x="560" y="120" width="200" height="80" rx="8" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
-  <text x="660" y="144" text-anchor="middle" fill="#39d2c0" font-size="11" font-weight="700">RESOLVED TEXT</text>
-  <text x="660" y="172" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">"Intro Hello End."</text>
-  <text x="660" y="190" text-anchor="middle" fill="#484f58" font-size="9">Live content, fetched on demand</text>
+  <rect x="510" y="160" width="180" height="24" rx="3" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="520" y="176" fill="#58a6ff" font-size="10">Transclusion(WorkB, 4:20)</text>
 
-  <!-- Depth note -->
-  <rect x="290" y="240" width="470" height="50" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
-  <text x="310" y="262" fill="#8b949e" font-size="10">Recursive resolution follows compound &rarr; compound chains up to 32 levels deep.</text>
-  <text x="310" y="280" fill="#8b949e" font-size="10">Cycle detection prevents infinite loops. This is Nelson's "golden thread."</text>
+  <rect x="320" y="192" width="120" height="24" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="330" y="208" fill="#d29922" font-size="10">Text: " the end."</text>
+
+  <text x="530" y="238" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">Resolved: "Intro The quick brown and then rendipity happens the end."</text>
 </svg>
 </div>
-<p class="diagram-caption">Figure 3: The resolve() method fetches current text from each source and concatenates the result.</p>
+<p class="diagram-caption">Figure 1: A compound work's O-tree contains Text elements (editable) and Transclusion elements (live references, zero-width). Resolution fetches source content on demand.</p>
 
-<h3>Span Migration: Tracking Content Through Edits</h3>
+<!-- ============================================================ -->
+<h2 id="s2">2. Architecture: Inline Transclusion Elements</h2>
 
 <p>
-When a source work is edited, compound spans referencing it have their offsets automatically adjusted via <code>migrate_compound_spans_for_delta()</code>:
+Xudanu implements compound documents via <strong>RangeElement::Transclusion</strong> &mdash; a first-class element type in the O-tree. This is neither a side-table nor a separate work type. Every work's O-tree can contain a mix of Text elements (editable content) and Transclusion elements (live references). The O-tree is the <strong>single source of truth</strong>.
 </p>
 
 <div class="diagram-container">
-<svg viewBox="0 0 780 280" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
-  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Span Migration: Offsets Track Content Through Edits</text>
+<svg viewBox="0 0 780 360" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">The O-Tree Is the Single Source of Truth</text>
 
-  <!-- Before -->
-  <rect x="20" y="50" width="350" height="90" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
-  <text x="40" y="74" fill="#58a6ff" font-size="11" font-weight="700">BEFORE EDIT</text>
-  <text x="40" y="96" fill="#8b949e" font-size="10">Source Work A: "Hello World"</text>
-  <rect x="40" y="106" width="100" height="20" rx="3" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1" stroke-dasharray="4,3"/>
-  <text x="45" y="120" fill="#3fb950" font-size="9">span [0:5]</text>
-  <text x="40" y="138" fill="#3fb950" font-size="10">Resolves to: "Hello"</text>
+  <!-- Old: Side-table (crossed out) -->
+  <rect x="20" y="55" width="350" height="140" rx="8" fill="rgba(248,81,73,0.04)" stroke="#f85149" stroke-width="1" stroke-dasharray="6,4"/>
+  <text x="195" y="80" text-anchor="middle" fill="#f85149" font-size="11" font-weight="700">OLD: SIDE-TABLE (DEPRECATED)</text>
+  <line x1="40" y1="70" x2="350" y2="70" stroke="#f85149" stroke-width="0.5" opacity="0.3"/>
+  <text x="40" y="100" fill="#8b949e" font-size="10">O-Tree: "Intro Hello End" (text copy)</text>
+  <text x="40" y="118" fill="#8b949e" font-size="10">CompoundEdition side-table:</text>
+  <text x="40" y="134" fill="#8b949e" font-size="10">  [Text, Span, Text]</text>
+  <text x="40" y="156" fill="#f85149" font-size="10">Problem: two copies can drift apart</text>
+  <text x="40" y="176" fill="#484f58" font-size="9">Migrated to inline elements via CLI tool</text>
 
-  <!-- After -->
-  <rect x="410" y="50" width="350" height="90" rx="8" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1"/>
-  <text x="430" y="74" fill="#d29922" font-size="11" font-weight="700">AFTER INSERT "GPS " AT POS 0</text>
-  <text x="430" y="96" fill="#8b949e" font-size="10">Source Work A: "GPS Hello World"</text>
-  <rect x="450" y="106" width="100" height="20" rx="3" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1" stroke-dasharray="4,3"/>
-  <text x="455" y="120" fill="#3fb950" font-size="9">span [4:9]</text>
-  <text x="430" y="138" fill="#3fb950" font-size="10">Still resolves to: "Hello"</text>
+  <!-- New: Inline elements -->
+  <rect x="400" y="55" width="360" height="280" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="2"/>
+  <text x="580" y="80" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700">NEW: INLINE TRANSCLUSION (IMPLEMENTED)</text>
+  <line x1="420" y1="90" x2="740" y2="90" stroke="#21262d" stroke-width="1"/>
 
-  <!-- Result -->
-  <rect x="100" y="170" width="580" height="50" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="390" y="194" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">The compound document still shows "Hello"</text>
-  <text x="390" y="212" text-anchor="middle" fill="#8b949e" font-size="10">The span reference followed the content through the insertion. Offsets shifted by +4.</text>
+  <text x="420" y="112" fill="#e6edf3" font-size="10" font-weight="600">O-Tree entries:</text>
+  <rect x="420" y="120" width="310" height="22" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="430" y="135" fill="#d29922" font-size="9">pos 0: Text("Intro ")</text>
+  <rect x="420" y="148" width="310" height="22" rx="3" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="430" y="163" fill="#58a6ff" font-size="9">pos 1: Transclusion(WorkA, 0, 15) char_len=0</text>
+  <rect x="420" y="176" width="310" height="22" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="430" y="191" fill="#d29922" font-size="9">pos 2: Text(" End.")</text>
+
+  <text x="420" y="222" fill="#3fb950" font-size="10" font-weight="600">&#10003; No side-table &mdash; one store only</text>
+  <text x="420" y="238" fill="#3fb950" font-size="10" font-weight="600">&#10003; No drift possible</text>
+  <text x="420" y="254" fill="#3fb950" font-size="10" font-weight="600">&#10003; No special work type needed</text>
+  <text x="420" y="270" fill="#3fb950" font-size="10" font-weight="600">&#10003; CRDT handles it (already supports mixed elements)</text>
+  <text x="420" y="286" fill="#3fb950" font-size="10" font-weight="600">&#10003; Self-transclusions supported (cycle detection)</text>
+  <text x="420" y="302" fill="#3fb950" font-size="10" font-weight="600">&#10003; Recursive resolution (32 levels, golden thread)</text>
+  <text x="420" y="318" fill="#3fb950" font-size="10" font-weight="600">&#10003; Span migration on source edits</text>
 </svg>
 </div>
-<p class="diagram-caption">Figure 4: Insertions, deletions, and replacements in source works trigger automatic span offset migration.</p>
+<p class="diagram-caption">Figure 2: The old side-table approach (left, deprecated) vs. the implemented inline approach (right). Transclusion elements live directly in the O-tree.</p>
 
 <!-- ============================================================ -->
-<h2 id="s5">5. Mechanism 3: Transclusion Links (Attribution)</h2>
+<h2 id="s3">3. The O-Tree: Single Source of Truth</h2>
 
 <p>
-Links are the <strong>provenance and attribution layer</strong>. They record why a piece of text appeared in your document, who put it there, and the chain of derivation:
+The O-tree (ordered tree) is the work's primary content store. It already supported mixed element types: <code>Text</code>, <code>Data</code>, <code>Label</code>, <code>PlaceHolder</code>, <code>IDHolder</code>, <code>Work</code>, <code>Blob</code>, <code>Overlay</code>. We added <code>Transclusion</code> as a new variant:
 </p>
 
 <pre>
-HyperLink {
-    link_id: 0x1A2B,
-    origin: this_work,          // where the link lives
-    destination: source_work,   // where the content came from
-    origin_ref: HyperRef {      // the span in THIS work
-        start_position: 42,
-        end_position: 88,
-        excerpt: "The quick brown fox",
-    },
-    link_types: [3, 7],         // typed links (quotation, paraphrase, etc.)
+pub enum RangeElement {
+    Text { text: String },                              // editable text
+    Data { bytes: Vec&lt;u8&gt; },
+    Label { label_id: RangeElementId, inner: Box&lt;RangeElement&gt; },
+    PlaceHolder { id: RangeElementId },
+    IDHolder { id: u64 },
+    Work { work_id: RangeElementId },
+    Blob { content_hash: u64, mime_type: String, ... },
+    Overlay { overlay: ImageOverlay },
+    <span class="accent-green">Transclusion { source_work_id: u64, char_start: usize, char_end: usize },  // NEW</span>
 }
 </pre>
 
-<div class="note">
-  <strong>Key distinction:</strong>
-  <strong>Compound spans</strong> answer: <em>"What text should I show here?"</em><br>
-  <strong>Links</strong> answer: <em>"Where did this text come from and who vouches for it?"</em><br>
-  A transclusion creates both, but they serve different purposes and can exist independently.
-</div>
+<p>
+The <code>Transclusion</code> element has <code>char_len() = 0</code> &mdash; it's a zero-width embed, similar to how rich text editors handle images. It occupies a position in the O-tree but doesn't contribute to the character index. This means:
+</p>
 
-<div class="diagram-container">
-<svg viewBox="0 0 780 260" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
-  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Two Parallel Systems, One Placement Action</text>
-
-  <!-- Placement action -->
-  <rect x="250" y="50" width="280" height="40" rx="6" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="1.5"/>
-  <text x="390" y="76" text-anchor="middle" fill="#39d2c0" font-size="12" font-weight="700">Place Transclusion</text>
-
-  <!-- Three arrows down -->
-  <line x1="160" y1="90" x2="160" y2="120" stroke="#d29922" stroke-width="1" stroke-dasharray="4,3"/>
-  <line x1="390" y1="90" x2="390" y2="120" stroke="#3fb950" stroke-width="1" stroke-dasharray="4,3"/>
-  <line x1="620" y1="90" x2="620" y2="120" stroke="#a371f7" stroke-width="1" stroke-dasharray="4,3"/>
-
-  <!-- O-Tree -->
-  <rect x="40" y="120" width="240" height="120" rx="8" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1.5"/>
-  <text x="160" y="144" text-anchor="middle" fill="#d29922" font-size="11" font-weight="700">O-TREE WRITE</text>
-  <text x="60" y="168" fill="#8b949e" font-size="10">Inserts excerpt text into</text>
-  <text x="60" y="184" fill="#8b949e" font-size="10">the work's text buffer.</text>
-  <text x="60" y="208" fill="#d29922" font-size="10" font-weight="600">Result: static copy</text>
-  <text x="60" y="226" fill="#8b949e" font-size="10">Question answered: "what</text>
-  <text x="60" y="238" fill="#8b949e" font-size="10">text is in the editor?"</text>
-
-  <!-- Compound -->
-  <rect x="270" y="120" width="240" height="120" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
-  <text x="390" y="144" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700">COMPOUND SPAN</text>
-  <text x="300" y="168" fill="#8b949e" font-size="10">Records (work_id, start, end)</text>
-  <text x="300" y="184" fill="#8b949e" font-size="10">as a live reference.</text>
-  <text x="300" y="208" fill="#3fb950" font-size="10" font-weight="600">Result: live reference</text>
-  <text x="300" y="226" fill="#8b949e" font-size="10">Question answered: "what</text>
-  <text x="300" y="238" fill="#8b949e" font-size="10">should I show here?"</text>
-
-  <!-- Link -->
-  <rect x="500" y="120" width="240" height="120" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
-  <text x="620" y="144" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="700">LINK CREATION</text>
-  <text x="530" y="168" fill="#8b949e" font-size="10">Creates attribution link</text>
-  <text x="530" y="184" fill="#8b949e" font-size="10">with provenance chain.</text>
-  <text x="530" y="208" fill="#a371f7" font-size="10" font-weight="600">Result: metadata record</text>
-  <text x="530" y="226" fill="#8b949e" font-size="10">Question answered: "where</text>
-  <text x="530" y="238" fill="#8b949e" font-size="10">did this come from?"</text>
-</svg>
-</div>
-<p class="diagram-caption">Figure 5: A single "place transclusion" action writes to all three stores simultaneously.</p>
+<ul style="margin:12px 0 12px 24px;max-width:780px">
+  <li><code>to_text()</code> skips Transclusion elements &mdash; raw text is editable text only</li>
+  <li><code>resolve_inline_transclusions()</code> fetches source content and assembles resolved text</li>
+  <li>CRDT deltas only affect Text elements &mdash; Transclusions are untouched by typing</li>
+  <li>Editing near a transclusion works naturally &mdash; text shifts around the zero-width element</li>
+</ul>
 
 <!-- ============================================================ -->
-<h2 id="s6">6. The Placement Flow</h2>
+<h2 id="s4">4. Resolution: Following the Golden Thread</h2>
 
 <p>
-Here's exactly what happens when you place a transclusion today:
+Resolution walks the O-tree, fetching live content from source works for each Transclusion element. If a source work ALSO contains Transclusion elements, resolution follows the chain recursively &mdash; Nelson's "golden thread" &mdash; up to 32 levels deep. Cycle detection prevents infinite loops.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 300" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrRes" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#39d2c0"/></marker>
+  </defs>
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Recursive Resolution: Following the Golden Thread</text>
+
+  <!-- Doc C -->
+  <rect x="20" y="55" width="200" height="90" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="120" y="78" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700">DOC C (compound)</text>
+  <text x="35" y="100" fill="#8b949e" font-size="9">Text: "Top: "</text>
+  <text x="35" y="115" fill="#58a6ff" font-size="9">Transclusion(DocB, 0:100)</text>
+  <text x="35" y="130" fill="#8b949e" font-size="9">Text: " end."</text>
+
+  <line x1="220" y1="100" x2="290" y2="100" stroke="#39d2c0" stroke-width="2" marker-end="url(#arrRes)"/>
+
+  <!-- Doc B -->
+  <rect x="290" y="55" width="200" height="90" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="390" y="78" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="700">DOC B (also compound)</text>
+  <text x="305" y="100" fill="#8b949e" font-size="9">Text: "Middle: "</text>
+  <text x="305" y="115" fill="#58a6ff" font-size="9">Transclusion(DocA, 0:5)</text>
+  <text x="305" y="130" fill="#8b949e" font-size="9">Text: " done."</text>
+
+  <line x1="490" y1="100" x2="560" y2="100" stroke="#39d2c0" stroke-width="2" marker-end="url(#arrRes)"/>
+
+  <!-- Doc A -->
+  <rect x="560" y="55" width="200" height="90" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="660" y="78" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">DOC A (source)</text>
+  <text x="575" y="100" fill="#8b949e" font-size="9">Text: "Hello World"</text>
+
+  <!-- Result -->
+  <rect x="100" y="180" width="580" height="60" rx="8" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="390" y="205" text-anchor="middle" fill="#39d2c0" font-size="12" font-weight="700">Resolving Doc C:</text>
+  <text x="390" y="225" text-anchor="middle" fill="#e6edf3" font-size="11">"Top: " + resolve(DocB) + " end." = "Top: Middle: Hello done. end."</text>
+
+  <text x="390" y="270" text-anchor="middle" fill="#484f58" font-size="10">Max depth: 32 levels. Cycle detection: A&rarr;B&rarr;A returns to_text(A) instead of empty.</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 3: Recursive resolution follows Transclusion chains. Doc C resolves through Doc B to Doc A &mdash; the golden thread.</p>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Span Migration: Tracking Content Through Edits</h2>
+
+<p>
+When a source work is edited, all Transclusion elements referencing it have their offsets automatically adjusted via <code>migrate_inline_transclusions_for_delta()</code>. This is wired into the text delta dispatch path.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Span Migration: Offsets Track Content Through Source Edits</text>
+
+  <rect x="20" y="45" width="350" height="60" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="40" y="68" fill="#58a6ff" font-size="11" font-weight="700">BEFORE: Source = "Hello World"</text>
+  <rect x="40" y="78" width="100" height="18" rx="3" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="45" y="91" fill="#3fb950" font-size="9">transclusion [0:5]</text>
+
+  <rect x="400" y="45" width="350" height="60" rx="6" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1"/>
+  <text x="420" y="68" fill="#d29922" font-size="11" font-weight="700">AFTER INSERT "GPS " AT POS 0</text>
+  <rect x="450" y="78" width="100" height="18" rx="3" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="455" y="91" fill="#3fb950" font-size="9">transclusion [4:9]</text>
+
+  <rect x="100" y="130" width="580" height="40" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="390" y="156" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">Both resolve to "Hello" &mdash; the reference followed the content.</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 4: Insertions and deletions in source works trigger automatic offset migration.</p>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Attribution Links (Separate from Content)</h2>
+
+<p>
+Links are the <strong>attribution and provenance layer</strong> &mdash; separate from content resolution. A transclusion placement creates both a Transclusion element (for content) and a link (for attribution). They answer different questions:
+</p>
+
+<div class="note">
+  <strong>Transclusion elements</strong> answer: <em>"What text should I show here?"</em><br>
+  <strong>Links</strong> answer: <em>"Where did this text come from and who vouches for it?"</em>
+</div>
+
+<p>
+Links power the backfollow engine (BLAKE3 fingerprint matching), the margin bars in the canvas overlay, and the provenance chain display. They exist alongside Transclusion elements but serve a fundamentally different purpose.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. The Placement Flow</h2>
+
+<p>
+When a user places a transclusion, only ONE write happens &mdash; an <code>ElementInsert</code> that creates a Transclusion element in the O-tree. No text copy is inserted. The attribution link is created separately.
 </p>
 
 <div class="example-block">
@@ -411,300 +315,232 @@ Here's exactly what happens when you place a transclusion today:
 <span class="accent-cyan">// 1. Select text in source work</span>
 holdSelection(excerpt, sourceWorkId, charStart, charEnd)
 
-<span class="accent-cyan">// 2. Navigate to target compound work</span>
-<span class="accent-cyan">//    TransclusionBadge appears with held excerpt</span>
-
-<span class="accent-cyan">// 3. Place transclusion at cursor position</span>
+<span class="accent-cyan">// 2. Navigate to target work, click to place</span>
 handlePlaceTransclusion(position):
-    <span class="accent-amber">// A. Insert excerpt into O-tree (STATIC COPY)</span>
-    setText(text.slice(0, pos) + excerpt + text.slice(pos))
+    <span class="accent-green">// A. Insert Transclusion element into O-tree (SINGLE SOURCE OF TRUTH)</span>
+    await client.elementInsert(workId, position, {
+        type: "transclusion",
+        transclusion_source: sourceWorkId,
+        transclusion_start: charStart,
+        transclusion_end: charEnd,
+    })
 
-    <span class="accent-green">// B. Record compound span (LIVE REFERENCE)</span>
-    compound.addSpan(text, pos, excerpt, sourceWorkId, charStart, charEnd)
-
-    <span class="accent-purple">// C. Create attribution link (METADATA)</span>
-    transclusion.placeTransclusion(sourceWorkId, excerpt, charStart, charEnd)</pre>
+    <span class="accent-purple">// B. Create attribution link (METADATA, separate from content)</span>
+    await transclusion.placeTransclusion(client, workId, position)</pre>
 </div>
 
-<div class="warning">
-  <strong>The drift problem:</strong> If you later edit the O-tree text directly (delete the paragraph, add text around it), the O-tree text and the compound edition diverge. The compound panel lets you fix the compound edition, but the O-tree copy becomes stale. This is the core UX confusion.
-</div>
+<p>
+No text is copied into the O-tree. The Transclusion element IS the reference. Resolution fetches content on demand.
+</p>
 
 <!-- ============================================================ -->
-<h2 id="s7">7. Live Update Pipeline</h2>
+<h2 id="s8">8. Live Update Pipeline</h2>
 
 <p>
 When a source work is edited, the compound system propagates the change through a four-stage pipeline:
 </p>
 
 <div class="diagram-container">
-<svg viewBox="0 0 780 360" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+<svg viewBox="0 0 780 280" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
   <defs>
     <marker id="arrPipe" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#484f58"/></marker>
   </defs>
-  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Live Update Pipeline: Source Edit &rarr; Compound Refresh</text>
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Live Update Pipeline</text>
 
-  <!-- Step 1 -->
-  <rect x="60" y="50" width="660" height="56" rx="6" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1"/>
-  <text x="80" y="72" fill="#d29922" font-size="11" font-weight="700">1. TEXT DELTA</text>
-  <text x="280" y="72" fill="#8b949e" font-size="11">User edits Work A. Text delta applied to Work A's O-tree.</text>
-  <text x="80" y="92" fill="#8b949e" font-size="10">Delta ops (retain/insert/delete) describe the change.</text>
+  <rect x="40" y="45" width="660" height="42" rx="6" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1"/>
+  <text x="60" y="65" fill="#d29922" font-size="11" font-weight="700">1. TEXT DELTA</text>
+  <text x="280" y="65" fill="#8b949e" font-size="11">User edits source work. Delta applied to O-tree.</text>
 
-  <line x1="390" y1="106" x2="390" y2="130" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrPipe)"/>
+  <line x1="390" y1="87" x2="390" y2="105" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrPipe)"/>
 
-  <!-- Step 2 -->
-  <rect x="60" y="130" width="660" height="56" rx="6" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1"/>
-  <text x="80" y="152" fill="#3fb950" font-size="11" font-weight="700">2. SPAN MIGRATION</text>
-  <text x="280" y="152" fill="#8b949e" font-size="11">migrate_compound_spans_for_delta() shifts all span offsets.</text>
-  <text x="80" y="172" fill="#8b949e" font-size="10">Finds every compound edition referencing Work A, adjusts char_start/char_end.</text>
+  <rect x="40" y="105" width="660" height="42" rx="6" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1"/>
+  <text x="60" y="125" fill="#3fb950" font-size="11" font-weight="700">2. SPAN MIGRATION</text>
+  <text x="280" y="125" fill="#8b949e" font-size="11">migrate_inline_transclusions_for_delta() shifts Transclusion offsets.</text>
 
-  <line x1="390" y1="186" x2="390" y2="210" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrPipe)"/>
+  <line x1="390" y1="147" x2="390" y2="165" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrPipe)"/>
 
-  <!-- Step 3 -->
-  <rect x="60" y="210" width="660" height="56" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
-  <text x="80" y="232" fill="#58a6ff" font-size="11" font-weight="700">3. PUSH NOTIFICATION</text>
-  <text x="280" y="232" fill="#8b949e" font-size="11">CompoundSourceChanged event pushed to all viewers.</text>
-  <text x="80" y="252" fill="#8b949e" font-size="10">WebSocket event sent to every session currently viewing any compound work that references Work A.</text>
+  <rect x="40" y="165" width="660" height="42" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="60" y="185" fill="#58a6ff" font-size="11" font-weight="700">3. PUSH NOTIFICATION</text>
+  <text x="280" y="185" fill="#8b949e" font-size="11">CompoundSourceChanged event pushed to all viewers.</text>
 
-  <line x1="390" y1="266" x2="390" y2="290" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrPipe)"/>
+  <line x1="390" y1="207" x2="390" y2="225" stroke="#484f58" stroke-width="1.5" marker-end="url(#arrPipe)"/>
 
-  <!-- Step 4 -->
-  <rect x="60" y="290" width="660" height="56" rx="6" fill="rgba(57,210,192,0.06)" stroke="#39d2c0" stroke-width="1"/>
-  <text x="80" y="312" fill="#39d2c0" font-size="11" font-weight="700">4. RE-RESOLVE</text>
-  <text x="280" y="312" fill="#8b949e" font-size="11">Client calls compoundResolveRecursive() &rarr; fetches fresh text.</text>
-  <text x="80" y="332" fill="#8b949e" font-size="10">Display updates instantly. 30s safety-net poll catches any missed events.</text>
+  <rect x="40" y="225" width="660" height="42" rx="6" fill="rgba(57,210,192,0.06)" stroke="#39d2c0" stroke-width="1"/>
+  <text x="60" y="245" fill="#39d2c0" font-size="11" font-weight="700">4. RE-RESOLVE</text>
+  <text x="280" y="245" fill="#8b949e" font-size="11">Client calls resolveInlineTransclusions() &rarr; display updates instantly.</text>
 </svg>
 </div>
-<p class="diagram-caption">Figure 6: Four-stage pipeline from source edit to compound refresh. Total latency: one round-trip.</p>
+<p class="diagram-caption">Figure 5: Four-stage pipeline from source edit to compound refresh. Push-based (no polling).</p>
 
 <!-- ============================================================ -->
-<h2 id="s8">8. The Design Tension</h2>
+<h2 id="s9">9. Self-Transclusions</h2>
 
 <p>
-There are two possible architectures. Xudanu is currently straddling both:
+A work can transclude from itself. This is the simplest way to create a transclusion &mdash; select text in a work, then place it back in the same work. Cycle detection returns the work's raw text (<code>to_text()</code>) instead of infinite-looping.
 </p>
 
-<div class="two-col">
 <div class="example-block">
-  <div class="example-label"><span class="accent-amber">Architecture A: Side-table (CURRENT)</span></div>
-<pre style="background:none;border:none;padding:0;margin:0">
-Work B
-+--------------------+ +------------------+
-| O-Tree (primary)   | | Compound Edition |
-| "Intro Hello End"  | | [Text,Span,Text] |
-| (editable copy)    | | (live references)|
-+--------+-----------+ +--------+---------+
-         |                     |
-    editing mode          reading mode
-    shows this            shows resolved
-</pre>
-<p style="font-size:13px;color:#f85149;margin:8px 0 0"><strong>Problem:</strong> two copies of content, can drift apart</p>
-</div>
-<div class="example-block">
-  <div class="example-label"><span class="accent-green">Architecture B: Primary (FUTURE)</span></div>
-<pre style="background:none;border:none;padding:0;margin:0">
-Work B (compound type)
-+--------------------------------------+
-| Compound Edition = THE document     |
-| [Text, Span&rarr;A, Text, Span&rarr;B, Text] |
-|                                      |
-| Resolved text is the ONLY text       |
-| No O-tree copy needed                |
-+--------------------------------------+
-</pre>
-<p style="font-size:13px;color:#3fb950;margin:8px 0 0"><strong>Benefit:</strong> no drift &mdash; single source of truth</p>
-</div>
-</div>
+  <div class="example-label">Example: Self-Transclusion</div>
+<pre>
+Work A O-tree:
+  pos 0: Text("Hello World")
+  pos 1: Text(" - ")
+  pos 2: Transclusion(A, 0, 5)   <span class="accent-amber">// references itself!</span>
 
-<p>
-Architecture B would eliminate the drift problem entirely, but requires a new work type whose primary content IS the compound edition. The O-tree would only be used for non-compound works. This is the direction we're heading.
-</p>
+Resolution:
+  to_text(A) = "Hello World - "    (skips Transclusion)
+  resolve(A):
+    1. Text("Hello World") &rarr; "Hello World"
+    2. Text(" - ") &rarr; " - "
+    3. Transclusion(A, 0, 5) &rarr; cycle detected &rarr; return to_text(A) = "Hello World - "
+       chars [0:5] of "Hello World - " = "Hello"
+  Result: "Hello World - Hello"</pre>
+</div>
 
 <!-- ============================================================ -->
-<h2 id="s9">9. Incremental Composition</h2>
+<h2 id="s10">10. Editor Rendering</h2>
 
 <p>
-Compound editions can be edited element-by-element using three incremental operations. Each operation persists via WAL and takes effect immediately:
+In the editor, Transclusion elements are rendered as <strong>read-only inline spans</strong> with amber background and dashed underline. The user can read the transclusion content but cannot edit it (it belongs to the source work).
 </p>
-
-<table>
-  <tr><th>Operation</th><th>Opcode</th><th>What it does</th></tr>
-  <tr>
-    <td><code>CompoundInsertElement</code></td>
-    <td class="mono">0x1D06</td>
-    <td>Insert a text literal or span reference at a given index</td>
-  </tr>
-  <tr>
-    <td><code>CompoundRemoveElement</code></td>
-    <td class="mono">0x1D07</td>
-    <td>Remove the element at a given index</td>
-  </tr>
-  <tr>
-    <td><code>CompoundMoveElement</code></td>
-    <td class="mono">0x1D08</td>
-    <td>Move an element from one position to another (reorder)</td>
-  </tr>
-</table>
 
 <div class="diagram-container">
-<svg viewBox="0 0 780 300" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
-  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Incremental Composition: Building a Compound Step by Step</text>
+<svg viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Editor Rendering: Resolved Text with Read-Only Transclusion Spans</text>
 
-  <!-- Step 1: empty -->
-  <rect x="20" y="50" width="220" height="100" rx="8" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1"/>
-  <text x="130" y="72" text-anchor="middle" fill="#d29922" font-size="10" font-weight="700">1. INSERT TEXT</text>
-  <text x="40" y="94" fill="#8b949e" font-size="10">insert(0, Text("Intro "))</text>
-  <rect x="40" y="104" width="180" height="24" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
-  <text x="50" y="120" fill="#d29922" font-size="10">[0] Text: "Intro "</text>
+  <rect x="40" y="50" width="700" height="50" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="60" y="80" fill="#e6edf3" font-size="12">Intro </text>
+  <rect x="103" y="62" width="90" height="26" rx="3" fill="rgba(245,158,11,0.15)" stroke="rgba(245,158,11,0.5)" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="108" y="80" fill="#d29922" font-size="12" font-weight="500">The quick brown</text>
+  <text x="198" y="80" fill="#e6edf3" font-size="12"> and then </text>
+  <rect x="280" y="62" width="110" height="26" rx="3" fill="rgba(245,158,11,0.15)" stroke="rgba(245,158,11,0.5)" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="285" y="80" fill="#d29922" font-size="12" font-weight="500">rendipity happens</text>
+  <text x="395" y="80" fill="#e6edf3" font-size="12"> the end.</text>
 
-  <!-- Step 2: insert span -->
-  <rect x="270" y="50" width="260" height="100" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
-  <text x="400" y="72" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="700">2. INSERT SPAN</text>
-  <text x="290" y="94" fill="#8b949e" font-size="10">insert(1, Span(W1006, 0, 5))</text>
-  <rect x="290" y="104" width="100" height="24" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
-  <text x="300" y="120" fill="#d29922" font-size="9">[0] "Intro "</text>
-  <rect x="395" y="104" width="120" height="24" rx="3" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>
-  <text x="405" y="120" fill="#58a6ff" font-size="9">[1] Span W1006</text>
+  <rect x="40" y="115" width="340" height="24" rx="3" fill="rgba(245,158,11,0.06)" stroke="#f59e0b" stroke-width="1"/>
+  <text x="50" y="131" fill="#f59e0b" font-size="10">Amber background + dashed underline = read-only transclusion</text>
 
-  <!-- Step 3: insert more -->
-  <rect x="560" y="50" width="200" height="100" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1"/>
-  <text x="660" y="72" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="700">3. INSERT TEXT</text>
-  <text x="580" y="94" fill="#8b949e" font-size="10">insert(2, Text(" End."))</text>
-  <rect x="580" y="104" width="60" height="20" rx="2" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
-  <text x="585" y="118" fill="#d29922" font-size="8">"Intro"</text>
-  <rect x="642" y="104" width="55" height="20" rx="2" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3,2"/>
-  <text x="647" y="118" fill="#58a6ff" font-size="8">Span</text>
-  <rect x="699" y="104" width="50" height="20" rx="2" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
-  <text x="704" y="118" fill="#d29922" font-size="8">"End."</text>
+  <rect x="400" y="115" width="340" height="24" rx="3" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="410" y="131" fill="#58a6ff" font-size="10">Left margin bar (canvas overlay) = per-source indicator</text>
 
-  <!-- Move example -->
-  <rect x="100" y="180" width="580" height="100" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
-  <text x="120" y="204" fill="#e6edf3" font-size="11" font-weight="600">REORDER: move_element(2, 0)</text>
-  <text x="120" y="228" fill="#8b949e" font-size="10">Before: [0] "Intro " &rarr; [1] Span W1006 &rarr; [2] " End."</text>
-  <text x="120" y="248" fill="#8b949e" font-size="10">After: &nbsp;[0] " End." &rarr; [1] "Intro " &rarr; [2] Span W1006</text>
-  <text x="120" y="268" fill="#3fb950" font-size="10">Each operation is WAL-persisted and broadcast to all viewers.</text>
+  <text x="390" y="170" text-anchor="middle" fill="#484f58" font-size="10">getEditableText() extracts only editable text for delta computation. Transclusion text is skipped.</text>
 </svg>
 </div>
-<p class="diagram-caption">Figure 7: Incremental composition allows building and restructuring compound documents element by element.</p>
+<p class="diagram-caption">Figure 6: The editor shows resolved text. Transclusion regions are styled and non-editable.</p>
+
+<h3>Undo Support</h3>
+
+<p>
+When a user places a transclusion and immediately presses Cmd+Z, the system calls <code>elementRemoveTransclusion()</code> to delete the Transclusion element. This works because the undo handler checks for a pending transclusion insertion when the text undo stack is empty.
+</p>
 
 <!-- ============================================================ -->
-<h2 id="s10">10. Use Cases: Simple to Visionary</h2>
+<h2 id="s11">11. Use Cases: Simple to Visionary</h2>
 
 <div class="example-block">
   <div class="example-label"><span class="accent-green">Level 1 &mdash; Quotation Anthology</span></div>
-  <p>A document collecting excerpts from multiple source works. Each excerpt is a live span &mdash; if a source is corrected or updated, the anthology reflects it automatically.</p>
-<pre>
-CompoundEdition {
-    Text { "Notable quotes:\n\n" },
-    Span { src: Shakespeare, [120:145] },  // "To be or not to be..."
-    Text { "\n\n &mdash; Hamlet\n\n" },
-    Span { src: Tolstoy, [3000:3080] },    // "All happy families..."
-    Text { "\n\n &mdash; Anna Karenina" },
-}</pre>
+  <p>Collect excerpts from multiple source works. Each excerpt is a live Transclusion element. If a source is corrected, the anthology reflects it automatically.</p>
 </div>
 
 <div class="example-block">
   <div class="example-label"><span class="accent-green">Level 1 &mdash; Shared Boilerplate</span></div>
-  <p>Maintain a single "disclaimer" work. Every document that needs the boilerplate references it via a compound span. Update the source once, all documents update everywhere.</p>
+  <p>Maintain a single "disclaimer" work. Every document referencing it has a Transclusion element. Update once, all update.</p>
 </div>
 
 <div class="example-block">
   <div class="example-label"><span class="accent-amber">Level 2 &mdash; Collaborative Study Guide</span></div>
-  <p>A study guide assembling passages from a textbook (source) with interleaved commentary (literal text). When the textbook is revised, the passages update automatically.</p>
-<pre>
-Text { "Chapter 3 discusses recursion. Key passage:\n\n" },
-Span { src: Textbook, [4500:4600] },     // textbook passage
-Text { "\n\nAnalysis: The author's approach..." },
-Span { src: Textbook, [4800:4900] },     // another passage
-Text { "\n\nThis connects to..." }</pre>
-</div>
-
-<div class="example-block">
-  <div class="example-label"><span class="accent-amber">Level 2 &mdash; Multilingual Parallel Text</span></div>
-  <p>Original text and translation shown side by side. Both are sources. Edits to either propagate to the parallel reading view.</p>
+  <p>Assemble passages from a textbook (Transclusion elements) with interleaved commentary (Text elements). When the textbook is revised, passages update automatically.</p>
 </div>
 
 <div class="example-block">
   <div class="example-label"><span class="accent-purple">Level 3 &mdash; Golden Thread / Deep Transclusion</span></div>
-  <p>A compound document references another compound document, which references another, creating a chain. Resolution follows the chain recursively (up to 32 levels). This is Nelson's "golden thread" &mdash; following content back through layers of derivation.</p>
-<pre>
-Doc C (compound) &rarr; spans in Doc B (compound) &rarr; spans in Doc A (source)
-
-Resolving Doc C:
-  1. Fetch Doc B's compound edition
-  2. For each span in Doc B, resolve against Doc A
-  3. Assemble final text from the entire chain</pre>
-</div>
-
-<div class="example-block">
-  <div class="example-label"><span class="accent-purple">Level 3 &mdash; Versioned Anthology with Reordering</span></div>
-  <p>An editor reorders, adds, and removes excerpts using incremental compound ops (<code>insert</code>, <code>remove</code>, <code>move</code>) without affecting source works. All spans remain live throughout restructuring.</p>
+  <p>A compound work references another compound work, which references another. Resolution follows the chain recursively (32 levels). This is Nelson's golden thread &mdash; following content back through layers of derivation.</p>
 </div>
 
 <div class="example-block">
   <div class="example-label"><span class="accent-cyan">Vision &mdash; Nelson's Docuverse</span></div>
-  <p>In the full vision, <em>everything</em> is transclusion. No document copies content &mdash; every document is a compound of live references to a universal docuverse. Authors receive micropayments when their content is transcluded. Copyright becomes attribution tracking rather than access control.</p>
-  <p>Xudanu implements the technical foundation: content-addressed storage, live span references, recursive resolution, and per-element provenance. The economic and social layers are future work.</p>
+  <p>Everything is transclusion. No document copies content &mdash; every document is assembled from live references. Authors receive micropayments when content is transcluded. Xudanu implements the technical foundation; the economic layer is future work.</p>
 </div>
 
 <!-- ============================================================ -->
-<h2 style="margin-top:48px">Roadmap</h2>
+<h2 id="s12">12. What Was Deprecated</h2>
+
+<p>
+The compound edition side-table (<code>compound_editions: HashMap&lt;BeId, CompoundEdition&gt;</code>) is deprecated. Existing side-table data was migrated to inline Transclusion elements via:
+</p>
+
+<pre>
+$ xudanu-server migrate-compound data
+Migrating compound editions to inline transclusion elements...
+  work 03ef: 1 spans migrated to inline
+  work 03f1: 1 spans migrated to inline
+Done: 2 spans migrated across 2 works
+</pre>
+
+<p>
+The side-table infrastructure (CompoundGetEdition, CompoundSetEdition, CompoundResolveWork, CompoundResolveRecursive, CompoundInsertElement, CompoundRemoveElement, CompoundMoveElement) remains for backward compatibility but receives no new writes. All new transclusion placements go through <code>ElementInsert</code> with Transclusion elements.
+</p>
 
 <table>
-  <tr><th>Feature</th><th>Status</th><th>Enables</th></tr>
+  <tr><th>Feature</th><th>Status</th><th>Details</th></tr>
   <tr>
-    <td>Incremental compound ops<br><code>insert</code> / <code>remove</code> / <code>move</code></td>
+    <td><code>RangeElement::Transclusion</code></td>
     <td class="fast">Done</td>
-    <td>Element-by-element editing without wholesale replacement</td>
-  </tr>
-  <tr>
-    <td>Push-based live updates<br><code>CompoundSourceChanged</code></td>
-    <td class="fast">Done</td>
-    <td>Instant notification when source works change</td>
-  </tr>
-  <tr>
-    <td>Compound composition panel</td>
-    <td class="fast">Done</td>
-    <td>Visual sidebar for viewing and editing compound structure</td>
-  </tr>
-  <tr>
-    <td>Span migration on edits</td>
-    <td class="fast">Done</td>
-    <td>Span offsets track content through insertions/deletions</td>
+    <td>Zero-width O-tree element, fingerprinted, serde-serializable</td>
   </tr>
   <tr>
     <td>Recursive resolution (32 levels)</td>
     <td class="fast">Done</td>
-    <td>Compound &rarr; compound transclusion chains with cycle detection</td>
+    <td>Golden thread with cycle detection, self-transclusion support</td>
   </tr>
   <tr>
-    <td>Compound as primary content type</td>
-    <td class="naive">Future</td>
-    <td>Eliminate dual-copy drift &mdash; compound IS the document</td>
+    <td>Span migration on source edits</td>
+    <td class="fast">Done</td>
+    <td>Offsets track content through insertions/deletions</td>
   </tr>
   <tr>
-    <td>RangeElement::Transclusion</td>
+    <td>Push-based live updates</td>
+    <td class="fast">Done</td>
+    <td>CompoundSourceChanged event to inline + side-table viewers</td>
+  </tr>
+  <tr>
+    <td>Editor rendering (read-only spans)</td>
+    <td class="fast">Done</td>
+    <td>Amber background, contenteditable=false, getEditableText for deltas</td>
+  </tr>
+  <tr>
+    <td>Undo support</td>
+    <td class="fast">Done</td>
+    <td>Cmd+Z removes last transclusion via elementRemoveTransclusion</td>
+  </tr>
+  <tr>
+    <td>Side-table migration</td>
+    <td class="fast">Done</td>
+    <td>CLI: migrate-compound &lt;data-dir&gt;</td>
+  </tr>
+  <tr>
+    <td>Compound side-table</td>
+    <td class="naive">Deprecated</td>
+    <td>Backward compatible, no new writes</td>
+  </tr>
+  <tr>
+    <td>Flatten action (break transclusion)</td>
     <td class="naive">Future</td>
-    <td>Transclusion as first-class O-tree element</td>
+    <td>Convert Transclusion element to editable Text on user request</td>
   </tr>
   <tr>
     <td>Federated compound resolution</td>
     <td class="naive">Future</td>
-    <td>Spans referencing works on other xudanu servers</td>
-  </tr>
-  <tr>
-    <td>Royalty / micropayment tracking</td>
-    <td class="naive">Future</td>
-    <td>Nelson's Rule 9: payment at any granularity</td>
+    <td>Transclusion elements referencing works on other servers</td>
   </tr>
 </table>
 
 <div class="note" style="margin-top:32px">
-  <strong>Bottom line:</strong> The mechanical foundation is solid &mdash; live span references, recursive resolution, span migration, push updates, and incremental editing all work. The remaining work is <strong>architectural</strong> (making compound editions first-class) and <strong>UX</strong> (making the composition workflow intuitive).
+  <strong>Bottom line:</strong> The O-tree is the single source of truth. Transclusion elements live directly in it. No side-table, no drift, no copies. Resolution is recursive (32 levels). Self-transclusions work. The compound infrastructure is solid and ready for real-world use.
 </div>
 
 <div class="footer">
-  Xudanu Compound Documents &mdash; <a href="https://github.com/jonesd/xudanu/issues/18">#18</a> &mdash; Opcodes 0x1D01&ndash;0x1D08
+  Xudanu Compound Documents &mdash; <a href="https://github.com/jonesd/xudanu/issues/18">#18</a> &mdash; RangeElement::Transclusion &mdash; Opcodes: ElementInsert (0x0C0B), ResolveInlineTransclusions (0x0E02), MigrateCompoundToInline (0x0E03), ElementRemoveTransclusion (0x0E04)
 </div>
 
 </div>
