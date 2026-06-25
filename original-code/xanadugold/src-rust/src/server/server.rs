@@ -8335,6 +8335,7 @@ impl Server {
 
         let new_edition = crate::edition::Edition::from_entries(new_entries);
         ws.work_mut().update_current_edition(new_edition);
+        ws.mark_dirty();
 
         self.compound_editions.remove(&work_id);
         Ok(migrated_count)
@@ -8746,6 +8747,7 @@ impl Server {
                 }
                 let new_edition = crate::edition::Edition::from_entries(new_entries);
                 ws.work_mut().update_current_edition(new_edition);
+                ws.mark_dirty();
             }
         }
     }
@@ -24671,6 +24673,101 @@ mod tests {
         );
         assert_eq!(result.span_ranges.len(), 1);
         assert_eq!(result.span_ranges[0].source_work_id, doc);
+    }
+
+    #[test]
+    fn inline_transclusion_survives_checkpoint_roundtrip() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("Intro "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(src, 0, 5),
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" End."),
+                )),
+            ),
+        ];
+        let doc = server
+            .create_work(sid, Edition::from_entries(entries))
+            .unwrap();
+
+        let before = server.resolve_inline_transclusions(doc).unwrap();
+        assert_eq!(before.text, "Intro Hello End.");
+
+        let snapshot = server.to_snapshot();
+        let restored = Server::from_snapshot(&snapshot);
+
+        let after = restored.resolve_inline_transclusions(doc).unwrap();
+        assert_eq!(
+            after.text, "Intro Hello End.",
+            "transclusion must survive checkpoint roundtrip"
+        );
+        assert_eq!(after.span_ranges.len(), 1);
+        assert_eq!(after.span_ranges[0].source_work_id, src);
+    }
+
+    #[test]
+    fn inline_transclusion_survives_migrate_compound_to_inline() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server
+            .create_work(sid, Edition::from_text("Hello World"))
+            .unwrap();
+
+        let entries = vec![
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("Intro "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" End."),
+                )),
+            ),
+        ];
+        let doc = server
+            .create_work(sid, Edition::from_entries(entries))
+            .unwrap();
+
+        let compound = crate::edition::compound::CompoundEdition::new(vec![
+            crate::edition::compound::CompoundElement::text("Intro "),
+            crate::edition::compound::CompoundElement::span(src, 0, 5),
+            crate::edition::compound::CompoundElement::text(" End."),
+        ]);
+        server.set_compound_edition(doc, compound, sid).unwrap();
+
+        let migrated = server.migrate_compound_to_inline(doc).unwrap();
+        assert_eq!(migrated, 1, "should migrate 1 span");
+
+        let snapshot = server.to_snapshot();
+        let restored = Server::from_snapshot(&snapshot);
+
+        assert!(
+            restored.work_has_inline_transclusions(doc),
+            "migrated transclusion must survive checkpoint roundtrip"
+        );
+        let result = restored.resolve_inline_transclusions(doc).unwrap();
+        assert!(
+            result.span_ranges.iter().any(|sr| sr.source_work_id == src),
+            "source work reference must survive roundtrip"
+        );
     }
 
     #[test]

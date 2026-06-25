@@ -871,7 +871,7 @@ export function CollaborativeEditor({
     const pre = document.createRange();
     pre.selectNodeContents(el);
     pre.setEnd(range.startContainer, range.startOffset);
-    const pos = pre.toString().length;
+    const pos = pre.toString().replace(/\u200B/g, "").length;
     onPlaceTransclusion(pos);
   }, [pendingTransclusion, onPlaceTransclusion]);
 
