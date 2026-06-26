@@ -31,3 +31,13 @@ original-code/xanadugold/src-rust/--data-dir/
 *.log
 security.log.*
 .opencode/
+original-code/xanadugold/src/
+original-code/xanadugold/formic/
+original-code/xanadugold/winfe/
+original-code/xanadugold/hack/
+original-code/xanadugold/dgj-server1/
+original-code/xanadugold/src.tar.gz
+original-code/xanadugold/smalltalk.tar.gz
+original-code/xanadugold/formic.tar.gz
+original-code/xanadugold/goldwinfe.tar.gz
+original-code/xanadugold/sthack.tar

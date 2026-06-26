@@ -1,6 +1,0 @@
-#ifndef XU_OPAQUEP_OXX
-#define XU_OPAQUEP_OXX
-
-XU_TYPE_2(XuCategory,XuCounted)
-
-#endif /* XU_OPAQUEP_OXX */

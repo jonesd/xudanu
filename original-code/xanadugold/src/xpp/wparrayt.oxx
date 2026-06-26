@@ -1,7 +1,0 @@
-#ifndef WPARRAYT_OXX
-#define WPARRAYT_OXX
-
-OPAQUE_TYPE_3(TestExecutor,XnExecutor,Heaper);
-OPAQUE_TYPE_2(SmallDyingThing,Heaper);
-
-#endif /* WPARRAYT_OXX */

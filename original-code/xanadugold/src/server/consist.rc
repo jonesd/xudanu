@@ -1,7 +1,0 @@
-WorksBootMaker();
-TrackCBlocks(FromDiskPlan(
-	Category(BeGrandMap),
-	"ent.ent"));
-WorksTester();
-PrintCBlocksTracks();
-NULL;

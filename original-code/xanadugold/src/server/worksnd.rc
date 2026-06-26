@@ -1,9 +1,0 @@
-GCMaxInterval(0);
-GCMinInterval(0);
-BackendBootMaker();
-WorksBootMaker();
-FakeDisk(Category(BeGrandMap));
-WorksIniter();
-IPRendezvousListener(65258);
-SelectServerLoop();
-NULL;

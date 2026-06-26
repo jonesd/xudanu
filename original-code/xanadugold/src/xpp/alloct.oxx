@@ -1,8 +1,0 @@
-#ifndef ALLOCT_OXX
-#define ALLOCT_OXX
-
-static char alloct_oxx_id[] = "$Id: alloct.oxx,v 2.2 1992/08/14 22:06:32 shap Exp $";
-
-OPAQUE_TYPE_2(Foo,Heaper);
-
-#endif /* ALLOCT_OXX */

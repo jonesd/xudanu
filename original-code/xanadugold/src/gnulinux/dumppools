@@ -1,8 +1,0 @@
-x/60x Heaplet::Current ->myBitMap
-x/60x Heaplet::NextCurrent->myBitMap
-x/60x Heaplet::CurrentDrainSet->myBitMap
-x/60x Heaplet::Old->myBitMap
-x/60x (Heaplet::PagePool)->myPagePool->myBitMap
-x/60x (Heaplet::PagePool)->myEmptyPagePool->myBitMap
-
-o

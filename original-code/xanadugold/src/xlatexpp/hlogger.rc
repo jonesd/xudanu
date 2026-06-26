@@ -1,4 +1,0 @@
-SwitchLogger("FooLog","cerr");
-SwitchLogger("VanillaLog","file");
-LogTester();
-NULL;

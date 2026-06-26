@@ -1,6 +1,0 @@
-#ifndef PARRAYP_OXX
-#define PARRAYP_OXX
-
-class PrimArrayHeap;
-
-#endif /* PARRAYP_OXX */

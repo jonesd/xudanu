@@ -1,7 +1,0 @@
-DiskPurgeRate(20);
-WorksBootMaker();
-FromDiskPlan(
-	Category(BeGrandMap),
-	"ent.ent");
-WorksTester();
-NULL;
