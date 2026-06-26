@@ -30,3 +30,4 @@ original-code/xanadugold/src-rust/--data-dir/
 *.key
 *.log
 security.log.*
+.opencode/
