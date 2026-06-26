@@ -13,6 +13,11 @@ export default defineConfig({
         target: "http://localhost:8080",
         ws: true,
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on("error", (err) => {
+            console.log("[ws proxy] error (non-fatal):", err.message);
+          });
+        },
       },
       "/csrf-token": {
         target: "http://localhost:8080",
