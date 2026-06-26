@@ -2588,10 +2588,48 @@ impl Server {
                 let clamped_end = src_span.end.min(sr.char_end as i64);
 
                 let offset = sr.flat_start as i64 - sr.char_start as i64;
+
+                let chain = self.transclusion_again_chain(
+                    sr.source_work_id,
+                    src_span.start as usize,
+                    src_span.end as usize,
+                );
+
+                let provenance_chain = if chain.is_empty() {
+                    None
+                } else {
+                    Some(
+                        chain
+                            .windows(2)
+                            .map(|w| super::transport::protocol::ProvenanceHopPayload {
+                                source_work_id: w[0].work_id,
+                                link_id: 0,
+                                source_work_title: Some(w[0].work_title.clone()),
+                                source_author_name: Some(w[0].author_name.clone()),
+                                dest_work_id: w[1].work_id,
+                            })
+                            .chain(std::iter::once(
+                                super::transport::protocol::ProvenanceHopPayload {
+                                    source_work_id: chain.last().unwrap().work_id,
+                                    link_id: 0,
+                                    source_work_title: Some(
+                                        chain.last().unwrap().work_title.clone(),
+                                    ),
+                                    source_author_name: Some(
+                                        chain.last().unwrap().author_name.clone(),
+                                    ),
+                                    dest_work_id: work_be_id,
+                                },
+                            ))
+                            .collect(),
+                    )
+                };
+
                 result.push(super::transport::protocol::AttributionSpanPayload {
                     start: clamped_start + offset,
                     end: clamped_end + offset,
                     source_work_id: Some(sr.source_work_id),
+                    provenance_chain,
                     ..src_span.clone()
                 });
             }

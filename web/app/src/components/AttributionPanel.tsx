@@ -269,10 +269,10 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
                   ? `sw:${span.source_work_id}`
                   : bytesToHex(span.author_public_key);
               const author = authors.find((a) => a.key === key);
-              const time = new Date(Number(BigInt(span.timestamp) / 1000000n));
+              const time = new Date(span.timestamp * 1000);
               return (
                 <li key={i} className="timeline-entry">
-                  <span className="timeline-time">{time.toLocaleTimeString()}</span>
+                  <span className="timeline-time">{time.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" })}</span>
                   <span className="timeline-range">[{span.start}..{span.end}]</span>
                   <span className="timeline-author" style={{ color: author?.color }}>
                     {author?.displayName || "unknown"}

@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compound Documents — How They Work</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg-panel: #12121a;
+    --bg-code: #0d0d14;
+    --neon-cyan: #00f0ff;
+    --neon-green: #00ff9f;
+    --neon-purple: #b14dff;
+    --neon-pink: #ff2d92;
+    --neon-amber: #ffaa00;
+    --neon-red: #ff4757;
+    --text: #e0e0e8;
+    --text-dim: #8888a0;
+    --text-bright: #ffffff;
+    --border: #1e1e2e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.7;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+  h1 {
+    font-size: 2.4em;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 20px rgba(0,240,255,0.3);
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  h1 .subtitle {
+    display: block;
+    font-size: 0.4em;
+    color: var(--text-dim);
+    text-shadow: none;
+    font-weight: 400;
+    margin-top: 4px;
+    letter-spacing: 0;
+  }
+  h2 {
+    font-size: 1.6em;
+    color: var(--neon-green);
+    margin-top: 48px;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 {
+    font-size: 1.2em;
+    color: var(--neon-purple);
+    margin-top: 32px;
+    margin-bottom: 12px;
+  }
+  h4 {
+    font-size: 1em;
+    color: var(--neon-amber);
+    margin-top: 24px;
+    margin-bottom: 8px;
+  }
+  p { margin-bottom: 14px; }
+  strong { color: var(--text-bright); }
+  code {
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.88em;
+    background: var(--bg-code);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--neon-cyan);
+    border: 1px solid var(--border);
+  }
+  pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    overflow-x: auto;
+    margin: 16px 0;
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--text);
+  }
+  .callout {
+    background: var(--bg-panel);
+    border-left: 3px solid var(--neon-cyan);
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 20px 0;
+  }
+  .callout.warning {
+    border-left-color: var(--neon-amber);
+  }
+  .callout.danger {
+    border-left-color: var(--neon-red);
+  }
+  .callout.success {
+    border-left-color: var(--neon-green);
+  }
+  .callout-title {
+    font-weight: 700;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--neon-cyan);
+    margin-bottom: 8px;
+  }
+  .callout.warning .callout-title { color: var(--neon-amber); }
+  .callout.danger .callout-title { color: var(--neon-red); }
+  .callout.success .callout-title { color: var(--neon-green); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.9em;
+  }
+  th {
+    text-align: left;
+    padding: 10px 14px;
+    background: var(--bg-panel);
+    color: var(--neon-cyan);
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  td strong { color: var(--text); }
+  .diagram {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin: 24px 0;
+    overflow-x: auto;
+  }
+  .diagram-label {
+    text-align: center;
+    font-size: 0.8em;
+    color: var(--text-dim);
+    margin-top: 12px;
+    font-style: italic;
+  }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tag-live { background: rgba(0,255,159,0.15); color: var(--neon-green); border: 1px solid rgba(0,255,159,0.3); }
+  .tag-copy { background: rgba(255,170,0,0.15); color: var(--neon-amber); border: 1px solid rgba(255,170,0,0.3); }
+  .tag-meta { background: rgba(177,77,255,0.15); color: var(--neon-purple); border: 1px solid rgba(177,77,255,0.3); }
+  .toc {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 24px 0;
+  }
+  .toc-title {
+    font-size: 0.8em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--neon-purple);
+    margin-bottom: 10px;
+  }
+  .toc ol { padding-left: 20px; }
+  .toc li { margin-bottom: 4px; }
+  .toc a { color: var(--neon-cyan); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .flow-step {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    margin: 16px 0;
+  }
+  .flow-number {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--bg-code);
+    border: 2px solid var(--neon-cyan);
+    color: var(--neon-cyan);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9em;
+  }
+  .flow-content { flex: 1; }
+  .flow-content > strong { color: var(--neon-cyan); }
+  .use-case {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 16px 0;
+  }
+  .use-case-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .use-case-level {
+    font-size: 0.7em;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .level-simple { background: rgba(0,255,159,0.15); color: var(--neon-green); }
+  .level-medium { background: rgba(255,170,0,0.15); color: var(--neon-amber); }
+  .level-advanced { background: rgba(255,45,146,0.15); color: var(--neon-pink); }
+  .level-vision { background: rgba(177,77,255,0.15); color: var(--neon-purple); }
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 40px 0;
+  }
+  .ascii-art {
+    font-family: "SF Mono", monospace;
+    font-size: 0.78em;
+    line-height: 1.35;
+    color: var(--text);
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .ascii-art .cyan { color: var(--neon-cyan); }
+  .ascii-art .green { color: var(--neon-green); }
+  .ascii-art .amber { color: var(--neon-amber); }
+  .ascii-art .purple { color: var(--neon-purple); }
+  .ascii-art .pink { color: var(--neon-pink); }
+  .ascii-art .dim { color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<h1>
+  Compound Documents
+  <span class="subtitle">How live transclusion works in xudanu — mechanisms, flows, and use cases</span>
+</h1>
+
+<div class="toc">
+  <div class="toc-title">Contents</div>
+  <ol>
+    <li><a href="#core-concept">The Core Concept</a></li>
+    <li><a href="#three-stores">The Three Stores (and why it's confusing)</a></li>
+    <li><a href="#mechanism-1">Mechanism 1: The O-Tree (your text)</a></li>
+    <li><a href="#mechanism-2">Mechanism 2: Compound Editions (live spans)</a></li>
+    <li><a href="#mechanism-3">Mechanism 3: Transclusion Links (attribution)</a></li>
+    <li><a href="#current-flow">The Current Flow (step by step)</a></li>
+    <li><a href="#design-tension">The Design Tension</a></li>
+    <li><a href="#live-updates">How Live Updates Work</a></li>
+    <li><a href="#use-cases">Use Cases: Simple to Visionary</a></li>
+    <li><a href="#where-were-going">Where We're Going</a></li>
+  </ol>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="core-concept">1. The Core Concept</h2>
+
+<p>A <strong>compound document</strong> is a document whose content is assembled from
+<em>live pieces of other documents</em> — not copies. When a source document changes,
+every compound document that references it automatically reflects the change.</p>
+
+<p>This is Ted Nelson's original vision for transclusion: the same content can appear
+in multiple places simultaneously, always in sync, without duplication.</p>
+
+<div class="diagram">
+<div class="ascii-art"><span class="dim">┌─────────────────┐</span>     <span class="cyan">┌──────────────────────────┐</span>
+<span class="dim">│  Source Work A  │</span>     <span class="cyan">│    Compound Document     │</span>
+<span class="dim">│                 │</span>     <span class="cyan">│                          │</span>
+<span class="dim">│ "The quick brown│</span><span class="green">─────►</span><span class="cyan">│ [span: Work A, 0:15] ──► │</span> "The quick brown"
+<span class="dim">│  fox jumps over │</span>     <span class="cyan">│                          │</span>
+<span class="dim">│  the lazy dog"  │</span>     <span class="cyan">│  (literal text)          │</span> " and then "
+<span class="dim">│                 │</span>     <span class="cyan">│                          │</span>
+<span class="dim">└─────────────────┘</span>     <span class="cyan">│ [span: Work B, 4:20] ──► │</span> "rendipity happens"
+<span class="dim">┌─────────────────┐</span>     <span class="cyan">│                          │</span>
+<span class="dim">│  Source Work B  │</span><span class="green">─────►</span><span class="cyan">└──────────────────────────┘</span>
+<span class="dim">│ "Seseapprendipit│</span>     <span class="dim">↑ resolved text shown to reader</span>
+<span class="dim">│  y happens"     │</span>
+<span class="dim">└─────────────────┘</span>
+
+<span class="dim">The compound doc doesn't store "The quick brown" — it stores a</span>
+<span class="dim">reference (Work A, chars 0-15). When Work A changes, the</span>
+<span class="dim">compound doc automatically reflects the new text.</span>
+</div>
+<div class="diagram-label">A compound document assembles content from multiple sources via live references</div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="three-stores">2. The Three Stores (and why it's confusing)</h2>
+
+<p>Every work in xudanu has up to <strong>three separate data stores</strong> that can
+hold text content. Understanding how they interact is the key to understanding
+the system:</p>
+
+<table>
+  <tr>
+    <th>Store</th>
+    <th>What it is</th>
+    <th>Type</th>
+    <th>Where</th>
+  </tr>
+  <tr>
+    <td><strong>O-Tree / CRDT</strong></td>
+    <td>The work's primary text buffer. What you edit in the editor. Persisted as revisions.</td>
+    <td><span class="tag tag-copy">Static Copy</span></td>
+    <td><code>Edition</code> entries in the ordered tree</td>
+  </tr>
+  <tr>
+    <td><strong>Compound Edition</strong></td>
+    <td>A side-table of elements (text literals + live span references). Optional metadata.</td>
+    <td><span class="tag tag-live">Live References</span></td>
+    <td><code>compound_editions: HashMap&lt;BeId, CompoundEdition&gt;</code></td>
+  </tr>
+  <tr>
+    <td><strong>Transclusion Links</strong></td>
+    <td>Inter-document hyperlinks with attribution and provenance chains.</td>
+    <td><span class="tag tag-meta">Metadata</span></td>
+    <td><code>links: HashMap&lt;BeId, HyperLink&gt;</code></td>
+  </tr>
+</table>
+
+<div class="callout warning">
+  <div class="callout-title">Why it's confusing</div>
+  When you place a transclusion, all three stores get written simultaneously.
+  The O-tree gets a text copy, the compound edition gets a span reference,
+  and the link system gets an attribution record. They can drift apart if
+  you edit one without the others.
+</div>
+
+<!-- ================================================================ -->
+<h2 id="mechanism-1">3. Mechanism 1: The O-Tree (your text)</h2>
+
+<p>This is the <strong>primary content store</strong>. When you type in the editor,
+you're modifying the O-tree. It's a CRDT — conflict-free, supports concurrent
+editing, and persists as numbered revisions.</p>
+
+<pre><code>// Simplified structure
+Edition {
+    orgl_root: OrglRoot,      // the ordered tree (o-tree)
+    endorsements: [...],      // who has vouched for this
+    // entries: [(position, RangeElement)] — text characters at positions
+}
+
+// What you see in the editor IS the O-tree text
+editor.textContent === otree.get_text()</code></pre>
+
+<p><span class="tag tag-copy">STATIC COPY</span> — When text from another work is pasted
+into the O-tree, it becomes a <strong>copy</strong>. It does not update when the
+source changes. This is just like copying text in a normal editor.</p>
+
+<!-- ================================================================ -->
+<h2 id="mechanism-2">4. Mechanism 2: Compound Editions (live spans)</h2>
+
+<p>This is the <strong>transclusion engine</strong>. A compound edition is an ordered
+list of elements, each either literal text or a live span reference:</p>
+
+<pre><code>CompoundEdition {
+    elements: [
+        Text { content: "Introduction. " },
+        Span  { span: CompoundSpan {
+            source_work_id: 1006,   // which work to reference
+            char_start: 0,          // character offset in source
+            char_end: 46,           // end offset (exclusive)
+        }},
+        Text { content: " Conclusion." },
+    ]
+}</code></pre>
+
+<p><span class="tag tag-live">LIVE REFERENCE</span> — The span doesn't store text.
+It stores a pointer <code>(work_id, char_start, char_end)</code>. When you
+<em>resolve</em> the compound, the system fetches the current text from each
+source work and assembles the result:</p>
+
+<div class="diagram">
+<div class="ascii-art">
+<span class="dim">Compound Edition:</span>
+<span class="cyan">┌──────────────┐   ┌──────────────────┐   ┌──────────────┐</span>
+<span class="cyan">│ Text: "Intro"│   │ Span: W1006 [0:5]│   │ Text: " End."│</span>
+<span class="cyan">└──────┬───────┘   └────────┬─────────┘   └──────┬───────┘</span>
+<span class="dim">       │                    │                    │</span>
+<span class="dim">       │           ┌────────▼─────────┐          │</span>
+<span class="dim">       │           │ Fetch from W1006 │          │</span>
+<span class="dim">       │           │ "Hello World!!!" │          │</span>
+<span class="dim">       │           │ chars [0:5]      │          │</span>
+<span class="dim">       │           │ = "Hello"        │          │</span>
+<span class="dim">       │           └────────┬─────────┘          │</span>
+<span class="dim">       │                    │                    │</span>
+<span class="dim">       ▼                    ▼                    ▼</span>
+<span class="green">Resolved text: "Intro" + "Hello" + " End." = "IntroHello End."</span>
+</div>
+<div class="diagram-label">Resolution: the compound engine fetches live text from each source and concatenates</div>
+</div>
+
+<h4>What happens when a source changes?</h4>
+
+<p>The compound engine has <strong>span migration</strong> — when Work A is edited,
+all compound spans referencing Work A have their offsets automatically adjusted:</p>
+
+<div class="diagram">
+<div class="ascii-art">
+<span class="dim">BEFORE: Source Work A = "Hello World"</span>
+<span class="dim">  Compound span: [0:5] → resolves to "Hello"</span>
+
+<span class="amber">EDIT: Insert "GPS " at position 0 → "GPS Hello World"</span>
+
+<span class="dim">AFTER: Span migrated by +4 chars</span>
+<span class="dim">  Compound span: [4:9] → resolves to "Hello" ✓</span>
+
+<span class="green">The compound document still shows "Hello" — the reference followed the text.</span>
+</div>
+<div class="diagram-label">Span migration: offsets shift to track content through edits</div>
+</div>
+
+<h4>Resolution modes</h4>
+<table>
+  <tr><th>Mode</th><th>Depth</th><th>Use case</th></tr>
+  <tr><td><code>resolve_compound_edition</code></td><td>1 level</td><td>Quick preview — only resolves direct spans</td></tr>
+  <tr><td><code>resolve_compound_recursive</code></td><td>Up to 32 levels</td><td>Full resolution — follows chains of compound→compound</td></tr>
+</table>
+
+<!-- ================================================================ -->
+<h2 id="mechanism-3">5. Mechanism 3: Transclusion Links (attribution)</h2>
+
+<p>Links are the <strong>provenance and attribution layer</strong>. They record
+<em>why</em> a piece of text appeared in your document, who put it there, and the
+chain of derivation:</p>
+
+<pre><code>HyperLink {
+    link_id: 0x1A2B,
+    origin: this_work,          // where the link lives
+    destination: source_work,   // where the content came from
+    origin_ref: HyperRef {      // the span in THIS work
+        start_position: 42,
+        end_position: 88,
+        excerpt: "The quick brown fox",
+    },
+    link_types: [3, 7],         // typed links (quotation, paraphrase, etc.)
+}</code></pre>
+
+<p>Links power the <strong>backfollow engine</strong> — the system that detects when
+content from one work appears in another, using BLAKE3 content fingerprints.
+This is separate from compound spans: links track <em>attribution</em>, compound
+spans track <em>live content resolution</em>.</p>
+
+<div class="callout">
+  <div class="callout-title">Key distinction</div>
+  <p><strong>Compound spans</strong> answer: <em>"What text should I show here?"</em><br>
+  <strong>Links</strong> answer: <em>"Where did this text come from and who vouches for it?"</em></p>
+  <p>A transclusion creates both, but they serve different purposes and can exist independently.</p>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="current-flow">6. The Current Flow (step by step)</h2>
+
+<p>Here's exactly what happens today when you place a transclusion:</p>
+
+<div class="flow-step">
+  <div class="flow-number">1</div>
+  <div class="flow-content">
+    <strong>Select text in a source work</strong><br>
+    You open Work A (a source document), highlight some text, and the selection
+    gets "held" by the transclusion hook (<code>holdSelection()</code>).
+    The excerpt text and its character offsets are stashed.
+  </div>
+</div>
+
+<div class="flow-step">
+  <div class="flow-number">2</div>
+  <div class="flow-content">
+    <strong>Navigate to your compound work</strong><br>
+    You switch to Work B (the document you're composing). A floating
+    <em>TransclusionBadge</em> appears showing the held excerpt.
+  </div>
+</div>
+
+<div class="flow-step">
+  <div class="flow-number">3</div>
+  <div class="flow-content">
+    <strong>Place the transclusion</strong><br>
+    <code>handlePlaceTransclusion()</code> fires and does <strong>three things at once</strong>:
+    <pre><code>// 1. Insert excerpt text into O-tree (STATIC COPY)
+setText(text.slice(0, pos) + excerpt + text.slice(pos));
+
+// 2. Record compound span (LIVE REFERENCE)
+compound.addSpan(text, pos, excerpt, sourceWorkId, charStart, charEnd);
+
+// 3. Create attribution link (METADATA)
+transclusion.placeTransclusion(sourceWorkId, excerpt, charStart, charEnd);</code></pre>
+  </div>
+</div>
+
+<div class="flow-step">
+  <div class="flow-number">4</div>
+  <div class="flow-content">
+    <strong>Three stores are now written</strong><br>
+    The O-tree has the text copy, the compound edition has the span reference,
+    and the link system has the attribution record. <strong>All three describe
+    the same content</strong>, but through different mechanisms.
+  </div>
+</div>
+
+<div class="flow-step">
+  <div class="flow-number">5</div>
+  <div class="flow-content">
+    <strong>Reading mode shows resolved text</strong><br>
+    When you switch to reading mode, <code>displayText</code> switches from the
+    O-tree text to <code>compound.resolvedText</code> — the live-resolved version
+    that fetches current content from sources.
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="callout-title">The drift problem</div>
+  If you later edit the O-tree text directly (delete the transclusion paragraph,
+  add text around it), the O-tree text and the compound edition diverge. The
+  compound panel lets you fix the compound edition, but the O-tree copy becomes
+  stale. This is the core UX confusion.
+</div>
+
+<!-- ================================================================ -->
+<h2 id="design-tension">7. The Design Tension</h2>
+
+<p>There are two possible architectures, and we're currently straddling both:</p>
+
+<div class="diagram">
+<div class="ascii-art">
+<span class="amber">ARCHITECTURE A: "Compound as side-table" (CURRENT)</span>
+<span class="dim">┌────────────────────────────────────────────────┐</span>
+<span class="dim">│ Work B                                          │</span>
+<span class="dim">│ ┌─────────────────┐  ┌──────────────────────┐  │</span>
+<span class="dim">│ │ O-Tree (primary)│  │ Compound Edition     │  │</span>
+<span class="dim">│ │ "Intro Hello End"│  │ [Text, Span, Text]   │  │</span>
+<span class="dim">│ │ (editable copy)  │  │ (live references)    │  │</span>
+<span class="dim">│ └────────┬────────┘  └──────────┬───────────┘  │</span>
+<span class="dim">│          │                      │               │</span>
+<span class="dim">│     editing mode            reading mode         │</span>
+<span class="dim">│     shows this              shows resolved       │</span>
+<span class="dim">└────────────────────────────────────────────────┘</span>
+<span class="dim">Problem: two copies of content, can drift apart</span>
+
+
+<span class="green">ARCHITECTURE B: "Compound as primary" (FUTURE?)</span>
+<span class="dim">┌────────────────────────────────────────────────┐</span>
+<span class="dim">│ Work B (compound type)                          │</span>
+<span class="dim">│ ┌────────────────────────────────────────────┐ │</span>
+<span class="dim">│ │ Compound Edition = THE document            │ │</span>
+<span class="dim">│ │ [Text, Span→A, Text, Span→B, Span→C, Text] │ │</span>
+<span class="dim">│ │                                            │ │</span>
+<span class="dim">│ │ Resolved text is the ONLY text             │ │</span>
+<span class="dim">│ │ No O-tree copy needed                      │ │</span>
+<span class="dim">│ └────────────────────────────────────────────┘ │</span>
+<span class="dim">└────────────────────────────────────────────────┘</span>
+<span class="dim">No drift possible — there's only one source of truth</span>
+</div>
+<div class="diagram-label">Two possible architectures: side-table (current) vs. primary (proposed)</div>
+</div>
+
+<p>Architecture B would eliminate the drift problem entirely, but requires a
+new work type whose primary content IS the compound edition. The O-tree would
+only be used for non-compound works.</p>
+
+<!-- ================================================================ -->
+<h2 id="live-updates">8. How Live Updates Work</h2>
+
+<p>When a source work is edited, the compound system propagates the change:</p>
+
+<div class="diagram">
+<div class="ascii-art">
+<span class="dim">User edits Work A (source)</span>
+<span class="dim">       │</span>
+<span class="dim">       ▼</span>
+<span class="amber">┌─────────────────────────────────┐</span>
+<span class="dim">│ 1. Text delta applied to O-tree │</span>
+<span class="dim">│    of Work A                    │</span>
+<span class="amber">└──────────────┬──────────────────┘</span>
+<span class="dim">               │</span>
+<span class="dim">               ▼</span>
+<span class="amber">┌─────────────────────────────────┐</span>
+<span class="dim">│ 2. migrate_compound_spans_      │</span>
+<span class="dim">│    for_delta()                  │</span>
+<span class="dim">│    Finds all compound editions  │</span>
+<span class="dim">│    referencing Work A and       │</span>
+<span class="dim">│    shifts their span offsets    │</span>
+<span class="amber">└──────────────┬──────────────────┘</span>
+<span class="dim">               │</span>
+<span class="dim">               ▼</span>
+<span class="amber">┌─────────────────────────────────┐</span>
+<span class="dim">│ 3. CompoundSourceChanged event  │</span>
+<span class="dim">│    Pushed to all sessions       │</span>
+<span class="dim">│    currently viewing any        │</span>
+<span class="dim">│    compound work that refs A    │</span>
+<span class="amber">└──────────────┬──────────────────┘</span>
+<span class="dim">               │</span>
+<span class="dim">               ▼</span>
+<span class="amber">┌─────────────────────────────────┐</span>
+<span class="dim">│ 4. Client re-resolves           │</span>
+<span class="dim">│    compoundResolveRecursive()   │</span>
+<span class="dim">│    Gets fresh text from source  │</span>
+<span class="dim">│    Updates display              │</span>
+<span class="amber">└─────────────────────────────────┘</span>
+</div>
+<div class="diagram-label">Live update pipeline: source edit → span migration → push → re-resolve</div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="use-cases">9. Use Cases: Simple to Visionary</h2>
+
+<div class="use-case">
+  <div class="use-case-header">
+    <span class="use-case-level level-simple">Level 1</span>
+    <strong>Quotation Anthology</strong>
+  </div>
+  <p>A document that collects excerpts from multiple source works. Each excerpt
+  is a live span — if the source is corrected or updated, the anthology reflects it.</p>
+  <pre><code>CompoundEdition {
+    Text { "Notable quotes:\n\n" },
+    Span { src: Shakespeare, [120:145] },  // "To be or not to be..."
+    Text { "\n\n— Hamlet\n\n" },
+    Span { src: Tolstoy, [3000:3080] },    // "All happy families..."
+    Text { "\n\n— Anna Karenina" },
+}</code></pre>
+</div>
+
+<div class="use-case">
+  <div class="use-case-header">
+    <span class="use-case-level level-simple">Level 1</span>
+    <strong>Shared Boilerplate / Templates</strong>
+  </div>
+  <p>Maintain a single "disclaimer" or "about" work. Every document that needs
+  the boilerplate references it via a compound span. Update the source once,
+  all documents update.</p>
+</div>
+
+<div class="use-case">
+  <div class="use-case-header">
+    <span class="use-case-level level-medium">Level 2</span>
+    <strong>Collaborative Study Guide</strong>
+  </div>
+  <p>A study guide that assembles passages from a textbook (source work) with
+  interleaved commentary (literal text). When the textbook is revised, the
+  relevant passages in the study guide update automatically.</p>
+  <pre><code>Text { "Chapter 3 discusses recursion. Key passage:\n\n" },
+Span { src: Textbook, [4500:4600] },     // textbook passage
+Text { "\n\nAnalysis: The author's approach to..." },
+Span { src: Textbook, [4800:4900] },     // another passage
+Text { "\n\nThis connects to..." }</code></pre>
+</div>
+
+<div class="use-case">
+  <div class="use-case-header">
+    <span class="use-case-level level-medium">Level 2</span>
+    <strong>Multilingual Parallel Text</strong>
+  </div>
+  <p>A document showing original text and translation side by side. The original
+  language work and translation work are both sources. Edits to either propagate
+  to the parallel reading view.</p>
+</div>
+
+<div class="use-case">
+  <div class="use-case-header">
+    <span class="use-case-level level-advanced">Level 3</span>
+    <strong>Golden Thread / Deep Transclusion Chains</strong>
+  </div>
+  <p>A compound document references another compound document, which references
+  another, creating a chain of live transclusions. Resolution follows the chain
+  recursively (up to 32 levels). This is Nelson's "golden thread" — following
+  content back through layers of derivation.</p>
+  <pre><code>Doc C (compound) → spans in Doc B (compound) → spans in Doc A (source)
+
+Resolving Doc C recursively:
+  1. Fetch Doc B's compound edition
+  2. For each span in Doc B, resolve it against Doc A
+  3. Assemble the final text from the entire chain</code></pre>
+</div>
+
+<div class="use-case">
+  <div class="use-case-header">
+    <span class="use-case-level level-advanced">Level 3</span>
+    <strong>Versioned Anthology with Reordering</strong>
+  </div>
+  <p>An anthology where the editor can reorder, add, and remove excerpts without
+  affecting the source works. Using the incremental compound ops
+  (<code>insert</code>, <code>remove</code>, <code>move</code>), the editor
+  restructures the composition while all spans remain live.</p>
+</div>
+
+<div class="use-case">
+  <div class="use-case-header">
+    <span class="use-case-level level-vision">Vision</span>
+    <strong>Nelson's Original Vision: The Xanadu Docuverse</strong>
+  </div>
+  <p>In the full vision, <em>everything</em> is transclusion. No document copies
+  content — every document is a compound of live references to a universal
+  docuverse. Authors are paid micropayments when their content is transcluded.
+  Copyright becomes attribution tracking rather than access control.</p>
+  <p>xudanu implements the technical foundation: content-addressed storage,
+  live span references, recursive resolution, and per-element provenance. The
+  economic and social layers are future work.</p>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="where-were-going">10. Where We're Going</h2>
+
+<table>
+  <tr><th>Feature</th><th>Status</th><th>What it enables</th></tr>
+  <tr>
+    <td>Incremental compound ops<br><code>insert</code> / <code>remove</code> / <code>move</code></td>
+    <td><span class="tag tag-live">Done</span></td>
+    <td>Edit compound structure element-by-element without wholesale replacement</td>
+  </tr>
+  <tr>
+    <td>Push-based live updates<br><code>CompoundSourceChanged</code></td>
+    <td><span class="tag tag-live">Done</span></td>
+    <td>Instant notification when source works change (replaces 3s polling)</td>
+  </tr>
+  <tr>
+    <td>Compound composition panel</td>
+    <td><span class="tag tag-live">Done</span></td>
+    <td>Visual sidebar for viewing and editing compound structure</td>
+  </tr>
+  <tr>
+    <td>Compound as primary content type</td>
+    <td><span class="tag tag-meta">Future</span></td>
+    <td>Eliminate the dual-copy drift — compound IS the document</td>
+  </tr>
+  <tr>
+    <td>RangeElement::Transclusion</td>
+    <td><span class="tag tag-meta">Future</span></td>
+    <td>Transclusion as a first-class element in the O-tree itself</td>
+  </tr>
+  <tr>
+    <td>Recursive transclusion rendering</td>
+    <td><span class="tag tag-meta">Future</span></td>
+    <td>Inline rendering of transcluded content with visible "golden thread" UI</td>
+  </tr>
+  <tr>
+    <td>Federated compound resolution</td>
+    <td><span class="tag tag-meta">Future</span></td>
+    <td>Spans referencing works on other xudanu servers</td>
+  </tr>
+  <tr>
+    <td>Royalty / micropayment tracking</td>
+    <td><span class="tag tag-meta">Future</span></td>
+    <td>Nelson's Rule 9: payment at any granularity</td>
+  </tr>
+</table>
+
+<div class="callout success">
+  <div class="callout-title">Bottom line</div>
+  <p>The mechanical foundation is solid: live span references, recursive resolution,
+  span migration, push updates, and incremental editing are all working. The
+  remaining work is <strong>architectural</strong> — making compound editions
+  first-class rather than a side-table — and <strong>UX</strong> — making the
+  composition workflow intuitive rather than confusing.</p>
+</div>
+
+<hr>
+<p style="color: var(--text-dim); font-size: 0.8em; text-align: center;">
+  xudanu compound documents — generated for team review<br>
+  Backend ops: 0x1D01-0x1D08 &nbsp;|&nbsp; Event: <code>CompoundSourceChanged</code> &nbsp;|&nbsp; Resolution depth: 32 levels
+</p>
+
+</body>
+</html>
