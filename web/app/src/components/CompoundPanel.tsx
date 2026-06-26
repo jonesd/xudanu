@@ -21,28 +21,34 @@ export function CompoundPanel({
   sourceTitles,
   spanRanges,
   onReload,
-  onInsertElement,
-  onRemoveElement,
   onMoveElement,
   onRemoveTransclusion,
 }: CompoundPanelProps) {
   const [elements, setElements] = useState<CompoundElementPayload[]>([]);
   const [resolvedText, setResolvedText] = useState("");
   const [expanded, setExpanded] = useState(true);
-  const [addingText, setAddingText] = useState<number | null>(null);
-  const [textValue, setTextValue] = useState("");
 
   const loadElements = useCallback(async () => {
     if (!client || workBeId === null) return;
     try {
-      const edition = await client.compoundGetEdition(workBeId);
-      if (edition && edition.elements) {
-        setElements(edition.elements);
+      const result = await client.resolveInlineTransclusions(workBeId);
+      if (result.spanRanges && result.spanRanges.length > 0) {
+        const inlineElements: CompoundElementPayload[] = result.spanRanges.map((sr) => ({
+          type: "span" as const,
+          source_work_id: sr.source_work_id,
+          char_start: sr.char_start,
+          char_end: sr.char_end,
+        }));
+        setElements(inlineElements);
       } else {
-        setElements([]);
+        const edition = await client.compoundGetEdition(workBeId);
+        if (edition && edition.elements) {
+          setElements(edition.elements);
+        } else {
+          setElements([]);
+        }
       }
-      const result = await client.compoundResolveWork(workBeId);
-      setResolvedText(result.flat_text || "");
+      setResolvedText(result.text || "");
     } catch {
       // expected during transitions
     }
@@ -57,12 +63,10 @@ export function CompoundPanel({
     if (!elem) return;
     if (elem.type === "span" && onRemoveTransclusion) {
       await onRemoveTransclusion(elem.source_work_id, elem.char_start, elem.char_end);
-    } else {
-      await onRemoveElement(index);
     }
     await loadElements();
     onReload();
-  }, [onRemoveElement, onRemoveTransclusion, elements, loadElements, onReload]);
+  }, [onRemoveTransclusion, elements, loadElements, onReload]);
 
   const handleMoveUp = useCallback(async (index: number) => {
     if (index === 0) return;
@@ -77,18 +81,6 @@ export function CompoundPanel({
     await loadElements();
     onReload();
   }, [onMoveElement, loadElements, onReload, elements.length]);
-
-  const handleAddText = useCallback(async (index: number) => {
-    if (!textValue.trim()) {
-      setAddingText(null);
-      return;
-    }
-    await onInsertElement(index, { type: "text", content: textValue });
-    setTextValue("");
-    setAddingText(null);
-    await loadElements();
-    onReload();
-  }, [onInsertElement, loadElements, onReload, textValue]);
 
   if (elements.length === 0 && !canEdit) return null;
 
@@ -129,43 +121,11 @@ export function CompoundPanel({
                   <button type="button" className="compound-btn compound-btn-del" onClick={() => handleRemove(i)} title="Remove">&#215;</button>
                 </span>
               )}
-            </div>
+             </div>
           ))}
-          {canEdit && (
-            <div className="compound-add-section">
-              {addingText === null ? (
-                <>
-                  <button
-                    type="button"
-                    className="compound-btn"
-                    onClick={() => setAddingText(elements.length)}
-                  >
-                    + Add text
-                  </button>
-                </>
-              ) : (
-                <div className="compound-text-input">
-                  <input
-                    type="text"
-                    value={textValue}
-                    onChange={(e) => setTextValue(e.target.value)}
-                    placeholder="Enter text content..."
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleAddText(addingText);
-                      if (e.key === "Escape") { setAddingText(null); setTextValue(""); }
-                    }}
-                  />
-                  <button type="button" className="compound-btn" onClick={() => handleAddText(addingText)}>Add</button>
-                  <button type="button" className="compound-btn" onClick={() => { setAddingText(null); setTextValue(""); }}>Cancel</button>
-                </div>
-              )}
-            </div>
-          )}
           {elements.length === 0 && (
             <div className="compound-empty-hint">
-              No compound elements. Use the transclusion placement workflow
-              (select text in a source work, then place it here) to add live spans.
+              No transclusions. Select text in a source work, then place it here.
             </div>
           )}
         </div>

@@ -2585,7 +2585,7 @@ fn dispatch_inner(
         }
 
         WireRequest::CrdtSyncOpen { work_id } => {
-            srv.ensure_logged_in(session_id)?;
+            srv.ensure_authenticated(session_id)?;
             let result = srv.crdt_open_session(session_id, work_id)?;
             Ok(ResponseValue::CrdtSyncOpenResult {
                 state_vector: result.state_vector,

@@ -1,0 +1,55 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Security: Install Rust Tools",
+      "type": "shell",
+      "command": "./scripts/security-checks.sh",
+      "args": ["install-tools"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Security: cargo audit",
+      "type": "shell",
+      "command": "./scripts/security-checks.sh",
+      "args": ["audit"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Security: cargo deny",
+      "type": "shell",
+      "command": "./scripts/security-checks.sh",
+      "args": ["deny"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Security: clippy strict",
+      "type": "shell",
+      "command": "./scripts/security-checks.sh",
+      "args": ["clippy"],
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Security: Sonar Prep (Clippy JSON)",
+      "type": "shell",
+      "command": "./scripts/security-checks.sh",
+      "args": ["sonar-prep"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Security: Sonar Scan",
+      "type": "shell",
+      "command": "./scripts/security-checks.sh",
+      "args": ["sonar-scan"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Security: Full Baseline",
+      "type": "shell",
+      "command": "./scripts/security-checks.sh",
+      "args": ["all"],
+      "problemMatcher": ["$rustc"],
+      "group": "test"
+    }
+  ]
+}

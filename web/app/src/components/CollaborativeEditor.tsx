@@ -221,6 +221,25 @@ function drawOverlay(
       const barOffset = (csIndex % 3) * 4;
       ctx.fillStyle = "#f59e0ba0";
       ctx.fillRect(0 + barOffset, firstTop, 3, barHeight);
+
+      hitZones.push({
+        marker: {
+          start: cs.flat_start,
+          end: cs.flat_end,
+          linkId: 0,
+          direction: "outgoing" as const,
+          otherWorkId: cs.source_work_id,
+          otherWorkTitle: "",
+          color: "#f59e0b",
+          provenanceChain: undefined,
+          otherWorkIsArchived: undefined,
+          otherWorkOwner: undefined,
+        },
+        x: 0,
+        y: firstTop,
+        width: Math.max(barOffset + 3, 12),
+        height: barHeight,
+      });
     }
   }
 

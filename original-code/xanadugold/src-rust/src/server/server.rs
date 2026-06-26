@@ -9849,6 +9849,13 @@ impl Server {
         work_be_id: BeId,
     ) -> Result<(), ServerError> {
         self.ensure_session(session_id)?;
+        let session = self
+            .sessions
+            .get(&session_id)
+            .ok_or(ServerError::SessionNotFound(session_id))?;
+        if session.club_signing_key().is_none() {
+            return Err(ServerError::NotAuthorized);
+        }
         let ws = self
             .works
             .get(&work_be_id)
