@@ -2456,43 +2456,57 @@ impl Server {
 
         let own_spans = self.attribution_query(work_be_id, None, None)?;
 
-        let mut otree_to_resolved: std::collections::HashMap<i64, usize> =
-            std::collections::HashMap::new();
-        let mut otree_pos: i64 = 0;
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        let edition = ws.work.current_edition();
+        let entries = edition.cached_entries();
+
+        let mut sorted_spans = resolved.span_ranges.clone();
+        sorted_spans.sort_by_key(|sr| sr.flat_start);
+        let mut span_idx = 0usize;
+
+        let mut char_to_resolved: Vec<usize> = Vec::new();
+        let mut own_char_pos: usize = 0;
         let mut resolved_pos: usize = 0;
 
-        for sr in &resolved.span_ranges {
-            while (resolved_pos as i64) < sr.flat_start as i64 {
-                otree_to_resolved.insert(otree_pos, resolved_pos);
-                otree_pos += 1;
-                resolved_pos += 1;
+        for (_, carrier) in entries.iter() {
+            let entry_len = carrier.char_len();
+
+            if carrier.element.is_transclusion() {
+                while span_idx < sorted_spans.len()
+                    && sorted_spans[span_idx].flat_start <= resolved_pos
+                {
+                    resolved_pos = resolved_pos.max(sorted_spans[span_idx].flat_end);
+                    span_idx += 1;
+                }
+            } else {
+                for _ in 0..entry_len {
+                    char_to_resolved.push(resolved_pos);
+                    own_char_pos += 1;
+                    resolved_pos += 1;
+                }
             }
-            otree_to_resolved.insert(otree_pos, sr.flat_start);
-            resolved_pos = sr.flat_end;
         }
-        loop {
-            otree_to_resolved.insert(otree_pos, resolved_pos);
-            if otree_pos as usize >= own_spans.len() {
-                break;
+
+        let map_char = |pos: i64| -> i64 {
+            let p = pos as usize;
+            if p == 0 {
+                char_to_resolved.get(0).copied().unwrap_or(0) as i64
+            } else if p <= char_to_resolved.len() {
+                char_to_resolved[p - 1] as i64 + 1
+            } else {
+                pos
             }
-            otree_pos += 1;
-            resolved_pos += 1;
-        }
+        };
 
         let mut result: Vec<super::transport::protocol::AttributionSpanPayload> = Vec::new();
 
         for span in &own_spans {
-            let mapped_start = otree_to_resolved
-                .get(&span.start)
-                .copied()
-                .unwrap_or(span.start as usize) as i64;
-            let mapped_end = otree_to_resolved
-                .get(&span.end)
-                .copied()
-                .unwrap_or(span.end as usize) as i64;
             result.push(super::transport::protocol::AttributionSpanPayload {
-                start: mapped_start,
-                end: mapped_end,
+                start: map_char(span.start),
+                end: map_char(span.end),
                 ..span.clone()
             });
         }
@@ -2502,17 +2516,48 @@ impl Server {
                 .attribution_query(sr.source_work_id, None, None)
                 .unwrap_or_default();
 
+            let src_text_len = self
+                .work_text(sr.source_work_id)
+                .map(|t| t.chars().count())
+                .unwrap_or(0);
+
+            let src_span_coverage: usize = src_spans
+                .iter()
+                .map(|s| (s.end - s.start).max(0) as usize)
+                .sum();
+
+            tracing::info!(
+                "[attribution_resolved] transclusion src={:04x} char_range=[{},{}] content_len={} \
+                 src_text_len={} src_spans={} src_coverage={}/{} ({:.0}%)",
+                sr.source_work_id,
+                sr.char_start,
+                sr.char_end,
+                sr.content_len,
+                src_text_len,
+                src_spans.len(),
+                src_span_coverage,
+                src_text_len,
+                if src_text_len > 0 {
+                    src_span_coverage as f64 / src_text_len as f64 * 100.0
+                } else {
+                    0.0
+                },
+            );
+
             for src_span in &src_spans {
-                if (src_span.start as usize) < sr.char_start
-                    || (src_span.end as usize) > sr.char_end
+                if (src_span.end as usize) <= sr.char_start
+                    || (src_span.start as usize) >= sr.char_end
                 {
                     continue;
                 }
 
+                let clamped_start = src_span.start.max(sr.char_start as i64);
+                let clamped_end = src_span.end.min(sr.char_end as i64);
+
                 let offset = sr.flat_start as i64 - sr.char_start as i64;
                 result.push(super::transport::protocol::AttributionSpanPayload {
-                    start: src_span.start + offset,
-                    end: src_span.end + offset,
+                    start: clamped_start + offset,
+                    end: clamped_end + offset,
                     source_work_id: Some(sr.source_work_id),
                     ..src_span.clone()
                 });
