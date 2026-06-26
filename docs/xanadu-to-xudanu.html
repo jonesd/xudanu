@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From Xanadu to Xudanu &mdash; 60 Years of Connected Documents</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#d29922}
+.example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
+.example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+td strong{color:#e6edf3}
+.fast{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
+.naive{color:#f85149;font-family:'JetBrains Mono',monospace}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.toc .toc-sub{padding-left:16px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-cyan{color:#39d2c0}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0;font-size:12px;color:#8b949e}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}.fast{color:#16a34a}.naive{color:#dc2626}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}.two-col{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>From Xanadu to Xudanu</h1>
+<p class="subtitle">60 years of connected documents: the algorithms, the people, and the modern realization of Ted Nelson's xanalogical structure.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. The Vision (1960)</a>
+  <a class="toc-section" href="#s2">2. The Gold Team's Innovations</a>
+  <a class="toc-sub" href="#s2a">2a. Enfilade Theory</a>
+  <a class="toc-sub" href="#s2b">2b. Tumbler Addressing</a>
+  <a class="toc-sub" href="#s2c">2c. The ent System</a>
+  <a class="toc-sub" href="#s2d">2d. Backfollow Engine</a>
+  <a class="toc-sub" href="#s2e">2e. Canopy Trees</a>
+  <a class="toc-sub" href="#s2f">2f. Content Lists</a>
+  <a class="toc-sub" href="#s2g">2g. DagWood Reconciliation</a>
+  <a class="toc-section" href="#s3">3. The "nu": Modern Enhancements</a>
+  <a class="toc-sub" href="#s3a">3a. BLAKE3 Content Addressing</a>
+  <a class="toc-sub" href="#s3b">3b. Ed25519 Per-Character Attribution</a>
+  <a class="toc-sub" href="#s3c">3c. CRDT Collaborative Editing</a>
+  <a class="toc-sub" href="#s3d">3d. Inline Transclusion</a>
+  <a class="toc-sub" href="#s3e">3e. Attribution Propagation</a>
+  <a class="toc-section" href="#s4">4. The Lineage</a>
+  <a class="toc-section" href="#s5">5. What Remains</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. The Vision (1960)</h2>
+
+<p>
+In 1960, Theodor Holm Nelson conceived a system where documents would never be copied, links would never break, and every quotation could be traced to its origin. He called it <strong>Project Xanadu</strong>. He called the literary structure <strong>xanalogical</strong> &mdash; a unique symmetrical connective system with two complementary forms of connection:
+</p>
+
+<div class="two-col">
+<div class="example-block">
+  <div class="example-label"><span class="accent-blue">Content Links</span></div>
+  <p style="font-size:13px;color:#8b949e;margin:0">Connections between things that are <strong>different</strong>. Commentary, cross-reference, disagreement. Profuse, bidirectional, unbreakable.</p>
+</div>
+<div class="example-block">
+  <div class="example-label"><span class="accent-green">Transclusion</span></div>
+  <p style="font-size:13px;color:#8b949e;margin:0">Connections between things that are <strong>the same</strong>. The same content, visibly and knowably, in more than one place. Not a copy &mdash; a live reference.</p>
+</div>
+</div>
+
+<p>
+The World Wide Web, built 30 years later, implemented neither. It gave us fragile one-way links, embedded in flat files, with no recognition of content identity or version change. Nelson's response:
+</p>
+
+<div class="gold">
+  <strong>Nelson:</strong> "The Web was not what we were working toward, it was what we were trying to <em>prevent</em>."
+</div>
+
+<p>
+For 40 years, over 100 people worked on Project Xanadu. About 25 were active at the software design level. They produced at least 10 major design iterations, from xu60 (1960) through xu99 (1999). The most complete implementation was <strong>Udanax Gold</strong> (xu92), released as open source in 1999.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. The Gold Team's Innovations</h2>
+
+<p>
+The Udanax Gold codebase, principally designed by <strong>Roger Gregory</strong> and <strong>Mark S. Miller</strong>, with the ent system by <strong>K. Eric Drexler</strong>, contained algorithmic breakthroughs that remain relevant today. Here are the key innovations.
+</p>
+
+<!-- ============================================================ -->
+<h3 id="s2a">2a. Enfilade Theory</h3>
+
+<p>
+An <strong>enfilade</strong> is a tree data structure with two simultaneous properties that seem contradictory:
+</p>
+
+<ul>
+  <li><strong>Upward search property</strong> &mdash; flags propagate from children to parents, enabling O(log n) filtering</li>
+  <li><strong>Downward structural property</strong> &mdash; structural transformations can be imposed from the root downward</li>
+</ul>
+
+<p>
+This dual-property tree was invented by Mark S. Miller, Stuart Greene, and Roger Gregory around 1980. It enables a single tree to serve as both a <strong>search index</strong> (fast filtering by content fingerprint) and a <strong>structural container</strong> (impose displacements, transforms, versions).
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrUp" markerWidth="6" markerHeight="6" refX="3" refY="0" orient="auto"><path d="M0,6 L3,0 L6,6" fill="#3fb950"/></marker>
+    <marker id="arrDown" markerWidth="6" markerHeight="6" refX="3" refY="6" orient="auto"><path d="M0,0 L3,6 L6,0" fill="#58a6ff"/></marker>
+  </defs>
+
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Enfilade: Dual-Property Tree</text>
+
+  <!-- Root -->
+  <rect x="330" y="55" width="120" height="40" rx="6" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="2"/>
+  <text x="390" y="80" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="700">ROOT (flags: A,B,C)</text>
+
+  <!-- Children -->
+  <rect x="170" y="135" width="120" height="40" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="230" y="160" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">LEFT (flags: A,B)</text>
+
+  <rect x="490" y="135" width="120" height="40" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="550" y="160" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">RIGHT (flags: C)</text>
+
+  <!-- Leaves -->
+  <rect x="100" y="215" width="100" height="30" rx="4" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="150" y="235" text-anchor="middle" fill="#58a6ff" font-size="10">Leaf A</text>
+
+  <rect x="220" y="215" width="100" height="30" rx="4" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="270" y="235" text-anchor="middle" fill="#58a6ff" font-size="10">Leaf B</text>
+
+  <rect x="480" y="215" width="100" height="30" rx="4" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="530" y="235" text-anchor="middle" fill="#58a6ff" font-size="10">Leaf C</text>
+
+  <!-- Upward arrows (search) -->
+  <line x1="230" y1="135" x2="360" y2="95" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="3,2" marker-end="url(#arrUp)"/>
+  <line x1="550" y1="135" x2="420" y2="95" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="3,2" marker-end="url(#arrUp)"/>
+
+  <!-- Downward arrows (structure) -->
+  <line x1="360" y1="95" x2="230" y2="135" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrDown)"/>
+  <line x1="420" y1="95" x2="550" y2="135" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrDown)"/>
+
+  <!-- Labels -->
+  <text x="280" y="115" fill="#3fb950" font-size="10">&#9650; search (OR flags up)</text>
+  <text x="500" y="115" fill="#58a6ff" font-size="10">&#9660; structure (impose down)</text>
+
+  <!-- Bottom explanation -->
+  <rect x="60" y="270" width="660" height="35" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="390" y="293" text-anchor="middle" fill="#8b949e" font-size="11">One tree. Two properties. O(log n) filtering + structural transform. Invented 1980.</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 1: The enfilade. Flags OR upward for search; structural transforms push downward. A single tree does both.</p>
+
+<p>
+<strong>Why it matters:</strong> without enfilades, finding all documents containing a specific content fingerprint requires scanning every document &mdash; O(n). With enfilades and canopy propagation, it's O(log n). For a million documents, that's the difference between 1,000,000 operations and 20.
+</p>
+
+<div class="gold">
+  <strong>Implemented in xudanu:</strong> <code>src/edition/canopy.rs</code> (BertCanopy, SensorCanopy). Ported from Gold's C++ to Rust. O(log n) filtering verified by tests.
+</div>
+
+<!-- ============================================================ -->
+<h3 id="s2b">2b. Tumbler Addressing</h3>
+
+<p>
+<strong>Tumblers</strong> are multi-segment universal addresses for content in a distributed docuverse. Designed by Gregory and Miller, they use hierarchical sequences like <code>4.3.1.7.2</code> where each segment narrows the location: server, work, edition, span, character.
+</p>
+
+<pre>
+Tumbler: 4.3.1.7.2
+         │ │ │ │ └─ character position
+         │ │ │ └─── span within edition
+         │ │ └───── edition number
+         │ └─────── work number
+         └───────── server number
+</pre>
+
+<p>
+Tumbler arithmetic supports <strong>span operations</strong> &mdash; unions, intersections, differences &mdash; using transfinite arithmetic. This means you can ask "what content overlaps between version 1 and version 3 of this document?" as a pure arithmetic operation on tumblers.
+</p>
+
+<div class="gold">
+  <strong>Implemented in xudanu:</strong> <code>src/space/sequence.rs</code>. Full tumbler implementation with region algebra (union, intersect, minus, complement), prefix queries, and lexicographic ordering. Used for endorsement addressing.
+</div>
+
+<!-- ============================================================ -->
+<h3 id="s2c">2c. The ent System</h3>
+
+<p>
+The <strong>ent</strong> (designed by K. Eric Drexler, ~1988-92) is a singular enfiladic structure with <strong>built-in versioning</strong>. It's a tree where every branch represents a version fork, and the tree structure itself encodes the complete version history of a document.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 280" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">The ent: Versioning Tree</text>
+
+  <!-- Root -->
+  <circle cx="120" cy="70" r="22" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="2"/>
+  <text x="120" y="75" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="700">v1</text>
+
+  <!-- Branch -->
+  <line x1="140" y1="70" x2="250" y2="70" stroke="#8b949e" stroke-width="1.5"/>
+  <circle cx="270" cy="70" r="22" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="2"/>
+  <text x="270" y="75" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="700">v2</text>
+
+  <!-- Fork -->
+  <line x1="290" y1="70" x2="390" y2="50" stroke="#8b949e" stroke-width="1.5"/>
+  <line x1="290" y1="70" x2="390" y2="130" stroke="#8b949e" stroke-width="1.5"/>
+
+  <!-- Upper branch -->
+  <circle cx="410" cy="50" r="22" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="410" y="55" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">v3a</text>
+
+  <line x1="430" y1="50" x2="530" y2="50" stroke="#8b949e" stroke-width="1.5"/>
+  <circle cx="550" cy="50" r="22" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="550" y="55" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="700">v4a</text>
+
+  <!-- Lower branch -->
+  <circle cx="410" cy="130" r="22" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="2"/>
+  <text x="410" y="135" text-anchor="middle" fill="#d29922" font-size="11" font-weight="700">v3b</text>
+
+  <!-- Merge -->
+  <line x1="570" y1="50" x2="660" y2="90" stroke="#8b949e" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="430" y1="130" x2="660" y2="90" stroke="#8b949e" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <circle cx="680" cy="90" r="22" fill="rgba(57,210,192,0.1)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="680" y="95" text-anchor="middle" fill="#39d2c0" font-size="11" font-weight="700">v5</text>
+
+  <!-- Labels -->
+  <text x="200" y="105" fill="#8b949e" font-size="10">edit</text>
+  <text x="340" y="40" fill="#8b949e" font-size="10">fork</text>
+  <text x="340" y="155" fill="#8b949e" font-size="10">fork</text>
+  <text x="640" y="80" fill="#39d2c0" font-size="10">merge</text>
+
+  <!-- Bottom -->
+  <rect x="60" y="200" width="660" height="60" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="390" y="225" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">Every branch is a version. Every version is accessible. Forks merge.</text>
+  <text x="390" y="245" text-anchor="middle" fill="#8b949e" font-size="10">No version is ever deleted. The tree IS the complete history.</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 2: The ent. Versions branch and merge. The tree structure encodes the complete version DAG.</p>
+
+<p>
+The ent enables <strong>non-destructive editing</strong>: creating a new version doesn't modify any previous version. It also enables <strong>DagWood reconciliation</strong> &mdash; merging divergent branches by finding the common ancestor and combining non-conflicting changes.
+</p>
+
+<div class="gold">
+  <strong>Implemented in xudanu:</strong> <code>src/ent/</code> &mdash; branch tree (B+tree), content entities, DagWood DAG reconciliation, H-tree (hash tree), trace (position tracking). ~7,000 lines ported from C++.
+</div>
+
+<!-- ============================================================ -->
+<h3 id="s2d">2d. Backfollow Engine</h3>
+
+<p>
+The <strong>backfollow engine</strong> answers the question: "Where else does this content appear?" Given a piece of text, it finds all documents containing that text &mdash; not by searching, but by <strong>content fingerprint matching</strong>.
+</p>
+
+<p>
+Every piece of content gets a fingerprint (originally a hash, now BLAKE3). The backfollow engine maintains an index mapping fingerprints to all documents containing that content. Query: O(log n) via canopy tree.
+</p>
+
+<div class="gold">
+  <strong>Implemented in xudanu:</strong> <code>src/edition/backfollow.rs</code> (~1,892 lines). Uses BLAKE3 for fingerprinting (Gold used a simpler hash). BertCanopy for O(log n) lookup. Recorder/Fossil system for persistent queries.
+</div>
+
+<!-- ============================================================ -->
+<h3 id="s2e">2e. Canopy Trees</h3>
+
+<p>
+<strong>Canopy trees</strong> (BertCanopy and SensorCanopy) are balanced binary indices built on top of enfilades. They enable fast filtering of transclusion queries &mdash; instead of scanning every position in every document, the canopy prunes the search space.
+</p>
+
+<table>
+  <tr><th>Operation</th><th>Without Canopy</th><th>With Canopy</th></tr>
+  <tr><td>Find content in 1 doc</td><td class="naive">O(n) scan</td><td class="fast">O(log n)</td></tr>
+  <tr><td>Find content across 1000 docs</td><td class="naive">O(1000n)</td><td class="fast">O(1000 log n)</td></tr>
+  <tr><td>Flag propagation</td><td class="naive">O(n) rebuild</td><td class="fast">O(log n) update</td></tr>
+</table>
+
+<p>
+<strong>Bert flags</strong> track which content fingerprints appear in subtrees. <strong>Sensor flags</strong> track which positions have specific properties. Both propagate upward (OR of children) enabling pruning: if a subtree doesn't contain the desired flag, skip it entirely.
+</p>
+
+<div class="gold">
+  <strong>Implemented in xudanu:</strong> <code>src/edition/canopy.rs</code>. Full implementation with BertProp/SensorProp flag sets, endorsement bit allocation, and flag-based filtering on transclusion queries. Uses <code>Arc&lt;Mutex&gt;</code> for thread safety (Gold was single-threaded).
+</div>
+
+<!-- ============================================================ -->
+<h3 id="s2f">2f. Content Lists (Referential Documents)</h3>
+
+<p>
+In the xanalogical model, a document is not a blob of text. It's a <strong>list of references</strong> pointing to content at permanent addresses. Editing modifies the reference list, never the content itself.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 220" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Document = Content List (References)</text>
+
+  <!-- Document -->
+  <rect x="20" y="55" width="200" height="130" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="120" y="78" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="700">DOCUMENT</text>
+
+  <rect x="40" y="90" width="160" height="20" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="50" y="104" fill="#d29922" font-size="9">&#8594; ref: content[1:50]</text>
+
+  <rect x="40" y="116" width="160" height="20" rx="3" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="50" y="130" fill="#3fb950" font-size="9">&#8594; transclusion: workB[0:30]</text>
+
+  <rect x="40" y="142" width="160" height="20" rx="3" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1"/>
+  <text x="50" y="156" fill="#d29922" font-size="9">&#8594; ref: content[51:100]</text>
+
+  <rect x="40" y="168" width="160" height="20" rx="3" fill="rgba(163,113,247,0.1)" stroke="#a371f7" stroke-width="1"/>
+  <text x="50" y="182" fill="#a371f7" font-size="9">&#8594; link: #2053</text>
+
+  <!-- Content store -->
+  <rect x="300" y="55" width="200" height="130" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="400" y="78" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">CONTENT STORE</text>
+  <text x="320" y="100" fill="#8b949e" font-size="10">[1:50] "Hello World..."</text>
+  <text x="320" y="120" fill="#8b949e" font-size="10">[51:100] "Goodbye..."</text>
+  <text x="320" y="150" fill="#484f58" font-size="9">(permanent addresses)</text>
+
+  <!-- Work B -->
+  <rect x="560" y="80" width="200" height="80" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="660" y="103" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">WORK B</text>
+  <text x="580" y="125" fill="#8b949e" font-size="10">[0:30] "transcluded..."</text>
+
+  <!-- Arrows -->
+  <line x1="200" y1="100" x2="300" y2="95" stroke="#d29922" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="200" y1="126" x2="560" y2="110" stroke="#3fb950" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="200" y1="152" x2="300" y2="115" stroke="#d29922" stroke-width="1" stroke-dasharray="3,2"/>
+</svg>
+</div>
+<p class="diagram-caption">Figure 3: A document is a list of references. Content lives separately at permanent addresses. Transclusions reference other documents.</p>
+
+<div class="gold">
+  <strong>Implemented in xudanu:</strong> <code>src/edition/edition.rs</code> &mdash; Edition with O-tree entries. <code>src/persist/chunk_store.rs</code> &mdash; content-addressed BLAKE3 storage. References are now both positional (O-tree) and content-addressed (BLAKE3 hash).
+</div>
+
+<!-- ============================================================ -->
+<h3 id="s2g">2g. DagWood Reconciliation</h3>
+
+<p>
+<strong>DagWood</strong> is a DAG-based reconciliation system for merging concurrent edits. When two users edit the same document simultaneously, DagWood finds the common ancestor, compares both branches against it, and automatically merges non-conflicting changes.
+</p>
+
+<p>
+This predates <strong>operational transform</strong> (OT) and <strong>CRDTs</strong> by decades. The key insight: represent the edit history as a DAG (directed acyclic graph), then find the maximum consistent merge of both branches.
+</p>
+
+<div class="gold">
+  <strong>Implemented in xudanu:</strong> <code>src/edition/three_way.rs</code> (~1,891 lines) and <code>src/ent/dagwood.rs</code> (~1,532 lines). Full three-way merge with conflict detection and position mapping. Used as fallback when CRDT state diverges.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. The "nu": Modern Enhancements</h2>
+
+<p>
+The name <strong>xudanu</strong> combines "xu" (from Xanadu) with "nu" (new). The "nu" represents what modern computer science adds to Nelson's 1960 vision:
+</p>
+
+<!-- ============================================================ -->
+<h3 id="s3a">3a. BLAKE3 Content Addressing</h3>
+
+<p>
+Nelson's "central proprietary secret" was "the freezing of content addresses into permanent universal IDs." Gold used simple hashes. We use <strong>BLAKE3</strong> &mdash; a modern cryptographic hash running at ~1 GB/s, producing 256-bit collision-resistant fingerprints.
+</p>
+
+<table>
+  <tr><th>Property</th><th>Gold (1990s)</th><th>Xudanu (2020s)</th></tr>
+  <tr><td>Hash function</td><td>Custom hash</td><td><strong>BLAKE3</strong> (cryptographic)</td></tr>
+  <tr><td>Speed</td><td>~100 MB/s</td><td class="fast">~1 GB/s</td></tr>
+  <tr><td>Collision resistance</td><td>Unknown</td><td>2<sup>-128</sup></td></tr>
+  <tr><td>Storage</td><td>Flat files</td><td>Content-addressed ChunkStore</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h3 id="s3b">3b. Ed25519 Per-Character Attribution</h3>
+
+<p>
+Gold tracked content identity (who transcluded what) but had no cryptographic proof of authorship. We add <strong>Ed25519 signatures</strong> on every text element &mdash; each character range is signed by its author's key.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 180" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="28" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Per-Character Cryptographic Attribution</text>
+
+  <text x="40" y="65" fill="#c9d1d9" font-size="13" font-family="'JetBrains Mono',monospace">"Hello World - transclusion - end"</text>
+
+  <!-- Author markers -->
+  <rect x="38" y="72" width="60" height="6" rx="2" fill="#3fb950" opacity="0.6"/>
+  <rect x="98" y="72" width="60" height="6" rx="2" fill="#3fb950" opacity="0.6"/>
+  <rect x="158" y="72" width="14" height="6" rx="2" fill="#8b949e" opacity="0.4"/>
+
+  <rect x="172" y="72" width="110" height="6" rx="2" fill="#58a6ff" opacity="0.6"/>
+  <rect x="282" y="72" width="14" height="6" rx="2" fill="#8b949e" opacity="0.4"/>
+
+  <rect x="296" y="72" width="40" height="6" rx="2" fill="#3fb950" opacity="0.6"/>
+
+  <!-- Labels -->
+  <text x="68" y="98" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">david</text>
+  <text x="227" y="98" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="600">alice (via transclusion)</text>
+  <text x="316" y="98" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">david</text>
+
+  <!-- Signature -->
+  <rect x="30" y="115" width="330" height="50" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="45" y="138" fill="#e6edf3" font-size="11" font-weight="600">Ed25519 signature per span:</text>
+  <text x="45" y="156" fill="#79c0ff" font-size="10" font-family="'JetBrains Mono',monospace">key:1eb56f8a..689b709e sig:9a8b.. timestamp:2026-06-25T19:00:01Z</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 4: Every character range carries an Ed25519 signature, author identity, and ISO 8601 timestamp. Court-grade non-repudiation.</p>
+
+<!-- ============================================================ -->
+<h3 id="s3c">3c. CRDT Collaborative Editing</h3>
+
+<p>
+Gold used <strong>grab/release locks</strong> &mdash; only one user could edit at a time. We replaced this with a <strong>CRDT (Conflict-free Replicated Data Type)</strong> layered on top of the O-tree. Multiple users edit simultaneously, with automatic convergence.
+</p>
+
+<table>
+  <tr><th>Feature</th><th>Gold (Locks)</th><th>Xudanu (CRDT)</th></tr>
+  <tr><td>Concurrent editing</td><td class="naive">One at a time</td><td class="fast">Unlimited simultaneous</td></tr>
+  <tr><td>Conflict resolution</td><td>Queue + wait</td><td class="fast">Automatic merge</td></tr>
+  <tr><td>Offline editing</td><td class="naive">Not possible</td><td class="fast">Sync on reconnect</td></tr>
+  <tr><td>Real-time awareness</td><td class="naive">None</td><td class="fast">Cursors, selections, typing</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h3 id="s3d">3d. Inline Transclusion (Single Source of Truth)</h3>
+
+<p>
+Gold's compound spans existed as a <strong>side-table</strong> alongside the O-tree &mdash; two copies that could drift apart. We moved transclusion directly INTO the O-tree as <code>RangeElement::Transclusion</code> &mdash; a zero-width element that IS the reference. One store. No drift.
+</p>
+
+<div class="note">
+  <strong>Novel contribution:</strong> This is not in Gold's design or any other system. Transclusion as a first-class O-tree element eliminates the dual-copy problem that plagued both Gold and earlier xudanu implementations.
+</div>
+
+<!-- ============================================================ -->
+<h3 id="s3e">3e. Attribution Propagation</h3>
+
+<p>
+When content is transcluded, the original author's identity and signature <strong>follow the content</strong> through transclusion chains. If alice writes text in document A, and david transcludes it into document B, document B's attribution panel shows alice as the author &mdash; with "via work:A" provenance.
+</p>
+
+<p>
+This works recursively through transclusion chains (up to 32 levels), with cycle detection. It's Nelson's <strong>golden thread</strong> &mdash; following authorship back to the ultimate source.
+</p>
+
+<div class="note">
+  <strong>Novel contribution:</strong> Propagating Ed25519 signatures through zero-width transclusion elements with position mapping. Not in Gold's design. Enables court-grade attribution tracking through any depth of transclusion chain.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. The Lineage</h2>
+
+<table>
+  <tr><th>Era</th><th>System</th><th>Key People</th><th>Contribution</th></tr>
+  <tr>
+    <td>1960-65</td>
+    <td>xu60/xu65</td>
+    <td>Ted Nelson</td>
+    <td>Hypertext, transclusion, referential editing. The vision.</td>
+  </tr>
+  <tr>
+    <td>1970-76</td>
+    <td>xu70/xu76</td>
+    <td>Nelson, Barus</td>
+    <td>Enfilades, parallel markup, ring buffers</td>
+  </tr>
+  <tr>
+    <td>~1980</td>
+    <td>Enfilade theory</td>
+    <td><strong>Miller, Greene, Gregory</strong></td>
+    <td>Dual-property tree (search + structure)</td>
+  </tr>
+  <tr>
+    <td>1988-92</td>
+    <td>xu88 / xu92 (Gold)</td>
+    <td><strong>Gregory, Miller, Drexler</strong></td>
+    <td>ent system, tumblers, backfollow, canopy, DagWood</td>
+  </tr>
+  <tr>
+    <td>1995-99</td>
+    <td>Transcopyright, PYXI</td>
+    <td>Nelson, Yee, Pam</td>
+    <td>Copyright model, skeleton frontend, open source release</td>
+  </tr>
+  <tr>
+    <td>2024-26</td>
+    <td><strong>xudanu</strong></td>
+    <td><strong>D. Jones</strong></td>
+    <td>Rust port, CRDT, crypto attribution, inline transclusion, web frontend</td>
+  </tr>
+</table>
+
+<div class="gold">
+  <strong>The "nu" in xudanu:</strong> We stand on the shoulders of Gregory, Miller, Drexler, and the 25+ designers who built the Gold system over 40 years. Their algorithms &mdash; enfilades, tumblers, canopy trees, backfollow, DagWood &mdash; form the mathematical foundation. Our contribution is the product layer: modern cryptography, collaborative editing, web technology, and the inline transclusion model that makes it all work together.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. What Remains</h2>
+
+<p>
+Nelson's complete vision includes features we have not yet built:
+</p>
+
+<table>
+  <tr><th>Feature</th><th>Nelson's Concept</th><th>Status</th></tr>
+  <tr><td>Transpointing windows</td><td>Side-by-side docs with connection beams</td><td>Filed as <a href="https://github.com/jonesd/xudanu/issues/59">#59</a></td></tr>
+  <tr><td>Link visualization</td><td>Typed links overlaid on documents</td><td>Filed as <a href="https://github.com/jonesd/xudanu/issues/60">#60</a></td></tr>
+  <tr><td>Attestation reports</td><td>Court-grade attribution export</td><td>Filed as <a href="https://github.com/jonesd/xudanu/issues/57">#57</a></td></tr>
+  <tr><td>Transcopyright / micropayments</td><td>Payment at content delivery</td><td>Data model exists, not wired</td></tr>
+  <tr><td>Federation</td><td>Cross-server transclusion + links</td><td>Transport exists, not complete</td></tr>
+  <tr><td>Rich media transclusion</td><td>Video, audio, diagrams</td><td>Text only</td></tr>
+</table>
+
+<p>
+The hard part &mdash; the algorithms, the data structures, the mathematical foundation &mdash; is done. What remains is visualization, infrastructure, and the economic layer. Nelson's team spent 40 years on the hard part. We're building the rest.
+</p>
+
+<div class="note" style="margin-top:32px">
+  <strong>Source code:</strong> 117,312 lines of Rust. 2,261 backend tests. 138 frontend tests.<br>
+  <strong>Lineage:</strong> Udanax Gold (1999) &rarr; xudanu (2024-2026)<br>
+  <strong>Vision:</strong> Ted Nelson, "A File Structure for the Complex, the Changing and the Indeterminate," 1965.
+</div>
+
+<div class="footer">
+  From Xanadu to Xudanu &mdash; <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a> &mdash; 60 years of connected documents
+</div>
+
+</div>
+</body>
+</html>
