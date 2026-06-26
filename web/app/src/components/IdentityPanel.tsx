@@ -44,7 +44,6 @@ export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, 
     const clubHex = identity.club_id.toString(16).padStart(4, "0");
     return (
       <div className="identity-panel identity-logged-in">
-        <span className="identity-name">{identity.display_name}</span>
         <span className="identity-id">#{clubHex}</span>
         <span
           className="identity-badge identity-verified"

@@ -1631,6 +1631,8 @@ export class CrdtSyncClient {
       ops,
     }).catch((e) => {
       console.error("Failed to send text delta:", e);
+      this.text = oldText;
+      this.textListeners.forEach((cb) => cb(oldText));
     });
   }
 

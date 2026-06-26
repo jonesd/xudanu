@@ -1,5 +1,5 @@
 import type { AwarenessState } from "../api/crdt_sync";
-import { authorColorPair, gradientCss } from "../author-color";
+import { authorColorPair } from "../author-color";
 
 interface AwarenessIndicatorsProps {
   states: AwarenessState[];
@@ -32,23 +32,16 @@ export function AwarenessIndicators({ states, connected }: AwarenessIndicatorsPr
           return (
             <span
               key={state.user_name}
-              className="awareness-user"
+              className={`awareness-pill${state.is_typing ? " awareness-pill-typing" : ""}`}
               title={`${state.user_name}${state.is_typing ? " (typing)" : ""}`}
+              style={{
+                borderTopColor: pair.primary,
+                borderBottomColor: pair.secondary,
+                borderLeftColor: pair.primary,
+                borderRightColor: pair.secondary,
+              }}
             >
-              <span
-                className="awareness-pulse"
-                style={{ background: gradientCss(pair) }}
-              />
-              <span
-                className="awareness-name"
-                style={{
-                  background: gradientCss(pair),
-                  color: "#fff",
-                }}
-              >
-                {state.user_name}
-              </span>
-              {state.is_typing && <span className="awareness-typing">...</span>}
+              {state.user_name}
             </span>
           );
         })

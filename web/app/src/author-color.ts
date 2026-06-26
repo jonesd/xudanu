@@ -27,8 +27,8 @@ const PALETTE: ColorPair[] = (() => {
   for (const hue of baseHues) {
     const complementary = (hue + 180) % HUE_PALETTE_SIZE;
     pairs.push({
-      primary: hslToHex(hue, 0.65, 0.62),
-      secondary: hslToHex(complementary, 0.7, 0.42),
+      primary: hslToHex(hue, 0.5, 0.68),
+      secondary: hslToHex(complementary, 0.55, 0.45),
     });
   }
   return pairs;
