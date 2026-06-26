@@ -1,4 +1,0 @@
-FakeDisk(Category(GrandHashTable));
-GrandHashTableTester();
-GrandHashSetTester();
-NULL;

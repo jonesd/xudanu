@@ -1,7 +1,0 @@
-#ifndef FILETPP_OXX
-#define FILETPP_OXX
-
-class FCloseExecutor;
-extern Category * cat_FCloseExecutor;
-
-#endif /* FILETPP_OXX */

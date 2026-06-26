@@ -1,4 +1,0 @@
-===> /Fhypatia/roger/prod/xhs/src/gnusun
-cd ../xpp/gnusun ; xumake -k libs
-===> /Fhypatia/roger/prod/xhs/src/xpp/gnusun
-(gcc -fno-defer-pop -munaligned-doubles -g3 -O0 -pg -Winline  -DMANUAL_CRUTCH=1 -I. -I.. -I../../xpp -I../../xlatexpp -I../../disk -I../../comm -I../../server -I../../disk -I../../urdi -I../sxx -I/usr/local/lib/g++-include  -I/usr/local/lib/g++-include/sys -I/usr/local/lib/gcc-lib/sparc-sun-sunos4.1.4/2.7.1/include  -I/usr/local/lib/gcc-lib/sparc-sun-sunos4.1.4/2.7.1/include/sys   -DUSE_INLINE -DGNUSUN -DGNU  -Dsparc -Dunix  -sun4 -c  ../scavx.cxx && (ld -r scavx.o ; rm -f scavx.o ; mv a.out scavx.o ; touch scavx.o; true)) || (rm -f scavx.o; false)

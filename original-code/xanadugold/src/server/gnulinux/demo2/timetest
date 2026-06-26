@@ -1,8 +1,0 @@
-rm ent.ent
-../febet.exe urdibld.rc
- gprof++ ../febet.exe >zzgprofurdi
-../febet.exe init.rc 
- gprof++ ../febet.exe >zzgprofinit
- ../febet.exe server0.rc
- gprof++ ../febet.exe >zzgprofserver
-

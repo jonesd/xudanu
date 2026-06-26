@@ -1,3 +1,0 @@
-EchoThunk("Building URDI file--this will take a while");
-BuildUrdiFile("ent.ent",32768,200,100);
-NULL;

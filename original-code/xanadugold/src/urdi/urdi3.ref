@@ -1,9 +1,0 @@
-URDI loop for plug-pull test
-
-Open first partition:
-
-low    = 523, middle = 1046, high   = 1569, max1   = 2093
-Problem(URDI_JACKPOT, val = 1, file = urdix.cxx, line = 1721)
-Caught it.
-Problem(BAIL_OUT, val = 1, file = urdi3t.cxx, line = 82)
-Assertion failed: Uncaught_Signal, file bombx.cxx, line 229

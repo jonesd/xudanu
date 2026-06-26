@@ -1,8 +1,0 @@
-#ifndef XU_ADMIN_OXX
-#define XU_ADMIN_OXX
-
-#include "opaque.hxx"
-#include "opaquep.hxx"
-#include "scalar.hxx"
-
-#endif

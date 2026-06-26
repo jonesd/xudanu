@@ -1,6 +1,0 @@
-3,4c3,4
-< ptrs = I(0), I(1), I(2), I(3), I(4), I(5), I(6), I(7), I(8), I(9), 
-< copiedPtrs = I(0), I(1), I(2), I(3), I(4), I(5), I(6), I(7), I(8), I(9), 
----
-> ptrs = 0x278cac, 0x278cbc, 0x278ccc, 0x278cdc, 0x278cec, 0x278cfc, 0x278d0c, 0x278d1c, 0x278d2c, 0x278d3c, 
-> copiedPtrs = 0x278cac, 0x278cbc, 0x278ccc, 0x278cdc, 0x278cec, 0x278cfc, 0x278d0c, 0x278d1c, 0x278d2c, 0x278d3c, 
