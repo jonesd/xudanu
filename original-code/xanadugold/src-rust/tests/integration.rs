@@ -8191,6 +8191,21 @@ async fn json_crdt_multi_user_sync() {
     )
     .await;
 
+    // Drain any CrdtAwarenessRemove events broadcast from session 1's close
+    // before querying subscriber count
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    loop {
+        match tokio::time::timeout(tokio::time::Duration::from_millis(50), r2.next()).await {
+            Ok(Some(Ok(Message::Text(t)))) => {
+                let v: serde_json::Value = serde_json::from_str(&t).unwrap_or_default();
+                if v.get("type").and_then(|t| t.as_str()) == Some("event") {
+                    continue;
+                }
+            }
+            _ => break,
+        }
+    }
+
     let count2_after = send_recv_json(
         &mut s2,
         &mut r2,
