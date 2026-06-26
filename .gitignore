@@ -18,3 +18,15 @@ docs/*.bak
 original-code/xanadugold/docs/*.txt
 original-code/xanadugold/docs/*.js
 original-code/xanadugold/src-rust/.cargo/
+
+# Runtime data directories (never commit)
+original-code/xanadugold/src-rust/data/
+original-code/xanadugold/src-rust/data.bak/
+original-code/xanadugold/src-rust/data.bak2/
+original-code/xanadugold/src-rust/data.old/
+original-code/xanadugold/src-rust/test-csrf/
+original-code/xanadugold/src-rust/--help/
+original-code/xanadugold/src-rust/--data-dir/
+*.key
+*.log
+security.log.*
