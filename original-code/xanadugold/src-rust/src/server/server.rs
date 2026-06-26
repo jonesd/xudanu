@@ -2504,11 +2504,44 @@ impl Server {
         let mut result: Vec<super::transport::protocol::AttributionSpanPayload> = Vec::new();
 
         for span in &own_spans {
-            result.push(super::transport::protocol::AttributionSpanPayload {
-                start: map_char(span.start),
-                end: map_char(span.end),
-                ..span.clone()
-            });
+            let span_start = span.start as usize;
+            let span_end = span.end as usize;
+            let start = span_start.min(char_to_resolved.len().saturating_sub(1));
+            let end = span_end.min(char_to_resolved.len());
+
+            let mut seg_start = start;
+            let mut prev_resolved = char_to_resolved.get(start).copied().unwrap_or(0);
+
+            for i in (start + 1)..=end.min(char_to_resolved.len()) {
+                let idx = (i - 1).min(char_to_resolved.len() - 1);
+                let cur_resolved = char_to_resolved.get(idx).copied().unwrap_or(prev_resolved);
+
+                if cur_resolved > prev_resolved + 1 {
+                    result.push(super::transport::protocol::AttributionSpanPayload {
+                        start: char_to_resolved.get(seg_start).copied().unwrap_or(0) as i64,
+                        end: (prev_resolved + 1) as i64,
+                        ..span.clone()
+                    });
+                    seg_start = i - 1;
+                }
+                prev_resolved = cur_resolved;
+            }
+
+            if seg_start < end || start == end {
+                let s = char_to_resolved.get(seg_start).copied().unwrap_or(0) as i64;
+                let e = if end > 0 && end <= char_to_resolved.len() {
+                    char_to_resolved[end - 1] as i64 + 1
+                } else {
+                    s
+                };
+                if e > s {
+                    result.push(super::transport::protocol::AttributionSpanPayload {
+                        start: s,
+                        end: e,
+                        ..span.clone()
+                    });
+                }
+            }
         }
 
         for sr in &resolved.span_ranges {
