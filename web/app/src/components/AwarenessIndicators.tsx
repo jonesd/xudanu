@@ -1,5 +1,5 @@
 import type { AwarenessState } from "../api/crdt_sync";
-import { authorColor } from "../author-color";
+import { authorColorPair, gradientCss } from "../author-color";
 
 interface AwarenessIndicatorsProps {
   states: AwarenessState[];
@@ -15,7 +15,6 @@ export function AwarenessIndicators({ states, connected }: AwarenessIndicatorsPr
     );
   }
 
-  // Deduplicate by user name — same user with multiple sessions shows once
   const seen = new Set<string>();
   const uniqueStates = states.filter((s) => {
     if (seen.has(s.user_name)) return false;
@@ -29,7 +28,7 @@ export function AwarenessIndicators({ states, connected }: AwarenessIndicatorsPr
         <span style={{ fontSize: "11px", opacity: 0.3 }}>No other active users</span>
       ) : (
         uniqueStates.map((state) => {
-          const color = authorColor(state.user_name);
+          const pair = authorColorPair(state.user_name);
           return (
             <span
               key={state.user_name}
@@ -38,9 +37,17 @@ export function AwarenessIndicators({ states, connected }: AwarenessIndicatorsPr
             >
               <span
                 className="awareness-pulse"
-                style={{ backgroundColor: color, color }}
+                style={{ background: gradientCss(pair) }}
               />
-              {state.user_name}
+              <span
+                className="awareness-name"
+                style={{
+                  background: gradientCss(pair),
+                  color: "#fff",
+                }}
+              >
+                {state.user_name}
+              </span>
               {state.is_typing && <span className="awareness-typing">...</span>}
             </span>
           );
