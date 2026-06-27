@@ -587,10 +587,10 @@ impl OperationCode {
             0x1D07 => Some(OperationCode::CompoundRemoveElement),
             0x1D08 => Some(OperationCode::CompoundMoveElement),
 
-            0x0E02 => Some(OperationCode::ResolveInlineTransclusions),
-            0x0E03 => Some(OperationCode::MigrateCompoundToInline),
-            0x0E04 => Some(OperationCode::ElementRemoveTransclusion),
-            0x0E05 => Some(OperationCode::AttributionQueryResolved),
+            0x1E01 => Some(OperationCode::ResolveInlineTransclusions),
+            0x1E02 => Some(OperationCode::MigrateCompoundToInline),
+            0x1E03 => Some(OperationCode::ElementRemoveTransclusion),
+            0x1E04 => Some(OperationCode::AttributionQueryResolved),
 
             0x0D01 => Some(OperationCode::AttributionQuery),
             0x0D02 => Some(OperationCode::AttributionVerify),
@@ -862,10 +862,10 @@ impl OperationCode {
             OperationCode::CompoundRemoveElement => 0x1D07,
             OperationCode::CompoundMoveElement => 0x1D08,
 
-            OperationCode::ResolveInlineTransclusions => 0x0E02,
-            OperationCode::MigrateCompoundToInline => 0x0E03,
-            OperationCode::ElementRemoveTransclusion => 0x0E04,
-            OperationCode::AttributionQueryResolved => 0x0E05,
+            OperationCode::ResolveInlineTransclusions => 0x1E01,
+            OperationCode::MigrateCompoundToInline => 0x1E02,
+            OperationCode::ElementRemoveTransclusion => 0x1E03,
+            OperationCode::AttributionQueryResolved => 0x1E04,
 
             OperationCode::AttributionQuery => 0x0D01,
             OperationCode::AttributionVerify => 0x0D02,

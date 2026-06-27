@@ -39,7 +39,7 @@ interface CollaborativeEditorProps {
   contentEndLine?: number;
   transclusionMarkers?: TransclusionMarker[];
   pendingTransclusion?: PendingTransclusion | null;
-  onPlaceTransclusion?: (position: number) => void;
+  onPlaceTransclusion?: (position: number, padding?: string) => void;
   selectionRange?: { start: number; end: number } | null;
   onNavigateToWork?: (workId: number) => void;
   onShowBacklinks?: (workId: number, excerpt: string) => void;
@@ -452,6 +452,7 @@ export function CollaborativeEditor({
   const editorRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const hitZonesRef = useRef<MarkerHitZone[]>([]);
+  const [placementIndicator, setPlacementIndicator] = useState<{ x: number; y: number; height: number; pos: number; padding?: string } | null>(null);
   const isComposing = useRef(false);
   const lastText = useRef(text);
   const undoStack = useRef<UndoEntry[]>([]);
@@ -886,24 +887,109 @@ export function CollaborativeEditor({
     if (!pendingTransclusion || !onPlaceTransclusion) return;
     if (!el.contains(e.target as Node)) return;
 
-    let range: Range | null = null;
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0) {
-      range = sel.getRangeAt(0);
+    const result = computePlacementPosition(e.clientX, e.clientY, el);
+    if (result !== null) {
+      console.log("[placement] O-tree position:", result.pos);
+      onPlaceTransclusion(result.pos);
     }
-    if (!range) {
-      const doc = el.ownerDocument as Document & { caretRangeFromPoint?: (x: number, y: number) => Range | null };
-      if (doc.caretRangeFromPoint) {
-        range = doc.caretRangeFromPoint(e.clientX, e.clientY);
+    setPlacementIndicator(null);
+  }, [pendingTransclusion, onPlaceTransclusion, onNavigateToWork]);
+
+  const computePlacementPosition = useCallback((clientX: number, clientY: number, el: HTMLElement): { pos: number; rect: DOMRect; padding?: string } | null => {
+    const doc = el.ownerDocument as Document & {
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    };
+
+    let range: Range | null = null;
+    if (doc.caretRangeFromPoint) {
+      range = doc.caretRangeFromPoint(clientX, clientY);
+    }
+    if (!range && doc.caretPositionFromPoint) {
+      const cp = doc.caretPositionFromPoint(clientX, clientY);
+      if (cp) {
+        range = document.createRange();
+        range.setStart(cp.offsetNode, cp.offset);
+        range.collapse(true);
       }
     }
-    if (!range) return;
+
+    if (!range) {
+      const editorRect = el.getBoundingClientRect();
+      if (clientY >= editorRect.top && clientY <= editorRect.bottom) {
+        const endRange = document.createRange();
+        endRange.selectNodeContents(el);
+        endRange.collapse(false);
+        const endRect = endRange.getBoundingClientRect();
+
+        const computedLineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
+        const linesBelow = Math.max(0, Math.round((clientY - endRect.bottom) / computedLineHeight));
+        const padding = "\n".repeat(linesBelow + 1);
+
+        const paddingNode = document.createTextNode(padding);
+        endRange.insertNode(paddingNode);
+        const afterRange = document.createRange();
+        afterRange.selectNodeContents(el);
+        afterRange.setStartAfter(paddingNode);
+        afterRange.collapse(true);
+        const afterRect = afterRange.getBoundingClientRect();
+
+        el.removeChild(paddingNode);
+
+        return { pos: -1, rect: afterRect, padding };
+      }
+      return null;
+    }
+
+    const rect = range.getBoundingClientRect();
+
     const pre = document.createRange();
     pre.selectNodeContents(el);
     pre.setEnd(range.startContainer, range.startOffset);
-    const pos = pre.toString().replace(/\u200B/g, "").length;
-    onPlaceTransclusion(pos);
-  }, [pendingTransclusion, onPlaceTransclusion, onNavigateToWork]);
+    const fullPos = pre.toString().replace(/\u200B/g, "").length;
+
+    let readonlyChars = 0;
+    el.querySelectorAll("[contenteditable='false']").forEach((span) => {
+      const spanRange = document.createRange();
+      spanRange.selectNodeContents(span);
+      if (spanRange.compareBoundaryPoints(Range.START_TO_END, pre) <= 0) {
+        readonlyChars += (span.textContent || "").replace(/\u200B/g, "").length;
+      }
+    });
+
+    return { pos: fullPos - readonlyChars, rect };
+  }, []);
+
+  const handleEditorMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!pendingTransclusion) {
+      if (placementIndicator) setPlacementIndicator(null);
+      return;
+    }
+    const el = editorRef.current;
+    if (!el) return;
+    if (!el.contains(e.target as Node)) return;
+
+    const result = computePlacementPosition(e.clientX, e.clientY, el);
+    if (!result) return;
+
+    const editorRect = el.getBoundingClientRect();
+    if (result.pos === -1) {
+      const editableText = getEditableText(el);
+      setPlacementIndicator({
+        x: 4,
+        y: result.rect.top - editorRect.top,
+        height: result.rect.height || 18,
+        pos: editableText.length,
+      });
+    } else {
+      setPlacementIndicator({
+        x: result.rect.left - editorRect.left,
+        y: result.rect.top - editorRect.top,
+        height: result.rect.height || 18,
+        pos: result.pos,
+      });
+    }
+  }, [pendingTransclusion, computePlacementPosition, placementIndicator]);
 
   useEffect(() => {
     document.addEventListener("selectionchange", handleSelectionChange);
@@ -1033,6 +1119,8 @@ export function CollaborativeEditor({
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             onClick={handleEditorClick}
+            onMouseMove={handleEditorMouseMove}
+            onMouseLeave={() => setPlacementIndicator(null)}
             onCompositionStart={() => { isComposing.current = true; }}
             onCompositionEnd={() => {
               isComposing.current = false;
@@ -1045,6 +1133,38 @@ export function CollaborativeEditor({
             }}
           />
           <RemoteCursors editorRef={editorRef} states={remoteCursors} />
+          {placementIndicator && (
+            <div
+              style={{
+                position: "absolute",
+                left: placementIndicator.x - 1,
+                top: placementIndicator.y,
+                height: placementIndicator.height,
+                width: 2,
+                background: "#f59e0b",
+                borderRadius: 1,
+                pointerEvents: "none",
+                zIndex: 6,
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  top: -18,
+                  left: 0,
+                  background: "#f59e0b",
+                  color: "#fff",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: "1px 5px",
+                  borderRadius: "3px 3px 3px 0",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                &#8594; pos {placementIndicator.pos}
+              </div>
+            </div>
+          )}
         </div>
         {outlineOpen && (
           <OutlinePanel

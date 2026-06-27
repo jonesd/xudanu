@@ -297,11 +297,12 @@ fn sort_json_value(value: &mut serde_json::Value) {
 
 fn compute_manifest_checksum(manifest: &Manifest) -> String {
     use sha2::{Digest, Sha256};
-    let mut copy = manifest.clone();
-    copy.checksum = String::new();
-    copy.created_at = String::new();
-    copy.server_version = String::new();
-    let mut value = serde_json::to_value(&copy).unwrap_or_default();
+    let mut value = serde_json::to_value(manifest).unwrap_or_default();
+    if let serde_json::Value::Object(ref mut map) = value {
+        map.remove("checksum");
+        map.remove("created_at");
+        map.remove("server_version");
+    }
     sort_json_value(&mut value);
     let json_str = serde_json::to_string(&value).unwrap_or_default();
     let mut hasher = Sha256::new();
@@ -1836,6 +1837,89 @@ mod tests {
         let report = preflight_check(&dir);
         assert!(!report.can_start);
         assert!(report.errors.iter().any(|e| e.contains("Invalid JSON")));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn checksum_stable_across_multiple_write_read_cycles() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let path = manifest_path(&dir);
+        let mut manifest = create_empty_manifest(test_system_clubs(), 42);
+        write_manifest(&mut manifest, &path).unwrap();
+
+        for cycle in 0..10 {
+            let raw = std::fs::read_to_string(&path).unwrap();
+            let from_raw = compute_manifest_checksum_from_raw(&raw);
+
+            let mut restored = read_manifest(&path).unwrap();
+            assert_eq!(
+                restored.checksum, from_raw,
+                "stored checksum must match raw recomputation on cycle {} \
+                 (stored={}, raw_recompute={})",
+                cycle, restored.checksum, from_raw
+            );
+
+            write_manifest(&mut restored, &path).unwrap();
+
+            let raw_after = std::fs::read_to_string(&path).unwrap();
+            let from_raw_after = compute_manifest_checksum_from_raw(&raw_after);
+            assert_eq!(
+                restored.checksum, from_raw_after,
+                "checksum after re-write must match raw recomputation on cycle {}",
+                cycle
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn checksum_consistent_struct_vs_raw() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let path = manifest_path(&dir);
+        let mut manifest = create_empty_manifest(test_system_clubs(), 77);
+        write_manifest(&mut manifest, &path).unwrap();
+
+        let raw_content = std::fs::read_to_string(&path).unwrap();
+        let from_struct = compute_manifest_checksum(&manifest);
+        let from_raw = compute_manifest_checksum_from_raw(&raw_content);
+
+        assert_eq!(
+            from_struct, from_raw,
+            "checksum from struct must match checksum from raw JSON content"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn checksum_detects_field_modification() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let path = manifest_path(&dir);
+        let mut manifest = create_empty_manifest(test_system_clubs(), 100);
+        write_manifest(&mut manifest, &path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let tampered = content.replace(
+            "\"grand_map_id_counter\": 100",
+            "\"grand_map_id_counter\": 999",
+        );
+        std::fs::write(&path, tampered).unwrap();
+
+        assert!(
+            read_manifest(&path).is_err(),
+            "tampered manifest must be rejected"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
