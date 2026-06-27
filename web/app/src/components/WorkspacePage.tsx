@@ -5,6 +5,7 @@ import { useCompoundEdition } from "../hooks/useCompoundEdition";
 import { authorColor } from "../author-color";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
 import { CompoundPanel } from "../components/CompoundPanel";
+import { ConnectionOverlay } from "../components/ConnectionOverlay";
 import { SourceTextViewer } from "../components/SourceTextViewer";
 import { VirtualizedEditor } from "../components/VirtualizedEditor";
 import type { BacklinkEntry } from "../api/crdt_sync";
@@ -149,6 +150,7 @@ export function WorkspacePage() {
     createAnnotation,
     deleteAnnotation,
     connectionEpoch: _connectionEpoch,
+    reconnectAttempt,
     canEdit,
     recentChanges,
   } = useCrdtSync(WS_URL, workBeId);
@@ -467,12 +469,20 @@ export function WorkspacePage() {
     }
   }, [connected, workBeId, works, identity]);
 
-  const handlePlaceTransclusion = useCallback(async (position: number) => {
+  const handlePlaceTransclusion = useCallback(async (position: number, padding?: string) => {
     if (!clientRef.current || workBeId === null) return;
     const pending = transclusion.pending;
     if (!pending) return;
     const rawExcerpt = pending.text;
-    const spanStart = position;
+
+    let spanStart = position;
+    if (padding && padding.length > 0) {
+      const newText = text + padding;
+      setText(newText);
+      await new Promise((r) => setTimeout(r, 200));
+      spanStart = newText.length;
+    }
+
     await compound.addSpan(
       text,
       spanStart,
@@ -609,6 +619,7 @@ export function WorkspacePage() {
 
   return (
     <div className="workspace-page">
+      <ConnectionOverlay connected={connected} reconnectAttempt={reconnectAttempt} />
       <header className="workspace-header">
         <h1>xudanu</h1>
         <span className={`sync-status ${connected ? "sync-connected" : "sync-disconnected"}`}>

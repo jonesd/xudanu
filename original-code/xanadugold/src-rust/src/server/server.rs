@@ -8441,13 +8441,62 @@ impl Server {
 
             for (_, c) in entries.iter() {
                 let entry_len = c.char_len();
-                if !inserted && cum_char >= char_position {
-                    new_entries.push((pos, arc_carrier.clone()));
+                if !inserted && cum_char + entry_len >= char_position {
+                    let offset_in_entry = char_position.saturating_sub(cum_char);
+                    if let Some(t) = c.element.as_text() {
+                        let chars: Vec<char> = t.chars().collect();
+                        let split = offset_in_entry.min(chars.len());
+
+                        let before: String = chars[..split].iter().collect();
+                        let after: String = chars[split..].iter().collect();
+
+                        let needs_newline_before = !before.is_empty() && !before.ends_with('\n');
+                        let needs_newline_after = !after.is_empty() && !after.starts_with('\n');
+
+                        if !before.is_empty() {
+                            let before_text = if needs_newline_before {
+                                format!("{}\n", before)
+                            } else {
+                                before
+                            };
+                            new_entries.push((
+                                pos,
+                                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                                    RangeElement::text(before_text),
+                                )),
+                            ));
+                            pos += 1;
+                        }
+                        new_entries.push((pos, arc_carrier.clone()));
+                        pos += 1;
+                        inserted = true;
+                        if !after.is_empty() {
+                            let after_text = if needs_newline_after {
+                                format!("\n{}", after)
+                            } else {
+                                after
+                            };
+                            new_entries.push((
+                                pos,
+                                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                                    RangeElement::text(after_text),
+                                )),
+                            ));
+                            pos += 1;
+                        }
+                    } else {
+                        if cum_char >= char_position {
+                            new_entries.push((pos, arc_carrier.clone()));
+                            pos += 1;
+                            inserted = true;
+                        }
+                        new_entries.push((pos, c.clone()));
+                        pos += 1;
+                    }
+                } else {
+                    new_entries.push((pos, c.clone()));
                     pos += 1;
-                    inserted = true;
                 }
-                new_entries.push((pos, c.clone()));
-                pos += 1;
                 cum_char += entry_len;
             }
             if !inserted {

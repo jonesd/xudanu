@@ -517,6 +517,10 @@ export class CrdtSyncClient {
     return this.connected;
   }
 
+  getReconnectAttempt(): number {
+    return this.reconnectAttempts;
+  }
+
   async attributionQuery(workId: number): Promise<AttributionSpan[]> {
     const resp = await this.sendRequest("attribution_query", {
       work_id: workId,

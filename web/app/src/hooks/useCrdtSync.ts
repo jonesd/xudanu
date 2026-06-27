@@ -5,6 +5,7 @@ export interface CrdtSyncState {
   text: string;
   connected: boolean;
   authenticated: boolean;
+  reconnectAttempt: number;
   awareness: AwarenessState[];
   setText: (text: string) => void;
   setTextLocal: (text: string) => void;
@@ -49,6 +50,7 @@ export function useCrdtSync(
   const clientRef = useRef<CrdtSyncClient | null>(null);
   const [text, setTextState] = useState("");
   const [connected, setConnected] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [awareness, setAwareness] = useState<AwarenessState[]>([]);
   const [contentMatches, setContentMatches] = useState<ContentMatch[]>([]);
   const [watchEnabled, setWatchEnabled] = useState(false);
@@ -80,7 +82,20 @@ export function useCrdtSync(
     clientRef.current = client;
 
     const unsubText = client.onTextChange(setTextState);
-    const unsubConn = client.onConnectionChange(setConnected);
+    const unsubConn = client.onConnectionChange((isConnected) => {
+      setConnected(isConnected);
+      if (isConnected) {
+        setReconnectAttempt(0);
+      } else {
+        setReconnectAttempt(client.getReconnectAttempt());
+      }
+    });
+
+    const reconnectPoll = setInterval(() => {
+      if (!client.isConnected()) {
+        setReconnectAttempt(client.getReconnectAttempt());
+      }
+    }, 2000);
     const unsubAware = client.onAwarenessChange(setAwareness);
     const MAX_CONTENT_MATCHES = 200;
     const unsubMatch = client.onContentMatch((match) => {
@@ -110,6 +125,7 @@ export function useCrdtSync(
     client.connect();
 
     return () => {
+      clearInterval(reconnectPoll);
       unsubText();
       unsubConn();
       unsubConn2();
@@ -426,7 +442,7 @@ export function useCrdtSync(
   }, [workBeId, refreshAnnotations]);
 
   return {
-    text, connected, authenticated, awareness, setText, setTextLocal, sendCursor, sendSelection,
+    text, connected, authenticated, reconnectAttempt, awareness, setText, setTextLocal, sendCursor, sendSelection,
     contentMatches, watchEnabled, toggleWatch, clientRef,
     attributionSpans, attributionLogStatus, refreshAttribution,
     refreshAwareness,
