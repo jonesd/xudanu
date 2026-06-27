@@ -497,6 +497,98 @@ When content is transcluded, the original author's identity and signature <stron
 This works recursively through transclusion chains (up to 32 levels), with cycle detection. It's Nelson's <strong>golden thread</strong> &mdash; following authorship back to the ultimate source.
 </p>
 
+<h3 id="s3e">3e. Attribution Propagation</h3>
+
+<p>
+When content is transcluded, the original author's identity and signature <strong>follow the content</strong> through transclusion chains. If alice writes text in document A, and david transcludes it into document B, document B's attribution panel shows alice as the author &mdash; with "via work:A" provenance.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 500" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Panel background -->
+  <rect x="20" y="10" width="740" height="480" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Header -->
+  <text x="40" y="40" fill="#e6edf3" font-size="16" font-weight="700">Attribution</text>
+  <text x="40" y="62" fill="#8b949e" font-size="12">6 spans &#183; 2 authors &#183; 100% coverage &#183; Chain valid</text>
+
+  <!-- Author: david -->
+  <rect x="40" y="80" width="340" height="60" rx="6" fill="#0d1117" stroke="#21262d" stroke-width="1"/>
+  <circle cx="58" cy="100" r="6" fill="#4a90d9"/>
+  <text x="72" y="105" fill="#e6edf3" font-size="13" font-weight="600">david</text>
+  <text x="72" y="122" fill="#3fb950" font-size="10">signed &#183; 4 spans</text>
+  <text x="72" y="136" fill="#484f58" font-size="9" font-family="'JetBrains Mono',monospace">1eb56f8a..689b709e &#183; club:03ec</text>
+
+  <!-- Author: alice -->
+  <rect x="40" y="150" width="340" height="60" rx="6" fill="#0d1117" stroke="#21262d" stroke-width="1"/>
+  <circle cx="58" cy="170" r="6" fill="#d97a4a"/>
+  <text x="72" y="175" fill="#e6edf3" font-size="13" font-weight="600">alice</text>
+  <text x="120" y="175" fill="#8b949e" font-size="11">via work:03ed</text>
+  <text x="72" y="192" fill="#3fb950" font-size="10">signed &#183; 2 spans</text>
+  <text x="72" y="206" fill="#484f58" font-size="9" font-family="'JetBrains Mono',monospace">e0ba9b81..00f131a8 &#183; club:03f7</text>
+
+  <!-- Coverage bar -->
+  <text x="40" y="235" fill="#8b949e" font-size="11" font-weight="600">COVERAGE</text>
+  <rect x="40" y="242" width="700" height="12" rx="3" fill="#21262d"/>
+  <rect x="40" y="242" width="700" height="12" rx="3" fill="#3fb950" opacity="0.4"/>
+  <text x="730" y="252" text-anchor="end" fill="#3fb950" font-size="10" font-weight="600">100%</text>
+
+  <!-- Timeline header -->
+  <text x="40" y="280" fill="#8b949e" font-size="11" font-weight="600">TIMELINE</text>
+  <line x1="40" y1="288" x2="740" y2="288" stroke="#21262d" stroke-width="1"/>
+
+  <!-- Timeline entries -->
+  <text x="40" y="308" fill="#8b949e" font-size="10">Jun 26, 2:14 PM</text>
+  <text x="180" y="308" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">[0..51]</text>
+  <rect x="250" y="298" width="6" height="14" rx="2" fill="#4a90d9"/>
+  <text x="262" y="308" fill="#4a90d9" font-size="10">david</text>
+
+  <text x="40" y="328" fill="#8b949e" font-size="10">Jun 25, 3:18 PM</text>
+  <text x="180" y="328" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">[51..155]</text>
+  <rect x="250" y="318" width="6" height="14" rx="2" fill="#4a90d9"/>
+  <text x="262" y="328" fill="#4a90d9" font-size="10">david</text>
+  <text x="310" y="328" fill="#8b949e" font-size="10" font-style="italic">via work:03ed</text>
+
+  <text x="40" y="348" fill="#8b949e" font-size="10">Jun 24, 7:44 PM</text>
+  <text x="180" y="348" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">[155..159]</text>
+  <rect x="250" y="338" width="6" height="14" rx="2" fill="#d97a4a"/>
+  <text x="262" y="348" fill="#d97a4a" font-size="10">alice</text>
+  <text x="300" y="348" fill="#8b949e" font-size="10" font-style="italic">via work:03ed</text>
+
+  <text x="40" y="368" fill="#8b949e" font-size="10">Jun 24, 3:14 PM</text>
+  <text x="180" y="368" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">[159..217]</text>
+  <rect x="250" y="358" width="6" height="14" rx="2" fill="#4a90d9"/>
+  <text x="262" y="368" fill="#4a90d9" font-size="10">david</text>
+  <text x="310" y="368" fill="#8b949e" font-size="10" font-style="italic">via work:03ed</text>
+
+  <text x="40" y="388" fill="#8b949e" font-size="10">Jun 24, 7:44 PM</text>
+  <text x="180" y="388" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">[217..222]</text>
+  <rect x="250" y="378" width="6" height="14" rx="2" fill="#d97a4a"/>
+  <text x="262" y="388" fill="#d97a4a" font-size="10">alice</text>
+  <text x="300" y="388" fill="#8b949e" font-size="10" font-style="italic">via work:03ed</text>
+
+  <text x="40" y="408" fill="#8b949e" font-size="10">Jun 24, 3:14 PM</text>
+  <text x="180" y="408" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">[222..343]</text>
+  <rect x="250" y="398" width="6" height="14" rx="2" fill="#4a90d9"/>
+  <text x="262" y="408" fill="#4a90d9" font-size="10">david</text>
+  <text x="310" y="408" fill="#8b949e" font-size="10" font-style="italic">via work:03ed</text>
+
+  <text x="40" y="428" fill="#8b949e" font-size="10">Jun 26, 2:14 PM</text>
+  <text x="180" y="428" fill="#c9d1d9" font-size="10" font-family="'JetBrains Mono',monospace">[343..365]</text>
+  <rect x="250" y="418" width="6" height="14" rx="2" fill="#4a90d9"/>
+  <text x="262" y="428" fill="#4a90d9" font-size="10">david</text>
+
+  <!-- Annotation -->
+  <rect x="400" y="298" width="320" height="100" rx="6" fill="rgba(57,210,192,0.06)" stroke="#39d2c0" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="415" y="320" fill="#39d2c0" font-size="10" font-weight="700">GOLDEN THREAD IN ACTION</text>
+  <text x="415" y="338" fill="#8b949e" font-size="10">&#8594; alice's text written Jun 24</text>
+  <text x="415" y="354" fill="#8b949e" font-size="10">&#8594; transcluded by david Jun 26</text>
+  <text x="415" y="370" fill="#8b949e" font-size="10">&#8594; attribution follows content</text>
+  <text x="415" y="386" fill="#8b949e" font-size="10">&#8594; timestamps preserved from source</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 5: Real attribution panel showing propagation. Alice's content (Jun 24) flows through transclusion into david's document (Jun 26) with original authorship and timestamps preserved.</p>
+
 <div class="note">
   <strong>Novel contribution:</strong> Propagating Ed25519 signatures through zero-width transclusion elements with position mapping. Not in Gold's design. Enables court-grade attribution tracking through any depth of transclusion chain.
 </div>
