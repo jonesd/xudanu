@@ -1925,4 +1925,106 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// CRITICAL TEST: This test must never fail in any release.
+    ///
+    /// The manifest checksum is the last line of defense against data
+    /// corruption. If the write path and read path produce different
+    /// hashes for the same data, the server refuses to start — users
+    /// lose access to ALL their documents.
+    ///
+    /// Historical bug: compute_manifest_checksum() (struct→Value) and
+    /// compute_manifest_checksum_from_raw() (raw→Value) produced
+    /// different hashes due to serde skip_serializing_if and char
+    /// encoding differences. This test catches that class of bug by
+    /// populating every skip_serializing_if field with a non-default
+    /// value, then verifying the checksum survives a write/read cycle.
+    ///
+    /// If you add a new field to Manifest with skip_serializing_if,
+    /// Option, or any conditional serialization, this test MUST still
+    /// pass. If it fails, the checksum path is broken and users will
+    /// experience runtime data loss on restart.
+    #[test]
+    fn checksum_survives_full_manifest_with_all_fields() {
+        let dir = temp_dir();
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let path = manifest_path(&dir);
+        let mut manifest = create_empty_manifest(test_system_clubs(), 100);
+
+        manifest.manifest_slot = 'b';
+        manifest.links_hash = Some([0xaa; 32]);
+        manifest.links.push(LinkEntry {
+            link_id: 200,
+            origin: 10,
+            destination: 20,
+            origin_ref: None,
+            destination_ref: None,
+            link_types: vec![1, 2],
+        });
+        manifest.content_address_hash = Some([0xbb; 32]);
+        manifest.blob_metas_hash = Some([0xcc; 32]);
+        manifest.blob_metas.push(BlobMetaEntry {
+            content_hash: vec![0x11; 32],
+            hash_u64: 42,
+            byte_size: 1024,
+            mime_type: "image/png".to_string(),
+            preview_hash: Some(vec![0x22; 32]),
+            metadata: std::collections::HashMap::from([
+                ("width".to_string(), "800".to_string()),
+            ]),
+        });
+        manifest.historical_authors_hash = Some([0xdd; 32]);
+        manifest.annotations_hash = Some([0xee; 32]);
+        manifest.fossil_snapshots_hash = Some([0xff; 32]);
+        manifest.starred_works.insert(
+            10,
+            std::collections::HashSet::from([100, 200]),
+        );
+        manifest.trails.push(TrailManifestEntry {
+            trail_id: 1,
+            owner_club: 10,
+            name: "Test Trail".to_string(),
+            stops: vec![TrailStopManifestEntry {
+                work_id: 100,
+                char_start: Some(0),
+                char_end: Some(50),
+                note: Some("test note".to_string()),
+            }],
+            created_at: 1000,
+            updated_at: 2000,
+        });
+        manifest.compound_editions.push((
+            300,
+            crate::edition::compound::CompoundEdition::new(vec![
+                crate::edition::compound::CompoundElement::text("hello"),
+                crate::edition::compound::CompoundElement::span(100, 0, 5),
+            ]),
+        ));
+
+        write_manifest(&mut manifest, &path).unwrap();
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let from_raw = compute_manifest_checksum_from_raw(&raw);
+
+        let mut restored = read_manifest(&path).unwrap();
+        assert_eq!(
+            restored.checksum, from_raw,
+            "CRITICAL: stored checksum must match raw recomputation. \
+             If this test fails, DO NOT RELEASE — users will lose data on restart."
+        );
+
+        write_manifest(&mut restored, &path).unwrap();
+        let raw2 = std::fs::read_to_string(&path).unwrap();
+        let restored2 = read_manifest(&path).unwrap();
+        assert_eq!(
+            restored2.checksum,
+            compute_manifest_checksum_from_raw(&raw2),
+            "CRITICAL: checksum must be stable across multiple write/read cycles \
+             with all fields populated."
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
