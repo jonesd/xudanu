@@ -115,10 +115,15 @@ export function useCompoundEdition(
   const undoLastInsert = useCallback(async (): Promise<boolean> => {
     if (!client || workBeId === null || !lastInsertedRef.current) return false;
     const { sourceWorkId, charStart, charEnd } = lastInsertedRef.current;
+    setSpanRanges([]);
+    setResolvedText("");
+    setSourceTitles({});
     try {
       const removed = await client.elementRemoveTransclusion(workBeId, sourceWorkId, charStart, charEnd);
       if (removed) {
         lastInsertedRef.current = null;
+        await loadCompound();
+      } else {
         await loadCompound();
       }
       return removed;
@@ -131,9 +136,14 @@ export function useCompoundEdition(
   const removeTransclusion = useCallback(
     async (sourceWorkId: number, charStart: number, charEnd: number): Promise<boolean> => {
       if (!client || workBeId === null) return false;
+      setSpanRanges([]);
+      setResolvedText("");
+      setSourceTitles({});
       try {
         const removed = await client.elementRemoveTransclusion(workBeId, sourceWorkId, charStart, charEnd);
         if (removed) {
+          await loadCompound();
+        } else {
           await loadCompound();
         }
         return removed;

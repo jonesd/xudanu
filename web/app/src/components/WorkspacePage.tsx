@@ -4,6 +4,7 @@ import { useTransclusion } from "../hooks/useTransclusion";
 import { useCompoundEdition } from "../hooks/useCompoundEdition";
 import { authorColor } from "../author-color";
 import { CollaborativeEditor } from "../components/CollaborativeEditor";
+import { TiptapEditor } from "../components/TiptapEditor";
 import { CompoundPanel } from "../components/CompoundPanel";
 import { ConnectionOverlay } from "../components/ConnectionOverlay";
 import { SourceTextViewer } from "../components/SourceTextViewer";
@@ -81,6 +82,7 @@ export function WorkspacePage() {
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [useTiptap, setUseTiptap] = useState(false);
   const [archivedWorks, setArchivedWorks] = useState<WorkListEntry[]>([]);
   const [revisionList, setRevisionList] = useState<string[]>([]);
   const [revisionIndex, setRevisionIndex] = useState(0);
@@ -476,15 +478,22 @@ export function WorkspacePage() {
     const rawExcerpt = pending.text;
 
     let spanStart = position;
-    if (padding && padding.length > 0) {
-      const newText = text + padding;
-      setText(newText);
+    let currentText = text;
+
+    if (position >= text.length && !text.endsWith("\n")) {
+      currentText = text + "\n";
+      setText(currentText);
       await new Promise((r) => setTimeout(r, 200));
-      spanStart = newText.length;
+      spanStart = currentText.length;
+    } else if (padding && padding.length > 0) {
+      currentText = text + padding;
+      setText(currentText);
+      await new Promise((r) => setTimeout(r, 200));
+      spanStart = currentText.length;
     }
 
     await compound.addSpan(
-      text,
+      currentText,
       spanStart,
       rawExcerpt,
       pending.sourceWorkId,
@@ -691,7 +700,16 @@ export function WorkspacePage() {
               className={`mode-toggle-btn ${showAttributionColors ? "" : "inactive"}`}
               title={showAttributionColors ? "Hide attribution colors" : "Show attribution colors"}
             >
-              {showAttributionColors ? "🎨" : "🎨\u2009̸"}
+              {showAttributionColors ? "\u{1F3A8}" : "\u{1F3A8}\u2009\u0338"}
+            </button>
+
+            <button
+              onClick={() => setUseTiptap((v) => !v)}
+              type="button"
+              className={`mode-toggle-btn ${useTiptap ? "" : "inactive"}`}
+              title={useTiptap ? "Using TipTap editor" : "Using contentEditable editor"}
+            >
+              T
             </button>
 
             {identity && (
@@ -1428,6 +1446,20 @@ export function WorkspacePage() {
                       fontSize={docPrefs.fontSize}
                        lineHeight={docPrefs.lineHeight}
                      />
+                  ) : useTiptap ? (
+                      <TiptapEditor
+                        key={workBeId}
+                        text={displayText}
+                        onTextChange={canEdit ? setText : undefined}
+                        onCursorChange={sendCursor}
+                        onSelectionChange={handleEditorSelectionChange}
+                        connected={connected}
+                        editable={canEdit}
+                        fontSize={docPrefs.fontSize}
+                        lineHeight={docPrefs.lineHeight}
+                        pendingTransclusion={transclusion.pending}
+                        onPlaceTransclusion={handlePlaceTransclusion}
+                      />
                   ) : (
                       <CollaborativeEditor
                       text={displayText}

@@ -4099,6 +4099,65 @@ canvas._bridge {
   opacity: 0.4;
 }
 
+.tiptap-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+}
+
+.tiptap-loading {
+  padding: 40px;
+  color: #999;
+  text-align: center;
+}
+
+.tiptap-status {
+  padding: 4px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.tiptap-editor-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 28px;
+  outline: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  color: #1a1a2e;
+  background: #ffffff;
+  line-height: 1.6;
+  min-height: 300px;
+  width: 100%;
+  display: flex;
+}
+
+.tiptap-editor-content .ProseMirror {
+  outline: none;
+  min-height: 300px;
+  width: 100%;
+}
+
+.tiptap-editor-content:empty::before {
+  content: attr(data-placeholder);
+  color: #aaa;
+  pointer-events: none;
+}
+
+.tiptap-editor-content p {
+  margin: 0 0 8px 0;
+}
+
+.tiptap-editor-content p:last-child {
+  margin-bottom: 0;
+}
+
 .inline-transclusion {
   background: rgba(245, 158, 11, 0.12);
   border-bottom: 1px dashed rgba(245, 158, 11, 0.5);
