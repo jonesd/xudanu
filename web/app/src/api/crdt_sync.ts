@@ -171,6 +171,8 @@ export interface SpanRangePayload {
   flat_start: number;
   flat_end: number;
   content_len: number;
+  otree_position?: number;
+  resolved_content?: string;
 }
 
 export type RangeElementPayload =
@@ -373,6 +375,9 @@ export class CrdtSyncClient {
   private workBeId: number;
   private sessionId: number | null = null;
   private crdtReady = false;
+  private deltaInFlight = false;
+  private pendingServerText: string | null = null;
+  private crdtOpenedThisConnection = false;
   currentIdentity: WhoAmIEntry | null = null;
   private skipCrdt = false;
 
@@ -1243,6 +1248,8 @@ export class CrdtSyncClient {
     return ++this.requestId;
   }
 
+  private static readonly REQUEST_TIMEOUT_MS = 30000;
+
   sendRequest(op: string, payload?: object): Promise<unknown> {
     const p = new Promise((resolve, reject) => {
       const id = this.nextId();
@@ -1255,7 +1262,22 @@ export class CrdtSyncClient {
       if (payload !== undefined) {
         frame.payload = payload;
       }
+
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        this.pending.delete(id);
+        reject(new Error(`WebSocket not open (state=${this.ws?.readyState ?? "null"})`));
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        if (this.pending.has(id)) {
+          this.pending.delete(id);
+          reject(new Error(`Request "${op}" timed out after ${CrdtSyncClient.REQUEST_TIMEOUT_MS}ms`));
+        }
+      }, CrdtSyncClient.REQUEST_TIMEOUT_MS);
+
       this.pending.set(id, (value, isError) => {
+        clearTimeout(timer);
         if (isError) {
           reject(new Error(String(value) || "unknown error"));
         } else {
@@ -1327,9 +1349,10 @@ export class CrdtSyncClient {
       });
       const inner = extractValue(openResp) as Record<string, unknown>;
 
-      const wasInitialOpen = !this.text;
+      const wasInitialOpen = !this.crdtOpenedThisConnection;
       if (wasInitialOpen) {
         this.text = (inner.current_text as string) || "";
+        this.crdtOpenedThisConnection = true;
       }
 
       if (this.currentIdentity) {
@@ -1398,6 +1421,7 @@ export class CrdtSyncClient {
     // Clear local state for the new work
     this.text = "";
     this.skipCrdt = false;
+    this.crdtOpenedThisConnection = false;
     this.awarenessMap.clear();
     this.recentChanges = [];
     this.textListeners.forEach((cb) => cb(""));
@@ -1456,7 +1480,9 @@ export class CrdtSyncClient {
       const payload = event.payload as Record<string, unknown> | undefined;
       if (payload && payload.work_id === this.workBeId && !this.skipCrdt) {
         const newText = payload.text as string;
-        if (newText !== this.text) {
+        if (this.deltaInFlight) {
+          this.pendingServerText = newText;
+        } else if (newText !== this.text) {
           this.text = newText;
           this.textListeners.forEach((cb) => cb(newText));
         }
@@ -1570,6 +1596,9 @@ export class CrdtSyncClient {
   private onClose(): void {
     this.connected = false;
     this.crdtReady = false;
+    this.crdtOpenedThisConnection = false;
+    this.deltaInFlight = false;
+    this.pendingServerText = null;
     if (this.awarenessSendTimer !== null) {
       clearTimeout(this.awarenessSendTimer);
       this.awarenessSendTimer = null;
@@ -1629,14 +1658,32 @@ export class CrdtSyncClient {
       ops.push({ type: "insert", text: insertText });
     }
 
+    this.deltaInFlight = true;
     this.sendRequest("work_revise_delta", {
       work_id: this.workBeId,
       base_revision: 0,
       ops,
+    }).then(() => {
+      this.deltaInFlight = false;
+      if (this.pendingServerText !== null) {
+        const serverText = this.pendingServerText;
+        this.pendingServerText = null;
+        const currentText = this.text;
+        if (serverText !== currentText) {
+          this.text = serverText;
+          this.textListeners.forEach((cb) => cb(serverText));
+        }
+      }
     }).catch((e) => {
-      console.error("Failed to send text delta:", e);
-      this.text = oldText;
-      this.textListeners.forEach((cb) => cb(oldText));
+      this.deltaInFlight = false;
+      const msg = String(e?.message || e || "");
+      if (msg.includes("WebSocket not open") || msg.includes("connection closed") || msg.includes("timed out")) {
+        console.warn("Text delta not sent (will sync on reconnect):", msg);
+      } else {
+        console.error("Failed to send text delta:", e);
+        this.text = oldText;
+        this.textListeners.forEach((cb) => cb(oldText));
+      }
     });
   }
 

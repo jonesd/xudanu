@@ -68,3 +68,50 @@ describe("WS reconnect backoff (F1)", () => {
     expect(nextBase).toBe(1000);
   });
 });
+
+describe("Request timeout and drop handling", () => {
+  it("rejects sendRequest immediately when WebSocket is not open", async () => {
+    const client = new CrdtSyncClient("ws://test", 1);
+    (client as any).ws = null;
+
+    await expect(client.sendRequest("test_op")).rejects.toThrow("WebSocket not open");
+  });
+
+  it("rejects sendRequest when WebSocket is in CONNECTING state", async () => {
+    const client = new CrdtSyncClient("ws://test", 1);
+    (client as any).ws = { readyState: 0 };
+
+    await expect(client.sendRequest("test_op")).rejects.toThrow("WebSocket not open");
+  });
+
+  it("cleans up pending map entry on timeout", async () => {
+    vi.useFakeTimers();
+    const client = new CrdtSyncClient("ws://test", 1);
+    (client as any).ws = { readyState: 1, send: vi.fn() };
+
+    const promise = client.sendRequest("slow_op");
+    vi.advanceTimersByTime(31000);
+
+    await expect(promise).rejects.toThrow("timed out");
+    expect((client as any).pending.size).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it("clears timeout timer when response arrives", async () => {
+    vi.useFakeTimers();
+    const client = new CrdtSyncClient("ws://test", 1);
+    (client as any).ws = { readyState: 1, send: vi.fn() };
+
+    const promise = client.sendRequest("fast_op");
+    const pendingMap = (client as any).pending;
+    const id = Array.from(pendingMap.keys())[0];
+    const handler = pendingMap.get(id);
+    pendingMap.delete(id);
+    handler({ result: "ok" }, false);
+
+    const result = await promise;
+    expect(result).toEqual({ result: "ok" });
+    expect(pendingMap.size).toBe(0);
+    vi.useRealTimers();
+  });
+});

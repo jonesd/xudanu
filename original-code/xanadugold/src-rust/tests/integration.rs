@@ -7040,16 +7040,16 @@ fn auto_checkpoint_skips_within_30s_window() {
     srv.checkpoint_to_file(&dir.join("server.json")).unwrap();
     let size_after_first = std::fs::metadata(dir.join("server.json")).unwrap().len();
 
-    srv.bump_operation();
-    srv.bump_operation();
-    srv.bump_operation();
-    srv.bump_operation();
-    srv.bump_operation();
-    srv.bump_operation();
-    srv.bump_operation();
-    srv.bump_operation();
-    srv.bump_operation();
-    srv.bump_operation();
+    srv.test_bump_operation();
+    srv.test_bump_operation();
+    srv.test_bump_operation();
+    srv.test_bump_operation();
+    srv.test_bump_operation();
+    srv.test_bump_operation();
+    srv.test_bump_operation();
+    srv.test_bump_operation();
+    srv.test_bump_operation();
+    srv.test_bump_operation();
 
     let size_after_ops = std::fs::metadata(dir.join("server.json")).unwrap().len();
     assert_eq!(

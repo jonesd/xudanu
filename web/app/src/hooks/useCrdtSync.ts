@@ -51,6 +51,7 @@ export function useCrdtSync(
   const [text, setTextState] = useState("");
   const [connected, setConnected] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [awareness, setAwareness] = useState<AwarenessState[]>([]);
   const [contentMatches, setContentMatches] = useState<ContentMatch[]>([]);
   const [watchEnabled, setWatchEnabled] = useState(false);
@@ -83,11 +84,21 @@ export function useCrdtSync(
 
     const unsubText = client.onTextChange(setTextState);
     const unsubConn = client.onConnectionChange((isConnected) => {
-      setConnected(isConnected);
       if (isConnected) {
+        if (disconnectTimerRef.current) {
+          clearTimeout(disconnectTimerRef.current);
+          disconnectTimerRef.current = null;
+        }
+        setConnected(true);
         setReconnectAttempt(0);
       } else {
-        setReconnectAttempt(client.getReconnectAttempt());
+        if (!disconnectTimerRef.current) {
+          disconnectTimerRef.current = setTimeout(() => {
+            disconnectTimerRef.current = null;
+            setConnected(false);
+            setReconnectAttempt(client.getReconnectAttempt());
+          }, 3000);
+        }
       }
     });
 

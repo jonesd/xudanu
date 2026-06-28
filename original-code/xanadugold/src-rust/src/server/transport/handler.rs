@@ -90,7 +90,13 @@ async fn index_handler(State(state): State<SharedState>) -> impl IntoResponse {
 }
 
 async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
-    let json = state.server.with_server_ref(|server| server.health_json());
+    let json = state.server.try_health_json()
+        .unwrap_or_else(|| {
+            serde_json::json!({
+                "status": "degraded",
+                "operations": state.server.operation_count(),
+            }).to_string()
+        });
     (
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         json,
@@ -683,6 +689,13 @@ async fn handle_socket(
                     out_tx: &mpsc::UnboundedSender<Vec<u8>>,
                     is_text_writer: bool| {
         if fossil_to_sub.is_empty() {
+            return;
+        }
+        let has_pending = state
+            .server
+            .try_with_server_ref(|srv| srv.has_pending_content_notifications())
+            .unwrap_or(false);
+        if !has_pending {
             return;
         }
         let my_fossils: std::collections::HashSet<_> = fossil_to_sub.keys().copied().collect();
