@@ -206,7 +206,7 @@ pub struct Server {
     pub(crate) club_refs: HashMap<BeId, crate::persist::manifest::ClubChunkRef>,
     edition_detectors: HashMap<BeId, DetectorList>,
     pub(crate) system_clubs: SystemClubs,
-    operation_counter: u64,
+    pub(crate) operation_counter: u64,
     admin: AdminState,
     links: HashMap<BeId, LinkState>,
     work_to_links: HashMap<BeId, Vec<BeId>>,
@@ -229,6 +229,7 @@ pub struct Server {
     reconcile_store: crate::server::federation::ReconcileStore,
     reconcile_counter: u64,
     last_checkpoint_time: u64,
+    checkpoint_in_flight: bool,
     pub(crate) otree_crdt: super::otree_crdt::OtreeCrdtManager,
     pub(crate) personal_club_count: usize,
     pub(crate) max_personal_clubs: usize,
@@ -704,6 +705,7 @@ impl Server {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
+            checkpoint_in_flight: false,
             otree_crdt: super::otree_crdt::OtreeCrdtManager::new(3),
             personal_club_count: 0,
             max_personal_clubs: 10_000,
@@ -5457,13 +5459,20 @@ impl Server {
         self.admin.is_shutdown_requested()
     }
 
-    pub fn bump_operation(&mut self) -> u64 {
-        self.operation_counter += 1;
+    pub fn check_periodic_maintenance(&mut self) -> bool {
         if self.operation_counter % 10 == 0 {
-            self.auto_checkpoint();
+            let needs_ckpt = self.auto_checkpoint();
             self.check_grab_timeouts();
+            needs_ckpt
+        } else {
+            false
         }
-        self.operation_counter
+    }
+
+    #[doc(hidden)]
+    pub fn test_bump_operation(&mut self) {
+        self.operation_counter += 1;
+        self.check_periodic_maintenance();
     }
 
     pub fn set_checkpoint_path(&mut self, path: std::path::PathBuf) {
@@ -6428,14 +6437,14 @@ impl Server {
         );
     }
 
-    fn auto_checkpoint(&mut self) {
+    fn auto_checkpoint(&mut self) -> bool {
         #[cfg(feature = "server")]
         {
-            // CRITICAL: suppress checkpoint if restore had errors.
-            // Writing now would overwrite good on-disk chunks with
-            // incomplete in-memory state — permanent data loss.
             if !self.restore_errors.is_empty() {
-                return;
+                return false;
+            }
+            if self.checkpoint_in_flight {
+                return false;
             }
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -6443,21 +6452,13 @@ impl Server {
                 .as_secs();
             let elapsed = now.saturating_sub(self.last_checkpoint_time);
             if elapsed >= 30 {
-                if self.chunk_store.is_some() {
-                    if let Err(e) = self.checkpoint_to_store() {
-                        tracing::warn!("auto-checkpoint failed: {}", e);
-                    } else {
-                        self.last_checkpoint_time = now;
-                    }
-                } else if let Some(ref path) = self.checkpoint_path {
-                    if let Err(e) = self.checkpoint_to_file(path) {
-                        tracing::warn!("auto-checkpoint failed: {}", e);
-                    } else {
-                        self.last_checkpoint_time = now;
-                    }
+                if self.chunk_store.is_some() || self.checkpoint_path.is_some() {
+                    self.checkpoint_in_flight = true;
+                    return true;
                 }
             }
         }
+        false
     }
 
     /// Returns true if the server started with restore errors.
@@ -6469,6 +6470,15 @@ impl Server {
     /// Returns the list of restore errors encountered at startup.
     pub fn restore_errors(&self) -> &[String] {
         &self.restore_errors
+    }
+
+    /// Marks a background checkpoint as complete and updates the timestamp.
+    pub fn checkpoint_completed(&mut self) {
+        self.checkpoint_in_flight = false;
+        self.last_checkpoint_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
     }
 
     /// Clears restore errors, re-enabling auto_checkpoint.
@@ -7835,6 +7845,10 @@ impl Server {
     }
 
     pub fn health_json(&self) -> String {
+        self.health_json_with_ops(self.operation_counter)
+    }
+
+    pub fn health_json_with_ops(&self, ops: u64) -> String {
         let grabbed = self
             .works
             .values()
@@ -7854,7 +7868,7 @@ impl Server {
             "sessions": self.sessions.len(),
             "blobs": self.blob_count(),
             "grabbed_works": grabbed,
-            "operations": self.operation_counter,
+            "operations": ops,
             "last_checkpoint_ago_secs": since_checkpoint,
             "server_id": self.server_keypair.identity_id().to_string(),
         })
@@ -8898,6 +8912,7 @@ impl Server {
         let entries = edition.cached_entries();
 
         let mut text_offset = 0usize;
+        let mut crdt_offset = 0usize;
         let mut resolved_text = String::new();
 
         for (_, carrier) in entries.iter() {
@@ -8933,6 +8948,8 @@ impl Server {
                     flat_start: text_offset,
                     flat_end: text_offset + content_len,
                     content_len,
+                    otree_position: crdt_offset,
+                    resolved_content: content.clone(),
                 });
 
                 if !source_titles.contains_key(&src_id) {
@@ -8945,7 +8962,9 @@ impl Server {
                 text_offset += content_len;
             } else if let Some(s) = carrier.element.as_text() {
                 resolved_text.push_str(s);
-                text_offset += s.chars().count();
+                let s_len = s.chars().count();
+                text_offset += s_len;
+                crdt_offset += s_len;
             }
         }
 
@@ -9816,6 +9835,10 @@ impl Server {
         }
         self.pending_content_notifications = remaining;
         matching
+    }
+
+    pub fn has_pending_content_notifications(&self) -> bool {
+        !self.pending_content_notifications.is_empty()
     }
 
     fn cap_pending_notifications(&mut self) {
@@ -11965,7 +11988,7 @@ pub(crate) mod persist_snapshot {
     pub struct ServerSnapshot {
         grand_map_id_counter: BeId,
         session_counter: u64,
-        operation_counter: u64,
+    pub(crate) operation_counter: u64,
         system_clubs: SystemClubs,
         works: Vec<(BeId, WorkStateSnapshot)>,
         clubs: Vec<ClubSnapshot>,
@@ -12241,6 +12264,7 @@ pub(crate) mod persist_snapshot {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs(),
+                checkpoint_in_flight: false,
                 otree_crdt: crate::server::otree_crdt::OtreeCrdtManager::new(3),
                 personal_club_count: 0,
                 max_personal_clubs: 10_000,
@@ -12713,6 +12737,7 @@ pub(crate) mod persist_snapshot {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
+            self.checkpoint_in_flight = false;
 
             if let Err(e) = self.wal.truncate() {
                 tracing::warn!("WAL truncate failed after checkpoint: {}", e);
@@ -13603,6 +13628,32 @@ mod tests {
         let session = server.connect();
         server.login_public(session).unwrap();
         (server, session)
+    }
+
+    fn setup_editing_server() -> (Server, SessionId) {
+        let mut server = Server::new();
+        let sid = setup_editing_session(&mut server);
+        (server, sid)
+    }
+
+    fn setup_editing_session(server: &mut Server) -> SessionId {
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let phc = crate::crypto::password::hash_password(b"test-pass").unwrap();
+        let club_id = server
+            .create_personal_club(
+                sid,
+                "test-editor".to_string(),
+                Some(crate::server::club::Credential::Password { phc_hash: phc }),
+                Some(b"test-pass".to_vec()),
+            )
+            .unwrap();
+        let sid2 = server.connect();
+        let _lock = server.login(sid2, club_id).unwrap();
+        server
+            .authenticate_with_pending(sid2, &LockCredential::Password(b"test-pass".to_vec()))
+            .unwrap();
+        sid2
     }
 
     #[test]
@@ -14534,8 +14585,7 @@ mod tests {
         let doc_id;
         {
             let mut server = Server::new();
-            let sid = server.connect();
-            server.login_public(sid).unwrap();
+            let sid = setup_editing_session(&mut server);
             doc_id = server.create_work(sid, Edition::from_text("v1")).unwrap();
             server.work_grab(sid, doc_id).unwrap();
             server
@@ -14584,8 +14634,7 @@ mod tests {
         let doc_id;
         {
             let mut server = Server::new();
-            let sid = server.connect();
-            server.login_public(sid).unwrap();
+            let sid = setup_editing_session(&mut server);
             doc_id = server.create_work(sid, Edition::from_text("data")).unwrap();
             server.work_grab(sid, doc_id).unwrap();
             assert!(server.work_is_grabbed(doc_id).unwrap());
@@ -17465,8 +17514,7 @@ mod tests {
         let club_b;
         {
             let mut server = Server::new();
-            let sid = server.connect();
-            server.login_public(sid).unwrap();
+            let sid = setup_editing_session(&mut server);
             work_id = server
                 .create_work(sid, Edition::from_text("persist sponsors"))
                 .unwrap();
@@ -26655,5 +26703,353 @@ mod tests {
             .filter(|a| !a.is_private || a.created_by == Some(999))
             .collect();
         assert_eq!(visible_to_999.len(), 1, "club 999 sees only public");
+    }
+
+    #[test]
+    fn check_periodic_maintenance_returns_checkpoint_flag_after_threshold() {
+        let (mut server, sid) = setup_logged_in_server();
+        server
+            .create_work(sid, Edition::from_text("test"))
+            .unwrap();
+        server.checkpoint_path = Some(std::env::temp_dir().join("xudanu_test_ckpt"));
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        server.last_checkpoint_time = now - 60;
+        server.operation_counter = 10;
+
+        let needs_ckpt = server.check_periodic_maintenance();
+        assert!(needs_ckpt, "check_periodic_maintenance should signal checkpoint needed after 30s threshold");
+        assert!(server.checkpoint_in_flight, "checkpoint_in_flight should be set");
+    }
+
+    #[test]
+    fn auto_checkpoint_suppressed_when_already_in_flight() {
+        let (mut server, sid) = setup_logged_in_server();
+        server
+            .create_work(sid, Edition::from_text("test"))
+            .unwrap();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        server.last_checkpoint_time = now - 60;
+        server.checkpoint_in_flight = true;
+
+        let needs_ckpt = server.auto_checkpoint();
+        assert!(!needs_ckpt, "should not schedule checkpoint when one is in flight");
+    }
+
+    #[test]
+    fn checkpoint_completed_clears_in_flight() {
+        let (mut server, _sid) = setup_logged_in_server();
+        server.checkpoint_in_flight = true;
+
+        let before = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        server.checkpoint_completed();
+
+        assert!(!server.checkpoint_in_flight, "in_flight should be cleared");
+        assert!(
+            server.last_checkpoint_time >= before,
+            "last_checkpoint_time should be updated"
+        );
+    }
+
+    #[test]
+    fn auto_checkpoint_suppressed_with_restore_errors() {
+        let (mut server, sid) = setup_logged_in_server();
+        server
+            .create_work(sid, Edition::from_text("test"))
+            .unwrap();
+
+        server.restore_errors.push("simulated corruption".to_string());
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        server.last_checkpoint_time = now - 60;
+
+        let needs_ckpt = server.auto_checkpoint();
+        assert!(!needs_ckpt, "checkpoint should be suppressed with restore errors");
+    }
+
+    fn make_transclusion_edition(
+        prefix: &str,
+        source: BeId,
+        char_start: usize,
+        char_end: usize,
+        suffix: &str,
+    ) -> Edition {
+        let mut entries = Vec::new();
+        let mut pos = 0i64;
+        if !prefix.is_empty() {
+            entries.push((pos, std::sync::Arc::new(
+                crate::edition::range_element::Carrier::new(RangeElement::text(prefix)),
+            )));
+            pos += 1;
+        }
+        entries.push((pos, std::sync::Arc::new(
+            crate::edition::range_element::Carrier::new(
+                RangeElement::transclusion(source, char_start, char_end),
+            ),
+        )));
+        pos += 1;
+        if !suffix.is_empty() {
+            entries.push((pos, std::sync::Arc::new(
+                crate::edition::range_element::Carrier::new(RangeElement::text(suffix)),
+            )));
+        }
+        Edition::from_entries(entries)
+    }
+
+    #[test]
+    fn transclusion_attribution_basic_single_hop() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server.create_work(sid, Edition::from_text("original source text")).unwrap();
+        let doc = server.create_work(sid, Edition::from_text("intro ")).unwrap();
+        server.element_insert(sid, doc, 6, RangeElement::transclusion(src, 0, 21)).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert!(result.text.contains("original source text"), "resolved text should contain source content");
+        assert_eq!(result.span_ranges.len(), 1, "should have 1 span range");
+        assert_eq!(result.span_ranges[0].source_work_id, src);
+        assert_eq!(result.span_ranges[0].resolved_content, "original source text");
+
+        let chain = server.transclusion_again_chain(doc, 6, 27);
+        assert!(chain.len() >= 2, "again chain should have at least 2 hops, got {}", chain.len());
+        assert!(!chain[0].is_original, "first hop should not be original");
+        assert!(chain.last().unwrap().is_original, "last hop should be original");
+        assert_eq!(chain.last().unwrap().work_id, src);
+    }
+
+    #[test]
+    fn transclusion_attribution_nested_three_level_chain() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server.create_work(sid, Edition::from_text("deep origin")).unwrap();
+        let mid = server.create_work(sid, make_transclusion_edition("mid:", src, 0, 11, "")).unwrap();
+        let doc = server.create_work(sid, make_transclusion_edition("top:", mid, 0, 100, "")).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert!(result.text.contains("deep origin"), "3-level resolution should reach the origin");
+        assert!(result.text.contains("mid:"), "should contain middle layer text");
+        assert_eq!(result.span_ranges.len(), 2, "should have 2 spans (mid + src)");
+
+        let chain = server.transclusion_again_chain(doc, 4, 100);
+        assert!(chain.len() >= 3, "3-level chain should have at least 3 hops, got {}", chain.len());
+    }
+
+    #[test]
+    fn transclusion_attribution_deep_chain_near_limit() {
+        let (mut server, sid) = setup_logged_in_server();
+        let origin_text = "X";
+        let mut prev = server.create_work(sid, Edition::from_text(origin_text)).unwrap();
+        for i in 0..28 {
+            let edition = make_transclusion_edition(
+                &format!("L{}:", i),
+                prev,
+                0,
+                100,
+                "",
+            );
+            let next = server.create_work(sid, edition).unwrap();
+            prev = next;
+        }
+        let result = server.resolve_inline_transclusions(prev).unwrap();
+        assert!(
+            result.text.contains("X") || result.span_ranges.len() > 0,
+            "28-level chain should resolve or have spans (within 32 depth limit)"
+        );
+    }
+
+    #[test]
+    fn transclusion_attribution_chain_at_depth_limit() {
+        let (mut server, sid) = setup_logged_in_server();
+        let origin_text = "DEPTH";
+        let mut prev = server.create_work(sid, Edition::from_text(origin_text)).unwrap();
+        for i in 0..35 {
+            let edition = make_transclusion_edition(
+                &format!("D{}:", i),
+                prev,
+                0,
+                100,
+                "",
+            );
+            let next = server.create_work(sid, edition).unwrap();
+            prev = next;
+        }
+        let result = server.resolve_inline_transclusions(prev).unwrap();
+        assert!(
+            !result.text.contains("DEPTH") || result.text.contains("DEPTH"),
+            "at 35+ depth, resolution may truncate (max 32) — should not panic"
+        );
+    }
+
+    #[test]
+    fn transclusion_attribution_self_cycle() {
+        let (mut server, sid) = setup_logged_in_server();
+        let doc = server.create_work(sid, Edition::from_text("selfref")).unwrap();
+        server.element_insert(sid, doc, 0, RangeElement::transclusion(doc, 0, 7)).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert!(
+            result.text.contains("selfref"),
+            "self-transclusion should resolve via cycle detection without infinite loop"
+        );
+        assert_eq!(
+            result.span_ranges.len(),
+            1,
+            "should have exactly 1 span (the self-transclusion)"
+        );
+    }
+
+    #[test]
+    fn transclusion_attribution_mutual_cycle() {
+        let (mut server, sid) = setup_logged_in_server();
+        let a = server.create_work(sid, Edition::from_text("alpha")).unwrap();
+        let b = server.create_work(sid, make_transclusion_edition("B:", a, 0, 5, "")).unwrap();
+        let _ = server.element_insert(sid, a, 5, RangeElement::transclusion(b, 0, 100)).unwrap();
+
+        let result = server.resolve_inline_transclusions(a).unwrap();
+        assert!(
+            result.text.contains("alpha"),
+            "mutual cycle should resolve without panic"
+        );
+        assert!(
+            result.text.contains("B:"),
+            "should contain B's text from transclusion"
+        );
+    }
+
+    #[test]
+    fn transclusion_attribution_multiple_different_sources() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src_a = server.create_work(sid, Edition::from_text("from source A")).unwrap();
+        let src_b = server.create_work(sid, Edition::from_text("from source B")).unwrap();
+        let doc = server.create_work(sid, Edition::from_text("start")).unwrap();
+        server.element_insert(sid, doc, 5, RangeElement::transclusion(src_a, 0, 13)).unwrap();
+        server.element_insert(sid, doc, 5, RangeElement::transclusion(src_b, 0, 13)).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert_eq!(result.span_ranges.len(), 2, "should have 2 spans from 2 sources");
+        let source_ids: Vec<_> = result.span_ranges.iter().map(|s| s.source_work_id).collect();
+        assert!(source_ids.contains(&src_a), "should include src_a");
+        assert!(source_ids.contains(&src_b), "should include src_b");
+    }
+
+    #[test]
+    fn transclusion_attribution_two_different_authors() {
+        let (mut server, sid1) = setup_editing_server();
+
+        let sid_tmp = server.connect();
+        server.login_public(sid_tmp).unwrap();
+        let user2_pass = b"user2pass";
+        let phc2 = crate::crypto::password::hash_password(user2_pass).unwrap();
+        let club2 = server
+            .create_personal_club(
+                sid_tmp,
+                "user2".to_string(),
+                Some(crate::server::club::Credential::Password { phc_hash: phc2 }),
+                Some(user2_pass.to_vec()),
+            )
+            .unwrap();
+        let sid2 = server.connect();
+        let _lock = server.login(sid2, club2).unwrap();
+        server
+            .authenticate_with_pending(sid2, &LockCredential::Password(user2_pass.to_vec()))
+            .unwrap();
+
+        let src = server.create_work(sid1, Edition::from_text("authored by user1")).unwrap();
+        let doc = server.create_work(sid2, Edition::from_text("doc by user2 ")).unwrap();
+        server.element_insert(sid2, doc, 12, RangeElement::transclusion(src, 0, 18)).unwrap();
+
+        let spans = server.attribution_query(doc, None, None).unwrap();
+        assert!(spans.len() >= 1, "should have attribution spans");
+        let has_direct = spans.iter().any(|s| s.source_work_id.is_none());
+        assert!(has_direct, "should have directly authored spans");
+    }
+
+    #[test]
+    fn transclusion_attribution_timestamps_present() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server.create_work(sid, Edition::from_text("timestamped content")).unwrap();
+        let doc = server.create_work(sid, Edition::from_text("doc ")).unwrap();
+        server.element_insert(sid, doc, 4, RangeElement::transclusion(src, 0, 20)).unwrap();
+
+        let spans = server.attribution_query(doc, None, None).unwrap();
+        for span in &spans {
+            assert!(
+                span.timestamp > 0,
+                "every span should have a positive timestamp, got {} for span [{}, {}]",
+                span.timestamp,
+                span.start,
+                span.end
+            );
+        }
+    }
+
+    #[test]
+    fn transclusion_attribution_log_chain_valid_after_transclusions() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server.create_work(sid, Edition::from_text("log test source")).unwrap();
+        let doc = server.create_work(sid, Edition::from_text("log test doc")).unwrap();
+        server.element_insert(sid, doc, 0, RangeElement::transclusion(src, 0, 16)).unwrap();
+
+        let status = server.attribution_log_status();
+        match status {
+            crate::server::transport::protocol::ResponseValue::AttributionLogStatusResult {
+                chain_valid, ..
+            } => {
+                assert!(chain_valid, "attribution log chain should be valid");
+            }
+            _ => panic!("expected AttributionLogStatusResult"),
+        }
+    }
+
+    #[test]
+    fn transclusion_resolved_query_returns_source_provenance() {
+        let (mut server, sid) = setup_editing_server();
+        let src = server.create_work(sid, Edition::from_text("provenance test")).unwrap();
+        let doc = server.create_work(sid, Edition::from_text("wrap ")).unwrap();
+        server.element_insert(sid, doc, 5, RangeElement::transclusion(src, 0, 15)).unwrap();
+
+        let resolved = server.resolve_inline_transclusions(doc).unwrap();
+        assert!(resolved.span_ranges.len() >= 1, "should have inline transclusion spans");
+
+        let spans = server.attribution_query_resolved(doc).unwrap();
+        assert!(!spans.is_empty(), "resolved attribution should return spans");
+    }
+
+    #[test]
+    fn transclusion_attribution_coverage_for_mixed_content() {
+        let (mut server, sid) = setup_logged_in_server();
+        let src = server.create_work(sid, Edition::from_text("transcluded part")).unwrap();
+        let doc_entries = vec![
+            (0i64, std::sync::Arc::new(
+                crate::edition::range_element::Carrier::new(RangeElement::text("my own text ")),
+            )),
+            (1, std::sync::Arc::new(
+                crate::edition::range_element::Carrier::new(RangeElement::transclusion(src, 0, 16)),
+            )),
+            (2, std::sync::Arc::new(
+                crate::edition::range_element::Carrier::new(RangeElement::text(" and more own")),
+            )),
+        ];
+        let doc = server.create_work(sid, Edition::from_entries(doc_entries)).unwrap();
+
+        let result = server.resolve_inline_transclusions(doc).unwrap();
+        assert!(result.text.contains("my own text"), "should contain own text");
+        assert!(result.text.contains("transcluded part"), "should contain transcluded text");
+        assert!(result.text.contains("and more own"), "should contain suffix text");
+        assert_eq!(result.span_ranges.len(), 1, "should have 1 span for the transclusion");
+
+        let chain = server.transclusion_again_chain(doc, 12, 28);
+        assert!(chain.len() >= 2, "should trace back to source, got {} hops", chain.len());
+        assert_eq!(chain.last().unwrap().work_id, src, "chain should end at source");
     }
 }

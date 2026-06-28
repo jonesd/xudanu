@@ -110,13 +110,33 @@ impl AppState {
 #[derive(Clone)]
 pub struct ServerHandle {
     inner: Arc<RwLock<Server>>,
+    operation_counter: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl ServerHandle {
     pub fn new(server: Server) -> Self {
+        let ops = server.operation_counter;
         ServerHandle {
             inner: Arc::new(RwLock::new(server)),
+            operation_counter: Arc::new(std::sync::atomic::AtomicU64::new(ops)),
         }
+    }
+
+    pub fn bump_operation_atomic(&self) -> u64 {
+        self.operation_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+    }
+
+    pub fn operation_count(&self) -> u64 {
+        self.operation_counter.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn try_health_json(&self) -> Option<String> {
+        let guard = match self.inner.try_read() {
+            Ok(g) => g,
+            Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return None,
+        };
+        Some(guard.health_json_with_ops(self.operation_count()))
     }
 
     pub fn with_server<R>(&self, f: impl FnOnce(&mut Server) -> R) -> R {
@@ -133,6 +153,11 @@ impl ServerHandle {
             e.into_inner()
         });
         f(&guard)
+    }
+
+    pub fn try_with_server_ref<R>(&self, f: impl FnOnce(&Server) -> R) -> Option<R> {
+        let guard = self.inner.try_read().ok()?;
+        Some(f(&guard))
     }
 
     pub fn wait_for_consequences(&self) {
@@ -199,5 +224,44 @@ impl ServerHandle {
 impl std::fmt::Debug for ServerHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ServerHandle").finish()
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_counter_increments_without_lock() {
+        let handle = ServerHandle::new(Server::new());
+        let c1 = handle.bump_operation_atomic();
+        let c2 = handle.bump_operation_atomic();
+        assert_eq!(c1, 1);
+        assert_eq!(c2, 2);
+        assert_eq!(handle.operation_count(), 2);
+    }
+
+    #[test]
+    fn try_health_json_returns_some_when_unlocked() {
+        let handle = ServerHandle::new(Server::new());
+        let json = handle.try_health_json();
+        assert!(json.is_some());
+        let parsed: serde_json::Value = serde_json::from_str(&json.unwrap()).unwrap();
+        assert_eq!(parsed["status"], "ok");
+    }
+
+    #[test]
+    fn try_with_server_ref_returns_some_when_unlocked() {
+        let handle = ServerHandle::new(Server::new());
+        let result = handle.try_with_server_ref(|srv| srv.session_count());
+        assert_eq!(result, Some(0));
+    }
+
+    #[test]
+    fn try_with_server_ref_returns_none_when_write_locked() {
+        let handle = ServerHandle::new(Server::new());
+        let _guard = handle.inner.write().unwrap();
+        let result = handle.try_with_server_ref(|_| 42);
+        assert_eq!(result, None);
     }
 }

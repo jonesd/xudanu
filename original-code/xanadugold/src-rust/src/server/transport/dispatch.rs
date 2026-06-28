@@ -41,10 +41,28 @@ pub fn dispatch(
                     .server
                     .with_server_ref(|srv| dispatch_inner_read(srv, session_id, request, state))
             } else {
-                state.server.with_server(|srv| {
-                    srv.bump_operation();
+                let _op_count = state.server.bump_operation_atomic();
+                let mut needs_ckpt = false;
+                let r = state.server.with_server(|srv| {
+                    srv.operation_counter = state.server.operation_count();
+                    needs_ckpt = srv.check_periodic_maintenance();
                     dispatch_inner(srv, session_id, request, state)
-                })
+                });
+                if needs_ckpt {
+                    let server = state.server.clone();
+                    tokio::spawn(async move {
+                        match server.checkpoint_async().await {
+                            Ok(()) => {
+                                server.with_server(|srv| srv.checkpoint_completed());
+                            }
+                            Err(e) => {
+                                tracing::warn!("async auto-checkpoint failed: {}", e);
+                                server.with_server(|srv| srv.checkpoint_completed());
+                            }
+                        }
+                    });
+                }
+                r
             }
         }));
         match guard_result {
@@ -83,7 +101,7 @@ fn dispatch_narration(
     };
 
     let (base_text, new_text, last_author) = state.server.with_server(|srv| {
-        srv.bump_operation();
+        let _ = state.server.bump_operation_atomic();
         srv.ensure_can_read(session_id, work_id)?;
 
         let new_text = if srv.crdt_is_active(work_id) {
@@ -198,7 +216,7 @@ fn dispatch_writing_feedback(
     };
 
     let text = state.server.with_server(|srv| {
-        srv.bump_operation();
+        let _ = state.server.bump_operation_atomic();
         srv.ensure_can_read(session_id, work_id)?;
         let text = if srv.crdt_is_active(work_id) {
             srv.crdt_current_text(work_id).unwrap_or_default()
@@ -535,16 +553,10 @@ fn dispatch_inner(
         }
         WireRequest::WorkStar { work_id } => {
             srv.work_star(session_id, work_id)?;
-            if let Err(e) = srv.checkpoint_to_store() {
-                tracing::warn!("[work_star] checkpoint failed: {}", e);
-            }
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkUnstar { work_id } => {
             srv.work_unstar(session_id, work_id)?;
-            if let Err(e) = srv.checkpoint_to_store() {
-                tracing::warn!("[work_unstar] checkpoint failed: {}", e);
-            }
             Ok(ResponseValue::Void)
         }
         WireRequest::WorkIsStarred { work_id } => {
@@ -2585,7 +2597,7 @@ fn dispatch_inner(
         }
 
         WireRequest::CrdtSyncOpen { work_id } => {
-            srv.ensure_authenticated(session_id)?;
+            srv.ensure_logged_in(session_id)?;
             let result = srv.crdt_open_session(session_id, work_id)?;
             Ok(ResponseValue::CrdtSyncOpenResult {
                 state_vector: result.state_vector,
