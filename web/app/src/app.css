@@ -4135,10 +4135,9 @@ canvas._bridge {
   line-height: 1.6;
   min-height: 300px;
   width: 100%;
-  display: flex;
 }
 
-.tiptap-editor-content .ProseMirror {
+.tiptap-editor-content.ProseMirror {
   outline: none;
   min-height: 300px;
   width: 100%;

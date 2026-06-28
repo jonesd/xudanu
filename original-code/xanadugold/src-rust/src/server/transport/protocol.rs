@@ -2864,6 +2864,10 @@ pub struct SpanRangePayload {
     pub flat_start: usize,
     pub flat_end: usize,
     pub content_len: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub otree_position: Option<usize>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub resolved_content: String,
 }
 
 impl SpanRangePayload {
@@ -2875,6 +2879,8 @@ impl SpanRangePayload {
             flat_start: sr.flat_start,
             flat_end: sr.flat_end,
             content_len: sr.content_len,
+            otree_position: Some(sr.otree_position),
+            resolved_content: sr.resolved_content.clone(),
         }
     }
 }

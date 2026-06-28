@@ -171,6 +171,8 @@ export interface SpanRangePayload {
   flat_start: number;
   flat_end: number;
   content_len: number;
+  otree_position?: number;
+  resolved_content?: string;
 }
 
 export type RangeElementPayload =

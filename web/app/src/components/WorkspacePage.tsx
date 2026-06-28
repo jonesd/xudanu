@@ -1449,7 +1449,7 @@ export function WorkspacePage() {
                   ) : useTiptap ? (
                       <TiptapEditor
                         key={workBeId}
-                        text={displayText}
+                        text={text}
                         onTextChange={canEdit ? setText : undefined}
                         onCursorChange={sendCursor}
                         onSelectionChange={handleEditorSelectionChange}
@@ -1459,6 +1459,9 @@ export function WorkspacePage() {
                         lineHeight={docPrefs.lineHeight}
                         pendingTransclusion={transclusion.pending}
                         onPlaceTransclusion={handlePlaceTransclusion}
+                        compoundSpanRanges={compound.spanRanges}
+                        compoundSourceTitles={compound.sourceTitles}
+                        onNavigateToWork={selectWork}
                       />
                   ) : (
                       <CollaborativeEditor

@@ -8898,6 +8898,7 @@ impl Server {
         let entries = edition.cached_entries();
 
         let mut text_offset = 0usize;
+        let mut crdt_offset = 0usize;
         let mut resolved_text = String::new();
 
         for (_, carrier) in entries.iter() {
@@ -8933,6 +8934,8 @@ impl Server {
                     flat_start: text_offset,
                     flat_end: text_offset + content_len,
                     content_len,
+                    otree_position: crdt_offset,
+                    resolved_content: content.clone(),
                 });
 
                 if !source_titles.contains_key(&src_id) {
@@ -8945,7 +8948,9 @@ impl Server {
                 text_offset += content_len;
             } else if let Some(s) = carrier.element.as_text() {
                 resolved_text.push_str(s);
-                text_offset += s.chars().count();
+                let s_len = s.chars().count();
+                text_offset += s_len;
+                crdt_offset += s_len;
             }
         }
 

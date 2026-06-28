@@ -451,7 +451,9 @@ pub fn write_manifest(manifest: &mut Manifest, path: &Path) -> Result<(), Manife
         }
     }
     manifest.sequence += 1;
-    manifest.checksum = compute_manifest_checksum(manifest);
+
+    let pre_checksum_json = serde_json::to_string_pretty(manifest)?;
+    manifest.checksum = compute_manifest_checksum_from_raw(&pre_checksum_json);
     manifest.created_at = iso_now();
     manifest.server_version = server_version();
 
