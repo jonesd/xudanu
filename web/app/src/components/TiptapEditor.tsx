@@ -15,7 +15,7 @@ interface TiptapEditorProps {
   fontSize?: number;
   lineHeight?: number;
   pendingTransclusion?: PendingTransclusion | null;
-  onPlaceTransclusion?: (position: number) => void;
+  onPlaceTransclusion?: (position: number, padding?: string) => void;
   compoundSpanRanges?: SpanRangePayload[];
   compoundSourceTitles?: Record<number, string>;
   onNavigateToWork?: (workId: number) => void;
@@ -92,11 +92,30 @@ export function TiptapEditor({
   const handleEditorClick = useCallback((e: React.MouseEvent) => {
     if (!editor || !pendingTransclusion || !onPlaceTransclusion) return;
 
-    const coords = editor.view.posAtCoords({ left: e.clientX, top: e.clientY });
     const fullText = editor.getText({ blockSeparator: "\n" });
+    const docSize = editor.state.doc.content.size;
 
+    let lastBottom = 0;
+    try {
+      const lastCoords = editor.view.coordsAtPos(Math.max(1, docSize - 1));
+      lastBottom = lastCoords.bottom;
+    } catch { lastBottom = 0; }
+
+    const lineHeight = parseFloat(getComputedStyle(editor.view.dom).lineHeight) || 20;
+
+    if (e.clientY > lastBottom + 4) {
+      const linesBelow = Math.max(1, Math.round((e.clientY - lastBottom) / lineHeight));
+      const padding = "\n".repeat(linesBelow);
+      const newPos = fullText.length + padding.length;
+      console.log("[tiptap-placement] below text by", linesBelow, "lines, newPos:", newPos);
+      onPlaceTransclusion(newPos, padding);
+      setPlacementIndicator(null);
+      return;
+    }
+
+    const coords = editor.view.posAtCoords({ left: e.clientX, top: e.clientY });
     if (coords === null) {
-      console.log("[tiptap-placement] below content, appending at end:", fullText.length);
+      console.log("[tiptap-placement] no coords, appending at end:", fullText.length);
       onPlaceTransclusion(fullText.length);
       setPlacementIndicator(null);
       return;
@@ -104,20 +123,6 @@ export function TiptapEditor({
 
     const pmPos = coords.pos;
     const flatPos = editor.state.doc.textBetween(0, pmPos, "\n").length;
-
-    if (flatPos >= fullText.length) {
-      const docSize = editor.state.doc.content.size;
-      const lastLine = editor.view.coordsAtPos(docSize);
-      if (e.clientY > lastLine.bottom + 4) {
-        const lineHeight = parseFloat(getComputedStyle(editor.view.dom).lineHeight) || 20;
-        const linesBelow = Math.max(1, Math.round((e.clientY - lastLine.bottom) / lineHeight));
-        console.log("[tiptap-placement] below last line by", linesBelow, "lines, flatPos:", fullText.length);
-        onPlaceTransclusion(fullText.length + linesBelow);
-        setPlacementIndicator(null);
-        return;
-      }
-    }
-
     console.log("[tiptap-placement] pmPos:", pmPos, "flatPos:", flatPos);
     onPlaceTransclusion(flatPos);
     setPlacementIndicator(null);
@@ -126,6 +131,30 @@ export function TiptapEditor({
   const handleEditorMouseMove = useCallback((e: React.MouseEvent) => {
     if (!editor || !pendingTransclusion) {
       if (placementIndicator) setPlacementIndicator(null);
+      return;
+    }
+
+    const fullText = editor.getText({ blockSeparator: "\n" });
+    const docSize = editor.state.doc.content.size;
+
+    let lastBottom = 0;
+    try {
+      const lastCoords = editor.view.coordsAtPos(Math.max(1, docSize - 1));
+      lastBottom = lastCoords.bottom;
+    } catch { lastBottom = 0; }
+
+    if (e.clientY > lastBottom + 4) {
+      const lineHeight = parseFloat(getComputedStyle(editor.view.dom).lineHeight) || 20;
+      const linesBelow = Math.max(1, Math.round((e.clientY - lastBottom) / lineHeight));
+      const padding = "\n".repeat(linesBelow);
+      const newPos = fullText.length + padding.length;
+      const editorDom = editor.view.dom;
+      const editorRect = editorDom.getBoundingClientRect();
+      setPlacementIndicator({
+        x: 4,
+        y: lastBottom + linesBelow * lineHeight - editorRect.top,
+        pos: newPos,
+      });
       return;
     }
 
@@ -173,23 +202,27 @@ export function TiptapEditor({
     if (!editor || !compoundSpanRanges) return;
 
     function flatPosToPmPos(doc: any, flatPos: number): number {
-      let charCount = 0;
-      let result = 1;
-      doc.descendants((node: any, pos: number) => {
-        if (charCount >= flatPos) return false;
-        if (node.isText) {
-          const text = node.text || "";
-          if (charCount + text.length >= flatPos) {
-            result = pos + (flatPos - charCount);
-            return false;
-          }
-          charCount += text.length;
-        } else if (node.isBlock && pos > 0) {
-          charCount += 1;
+      if (flatPos <= 0) return 1;
+      let flat = 0;
+      let pmOffset = 0;
+
+      for (let pi = 0; pi < doc.childCount; pi++) {
+        const para = doc.child(pi);
+        const text = para.textContent;
+
+        if (flat + text.length >= flatPos) {
+          return Math.min(pmOffset + 1 + (flatPos - flat), doc.content.size);
         }
-        return true;
-      });
-      return Math.min(result, doc.content.size);
+
+        flat += text.length;
+        pmOffset += para.nodeSize;
+
+        if (pi < doc.childCount - 1) {
+          flat++;
+        }
+      }
+
+      return doc.content.size;
     }
 
     const existingNodes: Array<{ pos: number; sourceWorkId: number; charStart: number; charEnd: number }> = [];
@@ -240,6 +273,7 @@ export function TiptapEditor({
       const pmPos = flatPosToPmPos(tr.doc, flatPos);
       const title = compoundSourceTitles?.[sr.source_work_id] || "";
       const content = sr.resolved_content || "[transclusion]";
+      console.log("[tiptap-sync] inserting transclusion:", { flatPos, pmPos, content, sourceId: sr.source_work_id, charStart: sr.char_start, charEnd: sr.char_end, otreePosition: sr.otree_position, contentLen: sr.content_len });
 
       tr = tr.insert(pmPos, editor.state.schema.nodes.transclusion.create({
         sourceWorkId: sr.source_work_id,

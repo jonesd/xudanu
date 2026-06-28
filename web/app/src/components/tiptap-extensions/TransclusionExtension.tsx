@@ -23,9 +23,8 @@ function TransclusionView({ node }: NodeViewProps) {
       contentEditable={false}
       style={{
         background: "rgba(245, 158, 11, 0.12)",
-        borderBottom: "1px dashed rgba(245, 158, 11, 0.5)",
         borderRadius: "2px",
-        padding: "1px 0",
+        padding: "1px 2px",
         cursor: "pointer",
         userSelect: "text",
       }}
