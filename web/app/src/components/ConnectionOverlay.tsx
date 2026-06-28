@@ -1,10 +1,23 @@
+import { useState, useEffect } from "react";
+
 interface ConnectionOverlayProps {
   connected: boolean;
   reconnectAttempt: number;
 }
 
 export function ConnectionOverlay({ connected, reconnectAttempt }: ConnectionOverlayProps) {
-  if (connected) return null;
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    if (connected) {
+      setShow(false);
+      return;
+    }
+    const timer = setTimeout(() => setShow(true), 2000);
+    return () => clearTimeout(timer);
+  }, [connected]);
+
+  if (!show || connected) return null;
 
   const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), 30000);
   const delayText = delay >= 1000 ? `${Math.round(delay / 1000)}s` : "soon";

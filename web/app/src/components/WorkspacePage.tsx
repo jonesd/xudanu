@@ -471,36 +471,23 @@ export function WorkspacePage() {
     }
   }, [connected, workBeId, works, identity]);
 
-  const handlePlaceTransclusion = useCallback(async (position: number, padding?: string) => {
+  const handlePlaceTransclusion = useCallback(async (position: number, _padding?: string) => {
     if (!clientRef.current || workBeId === null) return;
     const pending = transclusion.pending;
     if (!pending) return;
     const rawExcerpt = pending.text;
 
-    let spanStart = position;
-    let currentText = text;
-
-    if (position >= text.length && !text.endsWith("\n")) {
-      currentText = text + "\n";
-      setText(currentText);
-      await new Promise((r) => setTimeout(r, 200));
-      spanStart = currentText.length;
-    } else if (padding && padding.length > 0) {
-      currentText = text + padding;
-      setText(currentText);
-      await new Promise((r) => setTimeout(r, 200));
-      spanStart = currentText.length;
-    }
+    console.log("[place-transclusion] position:", position, "text length:", text.length, "text ends with \\n:", text.endsWith("\\n"));
 
     await compound.addSpan(
-      currentText,
-      spanStart,
+      text,
+      position,
       rawExcerpt,
       pending.sourceWorkId,
       pending.start,
       pending.end,
     );
-    const linkId = await transclusion.placeTransclusion(clientRef.current, workBeId, spanStart);
+    const linkId = await transclusion.placeTransclusion(clientRef.current, workBeId, position);
     if (linkId !== null) {
       if (clientRef.current) {
         await new Promise((r) => setTimeout(r, 500));

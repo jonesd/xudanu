@@ -1,6 +1,6 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { TransclusionExtension } from "./tiptap-extensions/TransclusionExtension";
 import type { SpanRangePayload } from "../api/crdt_sync";
@@ -87,6 +87,8 @@ export function TiptapEditor({
     },
   });
 
+  const [placementIndicator, setPlacementIndicator] = useState<{ x: number; y: number; pos: number } | null>(null);
+
   const handleEditorClick = useCallback((e: React.MouseEvent) => {
     if (!editor || !pendingTransclusion || !onPlaceTransclusion) return;
 
@@ -96,6 +98,7 @@ export function TiptapEditor({
     if (coords === null) {
       console.log("[tiptap-placement] below content, appending at end:", fullText.length);
       onPlaceTransclusion(fullText.length);
+      setPlacementIndicator(null);
       return;
     }
 
@@ -110,13 +113,44 @@ export function TiptapEditor({
         const linesBelow = Math.max(1, Math.round((e.clientY - lastLine.bottom) / lineHeight));
         console.log("[tiptap-placement] below last line by", linesBelow, "lines, flatPos:", fullText.length);
         onPlaceTransclusion(fullText.length + linesBelow);
+        setPlacementIndicator(null);
         return;
       }
     }
 
     console.log("[tiptap-placement] pmPos:", pmPos, "flatPos:", flatPos);
     onPlaceTransclusion(flatPos);
+    setPlacementIndicator(null);
   }, [editor, pendingTransclusion, onPlaceTransclusion]);
+
+  const handleEditorMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!editor || !pendingTransclusion) {
+      if (placementIndicator) setPlacementIndicator(null);
+      return;
+    }
+
+    const coords = editor.view.posAtCoords({ left: e.clientX, top: e.clientY });
+    if (!coords) {
+      setPlacementIndicator(null);
+      return;
+    }
+
+    const pmPos = coords.pos;
+    const flatPos = editor.state.doc.textBetween(0, pmPos, "\n").length;
+
+    try {
+      const rect = editor.view.coordsAtPos(pmPos);
+      const editorDom = editor.view.dom;
+      const editorRect = editorDom.getBoundingClientRect();
+      setPlacementIndicator({
+        x: rect.left - editorRect.left,
+        y: rect.top - editorRect.top,
+        pos: flatPos,
+      });
+    } catch {
+      setPlacementIndicator(null);
+    }
+  }, [editor, pendingTransclusion, placementIndicator]);
 
   useEffect(() => {
     if (!editor) return;
@@ -137,6 +171,26 @@ export function TiptapEditor({
 
   useEffect(() => {
     if (!editor || !compoundSpanRanges) return;
+
+    function flatPosToPmPos(doc: any, flatPos: number): number {
+      let charCount = 0;
+      let result = 1;
+      doc.descendants((node: any, pos: number) => {
+        if (charCount >= flatPos) return false;
+        if (node.isText) {
+          const text = node.text || "";
+          if (charCount + text.length >= flatPos) {
+            result = pos + (flatPos - charCount);
+            return false;
+          }
+          charCount += text.length;
+        } else if (node.isBlock && pos > 0) {
+          charCount += 1;
+        }
+        return true;
+      });
+      return Math.min(result, doc.content.size);
+    }
 
     const existingNodes: Array<{ pos: number; sourceWorkId: number; charStart: number; charEnd: number }> = [];
     editor.state.doc.descendants((node: any, pos: number) => {
@@ -182,11 +236,12 @@ export function TiptapEditor({
       const key = `${sr.source_work_id}:${sr.char_start}:${sr.char_end}`;
       if (existingSet.has(key)) continue;
 
-      const insertPos = Math.min(sr.otree_position ?? sr.flat_start, tr.doc.content.size);
+      const flatPos = sr.otree_position ?? sr.flat_start;
+      const pmPos = flatPosToPmPos(tr.doc, flatPos);
       const title = compoundSourceTitles?.[sr.source_work_id] || "";
       const content = sr.resolved_content || "[transclusion]";
 
-      tr = tr.insert(insertPos, editor.state.schema.nodes.transclusion.create({
+      tr = tr.insert(pmPos, editor.state.schema.nodes.transclusion.create({
         sourceWorkId: sr.source_work_id,
         charStart: sr.char_start,
         charEnd: sr.char_end,
@@ -197,7 +252,11 @@ export function TiptapEditor({
     }
 
     if (changed) {
-      editor.view.dispatch(tr.setMeta("addToHistory", false));
+      setTimeout(() => {
+        if (editor && !editor.isDestroyed) {
+          editor.view.dispatch(tr.setMeta("addToHistory", false));
+        }
+      }, 0);
     }
   }, [editor, compoundSpanRanges, compoundSourceTitles]);
 
@@ -209,7 +268,9 @@ export function TiptapEditor({
     <div
       className="tiptap-container"
       onClick={pendingTransclusion ? handleEditorClick : undefined}
-      style={{ cursor: pendingTransclusion ? "crosshair" : "default" }}
+      onMouseMove={pendingTransclusion ? handleEditorMouseMove : undefined}
+      onMouseLeave={() => setPlacementIndicator(null)}
+      style={{ cursor: pendingTransclusion ? "crosshair" : "default", position: "relative" }}
     >
       <div className="tiptap-status">
         <span className={`sync-indicator ${connected ? "sync-connected" : "sync-disconnected"}`}>
@@ -222,6 +283,38 @@ export function TiptapEditor({
         )}
       </div>
       <EditorContent editor={editor} />
+      {placementIndicator && (
+        <div
+          style={{
+            position: "absolute",
+            left: placementIndicator.x - 1,
+            top: placementIndicator.y + 30,
+            width: 2,
+            height: 20,
+            background: "#f59e0b",
+            borderRadius: 1,
+            pointerEvents: "none",
+            zIndex: 10,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: -18,
+              left: 0,
+              background: "#f59e0b",
+              color: "#fff",
+              fontSize: 10,
+              fontWeight: 600,
+              padding: "1px 5px",
+              borderRadius: "3px 3px 3px 0",
+              whiteSpace: "nowrap",
+            }}
+          >
+            pos {placementIndicator.pos}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
