@@ -1,12 +1,19 @@
 import { useState } from "react";
 import type { WhoAmIEntry } from "../api/crdt_sync";
 
+interface Roster {
+  members: [number, string][];
+  total: number;
+  truncated: boolean;
+}
+
 interface IdentityPanelProps {
   identity: WhoAmIEntry | null;
   connected: boolean;
   onLogin: (clubName: string, password: string) => Promise<void>;
   onCreateIdentity: (displayName: string, password: string) => Promise<void>;
   onLogout: () => void;
+  rosters?: Record<number, Roster>;
 }
 
 const MIN_PASSWORD_LENGTH = 10;
@@ -32,28 +39,80 @@ export function passwordStrength(pw: string): { score: number; label: string; co
   return { score, label: "Strong", color: "#27ae60" };
 }
 
-export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, onLogout }: IdentityPanelProps) {
+export function IdentityPanel({ identity, connected, onLogin, onCreateIdentity, onLogout, rosters }: IdentityPanelProps) {
   const [mode, setMode] = useState<"closed" | "login" | "create">("closed");
   const [clubName, setClubName] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   if (identity) {
     const clubHex = identity.club_id.toString(16).padStart(4, "0");
     return (
       <div className="identity-panel identity-logged-in">
-        <span className="identity-id">#{clubHex}</span>
-        <span
-          className="identity-badge identity-verified"
-          title="Cryptographically verified identity"
-          style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        </span>
+        <div className="identity-modal-name">{identity.display_name}</div>
+        <div className="identity-modal-grid">
+          <span className="identity-modal-label">Club ID</span>
+          <span className="identity-modal-value">#{clubHex}</span>
+          <span className="identity-modal-label">Status</span>
+          <span className="identity-badge identity-verified">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            verified
+          </span>
+        </div>
+        {identity.verifying_key && (
+          <div className="identity-modal-keyblock">
+            <div className="identity-modal-label">Public verifying key</div>
+            <div className="identity-modal-key-full">{identity.verifying_key}</div>
+            <button
+              type="button"
+              className="identity-modal-copy"
+              onClick={() => {
+                navigator.clipboard?.writeText(identity.verifying_key || "");
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }}
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+        )}
+        {identity.clubs && identity.clubs.length > 0 && (
+          <div className="identity-modal-clubs">
+            <div className="identity-modal-label">Clubs you can access ({identity.clubs.length})</div>
+            <ul>
+              {identity.clubs.map(([cid, cname]) => {
+                const roster = rosters?.[cid];
+                return (
+                  <li key={cid}>
+                    <div className="identity-modal-club-row">
+                      <span className="identity-modal-value">#{cid.toString(16).padStart(4, "0")}</span>
+                      <span className="identity-modal-club-name">{cname}</span>
+                    </div>
+                    {roster && roster.total > 0 && (
+                      <div className="identity-modal-roster">
+                        {roster.members.map(([mid, mname]) => (
+                          <span key={mid} className="identity-modal-roster-member">{mname}</span>
+                        ))}
+                        {roster.truncated && (
+                          <span className="identity-modal-roster-more">+{roster.total - roster.members.length} more</span>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+        <div className="identity-modal-hint">
+          Your private signing key is encrypted at rest and never shown. Your
+          public verifying key can be shared so others can confirm your signatures.
+        </div>
         <button type="button" className="identity-logout" onClick={onLogout}>Sign Out</button>
       </div>
     );

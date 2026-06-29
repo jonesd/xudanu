@@ -78,8 +78,12 @@ export function useTransclusion(): TransclusionState {
   const loadLinks = useCallback(
     async (client: CrdtSyncClient, workId: number, works: WorkListEntry[]) => {
       try {
-        const linkList = await client.linkListForWork(workId);
-        setLinks(linkList);
+      const rawList = await client.linkListForWork(workId);
+      const seenIds = new Set<number>();
+      const linkList = rawList.filter((l) =>
+        seenIds.has(l.link_id) ? false : (seenIds.add(l.link_id), true),
+      );
+      setLinks(linkList);
 
         const workTitleMap = new Map<number, string>();
         for (const w of works) {
