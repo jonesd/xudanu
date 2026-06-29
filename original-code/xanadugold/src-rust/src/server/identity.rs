@@ -334,7 +334,12 @@ impl Server {
         self.clubs
             .get(&club_id)
             .and_then(|c| c.encrypted_signing_key())
-            .map(|k| k.verifying_key.iter().map(|b| format!("{:02x}", b)).collect())
+            .map(|k| {
+                k.verifying_key
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect()
+            })
     }
 
     // === Club membership ===

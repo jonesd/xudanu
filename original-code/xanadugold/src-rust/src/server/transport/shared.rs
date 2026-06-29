@@ -123,11 +123,14 @@ impl ServerHandle {
     }
 
     pub fn bump_operation_atomic(&self) -> u64 {
-        self.operation_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+        self.operation_counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1
     }
 
     pub fn operation_count(&self) -> u64 {
-        self.operation_counter.load(std::sync::atomic::Ordering::Relaxed)
+        self.operation_counter
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn try_health_json(&self) -> Option<String> {

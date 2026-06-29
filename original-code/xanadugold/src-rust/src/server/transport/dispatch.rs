@@ -889,7 +889,10 @@ fn dispatch_inner(
             let verifying_key = clubs
                 .first()
                 .and_then(|(cid, _)| srv.club_verifying_key_hex(*cid));
-            Ok(ResponseValue::ClubWhoAmIResult { clubs, verifying_key })
+            Ok(ResponseValue::ClubWhoAmIResult {
+                clubs,
+                verifying_key,
+            })
         }
         WireRequest::ClubAddMember { club_id, member_id } => {
             srv.club_add_member(session_id, club_id, member_id)?;
@@ -3370,7 +3373,10 @@ fn dispatch_inner_read(
             let verifying_key = clubs
                 .first()
                 .and_then(|(cid, _)| srv.club_verifying_key_hex(*cid));
-            Ok(ResponseValue::ClubWhoAmIResult { clubs, verifying_key })
+            Ok(ResponseValue::ClubWhoAmIResult {
+                clubs,
+                verifying_key,
+            })
         }
         WireRequest::ClubMembers { club_id } => {
             let members = srv.club_members(session_id, club_id)?;
