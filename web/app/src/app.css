@@ -668,7 +668,7 @@ body {
 
 .editor-readonly {
   background: #fafafa;
-  cursor: not-allowed;
+  cursor: text;
 }
 
 .attribution-mode-label {
@@ -905,7 +905,7 @@ body {
 
 .editor-readonly {
   background: #fafafa;
-  cursor: not-allowed;
+  cursor: text;
 }
 
 .virtualized .editor-container {

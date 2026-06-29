@@ -114,6 +114,8 @@ export interface SourcePatternEntry {
 export interface WhoAmIEntry {
   club_id: number;
   display_name: string;
+  verifying_key?: string;
+  clubs?: [number, string][];
 }
 
 export interface LlmUsageSummary {
@@ -299,6 +301,7 @@ export interface WorkListEntry {
   source_author_id?: number;
   source_edition_info?: string;
   is_starred?: boolean;
+  updated_at?: number;
 }
 
 export interface GraphNode {
@@ -1113,6 +1116,12 @@ export class CrdtSyncClient {
     return (r.members as number[]) || [];
   }
 
+  async clubRoster(clubId: number): Promise<{ members: [number, string][]; total: number; truncated: boolean }> {
+    const resp = await this.sendRequest("club_roster", { club_id: clubId });
+    const val = extractValue(resp) as { members: [number, string][]; total: number; truncated: boolean };
+    return val;
+  }
+
   async clubAddMember(clubId: number, memberId: number): Promise<void> {
     await this.sendRequest("club_add_member", { club_id: clubId, member_id: memberId });
   }
@@ -1176,11 +1185,11 @@ export class CrdtSyncClient {
       throw e;
     }
     const whoResp = await this.sendRequest("club_who_am_i");
-    const val = extractValue(whoResp) as { clubs: [number, string][] };
+    const val = extractValue(whoResp) as { clubs: [number, string][]; verifying_key?: string };
     const clubs = val.clubs || [];
     if (clubs.length > 0) {
       const [clubId, name] = clubs[0];
-      this.currentIdentity = { club_id: clubId, display_name: name };
+      this.currentIdentity = { club_id: clubId, display_name: name, verifying_key: val.verifying_key, clubs };
     }
 
     if (this.crdtReady && this.workBeId) {
@@ -1198,11 +1207,11 @@ export class CrdtSyncClient {
   async checkWhoAmI(): Promise<WhoAmIEntry | null> {
     try {
       const resp = await this.sendRequest("club_who_am_i");
-      const val = extractValue(resp) as { clubs: [number, string][] };
+      const val = extractValue(resp) as { clubs: [number, string][]; verifying_key?: string };
       const clubs = val.clubs || [];
       if (clubs.length > 0) {
         const [clubId, name] = clubs[0];
-        this.currentIdentity = { club_id: clubId, display_name: name };
+        this.currentIdentity = { club_id: clubId, display_name: name, verifying_key: val.verifying_key, clubs };
       } else {
         this.currentIdentity = null;
       }
