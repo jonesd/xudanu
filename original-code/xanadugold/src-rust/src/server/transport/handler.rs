@@ -90,13 +90,13 @@ async fn index_handler(State(state): State<SharedState>) -> impl IntoResponse {
 }
 
 async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
-    let json = state.server.try_health_json()
-        .unwrap_or_else(|| {
-            serde_json::json!({
-                "status": "degraded",
-                "operations": state.server.operation_count(),
-            }).to_string()
-        });
+    let json = state.server.try_health_json().unwrap_or_else(|| {
+        serde_json::json!({
+            "status": "degraded",
+            "operations": state.server.operation_count(),
+        })
+        .to_string()
+    });
     (
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         json,
