@@ -162,6 +162,58 @@ impl Server {
         Ok(())
     }
 
+    // === Email verification (account verification, FR-2) ===
+
+    /// Mark a club as verified. Called after a verification token is redeemed;
+    /// token possession is the authority, so no session is required.
+    pub fn mark_club_verified(&mut self, club_id: BeId) -> Result<(), ServerError> {
+        let club = self
+            .clubs
+            .get_mut(&club_id)
+            .ok_or(ServerError::ClubNotFound(club_id))?;
+        club.set_verified(true);
+        self.dirty_clubs.insert(club_id);
+        Ok(())
+    }
+
+    /// Set the email on a club (at signup). Requires authority over the club.
+    pub fn club_set_email(
+        &mut self,
+        session_id: SessionId,
+        club_id: BeId,
+        email: Option<String>,
+    ) -> Result<(), ServerError> {
+        self.ensure_logged_in(session_id)?;
+        if !self.session(session_id)?.has_authority(club_id) {
+            let session = self.session(session_id)?;
+            let km = session._key_master().ok_or(ServerError::NotAuthorized)?;
+            if !km.has_signature_authority(club_id, &self.clubs) {
+                return Err(ServerError::NotAuthorized);
+            }
+        }
+        let club = self
+            .clubs
+            .get_mut(&club_id)
+            .ok_or(ServerError::ClubNotFound(club_id))?;
+        club.set_email(email);
+        self.dirty_clubs.insert(club_id);
+        Ok(())
+    }
+
+    /// Find a personal club by email (case-insensitive). Used for resend.
+    pub fn find_club_by_email(&self, email: &str) -> Option<BeId> {
+        let needle = email.trim().to_lowercase();
+        self.clubs
+            .iter()
+            .find(|(_, c)| {
+                c.is_personal()
+                    && c.email()
+                        .map(|e| e.eq_ignore_ascii_case(&needle))
+                        .unwrap_or(false)
+            })
+            .map(|(id, _)| *id)
+    }
+
     // === Personal clubs (user accounts) ===
 
     pub fn create_personal_club(
