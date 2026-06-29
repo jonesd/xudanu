@@ -9,6 +9,12 @@ use super::session::SessionId;
 use crate::crypto::club_keys::{decrypt_signing_key, encrypt_signing_key, generate_club_keypair};
 use crate::edition::{BeId, Edition};
 
+pub struct ClubRosterInfo {
+    pub members: Vec<(BeId, String)>,
+    pub total: usize,
+    pub truncated: bool,
+}
+
 macro_rules! security_info {
     ($($arg:tt)*) => {
         tracing::info!(target: "xudanu::security", $($arg)*)
@@ -322,6 +328,15 @@ impl Server {
         Ok(result)
     }
 
+    /// Returns the hex-encoded public verifying key for a club, if it has one.
+    /// This is the public counterpart to the encrypted signing key — safe to share.
+    pub fn club_verifying_key_hex(&self, club_id: BeId) -> Option<String> {
+        self.clubs
+            .get(&club_id)
+            .and_then(|c| c.encrypted_signing_key())
+            .map(|k| k.verifying_key.iter().map(|b| format!("{:02x}", b)).collect())
+    }
+
     // === Club membership ===
 
     pub fn club_add_member(
@@ -403,6 +418,71 @@ impl Server {
         }
         let club = self.club(club_id)?;
         Ok(club.members().iter().copied().collect())
+    }
+
+    /// Capped, authority-scoped roster for the identity panel.
+    /// Non-members see an empty roster (details hidden). The public system club
+    /// is never enumerated. Results are capped; `truncated` signals more exist.
+    pub fn club_roster(
+        &self,
+        session_id: SessionId,
+        club_id: BeId,
+    ) -> Result<ClubRosterInfo, ServerError> {
+        self.ensure_logged_in(session_id)?;
+        const ROSTER_CAP: usize = 50;
+
+        if club_id == self.system_clubs.public_club {
+            return Ok(ClubRosterInfo {
+                members: Vec::new(),
+                total: 0,
+                truncated: false,
+            });
+        }
+
+        let all: Vec<BeId> = {
+            let session = self.session(session_id)?;
+            let club = self.club(club_id)?;
+            let authorized = session.has_authority(club_id)
+                || club
+                    .read_club()
+                    .map_or(false, |rc| session.has_authority(rc))
+                || club
+                    .edit_club()
+                    .map_or(false, |ec| session.has_authority(ec))
+                || club
+                    .default_read_club()
+                    .map_or(false, |rc| session.has_authority(rc))
+                || club
+                    .default_edit_club()
+                    .map_or(false, |ec| session.has_authority(ec));
+            if !authorized {
+                return Ok(ClubRosterInfo {
+                    members: Vec::new(),
+                    total: 0,
+                    truncated: false,
+                });
+            }
+            club.members().iter().copied().collect()
+        };
+
+        let total = all.len();
+        let truncated = total > ROSTER_CAP;
+        let members = all
+            .into_iter()
+            .take(ROSTER_CAP)
+            .map(|cid| {
+                let name = self
+                    .club_name_by_id(cid)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("club:{:x}", cid));
+                (cid, name)
+            })
+            .collect();
+        Ok(ClubRosterInfo {
+            members,
+            total,
+            truncated,
+        })
     }
 
     // === Authentication ===

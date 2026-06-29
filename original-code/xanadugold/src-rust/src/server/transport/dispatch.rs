@@ -802,6 +802,7 @@ fn dispatch_inner(
                             source_author_id,
                             source_edition_info,
                             is_starred: starred.contains(&work_id),
+                            updated_at: None,
                         }
                     },
                 )
@@ -885,7 +886,10 @@ fn dispatch_inner(
         }
         WireRequest::ClubWhoAmI => {
             let clubs = srv.who_am_i(session_id)?;
-            Ok(ResponseValue::ClubWhoAmIResult { clubs })
+            let verifying_key = clubs
+                .first()
+                .and_then(|(cid, _)| srv.club_verifying_key_hex(*cid));
+            Ok(ResponseValue::ClubWhoAmIResult { clubs, verifying_key })
         }
         WireRequest::ClubAddMember { club_id, member_id } => {
             srv.club_add_member(session_id, club_id, member_id)?;
@@ -898,6 +902,14 @@ fn dispatch_inner(
         WireRequest::ClubMembers { club_id } => {
             let members = srv.club_members(session_id, club_id)?;
             Ok(ResponseValue::ClubMembersResult { members })
+        }
+        WireRequest::ClubRoster { club_id } => {
+            let r = srv.club_roster(session_id, club_id)?;
+            Ok(ResponseValue::ClubRosterResult {
+                members: r.members,
+                total: r.total as u64,
+                truncated: r.truncated,
+            })
         }
 
         WireRequest::EditionStore { edition } => {
@@ -1035,6 +1047,7 @@ fn dispatch_inner(
                         source_author_id: ws.source_author_id(),
                         source_edition_info: ws.source_edition_info().map(|s| s.to_string()),
                         is_starred: starred.contains(id),
+                        updated_at: ws.latest_revision_timestamp(),
                     });
                 }
             }
@@ -1073,6 +1086,7 @@ fn dispatch_inner(
                         source_author_id: None,
                         source_edition_info: None,
                         is_starred: starred.contains(&work_id),
+                        updated_at: None,
                     }
                 })
                 .collect();
@@ -3055,6 +3069,7 @@ fn dispatch_inner(
                             source_author_id: Some(author_id),
                             source_edition_info,
                             is_starred: starred.contains(&work_id),
+                            updated_at: None,
                         }
                     },
                 )
@@ -3293,6 +3308,7 @@ fn dispatch_inner_read(
                             source_author_id,
                             source_edition_info,
                             is_starred: starred.contains(&work_id),
+                            updated_at: None,
                         }
                     },
                 )
@@ -3351,11 +3367,22 @@ fn dispatch_inner_read(
         }
         WireRequest::ClubWhoAmI => {
             let clubs = srv.who_am_i(session_id)?;
-            Ok(ResponseValue::ClubWhoAmIResult { clubs })
+            let verifying_key = clubs
+                .first()
+                .and_then(|(cid, _)| srv.club_verifying_key_hex(*cid));
+            Ok(ResponseValue::ClubWhoAmIResult { clubs, verifying_key })
         }
         WireRequest::ClubMembers { club_id } => {
             let members = srv.club_members(session_id, club_id)?;
             Ok(ResponseValue::ClubMembersResult { members })
+        }
+        WireRequest::ClubRoster { club_id } => {
+            let r = srv.club_roster(session_id, club_id)?;
+            Ok(ResponseValue::ClubRosterResult {
+                members: r.members,
+                total: r.total as u64,
+                truncated: r.truncated,
+            })
         }
         WireRequest::EditionGet { be_id } => {
             srv.ensure_logged_in(session_id)?;
@@ -3462,6 +3489,7 @@ fn dispatch_inner_read(
                         source_author_id: ws.source_author_id(),
                         source_edition_info: ws.source_edition_info().map(|s| s.to_string()),
                         is_starred: starred.contains(id),
+                        updated_at: ws.latest_revision_timestamp(),
                     });
                 }
             }
@@ -3500,6 +3528,7 @@ fn dispatch_inner_read(
                         source_author_id: None,
                         source_edition_info: None,
                         is_starred: starred.contains(&work_id),
+                        updated_at: None,
                     }
                 })
                 .collect();

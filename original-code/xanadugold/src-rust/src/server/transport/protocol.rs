@@ -154,6 +154,7 @@ pub enum OperationCode {
     ClubAddMember,
     ClubRemoveMember,
     ClubMembers,
+    ClubRoster,
 
     EditionStore,
     EditionGet,
@@ -433,6 +434,7 @@ impl OperationCode {
             0x020E => Some(OperationCode::ClubAddMember),
             0x020F => Some(OperationCode::ClubRemoveMember),
             0x0210 => Some(OperationCode::ClubMembers),
+            0x0211 => Some(OperationCode::ClubRoster),
 
             0x0401 => Some(OperationCode::EditionStore),
             0x0402 => Some(OperationCode::EditionGet),
@@ -702,6 +704,7 @@ impl OperationCode {
             OperationCode::ClubAddMember => 0x020E,
             OperationCode::ClubRemoveMember => 0x020F,
             OperationCode::ClubMembers => 0x0210,
+            OperationCode::ClubRoster => 0x0211,
 
             OperationCode::EditionStore => 0x0401,
             OperationCode::EditionGet => 0x0402,
@@ -1176,6 +1179,9 @@ pub enum WireRequest {
         member_id: BeId,
     },
     ClubMembers {
+        club_id: BeId,
+    },
+    ClubRoster {
         club_id: BeId,
     },
 
@@ -1841,6 +1847,7 @@ impl WireRequest {
                 | Self::ClubNames { .. }
                 | Self::ClubWhoAmI { .. }
                 | Self::ClubMembers { .. }
+                | Self::ClubRoster { .. }
                 | Self::ServerStats
                 | Self::LinkGet { .. }
                 | Self::LinkListForWork { .. }
@@ -2285,6 +2292,8 @@ pub enum ResponseValue {
 
     ClubWhoAmIResult {
         clubs: Vec<(BeId, String)>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        verifying_key: Option<String>,
     },
 
     ClubSetPasswordResult {
@@ -2297,6 +2306,12 @@ pub enum ResponseValue {
 
     ClubMembersResult {
         members: Vec<BeId>,
+    },
+
+    ClubRosterResult {
+        members: Vec<(BeId, String)>,
+        total: u64,
+        truncated: bool,
     },
 
     RevisionRangeResult {
@@ -2552,6 +2567,8 @@ pub struct WorkListEntry {
     pub source_edition_info: Option<String>,
     #[serde(default)]
     pub is_starred: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
