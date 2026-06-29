@@ -9929,9 +9929,6 @@ impl Server {
             .sessions
             .get(&session_id)
             .ok_or(ServerError::SessionNotFound(session_id))?;
-        if session.club_signing_key().is_none() {
-            return Err(ServerError::NotAuthorized);
-        }
         let ws = self
             .works
             .get(&work_be_id)
@@ -11992,7 +11989,7 @@ pub(crate) mod persist_snapshot {
     pub struct ServerSnapshot {
         grand_map_id_counter: BeId,
         session_counter: u64,
-    pub(crate) operation_counter: u64,
+        pub(crate) operation_counter: u64,
         system_clubs: SystemClubs,
         works: Vec<(BeId, WorkStateSnapshot)>,
         clubs: Vec<ClubSnapshot>,
@@ -26712,9 +26709,7 @@ mod tests {
     #[test]
     fn check_periodic_maintenance_returns_checkpoint_flag_after_threshold() {
         let (mut server, sid) = setup_logged_in_server();
-        server
-            .create_work(sid, Edition::from_text("test"))
-            .unwrap();
+        server.create_work(sid, Edition::from_text("test")).unwrap();
         server.checkpoint_path = Some(std::env::temp_dir().join("xudanu_test_ckpt"));
 
         let now = std::time::SystemTime::now()
@@ -26725,16 +26720,20 @@ mod tests {
         server.operation_counter = 10;
 
         let needs_ckpt = server.check_periodic_maintenance();
-        assert!(needs_ckpt, "check_periodic_maintenance should signal checkpoint needed after 30s threshold");
-        assert!(server.checkpoint_in_flight, "checkpoint_in_flight should be set");
+        assert!(
+            needs_ckpt,
+            "check_periodic_maintenance should signal checkpoint needed after 30s threshold"
+        );
+        assert!(
+            server.checkpoint_in_flight,
+            "checkpoint_in_flight should be set"
+        );
     }
 
     #[test]
     fn auto_checkpoint_suppressed_when_already_in_flight() {
         let (mut server, sid) = setup_logged_in_server();
-        server
-            .create_work(sid, Edition::from_text("test"))
-            .unwrap();
+        server.create_work(sid, Edition::from_text("test")).unwrap();
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -26744,7 +26743,10 @@ mod tests {
         server.checkpoint_in_flight = true;
 
         let needs_ckpt = server.auto_checkpoint();
-        assert!(!needs_ckpt, "should not schedule checkpoint when one is in flight");
+        assert!(
+            !needs_ckpt,
+            "should not schedule checkpoint when one is in flight"
+        );
     }
 
     #[test]
@@ -26768,11 +26770,11 @@ mod tests {
     #[test]
     fn auto_checkpoint_suppressed_with_restore_errors() {
         let (mut server, sid) = setup_logged_in_server();
-        server
-            .create_work(sid, Edition::from_text("test"))
-            .unwrap();
+        server.create_work(sid, Edition::from_text("test")).unwrap();
 
-        server.restore_errors.push("simulated corruption".to_string());
+        server
+            .restore_errors
+            .push("simulated corruption".to_string());
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -26780,7 +26782,10 @@ mod tests {
         server.last_checkpoint_time = now - 60;
 
         let needs_ckpt = server.auto_checkpoint();
-        assert!(!needs_ckpt, "checkpoint should be suppressed with restore errors");
+        assert!(
+            !needs_ckpt,
+            "checkpoint should be suppressed with restore errors"
+        );
     }
 
     fn make_transclusion_edition(
@@ -26793,21 +26798,28 @@ mod tests {
         let mut entries = Vec::new();
         let mut pos = 0i64;
         if !prefix.is_empty() {
-            entries.push((pos, std::sync::Arc::new(
-                crate::edition::range_element::Carrier::new(RangeElement::text(prefix)),
-            )));
+            entries.push((
+                pos,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(prefix),
+                )),
+            ));
             pos += 1;
         }
-        entries.push((pos, std::sync::Arc::new(
-            crate::edition::range_element::Carrier::new(
+        entries.push((
+            pos,
+            std::sync::Arc::new(crate::edition::range_element::Carrier::new(
                 RangeElement::transclusion(source, char_start, char_end),
-            ),
-        )));
+            )),
+        ));
         pos += 1;
         if !suffix.is_empty() {
-            entries.push((pos, std::sync::Arc::new(
-                crate::edition::range_element::Carrier::new(RangeElement::text(suffix)),
-            )));
+            entries.push((
+                pos,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(suffix),
+                )),
+            ));
         }
         Edition::from_entries(entries)
     }
@@ -26815,52 +26827,87 @@ mod tests {
     #[test]
     fn transclusion_attribution_basic_single_hop() {
         let (mut server, sid) = setup_logged_in_server();
-        let src = server.create_work(sid, Edition::from_text("original source text")).unwrap();
-        let doc = server.create_work(sid, Edition::from_text("intro ")).unwrap();
-        server.element_insert(sid, doc, 6, RangeElement::transclusion(src, 0, 21)).unwrap();
+        let src = server
+            .create_work(sid, Edition::from_text("original source text"))
+            .unwrap();
+        let doc = server
+            .create_work(sid, Edition::from_text("intro "))
+            .unwrap();
+        server
+            .element_insert(sid, doc, 6, RangeElement::transclusion(src, 0, 21))
+            .unwrap();
 
         let result = server.resolve_inline_transclusions(doc).unwrap();
-        assert!(result.text.contains("original source text"), "resolved text should contain source content");
+        assert!(
+            result.text.contains("original source text"),
+            "resolved text should contain source content"
+        );
         assert_eq!(result.span_ranges.len(), 1, "should have 1 span range");
         assert_eq!(result.span_ranges[0].source_work_id, src);
-        assert_eq!(result.span_ranges[0].resolved_content, "original source text");
+        assert_eq!(
+            result.span_ranges[0].resolved_content,
+            "original source text"
+        );
 
         let chain = server.transclusion_again_chain(doc, 6, 27);
-        assert!(chain.len() >= 2, "again chain should have at least 2 hops, got {}", chain.len());
+        assert!(
+            chain.len() >= 2,
+            "again chain should have at least 2 hops, got {}",
+            chain.len()
+        );
         assert!(!chain[0].is_original, "first hop should not be original");
-        assert!(chain.last().unwrap().is_original, "last hop should be original");
+        assert!(
+            chain.last().unwrap().is_original,
+            "last hop should be original"
+        );
         assert_eq!(chain.last().unwrap().work_id, src);
     }
 
     #[test]
     fn transclusion_attribution_nested_three_level_chain() {
         let (mut server, sid) = setup_logged_in_server();
-        let src = server.create_work(sid, Edition::from_text("deep origin")).unwrap();
-        let mid = server.create_work(sid, make_transclusion_edition("mid:", src, 0, 11, "")).unwrap();
-        let doc = server.create_work(sid, make_transclusion_edition("top:", mid, 0, 100, "")).unwrap();
+        let src = server
+            .create_work(sid, Edition::from_text("deep origin"))
+            .unwrap();
+        let mid = server
+            .create_work(sid, make_transclusion_edition("mid:", src, 0, 11, ""))
+            .unwrap();
+        let doc = server
+            .create_work(sid, make_transclusion_edition("top:", mid, 0, 100, ""))
+            .unwrap();
 
         let result = server.resolve_inline_transclusions(doc).unwrap();
-        assert!(result.text.contains("deep origin"), "3-level resolution should reach the origin");
-        assert!(result.text.contains("mid:"), "should contain middle layer text");
-        assert_eq!(result.span_ranges.len(), 2, "should have 2 spans (mid + src)");
+        assert!(
+            result.text.contains("deep origin"),
+            "3-level resolution should reach the origin"
+        );
+        assert!(
+            result.text.contains("mid:"),
+            "should contain middle layer text"
+        );
+        assert_eq!(
+            result.span_ranges.len(),
+            2,
+            "should have 2 spans (mid + src)"
+        );
 
         let chain = server.transclusion_again_chain(doc, 4, 100);
-        assert!(chain.len() >= 3, "3-level chain should have at least 3 hops, got {}", chain.len());
+        assert!(
+            chain.len() >= 3,
+            "3-level chain should have at least 3 hops, got {}",
+            chain.len()
+        );
     }
 
     #[test]
     fn transclusion_attribution_deep_chain_near_limit() {
         let (mut server, sid) = setup_logged_in_server();
         let origin_text = "X";
-        let mut prev = server.create_work(sid, Edition::from_text(origin_text)).unwrap();
+        let mut prev = server
+            .create_work(sid, Edition::from_text(origin_text))
+            .unwrap();
         for i in 0..28 {
-            let edition = make_transclusion_edition(
-                &format!("L{}:", i),
-                prev,
-                0,
-                100,
-                "",
-            );
+            let edition = make_transclusion_edition(&format!("L{}:", i), prev, 0, 100, "");
             let next = server.create_work(sid, edition).unwrap();
             prev = next;
         }
@@ -26875,15 +26922,11 @@ mod tests {
     fn transclusion_attribution_chain_at_depth_limit() {
         let (mut server, sid) = setup_logged_in_server();
         let origin_text = "DEPTH";
-        let mut prev = server.create_work(sid, Edition::from_text(origin_text)).unwrap();
+        let mut prev = server
+            .create_work(sid, Edition::from_text(origin_text))
+            .unwrap();
         for i in 0..35 {
-            let edition = make_transclusion_edition(
-                &format!("D{}:", i),
-                prev,
-                0,
-                100,
-                "",
-            );
+            let edition = make_transclusion_edition(&format!("D{}:", i), prev, 0, 100, "");
             let next = server.create_work(sid, edition).unwrap();
             prev = next;
         }
@@ -26897,8 +26940,12 @@ mod tests {
     #[test]
     fn transclusion_attribution_self_cycle() {
         let (mut server, sid) = setup_logged_in_server();
-        let doc = server.create_work(sid, Edition::from_text("selfref")).unwrap();
-        server.element_insert(sid, doc, 0, RangeElement::transclusion(doc, 0, 7)).unwrap();
+        let doc = server
+            .create_work(sid, Edition::from_text("selfref"))
+            .unwrap();
+        server
+            .element_insert(sid, doc, 0, RangeElement::transclusion(doc, 0, 7))
+            .unwrap();
 
         let result = server.resolve_inline_transclusions(doc).unwrap();
         assert!(
@@ -26915,9 +26962,15 @@ mod tests {
     #[test]
     fn transclusion_attribution_mutual_cycle() {
         let (mut server, sid) = setup_logged_in_server();
-        let a = server.create_work(sid, Edition::from_text("alpha")).unwrap();
-        let b = server.create_work(sid, make_transclusion_edition("B:", a, 0, 5, "")).unwrap();
-        let _ = server.element_insert(sid, a, 5, RangeElement::transclusion(b, 0, 100)).unwrap();
+        let a = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
+        let b = server
+            .create_work(sid, make_transclusion_edition("B:", a, 0, 5, ""))
+            .unwrap();
+        let _ = server
+            .element_insert(sid, a, 5, RangeElement::transclusion(b, 0, 100))
+            .unwrap();
 
         let result = server.resolve_inline_transclusions(a).unwrap();
         assert!(
@@ -26933,15 +26986,33 @@ mod tests {
     #[test]
     fn transclusion_attribution_multiple_different_sources() {
         let (mut server, sid) = setup_logged_in_server();
-        let src_a = server.create_work(sid, Edition::from_text("from source A")).unwrap();
-        let src_b = server.create_work(sid, Edition::from_text("from source B")).unwrap();
-        let doc = server.create_work(sid, Edition::from_text("start")).unwrap();
-        server.element_insert(sid, doc, 5, RangeElement::transclusion(src_a, 0, 13)).unwrap();
-        server.element_insert(sid, doc, 5, RangeElement::transclusion(src_b, 0, 13)).unwrap();
+        let src_a = server
+            .create_work(sid, Edition::from_text("from source A"))
+            .unwrap();
+        let src_b = server
+            .create_work(sid, Edition::from_text("from source B"))
+            .unwrap();
+        let doc = server
+            .create_work(sid, Edition::from_text("start"))
+            .unwrap();
+        server
+            .element_insert(sid, doc, 5, RangeElement::transclusion(src_a, 0, 13))
+            .unwrap();
+        server
+            .element_insert(sid, doc, 5, RangeElement::transclusion(src_b, 0, 13))
+            .unwrap();
 
         let result = server.resolve_inline_transclusions(doc).unwrap();
-        assert_eq!(result.span_ranges.len(), 2, "should have 2 spans from 2 sources");
-        let source_ids: Vec<_> = result.span_ranges.iter().map(|s| s.source_work_id).collect();
+        assert_eq!(
+            result.span_ranges.len(),
+            2,
+            "should have 2 spans from 2 sources"
+        );
+        let source_ids: Vec<_> = result
+            .span_ranges
+            .iter()
+            .map(|s| s.source_work_id)
+            .collect();
         assert!(source_ids.contains(&src_a), "should include src_a");
         assert!(source_ids.contains(&src_b), "should include src_b");
     }
@@ -26968,9 +27039,15 @@ mod tests {
             .authenticate_with_pending(sid2, &LockCredential::Password(user2_pass.to_vec()))
             .unwrap();
 
-        let src = server.create_work(sid1, Edition::from_text("authored by user1")).unwrap();
-        let doc = server.create_work(sid2, Edition::from_text("doc by user2 ")).unwrap();
-        server.element_insert(sid2, doc, 12, RangeElement::transclusion(src, 0, 18)).unwrap();
+        let src = server
+            .create_work(sid1, Edition::from_text("authored by user1"))
+            .unwrap();
+        let doc = server
+            .create_work(sid2, Edition::from_text("doc by user2 "))
+            .unwrap();
+        server
+            .element_insert(sid2, doc, 12, RangeElement::transclusion(src, 0, 18))
+            .unwrap();
 
         let spans = server.attribution_query(doc, None, None).unwrap();
         assert!(spans.len() >= 1, "should have attribution spans");
@@ -26981,9 +27058,13 @@ mod tests {
     #[test]
     fn transclusion_attribution_timestamps_present() {
         let (mut server, sid) = setup_logged_in_server();
-        let src = server.create_work(sid, Edition::from_text("timestamped content")).unwrap();
+        let src = server
+            .create_work(sid, Edition::from_text("timestamped content"))
+            .unwrap();
         let doc = server.create_work(sid, Edition::from_text("doc ")).unwrap();
-        server.element_insert(sid, doc, 4, RangeElement::transclusion(src, 0, 20)).unwrap();
+        server
+            .element_insert(sid, doc, 4, RangeElement::transclusion(src, 0, 20))
+            .unwrap();
 
         let spans = server.attribution_query(doc, None, None).unwrap();
         for span in &spans {
@@ -27000,14 +27081,21 @@ mod tests {
     #[test]
     fn transclusion_attribution_log_chain_valid_after_transclusions() {
         let (mut server, sid) = setup_logged_in_server();
-        let src = server.create_work(sid, Edition::from_text("log test source")).unwrap();
-        let doc = server.create_work(sid, Edition::from_text("log test doc")).unwrap();
-        server.element_insert(sid, doc, 0, RangeElement::transclusion(src, 0, 16)).unwrap();
+        let src = server
+            .create_work(sid, Edition::from_text("log test source"))
+            .unwrap();
+        let doc = server
+            .create_work(sid, Edition::from_text("log test doc"))
+            .unwrap();
+        server
+            .element_insert(sid, doc, 0, RangeElement::transclusion(src, 0, 16))
+            .unwrap();
 
         let status = server.attribution_log_status();
         match status {
             crate::server::transport::protocol::ResponseValue::AttributionLogStatusResult {
-                chain_valid, ..
+                chain_valid,
+                ..
             } => {
                 assert!(chain_valid, "attribution log chain should be valid");
             }
@@ -27018,42 +27106,88 @@ mod tests {
     #[test]
     fn transclusion_resolved_query_returns_source_provenance() {
         let (mut server, sid) = setup_editing_server();
-        let src = server.create_work(sid, Edition::from_text("provenance test")).unwrap();
-        let doc = server.create_work(sid, Edition::from_text("wrap ")).unwrap();
-        server.element_insert(sid, doc, 5, RangeElement::transclusion(src, 0, 15)).unwrap();
+        let src = server
+            .create_work(sid, Edition::from_text("provenance test"))
+            .unwrap();
+        let doc = server
+            .create_work(sid, Edition::from_text("wrap "))
+            .unwrap();
+        server
+            .element_insert(sid, doc, 5, RangeElement::transclusion(src, 0, 15))
+            .unwrap();
 
         let resolved = server.resolve_inline_transclusions(doc).unwrap();
-        assert!(resolved.span_ranges.len() >= 1, "should have inline transclusion spans");
+        assert!(
+            resolved.span_ranges.len() >= 1,
+            "should have inline transclusion spans"
+        );
 
         let spans = server.attribution_query_resolved(doc).unwrap();
-        assert!(!spans.is_empty(), "resolved attribution should return spans");
+        assert!(
+            !spans.is_empty(),
+            "resolved attribution should return spans"
+        );
     }
 
     #[test]
     fn transclusion_attribution_coverage_for_mixed_content() {
         let (mut server, sid) = setup_logged_in_server();
-        let src = server.create_work(sid, Edition::from_text("transcluded part")).unwrap();
+        let src = server
+            .create_work(sid, Edition::from_text("transcluded part"))
+            .unwrap();
         let doc_entries = vec![
-            (0i64, std::sync::Arc::new(
-                crate::edition::range_element::Carrier::new(RangeElement::text("my own text ")),
-            )),
-            (1, std::sync::Arc::new(
-                crate::edition::range_element::Carrier::new(RangeElement::transclusion(src, 0, 16)),
-            )),
-            (2, std::sync::Arc::new(
-                crate::edition::range_element::Carrier::new(RangeElement::text(" and more own")),
-            )),
+            (
+                0i64,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text("my own text "),
+                )),
+            ),
+            (
+                1,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::transclusion(src, 0, 16),
+                )),
+            ),
+            (
+                2,
+                std::sync::Arc::new(crate::edition::range_element::Carrier::new(
+                    RangeElement::text(" and more own"),
+                )),
+            ),
         ];
-        let doc = server.create_work(sid, Edition::from_entries(doc_entries)).unwrap();
+        let doc = server
+            .create_work(sid, Edition::from_entries(doc_entries))
+            .unwrap();
 
         let result = server.resolve_inline_transclusions(doc).unwrap();
-        assert!(result.text.contains("my own text"), "should contain own text");
-        assert!(result.text.contains("transcluded part"), "should contain transcluded text");
-        assert!(result.text.contains("and more own"), "should contain suffix text");
-        assert_eq!(result.span_ranges.len(), 1, "should have 1 span for the transclusion");
+        assert!(
+            result.text.contains("my own text"),
+            "should contain own text"
+        );
+        assert!(
+            result.text.contains("transcluded part"),
+            "should contain transcluded text"
+        );
+        assert!(
+            result.text.contains("and more own"),
+            "should contain suffix text"
+        );
+        assert_eq!(
+            result.span_ranges.len(),
+            1,
+            "should have 1 span for the transclusion"
+        );
 
         let chain = server.transclusion_again_chain(doc, 12, 28);
-        assert!(chain.len() >= 2, "should trace back to source, got {} hops", chain.len());
-        assert_eq!(chain.last().unwrap().work_id, src, "chain should end at source");
+        assert!(
+            chain.len() >= 2,
+            "should trace back to source, got {} hops",
+            chain.len()
+        );
+        assert_eq!(
+            chain.last().unwrap().work_id,
+            src,
+            "chain should end at source"
+        );
     }
 }
