@@ -23,6 +23,8 @@ pub struct Club {
     display_name: Option<String>,
     is_personal: bool,
     encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
+    email: Option<String>,
+    verified: bool,
 }
 
 impl Club {
@@ -40,6 +42,8 @@ impl Club {
             display_name: None,
             is_personal: false,
             encrypted_signing_key: None,
+            email: None,
+            verified: false,
         }
     }
 
@@ -57,6 +61,8 @@ impl Club {
             display_name: None,
             is_personal: false,
             encrypted_signing_key: None,
+            email: None,
+            verified: false,
         }
     }
 
@@ -80,6 +86,8 @@ impl Club {
             display_name,
             is_personal: true,
             encrypted_signing_key: None,
+            email: None,
+            verified: false,
         }
     }
 
@@ -117,6 +125,22 @@ impl Club {
 
     pub fn set_name(&mut self, name: String) {
         self.name = Some(name);
+    }
+
+    pub fn email(&self) -> Option<&str> {
+        self.email.as_deref()
+    }
+
+    pub fn set_email(&mut self, email: Option<String>) {
+        self.email = email;
+    }
+
+    pub fn is_verified(&self) -> bool {
+        self.verified
+    }
+
+    pub fn set_verified(&mut self, verified: bool) {
+        self.verified = verified;
     }
 
     pub fn owner(&self) -> Option<BeId> {

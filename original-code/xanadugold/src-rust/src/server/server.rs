@@ -431,6 +431,8 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
             display_name: club.display_name().map(|s| s.to_string()),
             credential: club.credential().cloned(),
             encrypted_signing_key: club.encrypted_signing_key().cloned(),
+            email: club.email().map(|s| s.to_string()),
+            verified: club.is_verified(),
             members: club.members().iter().copied().collect(),
             sponsored_works: club.sponsored_works().iter().copied().collect(),
         };
@@ -5787,6 +5789,8 @@ impl Server {
                     club.set_display_name(club_ref.display_name.clone());
                     club.set_credential(club_ref.credential.clone());
                     club.set_encrypted_signing_key(club_ref.encrypted_signing_key.clone());
+                    club.set_email(club_ref.email.clone());
+                    club.set_verified(club_ref.verified);
                     for member_id in &club_ref.members {
                         club.add_member(*member_id);
                     }
@@ -11954,6 +11958,10 @@ pub(crate) mod persist_snapshot {
         #[serde(default)]
         encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
         #[serde(default)]
+        email: Option<String>,
+        #[serde(default)]
+        verified: bool,
+        #[serde(default)]
         members: Vec<BeId>,
         #[serde(default)]
         sponsored_works: Vec<BeId>,
@@ -12091,6 +12099,8 @@ pub(crate) mod persist_snapshot {
                     display_name: club.display_name().map(|s| s.to_string()),
                     credential: club.credential().cloned(),
                     encrypted_signing_key: club.encrypted_signing_key().cloned(),
+                    email: club.email().map(|s| s.to_string()),
+                    verified: club.is_verified(),
                     members: club.members().iter().copied().collect(),
                     sponsored_works: club.sponsored_works().iter().copied().collect(),
                 })
@@ -12330,6 +12340,8 @@ pub(crate) mod persist_snapshot {
                 club.set_display_name(club_snap.display_name.clone());
                 club.set_credential(club_snap.credential.clone());
                 club.set_encrypted_signing_key(club_snap.encrypted_signing_key.clone());
+                club.set_email(club_snap.email.clone());
+                club.set_verified(club_snap.verified);
                 for member_id in &club_snap.members {
                     club.add_member(*member_id);
                 }
@@ -12838,6 +12850,8 @@ pub(crate) mod persist_snapshot {
                     display_name: club.display_name().map(|s| s.to_string()),
                     credential: club.credential().cloned(),
                     encrypted_signing_key: club.encrypted_signing_key().cloned(),
+                    email: club.email().map(|s| s.to_string()),
+                    verified: club.is_verified(),
                     members: club.members().iter().copied().collect(),
                     sponsored_works: club.sponsored_works().iter().copied().collect(),
                 };

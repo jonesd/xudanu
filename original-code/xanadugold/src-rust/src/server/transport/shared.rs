@@ -24,6 +24,7 @@ pub struct AppState {
     pub csrf_tokens: Arc<Mutex<HashSet<String>>>,
     pub oauth_config: OAuthConfig,
     pub oauth_state: OAuthState,
+    pub verification: crate::server::verification::VerificationState,
 }
 
 impl AppState {
@@ -48,6 +49,7 @@ impl AppState {
             csrf_tokens: Arc::new(Mutex::new(HashSet::new())),
             oauth_config: OAuthConfig::default(),
             oauth_state: OAuthState::new(),
+            verification: crate::server::verification::VerificationState::new(String::new()),
         }
     }
 

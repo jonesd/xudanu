@@ -34,6 +34,9 @@ pub mod source_matcher;
 pub mod transport;
 
 #[cfg(feature = "server")]
+pub mod verification;
+
+#[cfg(feature = "server")]
 pub mod wait_barrier;
 
 #[cfg(feature = "server")]

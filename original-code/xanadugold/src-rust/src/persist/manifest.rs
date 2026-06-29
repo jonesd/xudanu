@@ -24,6 +24,10 @@ pub struct ClubChunkRef {
     #[serde(default)]
     pub encrypted_signing_key: Option<crate::crypto::club_keys::EncryptedSigningKey>,
     #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub verified: bool,
+    #[serde(default)]
     pub members: Vec<BeId>,
     #[serde(default)]
     pub sponsored_works: Vec<BeId>,

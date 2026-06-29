@@ -48,6 +48,9 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/csrf-token", get(csrf_token_handler))
         .route("/auth/login", post(auth_login_handler))
         .route("/auth/logout", post(auth_logout_handler))
+        .route("/signup", post(signup_handler))
+        .route("/verify", get(verify_handler))
+        .route("/resend-verification", post(resend_verification_handler))
         .route("/auth/github", get(super::oauth::github_redirect_handler))
         .route(
             "/auth/github/callback",
@@ -228,6 +231,165 @@ async fn auth_logout_handler(
     (
         axum::http::StatusCode::OK,
         [(axum::http::header::SET_COOKIE, cookie.to_string())],
+        r#"{"ok":true}"#,
+    )
+        .into_response()
+}
+
+// === Email verification (account verification, FR-2) ===
+
+#[derive(serde::Deserialize)]
+struct SignupRequest {
+    display_name: String,
+    email: String,
+    password: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ResendRequest {
+    email: String,
+}
+
+#[derive(serde::Deserialize)]
+struct VerifyParams {
+    token: Option<String>,
+}
+
+fn is_valid_email(e: &str) -> bool {
+    let parts: Vec<&str> = e.split('@').collect();
+    parts.len() == 2 && !parts[0].is_empty() && parts[1].contains('.')
+}
+
+fn html_page(title: &str, body: &str) -> axum::response::Response {
+    let html = format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>{title}</title></head>\
+         <body style=\"font-family:sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem\">\
+         <h1>{title}</h1><p>{body}</p></body></html>"
+    );
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/html; charset=utf-8".to_string(),
+        )],
+        html,
+    )
+        .into_response()
+}
+
+/// POST /signup — create an unverified personal club and send a verification link.
+async fn signup_handler(
+    State(state): State<SharedState>,
+    axum::Json(body): axum::Json<SignupRequest>,
+) -> axum::response::Response {
+    let email = body.email.trim().to_lowercase();
+    let display_name = body.display_name.trim().to_string();
+    if display_name.is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            [("content-type", "application/json")],
+            r#"{"error":"display name required"}"#,
+        )
+            .into_response();
+    }
+    if !is_valid_email(&email) {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            [("content-type", "application/json")],
+            r#"{"error":"invalid email"}"#,
+        )
+            .into_response();
+    }
+    if body.password.len() < 10 {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            [("content-type", "application/json")],
+            r#"{"error":"password must be at least 10 characters"}"#,
+        )
+            .into_response();
+    }
+
+    let pw = body.password.clone();
+    let created = state
+        .server
+        .with_server(|srv| -> Option<crate::edition::BeId> {
+            let sid = srv.connect();
+            srv.login_public(sid).ok()?;
+            let phc = crate::crypto::password::hash_password(pw.as_bytes()).ok()?;
+            let club_id = srv
+                .create_personal_club(
+                    sid,
+                    display_name.clone(),
+                    Some(crate::server::club::Credential::Password { phc_hash: phc }),
+                    Some(pw.as_bytes().to_vec()),
+                )
+                .ok()?;
+            srv.club_set_email(sid, club_id, Some(email.clone())).ok()?;
+            let _ = srv.disconnect(sid);
+            Some(club_id)
+        });
+
+    let club_id = match created {
+        Some(id) => id,
+        None => {
+            return (
+                axum::http::StatusCode::CONFLICT,
+                [("content-type", "application/json")],
+                r#"{"error":"signup failed (name or email may be taken)"}"#,
+            )
+                .into_response();
+        }
+    };
+
+    let token = state.verification.issue(club_id, &email);
+    state.verification.send_verification(&email, &token);
+    (
+        axum::http::StatusCode::OK,
+        [("content-type", "application/json")],
+        format!(r#"{{"ok":true,"club_id":{}}}"#, club_id),
+    )
+        .into_response()
+}
+
+/// GET /verify?token=... — redeem the token and mark the club verified.
+async fn verify_handler(
+    State(state): State<SharedState>,
+    axum::extract::Query(params): axum::extract::Query<VerifyParams>,
+) -> axum::response::Response {
+    let token = params.token.unwrap_or_default();
+    match state.verification.redeem(&token) {
+        Some((club_id, _email)) => {
+            let _ = state
+                .server
+                .with_server(|srv| srv.mark_club_verified(club_id));
+            html_page(
+                "Email verified",
+                "Your email is verified. You can close this tab and sign in to start editing.",
+            )
+        }
+        None => html_page(
+            "Verification failed",
+            "This link is invalid, expired, or already used.",
+        ),
+    }
+}
+
+/// POST /resend-verification — re-issue a verification link for an email.
+/// Returns ok regardless of whether the email exists (do not leak account existence).
+async fn resend_verification_handler(
+    State(state): State<SharedState>,
+    axum::Json(body): axum::Json<ResendRequest>,
+) -> axum::response::Response {
+    let email = body.email.trim().to_lowercase();
+    let club_id = state
+        .server
+        .with_server(|srv| srv.find_club_by_email(&email));
+    if let Some(id) = club_id {
+        let token = state.verification.issue(id, &email);
+        state.verification.send_verification(&email, &token);
+    }
+    (
+        axum::http::StatusCode::OK,
+        [("content-type", "application/json")],
         r#"{"ok":true}"#,
     )
         .into_response()
