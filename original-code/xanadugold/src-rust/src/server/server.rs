@@ -94,6 +94,10 @@ impl WorkState {
         self.source_edition_info.as_deref()
     }
 
+    pub(crate) fn latest_revision_timestamp(&self) -> Option<u64> {
+        self.revision_timestamps.values().copied().max()
+    }
+
     fn mark_dirty(&mut self) {
         self.chunk_ref = None;
         self.dirty_gen = self.dirty_gen.wrapping_add(1);
