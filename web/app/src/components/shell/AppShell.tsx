@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useCrdtSync } from "../../hooks/useCrdtSync";
-import { useTransclusion } from "../../hooks/useTransclusion";
+import { useTransclusion, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion";
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair } from "../../author-color";
 import { CollaborativeEditor } from "../CollaborativeEditor";
@@ -98,12 +98,19 @@ export function AppShell() {
 
   const loadTransclusionLinks = transclusion.loadLinks;
   const loadBacklinks = transclusion.loadBacklinks;
+  const loadLinkTypes = transclusion.loadLinkTypes;
   useEffect(() => {
     if (connected && workBeId !== null && clientRef.current && identity) {
       loadTransclusionLinks(clientRef.current, workBeId, works);
       loadBacklinks(clientRef.current, workBeId);
     }
   }, [connected, workBeId, works, identity, loadTransclusionLinks, loadBacklinks]);
+
+  useEffect(() => {
+    if (connected && clientRef.current && identity) {
+      loadLinkTypes(clientRef.current);
+    }
+  }, [connected, identity, loadLinkTypes]);
 
   const selectWork = useCallback((id: number) => {
     setWorkBeId(id);
@@ -179,6 +186,46 @@ export function AppShell() {
     [clientRef, workBeId, transclusion, works, text, compound, setText],
   );
 
+  const handleCreateLinkSelection = useCallback(() => {
+    if (!selectionRange || workBeId === null) return;
+    let selectedText = "";
+    const domSel = window.getSelection();
+    if (domSel && !domSel.isCollapsed && domSel.toString().length > 0) {
+      selectedText = domSel.toString();
+    } else {
+      selectedText = displayText.slice(selectionRange.start, selectionRange.end);
+    }
+    const title = currentWorkMeta?.title || `Work ${workBeId.toString(16).padStart(4, "0")}`;
+    transclusion.holdLinkSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
+  }, [selectionRange, workBeId, displayText, currentWorkMeta, transclusion]);
+
+  const handleCreateLinkTarget = useCallback(
+    async (typeId: number) => {
+      if (!clientRef.current || workBeId === null || !selectionRange) return;
+      let targetText = "";
+      const domSel = window.getSelection();
+      if (domSel && !domSel.isCollapsed && domSel.toString().length > 0) {
+        targetText = domSel.toString();
+      } else {
+        targetText = displayText.slice(selectionRange.start, selectionRange.end);
+      }
+      const linkId = await transclusion.createContentLink(
+        clientRef.current,
+        workBeId,
+        selectionRange.start,
+        selectionRange.end,
+        targetText,
+        typeId,
+      );
+      if (linkId !== null && clientRef.current) {
+        await new Promise((r) => setTimeout(r, 300));
+        await transclusion.loadLinks(clientRef.current, workBeId, works);
+        await transclusion.loadBacklinks(clientRef.current, workBeId);
+      }
+    },
+    [clientRef, workBeId, selectionRange, displayText, transclusion, works],
+  );
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -195,10 +242,11 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (!transclusion.pending) return;
+    if (!transclusion.pending && !transclusion.pendingLink) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         transclusion.clearPending();
+        transclusion.clearPendingLink();
         e.preventDefault();
       }
     };
@@ -282,7 +330,7 @@ export function AppShell() {
       />
 
       <div className="document-area">
-        {workBeId !== null && selectionRange && !transclusion.pending && (
+        {workBeId !== null && selectionRange && !transclusion.pending && !transclusion.pendingLink && (
           <button
             type="button"
             className="transclude-btn"
@@ -291,6 +339,59 @@ export function AppShell() {
           >
             Transclude ({selectionRange.start}-{selectionRange.end})
           </button>
+        )}
+        {workBeId !== null && selectionRange && !transclusion.pending && !transclusion.pendingLink && (
+          <button
+            type="button"
+            className="transclude-btn"
+            style={{ left: "auto", right: "50%", transform: "translateX(50%)", borderColor: "var(--blue)" }}
+            onClick={handleCreateLinkSelection}
+            title="Hold this selection to create a typed content link"
+          >
+            Create Link ({selectionRange.start}-{selectionRange.end})
+          </button>
+        )}
+        {transclusion.pendingLink && !selectionRange && (
+          <div className="transclude-btn" style={{ left: "50%", transform: "translateX(-50%)", borderColor: "var(--blue)", cursor: "default" }}>
+            Linking from "{transclusion.pendingLink.sourceWorkTitle}" — select target text
+            <button
+              type="button"
+              onClick={transclusion.clearPendingLink}
+              style={{ marginLeft: 8, background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer" }}
+            >
+              cancel
+            </button>
+          </div>
+        )}
+        {transclusion.pendingLink && selectionRange && workBeId !== null && (
+          <div className="transclude-btn" style={{ left: "50%", transform: "translateX(-50%)", borderColor: "var(--blue)", cursor: "default", display: "flex", gap: 6, alignItems: "center" }}>
+            <span style={{ color: "var(--text-muted)", fontSize: 11 }}>Link type:</span>
+            {DEFAULT_LINK_TYPES.map((t) => (
+              <button
+                key={t.type_id}
+                type="button"
+                onClick={() => handleCreateLinkTarget(t.type_id)}
+                style={{
+                  background: "none",
+                  border: `1px solid ${t.color}`,
+                  borderRadius: 4,
+                  color: t.color,
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  cursor: "pointer",
+                }}
+              >
+                {t.name}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={transclusion.clearPendingLink}
+              style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: 11 }}
+            >
+              cancel
+            </button>
+          </div>
         )}
         {workBeId !== null && transclusion.pending && (
           <TransclusionBadge

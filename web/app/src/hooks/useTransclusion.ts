@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import type { CrdtSyncClient, LinkEntry, TransclusionMarker, WorkListEntry, BacklinkEntry } from "../api/crdt_sync";
+import type { CrdtSyncClient, LinkEntry, TransclusionMarker, WorkListEntry, BacklinkEntry, LinkTypeInfo } from "../api/crdt_sync";
 
 export interface PendingTransclusion {
   sourceWorkId: number;
@@ -9,16 +9,38 @@ export interface PendingTransclusion {
   text: string;
 }
 
+export interface PendingLink {
+  sourceWorkId: number;
+  sourceWorkTitle: string;
+  start: number;
+  end: number;
+  text: string;
+}
+
+export const DEFAULT_LINK_TYPES: { type_id: number; name: string; color: string; lineStyle: string }[] = [
+  { type_id: 1, name: "Comment", color: "#58a6ff", lineStyle: "dashed" },
+  { type_id: 2, name: "Reference", color: "#3fb950", lineStyle: "solid" },
+  { type_id: 3, name: "Disagreement", color: "#f85149", lineStyle: "underline" },
+  { type_id: 4, name: "Quotation", color: "#a371f7", lineStyle: "dotted" },
+  { type_id: 5, name: "See Also", color: "#d29922", lineStyle: "dashed" },
+];
+
 export interface TransclusionState {
   pending: PendingTransclusion | null;
+  pendingLink: PendingLink | null;
   links: LinkEntry[];
   markers: TransclusionMarker[];
   backlinks: BacklinkEntry[];
+  linkTypes: LinkTypeInfo[];
   holdSelection: (workId: number, workTitle: string, start: number, end: number, text: string) => void;
   clearPending: () => void;
+  holdLinkSelection: (workId: number, workTitle: string, start: number, end: number, text: string) => void;
+  clearPendingLink: () => void;
+  createContentLink: (client: CrdtSyncClient, targetWorkId: number, targetStart: number, targetEnd: number, targetText: string, typeId: number) => Promise<number | null>;
   placeTransclusion: (client: CrdtSyncClient, targetWorkId: number, targetPosition: number) => Promise<number | null>;
   loadLinks: (client: CrdtSyncClient, workId: number, works: WorkListEntry[]) => Promise<void>;
   loadBacklinks: (client: CrdtSyncClient, workId: number) => Promise<void>;
+  loadLinkTypes: (client: CrdtSyncClient) => Promise<void>;
   deleteLink: (client: CrdtSyncClient, linkId: number) => Promise<void>;
 }
 
@@ -37,9 +59,11 @@ function markerColorForWork(workId: number): string {
 
 export function useTransclusion(): TransclusionState {
   const [pending, setPending] = useState<PendingTransclusion | null>(null);
+  const [pendingLink, setPendingLink] = useState<PendingLink | null>(null);
   const [links, setLinks] = useState<LinkEntry[]>([]);
   const [markers, setMarkers] = useState<TransclusionMarker[]>([]);
   const [backlinks, setBacklinks] = useState<BacklinkEntry[]>([]);
+  const [linkTypes, setLinkTypes] = useState<LinkTypeInfo[]>([]);
 
   const holdSelection = useCallback(
     (workId: number, workTitle: string, start: number, end: number, text: string) => {
@@ -138,6 +162,62 @@ export function useTransclusion(): TransclusionState {
     [],
   );
 
+  const holdLinkSelection = useCallback(
+    (workId: number, workTitle: string, start: number, end: number, text: string) => {
+      setPendingLink({ sourceWorkId: workId, sourceWorkTitle: workTitle, start, end, text });
+    },
+    [],
+  );
+
+  const clearPendingLink = useCallback(() => {
+    setPendingLink(null);
+  }, []);
+
+  const createContentLink = useCallback(
+    async (
+      client: CrdtSyncClient,
+      targetWorkId: number,
+      targetStart: number,
+      targetEnd: number,
+      targetText: string,
+      typeId: number,
+    ): Promise<number | null> => {
+      if (!pendingLink) return null;
+      const source = pendingLink;
+      setPendingLink(null);
+      try {
+        const linkId = await client.linkCreate(
+          source.sourceWorkId,
+          targetWorkId,
+          { excerpt: source.text, start: source.start, end: source.end },
+          { excerpt: targetText, start: targetStart, end: targetEnd },
+        );
+        try {
+          await client.linkSetTypes(linkId, [typeId]);
+        } catch (e) {
+          console.error("Failed to set link type:", e);
+        }
+        return linkId;
+      } catch (e) {
+        console.error("Failed to create content link:", e);
+        return null;
+      }
+    },
+    [pendingLink],
+  );
+
+  const loadLinkTypes = useCallback(
+    async (client: CrdtSyncClient) => {
+      try {
+        const result = await client.linkTypeList();
+        setLinkTypes(result.length > 0 ? result : DEFAULT_LINK_TYPES.map((t) => ({ type_id: t.type_id, name: t.name })));
+      } catch {
+        setLinkTypes(DEFAULT_LINK_TYPES.map((t) => ({ type_id: t.type_id, name: t.name })));
+      }
+    },
+    [],
+  );
+
   const loadBacklinks = useCallback(
     async (client: CrdtSyncClient, workId: number) => {
       try {
@@ -165,14 +245,20 @@ export function useTransclusion(): TransclusionState {
 
   return {
     pending,
+    pendingLink,
     links,
     markers,
     backlinks,
+    linkTypes,
     holdSelection,
     clearPending,
+    holdLinkSelection,
+    clearPendingLink,
+    createContentLink,
     placeTransclusion,
     loadLinks,
     loadBacklinks,
+    loadLinkTypes,
     deleteLink,
   };
 }
