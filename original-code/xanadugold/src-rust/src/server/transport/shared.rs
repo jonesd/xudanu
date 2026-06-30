@@ -25,6 +25,7 @@ pub struct AppState {
     pub oauth_config: OAuthConfig,
     pub oauth_state: OAuthState,
     pub verification: crate::server::verification::VerificationState,
+    pub governance_tx: tokio::sync::broadcast::Sender<super::federation_handler::FederationFrame>,
 }
 
 impl AppState {
@@ -38,6 +39,7 @@ impl AppState {
     pub fn with_security(srv: Server, monitor: SecurityMonitor) -> Self {
         let handle = ServerHandle::new(srv);
         let (tx, _) = tokio::sync::broadcast::channel(256);
+        let (gov_tx, _) = tokio::sync::broadcast::channel(64);
         AppState {
             server: handle,
             event_bus: tx,
@@ -50,6 +52,7 @@ impl AppState {
             oauth_config: OAuthConfig::default(),
             oauth_state: OAuthState::new(),
             verification: crate::server::verification::VerificationState::new(String::new()),
+            governance_tx: gov_tx,
         }
     }
 

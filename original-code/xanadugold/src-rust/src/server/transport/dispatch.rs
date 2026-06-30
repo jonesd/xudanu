@@ -2544,6 +2544,13 @@ fn dispatch_inner(
             }
             srv.ensure_admin(session_id)?;
             let proposal = srv.governance_propose(transactions);
+            if let Some(ref p) = proposal {
+                let _ = state.governance_tx.send(
+                    super::federation_handler::FederationFrame::GovernancePrePrepare {
+                        proposal: p.clone(),
+                    },
+                );
+            }
             Ok(ResponseValue::GovernanceProposeResult { proposal })
         }
 

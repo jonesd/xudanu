@@ -75,6 +75,7 @@ fn usage() {
     eprintln!("  --tls-key <path>         TLS private key PEM file");
     eprintln!("  --peer <addr>            Federation peer address (repeatable, e.g. ws://host:port/federation)");
     eprintln!("  --federation-mode <mode> Federation mode: closed (default) or open");
+    eprintln!("  --trusted-peer-key <hex> Trusted peer Ed25519 verifying key (repeatable)");
     eprintln!("  --allowed-origin <url>   Allowed WebSocket origin (repeatable, e.g. https://example.com)");
     eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
     eprintln!("  --key-passphrase <pw>   Passphrase for encrypted server key file");
@@ -399,6 +400,7 @@ async fn main() {
             let mut tls_key: Option<PathBuf> = None;
             let mut federation_peers: Vec<String> = Vec::new();
             let mut federation_mode = "closed".to_string();
+            let mut trusted_peer_keys: Vec<String> = Vec::new();
             let mut allowed_origins: std::collections::HashSet<String> =
                 std::collections::HashSet::new();
             let mut csrf_enabled = false;
@@ -457,6 +459,14 @@ async fn main() {
                             eprintln!("Error: --federation-mode requires a value");
                             std::process::exit(1);
                         });
+                    }
+                    "--trusted-peer-key" => {
+                        i += 1;
+                        let key = args.get(i).map(|s| s.to_string()).unwrap_or_else(|| {
+                            eprintln!("Error: --trusted-peer-key requires a hex key");
+                            std::process::exit(1);
+                        });
+                        trusted_peer_keys.push(key);
                     }
                     "--allowed-origin" => {
                         i += 1;
@@ -624,6 +634,27 @@ async fn main() {
                     federation_mode
                 );
                 server.set_federation_config(config);
+
+                server.membership_bootstrap_init();
+                tracing::info!(
+                    "Federation: membership bootstrap complete, server_id={}",
+                    server.federation_server_id()
+                );
+
+                for key in &trusted_peer_keys {
+                    server.federation_register_peer_key(key.clone());
+                    tracing::info!(
+                        "Federation: registered trusted peer key={}…",
+                        &key[..32.min(key.len())]
+                    );
+                }
+
+                let vk_hex = server.server_verifying_key_hex();
+                tracing::info!("Federation: this server's verifying key: {}", vk_hex);
+                tracing::info!(
+                    "Federation: other peers must register this key via --trusted-peer-key {}",
+                    vk_hex
+                );
             }
 
             let state = {
@@ -777,6 +808,20 @@ async fn main() {
                         }
                     }
                 });
+            }
+
+            {
+                let fed_enabled = state
+                    .server
+                    .with_server_ref(|srv| srv.federation_is_enabled());
+                if fed_enabled {
+                    let pool = xudanu::server::transport::federation_active::PeerPool::new();
+                    xudanu::server::transport::federation_active::spawn_federation_tasks(
+                        state.clone(),
+                        pool,
+                    )
+                    .await;
+                }
             }
 
             if let (Some(cert_path), Some(key_path)) = (tls_cert, tls_key) {
