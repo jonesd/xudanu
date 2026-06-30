@@ -5183,6 +5183,205 @@ async fn federation_content_replication_between_two_servers() {
     panic!("expected error or ready, got: {:?}", next_val);
 }
 
+// ── FR-3 Activation integration tests ───────────────────────────────
+//
+// These tests exercise the real outbound dialer, handshake, key
+// registration, periodic sync, and content replication — the full
+// activation layer (federation_active.rs). Unlike the Phase 15 tests
+// above which manually connect raw WebSockets with fake keys, these
+// tests let the servers dial each other and sync automatically.
+
+#[tokio::test]
+async fn federation_activation_content_replication_end_to_end() {
+    use std::time::Duration;
+    use xudanu::server::federation::{FederationConfig, FederationMode, PeerAddress};
+    use xudanu::server::transport::federation_active::{spawn_federation_tasks, PeerPool};
+
+    let srv_a = FederationTestServer::start().await;
+    let srv_b = FederationTestServer::start().await;
+
+    let a_port = srv_a.addr.port();
+    let b_port = srv_b.addr.port();
+
+    srv_a.state.server.with_server(|srv| {
+        srv.set_federation_config(FederationConfig {
+            enabled: true,
+            peers: vec![PeerAddress::new("127.0.0.1", b_port)],
+            mode: FederationMode::Closed,
+            min_endorsements: 2,
+        });
+        srv.membership_bootstrap_init();
+    });
+
+    srv_b.state.server.with_server(|srv| {
+        srv.set_federation_config(FederationConfig {
+            enabled: true,
+            peers: vec![PeerAddress::new("127.0.0.1", a_port)],
+            mode: FederationMode::Closed,
+            min_endorsements: 2,
+        });
+        srv.membership_bootstrap_init();
+    });
+
+    let a_key = srv_a
+        .state
+        .server
+        .with_server_ref(|s| s.server_verifying_key_hex());
+    let b_key = srv_b
+        .state
+        .server
+        .with_server_ref(|s| s.server_verifying_key_hex());
+    srv_a
+        .state
+        .server
+        .with_server(|s| s.federation_register_peer_key(b_key));
+    srv_b
+        .state
+        .server
+        .with_server(|s| s.federation_register_peer_key(a_key));
+
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv_a.addr, PROTOCOL_VERSION
+    );
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(2, "session_login_public", None)).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            3,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "federation sync test content"}})),
+        ),
+    )
+    .await;
+    assert_eq!(resp["type"], "response");
+
+    let initial_b = srv_b.state.server.with_server_ref(|s| s.work_count());
+
+    let pool_a = PeerPool::new();
+    let pool_b = PeerPool::new();
+    spawn_federation_tasks(srv_a.state.clone(), pool_a).await;
+    spawn_federation_tasks(srv_b.state.clone(), pool_b).await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let b_count = srv_b.state.server.with_server_ref(|s| s.work_count());
+        if b_count > initial_b {
+            break;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            panic!(
+                "Work did not replicate to B within 15s (initial={}, current={})",
+                initial_b, b_count
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+
+    let remote_count = srv_b
+        .state
+        .server
+        .with_server_ref(|s| s.federation_remote_origin_count());
+    assert!(
+        remote_count > 0,
+        "B should have recorded a federated remote origin"
+    );
+}
+
+#[tokio::test]
+async fn federation_activation_membership_converges() {
+    use std::time::Duration;
+    use xudanu::server::federation::{FederationConfig, FederationMode, PeerAddress};
+    use xudanu::server::transport::federation_active::{spawn_federation_tasks, PeerPool};
+
+    let srv_a = FederationTestServer::start().await;
+    let srv_b = FederationTestServer::start().await;
+
+    let a_port = srv_a.addr.port();
+    let b_port = srv_b.addr.port();
+
+    srv_a.state.server.with_server(|srv| {
+        srv.set_federation_config(FederationConfig {
+            enabled: true,
+            peers: vec![PeerAddress::new("127.0.0.1", b_port)],
+            mode: FederationMode::Closed,
+            min_endorsements: 2,
+        });
+        srv.membership_bootstrap_init();
+    });
+
+    srv_b.state.server.with_server(|srv| {
+        srv.set_federation_config(FederationConfig {
+            enabled: true,
+            peers: vec![PeerAddress::new("127.0.0.1", a_port)],
+            mode: FederationMode::Closed,
+            min_endorsements: 2,
+        });
+        srv.membership_bootstrap_init();
+    });
+
+    let a_key = srv_a
+        .state
+        .server
+        .with_server_ref(|s| s.server_verifying_key_hex());
+    let b_key = srv_b
+        .state
+        .server
+        .with_server_ref(|s| s.server_verifying_key_hex());
+    srv_a
+        .state
+        .server
+        .with_server(|s| s.federation_register_peer_key(b_key));
+    srv_b
+        .state
+        .server
+        .with_server(|s| s.federation_register_peer_key(a_key));
+
+    let a_id = srv_a
+        .state
+        .server
+        .with_server_ref(|s| s.federation_server_id());
+    let b_id = srv_b
+        .state
+        .server
+        .with_server_ref(|s| s.federation_server_id());
+
+    let pool_a = PeerPool::new();
+    let pool_b = PeerPool::new();
+    spawn_federation_tasks(srv_a.state.clone(), pool_a).await;
+    spawn_federation_tasks(srv_b.state.clone(), pool_b).await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let a_knows_b = srv_a
+            .state
+            .server
+            .with_server_ref(|s| s.membership_is_known_member(&b_id));
+        let b_knows_a = srv_b
+            .state
+            .server
+            .with_server_ref(|s| s.membership_is_known_member(&a_id));
+        if a_knows_b && b_knows_a {
+            break;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            let a_members = srv_a.state.server.with_server_ref(|s| s.membership_list());
+            let b_members = srv_b.state.server.with_server_ref(|s| s.membership_list());
+            panic!(
+                "Membership did not converge within 15s. A knows {} members, B knows {} members",
+                a_members.len(),
+                b_members.len()
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
 // ── Cross-server transclusion tests (Phase 17) ──────────────────────
 
 #[tokio::test]
