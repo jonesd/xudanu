@@ -4,6 +4,7 @@ pub mod chained_log;
 pub mod channel;
 pub mod codec;
 pub mod dispatch;
+pub mod federation_active;
 pub mod federation_handler;
 pub mod handler;
 pub mod oauth;

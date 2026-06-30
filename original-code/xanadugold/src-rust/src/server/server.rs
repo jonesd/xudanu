@@ -11153,6 +11153,10 @@ impl Server {
         self.server_keypair.signing_verifying_key()
     }
 
+    pub fn server_verifying_key_hex(&self) -> String {
+        Self::hex_encode(&self.server_keypair.signing_verifying_key().to_bytes())
+    }
+
     pub fn federation_get_work_edition(
         &self,
         work_id: u64,

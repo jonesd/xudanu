@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 
 use super::shared::SharedState;
 
-const FEDERATION_PROTOCOL_VERSION: u8 = 1;
-const FEDERATION_MIN_COMPAT_VERSION: u8 = 1;
+pub(crate) const FEDERATION_PROTOCOL_VERSION: u8 = 1;
+pub(crate) const FEDERATION_MIN_COMPAT_VERSION: u8 = 1;
 const HANDSHAKE_TIMEOUT_SECS: u64 = 30;
 
 fn default_min_compat() -> u8 {
@@ -854,7 +854,10 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
     );
 }
 
-fn encrypt_frame(plaintext: &[u8], cipher: &mut crate::crypto::aead::SessionCipher) -> Vec<u8> {
+pub(crate) fn encrypt_frame(
+    plaintext: &[u8],
+    cipher: &mut crate::crypto::aead::SessionCipher,
+) -> Vec<u8> {
     match cipher.seal(plaintext, b"xudanu-federation") {
         Ok(envelope) => envelope.encode(),
         Err(e) => {
@@ -864,7 +867,7 @@ fn encrypt_frame(plaintext: &[u8], cipher: &mut crate::crypto::aead::SessionCiph
     }
 }
 
-fn decrypt_frame(
+pub(crate) fn decrypt_frame(
     data: &[u8],
     cipher: &mut crate::crypto::aead::SessionCipher,
 ) -> Result<Vec<u8>, String> {
@@ -933,8 +936,418 @@ async fn wait_for_frame(
     wait_for_frame_inner(ws_receiver).await.and_then(|r| r.ok())
 }
 
-fn hex_encode(data: &[u8]) -> String {
+pub(crate) fn hex_encode(data: &[u8]) -> String {
     data.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+pub(crate) async fn process_federation_frame(
+    frame: FederationFrame,
+    state: &SharedState,
+    peer_server_id: &str,
+) -> Vec<FederationFrame> {
+    match frame {
+        FederationFrame::Hello(_) | FederationFrame::Signature(_) => {
+            tracing::warn!("Federation: unexpected handshake frame after completion, ignoring");
+            vec![]
+        }
+        FederationFrame::Heartbeat => vec![FederationFrame::Ack],
+        FederationFrame::Ack => vec![],
+        FederationFrame::Ready(r) => {
+            tracing::info!("Peer ready: {} status={}", r.server_id, r.status);
+            vec![]
+        }
+        FederationFrame::SyncPull(pull) => {
+            let max = pull
+                .max_entries
+                .min(crate::server::federation::MAX_SYNC_ENTRIES);
+            let push = state.server.with_server(|srv| {
+                let mut works = srv.federation_export_works();
+                let mut editions = srv.federation_export_editions();
+                let mut blobs = srv.federation_export_blobs();
+                works.truncate(max);
+                editions.truncate(max.saturating_sub(works.len()));
+                blobs.truncate(
+                    max.saturating_sub(works.len())
+                        .saturating_sub(editions.len()),
+                );
+                crate::server::federation::SyncPush {
+                    server_id: srv.federation_server_id(),
+                    works,
+                    editions,
+                    blobs,
+                }
+            });
+            vec![FederationFrame::SyncPush(push)]
+        }
+        FederationFrame::SyncPush(push) => {
+            let result = state.server.with_server(|srv| {
+                let my_id = srv.federation_server_id();
+                let (works_imported, works_known) =
+                    srv.federation_import_works(&push.works, &my_id);
+                let (blobs_imported, blobs_known) =
+                    srv.federation_import_blobs(&push.blobs, &push.server_id);
+                crate::server::federation::ContentSyncResult {
+                    works_received: works_imported,
+                    editions_received: 0,
+                    blobs_received: blobs_imported,
+                    works_already_known: works_known,
+                    editions_already_known: 0,
+                    blobs_already_known: blobs_known,
+                }
+            });
+            vec![FederationFrame::SyncResult(result)]
+        }
+        FederationFrame::SyncResult(_result) => vec![],
+        FederationFrame::ContentGet { work_id } => {
+            let response = state.server.with_server_ref(|srv| {
+                match srv.federation_get_work_edition(work_id) {
+                    Some(edition_payload) => FederationFrame::ContentResponse {
+                        found: true,
+                        edition_payload: Some(edition_payload),
+                    },
+                    None => FederationFrame::ContentResponse {
+                        found: false,
+                        edition_payload: None,
+                    },
+                }
+            });
+            vec![response]
+        }
+        FederationFrame::ContentResponse { .. } => vec![],
+        FederationFrame::BlobGet { content_hash_hex } => {
+            let response = state.server.with_server_ref(|srv| {
+                match srv.federation_get_blob(&content_hash_hex) {
+                    Some((data_b64, mime_type)) => FederationFrame::BlobResponse {
+                        found: true,
+                        data: Some(data_b64),
+                        mime_type: Some(mime_type),
+                    },
+                    None => FederationFrame::BlobResponse {
+                        found: false,
+                        data: None,
+                        mime_type: None,
+                    },
+                }
+            });
+            vec![response]
+        }
+        FederationFrame::BlobResponse { .. } => vec![],
+        FederationFrame::TranscludeQuery {
+            content_fingerprint_hex,
+            direct_only,
+        } => {
+            let results = state.server.with_server(|srv| {
+                srv.federation_query_local_transclusion(&content_fingerprint_hex, direct_only)
+            });
+            vec![FederationFrame::TranscludeResponse { results }]
+        }
+        FederationFrame::TranscludeResponse { .. } => vec![],
+        FederationFrame::ContentFetch {
+            content_fingerprint_hex,
+        } => {
+            let response = state.server.with_server(|srv| {
+                match srv.federation_fetch_by_fingerprint(&content_fingerprint_hex) {
+                    super::super::server::FederationFetchResponse::Edition(payload) => {
+                        FederationFrame::ContentFetchResponse {
+                            found: true,
+                            edition_payload: Some(payload),
+                            blob_data: None,
+                            blob_mime_type: None,
+                        }
+                    }
+                    super::super::server::FederationFetchResponse::Blob(data, mime) => {
+                        FederationFrame::ContentFetchResponse {
+                            found: true,
+                            edition_payload: None,
+                            blob_data: Some(data),
+                            blob_mime_type: Some(mime),
+                        }
+                    }
+                    super::super::server::FederationFetchResponse::NotFound => {
+                        FederationFrame::ContentFetchResponse {
+                            found: false,
+                            edition_payload: None,
+                            blob_data: None,
+                            blob_mime_type: None,
+                        }
+                    }
+                }
+            });
+            vec![response]
+        }
+        FederationFrame::ContentFetchResponse { .. } => vec![],
+        FederationFrame::EndorsementSyncPush { endorsements } => {
+            state.server.with_server(|srv| {
+                srv.reconcile_merge_endorsements(&endorsements);
+            });
+            let reply_endorsements = state
+                .server
+                .with_server(|srv| srv.reconcile_export_endorsements());
+            vec![FederationFrame::EndorsementSyncResult {
+                endorsements: reply_endorsements,
+            }]
+        }
+        FederationFrame::EndorsementSyncResult { endorsements } => {
+            state.server.with_server(|srv| {
+                srv.reconcile_merge_endorsements(&endorsements);
+            });
+            vec![]
+        }
+        FederationFrame::StateSyncPush { states } => {
+            state.server.with_server(|srv| {
+                for remote_state in &states {
+                    srv.reconcile_merge_remote(remote_state.clone());
+                }
+            });
+            let reply_states = state.server.with_server(|srv| srv.reconcile_export_all());
+            vec![FederationFrame::StateSyncResult {
+                states: reply_states,
+            }]
+        }
+        FederationFrame::StateSyncResult { states } => {
+            state.server.with_server(|srv| {
+                for remote_state in &states {
+                    srv.reconcile_merge_remote(remote_state.clone());
+                }
+            });
+            vec![]
+        }
+        FederationFrame::MembershipJoinRequest { entry } => {
+            let result = state
+                .server
+                .with_server(|srv| srv.membership_process_join(entry));
+            vec![FederationFrame::MembershipJoinResult { result }]
+        }
+        FederationFrame::MembershipJoinResult { result } => {
+            match &result {
+                crate::server::federation::JoinResult::Accepted {
+                    server_id,
+                    membership_entry,
+                    offered_endorsement,
+                } => {
+                    tracing::info!("Membership join accepted for server {}", server_id);
+                    if let Some(proof) = offered_endorsement {
+                        let endorsee_id = membership_entry.server_id.clone();
+                        let proof_clone = proof.clone();
+                        state
+                            .server
+                            .with_server(|srv| srv.membership_endorse(&endorsee_id, proof_clone));
+                    }
+                }
+                crate::server::federation::JoinResult::Rejected { server_id, reason } => {
+                    tracing::warn!(
+                        "Membership join rejected for server {}: {}",
+                        server_id,
+                        reason
+                    );
+                }
+            }
+            vec![]
+        }
+        FederationFrame::MembershipEndorseOffer { server_id, proof } => {
+            let accepted = state
+                .server
+                .with_server(|srv| srv.membership_endorse(&server_id, proof));
+            vec![FederationFrame::MembershipEndorseResult { accepted }]
+        }
+        FederationFrame::MembershipEndorseResult { accepted } => {
+            tracing::info!("Membership endorse result: accepted={}", accepted);
+            vec![]
+        }
+        FederationFrame::MembershipSyncPush { members } => {
+            state.server.with_server(|srv| {
+                srv.membership_merge_orset(&members);
+            });
+            let reply_members = state
+                .server
+                .with_server(|srv| srv.membership_export_orset().clone());
+            vec![FederationFrame::MembershipSyncResult {
+                members: reply_members,
+            }]
+        }
+        FederationFrame::MembershipSyncResult { members } => {
+            state.server.with_server(|srv| {
+                srv.membership_merge_orset(&members);
+            });
+            vec![]
+        }
+        FederationFrame::MembershipLeave { server_id } => {
+            if server_id != peer_server_id {
+                tracing::warn!(
+                    "MembershipLeave: rejected — claimed {} but authenticated as {}",
+                    server_id,
+                    peer_server_id
+                );
+            } else {
+                state
+                    .server
+                    .with_server(|srv| srv.membership_remove(&server_id));
+                tracing::info!("Peer {} left federation membership", server_id);
+            }
+            vec![]
+        }
+        FederationFrame::GovernancePrePrepare { proposal } => {
+            tracing::info!(
+                "Governance: received pre-prepare from {} view={} seq={}",
+                proposal.proposer_id,
+                proposal.view_number,
+                proposal.sequence_number
+            );
+            let my_id = state
+                .server
+                .with_server_ref(|srv| srv.federation_server_id());
+            let prepare_vote = crate::server::federation::PbftVote {
+                view_number: proposal.view_number,
+                sequence_number: proposal.sequence_number,
+                voter_id: my_id,
+                phase: crate::server::federation::PbftPhase::Prepare,
+            };
+            let phase = state
+                .server
+                .with_server(|srv| srv.governance_receive_prepare(prepare_vote.clone()));
+
+            let mut replies = vec![FederationFrame::GovernancePrepareVote { vote: prepare_vote }];
+
+            if phase == crate::server::federation::RoundPhase::Commit {
+                let commit_vote = crate::server::federation::PbftVote {
+                    view_number: proposal.view_number,
+                    sequence_number: proposal.sequence_number,
+                    voter_id: state
+                        .server
+                        .with_server_ref(|srv| srv.federation_server_id()),
+                    phase: crate::server::federation::PbftPhase::Commit,
+                };
+                replies.push(FederationFrame::GovernanceCommitVote { vote: commit_vote });
+            }
+            replies
+        }
+        FederationFrame::GovernancePrepareVote { vote } => {
+            if vote.voter_id != peer_server_id {
+                tracing::warn!(
+                    "Governance: rejected prepare vote from {} claiming to be {}",
+                    peer_server_id,
+                    vote.voter_id
+                );
+            } else {
+                let phase = state
+                    .server
+                    .with_server(|srv| srv.governance_receive_prepare(vote));
+                tracing::debug!("Governance: prepare vote processed, phase={:?}", phase);
+            }
+            vec![]
+        }
+        FederationFrame::GovernanceCommitVote { vote } => {
+            if vote.voter_id != peer_server_id {
+                tracing::warn!(
+                    "Governance: rejected commit vote from {} claiming to be {}",
+                    peer_server_id,
+                    vote.voter_id
+                );
+            } else {
+                let phase = state
+                    .server
+                    .with_server(|srv| srv.governance_receive_commit(vote));
+                if phase == crate::server::federation::RoundPhase::Sealed {
+                    if let Some(batch) = state.server.with_server(|srv| srv.governance_seal_round())
+                    {
+                        tracing::info!(
+                            "Governance: sealed batch seq={} with {} txs",
+                            batch.sequence_number,
+                            batch.transactions.len()
+                        );
+                    }
+                }
+            }
+            vec![]
+        }
+        FederationFrame::GovernanceSealed { batch } => {
+            tracing::info!(
+                "Governance: received sealed batch seq={} from {}",
+                batch.sequence_number,
+                batch.proposer_id
+            );
+            state.server.with_server(|srv| {
+                if batch.proposer_id != peer_server_id {
+                    tracing::warn!(
+                        "Governance: rejected sealed batch from {} — proposer is {}",
+                        peer_server_id,
+                        batch.proposer_id
+                    );
+                    return;
+                }
+                let expected_seq = srv.governance_current_sequence() + 1;
+                if batch.sequence_number != expected_seq {
+                    tracing::warn!(
+                        "Governance: rejected sealed batch seq={} — expected {}",
+                        batch.sequence_number,
+                        expected_seq
+                    );
+                    return;
+                }
+                if srv.governance_is_applied(batch.sequence_number) {
+                    tracing::info!(
+                        "Governance: skipping already-applied batch seq={}",
+                        batch.sequence_number
+                    );
+                    return;
+                }
+                for tx in &batch.transactions {
+                    srv.governance_execute_tx(tx);
+                }
+                srv.governance_mark_applied(batch.sequence_number);
+            });
+            vec![]
+        }
+        FederationFrame::CrdtSyncPull {
+            server_id,
+            work_ids,
+        } => {
+            if server_id != peer_server_id {
+                tracing::warn!(
+                    "CrdtSyncPull: rejected — claimed {} but authenticated as {}",
+                    server_id,
+                    peer_server_id
+                );
+                vec![]
+            } else {
+                let updates = state
+                    .server
+                    .with_server(|srv| srv.federation_crdt_pull(&work_ids));
+                vec![FederationFrame::CrdtSyncResult { updates }]
+            }
+        }
+        FederationFrame::CrdtSyncPush { server_id, updates } => {
+            if server_id != peer_server_id {
+                tracing::warn!(
+                    "CrdtSyncPush: rejected — claimed {} but authenticated as {}",
+                    server_id,
+                    peer_server_id
+                );
+            } else {
+                let result = state
+                    .server
+                    .with_server(|srv| srv.federation_crdt_apply(&updates));
+                tracing::info!(
+                    "CRDT federation: applied {} updates, {} failed from {}",
+                    result.updates_applied,
+                    result.updates_failed,
+                    peer_server_id
+                );
+            }
+            vec![]
+        }
+        FederationFrame::CrdtSyncResult { updates } => {
+            let result = state
+                .server
+                .with_server(|srv| srv.federation_crdt_apply(&updates));
+            tracing::info!(
+                "CRDT federation sync result: applied {}, failed {}",
+                result.updates_applied,
+                result.updates_failed
+            );
+            vec![]
+        }
+    }
 }
 
 #[cfg(test)]
