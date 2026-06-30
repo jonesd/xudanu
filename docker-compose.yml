@@ -1,0 +1,80 @@
+# 3-peer federation test bed on a private bridge network.
+#
+# Each container is a FULL node: web UI + client WS (/xudanu) + federation WS
+# (/federation). Host ports 8081/8082/8083 let you browse each peer.
+#
+# NOTE: federation is not yet operational end-to-end (FR-3 — outbound dialer,
+# bootstrap, peer-key registration — is the missing wiring). Until FR-3 lands,
+# these run as three standalone servers that do not yet federate. This compose
+# is the test harness, ready for FR-3.
+
+services:
+  peer1:
+    build: .
+    image: xudanu:0.8.0
+    container_name: xudanu-peer1
+    hostname: peer1
+    networks: [xudanu-net]
+    ports: ["8081:8080"]
+    volumes: ["peer1-data:/data"]
+    command:
+      - run
+      - "0.0.0.0:8080"
+      - /data
+      - --static-dir
+      - /app/dist
+      - --federation-mode
+      - closed
+      - --peer
+      - ws://peer2:8080/federation
+      - --peer
+      - ws://peer3:8080/federation
+
+  peer2:
+    image: xudanu:0.8.0
+    container_name: xudanu-peer2
+    hostname: peer2
+    networks: [xudanu-net]
+    ports: ["8082:8080"]
+    volumes: ["peer2-data:/data"]
+    command:
+      - run
+      - "0.0.0.0:8080"
+      - /data
+      - --static-dir
+      - /app/dist
+      - --federation-mode
+      - closed
+      - --peer
+      - ws://peer1:8080/federation
+      - --peer
+      - ws://peer3:8080/federation
+
+  peer3:
+    image: xudanu:0.8.0
+    container_name: xudanu-peer3
+    hostname: peer3
+    networks: [xudanu-net]
+    ports: ["8083:8080"]
+    volumes: ["peer3-data:/data"]
+    command:
+      - run
+      - "0.0.0.0:8080"
+      - /data
+      - --static-dir
+      - /app/dist
+      - --federation-mode
+      - closed
+      - --peer
+      - ws://peer1:8080/federation
+      - --peer
+      - ws://peer2:8080/federation
+
+networks:
+  xudanu-net:
+    driver: bridge
+
+volumes:
+  peer1-data:
+  peer2-data:
+  peer3-data:
