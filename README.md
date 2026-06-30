@@ -84,7 +84,7 @@ This project is an ongoing evolution, not a static port.
 
 ## Status
 
-**Developer Preview** — the system is functional and tested (1,799 tests passing) but APIs and data formats may evolve. Snapshot migration ensures your data survives upgrades. Versioned wire protocol supports backward-compatible API changes.
+**Developer Preview** — the system is functional and tested (2,500+ tests passing) but APIs and data formats may evolve. Snapshot migration ensures your data survives upgrades. Versioned wire protocol supports backward-compatible API changes.
 
 **[Feature Status](original-code/xanadugold/src-rust/docs/feature-status.md)** — comprehensive tracking of all Xanadu, Udanax Gold, and Xudanu features with implementation status. Covers Nelson's 17 Rules, core data structures, wire protocol, frontend, security, federation, and Xudanu-exclusive additions (LLM integration, cryptographic provenance, CRDT collaborative editing).
 
@@ -148,6 +148,49 @@ Go to **http://127.0.0.1:8080** — you'll see the document editor.
 - [Notification System](http://dgjones.info/xudanu/notification-system.html) — content watch, similarity matching, and micropayments.
 - [All documentation](http://dgjones.info/xudanu/) — index of all available docs.
 - [Server README](original-code/xanadugold/src-rust/README.md) — CLI reference, web UI guide, TLS setup, federation, and architecture details.
+
+---
+
+## Federation & Clustering
+
+Xudanu runs as a single server on a laptop, but it also supports **multi-machine federation** — a cluster of independent peer nodes that replicate content, converge membership, and make cluster-wide decisions via PBFT consensus.
+
+**What works today (v0.8.1):**
+- Outbound dialer with automatic reconnect (exponential backoff)
+- Mutual Ed25519/X25519 handshake with ChaCha20-Poly1305 encrypted channels
+- Content replication (BLAKE3-verified, CRDT-convergent — duplicates are harmless)
+- Membership convergence via web-of-trust endorsements
+- PBFT governance broadcast for cluster-wide decisions
+- Self-healing: a partitioned or crashed node catches up automatically on return
+
+**Try it with Docker (3-node cluster):**
+
+```bash
+docker compose up --build
+# Peer A: http://localhost:8081
+# Peer B: http://localhost:8082
+# Peer C: http://localhost:8083
+```
+
+Each peer is a full node (web UI + client WS + federation WS). Upload a document on one peer — it appears on the others within seconds.
+
+**Manual two-node setup:**
+
+```bash
+# Peer A — logs its verifying key at startup
+xudanu-server run 127.0.0.1:8081 data-a \
+  --peer 127.0.0.1:8082 \
+  --trusted-peer-key <B's verifying key>
+
+# Peer B — registers A's key
+xudanu-server run 127.0.0.1:8082 data-b \
+  --peer 127.0.0.1:8081 \
+  --trusted-peer-key <A's verifying key>
+```
+
+**Scaling:** 3-10 peers on VPS or donated machines works out of the box (full-mesh replication). Beyond 20 nodes, incremental sync and gossip relay are on the roadmap.
+
+**Full guide:** [Federation Activation](http://dgjones.info/xudanu/federation-activation.html) — PBFT explained, broadcast/sync diagrams, chunk replication flow, failure recovery scenarios, scaling estimates, and a problem checklist by cluster size.
 
 ---
 
