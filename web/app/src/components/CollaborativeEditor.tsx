@@ -83,6 +83,22 @@ interface MarkerHitZone {
   height: number;
 }
 
+const LINK_TYPE_STYLES: Record<number, { color: string }> = {
+  1: { color: "#58a6ff" },
+  2: { color: "#3fb950" },
+  3: { color: "#f85149" },
+  4: { color: "#a371f7" },
+  5: { color: "#d29922" },
+};
+
+const LINK_TYPE_NAMES: Record<number, string> = {
+  1: "Comment",
+  2: "Reference",
+  3: "Disagreement",
+  4: "Quotation",
+  5: "See Also",
+};
+
 function drawOverlay(
   editor: HTMLElement | null,
   canvas: HTMLCanvasElement | null,
@@ -307,31 +323,59 @@ function drawOverlay(
     const lastBottom = lastRect.bottom - rect.top;
     const height = lastBottom - firstTop;
 
-    const barWidth = 3 + (marker.provenanceChain && marker.provenanceChain.length > 0
-      ? 1 + marker.provenanceChain.length * 3 : 0);
+    const isIncoming = marker.direction === "incoming";
+    const typeStyle = marker.linkTypeId ? LINK_TYPE_STYLES[marker.linkTypeId] : null;
+    const barColor = typeStyle ? typeStyle.color : marker.color;
 
-    ctx.fillStyle = marker.color + "60";
-    ctx.fillRect(0, firstTop, 3, height);
-
-    if (marker.provenanceChain && marker.provenanceChain.length > 0) {
-      const chainCount = marker.provenanceChain.length;
-      const stackWidth = 2;
-      const gap = 1;
-      const chainColor = "#c4a35a";
-      for (let i = 0; i < chainCount; i++) {
-        const stackX = 3 + gap + i * (stackWidth + gap);
-        ctx.fillStyle = chainColor + "80";
-        ctx.fillRect(stackX, firstTop, stackWidth, height);
+    if (typeStyle) {
+      ctx.strokeStyle = barColor + "cc";
+      ctx.lineWidth = 1.5;
+      for (const r of rangeRects) {
+        const rx = r.left - rect.left;
+        const ry = r.bottom - rect.top - 1;
+        ctx.beginPath();
+        ctx.moveTo(rx, ry);
+        ctx.lineTo(rx + r.width, ry);
+        ctx.stroke();
       }
     }
 
-    hitZones.push({
-      marker,
-      x: 0,
-      y: firstTop,
-      width: Math.max(barWidth, 12),
-      height,
-    });
+    const barWidth = 3 + (marker.provenanceChain && marker.provenanceChain.length > 0
+      ? 1 + marker.provenanceChain.length * 3 : 0);
+
+    ctx.fillStyle = barColor + "60";
+    if (isIncoming && typeStyle) {
+      ctx.fillRect(rect.width - 3, firstTop, 3, height);
+      hitZones.push({
+        marker,
+        x: rect.width - Math.max(barWidth, 12),
+        y: firstTop,
+        width: Math.max(barWidth, 12),
+        height,
+      });
+    } else {
+      ctx.fillRect(0, firstTop, 3, height);
+
+      if (marker.provenanceChain && marker.provenanceChain.length > 0) {
+        const chainCount = marker.provenanceChain.length;
+        const stackWidth = 2;
+        const gap = 1;
+        const chainColor = "#c4a35a";
+        for (let i = 0; i < chainCount; i++) {
+          const stackX = 3 + gap + i * (stackWidth + gap);
+          ctx.fillStyle = chainColor + "80";
+          ctx.fillRect(stackX, firstTop, stackWidth, height);
+        }
+      }
+
+      hitZones.push({
+        marker,
+        x: 0,
+        y: firstTop,
+        width: Math.max(barWidth, 12),
+        height,
+      });
+    }
   }
 
   const now2 = Date.now();
@@ -1073,11 +1117,13 @@ export function CollaborativeEditor({
                 zIndex: 100,
               }}
             >
-              <div className="marker-tooltip-title" style={{ color: hoveredMarker.color }}>
+              <div className="marker-tooltip-title" style={{ color: hoveredMarker.linkTypeId ? (LINK_TYPE_STYLES[hoveredMarker.linkTypeId]?.color ?? hoveredMarker.color) : hoveredMarker.color }}>
                 {hoveredMarker.otherWorkTitle}
               </div>
               <div className="marker-tooltip-direction">
-                {hoveredMarker.direction === "outgoing" ? "Transcluded to" : "Transcluded from"}
+                {hoveredMarker.linkTypeId
+                  ? `${LINK_TYPE_NAMES[hoveredMarker.linkTypeId] ?? "Link"} — ${hoveredMarker.direction === "outgoing" ? "links to" : "linked from"}`
+                  : hoveredMarker.direction === "outgoing" ? "Transcluded to" : "Transcluded from"}
               </div>
               {hoveredMarker.otherWorkIsArchived && (
                 <div
