@@ -138,6 +138,7 @@ export interface LinkEntry {
   destination_archived?: boolean;
   destination_title?: string | null;
   destination_owner?: number | null;
+  link_types?: number[];
 }
 
 export interface ProvenanceHop {
@@ -288,6 +289,7 @@ export interface TransclusionMarker {
   otherWorkTitle: string;
   color: string;
   provenanceChain?: ProvenanceHop[];
+  linkTypeId?: number;
   // Ghost: the referenced (other) work is archived (soft-deleted).
   otherWorkIsArchived?: boolean;
   otherWorkOwner?: number | null;

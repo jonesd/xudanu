@@ -147,6 +147,7 @@ export function useTransclusion(): TransclusionState {
                 otherWorkTitle: title,
                 color,
                 provenanceChain: chain,
+                linkTypeId: link.link_types?.[0],
                 otherWorkIsArchived: !!otherArchived,
                 otherWorkOwner: otherOwner ?? null,
               });
