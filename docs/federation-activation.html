@@ -18,6 +18,8 @@ h2{font-size:26px;font-weight:700;color:#e6edf3;margin-top:56px;margin-bottom:16
 h3{font-size:18px;font-weight:600;color:#58a6ff;margin-top:32px;margin-bottom:12px}
 h4{font-size:15px;font-weight:600;color:#8b949e;margin-top:24px;margin-bottom:8px}
 p{margin-bottom:14px}
+ul,ol{margin:0 0 16px 24px}
+li{margin-bottom:6px}
 code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
 pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
 .diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
@@ -26,6 +28,8 @@ pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 2
 .note strong{color:#58a6ff}
 .gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
 .gold strong{color:#d29922}
+.warn{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warn strong{color:#f85149}
 .accent-green{color:#3fb950}.accent-blue{color:#58a6ff}.accent-purple{color:#a371f7}.accent-amber{color:#d29922}.accent-red{color:#f85149}.accent-cyan{color:#39d2c0}
 .legend{display:flex;gap:18px;flex-wrap:wrap;margin:12px 0 4px;font-size:12px;color:#8b949e;align-items:center}
 .legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;display:inline-block;margin-right:6px;vertical-align:middle}
@@ -33,73 +37,91 @@ pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 2
 .step .n{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:rgba(88,166,255,0.15);color:#58a6ff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;margin-top:2px}
 .step .b{flex:1;background:#161b22;border:1px solid #21262d;border-radius:8px;padding:10px 14px}
 .step .b strong{color:#e6edf3}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
+th{background:#161b22;color:#58a6ff;font-weight:600;padding:8px 12px;text-align:left;border-bottom:1px solid #30363d}
+td{padding:8px 12px;border-bottom:1px solid #21262d;color:#c9d1d9}
+tr:hover td{background:rgba(110,118,129,0.06)}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;letter-spacing:0.3px}
+.tag-ok{background:rgba(63,185,80,0.15);color:#3fb950}
+.tag-warn{background:rgba(210,153,34,0.15);color:#d29922}
+.tag-risk{background:rgba(248,81,73,0.15);color:#f85149}
 .footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
 svg text{font-family:'Inter',sans-serif}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:24px 0;font-size:13px}
+.toc-title{font-size:11px;font-weight:600;color:#8b949e;letter-spacing:1px;margin-bottom:8px;text-transform:uppercase}
+.toc a{display:block;padding:3px 0;color:#58a6ff;font-size:13px}
+.toc .toc-sub a{padding-left:16px;font-size:12px;color:#8b949e}
 </style>
 </head>
 <body>
 <div class="wrap">
 
 <h1>Federation Activation</h1>
-<p class="subtitle">How independent Xudanu servers connect, trust each other, and keep content in sync — and the wiring (FR-3) that turns the finished components into a running federation.</p>
+<p class="subtitle">How independent Xudanu servers connect, trust each other, replicate content, reach consensus, recover from failures, and scale — explained with diagrams for operators and developers.</p>
 
-<h2>What a federation is</h2>
+<div class="toc">
+<div class="toc-title">Contents</div>
+<a href="#what">What a Federation Is</a>
+<a href="#activation">The Activation Layer (FR-3) — Now Implemented</a>
+<a href="#pbft">PBFT: Making Decisions Together</a>
+<a href="#broadcast">Broadcasting &amp; Synchronization</a>
+<a href="#chunks">How Xudanu Shares Content</a>
+<a href="#join">How a Donated Machine Joins</a>
+<a href="#failures">When Things Go Wrong: Failure &amp; Recovery</a>
+<a href="#scaling">Scaling: What to Expect as You Grow</a>
+<a href="#checklist">Problem Checklist by Scale</a>
+<a href="#docker">Testing it: Docker Test Bed</a>
+</div>
+
+<h2 id="what">What a federation is</h2>
 <p>A Xudanu <strong>federation</strong> is a set of independent <span class="accent-blue">server peers</span>, each a full node (it serves the web UI, the client WebSocket <code>/xudanu</code>, and the peer WebSocket <code>/federation</code>). Peers connect to each other, <strong>replicate content</strong> (chunks verified by <span class="accent-green">BLAKE3</span>), maintain a shared <strong>membership</strong> via a web-of-trust of Ed25519 endorsements, and make cluster-wide decisions with <span class="accent-purple">PBFT consensus</span>. Users connect to any peer's web UI; the peers federate behind the scenes.</p>
-
-<div class="note"><strong>Current state:</strong> every building block (CRDTs, PBFT core, web-of-trust crypto, BLAKE3 replication, the mutual handshake, all inbound handlers) is implemented and merged (phases 14–19). What's missing is the <em>activation layer</em> — the runtime wiring that makes peers actually dial out, bootstrap, register keys, sync, and broadcast. That is <strong>FR-3</strong>.</p></div>
 
 <div class="diagram-container">
 <svg viewBox="0 0 900 400" width="100%" role="img" aria-label="Federation topology">
-  <!-- private network container -->
   <rect x="30" y="70" width="840" height="300" rx="14" fill="rgba(57,210,192,0.04)" stroke="#30363d" stroke-width="1.5" stroke-dasharray="6 4"/>
   <text x="46" y="92" font-size="12" fill="#8b949e" letter-spacing="0.5">PRIVATE FEDERATION NETWORK (e.g. Docker bridge, or WAN between donated hosts)</text>
 
-  <!-- users -->
   <a href="#"><g>
     <rect x="120" y="20" width="160" height="34" rx="6" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/>
-    <text x="200" y="42" text-anchor="middle" font-size="13" fill="#e6edf3">👤 Users (browser)</text>
+    <text x="200" y="42" text-anchor="middle" font-size="13" fill="#e6edf3">Users (browser)</text>
   </g></a>
   <a href="#"><g>
     <rect x="620" y="20" width="160" height="34" rx="6" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/>
-    <text x="700" y="42" text-anchor="middle" font-size="13" fill="#e6edf3">👤 Users (browser)</text>
+    <text x="700" y="42" text-anchor="middle" font-size="13" fill="#e6edf3">Users (browser)</text>
   </g></a>
   <line x1="200" y1="54" x2="200" y2="120" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="3 3"/>
   <line x1="700" y1="54" x2="700" y2="120" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="3 3"/>
   <text x="210" y="92" font-size="10" fill="#8b949e">web + /xudanu WS</text>
 
-  <!-- peers -->
   <g>
     <rect x="90" y="120" width="220" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
     <text x="200" y="148" text-anchor="middle" font-size="16" font-weight="700" fill="#e6edf3">Peer A</text>
-    <text x="200" y="172" text-anchor="middle" font-size="11" fill="#8b949e">web UI · /xudanu · /federation</text>
+    <text x="200" y="172" text-anchor="middle" font-size="11" fill="#8b949e">web UI . /xudanu . /federation</text>
     <text x="200" y="195" text-anchor="middle" font-size="11" fill="#3fb950">Ed25519 identity + /data</text>
     <text x="200" y="218" text-anchor="middle" font-size="10" fill="#484f58" font-family="JetBrains Mono,monospace">--peer B  --peer C</text>
   </g>
   <g>
     <rect x="340" y="120" width="220" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
     <text x="450" y="148" text-anchor="middle" font-size="16" font-weight="700" fill="#e6edf3">Peer B</text>
-    <text x="450" y="172" text-anchor="middle" font-size="11" fill="#8b949e">web UI · /xudanu · /federation</text>
+    <text x="450" y="172" text-anchor="middle" font-size="11" fill="#8b949e">web UI . /xudanu . /federation</text>
     <text x="450" y="195" text-anchor="middle" font-size="11" fill="#3fb950">Ed25519 identity + /data</text>
     <text x="450" y="218" text-anchor="middle" font-size="10" fill="#484f58" font-family="JetBrains Mono,monospace">--peer A  --peer C</text>
   </g>
   <g>
     <rect x="590" y="120" width="220" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
     <text x="700" y="148" text-anchor="middle" font-size="16" font-weight="700" fill="#e6edf3">Peer C</text>
-    <text x="700" y="172" text-anchor="middle" font-size="11" fill="#8b949e">web UI · /xudanu · /federation</text>
+    <text x="700" y="172" text-anchor="middle" font-size="11" fill="#8b949e">web UI . /xudanu . /federation</text>
     <text x="700" y="195" text-anchor="middle" font-size="11" fill="#3fb950">Ed25519 identity + /data</text>
     <text x="700" y="218" text-anchor="middle" font-size="10" fill="#484f58" font-family="JetBrains Mono,monospace">--peer A  --peer B</text>
   </g>
 
-  <!-- federation links (bidirectional) -->
   <line x1="310" y1="180" x2="340" y2="180" stroke="#a371f7" stroke-width="2"/>
   <line x1="560" y1="180" x2="590" y2="180" stroke="#a371f7" stroke-width="2"/>
   <path d="M 200 240 Q 360 320 450 240" fill="none" stroke="#a371f7" stroke-width="2" stroke-dasharray="5 3"/>
 
-  <!-- replication label -->
   <rect x="300" y="300" width="300" height="30" rx="6" fill="rgba(163,113,247,0.10)" stroke="#a371f7"/>
-  <text x="450" y="320" text-anchor="middle" font-size="12" fill="#a371f7">/federation WS · BLAKE3-verified replication</text>
+  <text x="450" y="320" text-anchor="middle" font-size="12" fill="#a371f7">/federation WS . BLAKE3-verified replication</text>
 
-  <!-- legend -->
   <g font-size="11" fill="#8b949e">
     <rect x="80" y="350" width="12" height="12" rx="2" fill="rgba(88,166,255,0.18)" stroke="#58a6ff"/><text x="98" y="360">users / client WS</text>
     <rect x="220" y="350" width="12" height="12" rx="2" fill="rgba(63,185,80,0.18)" stroke="#3fb950"/><text x="238" y="360">peer (full node)</text>
@@ -109,71 +131,533 @@ svg text{font-family:'Inter',sans-serif}
 <div class="diagram-caption">Three full-node peers on a private network. Users hit any peer's web UI; peers replicate content and membership over <code>/federation</code>.</div>
 </div>
 
-<h2>The activation layer (FR-3)</h2>
-<p>Five pieces of runtime wiring turn the finished components into a live federation. Today the server is <em>passive</em> — it accepts inbound <code>/federation</code> sockets but never reaches out. Each item below is the missing "active" half.</p>
+<h2 id="activation">The activation layer (FR-3) — now implemented</h2>
+<p>Five pieces of runtime wiring turn the finished components into a live federation. Each was previously missing; <strong>all five are now implemented</strong> and merged.</p>
 
-<h3><span class="accent-blue">1. Outbound dialer</span> <span style="color:#8b949e;font-weight:400">— the hard blocker</span></h3>
-<p>On startup, a task per <code>--peer</code> address dials <code>ws://peer/federation</code>, performs the existing mutual handshake <em>as the client side</em>, and holds the encrypted channel in a pool (with reconnect/backoff). All the inbound frame handlers already exist — this is the missing initiator that lets a peer send frames <em>to</em> others.</p>
+<div class="step"><div class="n">1</div><div class="b"><strong><span class="accent-blue">Outbound dialer</span></strong> — On startup, a task per <code>--peer</code> dials <code>ws://peer/federation</code>, performs the mutual handshake as the client side, and holds the encrypted channel in a <code>PeerPool</code>. Reconnects with exponential backoff (1s&rarr;30s cap).</div></div>
+<div class="step"><div class="n">2</div><div class="b"><strong><span class="accent-green">Startup bootstrap</span></strong> — <code>membership_bootstrap_init()</code> creates a self-endorsed membership entry so the node can act as a founder or be validated by others.</div></div>
+<div class="step"><div class="n">3</div><div class="b"><strong><span class="accent-amber">Peer-key registration</span></strong> — <code>--trusted-peer-key &lt;hex&gt;</code> registers trusted peer keys, fixing the <code>is_peer_known</code> reject-all trap. Without it, every connection is refused when federation is enabled.</div></div>
+<div class="step"><div class="n">4</div><div class="b"><strong><span class="accent-purple">Periodic sync / heartbeat</span></strong> — Every 30s sends <code>Heartbeat</code>; every 60s sends <code>SyncPull</code>, <code>MembershipSyncPush</code>, <code>StateSyncPush</code>, <code>EndorsementSyncPush</code>. Turns "connected" into "converged."</div></div>
+<div class="step"><div class="n">5</div><div class="b"><strong><span class="accent-red">PBFT broadcast</span></strong> — <code>GovernancePropose</code> broadcasts <code>GovernancePrePrepare</code> to all peers via the <code>governance_tx</code> broadcast channel; peers relay votes and seal.</div></div>
 
-<h3><span class="accent-green">2. Startup bootstrap</span></h3>
-<p>When federation is enabled, call <code>membership_bootstrap_init()</code> at startup so the node has a self-endorsed membership entry (it can act as a founder or a peer others can validate). Today this is only called from a unit test.</p>
+<div class="note"><strong>Federation is off by default.</strong> A standalone server (no <code>--peer</code> flag) is completely unaffected — the dialer never spawns, the broadcast channel has no subscribers, and <code>is_peer_known</code> returns <code>true</code> for everyone. You opt in at startup with CLI flags.</div>
 
-<h3><span class="accent-amber">3. Peer-key registration</span> <span style="color:#8b949e;font-weight:400">— fixes the reject-all trap</span></h3>
-<p>A way to register trusted peer verifying keys (<code>--trusted-peer-key &lt;hex&gt;</code> or a file) that calls <code>federation_register_peer_key</code>. Without it, <code>is_peer_known</code> <strong>rejects every connection</strong> when federation is enabled — a self-DoS. This is the smallest fix and unblocks everything.</p>
+<h2 id="pbft">PBFT: Making decisions together</h2>
+<p>Xudanu uses <strong>Practical Byzantine Fault Tolerance (PBFT)</strong> for cluster-wide decisions — things like admitting a new member, expelling a bad actor, or recording a royalty payment. PBFT is a consensus protocol that lets a group of nodes agree on a decision even if some nodes are malicious or offline.</p>
 
-<h3><span class="accent-purple">4. Periodic sync / heartbeat loop</span></h3>
-<p>On each live outbound channel, periodically send <code>Heartbeat</code> (liveness) plus <code>SyncPull</code>/<code>SyncPush</code> (content), <code>MembershipSyncPush</code>, <code>StateSyncPush</code>, <code>EndorsementSyncPush</code>. All the receiving handlers already exist — this is pure orchestration that turns "connected" into "converged."</p>
+<h3>What PBFT is — in plain language</h3>
+<p>Imagine a committee of <strong>N</strong> people who must vote on a proposal. PBFT guarantees that:</p>
+<ul>
+<li>The group can reach a decision as long as at least <strong>2/3 of the members are honest and reachable</strong> (formally: tolerates <strong>f</strong> faulty nodes out of <strong>3f+1</strong> total).</li>
+<li>No two honest members will ever disagree on the outcome.</li>
+<li>Once a decision is sealed, it cannot be undone.</li>
+</ul>
 
-<h3><span class="accent-red">5. PBFT broadcast</span></h3>
-<p>When an admin proposes governance, the leader broadcasts <code>GovernancePrePrepare</code> to peers; replicas relay <code>Prepare</code>/<code>Commit</code> votes to each other and broadcast <code>Sealed</code>. Today proposals die on the proposing node — votes only flow inbound.</p>
+<div class="diagram-container">
+<svg viewBox="0 0 900 460" width="100%" role="img" aria-label="PBFT three-phase consensus flow">
+  <defs>
+    <marker id="arr-pbft" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker>
+    <marker id="arr-pbft-g" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#3fb950"/></marker>
+    <marker id="arr-pbft-p" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#a371f7"/></marker>
+    <marker id="arr-pbft-a" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#d29922"/></marker>
+  </defs>
 
-<h2>How a donated machine joins</h2>
+  <!-- nodes -->
+  <g font-size="12">
+    <rect x="50" y="30" width="140" height="50" rx="8" fill="rgba(163,113,247,0.12)" stroke="#a371f7" stroke-width="1.5"/>
+    <text x="120" y="52" text-anchor="middle" fill="#e6edf3" font-weight="700">Leader (L)</text>
+    <text x="120" y="68" text-anchor="middle" fill="#8b949e" font-size="10">proposes</text>
+
+    <rect x="260" y="30" width="140" height="50" rx="8" fill="rgba(63,185,80,0.10)" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="330" y="52" text-anchor="middle" fill="#e6edf3" font-weight="600">Replica A</text>
+    <text x="330" y="68" text-anchor="middle" fill="#8b949e" font-size="10">validates</text>
+
+    <rect x="470" y="30" width="140" height="50" rx="8" fill="rgba(63,185,80,0.10)" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="540" y="52" text-anchor="middle" fill="#e6edf3" font-weight="600">Replica B</text>
+    <text x="540" y="68" text-anchor="middle" fill="#8b949e" font-size="10">validates</text>
+
+    <rect x="680" y="30" width="140" height="50" rx="8" fill="rgba(248,81,73,0.10)" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <text x="750" y="52" text-anchor="middle" fill="#e6edf3" font-weight="600">Replica C</text>
+    <text x="750" y="68" text-anchor="middle" fill="#f85149" font-size="10">offline (f=1)</text>
+  </g>
+
+  <!-- Phase 1: PrePrepare -->
+  <text x="20" y="120" font-size="11" fill="#a371f7" font-weight="600" letter-spacing="0.5">PHASE 1</text>
+  <text x="90" y="120" font-size="12" fill="#e6edf3" font-weight="600">PrePrepare</text>
+  <text x="200" y="120" font-size="10" fill="#8b949e">Leader broadcasts the proposal to all replicas</text>
+  <line x1="190" y1="95" x2="260" y2="135" stroke="#a371f7" stroke-width="2" marker-end="url(#arr-pbft-p)"/>
+  <line x1="190" y1="95" x2="470" y2="135" stroke="#a371f7" stroke-width="2" marker-end="url(#arr-pbft-p)"/>
+  <line x1="190" y1="95" x2="680" y2="135" stroke="#a371f7" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.4"/>
+  <text x="400" y="115" font-size="9" fill="#a371f7">GovernancePrePrepare</text>
+
+  <!-- Phase 2: Prepare -->
+  <text x="20" y="195" font-size="11" fill="#58a6ff" font-weight="600" letter-spacing="0.5">PHASE 2</text>
+  <text x="90" y="195" font-size="12" fill="#e6edf3" font-weight="600">Prepare</text>
+  <text x="180" y="195" font-size="10" fill="#8b949e">Each replica broadcasts its Prepare vote to all others</text>
+  <!-- A -> L -->
+  <line x1="300" y1="160" x2="170" y2="195" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr-pbft)"/>
+  <!-- A -> B -->
+  <line x1="360" y1="160" x2="500" y2="195" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr-pbft)"/>
+  <!-- B -> L -->
+  <line x1="510" y1="160" x2="170" y2="195" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr-pbft)"/>
+  <!-- B -> A -->
+  <line x1="470" y1="160" x2="360" y2="195" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr-pbft)"/>
+  <text x="350" y="178" font-size="9" fill="#58a6ff">GovernancePrepareVote</text>
+
+  <!-- quorum annotation -->
+  <rect x="580" y="170" width="260" height="40" rx="6" fill="rgba(88,166,255,0.08)" stroke="#58a6ff"/>
+  <text x="710" y="187" text-anchor="middle" font-size="10" fill="#58a6ff" font-weight="600">2f+1 Prepare votes received?</text>
+  <text x="710" y="202" text-anchor="middle" font-size="10" fill="#3fb950">YES (2 of 3 active) -> advance to Commit</text>
+
+  <!-- Phase 3: Commit -->
+  <text x="20" y="275" font-size="11" fill="#d29922" font-weight="600" letter-spacing="0.5">PHASE 3</text>
+  <text x="90" y="275" font-size="12" fill="#e6edf3" font-weight="600">Commit</text>
+  <text x="180" y="275" font-size="10" fill="#8b949e">Replicas broadcast Commit votes; on 2f+1, the round is sealed</text>
+  <line x1="300" y1="240" x2="170" y2="275" stroke="#d29922" stroke-width="1.5" marker-end="url(#arr-pbft-a)"/>
+  <line x1="360" y1="240" x2="500" y2="275" stroke="#d29922" stroke-width="1.5" marker-end="url(#arr-pbft-a)"/>
+  <line x1="510" y1="240" x2="360" y2="275" stroke="#d29922" stroke-width="1.5" marker-end="url(#arr-pbft-a)"/>
+  <line x1="470" y1="240" x2="170" y2="275" stroke="#d29922" stroke-width="1.5" marker-end="url(#arr-pbft-a)"/>
+  <text x="350" y="258" font-size="9" fill="#d29922">GovernanceCommitVote</text>
+
+  <!-- Seal -->
+  <text x="20" y="350" font-size="11" fill="#3fb950" font-weight="600" letter-spacing="0.5">SEAL</text>
+  <text x="90" y="350" font-size="12" fill="#e6edf3" font-weight="600">Sealed</text>
+  <text x="180" y="350" font-size="10" fill="#8b949e">2f+1 Commit votes -> round is sealed; transactions are executed</text>
+  <rect x="230" y="330" width="500" height="36" rx="8" fill="rgba(63,185,80,0.10)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="480" y="353" text-anchor="middle" font-size="12" fill="#3fb950" font-weight="600">GovernanceSealed -> all nodes execute transactions</text>
+
+  <!-- quorum table -->
+  <text x="50" y="410" font-size="11" fill="#8b949e" font-weight="600">Quorum requirements by cluster size:</text>
+  <g font-size="10" fill="#8b949e">
+    <text x="50" y="430">3 nodes (f=1): need 2 votes</text>
+    <text x="250" y="430">4 nodes (f=1): need 3 votes</text>
+    <text x="480" y="430">7 nodes (f=2): need 5 votes</text>
+    <text x="680" y="430">10 nodes (f=3): need 7 votes</text>
+  </g>
+</svg>
+<div class="diagram-caption">PBFT three-phase flow with 4 nodes (1 offline). The cluster tolerates f faulty nodes out of 3f+1. PrePrepare broadcasts from the leader; Prepare and Commit votes flow between all replicas; sealing requires 2f+1 Commit votes.</div>
+</div>
+
+<h3>The quorum rule, simply</h3>
+<p>For a cluster of <strong>N</strong> nodes, PBFT tolerates up to <strong>f</strong> faulty/offline nodes, where <code>f = (N - 1) / 3</code>. To make a decision, you need at least <strong>2f+1</strong> nodes to vote yes:</p>
+<table>
+<tr><th>Cluster size (N)</th><th>Fault tolerance (f)</th><th>Votes needed (2f+1)</th><th>Can lose</th></tr>
+<tr><td>3</td><td>0</td><td>2</td><td>1 node <span class="tag tag-ok">OK</span></td></tr>
+<tr><td>4</td><td>1</td><td>3</td><td>1 node <span class="tag tag-ok">OK</span></td></tr>
+<tr><td>7</td><td>2</td><td>5</td><td>2 nodes <span class="tag tag-ok">OK</span></td></tr>
+<tr><td>10</td><td>3</td><td>7</td><td>3 nodes <span class="tag tag-ok">OK</span></td></tr>
+<tr><td>2</td><td>0</td><td>2</td><td>0 nodes <span class="tag tag-warn">fragile</span></td></tr>
+</table>
+<div class="note"><strong>Practical guidance:</strong> 3 nodes is the minimum for a resilient federation (tolerates 1 offline). 2 nodes works but both must always be online. 4 nodes is the sweet spot — tolerates 1 failure with margin.</div>
+
+<h2 id="broadcast">Broadcasting &amp; synchronization</h2>
+<p>Once peers are connected, they need to stay in sync. Xudanu uses two complementary mechanisms: <strong>periodic sync</strong> (every 60 seconds) and <strong>event-driven broadcast</strong> (immediate, for governance).</p>
+
+<h3>How the periodic sync loop works</h3>
+<p>Every 60 seconds, each outbound connection sends a batch of sync frames to the peer on the other end. The peer processes them and replies with its own state. This ensures both sides converge even if they were temporarily disconnected.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 900 380" width="100%" role="img" aria-label="Sync and broadcast mechanism">
+  <defs>
+    <marker id="arr-sync" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker>
+    <marker id="arr-sync-g" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#3fb950"/></marker>
+    <marker id="arr-sync-p" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#a371f7"/></marker>
+  </defs>
+
+  <!-- PeerPool -->
+  <rect x="30" y="20" width="200" height="50" rx="8" fill="rgba(163,113,247,0.10)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="130" y="42" text-anchor="middle" font-size="13" fill="#a371f7" font-weight="700">PeerPool</text>
+  <text x="130" y="58" text-anchor="middle" font-size="10" fill="#8b949e">broadcast() / send()</text>
+
+  <!-- Sync timer -->
+  <rect x="30" y="90" width="200" height="44" rx="8" fill="rgba(63,185,80,0.10)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="130" y="110" text-anchor="middle" font-size="12" fill="#3fb950" font-weight="600">Sync Timer (60s)</text>
+  <text x="130" y="126" text-anchor="middle" font-size="10" fill="#8b949e">build_sync_frames()</text>
+
+  <!-- Heartbeat timer -->
+  <rect x="30" y="150" width="200" height="44" rx="8" fill="rgba(88,166,255,0.10)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="130" y="170" text-anchor="middle" font-size="12" fill="#58a6ff" font-weight="600">Heartbeat (30s)</text>
+  <text x="130" y="186" text-anchor="middle" font-size="10" fill="#8b949e">liveness + dead-peer detection</text>
+
+  <!-- Outbound channels -->
+  <line x1="230" y1="45" x2="320" y2="140" stroke="#a371f7" stroke-width="1.5" marker-end="url(#arr-sync-p)"/>
+  <line x1="230" y1="110" x2="320" y2="160" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arr-sync-g)"/>
+  <line x1="230" y1="172" x2="320" y2="180" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr-sync)"/>
+
+  <!-- select! loop -->
+  <rect x="320" y="100" width="240" height="120" rx="10" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="440" y="124" text-anchor="middle" font-size="13" fill="#e6edf3" font-weight="700">Outbound Connection</text>
+  <text x="440" y="144" text-anchor="middle" font-size="10" fill="#8b949e">tokio::select! { ... }</text>
+  <text x="440" y="164" text-anchor="middle" font-size="10" fill="#3fb950">recv from peer -> process</text>
+  <text x="440" y="180" text-anchor="middle" font-size="10" fill="#a371f7">broadcast frame -> encrypt+send</text>
+  <text x="440" y="196" text-anchor="middle" font-size="10" fill="#58a6ff">heartbeat tick -> send</text>
+  <text x="440" y="212" text-anchor="middle" font-size="10" fill="#3fb950">sync tick -> batch send</text>
+
+  <!-- Encrypted channel -->
+  <rect x="600" y="120" width="130" height="80" rx="8" fill="rgba(57,210,192,0.06)" stroke="#39d2c0" stroke-width="1.5"/>
+  <text x="665" y="148" text-anchor="middle" font-size="11" fill="#39d2c0" font-weight="600">Encrypted</text>
+  <text x="665" y="164" text-anchor="middle" font-size="11" fill="#39d2c0" font-weight="600">AEAD Channel</text>
+  <text x="665" y="184" text-anchor="middle" font-size="9" fill="#8b949e">ChaCha20-Poly1305</text>
+  <line x1="560" y1="160" x2="600" y2="160" stroke="#39d2c0" stroke-width="2" marker-end="url(#arr-sync)"/>
+
+  <!-- Remote peer -->
+  <rect x="770" y="120" width="110" height="80" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="825" y="155" text-anchor="middle" font-size="13" fill="#3fb950" font-weight="700">Peer</text>
+  <text x="825" y="175" text-anchor="middle" font-size="10" fill="#8b949e">processes frames</text>
+  <line x1="730" y1="160" x2="770" y2="160" stroke="#3fb950" stroke-width="2" marker-end="url(#arr-sync-g)"/>
+
+  <!-- Sync frame types -->
+  <text x="30" y="270" font-size="11" fill="#8b949e" font-weight="600">Frame types sent during each sync cycle:</text>
+  <g font-size="10">
+    <rect x="30" y="285" width="150" height="28" rx="5" fill="rgba(63,185,80,0.10)" stroke="#3fb950"/><text x="105" y="303" text-anchor="middle" fill="#3fb950">SyncPull</text>
+    <rect x="195" y="285" width="170" height="28" rx="5" fill="rgba(163,113,247,0.10)" stroke="#a371f7"/><text x="280" y="303" text-anchor="middle" fill="#a371f7">MembershipSyncPush</text>
+    <rect x="380" y="285" width="150" height="28" rx="5" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/><text x="455" y="303" text-anchor="middle" fill="#58a6ff">StateSyncPush</text>
+    <rect x="545" y="285" width="180" height="28" rx="5" fill="rgba(210,153,34,0.10)" stroke="#d29922"/><text x="635" y="303" text-anchor="middle" fill="#d29922">EndorsementSyncPush</text>
+    <rect x="740" y="285" width="140" height="28" rx="5" fill="rgba(57,210,192,0.10)" stroke="#39d2c0"/><text x="810" y="303" text-anchor="middle" fill="#39d2c0">CrdtSyncPull</text>
+  </g>
+
+  <!-- CRDT convergence -->
+  <text x="30" y="340" font-size="11" fill="#8b949e" font-weight="600">CRDT guarantee:</text>
+  <text x="170" y="340" font-size="11" fill="#3fb950">merge(A, merge(A, B)) == merge(A, B) — duplicates are harmless; convergence is mathematical, not best-effort.</text>
+</svg>
+<div class="diagram-caption">Each outbound connection runs a <code>select!</code> loop that multiplexes inbound frames, broadcast frames (from PeerPool), heartbeats, and periodic sync. All data crosses an encrypted AEAD channel. CRDTs ensure convergence regardless of frame duplication or arrival order.</div>
+</div>
+
+<div class="note"><strong>Why duplicates don't matter:</strong> Xudanu uses CRDTs (Conflict-free Replicated Data Types) for all federated state — membership (OR-Set), reconcile states (LWW Register + OR-Set alternatives), and content (BLAKE3-addressed). CRDTs are mathematically guaranteed to converge to the same state regardless of delivery order or duplication. A frame received 5 times has exactly the same effect as received once.</div>
+
+<h2 id="chunks">How Xudanu shares content</h2>
+<p>Xudanu's document model is <strong>content-addressed</strong>: every piece of content (a chunk of text, an edition, a blob) is identified by its <span class="accent-green">BLAKE3 hash</span>, not by a server-assigned ID. This makes replication straightforward — you can verify any piece of data by recomputing its hash.</p>
+
+<h3>The chunk replication flow</h3>
+<p>When a user edits a document on Peer A, the change flows through the system and reaches all other peers within one sync interval (60 seconds):</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 900 420" width="100%" role="img" aria-label="Chunk replication flow">
+  <defs>
+    <marker id="arr-chunk" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker>
+  </defs>
+
+  <!-- User edits on Peer A -->
+  <g font-size="11">
+    <rect x="20" y="20" width="130" height="34" rx="6" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/>
+    <text x="85" y="42" text-anchor="middle" fill="#e6edf3">User edits document</text>
+    <line x1="85" y1="54" x2="85" y2="80" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arr-chunk)"/>
+
+    <rect x="20" y="80" width="130" height="34" rx="6" fill="rgba(63,185,80,0.10)" stroke="#3fb950"/>
+    <text x="85" y="102" text-anchor="middle" fill="#3fb950">Edition stored</text>
+    <line x1="85" y1="114" x2="85" y2="140" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arr-chunk)"/>
+
+    <rect x="20" y="140" width="130" height="34" rx="6" fill="#rgba(57,210,192,0.10)" stroke="#39d2c0"/>
+    <text x="85" y="162" text-anchor="middle" fill="#39d2c0">BLAKE3 hash</text>
+    <text x="85" y="172" text-anchor="middle" fill="#8b949e" font-size="9">of chunk content</text>
+    <line x1="150" y1="157" x2="190" y2="157" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr-chunk)"/>
+  </g>
+
+  <!-- Peer A internal -->
+  <rect x="190" y="40" width="160" height="280" rx="10" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="270" y="62" text-anchor="middle" font-size="14" font-weight="700" fill="#3fb950">Peer A</text>
+  <g font-size="10">
+    <rect x="210" y="80" width="120" height="28" rx="5" fill="#161b22" stroke="#30363d"/>
+    <text x="270" y="98" text-anchor="middle" fill="#8b949e">chunk_store</text>
+
+    <rect x="210" y="120" width="120" height="28" rx="5" fill="#161b22" stroke="#30363d"/>
+    <text x="270" y="138" text-anchor="middle" fill="#8b949e">edition_payload</text>
+
+    <rect x="210" y="160" width="120" height="28" rx="5" fill="#161b22" stroke="#30363d"/>
+    <text x="270" y="178" text-anchor="middle" fill="#8b949e">span_provenance</text>
+
+    <rect x="210" y="210" width="120" height="34" rx="5" fill="rgba(63,185,80,0.10)" stroke="#3fb950"/>
+    <text x="270" y="223" text-anchor="middle" fill="#3fb950" font-weight="600">federation_export</text>
+    <text x="270" y="237" text-anchor="middle" fill="#8b949e" font-size="9">SyncWorkEntry</text>
+  </g>
+
+  <!-- SyncPush -->
+  <line x1="330" y1="227" x2="400" y2="227" stroke="#a371f7" stroke-width="2" marker-end="url(#arr-chunk)"/>
+  <text x="365" y="220" text-anchor="middle" font-size="9" fill="#a371f7">SyncPush</text>
+
+  <!-- Encrypted channel -->
+  <rect x="400" y="200" width="120" height="56" rx="8" fill="rgba(57,210,192,0.06)" stroke="#39d2c0" stroke-width="1.5"/>
+  <text x="460" y="222" text-anchor="middle" font-size="10" fill="#39d2c0" font-weight="600">AEAD encrypt</text>
+  <text x="460" y="238" text-anchor="middle" font-size="9" fill="#8b949e">ChaCha20-Poly1305</text>
+
+  <line x1="520" y1="228" x2="580" y2="228" stroke="#39d2c0" stroke-width="2" marker-end="url(#arr-chunk)"/>
+
+  <!-- Peer B -->
+  <rect x="580" y="40" width="150" height="280" rx="10" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="655" y="62" text-anchor="middle" font-size="14" font-weight="700" fill="#3fb950">Peer B</text>
+  <g font-size="10">
+    <rect x="600" y="80" width="110" height="28" rx="5" fill="rgba(57,210,192,0.10)" stroke="#39d2c0"/>
+    <text x="655" y="98" text-anchor="middle" fill="#39d2c0" font-weight="600">recompute BLAKE3</text>
+
+    <rect x="600" y="120" width="110" height="28" rx="5" fill="rgba(63,185,80,0.10)" stroke="#3fb950"/>
+    <text x="655" y="138" text-anchor="middle" fill="#3fb950" font-weight="600">hash matches?</text>
+
+    <rect x="600" y="165" width="110" height="28" rx="5" fill="rgba(63,185,80,0.10)" stroke="#3fb950"/>
+    <text x="655" y="183" text-anchor="middle" fill="#3fb950">import chunk</text>
+
+    <rect x="600" y="205" width="110" height="28" rx="5" fill="#161b22" stroke="#30363d"/>
+    <text x="655" y="223" text-anchor="middle" fill="#8b949e">chunk_store</text>
+
+    <rect x="600" y="245" width="110" height="28" rx="5" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/>
+    <text x="655" y="263" text-anchor="middle" fill="#58a6ff">edition visible</text>
+  </g>
+  <line x1="655" y1="108" x2="655" y2="120" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr-chunk)"/>
+  <line x1="655" y1="148" x2="655" y2="165" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arr-chunk)"/>
+  <line x1="655" y1="193" x2="655" y2="205" stroke="#3fb949e" stroke-width="1.5" marker-end="url(#arr-chunk)"/>
+
+  <!-- Tamper rejection -->
+  <rect x="750" y="100" width="140" height="70" rx="8" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1.5"/>
+  <text x="820" y="122" text-anchor="middle" font-size="10" fill="#f85149" font-weight="600">Tampered blob?</text>
+  <text x="820" y="138" text-anchor="middle" font-size="10" fill="#f85149">recomputed hash</text>
+  <text x="820" y="152" text-anchor="middle" font-size="10" fill="#f85149">!= expected hash</text>
+  <text x="820" y="166" text-anchor="middle" font-size="10" fill="#f85149" font-weight="600">-> REJECTED</text>
+
+  <!-- Peer C -->
+  <rect x="760" y="200" width="130" height="110" rx="10" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="825" y="222" text-anchor="middle" font-size="13" font-weight="700" fill="#3fb950">Peer C</text>
+  <text x="825" y="245" text-anchor="middle" font-size="10" fill="#8b949e">same flow:</text>
+  <text x="825" y="262" text-anchor="middle" font-size="10" fill="#8b949e">verify + import</text>
+  <text x="825" y="279" text-anchor="middle" font-size="10" fill="#8b949e">deduplicates by</text>
+  <text x="825" y="294" text-anchor="middle" font-size="10" fill="#8b949e">BLAKE3 fingerprint</text>
+
+  <!-- timeline -->
+  <line x1="20" y1="350" x2="880" y2="350" stroke="#30363d" stroke-width="1"/>
+  <text x="20" y="370" font-size="10" fill="#8b949e">t=0s: user edits</text>
+  <text x="200" y="370" font-size="10" fill="#3fb950">edition stored</text>
+  <text x="380" y="370" font-size="10" fill="#a371f7">export + sync</text>
+  <text x="560" y="370" font-size="10" fill="#39d2c0">encrypt + transmit</text>
+  <text x="730" y="370" font-size="10" fill="#3fb950">verify + import</text>
+  <text x="20" y="390" font-size="10" fill="#8b949e" font-style="italic">Total latency: typically &lt; 1 second within a sync cycle; at most 60s until the next sync tick.</text>
+</svg>
+<div class="diagram-caption">A user edits on Peer A. The edition is stored with a BLAKE3 fingerprint. During the next sync cycle, the <code>SyncPush</code> frame carries the edition payload across the encrypted channel. Peer B and C recompute the hash — if it matches, they import; if not, the data is rejected as tampered or corrupt.</div>
+</div>
+
+<h3>What gets replicated</h3>
+<table>
+<tr><th>Data type</th><th>How it's verified</th><th>Deduplication</th></tr>
+<tr><td><strong>Works (documents)</strong></td><td>BLAKE3 hash of all edition entries</td><td>Existing fingerprints checked before import</td></tr>
+<tr><td><strong>Editions (versions)</strong></td><td>Content-addressed within the work</td><td>Per-work fingerprint set</td></tr>
+<tr><td><strong>Blobs (images, files)</strong></td><td>BLAKE3 hash of raw bytes</td><td>Hash-addressed on disk</td></tr>
+<tr><td><strong>Membership</strong></td><td>Ed25519 signature on each endorsement</td><td>OR-Set tags (idempotent merge)</td></tr>
+<tr><td><strong>Endorsements</strong></td><td>Signed by the endorsing member's key</td><td>OR-Set (idempotent)</td></tr>
+<tr><td><strong>Reconcile state</strong></td><td>LWW timestamp + content hash</td><td>Highest timestamp wins</td></tr>
+</table>
+
+<div class="gold"><strong>Only published works are exported.</strong> Private drafts stay on the originating server. The <code>federation_export_works</code> function filters to <code>read_club == public_club</code>, ensuring private content never leaves its origin.</div>
+
+<h2 id="join">How a donated machine joins</h2>
 <p>Identity is the server's existing <strong>Ed25519 keypair</strong> (<code>data/server.key</code>); trust is a <strong>web-of-trust</strong> of signed endorsements (phase-19a, already built). A donated host proves who it is by its key, and gets vouched for by an existing member.</p>
 
 <div class="diagram-container">
 <svg viewBox="0 0 900 150" width="100%" role="img" aria-label="Donated host join flow">
   <defs>
-    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker>
+    <marker id="arr2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker>
   </defs>
-  <!-- step boxes -->
   <g font-size="11">
     <rect x="10"  y="40" width="150" height="64" rx="8" fill="rgba(63,185,80,0.10)" stroke="#3fb950"/>
-    <text x="85"  y="64" text-anchor="middle" fill="#e6edf3" font-weight="600">1 · bootstrap</text>
+    <text x="85"  y="64" text-anchor="middle" fill="#e6edf3" font-weight="600">1 . bootstrap</text>
     <text x="85"  y="84" text-anchor="middle" fill="#8b949e">self-endorse</text>
     <text x="85"  y="98" text-anchor="middle" fill="#8b949e">(membership_bootstrap_init)</text>
 
     <rect x="180" y="40" width="150" height="64" rx="8" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/>
-    <text x="255" y="64" text-anchor="middle" fill="#e6edf3" font-weight="600">2 · dial founder</text>
+    <text x="255" y="64" text-anchor="middle" fill="#e6edf3" font-weight="600">2 . dial founder</text>
     <text x="255" y="84" text-anchor="middle" fill="#8b949e">--peer</text>
     <text x="255" y="98" text-anchor="middle" fill="#8b949e">outbound dialer</text>
 
     <rect x="350" y="40" width="150" height="64" rx="8" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/>
-    <text x="425" y="64" text-anchor="middle" fill="#e6edf3" font-weight="600">3 · handshake</text>
+    <text x="425" y="64" text-anchor="middle" fill="#e6edf3" font-weight="600">3 . handshake</text>
     <text x="425" y="84" text-anchor="middle" fill="#8b949e">mutual Ed25519</text>
     <text x="425" y="98" text-anchor="middle" fill="#8b949e">+ X25519 / AEAD</text>
 
     <rect x="520" y="40" width="150" height="64" rx="8" fill="rgba(210,153,34,0.10)" stroke="#d29922"/>
-    <text x="595" y="64" text-anchor="middle" fill="#e6edf3" font-weight="600">4 · key registered</text>
+    <text x="595" y="64" text-anchor="middle" fill="#e6edf3" font-weight="600">4 . key registered</text>
     <text x="595" y="84" text-anchor="middle" fill="#8b949e">--trusted-peer-key</text>
     <text x="595" y="98" text-anchor="middle" fill="#8b949e">is_peer_known = true</text>
 
     <rect x="690" y="40" width="200" height="64" rx="8" fill="rgba(163,113,247,0.10)" stroke="#a371f7"/>
-    <text x="790" y="62" text-anchor="middle" fill="#e6edf3" font-weight="600">5 · join + endorse</text>
+    <text x="790" y="62" text-anchor="middle" fill="#e6edf3" font-weight="600">5 . join + endorse</text>
     <text x="790" y="80" text-anchor="middle" fill="#8b949e">MembershipJoinRequest</text>
-    <text x="790" y="96" text-anchor="middle" fill="#8b949e">→ endorsed → cluster converges</text>
+    <text x="790" y="96" text-anchor="middle" fill="#8b949e">-> endorsed -> cluster converges</text>
   </g>
-  <!-- arrows -->
-  <line x1="160" y1="72" x2="178" y2="72" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="330" y1="72" x2="348" y2="72" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="500" y1="72" x2="518" y2="72" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="670" y1="72" x2="688" y2="72" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="160" y1="72" x2="178" y2="72" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
+  <line x1="330" y1="72" x2="348" y2="72" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
+  <line x1="500" y1="72" x2="518" y2="72" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
+  <line x1="670" y1="72" x2="688" y2="72" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
 </svg>
 <div class="diagram-caption">A donated host bootstraps, dials a founder, completes the mutual handshake, has its key registered, then joins with an endorsement — membership converges cluster-wide.</div>
 </div>
 
 <div class="gold"><strong>No central authority.</strong> Trust is peer-signed and auditable; a compromised donor can be ejected via signed retraction or a PBFT <code>Expel</code> transaction. Each donor bears their own machine, so cost stays distributed — there is no expensive central fleet.</div>
 
-<h2>Testing it: Docker test bed</h2>
+<h2 id="failures">When things go wrong: failure &amp; recovery</h2>
+<p>Federations run over real networks, and real networks fail. Xudanu is designed to <strong>self-heal</strong> — when a failed or partitioned node comes back, it catches up automatically. Here are the common scenarios and how the system handles them.</p>
+
+<h3>Scenario 1: Network partition (node temporarily unreachable)</h3>
+<p>A peer's network goes down (VPN drops, host reboots, ISP hiccup). The other peers continue operating. When the partitioned node returns, it reconnects and syncs.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 900 300" width="100%" role="img" aria-label="Network partition and recovery">
+  <defs><marker id="arr-f" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker></defs>
+
+  <!-- t=0: healthy -->
+  <text x="20" y="20" font-size="11" fill="#3fb950" font-weight="600">t=0 — Healthy federation</text>
+  <g font-size="10">
+    <circle cx="100" cy="60" r="22" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1.5"/><text x="100" y="64" text-anchor="middle" fill="#3fb950" font-weight="600">A</text>
+    <circle cx="200" cy="60" r="22" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1.5"/><text x="200" y="64" text-anchor="middle" fill="#3fb950" font-weight="600">B</text>
+    <circle cx="300" cy="60" r="22" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1.5"/><text x="300" y="64" text-anchor="middle" fill="#3fb950" font-weight="600">C</text>
+    <line x1="122" y1="60" x2="178" y2="60" stroke="#a371f7" stroke-width="2"/>
+    <line x1="222" y1="60" x2="278" y2="60" stroke="#a371f7" stroke-width="2"/>
+  </g>
+
+  <!-- t=1: partition -->
+  <text x="420" y="20" font-size="11" fill="#f85149" font-weight="600">t=1 — Partition! C is isolated</text>
+  <g font-size="10">
+    <circle cx="500" cy="60" r="22" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1.5"/><text x="500" y="64" text-anchor="middle" fill="#3fb950" font-weight="600">A</text>
+    <circle cx="600" cy="60" r="22" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1.5"/><text x="600" y="64" text-anchor="middle" fill="#3fb950" font-weight="600">B</text>
+    <circle cx="720" cy="60" r="22" fill="rgba(248,81,73,0.15)" stroke="#f85149" stroke-width="1.5" stroke-dasharray="3 2"/><text x="720" y="64" text-anchor="middle" fill="#f85149" font-weight="600">C</text>
+    <line x1="522" y1="60" x2="578" y2="60" stroke="#a371f7" stroke-width="2"/>
+    <line x1="622" y1="60" x2="698" y2="60" stroke="#f85149" stroke-width="2" stroke-dasharray="4 3"/>
+    <text x="660" y="50" text-anchor="middle" font-size="9" fill="#f85149">X (broken)</text>
+    <text x="660" y="100" text-anchor="middle" font-size="9" fill="#8b949e">A-B still operate</text>
+    <text x="660" y="115" text-anchor="middle" font-size="9" fill="#8b949e">edits continue</text>
+  </g>
+
+  <!-- t=2: reconnect -->
+  <text x="20" y="150" font-size="11" fill="#d29922" font-weight="600">t=2 — C reconnects (backoff retry succeeds)</text>
+  <g font-size="10">
+    <circle cx="100" cy="190" r="22" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1.5"/><text x="100" y="194" text-anchor="middle" fill="#3fb950" font-weight="600">A</text>
+    <circle cx="200" cy="190" r="22" fill="rgba(63,185,80,0.15)" stroke="#3fb950" stroke-width="1.5"/><text x="200" y="194" text-anchor="middle" fill="#3fb950" font-weight="600">B</text>
+    <circle cx="300" cy="190" r="22" fill="rgba(210,153,34,0.15)" stroke="#d29922" stroke-width="1.5"/><text x="300" y="194" text-anchor="middle" fill="#d29922" font-weight="600">C</text>
+    <line x1="122" y1="190" x2="178" y2="190" stroke="#a371f7" stroke-width="2"/>
+    <line x1="222" y1="190" x2="278" y2="190" stroke="#d29922" stroke-width="2"/>
+  </g>
+
+  <!-- t=3: converged -->
+  <text x="420" y="150" font-size="11" fill="#3fb950" font-weight="600">t=3 — C syncs missed data, cluster converges</text>
+  <g font-size="10">
+    <rect x="430" y="170" width="200" height="26" rx="5" fill="rgba(63,185,80,0.10)" stroke="#3fb950"/>
+    <text x="530" y="187" text-anchor="middle" fill="#3fb950">SyncPull -> gets all missed updates</text>
+    <rect x="430" y="204" width="200" height="26" rx="5" fill="rgba(63,185,80,0.10)" stroke="#3fb950"/>
+    <text x="530" y="221" text-anchor="middle" fill="#3fb950">BLAKE3 verify -> import</text>
+    <rect x="430" y="238" width="200" height="26" rx="5" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/>
+    <text x="530" y="255" text-anchor="middle" fill="#58a6ff">CRDT merge -> identical state</text>
+
+    <text x="680" y="187" font-size="9" fill="#8b949e">No conflict resolution</text>
+    <text x="680" y="202" font-size="9" fill="#8b949e">needed -- CRDTs are</text>
+    <text x="680" y="217" font-size="9" fill="#8b949e">designed for exactly</text>
+    <text x="680" y="232" font-size="9" fill="#8b949e">this scenario.</text>
+  </g>
+
+  <text x="20" y="280" font-size="10" fill="#8b949e" font-style="italic">Recovery is automatic. The dialer's exponential backoff (1s, 2s, 4s, ... 30s cap) retries until the peer is reachable, then the sync loop catches up.</text>
+</svg>
+<div class="diagram-caption">Network partition and automatic recovery. CRDTs guarantee convergence without conflict resolution — C simply pulls the state it missed.</div>
+</div>
+
+<h3>Scenario 2: Node crash (data dir survives)</h3>
+<p>If a peer process crashes but its <code>/data</code> directory survives (common case — process killed, OOM, panic), the node restarts, restores from its chunk store, reconnects, and syncs. Data written before the crash is durable (checkpointed every 5 seconds). No manual intervention needed.</p>
+
+<h3>Scenario 3: Byzantine (malicious) node</h3>
+<p>A compromised node tries to inject tampered data or forge endorsements. The system rejects these automatically:</p>
+<ul>
+<li><strong>Tampered blobs/chunks:</strong> BLAKE3 hash mismatch on import &rarr; rejected.</li>
+<li><strong>Forged endorsements:</strong> Ed25519 signature verification fails &rarr; rejected.</li>
+<li><strong>False membership claims:</strong> <code>MembershipJoinRequest</code> with invalid proofs &rarr; rejected.</li>
+<li><strong>Cluster-wide removal:</strong> A PBFT <code>Expel</code> transaction removes the bad node's membership from all peers.</li>
+</ul>
+
+<h3>Scenario 4: Split-brain (two partitions, both active)</h3>
+<p>If the network splits into two groups (e.g., A-B and C-D), both partitions continue accepting edits independently. PBFT cannot reach quorum in either partition (each has fewer than 2f+1 votes for a 4-node cluster with f=1). When the partition heals, CRDTs merge the divergent states — both sets of edits are preserved as alternatives, and the reconcile store's LWW (Last-Writer-Wins) registers pick the most recent timestamp.</p>
+
+<div class="warn"><strong>Split-brain caveat:</strong> PBFT governance decisions cannot complete during a partition (by design — this prevents conflicting decisions). Content edits are NOT blocked — they are CRDT-merged on heal. If both partitions edited the same document, both versions are preserved as reconcile alternatives, and the user can choose which to keep.</div>
+
+<h3>Scenario 5: Slow or degraded node</h3>
+<p>A peer that is reachable but very slow (high latency, low bandwidth, overloaded CPU). Heartbeats detect this (30s timeout). The outbound dialer doesn't block on slow peers — each connection has its own task. Other peers continue syncing among themselves at full speed. The slow node catches up when it can.</p>
+
+<h2 id="scaling">Scaling: what to expect as you grow</h2>
+<p>Adding more machines increases resilience but also increases network traffic, because each peer connects to every other peer (full mesh). Here's what to expect at different scales.</p>
+
+<h3>Connection mesh: O(n&sup2;)</h3>
+<p>Each peer maintains an outbound connection to every other peer. With <strong>N</strong> peers, there are <strong>N &times; (N-1)</strong> directional connections (or N(N-1)/2 bidirectional pairs):</p>
+<table>
+<tr><th>Peers (N)</th><th>Bidirectional pairs</th><th>Connections per peer</th><th>Assessment</th></tr>
+<tr><td>3</td><td>3</td><td>2</td><td><span class="tag tag-ok">trivial</span></td></tr>
+<tr><td>5</td><td>10</td><td>4</td><td><span class="tag tag-ok">easy</span></td></tr>
+<tr><td>10</td><td>45</td><td>9</td><td><span class="tag tag-ok">fine</span></td></tr>
+<tr><td>20</td><td>190</td><td>19</td><td><span class="tag tag-warn">moderate</span></td></tr>
+<tr><td>50</td><td>1,225</td><td>49</td><td><span class="tag tag-warn">heavy</span></td></tr>
+<tr><td>100</td><td>4,950</td><td>99</td><td><span class="tag tag-risk">very heavy</span></td></tr>
+</table>
+<div class="note"><strong>Future optimization:</strong> For 50+ nodes, a gossip protocol or relay-based topology (instead of full mesh) would dramatically reduce connections. This is on the roadmap but not needed for v1 — most federations will have 3–10 peers.</div>
+
+<h3>Bandwidth per sync cycle</h3>
+<p>Each 60-second sync cycle sends all published works, membership, states, and endorsements to each peer. For a fresh/small federation this is kilobytes. As content grows, bandwidth scales with <strong>total published content &times; number of peers</strong>.</p>
+<table>
+<tr><th>Federation size</th><th>Content volume</th><th>Per-peer bandwidth (60s)</th><th>Notes</th></tr>
+<tr><td>3 peers</td><td>~10 MB</td><td>~10 MB</td><td>Trivial on any connection</td></tr>
+<tr><td>5 peers</td><td>~50 MB</td><td>~50 MB</td><td>Fine on broadband</td></tr>
+<tr><td>10 peers</td><td>~200 MB</td><td>~200 MB</td><td>~3 Mbps sustained — fine for VPS</td></tr>
+<tr><td>10 peers</td><td>~1 GB</td><td>~1 GB</td><td>~14 Mbps — needs a good link</td></tr>
+<tr><td>20 peers</td><td>~1 GB</td><td>~1 GB &times; 19 peers</td><td>~270 Mbps aggregate — datacenter</td></tr>
+</table>
+<div class="note"><strong>Incremental sync is the next optimization.</strong> Currently <code>SyncPull</code> sends up to <code>MAX_SYNC_ENTRIES</code> (1000) entries per cycle. Deduplication by BLAKE3 fingerprint prevents re-import, but the full payload still transmits. A future "known fingerprints" filter (the field exists in the struct but isn't populated yet) will skip data the peer already has.</div>
+
+<h3>Memory and CPU per peer</h3>
+<ul>
+<li><strong>RAM:</strong> Each peer holds its own chunk store, the membership OR-Set, reconcile states, and CRDT buffers. A peer with 100 works uses ~50–100 MB RAM. Federation adds ~2–5 MB per connected peer (channel buffers + sync state).</li>
+<li><strong>CPU:</strong> Dominated by BLAKE3 hashing (on import) and Ed25519 signature verification (on handshakes/endorsements). Both are fast (< 1ms per operation). A 4-core VPS handles 10+ peers comfortably.</li>
+<li><strong>Disk:</strong> Content-addressed storage grows with total published works. BLAKE3 deduplication means the same content stored on multiple peers takes space only once per peer.</li>
+</ul>
+
+<h3>Recommended configurations</h3>
+<table>
+<tr><th>Use case</th><th>Peers</th><th>Min specs per peer</th><th>Network</th></tr>
+<tr><td><strong>Personal / testing</strong></td><td>2–3</td><td>2 vCPU, 2 GB RAM, 10 GB disk</td><td>Any broadband</td></tr>
+<tr><td><strong>Small team</strong></td><td>3–5</td><td>2 vCPU, 4 GB RAM, 20 GB disk</td><td>10 Mbps uplink</td></tr>
+<tr><td><strong>Organization</strong></td><td>5–10</td><td>4 vCPU, 8 GB RAM, 50 GB disk</td><td>50 Mbps uplink</td></tr>
+<tr><td><strong>Large federation</strong></td><td>10–20</td><td>4 vCPU, 16 GB RAM, 100 GB disk</td><td>100 Mbps+ datacenter</td></tr>
+<tr><td><strong>Research / max scale</strong></td><td>20–50</td><td>8 vCPU, 32 GB RAM, 200 GB SSD</td><td>Gigabit datacenter</td></tr>
+</table>
+
+<h2 id="checklist">Problem checklist by scale</h2>
+<p>A diagnostic reference for operators. If something seems wrong, check these items.</p>
+
+<h3>2–3 nodes (personal / small team)</h3>
+<ul>
+<li><span class="tag tag-ok">Common</span> <strong>Keys not cross-registered:</strong> Both peers must register each other's verifying key via <code>--trusted-peer-key</code>. If you see "peer not in trusted peers list," check that the hex keys match.</li>
+<li><span class="tag tag-ok">Common</span> <strong>Wrong peer address format:</strong> <code>--peer</code> expects <code>ws://host:port/federation</code> or <code>host:port</code>. Check that the port matches the listening port of the remote peer.</li>
+<li><span class="tag tag-ok">Common</span> <strong>Firewall blocks /federation:</strong> The WebSocket upgrade on <code>/federation</code> must be reachable. If using Docker, ensure the port is published.</li>
+<li><span class="tag tag-warn">Watch</span> <strong>Both nodes offline:</strong> With 2 nodes and f=0, if one goes down, PBFT cannot function. Content sync still works when it returns (CRDTs), but governance is blocked until both are up.</li>
+<li><span class="tag tag-warn">Watch</span> <strong>Bootstrap not called:</strong> If membership is empty, check that <code>--peer</code> was specified (which enables federation and triggers <code>membership_bootstrap_init</code>).</li>
+</ul>
+
+<h3>5–10 nodes (organization)</h3>
+<ul>
+<li><span class="tag tag-warn">Watch</span> <strong>Key management:</strong> Each new peer's verifying key must be registered on all existing peers. Consider maintaining a shared <code>trusted-peers.txt</code> file.</li>
+<li><span class="tag tag-warn">Watch</span> <strong>Sync bandwidth:</strong> With 10 peers and significant content, each sync cycle sends data to 9 peers. Monitor outbound bandwidth.</li>
+<li><span class="tag tag-warn">Watch</span> <strong>Stale membership:</strong> If a peer leaves without sending <code>MembershipLeave</code>, its entry persists until explicitly removed. Use the admin API to clean up.</li>
+<li><span class="tag tag-ok">Tip</span> <strong>Use 4+ nodes for PBFT:</strong> With 4 nodes (f=1), you can lose 1 node and still reach quorum. With 3 nodes (f=0), losing any node blocks governance.</li>
+</ul>
+
+<h3>10–20 nodes (large federation)</h3>
+<ul>
+<li><span class="tag tag-risk">Plan</span> <strong>Connection overhead:</strong> Each peer holds 9–19 WebSocket connections. Monitor file descriptor limits (<code>ulimit -n</code>).</li>
+<li><span class="tag tag-risk">Plan</span> <strong>Startup thundering herd:</strong> If all peers restart simultaneously, they all try to dial each other at once. The exponential backoff helps, but consider staggered restarts.</li>
+<li><span class="tag tag-warn">Watch</span> <strong>Endorsement chain growth:</strong> The membership OR-Set grows with each endorsement. At 20 nodes with cross-endorsements, the set can be several hundred KB. Not a problem, but watch for sync latency.</li>
+<li><span class="tag tag-warn">Watch</span> <strong>PBFT leader bottleneck:</strong> The current leader proposes all transactions. At 20 nodes, if the leader is slow, governance stalls. Leader rotation exists but view-change (automatic leader failover) is a future feature.</li>
+</ul>
+
+<h3>20–50+ nodes (research / max scale)</h3>
+<ul>
+<li><span class="tag tag-risk">Challenge</span> <strong>Full mesh doesn't scale:</strong> 50 nodes = 2,450 connections. Each peer dials 49 others. This works but is wasteful. A gossip/relay topology is needed for sustainable scaling.</li>
+<li><span class="tag tag-risk">Challenge</span> <strong>Sync payload size:</strong> With 50 peers and GBs of content, the 60-second full sync is impractical. Incremental sync (using <code>known_fingerprints</code>) is essential.</li>
+<li><span class="tag tag-risk">Challenge</span> <strong>PBFT message complexity:</strong> O(n&sup2;) vote messages per round. At 50 nodes, each round generates ~2,500 vote messages. Practical but slow.</li>
+<li><span class="tag tag-risk">Challenge</span> <strong>Membership convergence latency:</strong> With 50 peers, a new endorsement takes several sync cycles to reach all nodes. Plan for eventual consistency, not immediate.</li>
+<li><span class="tag tag-warn">Watch</span> <strong>NAT / reachability:</strong> Donated hosts behind NAT cannot be dialed. Each peer must be directly reachable (public IP or port-forward). A relay/TURN server is a future feature.</li>
+</ul>
+
+<div class="note"><strong>Bottom line:</strong> For most use cases (3–10 peers on VPS or donated machines), Xudanu's federation works well out of the box. The full-mesh + periodic sync model is simple, robust, and self-healing. Scaling beyond 20 nodes is possible but will benefit from the incremental sync and gossip relay optimizations on the roadmap.</div>
+
+<h2 id="docker">Testing it: Docker test bed</h2>
 <p>The <code>docker-compose.yml</code> runs three full-node peers on a private bridge network (host ports <code>8081</code>/<code>8082</code>/<code>8083</code>), each with <code>--peer</code> pointing at the other two. On a 32&nbsp;GB machine this is trivial for small/fresh data dirs — you could run 5–10+ peers; <strong>3–4 is the sweet spot</strong> for exercising PBFT quorum and membership.</p>
 <pre><code>docker compose up --build
 # then browse:
@@ -181,15 +665,28 @@ open http://localhost:8081   # peer A
 open http://localhost:8082   # peer B
 open http://localhost:8083   # peer C</code></pre>
 
-<div class="note"><strong>Reminder:</strong> until FR-3 (items 1–5 above) is implemented, these containers run as <em>standalone</em> servers that do not yet federate — the compose is the test harness, ready and waiting for the activation wiring.</div>
+<p>For manual testing with two peers (no Docker):</p>
+<pre><code># Terminal 1: Peer A
+cargo run --release --features server --bin xudanu-server -- \
+  run 127.0.0.1:8081 data-a \
+  --peer 127.0.0.1:8082 \
+  --trusted-peer-key &lt;B's verifying key&gt;
 
-<h2>Sequencing</h2>
-<div class="step"><div class="n">1</div><div class="b"><strong>Peer-key registration + bootstrap</strong> (3 + 2) — smallest; fixes the reject-all trap so anything can connect.</div></div>
-<div class="step"><div class="n">2</div><div class="b"><strong>Outbound dialer</strong> (1) — the hard blocker; without it nothing is active.</div></div>
-<div class="step"><div class="n">3</div><div class="b"><strong>Sync / heartbeat loop</strong> (4) — turns a connection into convergence.</div></div>
-<div class="step"><div class="n">4</div><div class="b"><strong>Donated-host join</strong> + <strong>PBFT broadcast</strong> (5, join flow) — cluster-wide trust and decisions.</div></div>
+# Terminal 2: Peer B
+cargo run --release --features server --bin xudanu-server -- \
+  run 127.0.0.1:8082 data-b \
+  --peer 127.0.0.1:8081 \
+  --trusted-peer-key &lt;A's verifying key&gt;</code></pre>
+<p>Each server prints its verifying key at startup: <code>Federation: this server's verifying key: &lt;hex&gt;</code>. Copy it to the other peer's <code>--trusted-peer-key</code> flag.</p>
 
-<div class="footer">Xudanu Federation Activation — see <a href="dev/FR-3.md">FR-3</a> · <a href="technical-architecture.html">Technical Architecture</a> · <a href="transclusion-engine.html">Transclusion Engine</a></div>
+<h2>Sequencing (implementation order)</h2>
+<div class="step"><div class="n">1</div><div class="b"><strong>Peer-key registration + bootstrap</strong> — smallest; fixes the reject-all trap so anything can connect. <span class="tag tag-ok">done</span></div></div>
+<div class="step"><div class="n">2</div><div class="b"><strong>Outbound dialer</strong> — the hard blocker; without it nothing is active. <span class="tag tag-ok">done</span></div></div>
+<div class="step"><div class="n">3</div><div class="b"><strong>Sync / heartbeat loop</strong> — turns a connection into convergence. <span class="tag tag-ok">done</span></div></div>
+<div class="step"><div class="n">4</div><div class="b"><strong>Donated-host join + PBFT broadcast</strong> — cluster-wide trust and decisions. <span class="tag tag-ok">done</span></div></div>
+<div class="step"><div class="n">5</div><div class="b"><strong>Real two-server integration test</strong> — proves 1–4 end-to-end. <span class="tag tag-warn">pending</span></div></div>
+
+<div class="footer">Xudanu Federation Activation — see <a href="dev/FR-3.md">FR-3 spec</a> . <a href="technical-architecture.html">Technical Architecture</a> . <a href="transclusion-engine.html">Transclusion Engine</a> . <a href="editions-and-works.html">Editions &amp; Works</a></div>
 
 </div>
 </body>

@@ -11,10 +11,11 @@ COPY web/app/ ./
 RUN npm run build
 
 # ── Stage 2: Rust server binary ────────────────────────────────────────────
-FROM rust:1-bookworm-slim AS server
+FROM rust:slim AS server
 WORKDIR /repo
 # Workspace root manifest + the crate (the only workspace member)
 COPY Cargo.toml ./
+COPY crates ./crates
 COPY original-code/xanadugold/src-rust ./original-code/xanadugold/src-rust
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/repo/target \
@@ -23,7 +24,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cp /repo/target/release/xudanu-server /xudanu-server
 
 # ── Stage 3: runtime ───────────────────────────────────────────────────────
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
