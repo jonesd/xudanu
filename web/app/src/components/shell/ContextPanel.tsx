@@ -1,4 +1,4 @@
-import type { AwarenessState, AttributionSpan, SpanRangePayload, LinkEntry } from "../../api/crdt_sync";
+import type { AwarenessState, AttributionSpan, SpanRangePayload, LinkEntry, BacklinkEntry } from "../../api/crdt_sync";
 import { PresenceSection } from "../panels/PresenceSection";
 import { DocuverseSection } from "../panels/DocuverseSection";
 import { ConnectionsSection } from "../panels/ConnectionsSection";
@@ -10,6 +10,7 @@ interface ContextPanelProps {
   attributionSpans: AttributionSpan[];
   attributionLogStatus: { entry_count: number; chain_valid: boolean; last_sequence: number; has_log: boolean } | null;
   transclusionLinks: LinkEntry[];
+  backlinks: BacklinkEntry[];
   compoundSpanRanges: SpanRangePayload[];
   compoundSourceTitles: Record<number, string>;
   currentWorkId: number | null;
@@ -31,6 +32,7 @@ export function ContextPanel(props: ContextPanelProps) {
       />
       <ConnectionsSection
         transclusionLinks={props.transclusionLinks}
+        backlinks={props.backlinks}
         compoundSpanRanges={props.compoundSpanRanges}
         compoundSourceTitles={props.compoundSourceTitles}
         onNavigateToWork={props.onNavigateToWork}
