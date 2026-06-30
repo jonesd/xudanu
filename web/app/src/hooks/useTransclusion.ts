@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import type { CrdtSyncClient, LinkEntry, TransclusionMarker, WorkListEntry } from "../api/crdt_sync";
+import type { CrdtSyncClient, LinkEntry, TransclusionMarker, WorkListEntry, BacklinkEntry } from "../api/crdt_sync";
 
 export interface PendingTransclusion {
   sourceWorkId: number;
@@ -13,10 +13,12 @@ export interface TransclusionState {
   pending: PendingTransclusion | null;
   links: LinkEntry[];
   markers: TransclusionMarker[];
+  backlinks: BacklinkEntry[];
   holdSelection: (workId: number, workTitle: string, start: number, end: number, text: string) => void;
   clearPending: () => void;
   placeTransclusion: (client: CrdtSyncClient, targetWorkId: number, targetPosition: number) => Promise<number | null>;
   loadLinks: (client: CrdtSyncClient, workId: number, works: WorkListEntry[]) => Promise<void>;
+  loadBacklinks: (client: CrdtSyncClient, workId: number) => Promise<void>;
   deleteLink: (client: CrdtSyncClient, linkId: number) => Promise<void>;
 }
 
@@ -37,6 +39,7 @@ export function useTransclusion(): TransclusionState {
   const [pending, setPending] = useState<PendingTransclusion | null>(null);
   const [links, setLinks] = useState<LinkEntry[]>([]);
   const [markers, setMarkers] = useState<TransclusionMarker[]>([]);
+  const [backlinks, setBacklinks] = useState<BacklinkEntry[]>([]);
 
   const holdSelection = useCallback(
     (workId: number, workTitle: string, start: number, end: number, text: string) => {
@@ -135,6 +138,18 @@ export function useTransclusion(): TransclusionState {
     [],
   );
 
+  const loadBacklinks = useCallback(
+    async (client: CrdtSyncClient, workId: number) => {
+      try {
+        const result = await client.findBacklinks(workId);
+        setBacklinks(result);
+      } catch {
+        setBacklinks([]);
+      }
+    },
+    [],
+  );
+
   const deleteLink = useCallback(
     async (client: CrdtSyncClient, linkId: number) => {
       try {
@@ -152,10 +167,12 @@ export function useTransclusion(): TransclusionState {
     pending,
     links,
     markers,
+    backlinks,
     holdSelection,
     clearPending,
     placeTransclusion,
     loadLinks,
+    loadBacklinks,
     deleteLink,
   };
 }

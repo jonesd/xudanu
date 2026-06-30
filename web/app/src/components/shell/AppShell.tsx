@@ -97,11 +97,13 @@ export function AppShell() {
   }, [connected, loadWorks]);
 
   const loadTransclusionLinks = transclusion.loadLinks;
+  const loadBacklinks = transclusion.loadBacklinks;
   useEffect(() => {
     if (connected && workBeId !== null && clientRef.current && identity) {
       loadTransclusionLinks(clientRef.current, workBeId, works);
+      loadBacklinks(clientRef.current, workBeId);
     }
-  }, [connected, workBeId, works, identity, loadTransclusionLinks]);
+  }, [connected, workBeId, works, identity, loadTransclusionLinks, loadBacklinks]);
 
   const selectWork = useCallback((id: number) => {
     setWorkBeId(id);
@@ -381,6 +383,7 @@ export function AppShell() {
         attributionSpans={attributionSpans}
         attributionLogStatus={attributionLogStatus}
         transclusionLinks={transclusion.links}
+        backlinks={transclusion.backlinks}
         compoundSpanRanges={compound.spanRanges}
         compoundSourceTitles={compound.sourceTitles}
         currentWorkId={workBeId}

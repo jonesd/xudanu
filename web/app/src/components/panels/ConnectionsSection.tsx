@@ -1,8 +1,9 @@
 import { useState } from "react";
-import type { LinkEntry, SpanRangePayload } from "../../api/crdt_sync";
+import type { LinkEntry, SpanRangePayload, BacklinkEntry } from "../../api/crdt_sync";
 
 interface ConnectionsSectionProps {
   transclusionLinks: LinkEntry[];
+  backlinks: BacklinkEntry[];
   compoundSpanRanges: SpanRangePayload[];
   compoundSourceTitles: Record<number, string>;
   onNavigateToWork: (workId: number) => void;
@@ -10,6 +11,7 @@ interface ConnectionsSectionProps {
 
 export function ConnectionsSection({
   transclusionLinks,
+  backlinks,
   compoundSpanRanges,
   compoundSourceTitles,
   onNavigateToWork,
@@ -65,10 +67,25 @@ export function ConnectionsSection({
     });
   }
 
+  for (const bl of backlinks) {
+    const key = `backlink-${bl.link_id}`;
+    items.push({
+      key,
+      type: "backlink",
+      title: bl.title || `Work ${bl.source_work_id.toString(16).padStart(4, "0")}`,
+      excerpt: (bl.excerpt || "").slice(0, 100),
+      meta: bl.link_type || "link",
+      workId: bl.source_work_id,
+    });
+  }
+
+  const backlinkCount = backlinks.length;
+
   const filtered = items.filter((item) => {
     if (filter === "pinned") return pinned.has(item.key);
     if (filter === "transclusion") return item.type === "transclusion";
     if (filter === "link") return item.type === "link";
+    if (filter === "backlink") return item.type === "backlink";
     return true;
   });
 
@@ -105,6 +122,7 @@ export function ConnectionsSection({
           {pinnedCount > 0 && <option value="pinned">Pinned ({pinnedCount})</option>}
           {compoundSpanRanges.length > 0 && <option value="transclusion">Transclusions ({compoundSpanRanges.length})</option>}
           {transclusionLinks.length > 0 && <option value="link">Links ({transclusionLinks.length})</option>}
+          {backlinkCount > 0 && <option value="backlink">Backlinks ({backlinkCount})</option>}
         </select>
       </div>
 
@@ -118,7 +136,7 @@ export function ConnectionsSection({
           key={item.key}
           className="conn-item"
           style={{
-            borderLeft: `3px solid ${item.type === "transclusion" ? "var(--amber)" : "var(--blue)"}`,
+            borderLeft: `3px solid ${item.type === "transclusion" ? "var(--amber)" : item.type === "backlink" ? "var(--green)" : "var(--blue)"}`,
           }}
           onClick={() => onNavigateToWork(item.workId)}
         >
@@ -131,7 +149,7 @@ export function ConnectionsSection({
               {pinned.has(item.key) ? "★" : "☆"}
             </span>
             <span className={`conn-type-label ${item.type}`}>{item.type}</span>
-            <span>{item.type === "transclusion" ? "→" : "⇄"} {item.title}</span>
+            <span>{item.type === "transclusion" ? "→" : item.type === "backlink" ? "←" : "⇄"} {item.title}</span>
           </div>
           <div className="conn-excerpt">"{item.excerpt}{item.excerpt.length >= 100 ? "…" : ""}"</div>
           <div className="conn-meta">
