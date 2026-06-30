@@ -3,10 +3,11 @@
 # Each container is a FULL node: web UI + client WS (/xudanu) + federation WS
 # (/federation). Host ports 8081/8082/8083 let you browse each peer.
 #
-# NOTE: federation is not yet operational end-to-end (FR-3 — outbound dialer,
-# bootstrap, peer-key registration — is the missing wiring). Until FR-3 lands,
-# these run as three standalone servers that do not yet federate. This compose
-# is the test harness, ready for FR-3.
+# FR-3 federation activation is implemented: outbound dialer, bootstrap,
+# peer-key registration, periodic sync, PBFT broadcast. However, peers must
+# cross-register verifying keys (--trusted-peer-key) to pass is_peer_known.
+# Without that, they will connect but reject each other's handshakes.
+# Check each peer's startup log for its verifying key, then add the flags.
 
 services:
   peer1:
@@ -29,8 +30,13 @@ services:
       - ws://peer2:8080/federation
       - --peer
       - ws://peer3:8080/federation
+      - --trusted-peer-key
+      - "6d46aa61d7c8e7951654d3cc5b60e102ba8b798922137cd4b98fa8cce1e11d7a"
+      - --trusted-peer-key
+      - "f70e92fc3a117c2fd9d07a8297141968030b9180a4e78a9a13eca465ebcd4d93"
 
   peer2:
+    build: .
     image: xudanu:0.8.0
     container_name: xudanu-peer2
     hostname: peer2
@@ -49,8 +55,13 @@ services:
       - ws://peer1:8080/federation
       - --peer
       - ws://peer3:8080/federation
+      - --trusted-peer-key
+      - "796feac1b606c4a6023fe4f88d701b6f4883f43577fda40b68b650b165467d7b"
+      - --trusted-peer-key
+      - "f70e92fc3a117c2fd9d07a8297141968030b9180a4e78a9a13eca465ebcd4d93"
 
   peer3:
+    build: .
     image: xudanu:0.8.0
     container_name: xudanu-peer3
     hostname: peer3
@@ -69,6 +80,10 @@ services:
       - ws://peer1:8080/federation
       - --peer
       - ws://peer2:8080/federation
+      - --trusted-peer-key
+      - "796feac1b606c4a6023fe4f88d701b6f4883f43577fda40b68b650b165467d7b"
+      - --trusted-peer-key
+      - "6d46aa61d7c8e7951654d3cc5b60e102ba8b798922137cd4b98fa8cce1e11d7a"
 
 networks:
   xudanu-net:
