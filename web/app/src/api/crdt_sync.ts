@@ -262,6 +262,11 @@ export interface BacklinkEntry {
   title?: string;
 }
 
+export interface LinkTypeInfo {
+  type_id: number;
+  name: string;
+}
+
 export interface AnnotationEntry {
   annotation_id: number;
   kind: string;
@@ -808,6 +813,17 @@ export class CrdtSyncClient {
 
   async linkDelete(linkId: number): Promise<void> {
     await this.sendRequest("link_delete", { link_id: linkId });
+  }
+
+  async linkSetTypes(linkId: number, linkTypes: number[]): Promise<void> {
+    await this.sendRequest("link_set_types", { link_id: linkId, link_types: linkTypes });
+  }
+
+  async linkTypeList(): Promise<LinkTypeInfo[]> {
+    const resp = await this.sendRequest("link_type_list", {});
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as LinkTypeInfo[];
+    return [];
   }
 
   async findSharedRegions(workA: number, workB: number, filterText?: string): Promise<SharedRegion[]> {
