@@ -458,9 +458,33 @@ pub struct FederatedTransclusionEntry {
     pub is_direct: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RemoteOriginRegistry {
     origins: HashMap<[u8; 32], RemoteOrigin>,
+}
+
+impl Serialize for RemoteOriginRegistry {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let entries: Vec<(&[u8; 32], &RemoteOrigin)> = self.origins.iter().collect();
+        entries.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for RemoteOriginRegistry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let entries: Vec<([u8; 32], RemoteOrigin)> = Vec::deserialize(deserializer)?;
+        let mut origins = HashMap::new();
+        for (fp, origin) in entries {
+            origins.insert(fp, origin);
+        }
+        Ok(RemoteOriginRegistry { origins })
+    }
 }
 
 impl RemoteOriginRegistry {
