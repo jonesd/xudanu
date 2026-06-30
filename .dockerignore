@@ -1,0 +1,9 @@
+.git
+.github
+docs
+**/target
+**/node_modules
+**/dist
+**/data
+**/*.tar.gz
+**/.DS_Store

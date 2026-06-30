@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Federation Activation — Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+h1{font-size:36px;font-weight:800;color:#e6edf3;letter-spacing:-0.5px;margin-bottom:8px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+h2{font-size:26px;font-weight:700;color:#e6edf3;margin-top:56px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;color:#58a6ff;margin-top:32px;margin-bottom:12px}
+h4{font-size:15px;font-weight:600;color:#8b949e;margin-top:24px;margin-bottom:8px}
+p{margin-bottom:14px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.accent-green{color:#3fb950}.accent-blue{color:#58a6ff}.accent-purple{color:#a371f7}.accent-amber{color:#d29922}.accent-red{color:#f85149}.accent-cyan{color:#39d2c0}
+.legend{display:flex;gap:18px;flex-wrap:wrap;margin:12px 0 4px;font-size:12px;color:#8b949e;align-items:center}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0;display:inline-block;margin-right:6px;vertical-align:middle}
+.step{display:flex;gap:14px;align-items:flex-start;margin:10px 0}
+.step .n{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:rgba(88,166,255,0.15);color:#58a6ff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;margin-top:2px}
+.step .b{flex:1;background:#161b22;border:1px solid #21262d;border-radius:8px;padding:10px 14px}
+.step .b strong{color:#e6edf3}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+svg text{font-family:'Inter',sans-serif}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Federation Activation</h1>
+<p class="subtitle">How independent Xudanu servers connect, trust each other, and keep content in sync — and the wiring (FR-3) that turns the finished components into a running federation.</p>
+
+<h2>What a federation is</h2>
+<p>A Xudanu <strong>federation</strong> is a set of independent <span class="accent-blue">server peers</span>, each a full node (it serves the web UI, the client WebSocket <code>/xudanu</code>, and the peer WebSocket <code>/federation</code>). Peers connect to each other, <strong>replicate content</strong> (chunks verified by <span class="accent-green">BLAKE3</span>), maintain a shared <strong>membership</strong> via a web-of-trust of Ed25519 endorsements, and make cluster-wide decisions with <span class="accent-purple">PBFT consensus</span>. Users connect to any peer's web UI; the peers federate behind the scenes.</p>
+
+<div class="note"><strong>Current state:</strong> every building block (CRDTs, PBFT core, web-of-trust crypto, BLAKE3 replication, the mutual handshake, all inbound handlers) is implemented and merged (phases 14–19). What's missing is the <em>activation layer</em> — the runtime wiring that makes peers actually dial out, bootstrap, register keys, sync, and broadcast. That is <strong>FR-3</strong>.</p></div>
+
+<div class="diagram-container">
+<svg viewBox="0 0 900 400" width="100%" role="img" aria-label="Federation topology">
+  <!-- private network container -->
+  <rect x="30" y="70" width="840" height="300" rx="14" fill="rgba(57,210,192,0.04)" stroke="#30363d" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="46" y="92" font-size="12" fill="#8b949e" letter-spacing="0.5">PRIVATE FEDERATION NETWORK (e.g. Docker bridge, or WAN between donated hosts)</text>
+
+  <!-- users -->
+  <a href="#"><g>
+    <rect x="120" y="20" width="160" height="34" rx="6" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/>
+    <text x="200" y="42" text-anchor="middle" font-size="13" fill="#e6edf3">👤 Users (browser)</text>
+  </g></a>
+  <a href="#"><g>
+    <rect x="620" y="20" width="160" height="34" rx="6" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/>
+    <text x="700" y="42" text-anchor="middle" font-size="13" fill="#e6edf3">👤 Users (browser)</text>
+  </g></a>
+  <line x1="200" y1="54" x2="200" y2="120" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <line x1="700" y1="54" x2="700" y2="120" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <text x="210" y="92" font-size="10" fill="#8b949e">web + /xudanu WS</text>
+
+  <!-- peers -->
+  <g>
+    <rect x="90" y="120" width="220" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="200" y="148" text-anchor="middle" font-size="16" font-weight="700" fill="#e6edf3">Peer A</text>
+    <text x="200" y="172" text-anchor="middle" font-size="11" fill="#8b949e">web UI · /xudanu · /federation</text>
+    <text x="200" y="195" text-anchor="middle" font-size="11" fill="#3fb950">Ed25519 identity + /data</text>
+    <text x="200" y="218" text-anchor="middle" font-size="10" fill="#484f58" font-family="JetBrains Mono,monospace">--peer B  --peer C</text>
+  </g>
+  <g>
+    <rect x="340" y="120" width="220" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="450" y="148" text-anchor="middle" font-size="16" font-weight="700" fill="#e6edf3">Peer B</text>
+    <text x="450" y="172" text-anchor="middle" font-size="11" fill="#8b949e">web UI · /xudanu · /federation</text>
+    <text x="450" y="195" text-anchor="middle" font-size="11" fill="#3fb950">Ed25519 identity + /data</text>
+    <text x="450" y="218" text-anchor="middle" font-size="10" fill="#484f58" font-family="JetBrains Mono,monospace">--peer A  --peer C</text>
+  </g>
+  <g>
+    <rect x="590" y="120" width="220" height="120" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="700" y="148" text-anchor="middle" font-size="16" font-weight="700" fill="#e6edf3">Peer C</text>
+    <text x="700" y="172" text-anchor="middle" font-size="11" fill="#8b949e">web UI · /xudanu · /federation</text>
+    <text x="700" y="195" text-anchor="middle" font-size="11" fill="#3fb950">Ed25519 identity + /data</text>
+    <text x="700" y="218" text-anchor="middle" font-size="10" fill="#484f58" font-family="JetBrains Mono,monospace">--peer A  --peer B</text>
+  </g>
+
+  <!-- federation links (bidirectional) -->
+  <line x1="310" y1="180" x2="340" y2="180" stroke="#a371f7" stroke-width="2"/>
+  <line x1="560" y1="180" x2="590" y2="180" stroke="#a371f7" stroke-width="2"/>
+  <path d="M 200 240 Q 360 320 450 240" fill="none" stroke="#a371f7" stroke-width="2" stroke-dasharray="5 3"/>
+
+  <!-- replication label -->
+  <rect x="300" y="300" width="300" height="30" rx="6" fill="rgba(163,113,247,0.10)" stroke="#a371f7"/>
+  <text x="450" y="320" text-anchor="middle" font-size="12" fill="#a371f7">/federation WS · BLAKE3-verified replication</text>
+
+  <!-- legend -->
+  <g font-size="11" fill="#8b949e">
+    <rect x="80" y="350" width="12" height="12" rx="2" fill="rgba(88,166,255,0.18)" stroke="#58a6ff"/><text x="98" y="360">users / client WS</text>
+    <rect x="220" y="350" width="12" height="12" rx="2" fill="rgba(63,185,80,0.18)" stroke="#3fb950"/><text x="238" y="360">peer (full node)</text>
+    <rect x="360" y="350" width="12" height="12" rx="2" fill="rgba(163,113,247,0.18)" stroke="#a371f7"/><text x="378" y="360">federation link</text>
+  </g>
+</svg>
+<div class="diagram-caption">Three full-node peers on a private network. Users hit any peer's web UI; peers replicate content and membership over <code>/federation</code>.</div>
+</div>
+
+<h2>The activation layer (FR-3)</h2>
+<p>Five pieces of runtime wiring turn the finished components into a live federation. Today the server is <em>passive</em> — it accepts inbound <code>/federation</code> sockets but never reaches out. Each item below is the missing "active" half.</p>
+
+<h3><span class="accent-blue">1. Outbound dialer</span> <span style="color:#8b949e;font-weight:400">— the hard blocker</span></h3>
+<p>On startup, a task per <code>--peer</code> address dials <code>ws://peer/federation</code>, performs the existing mutual handshake <em>as the client side</em>, and holds the encrypted channel in a pool (with reconnect/backoff). All the inbound frame handlers already exist — this is the missing initiator that lets a peer send frames <em>to</em> others.</p>
+
+<h3><span class="accent-green">2. Startup bootstrap</span></h3>
+<p>When federation is enabled, call <code>membership_bootstrap_init()</code> at startup so the node has a self-endorsed membership entry (it can act as a founder or a peer others can validate). Today this is only called from a unit test.</p>
+
+<h3><span class="accent-amber">3. Peer-key registration</span> <span style="color:#8b949e;font-weight:400">— fixes the reject-all trap</span></h3>
+<p>A way to register trusted peer verifying keys (<code>--trusted-peer-key &lt;hex&gt;</code> or a file) that calls <code>federation_register_peer_key</code>. Without it, <code>is_peer_known</code> <strong>rejects every connection</strong> when federation is enabled — a self-DoS. This is the smallest fix and unblocks everything.</p>
+
+<h3><span class="accent-purple">4. Periodic sync / heartbeat loop</span></h3>
+<p>On each live outbound channel, periodically send <code>Heartbeat</code> (liveness) plus <code>SyncPull</code>/<code>SyncPush</code> (content), <code>MembershipSyncPush</code>, <code>StateSyncPush</code>, <code>EndorsementSyncPush</code>. All the receiving handlers already exist — this is pure orchestration that turns "connected" into "converged."</p>
+
+<h3><span class="accent-red">5. PBFT broadcast</span></h3>
+<p>When an admin proposes governance, the leader broadcasts <code>GovernancePrePrepare</code> to peers; replicas relay <code>Prepare</code>/<code>Commit</code> votes to each other and broadcast <code>Sealed</code>. Today proposals die on the proposing node — votes only flow inbound.</p>
+
+<h2>How a donated machine joins</h2>
+<p>Identity is the server's existing <strong>Ed25519 keypair</strong> (<code>data/server.key</code>); trust is a <strong>web-of-trust</strong> of signed endorsements (phase-19a, already built). A donated host proves who it is by its key, and gets vouched for by an existing member.</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 900 150" width="100%" role="img" aria-label="Donated host join flow">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#8b949e"/></marker>
+  </defs>
+  <!-- step boxes -->
+  <g font-size="11">
+    <rect x="10"  y="40" width="150" height="64" rx="8" fill="rgba(63,185,80,0.10)" stroke="#3fb950"/>
+    <text x="85"  y="64" text-anchor="middle" fill="#e6edf3" font-weight="600">1 · bootstrap</text>
+    <text x="85"  y="84" text-anchor="middle" fill="#8b949e">self-endorse</text>
+    <text x="85"  y="98" text-anchor="middle" fill="#8b949e">(membership_bootstrap_init)</text>
+
+    <rect x="180" y="40" width="150" height="64" rx="8" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/>
+    <text x="255" y="64" text-anchor="middle" fill="#e6edf3" font-weight="600">2 · dial founder</text>
+    <text x="255" y="84" text-anchor="middle" fill="#8b949e">--peer</text>
+    <text x="255" y="98" text-anchor="middle" fill="#8b949e">outbound dialer</text>
+
+    <rect x="350" y="40" width="150" height="64" rx="8" fill="rgba(88,166,255,0.10)" stroke="#58a6ff"/>
+    <text x="425" y="64" text-anchor="middle" fill="#e6edf3" font-weight="600">3 · handshake</text>
+    <text x="425" y="84" text-anchor="middle" fill="#8b949e">mutual Ed25519</text>
+    <text x="425" y="98" text-anchor="middle" fill="#8b949e">+ X25519 / AEAD</text>
+
+    <rect x="520" y="40" width="150" height="64" rx="8" fill="rgba(210,153,34,0.10)" stroke="#d29922"/>
+    <text x="595" y="64" text-anchor="middle" fill="#e6edf3" font-weight="600">4 · key registered</text>
+    <text x="595" y="84" text-anchor="middle" fill="#8b949e">--trusted-peer-key</text>
+    <text x="595" y="98" text-anchor="middle" fill="#8b949e">is_peer_known = true</text>
+
+    <rect x="690" y="40" width="200" height="64" rx="8" fill="rgba(163,113,247,0.10)" stroke="#a371f7"/>
+    <text x="790" y="62" text-anchor="middle" fill="#e6edf3" font-weight="600">5 · join + endorse</text>
+    <text x="790" y="80" text-anchor="middle" fill="#8b949e">MembershipJoinRequest</text>
+    <text x="790" y="96" text-anchor="middle" fill="#8b949e">→ endorsed → cluster converges</text>
+  </g>
+  <!-- arrows -->
+  <line x1="160" y1="72" x2="178" y2="72" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="330" y1="72" x2="348" y2="72" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="500" y1="72" x2="518" y2="72" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="670" y1="72" x2="688" y2="72" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr)"/>
+</svg>
+<div class="diagram-caption">A donated host bootstraps, dials a founder, completes the mutual handshake, has its key registered, then joins with an endorsement — membership converges cluster-wide.</div>
+</div>
+
+<div class="gold"><strong>No central authority.</strong> Trust is peer-signed and auditable; a compromised donor can be ejected via signed retraction or a PBFT <code>Expel</code> transaction. Each donor bears their own machine, so cost stays distributed — there is no expensive central fleet.</div>
+
+<h2>Testing it: Docker test bed</h2>
+<p>The <code>docker-compose.yml</code> runs three full-node peers on a private bridge network (host ports <code>8081</code>/<code>8082</code>/<code>8083</code>), each with <code>--peer</code> pointing at the other two. On a 32&nbsp;GB machine this is trivial for small/fresh data dirs — you could run 5–10+ peers; <strong>3–4 is the sweet spot</strong> for exercising PBFT quorum and membership.</p>
+<pre><code>docker compose up --build
+# then browse:
+open http://localhost:8081   # peer A
+open http://localhost:8082   # peer B
+open http://localhost:8083   # peer C</code></pre>
+
+<div class="note"><strong>Reminder:</strong> until FR-3 (items 1–5 above) is implemented, these containers run as <em>standalone</em> servers that do not yet federate — the compose is the test harness, ready and waiting for the activation wiring.</div>
+
+<h2>Sequencing</h2>
+<div class="step"><div class="n">1</div><div class="b"><strong>Peer-key registration + bootstrap</strong> (3 + 2) — smallest; fixes the reject-all trap so anything can connect.</div></div>
+<div class="step"><div class="n">2</div><div class="b"><strong>Outbound dialer</strong> (1) — the hard blocker; without it nothing is active.</div></div>
+<div class="step"><div class="n">3</div><div class="b"><strong>Sync / heartbeat loop</strong> (4) — turns a connection into convergence.</div></div>
+<div class="step"><div class="n">4</div><div class="b"><strong>Donated-host join</strong> + <strong>PBFT broadcast</strong> (5, join flow) — cluster-wide trust and decisions.</div></div>
+
+<div class="footer">Xudanu Federation Activation — see <a href="dev/FR-3.md">FR-3</a> · <a href="technical-architecture.html">Technical Architecture</a> · <a href="transclusion-engine.html">Transclusion Engine</a></div>
+
+</div>
+</body>
+</html>
