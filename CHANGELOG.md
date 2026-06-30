@@ -6,6 +6,45 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v0.8.1] — 2026-06-30
+
+### Federation Activation (FR-3) — cluster goes live
+- **feat(federation): FR-3 activation layer** — outbound dialer with exponential backoff reconnect, client-side mutual handshake (Ed25519/X25519 + ChaCha20-Poly1305 AEAD), `PeerPool` for broadcast, periodic sync/heartbeat loop (30s heartbeat, 60s content+membership+state+endorsement sync), donated-host join initiator (`MembershipJoinRequest` after initial sync), and PBFT `GovernancePrePrepare` broadcast via `governance_tx` channel.
+  - New module: `src/server/transport/federation_active.rs` (~550 lines).
+  - Shared `process_federation_frame` extracted from inbound handler (all 30+ frame types) for reuse by outbound connections.
+  - `--trusted-peer-key <hex>` CLI flag (repeatable) — fixes the `is_peer_known` reject-all trap.
+  - `membership_bootstrap_init()` called at startup when federation enabled.
+  - Server verifying key logged at startup for operator cross-registration.
+  - Standalone mode unaffected: all new paths gated behind `federation_is_enabled()`.
+- **test(federation):** Two real two-server integration tests (`federation_activation_content_replication_end_to_end`, `federation_activation_membership_converges`) — exercise the actual dialer, handshake, sync, and convergence. Pass in <1s.
+- **fix(persist):** `RemoteOriginRegistry` used `HashMap<[u8;32], _>` which serde_json cannot serialize as JSON object keys — replaced derived `Serialize`/`Deserialize` with manual impls that convert to/from `Vec` of pairs. Fixes manifest checkpoint failures (`"key must be a string"`) seen in Docker cluster.
+
+### Docker federation test bed
+- **build(docker):** Multi-stage Dockerfile (Vite frontend + Rust release binary + debian:trixie-slim runtime). `docker-compose.yml` runs 3 full-node peers on a bridge network (ports 8081/8082/8083) with cross-registered verifying keys. Working end-to-end: Dracula.txt uploaded on peer1 appears on peer2 via federation sync.
+
+### Documentation
+- **docs:** Expanded `federation-activation.html` (196→693 lines) with PBFT introduction + 3-phase consensus diagram, broadcast/sync mechanism diagram, chunk replication flow diagram, failure & recovery scenarios (partition, crash, Byzantine, split-brain, slow node), scaling guide with O(n²) mesh analysis and bandwidth estimates, and problem checklist organized by cluster size (2–50+ nodes).
+- **docs:** `index.html` Federation card now links to `federation-activation.html`.
+
+---
+
+## [v0.8.0] — 2026-06-29
+
+### UI Redesign
+- **feat(ui): AppShell redesign** — identity panel (username, club ID, public verifying key with copy, clubs-you-can-access, capped roster), ⌘K search overlay with title matching, library slide-out with hover tooltips (last-edited + revision count), transclusion fully ported into the shell (hold selection → place at cursor → markers/links).
+- **fix(ui):** Identity-modal clipping, dark-on-dark text, duplicate link key warnings, read-only cursor styling.
+
+### Backend
+- **feat(backend):** `WorkListEntry.updated_at` (last revision timestamp), `club_verifying_key_hex` accessor, capped `club_roster` wire request. `ClubRoster` in wire protocol.
+- **feat(verification): Email verification backend (FR-2 slice 1)** — `Club.email`/`verified` fields with manifest snapshot round-trip, `verification/` module (token store + `DevProvider` + `EmailProvider` trait), `/signup`, `/verify`, `/resend-verification` endpoints.
+- **revert:** Dropped the edit-protection signing-key gate in `ensure_can_edit` (commit 01901728 broke ~93 tests). Will be re-introduced gated on `verified` status in FR-2 slice 4.
+
+### Documentation
+- **docs:** FR-1 (signature verification tool), FR-2 (account verification & edit gate), FR-3 (federation activation) functional requirement specs.
+- **docs:** "Xudanu at a Glance" clickable architecture hero diagram on `index.html`.
+
+---
+
 ## [v0.7.9] — 2026-06-22
 
 ### Archive / Soft-Delete (#25)
