@@ -6,9 +6,10 @@ interface AttributionSectionProps {
   attributionSpans: AttributionSpan[];
   attributionLogStatus: AttributionLogStatus | null;
   onOpenFullView?: () => void;
+  onExportReport?: () => void;
 }
 
-export function AttributionSection({ attributionSpans, attributionLogStatus, onOpenFullView }: AttributionSectionProps) {
+export function AttributionSection({ attributionSpans, attributionLogStatus, onOpenFullView, onExportReport }: AttributionSectionProps) {
   const [expanded, setExpanded] = useState(false);
 
   const totalEnd = attributionSpans.length > 0 ? Math.max(...attributionSpans.map((s) => s.end)) : 0;
@@ -94,6 +95,25 @@ export function AttributionSection({ attributionSpans, attributionLogStatus, onO
                   }}
                 >
                   Open full provenance view
+                </button>
+              )}
+              {onExportReport && (
+                <button
+                  type="button"
+                  onClick={onExportReport}
+                  style={{
+                    marginTop: 4,
+                    background: "none",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    color: "var(--green)",
+                    fontSize: 11,
+                    padding: "3px 8px",
+                    cursor: "pointer",
+                    width: "100%",
+                  }}
+                >
+                  Export attestation report
                 </button>
               )}
             </div>

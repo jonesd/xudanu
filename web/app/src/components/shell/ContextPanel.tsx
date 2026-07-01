@@ -15,6 +15,7 @@ interface ContextPanelProps {
   currentWorkId: number | null;
   onNavigateToWork: (workId: number) => void;
   onOpenProvenance?: () => void;
+  onExportReport?: () => void;
   focusMode: boolean;
   onToggleFocus: () => void;
 }
@@ -37,7 +38,7 @@ export function ContextPanel(props: ContextPanelProps) {
         compoundSourceTitles={props.compoundSourceTitles}
         onNavigateToWork={props.onNavigateToWork}
       />
-      <AttributionSection attributionSpans={props.attributionSpans} attributionLogStatus={props.attributionLogStatus} onOpenFullView={props.onOpenProvenance} />
+      <AttributionSection attributionSpans={props.attributionSpans} attributionLogStatus={props.attributionLogStatus} onOpenFullView={props.onOpenProvenance} onExportReport={props.onExportReport} />
     </div>
   );
 }
