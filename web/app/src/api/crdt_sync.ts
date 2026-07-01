@@ -856,6 +856,13 @@ export class CrdtSyncClient {
     return typeof club === "number" ? club : null;
   }
 
+  async generateAttestationReport(workId: number): Promise<string> {
+    const resp = await this.sendRequest("attestation_report", { work_id: workId });
+    const val = extractValue(resp);
+    const obj = val as Record<string, unknown>;
+    return (obj.report_json as string) || (obj.value as string) || JSON.stringify(val);
+  }
+
   async findSharedRegions(workA: number, workB: number, filterText?: string): Promise<SharedRegion[]> {
     const payload: Record<string, unknown> = { work_a: workA, work_b: workB };
     if (filterText) payload.filter_text = filterText;
