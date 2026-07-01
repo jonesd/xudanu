@@ -278,6 +278,7 @@ impl BinaryCodec {
             | OperationCode::CrdtSyncSubscriberCount
             | OperationCode::CrdtSyncOpen
             | OperationCode::CrdtAwarenessGet
+            | OperationCode::AttestationReport
             | OperationCode::WorkSummary
             | OperationCode::WorkVersionTimeline => {
                 let id: BeId = postcard::from_bytes(payload_data)
@@ -425,6 +426,7 @@ impl BinaryCodec {
             }
             OperationCode::CrdtSyncText => Ok(WireRequest::CrdtSyncText { work_id: id }),
             OperationCode::CrdtAwarenessGet => Ok(WireRequest::CrdtAwarenessGet { work_id: id }),
+            OperationCode::AttestationReport => Ok(WireRequest::AttestationReport { work_id: id }),
             OperationCode::WorkSummary => Ok(WireRequest::WorkSummary { work_id: id }),
             OperationCode::WorkVersionTimeline => {
                 Ok(WireRequest::WorkVersionTimeline { work_id: id })
@@ -673,6 +675,14 @@ impl JsonCodec {
                 OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
                 OperationCode::ClubWhoAmI => Ok(WireRequest::ClubWhoAmI),
                 OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
+                OperationCode::AttestationReport => {
+                    let id: BeId = payload
+                        .as_ref()
+                        .and_then(|p| p.get("work_id"))
+                        .and_then(|v| serde_json::from_value(v.clone()).ok())
+                        .unwrap_or_default();
+                    Ok(WireRequest::AttestationReport { work_id: id })
+                }
                 OperationCode::HistoricalAuthorList => Ok(WireRequest::HistoricalAuthorList),
                 OperationCode::SourcePatternList => Ok(WireRequest::SourcePatternList),
                 OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),

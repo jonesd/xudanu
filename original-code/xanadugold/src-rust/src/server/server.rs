@@ -2698,6 +2698,139 @@ impl Server {
         }
     }
 
+    pub fn generate_attestation_report(
+        &mut self,
+        work_be_id: BeId,
+        session_id: SessionId,
+    ) -> Result<String, ServerError> {
+        if self.crdt_is_active(work_be_id)
+            && self.crdt_needs_materialization(work_be_id)
+            && self.crdt_debounce_elapsed(work_be_id)
+        {
+            if let Ok(edition) = self.materialize_with_provenance(work_be_id, session_id) {
+                let author_club = self.resolve_author_club(session_id);
+                let _ = self.revise_work(work_be_id, session_id, edition, author_club);
+            }
+        }
+
+        let spans = self.attribution_query_resolved(work_be_id)?;
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+        let title = ws.title().to_string();
+        let revision = ws.work.revision_count();
+        let text = ws.work.current_edition().to_text();
+        let char_count = text.chars().count();
+
+        let content_hash = {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(text.as_bytes());
+            hasher.finalize().to_hex().to_string()
+        };
+
+        let log_status = self.attribution_log_status();
+        let (entry_count, chain_valid, last_sequence, has_log) = match log_status {
+            super::transport::protocol::ResponseValue::AttributionLogStatusResult {
+                entry_count,
+                chain_valid,
+                last_sequence,
+                has_log,
+            } => (entry_count, chain_valid, last_sequence, has_log),
+            _ => (0, true, 0, false),
+        };
+
+        let ancestry = self.provenance_ancestry(work_be_id);
+        let provenance_chain = self.enrich_provenance_hops(&ancestry);
+
+        let server_id = self.federation_server_id();
+        let verifying_key_hex = self.server_verifying_key_hex();
+
+        let key_history = self.key_history.to_file_repr();
+
+        let report = serde_json::json!({
+            "type": "xudanu-attestation-report",
+            "version": 1,
+            "generated_at": Self::current_timestamp_secs(),
+            "document": {
+                "work_id": format!("{:04x}", work_be_id),
+                "title": title,
+                "revision": revision,
+                "character_count": char_count,
+                "content_hash_blake3": content_hash,
+            },
+            "server_identity": {
+                "server_id": server_id,
+                "verifying_key_ed25519": verifying_key_hex,
+            },
+            "attribution": {
+                "span_count": spans.len(),
+                "spans": spans.iter().map(|s| {
+                    let author = s.author_display_name.as_deref().unwrap_or("unknown");
+                    let author_type = s.author_type.as_deref().unwrap_or("human");
+                    serde_json::json!({
+                        "range": [s.start, s.end],
+                        "author": author,
+                        "author_type": author_type,
+                        "signature_valid": s.signature_valid,
+                        "timestamp": s.timestamp,
+                        "source_work_id": s.source_work_id.map(|id| format!("{:04x}", id)),
+                        "provenance_chain": s.provenance_chain.as_ref().map(|chain| {
+                            chain.iter().map(|hop| serde_json::json!({
+                                "source_work_id": format!("{:04x}", hop.source_work_id),
+                                "source_work_title": hop.source_work_title,
+                                "source_author_name": hop.source_author_name,
+                            })).collect::<Vec<_>>()
+                        }),
+                    })
+                }).collect::<Vec<_>>(),
+            },
+            "provenance_chain": provenance_chain.iter().map(|hop| serde_json::json!({
+                "source_work_id": format!("{:04x}", hop.source_work_id),
+                "source_work_title": hop.source_work_title,
+                "source_author_name": hop.source_author_name,
+                "dest_work_id": format!("{:04x}", hop.dest_work_id),
+            })).collect::<Vec<_>>(),
+            "security_log": {
+                "has_log": has_log,
+                "entry_count": entry_count,
+                "last_sequence": last_sequence,
+                "chain_valid": chain_valid,
+                "algorithm": "SHA-256 chained, Ed25519 signed, BLAKE3 content-addressed",
+            },
+            "key_history": {
+                "server_id": key_history.server_id,
+                "current_key_id": key_history.current_key_id,
+                "entry_count": key_history.entries.len(),
+                "rotation_proof_count": key_history.rotation_proofs.len(),
+            },
+        });
+
+        let report_str = serde_json::to_string_pretty(&report)
+            .map_err(|e| ServerError::Internal(format!("report serialization: {}", e)))?;
+
+        let report_hash = {
+            use sha2::Digest;
+            let mut hasher = sha2::Sha256::new();
+            hasher.update(report_str.as_bytes());
+            format!("{:x}", hasher.finalize())
+        };
+
+        let signature = crate::crypto::sign::sign_bytes(
+            &self.server_keypair.signing_key,
+            report_hash.as_bytes(),
+        );
+
+        let signed_report = serde_json::json!({
+            "report": report,
+            "report_hash_sha256": report_hash,
+            "server_signature_ed25519": signature.to_bytes().iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+        });
+
+        serde_json::to_string_pretty(&signed_report)
+            .map_err(|e| ServerError::Internal(format!("signed report serialization: {}", e)))
+    }
+
     fn verify_attribution_log_chain(&self) -> bool {
         let data_dir = match &self.data_dir {
             Some(d) => d,
