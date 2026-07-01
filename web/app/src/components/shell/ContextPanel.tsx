@@ -3,7 +3,6 @@ import { PresenceSection } from "../panels/PresenceSection";
 import { DocuverseSection } from "../panels/DocuverseSection";
 import { ConnectionsSection } from "../panels/ConnectionsSection";
 import { AttributionSection } from "../panels/AttributionSection";
-import { AuditTrailSection } from "../panels/AuditTrailSection";
 
 interface ContextPanelProps {
   awareness: AwarenessState[];
@@ -15,6 +14,7 @@ interface ContextPanelProps {
   compoundSourceTitles: Record<number, string>;
   currentWorkId: number | null;
   onNavigateToWork: (workId: number) => void;
+  onOpenProvenance?: () => void;
   focusMode: boolean;
   onToggleFocus: () => void;
 }
@@ -37,8 +37,7 @@ export function ContextPanel(props: ContextPanelProps) {
         compoundSourceTitles={props.compoundSourceTitles}
         onNavigateToWork={props.onNavigateToWork}
       />
-      <AttributionSection attributionSpans={props.attributionSpans} />
-      <AuditTrailSection status={props.attributionLogStatus} />
+      <AttributionSection attributionSpans={props.attributionSpans} attributionLogStatus={props.attributionLogStatus} onOpenFullView={props.onOpenProvenance} />
     </div>
   );
 }

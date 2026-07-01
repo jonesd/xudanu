@@ -376,8 +376,8 @@ export class CrdtSyncClient {
   private connected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
-  private static readonly RECONNECT_BASE_MS = 1000;
-  private static readonly RECONNECT_MAX_MS = 30000;
+  private static readonly RECONNECT_BASE_MS = 500;
+  private static readonly RECONNECT_MAX_MS = 10000;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private awarenessMap = new Map<number, AwarenessState>();
   private awarenessSendTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1397,44 +1397,50 @@ export class CrdtSyncClient {
 
   async tryOpenWork(): Promise<void> {
     if (!this.workBeId || !this.ws?.OPEN) return;
-    if (this.skipCrdt) return;
-    try {
-      const openResp = await this.sendRequest("crdt_sync_open", {
-        work_id: this.workBeId,
-      });
-      const inner = extractValue(openResp) as Record<string, unknown>;
+    let loaded = false;
+    if (!this.skipCrdt) {
+      try {
+        const openResp = await this.sendRequest("crdt_sync_open", {
+          work_id: this.workBeId,
+        });
+        const inner = extractValue(openResp) as Record<string, unknown>;
 
-      const wasInitialOpen = !this.crdtOpenedThisConnection;
-      if (wasInitialOpen) {
-        this.text = (inner.current_text as string) || "";
-        this.crdtOpenedThisConnection = true;
-      }
-
-      if (this.currentIdentity) {
-        try {
-          await this.sendRequest("crdt_register_author", { work_id: this.workBeId });
-        } catch (e) {
-          console.warn("crdt_sync: register_author failed:", e);
+        const wasInitialOpen = !this.crdtOpenedThisConnection;
+        if (wasInitialOpen) {
+          this.text = (inner.current_text as string) || "";
+          this.crdtOpenedThisConnection = true;
         }
-      }
 
-      this.crdtReady = true;
-      if (wasInitialOpen) {
-        this.textListeners.forEach((cb) => cb(this.text));
-      }
-
-      this.sendRequest("crdt_awareness_get", {
-        work_id: this.workBeId,
-      }).then((awareResp) => {
-        const awareVal = extractValue(awareResp) as Record<string, unknown>;
-        const states = awareVal.states as AwarenessState[] || [];
-        this.awarenessMap.clear();
-        for (const s of states) {
-          this.awarenessMap.set(s.session_id, s);
+        if (this.currentIdentity) {
+          try {
+            await this.sendRequest("crdt_register_author", { work_id: this.workBeId });
+          } catch (e) {
+            console.warn("crdt_sync: register_author failed:", e);
+          }
         }
-        this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
-      }).catch(() => {});
-    } catch {
+
+        this.crdtReady = true;
+        loaded = true;
+        if (wasInitialOpen) {
+          this.textListeners.forEach((cb) => cb(this.text));
+        }
+
+        this.sendRequest("crdt_awareness_get", {
+          work_id: this.workBeId,
+        }).then((awareResp) => {
+          const awareVal = extractValue(awareResp) as Record<string, unknown>;
+          const states = awareVal.states as AwarenessState[] || [];
+          this.awarenessMap.clear();
+          for (const s of states) {
+            this.awarenessMap.set(s.session_id, s);
+          }
+          this.awarenessListeners.forEach((cb) => cb(Array.from(this.awarenessMap.values())));
+        }).catch(() => {});
+      } catch {
+        // CRDT open failed — fall through to edition fallback below
+      }
+    }
+    if (!loaded) {
       try {
         const edResp = await this.sendRequest("work_get_edition", {
           work_id: this.workBeId,

@@ -5,6 +5,7 @@ import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair } from "../../author-color";
 import { CollaborativeEditor } from "../CollaborativeEditor";
 import { TransclusionBadge } from "../TransclusionBadge";
+import { AttributionPanel } from "../AttributionPanel";
 import { SourceTextViewer } from "../SourceTextViewer";
 import { ConnectionOverlay } from "../ConnectionOverlay";
 import { IdentityPanel } from "../IdentityPanel";
@@ -32,6 +33,7 @@ export function AppShell() {
   const [showImport, setShowImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showIdentity, setShowIdentity] = useState(false);
+  const [showProvenance, setShowProvenance] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [works, setWorks] = useState<WorkListEntry[]>([]);
@@ -68,6 +70,7 @@ export function AppShell() {
     clientRef,
     attributionSpans,
     attributionLogStatus,
+    refreshAttribution,
     canEdit,
     reconnectAttempt,
     fetchWorkList,
@@ -105,16 +108,18 @@ export function AppShell() {
     if (connected && workBeId !== null && clientRef.current && identity) {
       loadTransclusionLinks(clientRef.current, workBeId, works);
       loadBacklinks(clientRef.current, workBeId);
+      refreshAttribution();
     }
-  }, [connected, workBeId, works, identity, loadTransclusionLinks, loadBacklinks]);
+  }, [connected, workBeId, works, identity, loadTransclusionLinks, loadBacklinks, refreshAttribution]);
 
   useEffect(() => {
     if (!connected || workBeId === null || !clientRef.current || !identity) return;
     const handler = setTimeout(() => {
       loadTransclusionLinks(clientRef.current!, workBeId!, works);
+      refreshAttribution();
     }, 1500);
     return () => clearTimeout(handler);
-  }, [text, connected, workBeId, identity, works, loadTransclusionLinks]);
+  }, [text, connected, workBeId, identity, works, loadTransclusionLinks, refreshAttribution]);
 
   useEffect(() => {
     if (connected && clientRef.current && identity) {
@@ -346,6 +351,7 @@ export function AppShell() {
       setActiveRail(item);
       if (item === "identity") setShowIdentity(true);
       else if (item === "settings") setShowSettings(true);
+      else if (item === "provenance") setShowProvenance((s) => !s);
       else if (item === "annotate") setActiveRail("annotate");
     },
     []
@@ -471,6 +477,14 @@ export function AppShell() {
                     {editOpen ? "Edit: Open" : "Edit: Owner"}
                   </button>
                 )}
+                <button
+                  type="button"
+                  className="publish-toggle"
+                  onClick={() => setShowProvenance((s) => !s)}
+                  title="Toggle provenance panel"
+                >
+                  {showProvenance ? "Hide Prov" : "Show Prov"}
+                </button>
               </div>
             </div>
             {transclusion.pendingLink && (
@@ -533,6 +547,28 @@ export function AppShell() {
                 onCreateAnnotation={undefined}
               />
             </div>
+            {showProvenance && (
+              <div className="provenance-split">
+                <div className="provenance-split-header">
+                  <span className="provenance-title">Provenance & Attribution</span>
+                  <button
+                    type="button"
+                    className="provenance-close"
+                    onClick={() => setShowProvenance(false)}
+                  >
+                    close
+                  </button>
+                </div>
+                <div className="provenance-split-body">
+                  <AttributionPanel
+                    spans={attributionSpans}
+                    logStatus={attributionLogStatus}
+                    documentLength={displayText.length}
+                    visible={showProvenance}
+                  />
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -547,6 +583,7 @@ export function AppShell() {
         compoundSourceTitles={compound.sourceTitles}
         currentWorkId={workBeId}
         onNavigateToWork={selectWork}
+        onOpenProvenance={() => setShowProvenance(true)}
         focusMode={focusMode}
         onToggleFocus={() => setFocusMode((f) => !f)}
       />

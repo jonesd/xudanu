@@ -462,14 +462,15 @@ async fn ws_handler(
                         .split(';')
                         .find_map(|c| c.trim().strip_prefix("xudanu_csrf="))
                 });
-            if cookie_token != Some(token.as_str()) {
-                tracing::warn!(
-                    target: "xudanu::security",
-                    remote_addr = %addr,
-                    event = "SECURITY:ws_csrf_cookie_mismatch",
-                    "WebSocket CSRF token/cookie mismatch"
-                );
-                return (axum::http::StatusCode::FORBIDDEN, "Invalid CSRF token").into_response();
+            if let Some(cookie_val) = cookie_token {
+                if cookie_val != token.as_str() {
+                    tracing::warn!(
+                        target: "xudanu::security",
+                        remote_addr = %addr,
+                        event = "SECURITY:ws_csrf_cookie_mismatch",
+                        "WebSocket CSRF cookie mismatch (stale cookie or proxy) — relying on token-set check"
+                    );
+                }
             }
             let valid = {
                 let mut tokens = state.csrf_tokens.lock().unwrap_or_else(|e| e.into_inner());
