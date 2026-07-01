@@ -842,6 +842,20 @@ export class CrdtSyncClient {
     return extractValue(resp) === true;
   }
 
+  async workSetEditClub(workId: number, clubId: number | null): Promise<void> {
+    const payload: Record<string, unknown> = { work_id: workId };
+    if (clubId !== null) payload.club_id = clubId;
+    await this.sendRequest("work_set_edit_club", payload);
+  }
+
+  async workEditClub(workId: number): Promise<number | null> {
+    const resp = await this.sendRequest("work_edit_club", { work_id: workId });
+    const val = extractValue(resp);
+    if (val === null || val === undefined) return null;
+    const club = (val as Record<string, unknown>).value ?? val;
+    return typeof club === "number" ? club : null;
+  }
+
   async findSharedRegions(workA: number, workB: number, filterText?: string): Promise<SharedRegion[]> {
     const payload: Record<string, unknown> = { work_a: workA, work_b: workB };
     if (filterText) payload.filter_text = filterText;

@@ -278,6 +278,7 @@ fn dispatch_inner(
     request: WireRequest,
     state: &SharedState,
 ) -> Result<ResponseValue, crate::server::ServerError> {
+    srv.touch_session(session_id);
     match request {
         WireRequest::SessionConnect => Ok(ResponseValue::Id(session_id.as_u64())),
         WireRequest::SessionDisconnect => {
