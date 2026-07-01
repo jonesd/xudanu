@@ -10726,3 +10726,136 @@ async fn ws_token_query_param_connects() {
     .await;
     assert_eq!(resp["type"], "response");
 }
+
+// ── CSRF WebSocket protection tests ─────────────────────────────────
+
+struct CsrfTestServer {
+    addr: SocketAddr,
+}
+
+impl CsrfTestServer {
+    async fn start() -> Self {
+        let server = Server::new();
+        let state = AppState::new(server).with_csrf(true).shared();
+        let client_router = build_router(state.clone());
+        let app = client_router.into_make_service_with_connect_info::<std::net::SocketAddr>();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        CsrfTestServer { addr }
+    }
+
+    fn ws_url(&self) -> String {
+        format!(
+            "ws://{}/xudanu?format=json&version=2&login=public",
+            self.addr
+        )
+    }
+}
+
+async fn fetch_csrf_token(addr: SocketAddr) -> (String, Option<String>) {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{}/csrf-token", addr))
+        .send()
+        .await
+        .unwrap();
+    let cookie = resp
+        .headers()
+        .get("set-cookie")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(';').next())
+        .map(|s| s.to_string());
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let token = body["csrf_token"].as_str().unwrap().to_string();
+    (token, cookie)
+}
+
+fn ws_request_with_cookie(
+    url: &str,
+    cookie: Option<&str>,
+) -> tokio_tungstenite::tungstenite::handshake::client::Request {
+    let mut builder = tokio_tungstenite::tungstenite::handshake::client::Request::builder()
+        .method("GET")
+        .uri(url)
+        .header("Host", "localhost")
+        .header("Connection", "Upgrade")
+        .header("Upgrade", "websocket")
+        .header("Sec-WebSocket-Version", "13")
+        .header(
+            "Sec-WebSocket-Key",
+            tokio_tungstenite::tungstenite::handshake::client::generate_key(),
+        );
+    if let Some(c) = cookie {
+        builder = builder.header("Cookie", c);
+    }
+    builder.body(()).unwrap()
+}
+
+#[tokio::test]
+async fn csrf_valid_token_with_cookie_connects() {
+    let srv = CsrfTestServer::start().await;
+    let (token, cookie) = fetch_csrf_token(srv.addr).await;
+    assert!(cookie.is_some());
+
+    let url = format!("{}&csrf_token={}", srv.ws_url(), token);
+    let request = ws_request_with_cookie(&url, cookie.as_deref());
+    let result = tokio_tungstenite::connect_async(request).await;
+    assert!(
+        result.is_ok(),
+        "WebSocket should connect with valid token + matching cookie"
+    );
+}
+
+#[tokio::test]
+async fn csrf_valid_token_without_cookie_connects() {
+    let srv = CsrfTestServer::start().await;
+    let (token, _cookie) = fetch_csrf_token(srv.addr).await;
+
+    let url = format!("{}&csrf_token={}", srv.ws_url(), token);
+    let request = ws_request_with_cookie(&url, None);
+    let result = tokio_tungstenite::connect_async(request).await;
+    assert!(
+        result.is_ok(),
+        "WebSocket should connect with valid token but no cookie (proxy/dev scenario)"
+    );
+}
+
+#[tokio::test]
+async fn csrf_wrong_cookie_still_connects_via_token_set() {
+    let srv = CsrfTestServer::start().await;
+    let (token, _cookie) = fetch_csrf_token(srv.addr).await;
+
+    let url = format!("{}&csrf_token={}", srv.ws_url(), token);
+    let request = ws_request_with_cookie(&url, Some("xudanu_csrf=wrong-token"));
+    let result = tokio_tungstenite::connect_async(request).await;
+    assert!(
+        result.is_ok(),
+        "WebSocket should connect with wrong cookie — token-set check is the primary CSRF defense"
+    );
+}
+
+#[tokio::test]
+async fn csrf_no_token_rejected() {
+    let srv = CsrfTestServer::start().await;
+
+    let request = ws_request_with_cookie(&srv.ws_url(), None);
+    let result = tokio_tungstenite::connect_async(request).await;
+    assert!(
+        result.is_err(),
+        "WebSocket should be rejected without CSRF token when CSRF is enabled"
+    );
+}
+
+#[tokio::test]
+async fn csrf_disabled_connects_without_token() {
+    let srv = TestServer::start().await;
+    let url = format!(
+        "ws://{}/xudanu?format=json&version=2&login=public",
+        srv.addr
+    );
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let _ = stream;
+}
