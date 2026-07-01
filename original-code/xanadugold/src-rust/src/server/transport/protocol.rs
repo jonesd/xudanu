@@ -1887,7 +1887,6 @@ impl WireRequest {
                 | Self::GovernanceStatus { .. }
                 | Self::GlobalTextSearch { .. }
                 | Self::ResolveInlineTransclusions { .. }
-                | Self::AttributionQueryResolved { .. }
         )
     }
 }
