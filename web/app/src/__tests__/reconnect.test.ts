@@ -14,7 +14,7 @@ describe("WS reconnect backoff (F1)", () => {
     const client = new CrdtSyncClient("ws://test", 1);
 
     for (let attempt = 0; attempt < 6; attempt++) {
-      const expectedBase = Math.min(1000 * Math.pow(2, attempt), 30000);
+      const expectedBase = Math.min(500 * Math.pow(2, attempt), 10000);
 
       for (let sample = 0; sample < 50; sample++) {
         const delaySpy = vi.spyOn(globalThis, "setTimeout");
@@ -41,16 +41,16 @@ describe("WS reconnect backoff (F1)", () => {
   it("delay caps at 30s", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     const base = client.getReconnectDelay(10);
-    expect(base).toBe(30000);
+    expect(base).toBe(10000);
   });
 
   it("base delay grows exponentially", () => {
     const client = new CrdtSyncClient("ws://test", 1);
-    expect(client.getReconnectDelay(0)).toBe(1000);
-    expect(client.getReconnectDelay(1)).toBe(2000);
-    expect(client.getReconnectDelay(2)).toBe(4000);
-    expect(client.getReconnectDelay(3)).toBe(8000);
-    expect(client.getReconnectDelay(4)).toBe(16000);
+    expect(client.getReconnectDelay(0)).toBe(500);
+    expect(client.getReconnectDelay(1)).toBe(1000);
+    expect(client.getReconnectDelay(2)).toBe(2000);
+    expect(client.getReconnectDelay(3)).toBe(4000);
+    expect(client.getReconnectDelay(4)).toBe(8000);
   });
 
   it("resets reconnect attempts to 0 on successful connect", async () => {
@@ -65,7 +65,7 @@ describe("WS reconnect backoff (F1)", () => {
     expect((client as any).reconnectAttempts).toBe(0);
 
     const nextBase = client.getReconnectDelay(0);
-    expect(nextBase).toBe(1000);
+    expect(nextBase).toBe(500);
   });
 });
 
@@ -90,7 +90,7 @@ describe("Request timeout and drop handling", () => {
     (client as any).ws = { readyState: 1, send: vi.fn() };
 
     const promise = client.sendRequest("slow_op");
-    vi.advanceTimersByTime(31000);
+    vi.advanceTimersByTime(11000);
 
     await expect(promise).rejects.toThrow("timed out");
     expect((client as any).pending.size).toBe(0);
