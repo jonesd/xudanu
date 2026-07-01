@@ -10,13 +10,18 @@ frontend. The project is split across two trees:
 
 ## Technology
 
-**Backend** — Rust (edition 2021). Crate name `xudanu` (v0.7.9).
+**Backend** — Rust (edition 2021). Crate name `xudanu` (v0.8.1).
 - Async runtime: `tokio`; web framework: `axum` 0.8 (HTTP + WebSocket).
 - TLS: `rustls` / `axum-server`; crypto: `chacha20poly1305`, `x25519-dalek`,
   `ed25519-dalek`, `argon2`, `ring`, `blake3`.
 - Serialization: `postcard` (wire) + `serde_json` (manifests/API).
 - Auth: OAuth2 (GitHub, Google), CSRF tokens, passphrase-protected server keys.
-- Federation between server peers over WebSocket.
+- Federation between server peers over WebSocket (FR-3: outbound dialer,
+  PeerPool, periodic sync/heartbeat, PBFT broadcast — see `federation_active.rs`).
+- Collaborative editing: Xudanu's own **O-tree CRDT** (`server/otree_crdt.rs`)
+  — a custom position-based CRDT using the space algebra (region/displacement).
+  Not Yjs/Yrs; the O-tree is purpose-built for Xudanu's content model and
+  integrates with span migration, attribution, and federation sync.
 - Optional `wasm` target (`crate-type = ["cdylib", "rlib"]`) for in-browser use.
 
 **Frontend** — React 19 + TypeScript, Vite 8, Vitest. Single-page app that
@@ -99,7 +104,8 @@ server/
   server.rs               core Server state, restore/checkpoint, recovery stats
   transport/              HTTP/WS layer: handler, dispatch, codec, protocol,
                           channel, snapshot, oauth, chained_log (security audit),
-                          federation_handler, audit, attribution_log
+                          federation_handler, federation_active (outbound dialer +
+                          PeerPool + sync loop), audit, attribution_log
   federation.rs           peer mesh + governance/endorsements
   identity.rs, keymaster.rs, session.rs, club.rs, admin.rs, otree_crdt.rs,
   detector.rs, lock.rs, wait_barrier.rs, historical_author.rs, source_matcher.rs
