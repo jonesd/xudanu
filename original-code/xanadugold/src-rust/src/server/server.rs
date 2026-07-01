@@ -3803,6 +3803,25 @@ impl Server {
             .unwrap_or(false)
     }
 
+    pub fn crdt_debounce_elapsed(&self, work_be_id: BeId) -> bool {
+        self.otree_crdt
+            .debounce_elapsed(work_be_id)
+            .unwrap_or(false)
+    }
+
+    pub fn try_materialize_for_attribution(&mut self, work_be_id: BeId, session_id: SessionId) {
+        if !self.crdt_is_active(work_be_id)
+            || !self.crdt_needs_materialization(work_be_id)
+            || !self.crdt_debounce_elapsed(work_be_id)
+        {
+            return;
+        }
+        if let Ok(edition) = self.materialize_with_provenance(work_be_id, session_id) {
+            let author_club = self.resolve_author_club(session_id);
+            let _ = self.revise_work(work_be_id, session_id, edition, author_club);
+        }
+    }
+
     pub fn set_work_title(&mut self, work_be_id: BeId, title: String) {
         if let Some(ws) = self.works.get_mut(&work_be_id) {
             ws.cached_title = title;

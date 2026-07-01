@@ -121,7 +121,7 @@ export function AppShell() {
       if (identity) {
         loadTransclusionLinks(clientRef.current!, workBeId!, works);
       }
-    }, 1500);
+    }, 500);
     return () => clearTimeout(handler);
   }, [text, connected, workBeId, identity, works, loadTransclusionLinks, refreshAttribution]);
 
