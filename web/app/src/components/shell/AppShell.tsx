@@ -105,18 +105,22 @@ export function AppShell() {
   const loadBacklinks = transclusion.loadBacklinks;
   const loadLinkTypes = transclusion.loadLinkTypes;
   useEffect(() => {
+    if (connected && workBeId !== null && clientRef.current) {
+      refreshAttribution();
+    }
     if (connected && workBeId !== null && clientRef.current && identity) {
       loadTransclusionLinks(clientRef.current, workBeId, works);
       loadBacklinks(clientRef.current, workBeId);
-      refreshAttribution();
     }
   }, [connected, workBeId, works, identity, loadTransclusionLinks, loadBacklinks, refreshAttribution]);
 
   useEffect(() => {
-    if (!connected || workBeId === null || !clientRef.current || !identity) return;
+    if (!connected || workBeId === null || !clientRef.current) return;
     const handler = setTimeout(() => {
-      loadTransclusionLinks(clientRef.current!, workBeId!, works);
       refreshAttribution();
+      if (identity) {
+        loadTransclusionLinks(clientRef.current!, workBeId!, works);
+      }
     }, 1500);
     return () => clearTimeout(handler);
   }, [text, connected, workBeId, identity, works, loadTransclusionLinks, refreshAttribution]);
@@ -137,8 +141,11 @@ export function AppShell() {
     }
   }, [connected, workBeId, identity]);
 
+  const [publishError, setPublishError] = useState<string | null>(null);
+
   const handleTogglePublish = useCallback(async () => {
     if (!clientRef.current || workBeId === null) return;
+    setPublishError(null);
     try {
       if (isPublished) {
         await clientRef.current.workUnpublish(workBeId);
@@ -148,7 +155,10 @@ export function AppShell() {
         setIsPublished(true);
       }
     } catch (e) {
-      console.error("Failed to toggle publish state:", e);
+      const msg = String((e as Error)?.message || e || "unknown error");
+      console.error("Failed to toggle publish state:", msg);
+      setPublishError(msg);
+      setTimeout(() => setPublishError(null), 5000);
     }
   }, [clientRef, workBeId, isPublished]);
 
@@ -449,6 +459,37 @@ export function AppShell() {
           <>
             <div className="doc-toolbar">
               <div className="doc-title">{currentWorkMeta?.title || `Work ${workIdDisplay}`}</div>
+              <button
+                type="button"
+                className="publish-toggle"
+                onClick={handleTogglePublish}
+                title={isPublished ? "Click to make private (only you can read)" : "Click to publish (everyone can read)"}
+              >
+                {isPublished ? "Published" : "Private"}
+              </button>
+              {publishError && (
+                <span style={{ fontSize: 10, color: "var(--red)", maxWidth: 200 }}>
+                  {publishError}
+                </span>
+              )}
+              {isPublished && (
+                <button
+                  type="button"
+                  className="publish-toggle"
+                  onClick={handleToggleEditAccess}
+                  title={editOpen ? "Click to restrict editing to owner" : "Click to allow anyone to edit"}
+                >
+                  {editOpen ? "Edit: Open" : "Edit: Owner"}
+                </button>
+              )}
+              <button
+                type="button"
+                className="publish-toggle"
+                onClick={() => setShowProvenance((s) => !s)}
+                title="Toggle provenance panel"
+              >
+                {showProvenance ? "Hide Prov" : "Show Prov"}
+              </button>
               <div className="doc-meta">
                 {awareness.length > 1 && (
                   <div className="collab-pill">
@@ -457,34 +498,6 @@ export function AppShell() {
                   </div>
                 )}
                 <div>{wordCount.toLocaleString()} words</div>
-                {workBeId !== null && (
-                  <button
-                    type="button"
-                    className="publish-toggle"
-                    onClick={handleTogglePublish}
-                    title={isPublished ? "Click to make private (only you can read)" : "Click to publish (everyone can read)"}
-                  >
-                    {isPublished ? "Published" : "Private"}
-                  </button>
-                )}
-                {workBeId !== null && isPublished && (
-                  <button
-                    type="button"
-                    className="publish-toggle"
-                    onClick={handleToggleEditAccess}
-                    title={editOpen ? "Click to restrict editing to owner" : "Click to allow anyone to edit"}
-                  >
-                    {editOpen ? "Edit: Open" : "Edit: Owner"}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="publish-toggle"
-                  onClick={() => setShowProvenance((s) => !s)}
-                  title="Toggle provenance panel"
-                >
-                  {showProvenance ? "Hide Prov" : "Show Prov"}
-                </button>
               </div>
             </div>
             {transclusion.pendingLink && (

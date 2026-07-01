@@ -21,9 +21,12 @@ export function AttributionSection({ attributionSpans, attributionLogStatus, onO
 
   const allOk = coverage >= 99 && allSigned && chainValid;
   const hasIssues = unsignedCount > 0 || !chainValid;
+  const noData = attributionSpans.length === 0 && !hasLog;
 
-  const statusColor = hasIssues ? "var(--red)" : coverage >= 80 ? "var(--green)" : "var(--amber)";
-  const statusLabel = hasIssues
+  const statusColor = noData ? "var(--text-dim)" : hasIssues ? "var(--red)" : coverage >= 80 ? "var(--green)" : "var(--amber)";
+  const statusLabel = noData
+    ? "no data"
+    : hasIssues
     ? `${unsignedCount > 0 ? `${unsignedCount} unsigned` : "chain broken"}`
     : allOk ? "valid" : `${coverage}%`;
 
