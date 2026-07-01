@@ -49,6 +49,28 @@ const MARKER_COLORS = [
   "#7b1fa2", "#c62828", "#2e7d32", "#e65100",
 ];
 
+const HATCH_COLORS: [string, string][] = [
+  ["#00897b", "#4db6ac"],
+  ["#5c6bc0", "#9fa8da"],
+  ["#f4511e", "#ffab91"],
+  ["#00838f", "#4dd0e1"],
+  ["#7b1fa2", "#ba68c8"],
+  ["#c62828", "#ef9a9a"],
+  ["#2e7d32", "#a5d6a7"],
+  ["#e65100", "#ffcc80"],
+  ["#37474f", "#90a4ae"],
+  ["#4527a0", "#b39ddb"],
+];
+
+export function getTransclusionColor(workId: number): string {
+  let hash = 0;
+  hash = ((hash << 5) - hash + workId) | 0;
+  hash = ((hash << 5) - hash + (workId >> 8)) | 0;
+  const pairIdx = Math.abs(hash) % (HATCH_COLORS.length * (HATCH_COLORS.length - 1));
+  const idxA = pairIdx % HATCH_COLORS.length;
+  return HATCH_COLORS[idxA][0];
+}
+
 function markerColorForWork(workId: number): string {
   let hash = 0;
   hash = ((hash << 5) - hash + workId) | 0;
@@ -146,6 +168,7 @@ export function useTransclusion(): TransclusionState {
                 otherWorkId,
                 otherWorkTitle: title,
                 color,
+                excerpt: excerpt.slice(0, 120),
                 provenanceChain: chain,
                 linkTypeId: link.link_types?.[0],
                 otherWorkIsArchived: !!otherArchived,

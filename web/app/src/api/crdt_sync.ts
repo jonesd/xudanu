@@ -288,6 +288,7 @@ export interface TransclusionMarker {
   otherWorkId: number;
   otherWorkTitle: string;
   color: string;
+  excerpt?: string;
   provenanceChain?: ProvenanceHop[];
   linkTypeId?: number;
   // Ghost: the referenced (other) work is archived (soft-deleted).
@@ -826,6 +827,19 @@ export class CrdtSyncClient {
     const val = extractValue(resp);
     if (Array.isArray(val)) return val as LinkTypeInfo[];
     return [];
+  }
+
+  async workPublish(workId: number): Promise<void> {
+    await this.sendRequest("work_publish", { work_id: workId });
+  }
+
+  async workUnpublish(workId: number): Promise<void> {
+    await this.sendRequest("work_unpublish", { work_id: workId });
+  }
+
+  async workIsPublished(workId: number): Promise<boolean> {
+    const resp = await this.sendRequest("work_is_published", { work_id: workId });
+    return extractValue(resp) === true;
   }
 
   async findSharedRegions(workA: number, workB: number, filterText?: string): Promise<SharedRegion[]> {

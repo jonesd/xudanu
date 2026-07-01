@@ -1,5 +1,14 @@
 import { useState } from "react";
 import type { LinkEntry, SpanRangePayload, BacklinkEntry } from "../../api/crdt_sync";
+import { getTransclusionColor } from "../../hooks/useTransclusion";
+
+const DEFAULT_LINK_TYPE_LABELS: Record<number, string> = {
+  1: "Comment",
+  2: "Reference",
+  3: "Disagreement",
+  4: "Quotation",
+  5: "See Also",
+};
 
 interface ConnectionsSectionProps {
   transclusionLinks: LinkEntry[];
@@ -45,7 +54,7 @@ export function ConnectionsSection({
       key,
       type: "transclusion",
       title: compoundSourceTitles[sr.source_work_id] || `work:${sr.source_work_id.toString(16)}`,
-      excerpt: sr.resolved_content?.slice(0, 100) || "...",
+      excerpt: sr.resolved_content?.slice(0, 80) || "...",
       meta: `${sr.content_len || 0} chars`,
       workId: sr.source_work_id,
     });
@@ -55,14 +64,19 @@ export function ConnectionsSection({
   for (const link of transclusionLinks) {
     if (seenLinkIds.has(link.link_id)) continue;
     seenLinkIds.add(link.link_id);
+    if (compoundSpanRanges.some((sr) => sr.source_work_id === link.destination || sr.source_work_id === link.origin)) {
+      const isTransclusionLink = !link.link_types || link.link_types.length === 0;
+      if (isTransclusionLink) continue;
+    }
     const key = `link-${link.link_id}`;
     const excerpt = link.origin_ref?.excerpt || link.destination_ref?.excerpt || "";
+    const typeName = (link.link_types?.[0] && DEFAULT_LINK_TYPE_LABELS[link.link_types[0]]) || "link";
     items.push({
       key,
       type: "link",
       title: link.destination_title || link.origin_title || "Untitled",
-      excerpt: excerpt.slice(0, 100),
-      meta: "link",
+      excerpt: excerpt.slice(0, 80),
+      meta: typeName,
       workId: link.destination,
     });
   }
@@ -73,7 +87,7 @@ export function ConnectionsSection({
       key,
       type: "backlink",
       title: bl.title || `Work ${bl.source_work_id.toString(16).padStart(4, "0")}`,
-      excerpt: (bl.excerpt || "").slice(0, 100),
+      excerpt: (bl.excerpt || "").slice(0, 80),
       meta: bl.link_type || "link",
       workId: bl.source_work_id,
     });
@@ -131,12 +145,17 @@ export function ConnectionsSection({
           Pinned
         </div>
       )}
-      {sorted.map((item) => (
+      {sorted.map((item) => {
+        const borderColor =
+          item.type === "transclusion" ? getTransclusionColor(item.workId) :
+          item.type === "backlink" ? "var(--green)" :
+          "var(--blue)";
+        return (
         <div
           key={item.key}
           className="conn-item"
           style={{
-            borderLeft: `3px solid ${item.type === "transclusion" ? "var(--amber)" : item.type === "backlink" ? "var(--green)" : "var(--blue)"}`,
+            borderLeft: `3px solid ${borderColor}`,
           }}
           onClick={() => onNavigateToWork(item.workId)}
         >
@@ -156,7 +175,8 @@ export function ConnectionsSection({
             <span>{item.meta}</span>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
