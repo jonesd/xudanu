@@ -33,6 +33,7 @@ export function AppShell() {
   const [showSettings, setShowSettings] = useState(false);
   const [showIdentity, setShowIdentity] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [works, setWorks] = useState<WorkListEntry[]>([]);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const [docPrefs, setDocPrefs] = useState<DocPreferences>(loadDocPreferences());
@@ -124,8 +125,10 @@ export function AppShell() {
   useEffect(() => {
     if (connected && workBeId !== null && clientRef.current && identity) {
       clientRef.current.workIsPublished(workBeId).then(setIsPublished).catch(() => setIsPublished(false));
+      clientRef.current.workEditClub(workBeId).then((c) => setEditOpen(c === 1)).catch(() => setEditOpen(false));
     } else {
       setIsPublished(false);
+      setEditOpen(false);
     }
   }, [connected, workBeId, identity]);
 
@@ -143,6 +146,21 @@ export function AppShell() {
       console.error("Failed to toggle publish state:", e);
     }
   }, [clientRef, workBeId, isPublished]);
+
+  const handleToggleEditAccess = useCallback(async () => {
+    if (!clientRef.current || workBeId === null) return;
+    try {
+      if (editOpen) {
+        await clientRef.current.workSetEditClub(workBeId, null);
+        setEditOpen(false);
+      } else {
+        await clientRef.current.workSetEditClub(workBeId, 1);
+        setEditOpen(true);
+      }
+    } catch (e) {
+      console.error("Failed to toggle edit access:", e);
+    }
+  }, [clientRef, workBeId, editOpen]);
 
   const selectWork = useCallback((id: number) => {
     setWorkBeId(id);
@@ -441,6 +459,16 @@ export function AppShell() {
                     title={isPublished ? "Click to make private (only you can read)" : "Click to publish (everyone can read)"}
                   >
                     {isPublished ? "Published" : "Private"}
+                  </button>
+                )}
+                {workBeId !== null && isPublished && (
+                  <button
+                    type="button"
+                    className="publish-toggle"
+                    onClick={handleToggleEditAccess}
+                    title={editOpen ? "Click to restrict editing to owner" : "Click to allow anyone to edit"}
+                  >
+                    {editOpen ? "Edit: Open" : "Edit: Owner"}
                   </button>
                 )}
               </div>

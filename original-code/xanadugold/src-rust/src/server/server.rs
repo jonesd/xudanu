@@ -818,6 +818,7 @@ impl Server {
     // === Session management ===
 
     const DISCONNECTED_SESSION_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+    const ZOMBIE_SESSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
     pub fn connect(&mut self) -> SessionId {
         static SESSION_SECRET: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
@@ -907,12 +908,22 @@ impl Server {
         self.sessions.values().filter(|s| s.is_connected()).count()
     }
 
+    pub fn touch_session(&mut self, id: SessionId) {
+        if let Some(s) = self.sessions.get_mut(&id) {
+            s.touch();
+        }
+    }
+
     pub fn prune_disconnected_sessions(&mut self) -> usize {
         let now = std::time::Instant::now();
         let grace = Self::DISCONNECTED_SESSION_GRACE;
+        let zombie = Self::ZOMBIE_SESSION_TIMEOUT;
         let before = self.sessions.len();
         self.sessions.retain(|_, s| {
             if s.is_connected() {
+                if now.duration_since(s.last_seen()) > zombie {
+                    return false;
+                }
                 return true;
             }
             match s.ended_at() {

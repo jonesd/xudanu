@@ -34,6 +34,7 @@ pub struct Session {
     id: SessionId,
     key_master: Option<KeyMaster>,
     _connect_time: Instant,
+    last_seen: Instant,
     initial_login: Option<BeId>,
     active: bool,
     pub(crate) ended_at: Option<Instant>,
@@ -49,6 +50,7 @@ impl Session {
             id,
             key_master: None,
             _connect_time: Instant::now(),
+            last_seen: Instant::now(),
             initial_login: None,
             active: true,
             ended_at: None,
@@ -90,6 +92,14 @@ impl Session {
 
     pub fn ended_at(&self) -> Option<Instant> {
         self.ended_at
+    }
+
+    pub fn touch(&mut self) {
+        self.last_seen = Instant::now();
+    }
+
+    pub fn last_seen(&self) -> Instant {
+        self.last_seen
     }
 
     pub fn _connect_time(&self) -> Instant {
