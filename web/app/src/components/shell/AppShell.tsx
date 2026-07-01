@@ -142,6 +142,7 @@ export function AppShell() {
   }, [connected, workBeId, identity]);
 
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [, setExportingReport] = useState(false);
 
   const handleTogglePublish = useCallback(async () => {
     if (!clientRef.current || workBeId === null) return;
@@ -176,6 +177,27 @@ export function AppShell() {
       console.error("Failed to toggle edit access:", e);
     }
   }, [clientRef, workBeId, editOpen]);
+
+  const handleExportReport = useCallback(async () => {
+    if (!clientRef.current || workBeId === null) return;
+    setExportingReport(true);
+    try {
+      const reportJson = await clientRef.current.generateAttestationReport(workBeId);
+      const blob = new Blob([reportJson], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `work-${workBeId.toString(16).padStart(4, "0")}-attestation-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Failed to export attestation report:", e);
+    } finally {
+      setExportingReport(false);
+    }
+  }, [clientRef, workBeId]);
 
   const selectWork = useCallback((id: number) => {
     setWorkBeId(id);
@@ -597,6 +619,7 @@ export function AppShell() {
         currentWorkId={workBeId}
         onNavigateToWork={selectWork}
         onOpenProvenance={() => setShowProvenance(true)}
+        onExportReport={handleExportReport}
         focusMode={focusMode}
         onToggleFocus={() => setFocusMode((f) => !f)}
       />
