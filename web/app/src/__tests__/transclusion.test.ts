@@ -47,10 +47,10 @@ describe("Transclusion delta computation", () => {
 
     expect(sentFrames).toHaveLength(1);
     const ops = (sentFrames[0].payload as { ops: unknown[] }).ops;
-    // Minimal delta: retain prefix + insert (no trailing retain for suffix)
     expect(ops).toEqual([
       { type: "retain", count: 6 },
       { type: "insert", text: "beautiful " },
+      { type: "retain", count: 5 },
     ]);
   });
 
@@ -333,6 +333,7 @@ describe("Transclusion placement simulation", () => {
     expect(ops).toEqual([
       { type: "retain", count: 6 },
       { type: "insert", text: "beautiful " },
+      { type: "retain", count: 5 },
     ]);
   });
 

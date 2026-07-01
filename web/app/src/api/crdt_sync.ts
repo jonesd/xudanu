@@ -1730,6 +1730,9 @@ export class CrdtSyncClient {
     if (insertText.length > 0) {
       ops.push({ type: "insert", text: insertText });
     }
+    if (suffix > 0) {
+      ops.push({ type: "retain", count: suffix });
+    }
 
     this.deltaInFlight = true;
     console.log("[CRDT-DIAG] sending work_revise_delta, ops:", ops.length, "for work", this.workBeId);
