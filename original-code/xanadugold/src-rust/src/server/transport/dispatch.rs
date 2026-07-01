@@ -2774,6 +2774,13 @@ fn dispatch_inner(
         }
 
         WireRequest::AttributionLogStatus => Ok(srv.attribution_log_status()),
+        WireRequest::AttestationReport { work_id } => {
+            srv.ensure_can_read(session_id, work_id)?;
+            let report = srv.generate_attestation_report(work_id, session_id)?;
+            Ok(ResponseValue::AttestationReportResult {
+                report_json: report,
+            })
+        }
         WireRequest::WorkTextRange {
             work_id,
             start_char,

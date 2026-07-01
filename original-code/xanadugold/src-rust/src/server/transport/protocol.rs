@@ -323,6 +323,7 @@ pub enum OperationCode {
     AttributionQuery,
     AttributionVerify,
     AttributionLogStatus,
+    AttestationReport,
     WorkTextRange,
     WorkOutline,
     WorkSearch,
@@ -597,6 +598,7 @@ impl OperationCode {
             0x0D01 => Some(OperationCode::AttributionQuery),
             0x0D02 => Some(OperationCode::AttributionVerify),
             0x0D03 => Some(OperationCode::AttributionLogStatus),
+            0x0D0B => Some(OperationCode::AttestationReport),
             0x0D04 => Some(OperationCode::WorkTextRange),
             0x0D05 => Some(OperationCode::WorkOutline),
             0x0D06 => Some(OperationCode::WorkSearch),
@@ -873,6 +875,7 @@ impl OperationCode {
             OperationCode::AttributionQuery => 0x0D01,
             OperationCode::AttributionVerify => 0x0D02,
             OperationCode::AttributionLogStatus => 0x0D03,
+            OperationCode::AttestationReport => 0x0D0B,
             OperationCode::WorkTextRange => 0x0D04,
             OperationCode::WorkOutline => 0x0D05,
             OperationCode::WorkSearch => 0x0D06,
@@ -1715,6 +1718,9 @@ pub enum WireRequest {
         span_fingerprint_hex: String,
     },
     AttributionLogStatus,
+    AttestationReport {
+        work_id: BeId,
+    },
     WorkTextRange {
         work_id: BeId,
         start_char: u64,
@@ -2328,6 +2334,9 @@ pub enum ResponseValue {
         chain_valid: bool,
         last_sequence: u64,
         has_log: bool,
+    },
+    AttestationReportResult {
+        report_json: String,
     },
     WorkTextRangeResult {
         text: String,
