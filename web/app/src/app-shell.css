@@ -206,6 +206,50 @@
 }
 
 /* ── Document Area ── */
+.selection-actions {
+  position: absolute;
+  top: 4px;
+  right: 14px;
+  z-index: 15;
+  display: flex;
+  gap: 8px;
+}
+
+.selection-action-btn {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 2px solid;
+  background: var(--bg-document);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: all 0.15s;
+}
+
+.selection-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+.transclusion-action {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.transclusion-action:hover {
+  background: var(--amber-light);
+}
+
+.link-action {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.link-action:hover {
+  background: var(--blue-light);
+}
+
 .document-area {
   background: var(--bg-document);
   overflow-y: auto;
@@ -221,6 +265,49 @@
   right: 14px;
   z-index: 15;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.link-action-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: var(--bg-document);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.link-action-text {
+  font-size: 12px;
+  color: var(--doc-text-muted);
+}
+
+.link-type-btn {
+  background: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.link-type-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.link-cancel-btn {
+  background: none;
+  border: none;
+  color: var(--doc-text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.link-cancel-btn:hover {
+  color: var(--red);
 }
 
 .doc-toolbar {
@@ -249,6 +336,23 @@
   color: var(--doc-text-muted);
 }
 
+.publish-toggle {
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--doc-text-muted);
+  transition: all 0.15s;
+}
+
+.publish-toggle:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+
 .collab-pill {
   display: flex;
   align-items: center;
@@ -268,10 +372,14 @@
 
 .document-center {
   flex: 1;
-  max-width: 720px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 48px 60px 120px;
+  padding: 48px 48px 120px;
   width: 100%;
+}
+
+.focus-mode .document-center {
+  max-width: 1100px;
 }
 
 .document-center .editor-content,
@@ -385,9 +493,9 @@
 /* Connection cards */
 .conn-item {
   background: var(--bg-elevated);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 6px;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 4px;
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -403,12 +511,13 @@
   font-size: 11px;
   color: var(--text-muted);
   font-family: 'Source Serif 4', serif;
-  line-height: 1.5;
+  line-height: 1.4;
+  margin-top: 1px;
 }
 .conn-meta {
   display: flex;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 2px;
   font-size: 10px;
   color: var(--text-dim);
   flex-wrap: wrap;
@@ -425,7 +534,7 @@
 }
 .conn-type-label.transclusion { background: rgba(217, 119, 6, 0.15); color: var(--amber); }
 .conn-type-label.link { background: rgba(37, 99, 235, 0.15); color: var(--blue); }
-.conn-type-label.backlink { background: rgba(37, 99, 235, 0.08); color: var(--blue); }
+.conn-type-label.backlink { background: rgba(5, 150, 105, 0.12); color: var(--green); }
 .conn-type-label.similar { background: rgba(124, 58, 237, 0.12); color: var(--purple); }
 
 .pin-toggle {

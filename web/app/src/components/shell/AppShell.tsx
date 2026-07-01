@@ -32,6 +32,7 @@ export function AppShell() {
   const [showImport, setShowImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showIdentity, setShowIdentity] = useState(false);
+  const [isPublished, setIsPublished] = useState(false);
   const [works, setWorks] = useState<WorkListEntry[]>([]);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const [docPrefs, setDocPrefs] = useState<DocPreferences>(loadDocPreferences());
@@ -107,10 +108,41 @@ export function AppShell() {
   }, [connected, workBeId, works, identity, loadTransclusionLinks, loadBacklinks]);
 
   useEffect(() => {
+    if (!connected || workBeId === null || !clientRef.current || !identity) return;
+    const handler = setTimeout(() => {
+      loadTransclusionLinks(clientRef.current!, workBeId!, works);
+    }, 1500);
+    return () => clearTimeout(handler);
+  }, [text, connected, workBeId, identity, works, loadTransclusionLinks]);
+
+  useEffect(() => {
     if (connected && clientRef.current && identity) {
       loadLinkTypes(clientRef.current);
     }
   }, [connected, identity, loadLinkTypes]);
+
+  useEffect(() => {
+    if (connected && workBeId !== null && clientRef.current && identity) {
+      clientRef.current.workIsPublished(workBeId).then(setIsPublished).catch(() => setIsPublished(false));
+    } else {
+      setIsPublished(false);
+    }
+  }, [connected, workBeId, identity]);
+
+  const handleTogglePublish = useCallback(async () => {
+    if (!clientRef.current || workBeId === null) return;
+    try {
+      if (isPublished) {
+        await clientRef.current.workUnpublish(workBeId);
+        setIsPublished(false);
+      } else {
+        await clientRef.current.workPublish(workBeId);
+        setIsPublished(true);
+      }
+    } catch (e) {
+      console.error("Failed to toggle publish state:", e);
+    }
+  }, [clientRef, workBeId, isPublished]);
 
   const selectWork = useCallback((id: number) => {
     setWorkBeId(id);
@@ -331,65 +363,22 @@ export function AppShell() {
 
       <div className="document-area">
         {workBeId !== null && selectionRange && !transclusion.pending && !transclusion.pendingLink && (
-          <button
-            type="button"
-            className="transclude-btn"
-            onClick={handleTranscludeSelection}
-            title="Hold this selection as a transclusion to insert elsewhere"
-          >
-            Transclude ({selectionRange.start}-{selectionRange.end})
-          </button>
-        )}
-        {workBeId !== null && selectionRange && !transclusion.pending && !transclusion.pendingLink && (
-          <button
-            type="button"
-            className="transclude-btn"
-            style={{ left: "auto", right: "50%", transform: "translateX(50%)", borderColor: "var(--blue)" }}
-            onClick={handleCreateLinkSelection}
-            title="Hold this selection to create a typed content link"
-          >
-            Create Link ({selectionRange.start}-{selectionRange.end})
-          </button>
-        )}
-        {transclusion.pendingLink && !selectionRange && (
-          <div className="transclude-btn" style={{ left: "50%", transform: "translateX(-50%)", borderColor: "var(--blue)", cursor: "default" }}>
-            Linking from "{transclusion.pendingLink.sourceWorkTitle}" — select target text
+          <div className="selection-actions">
             <button
               type="button"
-              onClick={transclusion.clearPendingLink}
-              style={{ marginLeft: 8, background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer" }}
+              className="selection-action-btn transclusion-action"
+              onClick={handleTranscludeSelection}
+              title="Hold this selection as a transclusion to insert elsewhere"
             >
-              cancel
+              Transclude ({selectionRange.start}-{selectionRange.end})
             </button>
-          </div>
-        )}
-        {transclusion.pendingLink && selectionRange && workBeId !== null && (
-          <div className="transclude-btn" style={{ left: "50%", transform: "translateX(-50%)", borderColor: "var(--blue)", cursor: "default", display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ color: "var(--text-muted)", fontSize: 11 }}>Link type:</span>
-            {DEFAULT_LINK_TYPES.map((t) => (
-              <button
-                key={t.type_id}
-                type="button"
-                onClick={() => handleCreateLinkTarget(t.type_id)}
-                style={{
-                  background: "none",
-                  border: `1px solid ${t.color}`,
-                  borderRadius: 4,
-                  color: t.color,
-                  fontSize: 11,
-                  padding: "2px 8px",
-                  cursor: "pointer",
-                }}
-              >
-                {t.name}
-              </button>
-            ))}
             <button
               type="button"
-              onClick={transclusion.clearPendingLink}
-              style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: 11 }}
+              className="selection-action-btn link-action"
+              onClick={handleCreateLinkSelection}
+              title="Hold this selection to create a typed content link"
             >
-              cancel
+              Create Link ({selectionRange.start}-{selectionRange.end})
             </button>
           </div>
         )}
@@ -444,8 +433,49 @@ export function AppShell() {
                   </div>
                 )}
                 <div>{wordCount.toLocaleString()} words</div>
+                {workBeId !== null && (
+                  <button
+                    type="button"
+                    className="publish-toggle"
+                    onClick={handleTogglePublish}
+                    title={isPublished ? "Click to make private (only you can read)" : "Click to publish (everyone can read)"}
+                  >
+                    {isPublished ? "Published" : "Private"}
+                  </button>
+                )}
               </div>
             </div>
+            {transclusion.pendingLink && (
+              <div className="link-action-bar">
+                {!selectionRange ? (
+                  <span className="link-action-text">
+                    Linking from &ldquo;{transclusion.pendingLink.sourceWorkTitle}&rdquo; &mdash; select target text
+                  </span>
+                ) : (
+                  <>
+                    <span className="link-action-text">Link type:</span>
+                    {DEFAULT_LINK_TYPES.map((t) => (
+                      <button
+                        key={t.type_id}
+                        type="button"
+                        className="link-type-btn"
+                        style={{ border: `1px solid ${t.color}`, color: t.color }}
+                        onClick={() => handleCreateLinkTarget(t.type_id)}
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </>
+                )}
+                <button
+                  type="button"
+                  className="link-cancel-btn"
+                  onClick={transclusion.clearPendingLink}
+                >
+                  cancel
+                </button>
+              </div>
+            )}
             <div className="document-center">
               <CollaborativeEditor
                 text={displayText}

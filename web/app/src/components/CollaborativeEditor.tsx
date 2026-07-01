@@ -83,12 +83,12 @@ interface MarkerHitZone {
   height: number;
 }
 
-const LINK_TYPE_STYLES: Record<number, { color: string }> = {
-  1: { color: "#58a6ff" },
-  2: { color: "#3fb950" },
-  3: { color: "#f85149" },
-  4: { color: "#a371f7" },
-  5: { color: "#d29922" },
+const LINK_TYPE_STYLES: Record<number, { color: string; dash: number[] }> = {
+  1: { color: "#58a6ff", dash: [4, 3] },      // Comment — short dashes
+  2: { color: "#3fb950", dash: [] },            // Reference — solid
+  3: { color: "#f85149", dash: [8, 3] },        // Disagreement — long dashes
+  4: { color: "#a371f7", dash: [1, 3] },        // Quotation — dotted
+  5: { color: "#d29922", dash: [6, 2, 1, 2] }, // See Also — dash-dot
 };
 
 const LINK_TYPE_NAMES: Record<number, string> = {
@@ -98,6 +98,53 @@ const LINK_TYPE_NAMES: Record<number, string> = {
   4: "Quotation",
   5: "See Also",
 };
+
+const HATCH_COLORS: [string, string][] = [
+  ["#00897b", "#4db6ac"],
+  ["#5c6bc0", "#9fa8da"],
+  ["#f4511e", "#ffab91"],
+  ["#00838f", "#4dd0e1"],
+  ["#7b1fa2", "#ba68c8"],
+  ["#c62828", "#ef9a9a"],
+  ["#2e7d32", "#a5d6a7"],
+  ["#e65100", "#ffcc80"],
+  ["#37474f", "#90a4ae"],
+  ["#4527a0", "#b39ddb"],
+];
+
+const hatchCache = new Map<number, CanvasPattern | null>();
+
+function getHatchPattern(ctx: CanvasRenderingContext2D, workId: number): CanvasPattern | null {
+  const cached = hatchCache.get(workId);
+  if (cached !== undefined) return cached;
+  let hash = 0;
+  hash = ((hash << 5) - hash + workId) | 0;
+  hash = ((hash << 5) - hash + (workId >> 8)) | 0;
+  const pairIdx = Math.abs(hash) % (HATCH_COLORS.length * (HATCH_COLORS.length - 1));
+  const idxA = pairIdx % HATCH_COLORS.length;
+  let idxB = (pairIdx / HATCH_COLORS.length) | 0;
+  if (idxB >= idxA) idxB++;
+  const [, bg1] = HATCH_COLORS[idxA % HATCH_COLORS.length];
+  const [, bg2] = HATCH_COLORS[idxB % HATCH_COLORS.length];
+  const pc = document.createElement("canvas");
+  pc.width = 8;
+  pc.height = 8;
+  const pctx = pc.getContext("2d");
+  if (!pctx) { hatchCache.set(workId, null); return null; }
+  pctx.fillStyle = bg1;
+  pctx.fillRect(0, 0, 8, 8);
+  pctx.strokeStyle = bg2;
+  pctx.lineWidth = 3;
+  pctx.beginPath();
+  pctx.moveTo(-2, 10);
+  pctx.lineTo(10, -2);
+  pctx.moveTo(6, 10);
+  pctx.lineTo(10, 6);
+  pctx.stroke();
+  const pattern = ctx.createPattern(pc, "repeat");
+  hatchCache.set(workId, pattern);
+  return pattern;
+}
 
 function drawOverlay(
   editor: HTMLElement | null,
@@ -330,6 +377,7 @@ function drawOverlay(
     if (typeStyle) {
       ctx.strokeStyle = barColor + "cc";
       ctx.lineWidth = 1.5;
+      ctx.setLineDash(typeStyle.dash);
       for (const r of rangeRects) {
         const rx = r.left - rect.left;
         const ry = r.bottom - rect.top - 1;
@@ -338,12 +386,18 @@ function drawOverlay(
         ctx.lineTo(rx + r.width, ry);
         ctx.stroke();
       }
+      ctx.setLineDash([]);
     }
 
     const barWidth = 3 + (marker.provenanceChain && marker.provenanceChain.length > 0
       ? 1 + marker.provenanceChain.length * 3 : 0);
 
-    ctx.fillStyle = barColor + "60";
+    if (typeStyle) {
+      ctx.fillStyle = barColor + "60";
+    } else {
+      const pattern = getHatchPattern(ctx, marker.otherWorkId);
+      ctx.fillStyle = pattern || marker.color + "60";
+    }
     if (isIncoming && typeStyle) {
       ctx.fillRect(rect.width - 3, firstTop, 3, height);
       hitZones.push({
@@ -1125,6 +1179,11 @@ export function CollaborativeEditor({
                   ? `${LINK_TYPE_NAMES[hoveredMarker.linkTypeId] ?? "Link"} — ${hoveredMarker.direction === "outgoing" ? "links to" : "linked from"}`
                   : hoveredMarker.direction === "outgoing" ? "Transcluded to" : "Transcluded from"}
               </div>
+              {hoveredMarker.excerpt && (
+                <div className="marker-tooltip-excerpt" style={{ fontSize: 11, color: "#8b949e", marginTop: 4, fontStyle: "italic", maxHeight: 60, overflow: "hidden" }}>
+                  &ldquo;{hoveredMarker.excerpt}&rdquo;
+                </div>
+              )}
               {hoveredMarker.otherWorkIsArchived && (
                 <div
                   className="marker-tooltip-archived"

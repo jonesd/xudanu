@@ -219,7 +219,7 @@ export function RemoteCursors({ editorRef, states }: RemoteCursorsProps) {
               borderRadius: "3px 3px 3px 0",
               whiteSpace: "nowrap",
               lineHeight: "14px",
-              maxWidth: "80px",
+              maxWidth: "200px",
               overflow: "hidden",
               textOverflow: "ellipsis",
             }}
