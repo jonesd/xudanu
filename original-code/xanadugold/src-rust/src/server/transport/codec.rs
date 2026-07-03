@@ -675,14 +675,6 @@ impl JsonCodec {
                 OperationCode::GovernanceStatus => Ok(WireRequest::GovernanceStatus),
                 OperationCode::ClubWhoAmI => Ok(WireRequest::ClubWhoAmI),
                 OperationCode::AttributionLogStatus => Ok(WireRequest::AttributionLogStatus),
-                OperationCode::AttestationReport => {
-                    let id: BeId = payload
-                        .as_ref()
-                        .and_then(|p| p.get("work_id"))
-                        .and_then(|v| serde_json::from_value(v.clone()).ok())
-                        .unwrap_or_default();
-                    Ok(WireRequest::AttestationReport { work_id: id })
-                }
                 OperationCode::HistoricalAuthorList => Ok(WireRequest::HistoricalAuthorList),
                 OperationCode::SourcePatternList => Ok(WireRequest::SourcePatternList),
                 OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
@@ -2668,7 +2660,8 @@ impl JsonCodec {
             | OperationCode::CrdtSyncMaterialize
             | OperationCode::CrdtSyncSubscriberCount
             | OperationCode::CrdtSyncText
-            | OperationCode::CrdtAwarenessGet => {
+            | OperationCode::CrdtAwarenessGet
+            | OperationCode::AttestationReport => {
                 #[derive(Deserialize)]
                 struct Args {
                     work_id: BeId,
@@ -2699,6 +2692,11 @@ impl JsonCodec {
                     OperationCode::CrdtAwarenessGet => Ok(WireRequest::CrdtAwarenessGet {
                         work_id: args.work_id,
                     }),
+                    OperationCode::AttestationReport => {
+                        Ok(WireRequest::AttestationReport {
+                            work_id: args.work_id,
+                        })
+                    }
                     _ => unreachable!(),
                 }
             }

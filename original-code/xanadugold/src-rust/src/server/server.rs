@@ -255,6 +255,7 @@ pub struct Server {
     /// data with incomplete in-memory state (data loss prevention).
     /// Cleared by an explicit admin action once the root cause is fixed.
     restore_errors: Vec<String>,
+    trusted_server_registry: Option<crate::crypto::server_identity::TrustedServerRegistry>,
 }
 
 #[derive(Debug, Clone)]
@@ -729,6 +730,7 @@ impl Server {
             compound_dirty: HashSet::new(),
             wal: crate::persist::wal::WalLog::disabled(),
             restore_errors: Vec::new(),
+            trusted_server_registry: None,
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
             // transclusion survival, and materialize_annotation_indexed support.
@@ -813,6 +815,48 @@ impl Server {
 
     pub fn pending_write_count(&self) -> u64 {
         self.write_barrier.pending_writes()
+    }
+
+    // === Trusted server registry ===
+
+    pub fn set_trusted_server_registry(&mut self, registry: crate::crypto::server_identity::TrustedServerRegistry) {
+        if let Err(e) = registry.verify_signature() {
+            tracing::error!(
+                error = %e,
+                event = "SECURITY:invalid_registry_signature",
+                "rejected trusted server registry with invalid signature"
+            );
+            return;
+        }
+        self.trusted_server_registry = Some(registry);
+        tracing::info!(
+            server_count = self.trusted_server_registry.as_ref().map(|r| r.server_count()).unwrap_or(0),
+            event = "SECURITY:trusted_registry_loaded",
+            "loaded trusted server registry"
+        );
+    }
+
+    pub fn trusted_server_registry(&self) -> Option<&crate::crypto::server_identity::TrustedServerRegistry> {
+        self.trusted_server_registry.as_ref()
+    }
+
+    pub fn verify_server_identity(
+        &self,
+        server_id: &str,
+        reported_key: &[u8],
+    ) -> Result<(), ServerError> {
+        let registry = self.trusted_server_registry.as_ref()
+            .ok_or_else(|| ServerError::Internal("trusted server registry not configured".to_string()))?;
+        
+        crate::crypto::server_identity::verify_server_identity(server_id, reported_key, registry)
+            .map_err(|e| ServerError::Internal(format!("server identity verification failed: {}", e)))
+    }
+
+    pub fn is_server_trusted(&self, server_id: &str) -> bool {
+        self.trusted_server_registry
+            .as_ref()
+            .map(|r| r.is_trusted(server_id))
+            .unwrap_or(false)
     }
 
     // === Session management ===
@@ -1238,6 +1282,9 @@ impl Server {
                 work.set_read_club(Some(owner_id));
                 work.set_edit_club(Some(owner_id));
             }
+        } else {
+            // No owner club found - this shouldn't happen since ensure_logged_in() was called
+            return Err(ServerError::NotAuthorized);
         }
 
         let author_club = self.resolve_author_club(session_id);
@@ -12065,6 +12112,381 @@ impl Server {
     pub fn federation_royalty_ledger(&self) -> &[crate::server::federation::RoyaltyEntry] {
         self.federation.royalty_ledger()
     }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_export_prov_json(
+        &self,
+        work_id: Option<u64>,
+        include_federation: bool,
+    ) -> Result<String, String> {
+        let mut prov_document = serde_json::json!({
+            "prefix": {
+                "prov": "http://www.w3.org/ns/prov#",
+                "xsd": "http://www.w3.org/2001/XMLSchema#",
+                "xudanu": "http://xudanu.org/ns/prov#"
+            },
+            "entity": {},
+            "agent": {},
+            "activity": {},
+            "wasAssociatedWith": {},
+            "wasGeneratedBy": {},
+            "used": {},
+            "wasDerivedFrom": {}
+        });
+
+        let server_id = self.federation_server_id();
+        let timestamp = Self::current_timestamp_secs();
+
+        let agent_id = format!("xudanu:server:{}", server_id);
+        let verifying_key = Self::hex_encode(&self.server_keypair.signing_verifying_key().to_bytes());
+        
+        prov_document["agent"] = serde_json::json!({
+            agent_id: {
+                "prov:type": "xudanu:Server",
+                "xudanu:serverId": server_id,
+                "xudanu:verifyingKey": verifying_key,
+                "xudanu:timestamp": timestamp
+            }
+        });
+
+        if include_federation {
+            let federation_bundle = self.federation.export_federation_bundle(&self.federation_server_id(), 0)
+                .map_err(|e| format!("Failed to export federation bundle: {}", e))?;
+            
+            if let Ok(prov_json_value) = self.federation.export_prov_json(&self.federation_server_id()) {
+                if let Some(bundles) = prov_json_value.get("bundle") {
+                    prov_document["bundle"] = bundles.clone();
+                }
+            }
+        }
+
+        serde_json::to_string_pretty(&prov_document)
+            .map_err(|e| format!("Failed to serialize PROV-JSON: {}", e))
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_receive_prov_bundle(
+        &mut self,
+        bundle: crate::edition::provenance::FederationProvenanceBundle,
+    ) -> Result<(), String> {
+        use crate::edition::provenance::FederationAttestation;
+        
+        for attestation in &bundle.attestations {
+            if attestation.subject_server_id != self.federation_server_id() {
+                continue;
+            }
+            
+            let verified = self.federation.verify_attestation(attestation)
+                .map_err(|e| format!("Failed to verify attestation: {}", e))?;
+            
+            if verified {
+                tracing::info!(
+                    "Verified federation attestation from {} for type '{}'",
+                    attestation.attester_server_id,
+                    attestation.attestation_type
+                );
+            } else {
+                tracing::warn!(
+                    "Failed to verify federation attestation from {}",
+                    attestation.attester_server_id
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_create_attestation_response(
+        &self,
+        attestation_type: String,
+        subject_server_id: String,
+        requesting_server_id: String,
+    ) -> Result<crate::edition::provenance::FederationAttestation, String> {
+        use crate::edition::provenance::FederationAttestation;
+        
+        if !self.federation.membership().is_member(&subject_server_id) {
+            return Err(format!("Subject server {} is not a federation member", subject_server_id));
+        }
+        
+        if !self.federation.membership().is_member(&requesting_server_id) {
+            return Err(format!("Requesting server {} is not a federation member", requesting_server_id));
+        }
+        
+        self.federation.create_attestation(
+            attestation_type,
+            subject_server_id,
+            &self.server_keypair.signing_key,
+        )
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_verify_attestation(
+        &self,
+        attestation: &crate::edition::provenance::FederationAttestation,
+    ) -> Result<bool, String> {
+        if attestation.subject_server_id != self.federation_server_id() {
+            return Ok(false);
+        }
+        
+        self.federation.verify_attestation(attestation)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_record_cluster_verification(
+        &mut self,
+        timestamp: u64,
+        consensus_type: String,
+        verifying_server_id: String,
+    ) -> Result<(), String> {
+        use crate::edition::provenance::ClusterVerificationActivity;
+        use std::collections::HashMap;
+        
+        if !self.federation.membership().is_member(&verifying_server_id) {
+            return Err(format!("Verifying server {} is not a federation member", verifying_server_id));
+        }
+        
+        let activity_id = format!("xudanu:cluster_verification:{}:{}", verifying_server_id, timestamp);
+        
+        let activity = ClusterVerificationActivity::new(
+            activity_id.clone(),
+            consensus_type.clone(),
+            timestamp,
+            timestamp,
+            vec![verifying_server_id.clone()],
+            consensus_type,
+            true,
+        );
+        
+        tracing::info!(
+            "Recorded cluster verification activity {} from {} with consensus_type '{}'",
+            activity_id, verifying_server_id, consensus_type
+        );
+        
+        Ok(())
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_map_cross_server_signatures_to_prov(
+        &self,
+        signatures: &[crate::edition::provenance::CrossServerSignature],
+        activity_id: &str,
+    ) -> Result<Vec<(String, crate::edition::provenance::ProvAssociation)>, String> {
+        let mut associations = Vec::new();
+        
+        for sig in signatures {
+            let server_id_hex = crate::crypto::keys::hex_encode(&sig.server_id);
+            let agent_id = crate::edition::provenance::generate_prov_id("xudanu:server", &server_id_hex[..8]);
+            let assoc_id = format!("{}:assoc:{}", activity_id, server_id_hex);
+            
+            let mut attributes = std::collections::HashMap::new();
+            attributes.insert(
+                "xudanu:signature".to_string(),
+                crate::edition::provenance::ProvValue::typed(&crate::crypto::keys::hex_encode(&sig.signature), "xsd:hexBinary")
+            );
+            attributes.insert(
+                "xudanu:timestamp".to_string(),
+                crate::edition::provenance::ProvValue::typed(&sig.timestamp.to_string(), "xsd:integer")
+            );
+            
+            associations.push((assoc_id, crate::edition::provenance::ProvAssociation {
+                activity: activity_id.to_string(),
+                agent: Some(agent_id),
+                plan: None,
+                role: Some("verifier".to_string()),
+                attributes,
+            }));
+        }
+        
+        Ok(associations)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_create_consensus_prov_bundle(
+        &self,
+        consensus: &crate::edition::provenance::ClusterConsensus,
+        base_provenance: &crate::edition::provenance::Provenance,
+    ) -> Result<(String, crate::edition::provenance::ProvBundle), String> {
+        let bundle_id = crate::edition::provenance::generate_federation_bundle_id(base_provenance.timestamp);
+        
+        let (bundle_id_str, bundle) = consensus.to_prov_bundle(bundle_id.clone(), base_provenance);
+        
+        tracing::info!(
+            "Created PROV bundle {} for cluster consensus with {} verifications",
+            bundle_id_str,
+            consensus.verifications.len()
+        );
+        
+        Ok((bundle_id_str, bundle))
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_export_metadata_as_prov_entity(
+        &self,
+    ) -> Result<(String, crate::edition::provenance::ProvEntity), String> {
+        let metadata = crate::edition::provenance::FederationMetadata::new(
+            self.federation_server_id(),
+            self.federation.get_federation_domain().to_string(),
+            self.federation.get_cluster_size(),
+            self.federation.get_mode().to_string(),
+            self.federation.get_min_endorsements(),
+            self.federation.get_membership_status().to_string(),
+        );
+        
+        let entity = metadata.to_prov_entity();
+        
+        tracing::debug!(
+            "Exported federation metadata as PROV entity: {}",
+            entity.0
+        );
+        
+        Ok(entity)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_export_server_agents(
+        &self,
+    ) -> Result<Vec<(String, crate::edition::provenance::ProvAgent)>, String> {
+        let mut agents = Vec::new();
+        
+        for member in self.federation.membership().active_members() {
+            let server_agent = crate::edition::provenance::FederationServerAgent::new(
+                member.server_id.clone(),
+                member.verifying_key_hex.clone(),
+                member.kex_public_hex.clone(),
+                format!("{:?}", member.status).to_lowercase(),
+                member.endorsement_count(),
+                member.joined_at,
+            );
+            
+            agents.push(server_agent.to_prov_agent());
+        }
+        
+        tracing::debug!(
+            "Exported {} federation server agents as PROV agents",
+            agents.len()
+        );
+        
+        Ok(agents)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_integrate_verification_activities(
+        &self,
+        prov_doc: &mut crate::edition::provenance::ProvJsonDocument,
+        activities: &[crate::edition::provenance::ClusterVerificationActivity],
+    ) -> Result<(), String> {
+        for activity in activities {
+            let (activity_id, prov_activity) = activity.to_prov_activity();
+            prov_doc.activity.insert(activity_id.clone(), prov_activity);
+            
+            for (assoc_id, association) in activity.to_prov_associations() {
+                prov_doc.wasAssociatedWith.insert(assoc_id, association);
+            }
+        }
+        
+        tracing::info!(
+            "Integrated {} cluster verification activities into PROV document",
+            activities.len()
+        );
+        
+        Ok(())
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_create_cross_server_attestation(
+        &self,
+        target_server_id: &str,
+        attestation_type: String,
+    ) -> Result<crate::edition::provenance::FederationAttestation, String> {
+        if !self.federation.membership().is_member(target_server_id) {
+            return Err(format!("Target server {} is not a federation member", target_server_id));
+        }
+        
+        let attestation = self.federation.create_attestation(
+            attestation_type,
+            target_server_id.to_string(),
+            &self.server_keypair.signing_key,
+        )?;
+        
+        tracing::info!(
+            "Created cross-server attestation for {} from server {}",
+            target_server_id,
+            self.federation_server_id()
+        );
+        
+        Ok(attestation)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_verify_cross_server_attestation(
+        &self,
+        attestation: &crate::edition::provenance::FederationAttestation,
+    ) -> Result<bool, String> {
+        if attestation.attester_server_id == self.federation_server_id() {
+            return Ok(false);
+        }
+        
+        if !self.federation.membership().is_member(&attestation.attester_server_id) {
+            return Ok(false);
+        }
+        
+        let verified = self.federation.verify_attestation(attestation)?;
+        
+        if verified {
+            tracing::info!(
+                "Verified cross-server attestation from {} for type '{}'",
+                attestation.attester_server_id,
+                attestation.attestation_type
+            );
+        } else {
+            tracing::warn!(
+                "Failed to verify cross-server attestation from {}",
+                attestation.attester_server_id
+            );
+        }
+        
+        Ok(verified)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_export_governance_activities(
+        &self,
+    ) -> Result<Vec<crate::edition::provenance::ClusterVerificationActivity>, String> {
+        let activities = self.federation.get_governance_activities();
+        
+        tracing::debug!(
+            "Exported {} governance activities from federation state",
+            activities.len()
+        );
+        
+        Ok(activities)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn federation_create_verification_activity(
+        &self,
+        activity_type: String,
+        verifying_servers: Vec<String>,
+        consensus_type: String,
+        threshold_met: bool,
+    ) -> Result<crate::edition::provenance::ClusterVerificationActivity, String> {
+        let activity = self.federation.create_cluster_verification_activity(
+            activity_type,
+            verifying_servers,
+            consensus_type,
+            threshold_met,
+        )?;
+        
+        tracing::info!(
+            "Created cluster verification activity with {} verifying servers, consensus_type='{}', threshold_met={}",
+            activity.verifying_servers.len(),
+            activity.consensus_type,
+            activity.threshold_met
+        );
+        
+        Ok(activity)
+    }
 }
 
 #[derive(Debug)]
@@ -12487,6 +12909,7 @@ pub(crate) mod persist_snapshot {
                 write_barrier: Arc::new(WriteBarrier::new()),
                 wal: crate::persist::wal::WalLog::disabled(),
                 restore_errors: Vec::new(),
+                trusted_server_registry: None,
             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap

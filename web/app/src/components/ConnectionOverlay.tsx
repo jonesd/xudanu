@@ -19,7 +19,7 @@ export function ConnectionOverlay({ connected, reconnectAttempt }: ConnectionOve
         zIndex: 9999,
         background: "rgba(248, 81, 73, 0.95)",
         color: "#fff",
-        padding: "10px 20px",
+        padding: "12px 20px",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -27,6 +27,7 @@ export function ConnectionOverlay({ connected, reconnectAttempt }: ConnectionOve
         fontSize: "14px",
         fontWeight: 500,
         boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+        backdropFilter: "blur(4px)",
       }}
     >
       <span

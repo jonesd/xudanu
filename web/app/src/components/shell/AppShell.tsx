@@ -213,8 +213,33 @@ export function AppShell() {
       if (newId !== null) {
         selectWork(newId);
         loadWorks();
+      } else {
+        console.warn("[handleCreate] createWork returned null - user may need to log in");
       }
-    } catch {}
+    } catch (e) {
+      const err = e as Error;
+      console.error("[handleCreate] Failed to create work:", err.message);
+      
+      // Categorize errors without exposing technical details
+      const showError = (userMessage: string) => {
+        alert(userMessage);
+      };
+      
+      if (err.message.includes("not authorized") || 
+          err.message.includes("NotAuthorized") ||
+          err.message.includes("authentication") ||
+          err.message.includes("unauthorized")) {
+        showError("Please create an identity first to create documents");
+      } else if (err.message.includes("network") || 
+                 err.message.includes("fetch") ||
+                 err.message.includes("connection")) {
+        showError("Network error. Please check your connection and try again.");
+      } else if (err.message.includes("timeout")) {
+        showError("Request timed out. Please try again.");
+      } else {
+        showError("Failed to create document. Please try again.");
+      }
+    }
   }, [createWork, selectWork, loadWorks]);
 
   const currentWorkMeta = works.find((w) => w.work_id === workBeId);
@@ -464,6 +489,12 @@ export function AppShell() {
                 Browse Library
               </button>
             </div>
+            {!identity && (
+              <div className="welcome-hint">
+                Tip: Create an identity first to own and edit your documents.
+                Anonymous works are read-only after sign-in.
+              </div>
+            )}
           </div>
         ) : isSourceWork ? (
           <SourceTextViewer
@@ -522,6 +553,12 @@ export function AppShell() {
                 <div>{wordCount.toLocaleString()} words</div>
               </div>
             </div>
+            {!canEdit && identity && (
+              <div className="readonly-banner">
+                You can read this document but cannot edit it — it is owned by another user.
+                {!isPublished && " It is also private."}
+              </div>
+            )}
             {transclusion.pendingLink && (
               <div className="link-action-bar">
                 {!selectionRange ? (
@@ -617,6 +654,7 @@ export function AppShell() {
         compoundSpanRanges={compound.spanRanges}
         compoundSourceTitles={compound.sourceTitles}
         currentWorkId={workBeId}
+        documentLength={displayText.length}
         onNavigateToWork={selectWork}
         onOpenProvenance={() => setShowProvenance(true)}
         onExportReport={handleExportReport}

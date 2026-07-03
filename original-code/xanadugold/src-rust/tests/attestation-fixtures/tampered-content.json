@@ -1,0 +1,82 @@
+{
+  "report": {
+    "type": "xudanu-attestation-report",
+    "version": 1,
+    "generated_at": 1719840000,
+    "document": {
+      "work_id": "03f6",
+      "title": "TAMPERED TITLE - content was modified after signing",
+      "revision": 42,
+      "character_count": 9884,
+      "content_hash_blake3": "7f3a91e2b8c4d5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0"
+    },
+    "server_identity": {
+      "server_id": "16522a722cab6b18",
+      "verifying_key_ed25519": "efdf23c44d7c29a3509899eebdd3b40d8f70dcf71464e05c4c8df04a43312340"
+    },
+    "attribution": {
+      "span_count": 3,
+      "spans": [
+        {
+          "range": [
+            0,
+            305
+          ],
+          "author": "david@dgjones.info",
+          "author_type": "human",
+          "signature_valid": true,
+          "timestamp": 1719836400,
+          "source_work_id": "03f5",
+          "provenance_chain": null
+        },
+        {
+          "range": [
+            305,
+            510
+          ],
+          "author": "alice@example.com",
+          "author_type": "human",
+          "signature_valid": true,
+          "timestamp": 1719837000,
+          "source_work_id": null,
+          "provenance_chain": null
+        },
+        {
+          "range": [
+            510,
+            9884
+          ],
+          "author": "david@dgjones.info",
+          "author_type": "human",
+          "signature_valid": true,
+          "timestamp": 1719838000,
+          "source_work_id": null,
+          "provenance_chain": null
+        }
+      ]
+    },
+    "provenance_chain": [
+      {
+        "source_work_id": "03f5",
+        "source_work_title": "david@dgjones.info",
+        "source_author_name": "david@dgjones.info",
+        "dest_work_id": "03f6"
+      }
+    ],
+    "security_log": {
+      "has_log": true,
+      "entry_count": 141,
+      "last_sequence": 141,
+      "chain_valid": true,
+      "algorithm": "SHA-256 chained, Ed25519 signed, BLAKE3 content-addressed"
+    },
+    "key_history": {
+      "server_id": "16522a722cab6b18",
+      "current_key_id": 1,
+      "entry_count": 1,
+      "rotation_proof_count": 0
+    }
+  },
+  "report_hash_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "server_signature_ed25519": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+}

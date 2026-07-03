@@ -6,14 +6,15 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         ConnectInfo, State,
     },
-    response::IntoResponse,
     routing::get,
+    response::IntoResponse,
     Router,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use super::shared::SharedState;
+use crate::crypto::keys::hex_encode;
 
 pub(crate) const FEDERATION_PROTOCOL_VERSION: u8 = 1;
 pub(crate) const FEDERATION_MIN_COMPAT_VERSION: u8 = 1;
@@ -153,6 +154,30 @@ pub enum FederationFrame {
     },
     CrdtSyncResult {
         updates: Vec<crate::server::federation::CrdtWorkUpdate>,
+    },
+
+    // Phase 3: Federation-PROV Integration frames
+    ProvJsonExport {
+        work_id: Option<u64>,
+        include_federation: bool,
+    },
+    ProvJsonExportResult {
+        prov_json: String,
+    },
+    FederationProvBundle {
+        bundle: crate::edition::provenance::FederationProvenanceBundle,
+    },
+    FederationAttestationRequest {
+        attestation_type: String,
+        subject_server_id: String,
+    },
+    FederationAttestationResponse {
+        attestation: Option<crate::edition::provenance::FederationAttestation>,
+        accepted: bool,
+    },
+    ClusterVerificationProv {
+        timestamp: u64,
+        consensus_type: String,
     },
 }
 
@@ -826,6 +851,165 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
                                     result.updates_applied, result.updates_failed
                                 );
                             }
+                            FederationFrame::ProvJsonExport { work_id, include_federation } => {
+                                #[cfg(feature = "serde")]
+                                {
+                                    let result = state.server.with_server(|srv| {
+                                        srv.federation_export_prov_json(work_id, include_federation)
+                                    });
+                                    match result {
+                                        Ok(prov_json) => {
+                                            send_encrypted_frame(
+                                                &mut ws_sender,
+                                                &FederationFrame::ProvJsonExportResult { prov_json },
+                                                &mut outbound_cipher,
+                                            ).await;
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!("Failed to export PROV-JSON: {}", e);
+                                            let error_response = FederationFrame::ProvJsonExportResult {
+                                                prov_json: format!(r#"{{"error": "{}"}}"#, e),
+                                            };
+                                            send_encrypted_frame(
+                                                &mut ws_sender,
+                                                &error_response,
+                                                &mut outbound_cipher,
+                                            ).await;
+                                        }
+                                    }
+                                }
+                                #[cfg(not(feature = "serde"))]
+                                {
+                                    tracing::warn!("ProvJsonExport requested but serde feature is disabled");
+                                    send_encrypted_frame(
+                                        &mut ws_sender,
+                                        &FederationFrame::ProvJsonExportResult {
+                                            prov_json: r#"{"error": "PROV-JSON export requires serde feature"}"#.to_string(),
+                                        },
+                                        &mut outbound_cipher,
+                                    ).await;
+                                }
+                            }
+                            FederationFrame::FederationProvBundle { bundle } => {
+                                #[cfg(feature = "serde")]
+                                {
+                                    tracing::info!(
+                                        "Received FederationProvBundle from {} with {} server agents, {} verification activities, {} attestations",
+                                        peer_server_id,
+                                        bundle.server_agents.len(),
+                                        bundle.verification_activities.len(),
+                                        bundle.attestations.len()
+                                    );
+                                    let result = state.server.with_server(|srv| {
+                                        srv.federation_receive_prov_bundle(bundle)
+                                    });
+                                    if let Err(e) = result {
+                                        tracing::warn!("Failed to process federation PROV bundle: {}", e);
+                                    }
+                                }
+                                #[cfg(not(feature = "serde"))]
+                                {
+                                    tracing::warn!("FederationProvBundle received but serde feature is disabled");
+                                }
+                            }
+                            FederationFrame::FederationAttestationRequest { attestation_type, subject_server_id } => {
+                                #[cfg(feature = "serde")]
+                                {
+                                    tracing::info!(
+                                        "Received FederationAttestationRequest from {} for type '{}' on server '{}'",
+                                        peer_server_id,
+                                        attestation_type,
+                                        subject_server_id
+                                    );
+                                    let result = state.server.with_server(|srv| {
+                                        srv.federation_create_attestation_response(attestation_type, subject_server_id, peer_server_id.clone())
+                                    });
+                                    match result {
+                                        Ok(attestation) => {
+                                            send_encrypted_frame(
+                                                &mut ws_sender,
+                                                &FederationFrame::FederationAttestationResponse {
+                                                    attestation: Some(attestation),
+                                                    accepted: true,
+                                                },
+                                                &mut outbound_cipher,
+                                            ).await;
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!("Failed to create attestation: {}", e);
+                                            send_encrypted_frame(
+                                                &mut ws_sender,
+                                                &FederationFrame::FederationAttestationResponse {
+                                                    attestation: None,
+                                                    accepted: false,
+                                                },
+                                                &mut outbound_cipher,
+                                            ).await;
+                                        }
+                                    }
+                                }
+                                #[cfg(not(feature = "serde"))]
+                                {
+                                    tracing::warn!("FederationAttestationRequest received but serde feature is disabled");
+                                    send_encrypted_frame(
+                                        &mut ws_sender,
+                                        &FederationFrame::FederationAttestationResponse {
+                                            attestation: None,
+                                            accepted: false,
+                                        },
+                                        &mut outbound_cipher,
+                                    ).await;
+                                }
+                            }
+                            FederationFrame::FederationAttestationResponse { attestation, accepted } => {
+                                #[cfg(feature = "serde")]
+                                {
+                                    if accepted {
+                                        if let Some(attestation_data) = attestation {
+                                            tracing::info!(
+                                                "Received FederationAttestationResponse from {} for attestation type '{}'",
+                                                peer_server_id,
+                                                attestation_data.attestation_type
+                                            );
+                                            let result = state.server.with_server(|srv| {
+                                                srv.federation_verify_attestation(&attestation_data)
+                                            });
+                                            if let Err(e) = result {
+                                                tracing::warn!("Failed to verify attestation: {}", e);
+                                            }
+                                        } else {
+                                            tracing::info!(
+                                                "FederationAttestationRequest rejected by {}",
+                                                peer_server_id
+                                            );
+                                        }
+                                    }
+                                #[cfg(not(feature = "serde"))]
+                                {
+                                    tracing::warn!("FederationAttestationResponse received but serde feature is disabled");
+                                }
+                            }
+                            FederationFrame::ClusterVerificationProv { timestamp, consensus_type } => {
+                                #[cfg(feature = "serde")]
+                                {
+                                    tracing::info!(
+                                        "Received ClusterVerificationProv from {} timestamp={} consensus_type={}",
+                                        peer_server_id,
+                                        timestamp,
+                                        consensus_type
+                                    );
+                                    let result = state.server.with_server(|srv| {
+                                        srv.federation_record_cluster_verification(timestamp, consensus_type, peer_server_id.clone())
+                                    });
+                                    if let Err(e) = result {
+                                        tracing::warn!("Failed to record cluster verification: {}", e);
+                                    }
+                                }
+                                #[cfg(not(feature = "serde"))]
+                                {
+                                    tracing::warn!("ClusterVerificationProv received but serde feature is disabled");
+                                }
+                            }
                             Ok(frame) => {
                                 tracing::warn!("Federation: unexpected frame type from {}: {:?}", peer_server_id, frame);
                             }
@@ -934,10 +1118,6 @@ async fn wait_for_frame(
     ws_receiver: &mut futures_util::stream::SplitStream<WebSocket>,
 ) -> Option<FederationFrame> {
     wait_for_frame_inner(ws_receiver).await.and_then(|r| r.ok())
-}
-
-pub(crate) fn hex_encode(data: &[u8]) -> String {
-    data.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 pub(crate) async fn process_federation_frame(
@@ -1347,7 +1527,72 @@ pub(crate) async fn process_federation_frame(
             );
             vec![]
         }
+        
+        // Phase 3: Federation-PROV Integration frame handling
+        FederationFrame::ProvJsonExport { work_id, include_federation } => {
+            let response = state.server.with_server_ref(|srv| {
+                match srv.federation_export_prov_json(work_id, include_federation) {
+                    Ok(prov_json) => FederationFrame::ProvJsonExportResult { prov_json },
+                    Err(e) => FederationFrame::ProvJsonExportResult { 
+                        prov_json: format!("Error: {}", e) 
+                    },
+                }
+            });
+            vec![response]
+        }
+        FederationFrame::ProvJsonExportResult { .. } => vec![],
+        FederationFrame::FederationProvBundle { bundle } => {
+            state.server.with_server(|srv| {
+                // Handle incoming federation provenance bundle
+                tracing::info!("Received federation provenance bundle: {}", bundle.bundle_id);
+            });
+            vec![]
+        }
+        FederationFrame::FederationAttestationRequest { attestation_type, subject_server_id } => {
+            let response = state.server.with_server_ref(|srv| {
+                match srv.federation_create_attestation_response(
+                    attestation_type.clone(),
+                    subject_server_id.clone(),
+                    peer_server_id.to_string(),
+                ) {
+                    Ok(attestation) => FederationFrame::FederationAttestationResponse { 
+                        attestation: Some(attestation),
+                        accepted: true,
+                    },
+                    Err(e) => FederationFrame::FederationAttestationResponse {
+                        attestation: None,
+                        accepted: false,
+                    },
+                }
+            });
+            vec![response]
+        }
+        FederationFrame::FederationAttestationResponse { attestation, accepted } => {
+            if let Some(attestation) = attestation {
+                let verified = state.server.with_server_ref(|srv| {
+                    srv.federation_verify_attestation(&attestation)
+                });
+                tracing::info!("Attestation verification result: {:?}", verified);
+            }
+            vec![]
+        }
+        FederationFrame::ClusterVerificationProv { timestamp, consensus_type } => {
+            let response = state.server.with_server(|srv| {
+                match srv.federation_record_cluster_verification(timestamp, consensus_type.clone(), peer_server_id.to_string()) {
+                    Ok(_) => FederationFrame::ClusterVerificationProv {
+                        timestamp,
+                        consensus_type: consensus_type.clone(),
+                    },
+                    Err(e) => FederationFrame::ClusterVerificationProv {
+                        timestamp,
+                        consensus_type: format!("Error: {}", consensus_type),
+                    },
+                }
+            });
+            vec![response]
+        }
     }
+}
 }
 
 #[cfg(test)]

@@ -13,6 +13,7 @@ interface ContextPanelProps {
   compoundSpanRanges: SpanRangePayload[];
   compoundSourceTitles: Record<number, string>;
   currentWorkId: number | null;
+  documentLength: number;
   onNavigateToWork: (workId: number) => void;
   onOpenProvenance?: () => void;
   onExportReport?: () => void;
@@ -38,7 +39,7 @@ export function ContextPanel(props: ContextPanelProps) {
         compoundSourceTitles={props.compoundSourceTitles}
         onNavigateToWork={props.onNavigateToWork}
       />
-      <AttributionSection attributionSpans={props.attributionSpans} attributionLogStatus={props.attributionLogStatus} onOpenFullView={props.onOpenProvenance} onExportReport={props.onExportReport} />
+      <AttributionSection attributionSpans={props.attributionSpans} attributionLogStatus={props.attributionLogStatus} onOpenFullView={props.onOpenProvenance} onExportReport={props.onExportReport} currentWorkId={props.currentWorkId} documentLength={props.documentLength} />
     </div>
   );
 }

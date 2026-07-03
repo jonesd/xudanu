@@ -292,8 +292,19 @@ impl KeyHistory {
     }
 }
 
-fn hex_encode(data: &[u8]) -> String {
+pub fn hex_encode(data: &[u8]) -> String {
     data.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+pub fn hex_decode(hex_str: &str) -> Result<Vec<u8>, String> {
+    if hex_str.len() % 2 != 0 {
+        return Err("Hex string must have even length".to_string());
+    }
+    (0..hex_str.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex_str[i..i + 2], 16))
+        .collect::<Result<Vec<u8>, _>>()
+        .map_err(|e| format!("Invalid hex character: {}", e))
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

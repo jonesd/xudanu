@@ -30,6 +30,16 @@ fn usage() {
     eprintln!("  info                                    Server info");
     eprintln!("  login                                   Login as public");
     eprintln!("  login-admin                             Login as admin");
+    eprintln!();
+    eprintln!("Offline commands (no server connection):");
+    eprintln!("  verify-report <report.json>             Verify an attestation report offline");
+    eprintln!("  registry-init <registry.json>           Create new trusted server registry");
+    eprintln!("  registry-add <registry.json> <server-id> <signing-key> <kex-key> [domain]");
+    eprintln!("                                         Add server to registry");
+    eprintln!("  registry-remove <registry.json> <server-id> <authority-key>");
+    eprintln!("                                         Remove server from registry");
+    eprintln!("  registry-verify <registry.json>         Verify registry signature");
+    eprintln!("  registry-list <registry.json>            List trusted servers");
 }
 
 type WsStream =
@@ -117,6 +127,227 @@ impl Client {
         )
         .await;
         self.logged_in = true;
+        Ok(())
+    }
+
+    fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
+        if s.len() % 2 != 0 {
+            return Err("odd-length hex".to_string());
+        }
+        let mut result = Vec::with_capacity(s.len() / 2);
+        let bytes = s.as_bytes();
+        for i in (0..bytes.len()).step_by(2) {
+            let hi = (bytes[i] as char).to_digit(16).ok_or("invalid hex")?;
+            let lo = (bytes[i + 1] as char).to_digit(16).ok_or("invalid hex")?;
+            result.push((hi * 16 + lo) as u8);
+        }
+        Ok(result)
+    }
+
+    fn verify_report(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        use sha2::Digest;
+
+        let report_text =
+            std::fs::read_to_string(path).map_err(|e| format!("Cannot read {}: {}", path, e))?;
+
+        let signed: serde_json::Value =
+            serde_json::from_str(&report_text).map_err(|e| format!("Invalid JSON: {}", e))?;
+
+        let report = signed.get("report").ok_or("Missing 'report' field")?;
+        let report_hash = signed
+            .get("report_hash_sha256")
+            .and_then(|v| v.as_str())
+            .ok_or("Missing 'report_hash_sha256' field")?;
+        let sig_hex = signed
+            .get("server_signature_ed25519")
+            .and_then(|v| v.as_str())
+            .ok_or("Missing 'server_signature_ed25519' field")?;
+
+        let report_body = serde_json::to_string_pretty(report)?;
+
+        println!("═══════════════════════════════════════════════════════════");
+        println!("  XUDANU ATTESTATION REPORT — VERIFICATION");
+        println!("═══════════════════════════════════════════════════════════");
+        println!();
+
+        let doc = &report["document"];
+        println!(
+            "  Document:  Work {}, revision {}",
+            doc["work_id"].as_str().unwrap_or("?"),
+            doc.get("revision").and_then(|v| v.as_u64()).unwrap_or(0)
+        );
+        println!(
+            "  Title:     {}",
+            doc["title"].as_str().unwrap_or("(untitled)")
+        );
+        println!(
+            "  Chars:     {}",
+            doc.get("character_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+        );
+        println!(
+            "  BLAKE3:    {}",
+            doc["content_hash_blake3"].as_str().unwrap_or("?")
+        );
+        println!();
+
+        let server_id = report["server_identity"]["server_id"]
+            .as_str()
+            .unwrap_or("?");
+        let verifying_key_hex = report["server_identity"]["verifying_key_ed25519"]
+            .as_str()
+            .unwrap_or("?");
+        println!(
+            "  Server:    {} ({})",
+            server_id,
+            &verifying_key_hex[..16.min(verifying_key_hex.len())]
+        );
+        println!();
+
+        let mut report_hash_ok = false;
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(report_body.as_bytes());
+        let computed_hash = format!("{:x}", hasher.finalize());
+        if computed_hash == report_hash {
+            println!("  Report hash:      VALID (SHA-256 matches)");
+            report_hash_ok = true;
+        } else {
+            println!("  Report hash:      FAILED");
+            println!("    Expected: {}", report_hash);
+            println!("    Got:      {}", computed_hash);
+        }
+
+        let mut sig_ok = false;
+        let sig_bytes = hex_decode(sig_hex).map_err(|e| format!("Invalid signature hex: {}", e))?;
+        if sig_bytes.len() == 64 {
+            let vk_bytes = hex_decode(verifying_key_hex)
+                .map_err(|e| format!("Invalid verifying key hex: {}", e))?;
+            if vk_bytes.len() == 32 {
+                let vk_array: [u8; 32] = vk_bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| "Verifying key wrong length")?;
+                let sig_array: [u8; 64] = sig_bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| "Signature wrong length")?;
+                let vk = ed25519_dalek::VerifyingKey::from_bytes(&vk_array)
+                    .map_err(|e| format!("Invalid verifying key: {}", e))?;
+                let signature = ed25519_dalek::Signature::from_slice(&sig_array)
+                    .map_err(|e| format!("Invalid signature: {}", e))?;
+
+                match xudanu::crypto::sign::verify_signature(
+                    &vk,
+                    report_hash.as_bytes(),
+                    &signature,
+                ) {
+                    Ok(()) => {
+                        println!("  Server signature:  VALID (Ed25519)");
+                        sig_ok = true;
+                    }
+                    Err(e) => println!("  Server signature:  FAILED ({})", e),
+                }
+            } else {
+                println!(
+                    "  Server signature:  SKIPPED (verifying key wrong length: {})",
+                    vk_bytes.len()
+                );
+            }
+        } else {
+            println!(
+                "  Server signature:  SKIPPED (signature wrong length: {})",
+                sig_bytes.len()
+            );
+        }
+
+        let spans = report["attribution"]["spans"].as_array();
+        let span_count = spans.map(|s| s.len()).unwrap_or(0);
+        let signed_count = spans
+            .map(|s| {
+                s.iter()
+                    .filter(|sp| {
+                        sp.get("signature_valid")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+        let unsigned_count = span_count - signed_count;
+
+        println!();
+        println!(
+            "  Attribution: {} spans, {} signed, {} unsigned",
+            span_count, signed_count, unsigned_count
+        );
+        if span_count > 0 && unsigned_count == 0 {
+            println!("    All spans signed with Ed25519");
+        } else if unsigned_count > 0 {
+            println!(
+                "    WARNING: {} spans lack valid signatures",
+                unsigned_count
+            );
+        }
+
+        let chain_valid = report["security_log"]["chain_valid"]
+            .as_bool()
+            .unwrap_or(false);
+        let entry_count = report["security_log"]["entry_count"].as_u64().unwrap_or(0);
+        println!();
+        println!(
+            "  Security log: {} entries, chain {}",
+            entry_count,
+            if chain_valid { "VALID" } else { "BROKEN" }
+        );
+
+        let prov_chain = report["provenance_chain"].as_array();
+        if let Some(chain) = prov_chain {
+            if !chain.is_empty() {
+                println!();
+                println!("  Provenance chain ({} hops):", chain.len());
+                for hop in chain {
+                    println!(
+                        "    {} -> {}",
+                        hop["source_work_title"]
+                            .as_str()
+                            .or_else(|| hop["source_author_name"].as_str())
+                            .unwrap_or("?"),
+                        hop["dest_work_id"].as_str().unwrap_or("this document")
+                    );
+                }
+            }
+        }
+
+        println!();
+        println!("───────────────────────────────────────────────────────────");
+
+        let all_pass = report_hash_ok && sig_ok && chain_valid && unsigned_count == 0;
+
+        if all_pass {
+            println!("  RESULT: ALL CHECKS PASSED");
+            println!("  Trust level: 1 (Basic — server-signed, chained log)");
+        } else {
+            println!("  RESULT: ISSUES DETECTED");
+            if !report_hash_ok {
+                println!("    - Report hash mismatch (content may be tampered)");
+            }
+            if !sig_ok {
+                println!("    - Server signature invalid (report may be forged)");
+            }
+            if !chain_valid {
+                println!("    - Security log chain broken (possible tampering)");
+            }
+            if unsigned_count > 0 {
+                println!("    - {} unsigned spans (attribution gaps)", unsigned_count);
+            }
+        }
+        println!("───────────────────────────────────────────────────────────");
+
+        if !all_pass {
+            std::process::exit(1);
+        }
+
         Ok(())
     }
 }
@@ -491,6 +722,25 @@ async fn repl(client: &mut Client) -> Result<(), Box<dyn std::error::Error>> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
+
+    if args.len() >= 2 && args[1] == "verify-report" {
+        if args.len() < 3 {
+            eprintln!("Usage: xudanu-cli verify-report <report.json>");
+            std::process::exit(1);
+        }
+        return verify_report(&args[2]);
+    }
+    
+    // Registry management commands
+    if args.len() >= 2 && args[1].starts_with("registry-") {
+        return handle_registry_command(&args).await;
+    }
+    
+    // Registry management commands
+    if args.len() >= 2 && args[1].starts_with("registry-") {
+        return handle_registry_command(&args).await;
+    }
+
     if args.len() < 3 {
         usage();
         std::process::exit(1);
@@ -520,5 +770,520 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         run_command(&mut client, cmd, &cmd_args).await?;
     }
 
+    Ok(())
+}
+
+fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
+    if s.len() % 2 != 0 {
+        return Err("odd-length hex".to_string());
+    }
+    let mut result = Vec::with_capacity(s.len() / 2);
+    let bytes = s.as_bytes();
+    for i in (0..bytes.len()).step_by(2) {
+        let hi = (bytes[i] as char).to_digit(16).ok_or("invalid hex")?;
+        let lo = (bytes[i + 1] as char).to_digit(16).ok_or("invalid hex")?;
+        result.push((hi * 16 + lo) as u8);
+    }
+    Ok(result)
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+fn verify_report(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use sha2::Digest;
+
+    let report_text =
+        std::fs::read_to_string(path).map_err(|e| format!("Cannot read {}: {}", path, e))?;
+
+    let signed: serde_json::Value =
+        serde_json::from_str(&report_text).map_err(|e| format!("Invalid JSON: {}", e))?;
+
+    let report = signed.get("report").ok_or("Missing 'report' field")?;
+    let report_hash = signed
+        .get("report_hash_sha256")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing 'report_hash_sha256' field")?;
+    let sig_hex = signed
+        .get("server_signature_ed25519")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing 'server_signature_ed25519' field")?;
+
+    let report_body = serde_json::to_string_pretty(report)?;
+
+    println!("===========================================================");
+    println!("  XUDANU ATTESTATION REPORT - VERIFICATION");
+    println!("===========================================================");
+    println!();
+
+    let doc = &report["document"];
+    println!(
+        "  Document:  Work {}, revision {}",
+        doc["work_id"].as_str().unwrap_or("?"),
+        doc.get("revision").and_then(|v| v.as_u64()).unwrap_or(0)
+    );
+    println!(
+        "  Title:     {}",
+        doc["title"].as_str().unwrap_or("(untitled)")
+    );
+    println!(
+        "  Chars:     {}",
+        doc.get("character_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+    );
+    println!(
+        "  BLAKE3:    {}",
+        doc["content_hash_blake3"].as_str().unwrap_or("?")
+    );
+    println!();
+
+    let server_id = report["server_identity"]["server_id"]
+        .as_str()
+        .unwrap_or("?");
+    let verifying_key_hex = report["server_identity"]["verifying_key_ed25519"]
+        .as_str()
+        .unwrap_or("?");
+    println!(
+        "  Server:    {} ({})",
+        server_id,
+        &verifying_key_hex[..16.min(verifying_key_hex.len())]
+    );
+    println!();
+
+    let mut report_hash_ok = false;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(report_body.as_bytes());
+    let computed_hash = format!("{:x}", hasher.finalize());
+    if computed_hash == *report_hash {
+        println!("  Report hash:      VALID (SHA-256 matches)");
+        report_hash_ok = true;
+    } else {
+        println!("  Report hash:      FAILED");
+        println!("    Expected: {}", report_hash);
+        println!("    Got:      {}", computed_hash);
+    }
+
+    let mut sig_ok = false;
+    let sig_bytes = hex_decode(sig_hex).map_err(|e| format!("Invalid signature hex: {}", e))?;
+    if sig_bytes.len() == 64 {
+        let vk_bytes = hex_decode(verifying_key_hex)
+            .map_err(|e| format!("Invalid verifying key hex: {}", e))?;
+        if vk_bytes.len() == 32 {
+            let vk_array: [u8; 32] = vk_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| "Verifying key wrong length")?;
+            let sig_array: [u8; 64] = sig_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| "Signature wrong length")?;
+            let vk = ed25519_dalek::VerifyingKey::from_bytes(&vk_array)
+                .map_err(|e| format!("Invalid verifying key: {}", e))?;
+            let signature = ed25519_dalek::Signature::from_slice(&sig_array)
+                .map_err(|e| format!("Invalid signature: {}", e))?;
+
+            match xudanu::crypto::sign::verify_signature(&vk, report_hash.as_bytes(), &signature) {
+                Ok(()) => {
+                    println!("  Server signature:  VALID (Ed25519)");
+                    sig_ok = true;
+                }
+                Err(e) => println!("  Server signature:  FAILED ({})", e),
+            }
+        } else {
+            println!(
+                "  Server signature:  SKIPPED (verifying key wrong length: {})",
+                vk_bytes.len()
+            );
+        }
+    } else {
+        println!(
+            "  Server signature:  SKIPPED (signature wrong length: {})",
+            sig_bytes.len()
+        );
+    }
+
+    let spans = report["attribution"]["spans"].as_array();
+    let span_count = spans.map(|s| s.len()).unwrap_or(0);
+    let signed_count = spans
+        .map(|s| {
+            s.iter()
+                .filter(|sp| {
+                    sp.get("signature_valid")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                })
+                .count()
+        })
+        .unwrap_or(0);
+    let unsigned_count = span_count - signed_count;
+
+    println!();
+    println!(
+        "  Attribution: {} spans, {} signed, {} unsigned",
+        span_count, signed_count, unsigned_count
+    );
+    if span_count > 0 && unsigned_count == 0 {
+        println!("    All spans signed with Ed25519");
+    } else if unsigned_count > 0 {
+        println!(
+            "    WARNING: {} spans lack valid signatures",
+            unsigned_count
+        );
+    }
+
+    let chain_valid = report["security_log"]["chain_valid"]
+        .as_bool()
+        .unwrap_or(false);
+    let entry_count = report["security_log"]["entry_count"].as_u64().unwrap_or(0);
+    println!();
+    println!(
+        "  Security log: {} entries, chain {}",
+        entry_count,
+        if chain_valid { "VALID" } else { "BROKEN" }
+    );
+
+    let prov_chain = report["provenance_chain"].as_array();
+    if let Some(chain) = prov_chain {
+        if !chain.is_empty() {
+            println!();
+            println!("  Provenance chain ({} hops):", chain.len());
+            for hop in chain {
+                println!(
+                    "    {} -> {}",
+                    hop["source_work_title"]
+                        .as_str()
+                        .or_else(|| hop["source_author_name"].as_str())
+                        .unwrap_or("?"),
+                    hop["dest_work_id"].as_str().unwrap_or("this document")
+                );
+            }
+        }
+    }
+
+    println!();
+    println!("-----------------------------------------------------------");
+
+    let all_pass = report_hash_ok && sig_ok && chain_valid && unsigned_count == 0;
+
+    if all_pass {
+        println!("  RESULT: ALL CHECKS PASSED");
+        println!("  Trust level: 1 (Basic - server-signed, chained log)");
+    } else {
+        println!("  RESULT: ISSUES DETECTED");
+        if !report_hash_ok {
+            println!("    - Report hash mismatch (content may be tampered)");
+        }
+        if !sig_ok {
+            println!("    - Server signature invalid (report may be forged)");
+        }
+        if !chain_valid {
+            println!("    - Security log chain broken (possible tampering)");
+        }
+        if unsigned_count > 0 {
+            println!("    - {} unsigned spans (attribution gaps)", unsigned_count);
+        }
+    }
+    println!("-----------------------------------------------------------");
+
+    if !all_pass {
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
+
+// Registry management commands
+async fn handle_registry_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let cmd = &args[1];
+    
+    match cmd.as_str() {
+        "registry-init" => {
+            if args.len() < 3 {
+                eprintln!("Usage: xudanu-cli registry-init <registry.json>");
+                eprintln!("Creates a new empty trusted server registry file");
+                eprintln!();
+                eprintln!("You'll need to provide an authority signing key to manage the registry.");
+                std::process::exit(1);
+            }
+            registry_init(&args[2])
+        }
+        "registry-add" => {
+            if args.len() < 6 {
+                eprintln!("Usage: xudanu-cli registry-add <registry.json> <server-id> <signing-key-hex> <kex-key-hex> [domain]");
+                eprintln!("Example: xudanu-cli registry-add registry.json \"server1\" \"010203...\" \"040506...\" \"xudanu\"");
+                eprintln!();
+                eprintln!("Keys must be 32-byte hex strings (64 hex characters).");
+                std::process::exit(1);
+            }
+            let domain = if args.len() > 6 { &args[6] } else { "xudanu" };
+            registry_add(&args[2], &args[3], &args[4], &args[5], domain)
+        }
+        "registry-remove" => {
+            if args.len() < 4 {
+                eprintln!("Usage: xudanu-cli registry-remove <registry.json> <server-id> <authority-key-hex>");
+                eprintln!("Note: You need the authority signing key to modify the registry");
+                std::process::exit(1);
+            }
+            registry_remove(&args[2], &args[3], &args[4])
+        }
+        "registry-verify" => {
+            if args.len() < 3 {
+                eprintln!("Usage: xudanu-cli registry-verify <registry.json>");
+                std::process::exit(1);
+            }
+            registry_verify(&args[2])
+        }
+        "registry-list" => {
+            if args.len() < 3 {
+                eprintln!("Usage: xudanu-cli registry-list <registry.json>");
+                std::process::exit(1);
+            }
+            registry_list(&args[2])
+        }
+        _ => {
+            eprintln!("Unknown registry command: {}", cmd);
+            eprintln!("Available: registry-init, registry-add, registry-remove, registry-verify, registry-list");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn registry_init(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use ed25519_dalek::SigningKey;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    
+    println!("Creating new trusted server registry: {}", path);
+    println!();
+    
+    // Generate a new authority key pair
+    println!("Generating authority key pair...");
+    let authority_key = SigningKey::generate(&mut rand::rngs::OsRng);
+    
+    // Save secret key to secure file with restricted permissions
+    let secret_key_path = format!("{}.authority-key", path);
+    let authority_key_hex = hex_encode(&authority_key.to_bytes());
+    
+    fs::write(&secret_key_path, &authority_key_hex)?;
+    
+    // Set file permissions to 600 (owner read/write only)
+    let mut perms = fs::metadata(&secret_key_path)?.permissions();
+    perms.set_mode(0o600);
+    fs::set_permissions(&secret_key_path, perms)?;
+    
+    println!("Authority signing key saved to: {}", secret_key_path);
+    println!("  File permissions: 600 (owner read/write only)");
+    println!();
+    
+    println!("Authority verifying key (PUBLIC - can be shared):");
+    println!("{}", hex_encode(&authority_key.verifying_key().to_bytes()));
+    println!();
+    
+    // Create empty registry with proper authority signature
+    let registry = xudanu::crypto::server_identity::TrustedServerRegistry::new(
+        &authority_key
+    );
+    
+    let file = xudanu::crypto::server_identity::ServerRegistryFile::new(registry);
+    file.save_to_file(std::path::Path::new(path))?;
+    
+    println!("✓ Registry created successfully: {}", path);
+    println!();
+    println!("IMPORTANT: The authority signing key is in {}", secret_key_path);
+    println!("You'll need it to add/remove servers from the registry.");
+    println!("Without it, you won't be able to modify the registry.");
+    println!("Keep this file secure and backed up in a safe location!");
+    
+    Ok(())
+}
+
+fn registry_add(
+    path: &str,
+    server_id: &str,
+    signing_key_hex: &str,
+    kex_key_hex: &str,
+    domain: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Adding server '{}' to registry: {}", server_id, path);
+    println!();
+    
+    // Parse keys
+    let signing_key_bytes = hex_decode(signing_key_hex)?;
+    let kex_key_bytes = hex_decode(kex_key_hex)?;
+    
+    let signing_key: [u8; 32] = signing_key_bytes.as_slice().try_into()
+        .map_err(|_| format!("Signing key must be 32 bytes (64 hex chars), got {}", signing_key_bytes.len()))?;
+    let kex_key: [u8; 32] = kex_key_bytes.as_slice().try_into()
+        .map_err(|_| format!("Kex key must be 32 bytes (64 hex chars), got {}", kex_key_bytes.len()))?;
+    
+    // Load existing registry
+    println!("Loading existing registry...");
+    let file = xudanu::crypto::server_identity::ServerRegistryFile::load_from_file(std::path::Path::new(path))?;
+    
+    // Create server identity
+    let identity = xudanu::crypto::server_identity::ServerIdentity::new(
+        server_id.to_string(),
+        signing_key,
+        kex_key,
+        domain.to_string(),
+    );
+    
+    // Prompt for authority signing key
+    println!("To add servers, you need the authority signing key.");
+    println!("Enter authority signing key (hex):");
+    
+    use std::io::{self, Write};
+    print!("> ");
+    io::stdout().flush()?;
+    let mut auth_key_hex = String::new();
+    io::stdin().read_line(&mut auth_key_hex)?;
+    let auth_key_hex = auth_key_hex.trim();
+    
+    let auth_key_bytes = hex_decode(auth_key_hex)?;
+    let auth_key_bytes: [u8; 32] = auth_key_bytes.as_slice().try_into()
+        .map_err(|_| format!("Authority key must be 32 bytes (64 hex chars), got {}", auth_key_bytes.len()))?;
+    
+    let auth_key = ed25519_dalek::SigningKey::from_bytes(&auth_key_bytes);
+    
+    println!("Verifying authority key...");
+    if auth_key.verifying_key().to_bytes() != file.registry.authority_key {
+        return Err("Authority key mismatch".into());
+    }
+    println!("✓ Authority key verified");
+    
+    // Add server using the clone method
+    println!("Adding server '{}' to registry...", server_id);
+    let updated_registry = file.registry.add_server_clone(identity, &auth_key)?;
+    
+    println!("✓ Server '{}' added to registry", server_id);
+    println!("Registry now contains {} trusted server(s)", updated_registry.server_count());
+    
+    // Save the updated registry
+    let updated_file = xudanu::crypto::server_identity::ServerRegistryFile::new(updated_registry);
+    updated_file.save_to_file(std::path::Path::new(path))?;
+    
+    println!("✓ Registry updated: {}", path);
+    
+    Ok(())
+}
+
+fn registry_remove(
+    path: &str,
+    server_id: &str,
+    auth_key_hex: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Removing server '{}' from registry: {}", server_id, path);
+    println!();
+    
+    // Load existing registry
+    println!("Loading existing registry...");
+    let file = xudanu::crypto::server_identity::ServerRegistryFile::load_from_file(std::path::Path::new(path))?;
+    
+    if !file.is_trusted(server_id) {
+        println!("✗ ERROR: Server '{}' not found in registry", server_id);
+        return Err("Server not found".into());
+    }
+    
+    // Verify authority key
+    println!("Verifying authority key...");
+    let auth_key_bytes = hex_decode(auth_key_hex)?;
+    let auth_key_bytes: [u8; 32] = auth_key_bytes.as_slice().try_into()
+        .map_err(|_| format!("Authority key must be 32 bytes (64 hex chars)"))?;
+    
+    let auth_key = ed25519_dalek::SigningKey::from_bytes(&auth_key_bytes);
+    
+    if auth_key.verifying_key().to_bytes() != file.registry.authority_key {
+        return Err("Authority key mismatch".into());
+    }
+    println!("✓ Authority key verified");
+    
+    println!("Removing server '{}' from registry...", server_id);
+    
+    // Create a new registry without the server using the clone method
+    let updated_registry = file.registry.remove_server_clone(server_id, &auth_key)?;
+    
+    println!("✓ Server '{}' removed from registry", server_id);
+    println!("Registry now contains {} trusted server(s)", updated_registry.server_count());
+    
+    // Save the updated registry
+    let updated_file = xudanu::crypto::server_identity::ServerRegistryFile::new(updated_registry);
+    updated_file.save_to_file(std::path::Path::new(path))?;
+    
+    println!("✓ Registry updated: {}", path);
+    
+    Ok(())
+}
+
+fn registry_verify(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Verifying registry: {}", path);
+    println!();
+    
+    let file = xudanu::crypto::server_identity::ServerRegistryFile::load_from_file(std::path::Path::new(path))?;
+    
+    println!("✓ Registry signature: VALID");
+    println!("  Authority key: {}", hex_encode(&file.registry.authority_key));
+    println!("  Last updated: {}", file.registry.last_updated);
+    println!("  Server count: {}", file.registry.server_count());
+    println!("  Version: {}", file.version);
+    
+    if file.registry.server_count() > 0 {
+        println!();
+        println!("Trusted servers:");
+        for server_id in file.registry.servers.keys() {
+            let identity = file.registry.get(server_id).unwrap();
+            println!("  - {} ({})", server_id, identity.federation_domain);
+            println!("    Signing key: {}...", hex_encode(&identity.signing_key)[..8.min(identity.signing_key.len())].to_string());
+            println!("    Added at: {}", identity.added_at);
+            if let Some(exp) = identity.expires_at {
+                println!("    Expires at: {}", exp);
+            }
+        }
+    }
+    
+    println!();
+    println!("✓ Registry verification complete");
+    
+    Ok(())
+}
+
+fn registry_list(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Listing trusted servers: {}", path);
+    println!();
+    
+    let file = xudanu::crypto::server_identity::ServerRegistryFile::load_from_file(std::path::Path::new(path))?;
+    
+    if file.registry.server_count() == 0 {
+        println!("No trusted servers in registry.");
+        return Ok(());
+    }
+    
+    println!("{:<20} {:<15} {}", "Server ID", "Domain", "Status");
+    println!("{}", "-".repeat(50));
+    
+    for server_id in file.registry.servers.keys() {
+        let identity = file.registry.get(server_id).unwrap();
+        
+        let status = if identity.is_valid_at(std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs())
+        {
+            "✓ Valid"
+        } else {
+            "✗ Expired"
+        };
+        
+        println!("{:<20} {:<15} {}", 
+            server_id, 
+            identity.federation_domain, 
+            status
+        );
+    }
+    
+    println!();
+    println!("Total: {} trusted server(s)", file.registry.server_count());
+    
     Ok(())
 }

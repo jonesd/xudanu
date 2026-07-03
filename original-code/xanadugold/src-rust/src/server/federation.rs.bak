@@ -373,6 +373,148 @@ impl FederationState {
         }
     }
 
+    #[cfg(feature = "serde")]
+    pub fn export_prov_json(&self) -> Result<serde_json::Value, String> {
+        use crate::edition::provenance::ProvJsonDocument;
+        
+        let mut doc = ProvJsonDocument::with_default_prefix();
+        
+        let server_id = self.get_server_id();
+        let federation_domain = self.get_federation_domain();
+        
+        let bundle = self.export_federation_bundle()?;
+        let (bundle_id, prov_bundle) = bundle.to_prov_bundle();
+        
+        let mut bundles = std::collections::HashMap::new();
+        bundles.insert(bundle_id, prov_bundle);
+        doc.bundle = Some(bundles);
+        
+        serde_json::to_value(&doc)
+            .map_err(|e| format!("Failed to serialize PROV-JSON: {}", e))
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn export_federation_bundle(&self) -> Result<crate::edition::provenance::FederationProvenanceBundle, String> {
+        use crate::edition::provenance::{FederationMetadata, FederationServerAgent, FederationProvenanceBundle};
+        use std::time::SystemTime;
+        
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        let bundle_id = format!("xudanu:federation:{}:{}", self.get_server_id(), timestamp);
+        
+        let federation_metadata = FederationMetadata::new(
+            self.get_server_id().to_string(),
+            self.get_federation_domain().to_string(),
+            self.get_cluster_size(),
+            self.get_mode().to_string(),
+            self.get_min_endorsements(),
+            self.get_membership_status().to_string(),
+        );
+        
+        let mut bundle = FederationProvenanceBundle::new(
+            bundle_id.clone(),
+            timestamp,
+            federation_metadata,
+        );
+        
+        for member in self.membership.active_members() {
+            let agent = FederationServerAgent::new(
+                member.server_id.clone(),
+                member.verifying_key_hex.clone(),
+                member.kex_public_hex.clone(),
+                format!("{:?}", member.status).to_lowercase(),
+                member.endorsement_count(),
+                member.joined_at,
+            );
+            bundle.add_server_agent(agent);
+        }
+        
+        Ok(bundle)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn create_attestation(
+        &self,
+        attestation_type: String,
+        subject_server_id: String,
+        signing_key: &ed25519_dalek::SigningKey,
+    ) -> Result<crate::edition::provenance::FederationAttestation, String> {
+        use crate::edition::provenance::FederationAttestation;
+        use crate::crypto::sign::sign_bytes;
+        use blake3::Hasher;
+        use std::time::SystemTime;
+        
+        let attester_server_id = self.get_server_id().to_string();
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        let mut hasher = Hasher::new();
+        hasher.update(b"xudanu/v1/federation-attestation");
+        hasher.update(attestation_type.as_bytes());
+        hasher.update(attester_server_id.as_bytes());
+        hasher.update(subject_server_id.as_bytes());
+        hasher.update(&timestamp.to_le_bytes());
+        let payload: [u8; 32] = hasher.finalize().into();
+        
+        let signature = sign_bytes(signing_key, &payload);
+        
+        let mut metadata = std::collections::HashMap::new();
+        metadata.insert("federation_domain".to_string(), self.get_federation_domain().to_string());
+        metadata.insert("cluster_size".to_string(), self.get_cluster_size().to_string());
+        metadata.insert("mode".to_string(), self.get_mode().to_string());
+        
+        Ok(FederationAttestation::new(
+            attestation_type,
+            attester_server_id,
+            subject_server_id,
+            timestamp,
+            signature.to_bytes().to_vec(),
+            metadata,
+        ))
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn verify_attestation(
+        &self,
+        attestation: &crate::edition::provenance::FederationAttestation,
+    ) -> Result<bool, String> {
+        use crate::crypto::sign::verify_signature;
+        use blake3::Hasher;
+        use ed25519_dalek::{Signature, VerifyingKey};
+        
+        let member = self.membership.find_member(&attestation.attester_server_id)
+            .ok_or_else(|| format!("Unknown attester server: {}", attestation.attester_server_id))?;
+        
+        let verifying_key_bytes = crate::crypto::keys::hex_decode(&member.verifying_key_hex)
+            .map_err(|e| format!("Invalid hex encoding: {}", e))?;
+        let verifying_key_bytes: [u8; 32] = verifying_key_bytes.try_into()
+            .map_err(|_| "Verifying key must be 32 bytes".to_string())?;
+        let verifying_key = VerifyingKey::from_bytes(&verifying_key_bytes)
+            .map_err(|e| format!("Invalid verifying key: {}", e))?;
+        
+        let mut hasher = Hasher::new();
+        hasher.update(b"xudanu/v1/federation-attestation");
+        hasher.update(attestation.attestation_type.as_bytes());
+        hasher.update(attestation.attester_server_id.as_bytes());
+        hasher.update(attestation.subject_server_id.as_bytes());
+        hasher.update(&attestation.timestamp.to_le_bytes());
+        let payload: [u8; 32] = hasher.finalize().into();
+        
+        let signature_bytes: [u8; 64] = attestation.signature.try_into()
+            .map_err(|_| "Signature must be 64 bytes".to_string())?;
+        let signature = Signature::from_bytes(&signature_bytes)
+            .map_err(|e| format!("Invalid signature: {}", e))?;
+        
+        verify_signature(&verifying_key, &payload, &signature)
+            .map_err(|e| format!("Signature verification failed: {}", e))
+    }
+
+    #[cfg(feature = "serde")]
     pub fn create_cluster_verification_activity(
         &self,
         activity_type: String,
@@ -481,13 +623,13 @@ impl FederationState {
             .map_err(|e| format!("Invalid local server ID: {}", e))?;
         let signing_key_array: [u8; 32] = signing_key_bytes.try_into()
             .map_err(|_| "Local server ID must be 32 bytes".to_string())?;
-        let signing_key = SigningKey::from_bytes(&signing_key_array);
+        let signing_key = SigningKey::from_bytes(&signing_key_array)
+            .map_err(|e| format!("Invalid signing key: {}", e))?;
         
         let signature = crate::crypto::sign::sign_bytes(&signing_key, &payload);
         
         Ok(CrossServerSignature {
             server_id: server_id_array,
-            verifying_key: signing_key.verifying_key().to_bytes(),
             signature: signature.to_bytes(),
             timestamp,
         })
@@ -4282,7 +4424,7 @@ impl FederationState {
                 "xudanu:GovernanceConsensus".to_string(),
                 sealed_batch.timestamp,
                 sealed_batch.timestamp,
-                sealed_batch.prepare_votes.iter().chain(sealed_batch.commit_votes.iter()).cloned().collect(),
+                sealed_batch.prepare_votes.iter().chain(sealed_batch.commit_votes).cloned().collect(),
                 "pbft_consensus".to_string(),
                 sealed_batch.prepare_votes.len() >= self.governance.quorum_size(),
             );
@@ -4346,7 +4488,7 @@ impl FederationState {
     #[cfg(feature = "serde")]
     pub fn verify_attestation(&self, attestation: &FederationAttestation) -> Result<bool, String> {
         use blake3::Hasher;
-        use ed25519_dalek::{Signature, VerifyingKey, Signer};
+        use ed25519_dalek::{Signature, VerifyingKey};
         
         let mut hasher = Hasher::new();
         hasher.update(b"xudanu/v1/federation-attestation");
@@ -4402,7 +4544,7 @@ impl FederationState {
         
         attributes.insert("prov:type".to_string(), ProvValue::qname("xudanu:FederationState"));
         attributes.insert("xudanu:serverId".to_string(), ProvValue::string(server_id));
-        attributes.insert("xudanu:enabled".to_string(), ProvValue::string(&self.config.enabled.to_string()));
+        attributes.insert("xudanu:enabled".to_string(), ProvValue::string(self.config.enabled.to_string()));
         attributes.insert("xudanu:mode".to_string(), ProvValue::string(&format!("{:?}", self.config.mode)));
         attributes.insert("xudanu:memberCount".to_string(), 
             ProvValue::typed(&self.membership.member_count().to_string(), "xsd:integer"));

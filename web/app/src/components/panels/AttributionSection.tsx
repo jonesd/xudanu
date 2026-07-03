@@ -7,14 +7,18 @@ interface AttributionSectionProps {
   attributionLogStatus: AttributionLogStatus | null;
   onOpenFullView?: () => void;
   onExportReport?: () => void;
+  currentWorkId?: number | null;
+  documentLength: number;
 }
 
-export function AttributionSection({ attributionSpans, attributionLogStatus, onOpenFullView, onExportReport }: AttributionSectionProps) {
+export function AttributionSection({ attributionSpans, attributionLogStatus, onOpenFullView, onExportReport, currentWorkId, documentLength }: AttributionSectionProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const totalEnd = attributionSpans.length > 0 ? Math.max(...attributionSpans.map((s) => s.end)) : 0;
+  const effectiveLength = attributionSpans.length > 0
+    ? Math.max(documentLength, attributionSpans.reduce((max, s) => Math.max(max, s.end), 0))
+    : documentLength;
   const coveredChars = attributionSpans.reduce((sum, s) => sum + (s.end - s.start), 0);
-  const coverage = totalEnd > 0 ? Math.min(100, Math.round((coveredChars / totalEnd) * 100)) : 0;
+  const coverage = effectiveLength > 0 ? Math.min(100, Math.round((coveredChars / effectiveLength) * 100)) : 0;
   const unsignedCount = attributionSpans.filter((s) => !s.signature_valid).length;
   const allSigned = unsignedCount === 0;
   const chainValid = attributionLogStatus?.chain_valid ?? true;
@@ -60,7 +64,7 @@ export function AttributionSection({ attributionSpans, attributionLogStatus, onO
       )}
       {hasLog && !expanded && allOk && (
         <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>
-          {attributionLogStatus!.entry_count} entries . chain valid . SHA-256 + Ed25519
+          {attributionSpans.length} attribution span{attributionSpans.length !== 1 ? "s" : ""} . chain valid . SHA-256 + Ed25519
         </div>
       )}
       {expanded && (
@@ -72,7 +76,7 @@ export function AttributionSection({ attributionSpans, attributionLogStatus, onO
                   {chainValid ? "Chain valid" : "CHAIN BROKEN"}
                 </span>
                 <span style={{ color: "var(--text-dim)" }}>
-                  {attributionLogStatus!.entry_count} entries . seq #{attributionLogStatus!.last_sequence}
+                  {attributionSpans.length} attribution span{attributionSpans.length !== 1 ? "s" : ""} . work #{currentWorkId}
                 </span>
               </div>
               <div style={{ color: "var(--text-dim)", fontSize: 10 }}>
