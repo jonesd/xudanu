@@ -334,7 +334,23 @@ export function WorkspacePage() {
       window.history.replaceState({}, "", url.toString());
       loadWorks();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const err = e instanceof Error ? e : { message: String(e) };
+      
+      // Categorize errors without exposing technical details
+      if (err.message.includes("not authorized") || 
+          err.message.includes("NotAuthorized") ||
+          err.message.includes("authentication") ||
+          err.message.includes("unauthorized")) {
+        setError("Please create an identity first to create documents");
+      } else if (err.message.includes("network") || 
+                 err.message.includes("fetch") ||
+                 err.message.includes("connection")) {
+        setError("Network error. Please check your connection and try again.");
+      } else if (err.message.includes("timeout")) {
+        setError("Request timed out. Please try again.");
+      } else {
+        setError("Failed to create document. Please try again.");
+      }
     }
   }, [createWork, loadWorks]);
 

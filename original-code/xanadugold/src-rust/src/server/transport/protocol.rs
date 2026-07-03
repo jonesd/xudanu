@@ -329,6 +329,19 @@ pub enum OperationCode {
     WorkSearch,
     WorkGoto,
 
+    #[cfg(feature = "serde")]
+    ProvJsonExport,
+    #[cfg(feature = "serde")]
+    FederationAttestationCreate,
+    #[cfg(feature = "serde")]
+    FederationAttestationVerify,
+    #[cfg(feature = "serde")]
+    FederationBundleExport,
+    #[cfg(feature = "serde")]
+    ClusterVerificationCreate,
+    #[cfg(feature = "serde")]
+    CrossServerSignatureVerify,
+
     HistoricalAuthorRegister,
     HistoricalAuthorGet,
     HistoricalAuthorSearch,
@@ -896,6 +909,19 @@ impl OperationCode {
             OperationCode::WorkVersionTimeline => 0x0D14,
             OperationCode::PassageComposition => 0x0D15,
             OperationCode::GlobalTextSearch => 0x0D16,
+            
+            #[cfg(feature = "serde")]
+            OperationCode::ProvJsonExport => 0x0E01,
+            #[cfg(feature = "serde")]
+            OperationCode::FederationAttestationCreate => 0x0E02,
+            #[cfg(feature = "serde")]
+            OperationCode::FederationAttestationVerify => 0x0E03,
+            #[cfg(feature = "serde")]
+            OperationCode::FederationBundleExport => 0x0E04,
+            #[cfg(feature = "serde")]
+            OperationCode::ClusterVerificationCreate => 0x0E05,
+            #[cfg(feature = "serde")]
+            OperationCode::CrossServerSignatureVerify => 0x0E06,
         }
     }
 }
@@ -1813,6 +1839,39 @@ pub enum WireRequest {
         #[serde(default)]
         max_results: Option<u64>,
     },
+
+    #[cfg(feature = "serde")]
+    ProvJsonExport {
+        #[serde(default)]
+        work_id: Option<u64>,
+        include_federation: bool,
+    },
+    #[cfg(feature = "serde")]
+    FederationAttestationCreate {
+        attestation_type: String,
+        subject_server_id: String,
+    },
+    #[cfg(feature = "serde")]
+    FederationAttestationVerify {
+        attestation_json: String,
+    },
+    #[cfg(feature = "serde")]
+    FederationBundleExport {
+        bundle_id: String,
+    },
+    #[cfg(feature = "serde")]
+    ClusterVerificationCreate {
+        activity_type: String,
+        verifying_servers: Vec<String>,
+        consensus_type: String,
+        threshold_met: bool,
+    },
+    #[cfg(feature = "serde")]
+    CrossServerSignatureVerify {
+        server_id: String,
+        signature: Vec<u8>,
+        timestamp: u64,
+    },
 }
 
 impl WireRequest {
@@ -2430,6 +2489,31 @@ pub enum ResponseValue {
     GlobalSearchResults {
         results: Vec<GlobalSearchResultPayload>,
         total_works_matched: u64,
+    },
+
+    #[cfg(feature = "serde")]
+    ProvJsonExportResult {
+        prov_json: String,
+    },
+    #[cfg(feature = "serde")]
+    FederationAttestationCreateResult {
+        attestation: String,
+    },
+    #[cfg(feature = "serde")]
+    FederationAttestationVerifyResult {
+        verified: bool,
+    },
+    #[cfg(feature = "serde")]
+    FederationBundleExportResult {
+        bundle_json: String,
+    },
+    #[cfg(feature = "serde")]
+    ClusterVerificationCreateResult {
+        activity_id: String,
+    },
+    #[cfg(feature = "serde")]
+    CrossServerSignatureVerifyResult {
+        valid: bool,
     },
 }
 
@@ -3384,6 +3468,16 @@ pub enum ErrorCode {
     ServerShuttingDown,
     NotAcceptingConnections,
     IrrevocablyRemoved,
+    #[cfg(feature = "serde")]
+    ProvJsonExportFailed,
+    #[cfg(feature = "serde")]
+    ProvJsonImportFailed,
+    #[cfg(feature = "serde")]
+    FederationAttestationFailed,
+    #[cfg(feature = "serde")]
+    FederationVerificationFailed,
+    #[cfg(feature = "serde")]
+    CrossServerSignatureInvalid,
 }
 
 impl ErrorCode {
@@ -3413,6 +3507,16 @@ impl ErrorCode {
                 ErrorCode::IrrevocablyRemoved
             }
             crate::server::ServerError::NotOwner(_) => ErrorCode::NotAuthorized,
+            #[cfg(feature = "serde")]
+            crate::server::ServerError::ProvJsonExportFailed(_) => ErrorCode::ProvJsonExportFailed,
+            #[cfg(feature = "serde")]
+            crate::server::ServerError::ProvJsonImportFailed(_) => ErrorCode::ProvJsonImportFailed,
+            #[cfg(feature = "serde")]
+            crate::server::ServerError::FederationAttestationFailed(_) => ErrorCode::FederationAttestationFailed,
+            #[cfg(feature = "serde")]
+            crate::server::ServerError::FederationVerificationFailed(_) => ErrorCode::FederationVerificationFailed,
+            #[cfg(feature = "serde")]
+            crate::server::ServerError::CrossServerSignatureInvalid(_) => ErrorCode::CrossServerSignatureInvalid,
         }
     }
 }

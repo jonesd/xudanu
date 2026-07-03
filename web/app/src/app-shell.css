@@ -206,6 +206,15 @@
 }
 
 /* ── Provenance Split (bottom of document area) ── */
+
+.readonly-banner {
+  flex-shrink: 0;
+  padding: 4px 16px;
+  font-size: 11px;
+  color: #92400e;
+  background: rgba(217, 119, 6, 0.08);
+  border-bottom: 1px solid rgba(217, 119, 6, 0.15);
+}
 .provenance-split {
   flex: 0 0 40%;
   min-height: 200px;
@@ -879,6 +888,18 @@
   max-width: 400px;
   line-height: 1.6;
 }
+
+.welcome-hint {
+  margin-top: 20px;
+  font-size: 12px;
+  color: #92400e;
+  background: rgba(217, 119, 6, 0.1);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+  border-radius: 6px;
+  padding: 8px 14px;
+  max-width: 400px;
+}
+
 .welcome-actions {
   display: flex;
   gap: 12px;

@@ -77,6 +77,7 @@ fn usage() {
     eprintln!("  --federation-mode <mode> Federation mode: closed (default) or open");
     eprintln!("  --trusted-peer-key <hex> Trusted peer Ed25519 verifying key (repeatable)");
     eprintln!("  --allowed-origin <url>   Allowed WebSocket origin (repeatable, e.g. https://example.com)");
+    eprintln!("  --trusted-registry <path>  Trusted server registry file for attestation verification");
     eprintln!("  --csrf-token             Require CSRF token for WebSocket connections");
     eprintln!("  --key-passphrase <pw>   Passphrase for encrypted server key file");
     eprintln!("                         (can also set XUDANU_KEY_PASSPHRASE env var)");
@@ -396,6 +397,7 @@ async fn main() {
             let mut addr = "127.0.0.1:8080".to_string();
             let mut data_dir: Option<String> = None;
             let mut static_dir: Option<PathBuf> = None;
+    let mut trusted_registry_path: Option<String> = None;
             let mut tls_cert: Option<PathBuf> = None;
             let mut tls_key: Option<PathBuf> = None;
             let mut federation_peers: Vec<String> = Vec::new();
@@ -475,6 +477,13 @@ async fn main() {
                             std::process::exit(1);
                         });
                         allowed_origins.insert(origin);
+                    }
+                    "--trusted-registry" => {
+                        i += 1;
+                        trusted_registry_path = Some(args.get(i).map(|s| s.to_string()).unwrap_or_else(|| {
+                            eprintln!("Error: --trusted-registry requires a path");
+                            std::process::exit(1);
+                        }));
                     }
                     "--csrf-token" => {
                         csrf_enabled = true;
@@ -655,6 +664,38 @@ async fn main() {
                     "Federation: other peers must register this key via --trusted-peer-key {}",
                     vk_hex
                 );
+            }
+            
+            // Load trusted server registry if provided
+            if let Some(registry_path) = trusted_registry_path {
+                tracing::info!("Loading trusted server registry from {}", registry_path);
+                match xudanu::crypto::server_identity::ServerRegistryFile::load_from_file(&std::path::Path::new(&registry_path)) {
+                    Ok(file) => {
+                        let server_count = file.server_count();
+                        let version = file.version;
+                        server.set_trusted_server_registry(file.registry);
+                        tracing::info!(
+                            "Trusted registry loaded: {} servers, version {}",
+                            server_count,
+                            version
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            error = %e,
+                            event = "SECURITY:registry_load_failed",
+                            "failed to load trusted server registry from {}: {}",
+                            registry_path, e
+                        );
+                        if args.len() > 2 && args[1] != "init" {
+                            // Only exit on non-init commands
+                            eprintln!("Error: Failed to load trusted registry from {}: {}", registry_path, e);
+                            std::process::exit(1);
+                        }
+                        // For init, just warn and continue
+                        tracing::warn!("Continuing without trusted server registry - attestation verification will be disabled");
+                    }
+                }
             }
 
             let state = {

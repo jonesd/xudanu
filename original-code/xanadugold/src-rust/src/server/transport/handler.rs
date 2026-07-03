@@ -965,6 +965,7 @@ async fn handle_socket(
                     }
                     IncomingMessage::Request(parsed) => {
                         let req_id = parsed.request_id;
+                        let request_type = format!("{:?}", parsed.inner);
                         let is_auth_op = matches!(
                             &parsed.inner,
                             WireRequest::SessionLoginPublic
@@ -987,14 +988,40 @@ async fn handle_socket(
                             let code = ErrorCode::from_server_error(err);
                             match code {
                                 ErrorCode::NotAuthorized => {
+                                    // Use generic error categories for security logging to avoid leaking internal details
+                                    let error_category = {
+                                        let request_type_clone = request_type.clone();
+                                        if request_type_clone.contains("create") {
+                                            "document_creation_failed"
+                                        } else if request_type_clone.contains("edit") {
+                                            "document_edit_failed"
+                                        } else if request_type_clone.contains("read") {
+                                            "document_read_failed"
+                                        } else if request_type_clone.contains("delete") {
+                                            "document_deletion_failed"
+                                        } else if request_type_clone.contains("admin") {
+                                            "admin_operation_failed"
+                                        } else {
+                                            "operation_failed"
+                                        }
+                                    };
+                                    
                                     if is_auth_op {
-                                        sec.on_auth_failure(session_id, remote_addr, err.to_string());
+                                        sec.on_auth_failure(session_id, remote_addr, error_category.to_string());
                                     } else {
-                                        sec.on_permission_denied(session_id, remote_addr, err.to_string());
+                                        sec.on_permission_denied(session_id, remote_addr, error_category.to_string());
                                     }
+                                    
+                                    // Log detailed error only to debug level
+                                    tracing::debug!(
+                                        session_id = %session_id,
+                                        request_type = %request_type,
+                                        error = %err,
+                                        "Detailed authorization error (debug only)"
+                                    );
                                 }
                                 ErrorCode::NotGrabbed | ErrorCode::AlreadyGrabbed => {
-                                    sec.on_grab_conflict(session_id, remote_addr, err.to_string());
+                                    sec.on_grab_conflict(session_id, remote_addr, "resource_conflict".to_string());
                                 }
                                 _ => {}
                             }

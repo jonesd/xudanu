@@ -8,11 +8,15 @@ use tokio_tungstenite::{
     connect_async, tungstenite::Message as WsMessage, MaybeTlsStream, WebSocketStream,
 };
 
-use super::federation_handler::{
-    decrypt_frame, encrypt_frame, hex_encode, process_federation_frame, FederationFrame,
-    FederationHello, FederationSignature, FEDERATION_MIN_COMPAT_VERSION,
-    FEDERATION_PROTOCOL_VERSION,
-};
+use super::federation_handler::FederationFrame;
+use super::federation_handler::FederationHello;
+use super::federation_handler::FederationSignature;
+use super::federation_handler::FEDERATION_MIN_COMPAT_VERSION;
+use super::federation_handler::FEDERATION_PROTOCOL_VERSION;
+use super::federation_handler::encrypt_frame;
+use super::federation_handler::decrypt_frame;
+use super::federation_handler::process_federation_frame;
+use crate::crypto::keys::hex_encode;
 use super::shared::SharedState;
 
 type PeerStream = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
