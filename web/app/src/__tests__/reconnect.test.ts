@@ -90,7 +90,7 @@ describe("Request timeout and drop handling", () => {
     (client as any).ws = { readyState: 1, send: vi.fn() };
 
     const promise = client.sendRequest("slow_op");
-    vi.advanceTimersByTime(11000);
+    vi.advanceTimersByTime(31000);
 
     await expect(promise).rejects.toThrow("timed out");
     expect((client as any).pending.size).toBe(0);
