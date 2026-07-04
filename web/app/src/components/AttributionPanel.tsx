@@ -1,6 +1,17 @@
 import { useMemo } from "react";
 import type { AttributionSpan, AttributionLogStatus, ProvenanceHop } from "../api/crdt_sync";
 
+function workIdFromUrl(): number | undefined {
+  const wid = new URLSearchParams(window.location.search).get("work");
+  if (!wid) return undefined;
+  const parsed = wid.startsWith("0x") ? parseInt(wid, 16) : parseInt(wid, 10);
+  return isNaN(parsed) ? undefined : parsed;
+}
+
+function formatWorkId(id: number): string {
+  return `0x${id.toString(16).padStart(4, "0")}`;
+}
+
 // Reconstruct the ancestry DAG from hop destinations and return each
 // leaf→target path. Without dest_work_id (old server) it falls back to a
 // single flat path so a multi-source doc isn't misread as a linear chain.
@@ -162,7 +173,10 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible, wo
           <span className={logStatus.has_log ? (logStatus.chain_valid ? "log-valid" : "log-invalid") : "log-none"}>
             {logStatus.has_log ? (logStatus.chain_valid ? "Chain valid" : "Chain INVALID") : "No Log"}
           </span>
-          <span className="log-detail">{spans.length} attribution spans, work:{workId ? `0x${workId.toString(16).padStart(4, "0")}` : "unknown"}</span>
+          <span className="log-detail">{spans.length} attribution spans, work:{(() => {
+            const id = workId ?? workIdFromUrl();
+            return id != null ? formatWorkId(id) : "unknown";
+          })()}</span>
         </div>
       )}
 
