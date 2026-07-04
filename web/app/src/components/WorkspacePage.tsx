@@ -1531,6 +1531,7 @@ export function WorkspacePage() {
         logStatus={attributionLogStatus}
         documentLength={displayText.length}
         visible={showAttribution && workBeId !== null}
+        workId={workBeId ?? undefined}
       />
 
       {showArchived && (

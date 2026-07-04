@@ -82,9 +82,10 @@ interface AttributionPanelProps {
   logStatus: AttributionLogStatus | null;
   documentLength: number;
   visible: boolean;
+  workId?: number;
 }
 
-export function AttributionPanel({ spans, logStatus, documentLength, visible }: AttributionPanelProps) {
+export function AttributionPanel({ spans, logStatus, documentLength, visible, workId }: AttributionPanelProps) {
   const authors = useMemo(() => {
     const groups = new Map<string, AuthorGroup>();
 
@@ -161,7 +162,7 @@ export function AttributionPanel({ spans, logStatus, documentLength, visible }: 
           <span className={logStatus.has_log ? (logStatus.chain_valid ? "log-valid" : "log-invalid") : "log-none"}>
             {logStatus.has_log ? (logStatus.chain_valid ? "Chain valid" : "Chain INVALID") : "No Log"}
           </span>
-          <span className="log-detail">{spans.length} attribution spans, work #{documentLength}</span>
+          <span className="log-detail">{spans.length} attribution spans, work:{workId ? `0x${workId.toString(16).padStart(4, "0")}` : "unknown"}</span>
         </div>
       )}
 
