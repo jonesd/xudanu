@@ -517,7 +517,7 @@ impl ClusterConsensus {
                 
                 bundle_doc.wasAssociatedWith.insert(assoc_id, ProvAssociation {
                     activity: activity_id.clone(),
-                    agent: Some(server_agent_id),
+                    agent: Some(server_agent_id.clone()),
                     plan: None,
                     role: Some("verifier".to_string()),
                     attributes: assoc_attrs,
