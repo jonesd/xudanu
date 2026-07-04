@@ -4304,6 +4304,7 @@ impl FederationState {
     ) -> Result<FederationAttestation, String> {
         use crate::edition::provenance::{FederationAttestation, unix_to_iso8601};
         use blake3::Hasher;
+        use ed25519_dalek::Signer;
         
         let server_id = "local_server"; // This should come from actual server context
         
@@ -4346,7 +4347,7 @@ impl FederationState {
     #[cfg(feature = "serde")]
     pub fn verify_attestation(&self, attestation: &FederationAttestation) -> Result<bool, String> {
         use blake3::Hasher;
-        use ed25519_dalek::{Signature, VerifyingKey, Signer};
+        use ed25519_dalek::{Signature, VerifyingKey, Verifier};
         
         let mut hasher = Hasher::new();
         hasher.update(b"xudanu/v1/federation-attestation");

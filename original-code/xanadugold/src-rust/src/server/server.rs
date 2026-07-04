@@ -12254,7 +12254,7 @@ impl Server {
             timestamp,
             timestamp,
             vec![verifying_server_id.clone()],
-            consensus_type,
+            consensus_type.clone(),
             true,
         );
         

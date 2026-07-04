@@ -3179,6 +3179,52 @@ fn dispatch_inner(
                 total_works_matched,
             })
         }
+        #[cfg(feature = "serde")]
+        WireRequest::ProvJsonExport { work_id, include_federation } => {
+            let wid = work_id.unwrap_or(0);
+            if wid > 0 {
+                srv.ensure_can_read(session_id, wid)?;
+            } else {
+                srv.ensure_session(session_id)?;
+            }
+            let prov_json = srv.federation_export_prov_json(work_id, include_federation)?;
+            Ok(ResponseValue::ProvJsonExportResult { prov_json })
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::FederationAttestationCreate { attestation_type, subject_server_id } => {
+            srv.ensure_session(session_id)?;
+            Err(crate::server::ServerError::Internal(
+                format!("Federation attestation create not supported in dispatch: type={} subject={}", attestation_type, subject_server_id)
+            ))
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::FederationAttestationVerify { attestation_json } => {
+            srv.ensure_session(session_id)?;
+            Err(crate::server::ServerError::Internal(
+                format!("Federation attestation verify not supported in dispatch: json_len={}", attestation_json.len())
+            ))
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::FederationBundleExport { bundle_id } => {
+            srv.ensure_session(session_id)?;
+            Err(crate::server::ServerError::Internal(
+                format!("Federation bundle export not supported in dispatch: bundle_id={}", bundle_id)
+            ))
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::ClusterVerificationCreate { activity_type, verifying_servers, consensus_type, threshold_met } => {
+            srv.ensure_session(session_id)?;
+            Err(crate::server::ServerError::Internal(
+                format!("Cluster verification create not supported in dispatch: type={} servers={} consensus={} threshold={}", activity_type, verifying_servers.len(), consensus_type, threshold_met)
+            ))
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::CrossServerSignatureVerify { server_id, signature, timestamp } => {
+            srv.ensure_session(session_id)?;
+            Err(crate::server::ServerError::Internal(
+                format!("Cross-server signature verify not supported in dispatch: server={} sig_len={} ts={}", server_id, signature.len(), timestamp)
+            ))
+        }
     }
 }
 

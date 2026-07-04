@@ -851,7 +851,7 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
                                     result.updates_applied, result.updates_failed
                                 );
                             }
-                            FederationFrame::ProvJsonExport { work_id, include_federation } => {
+                            Ok(FederationFrame::ProvJsonExport { work_id, include_federation }) => {
                                 #[cfg(feature = "serde")]
                                 {
                                     let result = state.server.with_server(|srv| {
@@ -890,7 +890,7 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
                                     ).await;
                                 }
                             }
-                            FederationFrame::FederationProvBundle { bundle } => {
+                            Ok(FederationFrame::FederationProvBundle { bundle }) => {
                                 #[cfg(feature = "serde")]
                                 {
                                     tracing::info!(
@@ -912,7 +912,7 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
                                     tracing::warn!("FederationProvBundle received but serde feature is disabled");
                                 }
                             }
-                            FederationFrame::FederationAttestationRequest { attestation_type, subject_server_id } => {
+                            Ok(FederationFrame::FederationAttestationRequest { attestation_type, subject_server_id }) => {
                                 #[cfg(feature = "serde")]
                                 {
                                     tracing::info!(
@@ -961,7 +961,7 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
                                     ).await;
                                 }
                             }
-                            FederationFrame::FederationAttestationResponse { attestation, accepted } => {
+                            Ok(FederationFrame::FederationAttestationResponse { attestation, accepted }) => {
                                 #[cfg(feature = "serde")]
                                 {
                                     if accepted {
@@ -984,12 +984,13 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
                                             );
                                         }
                                     }
+                                }
                                 #[cfg(not(feature = "serde"))]
                                 {
                                     tracing::warn!("FederationAttestationResponse received but serde feature is disabled");
                                 }
                             }
-                            FederationFrame::ClusterVerificationProv { timestamp, consensus_type } => {
+                            Ok(FederationFrame::ClusterVerificationProv { timestamp, consensus_type }) => {
                                 #[cfg(feature = "serde")]
                                 {
                                     tracing::info!(
@@ -1592,7 +1593,6 @@ pub(crate) async fn process_federation_frame(
             vec![response]
         }
     }
-}
 }
 
 #[cfg(test)]
