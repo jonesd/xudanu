@@ -330,7 +330,7 @@ export function WorkspacePage() {
       }
       setWorkBeId(newId);
       const url = new URL(window.location.href);
-      url.searchParams.set("work", String(newId));
+      url.searchParams.set("work", `0x${newId.toString(16)}`);
       window.history.replaceState({}, "", url.toString());
       loadWorks();
     } catch (e) {
@@ -357,7 +357,7 @@ export function WorkspacePage() {
   const selectWork = useCallback((id: number) => {
     setWorkBeId(id);
     const url = new URL(window.location.href);
-    url.searchParams.set("work", String(id));
+    url.searchParams.set("work", `0x${id.toString(16)}`);
     window.history.replaceState({}, "", url.toString());
     setNarration(null);
     setFeedback(null);
@@ -1693,7 +1693,7 @@ export function WorkspacePage() {
         onImported={(workId) => {
           setWorkBeId(workId);
           const url = new URL(window.location.href);
-          url.searchParams.set("work", String(workId));
+          url.searchParams.set("work", `0x${workId.toString(16)}`);
           window.history.replaceState({}, "", url.toString());
           loadWorks();
         }}

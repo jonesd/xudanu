@@ -7,7 +7,7 @@
 // membership, governance) to PROV entities, activities, and agents.
 
 use blake3::Hasher;
-use ed25519_dalek::{Signature, SigningKey, VerifyingKey, Signer, Verifier};
+use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 
 use super::backend::BeId;
 

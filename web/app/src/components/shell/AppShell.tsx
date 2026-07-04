@@ -202,7 +202,7 @@ export function AppShell() {
   const selectWork = useCallback((id: number) => {
     setWorkBeId(id);
     const url = new URL(window.location.href);
-    url.searchParams.set("work", String(id));
+    url.searchParams.set("work", `0x${id.toString(16)}`);
     window.history.replaceState({}, "", url.toString());
     setLibraryOpen(false);
   }, []);
