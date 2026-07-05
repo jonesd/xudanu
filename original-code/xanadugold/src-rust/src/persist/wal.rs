@@ -140,6 +140,8 @@ impl WalLog {
         owner_club: BeId,
         trail_id: BeId,
         name: &str,
+        introduction: Option<&str>,
+        categories: &[String],
     ) -> Result<u64, WalError> {
         self.append(
             "trail_create",
@@ -147,6 +149,8 @@ impl WalLog {
                 "owner_club": owner_club,
                 "trail_id": trail_id,
                 "name": name,
+                "introduction": introduction,
+                "categories": categories,
             }),
         )
     }
@@ -369,7 +373,18 @@ impl WalLog {
                         entry.args.get("trail_id").and_then(|v| v.as_u64()),
                         entry.args.get("name").and_then(|v| v.as_str()),
                     ) {
-                        server.wal_replay_trail_create(owner_club, trail_id, name);
+                        let intro = entry.args.get("introduction").and_then(|v| v.as_str());
+                        let cats: Vec<String> = entry
+                            .args
+                            .get("categories")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        server.wal_replay_trail_create(owner_club, trail_id, name, intro, &cats);
                         true
                     } else {
                         false
@@ -659,7 +674,8 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
 
         let mut wal = WalLog::open(&dir).unwrap();
-        wal.append_trail_create(100, 500, "test trail").unwrap();
+        wal.append_trail_create(100, 500, "test trail", None, &[])
+            .unwrap();
         wal.append_trail_add_stop(500, 600, Some(10), Some(50), Some("note"))
             .unwrap();
         wal.append_trail_remove_stop(500, 600).unwrap();

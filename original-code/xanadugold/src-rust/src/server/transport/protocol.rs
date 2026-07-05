@@ -360,6 +360,12 @@ pub enum OperationCode {
     WorkVersionTimeline,
     PassageComposition,
     GlobalTextSearch,
+
+    TrailUpdate,
+    TrailPublish,
+    TrailUnpublish,
+    TrailListPublished,
+    TrailListCategories,
 }
 
 impl OperationCode {
@@ -435,6 +441,11 @@ impl OperationCode {
             0x033e => Some(OperationCode::TrailReorderStops),
             0x033f => Some(OperationCode::TrailList),
             0x0340 => Some(OperationCode::TrailGet),
+            0x0344 => Some(OperationCode::TrailUpdate),
+            0x0345 => Some(OperationCode::TrailPublish),
+            0x0346 => Some(OperationCode::TrailUnpublish),
+            0x0347 => Some(OperationCode::TrailListPublished),
+            0x0348 => Some(OperationCode::TrailListCategories),
             0x0341 => Some(OperationCode::WorkDiffNarration),
             0x0342 => Some(OperationCode::WorkWritingFeedback),
             0x0343 => Some(OperationCode::WorkBacklinks),
@@ -698,6 +709,11 @@ impl OperationCode {
             OperationCode::TrailReorderStops => 0x033e,
             OperationCode::TrailList => 0x033f,
             OperationCode::TrailGet => 0x0340,
+            OperationCode::TrailUpdate => 0x0344,
+            OperationCode::TrailPublish => 0x0345,
+            OperationCode::TrailUnpublish => 0x0346,
+            OperationCode::TrailListPublished => 0x0347,
+            OperationCode::TrailListCategories => 0x0348,
             OperationCode::WorkOwner => 0x0313,
             OperationCode::WorkPublish => 0x0317,
             OperationCode::WorkUnpublish => 0x0318,
@@ -909,7 +925,7 @@ impl OperationCode {
             OperationCode::WorkVersionTimeline => 0x0D14,
             OperationCode::PassageComposition => 0x0D15,
             OperationCode::GlobalTextSearch => 0x0D16,
-            
+
             #[cfg(feature = "serde")]
             OperationCode::ProvJsonExport => 0x0E01,
             #[cfg(feature = "serde")]
@@ -1069,6 +1085,10 @@ pub enum WireRequest {
 
     TrailCreate {
         name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        introduction: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        categories: Vec<String>,
     },
     TrailDelete {
         trail_id: BeId,
@@ -1096,6 +1116,22 @@ pub enum WireRequest {
     TrailGet {
         trail_id: BeId,
     },
+    TrailUpdate {
+        trail_id: BeId,
+        introduction: Option<String>,
+        categories: Vec<String>,
+    },
+    TrailPublish {
+        trail_id: BeId,
+    },
+    TrailUnpublish {
+        trail_id: BeId,
+    },
+    TrailListPublished {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        category: Option<String>,
+    },
+    TrailListCategories,
 
     WorkSetReadClub {
         work_id: BeId,
@@ -1908,6 +1944,8 @@ impl WireRequest {
                 | Self::EditionTotalEndorsements { .. }
                 | Self::TrailList { .. }
                 | Self::TrailGet { .. }
+                | Self::TrailListPublished { .. }
+                | Self::TrailListCategories
                 | Self::ClubGet { .. }
                 | Self::ClubNames { .. }
                 | Self::ClubWhoAmI { .. }
@@ -2034,6 +2072,7 @@ pub enum ResponseValue {
     WorkGraphResult(GraphPayload),
     TrailResult(TrailPayload),
     TrailListResult(Vec<TrailPayload>),
+    TrailCategories(Vec<String>),
     WorkBacklinksResult(Vec<BacklinkEntryPayload>),
     PaginatedWorkList {
         entries: Vec<WorkListEntry>,
@@ -2755,6 +2794,14 @@ pub struct TrailStopPayload {
 pub struct TrailPayload {
     pub trail_id: BeId,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub introduction: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<String>,
+    #[serde(default)]
+    pub published: bool,
+    #[serde(default)]
+    pub owner_club: BeId,
     pub stops: Vec<TrailStopPayload>,
     pub created_at: u64,
     pub updated_at: u64,
@@ -3512,11 +3559,17 @@ impl ErrorCode {
             #[cfg(feature = "serde")]
             crate::server::ServerError::ProvJsonImportFailed(_) => ErrorCode::ProvJsonImportFailed,
             #[cfg(feature = "serde")]
-            crate::server::ServerError::FederationAttestationFailed(_) => ErrorCode::FederationAttestationFailed,
+            crate::server::ServerError::FederationAttestationFailed(_) => {
+                ErrorCode::FederationAttestationFailed
+            }
             #[cfg(feature = "serde")]
-            crate::server::ServerError::FederationVerificationFailed(_) => ErrorCode::FederationVerificationFailed,
+            crate::server::ServerError::FederationVerificationFailed(_) => {
+                ErrorCode::FederationVerificationFailed
+            }
             #[cfg(feature = "serde")]
-            crate::server::ServerError::CrossServerSignatureInvalid(_) => ErrorCode::CrossServerSignatureInvalid,
+            crate::server::ServerError::CrossServerSignatureInvalid(_) => {
+                ErrorCode::CrossServerSignatureInvalid
+            }
         }
     }
 }

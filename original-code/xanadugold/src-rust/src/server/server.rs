@@ -271,6 +271,9 @@ struct TrailState {
     trail_id: BeId,
     owner_club: BeId,
     name: String,
+    introduction: Option<String>,
+    categories: Vec<String>,
+    published: bool,
     stops: Vec<TrailStop>,
     created_at: u64,
     updated_at: u64,
@@ -819,7 +822,10 @@ impl Server {
 
     // === Trusted server registry ===
 
-    pub fn set_trusted_server_registry(&mut self, registry: crate::crypto::server_identity::TrustedServerRegistry) {
+    pub fn set_trusted_server_registry(
+        &mut self,
+        registry: crate::crypto::server_identity::TrustedServerRegistry,
+    ) {
         if let Err(e) = registry.verify_signature() {
             tracing::error!(
                 error = %e,
@@ -830,13 +836,19 @@ impl Server {
         }
         self.trusted_server_registry = Some(registry);
         tracing::info!(
-            server_count = self.trusted_server_registry.as_ref().map(|r| r.server_count()).unwrap_or(0),
+            server_count = self
+                .trusted_server_registry
+                .as_ref()
+                .map(|r| r.server_count())
+                .unwrap_or(0),
             event = "SECURITY:trusted_registry_loaded",
             "loaded trusted server registry"
         );
     }
 
-    pub fn trusted_server_registry(&self) -> Option<&crate::crypto::server_identity::TrustedServerRegistry> {
+    pub fn trusted_server_registry(
+        &self,
+    ) -> Option<&crate::crypto::server_identity::TrustedServerRegistry> {
         self.trusted_server_registry.as_ref()
     }
 
@@ -845,11 +857,14 @@ impl Server {
         server_id: &str,
         reported_key: &[u8],
     ) -> Result<(), ServerError> {
-        let registry = self.trusted_server_registry.as_ref()
-            .ok_or_else(|| ServerError::Internal("trusted server registry not configured".to_string()))?;
-        
+        let registry = self.trusted_server_registry.as_ref().ok_or_else(|| {
+            ServerError::Internal("trusted server registry not configured".to_string())
+        })?;
+
         crate::crypto::server_identity::verify_server_identity(server_id, reported_key, registry)
-            .map_err(|e| ServerError::Internal(format!("server identity verification failed: {}", e)))
+            .map_err(|e| {
+                ServerError::Internal(format!("server identity verification failed: {}", e))
+            })
     }
 
     pub fn is_server_trusted(&self, server_id: &str) -> bool {
@@ -4546,7 +4561,14 @@ impl Server {
         }
     }
 
-    pub(crate) fn wal_replay_trail_create(&mut self, owner_club: BeId, trail_id: BeId, name: &str) {
+    pub(crate) fn wal_replay_trail_create(
+        &mut self,
+        owner_club: BeId,
+        trail_id: BeId,
+        name: &str,
+        introduction: Option<&str>,
+        categories: &[String],
+    ) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -4557,6 +4579,9 @@ impl Server {
                 trail_id,
                 owner_club,
                 name: name.to_string(),
+                introduction: introduction.map(|s| s.to_string()),
+                categories: categories.to_vec(),
+                published: false,
                 stops: Vec::new(),
                 created_at: now,
                 updated_at: now,
@@ -4806,6 +4831,10 @@ impl Server {
         super::transport::protocol::TrailPayload {
             trail_id: t.trail_id,
             name: t.name.clone(),
+            introduction: t.introduction.clone(),
+            categories: t.categories.clone(),
+            published: t.published,
+            owner_club: t.owner_club,
             stops,
             created_at: t.created_at,
             updated_at: t.updated_at,
@@ -4816,6 +4845,8 @@ impl Server {
         &mut self,
         session_id: SessionId,
         name: String,
+        introduction: Option<String>,
+        categories: Vec<String>,
     ) -> Result<BeId, ServerError> {
         let owner = self.trail_owner_club(session_id)?;
         let trail_id = self.trail_counter;
@@ -4830,12 +4861,21 @@ impl Server {
                 trail_id,
                 owner_club: owner,
                 name: name.clone(),
+                introduction: introduction.clone(),
+                categories: categories.clone(),
+                published: false,
                 stops: Vec::new(),
                 created_at: now,
                 updated_at: now,
             },
         );
-        if let Err(e) = self.wal.append_trail_create(owner, trail_id, &name) {
+        if let Err(e) = self.wal.append_trail_create(
+            owner,
+            trail_id,
+            &name,
+            introduction.as_deref(),
+            &categories,
+        ) {
             tracing::warn!("WAL write failed for trail_create: {}", e);
         }
         Ok(trail_id)
@@ -5017,10 +5057,106 @@ impl Server {
             .trails
             .get(&trail_id)
             .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
-        if t.owner_club != owner {
+        if t.owner_club != owner && !t.published {
             return Err(ServerError::InvalidArgument("not your trail".into()));
         }
         Ok(self.trail_to_payload(t))
+    }
+
+    pub fn trail_update(
+        &mut self,
+        session_id: SessionId,
+        trail_id: BeId,
+        introduction: Option<String>,
+        categories: Vec<String>,
+    ) -> Result<(), ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let t = self
+            .trails
+            .get_mut(&trail_id)
+            .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
+        if t.owner_club != owner {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        t.introduction = introduction;
+        t.categories = categories;
+        t.updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Ok(())
+    }
+
+    pub fn trail_publish(
+        &mut self,
+        session_id: SessionId,
+        trail_id: BeId,
+    ) -> Result<(), ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let t = self
+            .trails
+            .get_mut(&trail_id)
+            .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
+        if t.owner_club != owner {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        t.published = true;
+        t.updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Ok(())
+    }
+
+    pub fn trail_unpublish(
+        &mut self,
+        session_id: SessionId,
+        trail_id: BeId,
+    ) -> Result<(), ServerError> {
+        let owner = self.trail_owner_club(session_id)?;
+        let t = self
+            .trails
+            .get_mut(&trail_id)
+            .ok_or_else(|| ServerError::InvalidArgument("trail not found".into()))?;
+        if t.owner_club != owner {
+            return Err(ServerError::InvalidArgument("not your trail".into()));
+        }
+        t.published = false;
+        t.updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        Ok(())
+    }
+
+    pub fn trail_list_published(
+        &self,
+        _session_id: SessionId,
+        category: Option<&str>,
+    ) -> Result<Vec<super::transport::protocol::TrailPayload>, ServerError> {
+        let trails: Vec<_> = self
+            .trails
+            .values()
+            .filter(|t| t.published)
+            .filter(|t| match category {
+                Some(cat) => t.categories.iter().any(|c| c.eq_ignore_ascii_case(cat)),
+                None => true,
+            })
+            .map(|t| self.trail_to_payload(t))
+            .collect();
+        Ok(trails)
+    }
+
+    pub fn trail_list_categories(&self) -> Vec<String> {
+        let mut cats: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for t in self.trails.values() {
+            if t.published {
+                for c in &t.categories {
+                    cats.insert(c.clone());
+                }
+            }
+        }
+        cats.into_iter().collect()
     }
 
     pub fn list_works_with_titles(
@@ -5891,6 +6027,9 @@ impl Server {
                     trail_id: t.trail_id,
                     owner_club: t.owner_club,
                     name: t.name,
+                    introduction: t.introduction,
+                    categories: t.categories,
+                    published: t.published,
                     stops: t
                         .stops
                         .into_iter()
@@ -10992,7 +11131,7 @@ impl Server {
 
     pub fn federation_is_peer_known(&self, verifying_key_hex: &str) -> bool {
         if !self.federation.is_enabled() {
-            return true;
+            return false;
         }
         self.federation.is_peer_known(verifying_key_hex)
     }
@@ -11092,8 +11231,21 @@ impl Server {
 
     pub fn federation_export_editions(&self) -> Vec<crate::server::federation::SyncEditionEntry> {
         let server_id = self.federation_server_id();
+        let public_edition_ids: std::collections::HashSet<u64> = self
+            .works
+            .iter()
+            .filter(|(_, ws)| ws.work.read_club() == Some(self.system_clubs.public_club))
+            .flat_map(|(_, ws)| ws.work.revision_history().keys().map(|k| *k as u64))
+            .collect();
         self.standalone_editions
             .iter()
+            .filter(|(edition_id, _)| {
+                if public_edition_ids.is_empty() {
+                    false
+                } else {
+                    public_edition_ids.contains(edition_id)
+                }
+            })
             .map(
                 |(edition_id, edition)| crate::server::federation::SyncEditionEntry {
                     origin_server_id: server_id.clone(),
@@ -11141,7 +11293,11 @@ impl Server {
             }
             let mut edition = entry.edition_payload.to_edition();
             if !entry.span_provenance.is_empty() && edition.span_provenance.is_empty() {
-                edition.span_provenance = entry.span_provenance.clone();
+                let verified =
+                    self.verify_span_provenance_against_edition(&edition, &entry.span_provenance);
+                if !verified.is_empty() {
+                    edition.span_provenance = verified;
+                }
             }
             let entry_fingerprint = {
                 let entries = edition.all_entries();
@@ -11294,6 +11450,15 @@ impl Server {
     ) -> Vec<crate::server::federation::CrdtWorkUpdate> {
         let mut updates = Vec::new();
         for &work_id in work_ids {
+            if let Some(ws) = self.works.get(&work_id) {
+                if ws.work.read_club() != Some(self.system_clubs.public_club) {
+                    tracing::warn!(
+                        work_id = ?work_id,
+                        "federation CrdtSyncPull denied: work is not public"
+                    );
+                    continue;
+                }
+            }
             if let Ok(text) = self.otree_crdt.extract_update_for_federation(work_id) {
                 if !text.is_empty() {
                     updates.push(crate::server::federation::CrdtWorkUpdate {
@@ -11343,10 +11508,14 @@ impl Server {
             ) {
                 Ok(_) => {
                     if !update.span_provenance.is_empty() {
-                        self.otree_crdt.store_federated_provenance(
+                        let verified = self.verify_federated_span_provenance(
                             update.work_id,
-                            update.span_provenance.clone(),
+                            &update.span_provenance,
                         );
+                        if !verified.is_empty() {
+                            self.otree_crdt
+                                .store_federated_provenance(update.work_id, verified);
+                        }
                     }
                     applied += 1
                 }
@@ -11357,6 +11526,87 @@ impl Server {
             updates_applied: applied,
             updates_failed: failed,
         }
+    }
+
+    fn verify_federated_span_provenance(
+        &self,
+        work_id: BeId,
+        spans: &[crate::edition::SpanProvenance],
+    ) -> Vec<crate::edition::SpanProvenance> {
+        let edition = match self.otree_crdt.current_edition(work_id) {
+            Ok(e) => e,
+            Err(_) => {
+                tracing::warn!(
+                    work_id = ?work_id,
+                    "could not materialize edition for federated provenance verification; dropping all spans"
+                );
+                return Vec::new();
+            }
+        };
+        self.verify_span_provenance_against_edition(&edition, spans)
+    }
+
+    fn verify_span_provenance_against_edition(
+        &self,
+        edition: &Edition,
+        spans: &[crate::edition::SpanProvenance],
+    ) -> Vec<crate::edition::SpanProvenance> {
+        let all_entries = edition.all_entries();
+        let server_vk = self.server_keypair.signing_verifying_key().to_bytes();
+        let known_keys: std::collections::HashSet<[u8; 32]> = self
+            .clubs
+            .values()
+            .filter_map(|c| c.encrypted_signing_key().map(|k| k.verifying_key))
+            .collect();
+
+        let mut verified = Vec::new();
+        for sp in spans {
+            let fps: Vec<[u8; 32]> = all_entries
+                .iter()
+                .filter(|(pos, _)| *pos >= sp.start && *pos < sp.end)
+                .map(|(_, c)| c.element.content_fingerprint())
+                .collect();
+
+            if fps.is_empty() {
+                tracing::warn!(
+                    start = sp.start,
+                    end = sp.end,
+                    "dropping federated span with no matching elements"
+                );
+                continue;
+            }
+
+            if !crate::edition::provenance::verify_span_provenance(&sp.provenance, &fps) {
+                tracing::warn!(
+                    start = sp.start,
+                    end = sp.end,
+                    "dropping federated span with invalid signature"
+                );
+                continue;
+            }
+
+            if sp.provenance.author_public_key != server_vk
+                && !known_keys.contains(&sp.provenance.author_public_key)
+            {
+                tracing::warn!(
+                    start = sp.start,
+                    end = sp.end,
+                    "dropping federated span from unknown author key"
+                );
+                continue;
+            }
+
+            verified.push(sp.clone());
+        }
+        if verified.len() < spans.len() {
+            tracing::info!(
+                total = spans.len(),
+                verified = verified.len(),
+                rejected = spans.len() - verified.len(),
+                "filtered federated span provenance"
+            );
+        }
+        verified
     }
 
     pub fn server_verifying_key(&self) -> ed25519_dalek::VerifyingKey {
@@ -11371,11 +11621,16 @@ impl Server {
         &self,
         work_id: u64,
     ) -> Option<crate::server::transport::protocol::EditionPayload> {
-        self.works.get(&work_id).map(|ws| {
+        let ws = self.works.get(&work_id)?;
+        if ws.work.read_club() != Some(self.system_clubs.public_club) {
+            tracing::warn!(work_id = ?work_id, "federation ContentGet denied: work is not public");
+            return None;
+        }
+        Some(
             crate::server::transport::protocol::EditionPayload::from_edition(
                 ws.work.current_edition(),
-            )
-        })
+            ),
+        )
     }
 
     pub fn federation_get_blob(&self, content_hash_hex: &str) -> Option<(String, String)> {
@@ -11456,6 +11711,13 @@ impl Server {
             if let Some(work_ids) = self.backfollow.fingerprint_to_works().get(&fp) {
                 if let Some(&work_id) = work_ids.iter().next() {
                     if let Some(ws) = self.works.get(&work_id) {
+                        if ws.work.read_club() != Some(self.system_clubs.public_club) {
+                            tracing::warn!(
+                                work_id = ?work_id,
+                                "federation ContentFetch denied: work is not public"
+                            );
+                            return FederationFetchResponse::NotFound;
+                        }
                         let ed = ws.work.current_edition();
                         let payload =
                             crate::server::transport::protocol::EditionPayload::from_edition(&ed);
@@ -12119,48 +12381,303 @@ impl Server {
         work_id: Option<u64>,
         include_federation: bool,
     ) -> Result<String, String> {
-        let mut prov_document = serde_json::json!({
-            "prefix": {
-                "prov": "http://www.w3.org/ns/prov#",
-                "xsd": "http://www.w3.org/2001/XMLSchema#",
-                "xudanu": "http://xudanu.org/ns/prov#"
-            },
-            "entity": {},
-            "agent": {},
-            "activity": {},
-            "wasAssociatedWith": {},
-            "wasGeneratedBy": {},
-            "used": {},
-            "wasDerivedFrom": {}
-        });
+        use crate::edition::provenance::{
+            generate_prov_id, unix_to_iso8601, ProvActivity, ProvAgent, ProvAssociation,
+            ProvAttribution, ProvDerivation, ProvEntity, ProvGeneration, ProvJsonDocument,
+            ProvValue,
+        };
+
+        let mut doc = ProvJsonDocument::with_default_prefix();
 
         let server_id = self.federation_server_id();
         let timestamp = Self::current_timestamp_secs();
+        let verifying_key_hex =
+            Self::hex_encode(&self.server_keypair.signing_verifying_key().to_bytes());
 
-        let agent_id = format!("xudanu:server:{}", server_id);
-        let verifying_key = Self::hex_encode(&self.server_keypair.signing_verifying_key().to_bytes());
-        
-        prov_document["agent"] = serde_json::json!({
-            agent_id: {
-                "prov:type": "xudanu:Server",
-                "xudanu:serverId": server_id,
-                "xudanu:verifyingKey": verifying_key,
-                "xudanu:timestamp": timestamp
-            }
-        });
+        let server_agent_id = generate_prov_id("xudanu:server", &server_id);
+        {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("prov:type".to_string(), ProvValue::qname("xudanu:Server"));
+            attrs.insert("xudanu:serverId".to_string(), ProvValue::string(&server_id));
+            attrs.insert(
+                "xudanu:verifyingKey".to_string(),
+                ProvValue::typed(&verifying_key_hex, "xsd:hexBinary"),
+            );
+            doc.agent
+                .insert(server_agent_id.clone(), ProvAgent { attributes: attrs });
+        }
 
-        if include_federation {
-            let federation_bundle = self.federation.export_federation_bundle(&self.federation_server_id(), 0)
-                .map_err(|e| format!("Failed to export federation bundle: {}", e))?;
-            
-            if let Ok(prov_json_value) = self.federation.export_prov_json(&self.federation_server_id()) {
-                if let Some(bundles) = prov_json_value.get("bundle") {
-                    prov_document["bundle"] = bundles.clone();
+        if let Some(wid) = work_id {
+            if wid > 0 {
+                let wid_be = wid as BeId;
+
+                let title = self
+                    .works
+                    .get(&wid_be)
+                    .map(|ws| ws.title().to_string())
+                    .unwrap_or_else(|| format!("work:{:04x}", wid));
+                let revision = self
+                    .works
+                    .get(&wid_be)
+                    .map(|ws| ws.work.revision_count())
+                    .unwrap_or(0);
+
+                let text = self
+                    .works
+                    .get(&wid_be)
+                    .map(|ws| ws.work.current_edition().to_text())
+                    .unwrap_or_default();
+                let content_hash = {
+                    let mut h = blake3::Hasher::new();
+                    h.update(text.as_bytes());
+                    h.finalize().to_hex().to_string()
+                };
+
+                let doc_entity_id = generate_prov_id("xudanu:doc", &format!("{:04x}", wid));
+                {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("prov:type".to_string(), ProvValue::qname("xudanu:Document"));
+                    attrs.insert(
+                        "xudanu:workId".to_string(),
+                        ProvValue::string(&format!("{:04x}", wid)),
+                    );
+                    attrs.insert("xudanu:title".to_string(), ProvValue::string(&title));
+                    attrs.insert(
+                        "xudanu:revision".to_string(),
+                        ProvValue::typed(&revision.to_string(), "xsd:integer"),
+                    );
+                    attrs.insert(
+                        "xudanu:contentHash".to_string(),
+                        ProvValue::typed(&content_hash, "xsd:hexBinary"),
+                    );
+                    attrs.insert(
+                        "xudanu:charCount".to_string(),
+                        ProvValue::typed(&text.chars().count().to_string(), "xsd:integer"),
+                    );
+                    doc.entity
+                        .insert(doc_entity_id.clone(), ProvEntity { attributes: attrs });
+                }
+
+                let spans = self
+                    .attribution_query(wid_be, None, None)
+                    .unwrap_or_default();
+                for (i, span) in spans.iter().enumerate() {
+                    let span_entity_id = generate_prov_id(
+                        "xudanu:span",
+                        &format!("{}:{}:{}", wid, span.start, span.end),
+                    );
+                    let sig_hex = span
+                        .author_public_key
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<String>();
+                    let server_id_hex = span
+                        .server_id
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<String>();
+
+                    {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert(
+                            "prov:type".to_string(),
+                            ProvValue::qname("xudanu:ContentSpan"),
+                        );
+                        attrs.insert(
+                            "xudanu:charRange".to_string(),
+                            ProvValue::string(&format!("[{}, {})", span.start, span.end)),
+                        );
+                        attrs.insert(
+                            "xudanu:authorPublicKey".to_string(),
+                            ProvValue::typed(&sig_hex, "xsd:hexBinary"),
+                        );
+                        attrs.insert(
+                            "xudanu:signatureValid".to_string(),
+                            ProvValue::typed(&span.signature_valid.to_string(), "xsd:boolean"),
+                        );
+                        attrs.insert(
+                            "xudanu:timestamp".to_string(),
+                            ProvValue::typed(&span.timestamp.to_string(), "xsd:integer"),
+                        );
+                        attrs.insert(
+                            "xudanu:serverId".to_string(),
+                            ProvValue::typed(&server_id_hex, "xsd:hexBinary"),
+                        );
+                        if let Some(ref at) = span.author_type {
+                            attrs.insert("xudanu:authorType".to_string(), ProvValue::string(at));
+                        }
+                        if let Some(ref model) = span.llm_model {
+                            attrs.insert("xudanu:llmModel".to_string(), ProvValue::string(model));
+                        }
+                        if let Some(src) = span.source_work_id {
+                            attrs.insert(
+                                "xudanu:sourceWorkId".to_string(),
+                                ProvValue::string(&format!("{:04x}", src)),
+                            );
+                        }
+                        doc.entity
+                            .insert(span_entity_id.clone(), ProvEntity { attributes: attrs });
+                    }
+
+                    let author_name = span.author_display_name.as_deref().unwrap_or("unknown");
+                    let author_agent_id =
+                        generate_prov_id("xudanu:agent", &sig_hex[..16.min(sig_hex.len())]);
+                    if !doc.agent.contains_key(&author_agent_id) {
+                        let author_type = span.author_type.as_deref().unwrap_or("human");
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert(
+                            "prov:type".to_string(),
+                            ProvValue::qname(match author_type {
+                                "llm" => "xudanu:LLMAgent",
+                                "historical" => "prov:Person",
+                                _ => "prov:Person",
+                            }),
+                        );
+                        attrs.insert(
+                            "xudanu:displayName".to_string(),
+                            ProvValue::string(author_name),
+                        );
+                        attrs.insert(
+                            "xudanu:publicKey".to_string(),
+                            ProvValue::typed(&sig_hex, "xsd:hexBinary"),
+                        );
+                        if let Some(cid) = span.author_club_id {
+                            attrs.insert(
+                                "xudanu:clubId".to_string(),
+                                ProvValue::string(&format!("{:04x}", cid)),
+                            );
+                        }
+                        doc.agent
+                            .insert(author_agent_id.clone(), ProvAgent { attributes: attrs });
+                    }
+
+                    let attr_id = format!("xudanu:attr:{}:{}", wid, i);
+                    doc.wasAttributedTo.insert(
+                        attr_id,
+                        ProvAttribution {
+                            entity: span_entity_id.clone(),
+                            agent: author_agent_id.clone(),
+                            time: crate::edition::provenance::unix_to_iso8601(span.timestamp),
+                            attributes: std::collections::HashMap::new(),
+                        },
+                    );
+
+                    let activity_id =
+                        generate_prov_id("xudanu:signing", &format!("{}:{}", wid, span.timestamp));
+                    if !doc.activity.contains_key(&activity_id) {
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert(
+                            "prov:type".to_string(),
+                            ProvValue::qname("xudanu:ContentSigning"),
+                        );
+                        attrs.insert("xudanu:witness".to_string(), ProvValue::string(&server_id));
+                        doc.activity.insert(
+                            activity_id.clone(),
+                            ProvActivity {
+                                start_time: crate::edition::provenance::unix_to_iso8601(
+                                    span.timestamp,
+                                ),
+                                end_time: crate::edition::provenance::unix_to_iso8601(
+                                    span.timestamp,
+                                ),
+                                attributes: attrs,
+                            },
+                        );
+                    }
+
+                    let gen_id = format!("xudanu:gen:{}:{}", wid, i);
+                    doc.wasGeneratedBy.insert(
+                        gen_id,
+                        ProvGeneration {
+                            entity: span_entity_id.clone(),
+                            activity: Some(activity_id.clone()),
+                            time: crate::edition::provenance::unix_to_iso8601(span.timestamp),
+                            attributes: std::collections::HashMap::new(),
+                        },
+                    );
+
+                    let assoc_id = format!("xudanu:assoc:{}:{}", wid, i);
+                    doc.wasAssociatedWith.insert(
+                        assoc_id,
+                        ProvAssociation {
+                            activity: activity_id.clone(),
+                            agent: Some(server_agent_id.clone()),
+                            plan: None,
+                            role: Some(ProvValue::qname("witness")),
+                            attributes: std::collections::HashMap::new(),
+                        },
+                    );
+
+                    if let Some(ref chain) = span.provenance_chain {
+                        for (j, hop) in chain.iter().enumerate() {
+                            let derived_id = format!("xudanu:deriv:{}:{}:{}", wid, i, j);
+                            let src_entity = generate_prov_id(
+                                "xudanu:doc",
+                                &format!("{:04x}", hop.source_work_id),
+                            );
+                            doc.wasDerivedFrom.insert(
+                                derived_id,
+                                ProvDerivation {
+                                    generated_entity: span_entity_id.clone(),
+                                    activity: None,
+                                    usage: None,
+                                    generation: None,
+                                    used_entity: src_entity,
+                                    attributes: std::collections::HashMap::new(),
+                                },
+                            );
+                        }
+                    }
+                }
+
+                let log_status = self.attribution_log_status();
+                if let super::transport::protocol::ResponseValue::AttributionLogStatusResult {
+                    entry_count,
+                    chain_valid,
+                    ..
+                } = log_status
+                {
+                    let log_entity_id = format!("xudanu:log:{}", wid);
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert(
+                        "prov:type".to_string(),
+                        ProvValue::qname("xudanu:AttributionLog"),
+                    );
+                    attrs.insert(
+                        "xudanu:entryCount".to_string(),
+                        ProvValue::typed(&entry_count.to_string(), "xsd:integer"),
+                    );
+                    attrs.insert(
+                        "xudanu:chainValid".to_string(),
+                        ProvValue::typed(&chain_valid.to_string(), "xsd:boolean"),
+                    );
+                    attrs.insert(
+                        "xudanu:algorithm".to_string(),
+                        ProvValue::string("SHA-256 chained"),
+                    );
+                    doc.entity
+                        .insert(log_entity_id, ProvEntity { attributes: attrs });
                 }
             }
         }
 
-        serde_json::to_string_pretty(&prov_document)
+        if include_federation {
+            if let Ok(prov_json_value) = self
+                .federation
+                .export_prov_json(&self.federation_server_id())
+            {
+                if let Some(bundles) = prov_json_value.get("bundle") {
+                    if let Ok(bundle_map) = serde_json::from_value::<
+                        std::collections::HashMap<String, crate::edition::provenance::ProvBundle>,
+                    >(bundles.clone())
+                    {
+                        doc.bundle = Some(bundle_map);
+                    }
+                }
+            }
+        }
+
+        serde_json::to_string_pretty(&doc)
             .map_err(|e| format!("Failed to serialize PROV-JSON: {}", e))
     }
 
@@ -12170,15 +12687,17 @@ impl Server {
         bundle: crate::edition::provenance::FederationProvenanceBundle,
     ) -> Result<(), String> {
         use crate::edition::provenance::FederationAttestation;
-        
+
         for attestation in &bundle.attestations {
             if attestation.subject_server_id != self.federation_server_id() {
                 continue;
             }
-            
-            let verified = self.federation.verify_attestation(attestation)
+
+            let verified = self
+                .federation
+                .verify_attestation(attestation)
                 .map_err(|e| format!("Failed to verify attestation: {}", e))?;
-            
+
             if verified {
                 tracing::info!(
                     "Verified federation attestation from {} for type '{}'",
@@ -12204,15 +12723,25 @@ impl Server {
         requesting_server_id: String,
     ) -> Result<crate::edition::provenance::FederationAttestation, String> {
         use crate::edition::provenance::FederationAttestation;
-        
+
         if !self.federation.membership().is_member(&subject_server_id) {
-            return Err(format!("Subject server {} is not a federation member", subject_server_id));
+            return Err(format!(
+                "Subject server {} is not a federation member",
+                subject_server_id
+            ));
         }
-        
-        if !self.federation.membership().is_member(&requesting_server_id) {
-            return Err(format!("Requesting server {} is not a federation member", requesting_server_id));
+
+        if !self
+            .federation
+            .membership()
+            .is_member(&requesting_server_id)
+        {
+            return Err(format!(
+                "Requesting server {} is not a federation member",
+                requesting_server_id
+            ));
         }
-        
+
         self.federation.create_attestation(
             attestation_type,
             subject_server_id,
@@ -12228,7 +12757,7 @@ impl Server {
         if attestation.subject_server_id != self.federation_server_id() {
             return Ok(false);
         }
-        
+
         self.federation.verify_attestation(attestation)
     }
 
@@ -12241,13 +12770,19 @@ impl Server {
     ) -> Result<(), String> {
         use crate::edition::provenance::ClusterVerificationActivity;
         use std::collections::HashMap;
-        
+
         if !self.federation.membership().is_member(&verifying_server_id) {
-            return Err(format!("Verifying server {} is not a federation member", verifying_server_id));
+            return Err(format!(
+                "Verifying server {} is not a federation member",
+                verifying_server_id
+            ));
         }
-        
-        let activity_id = format!("xudanu:cluster_verification:{}:{}", verifying_server_id, timestamp);
-        
+
+        let activity_id = format!(
+            "xudanu:cluster_verification:{}:{}",
+            verifying_server_id, timestamp
+        );
+
         let activity = ClusterVerificationActivity::new(
             activity_id.clone(),
             consensus_type.clone(),
@@ -12257,12 +12792,14 @@ impl Server {
             consensus_type.clone(),
             true,
         );
-        
+
         tracing::info!(
             "Recorded cluster verification activity {} from {} with consensus_type '{}'",
-            activity_id, verifying_server_id, consensus_type
+            activity_id,
+            verifying_server_id,
+            consensus_type
         );
-        
+
         Ok(())
     }
 
@@ -12273,31 +12810,41 @@ impl Server {
         activity_id: &str,
     ) -> Result<Vec<(String, crate::edition::provenance::ProvAssociation)>, String> {
         let mut associations = Vec::new();
-        
+
         for sig in signatures {
             let server_id_hex = crate::crypto::keys::hex_encode(&sig.server_id);
-            let agent_id = crate::edition::provenance::generate_prov_id("xudanu:server", &server_id_hex[..8]);
+            let agent_id =
+                crate::edition::provenance::generate_prov_id("xudanu:server", &server_id_hex[..8]);
             let assoc_id = format!("{}:assoc:{}", activity_id, server_id_hex);
-            
+
             let mut attributes = std::collections::HashMap::new();
             attributes.insert(
                 "xudanu:signature".to_string(),
-                crate::edition::provenance::ProvValue::typed(&crate::crypto::keys::hex_encode(&sig.signature), "xsd:hexBinary")
+                crate::edition::provenance::ProvValue::typed(
+                    &crate::crypto::keys::hex_encode(&sig.signature),
+                    "xsd:hexBinary",
+                ),
             );
             attributes.insert(
                 "xudanu:timestamp".to_string(),
-                crate::edition::provenance::ProvValue::typed(&sig.timestamp.to_string(), "xsd:integer")
+                crate::edition::provenance::ProvValue::typed(
+                    &sig.timestamp.to_string(),
+                    "xsd:integer",
+                ),
             );
-            
-            associations.push((assoc_id, crate::edition::provenance::ProvAssociation {
-                activity: activity_id.to_string(),
-                agent: Some(agent_id),
-                plan: None,
-                role: Some("verifier".to_string()),
-                attributes,
-            }));
+
+            associations.push((
+                assoc_id,
+                crate::edition::provenance::ProvAssociation {
+                    activity: activity_id.to_string(),
+                    agent: Some(agent_id),
+                    plan: None,
+                    role: Some(crate::edition::provenance::ProvValue::qname("verifier")),
+                    attributes,
+                },
+            ));
         }
-        
+
         Ok(associations)
     }
 
@@ -12307,16 +12854,17 @@ impl Server {
         consensus: &crate::edition::provenance::ClusterConsensus,
         base_provenance: &crate::edition::provenance::Provenance,
     ) -> Result<(String, crate::edition::provenance::ProvBundle), String> {
-        let bundle_id = crate::edition::provenance::generate_federation_bundle_id(base_provenance.timestamp);
-        
+        let bundle_id =
+            crate::edition::provenance::generate_federation_bundle_id(base_provenance.timestamp);
+
         let (bundle_id_str, bundle) = consensus.to_prov_bundle(bundle_id.clone(), base_provenance);
-        
+
         tracing::info!(
             "Created PROV bundle {} for cluster consensus with {} verifications",
             bundle_id_str,
             consensus.verifications.len()
         );
-        
+
         Ok((bundle_id_str, bundle))
     }
 
@@ -12332,14 +12880,11 @@ impl Server {
             self.federation.get_min_endorsements(),
             self.federation.get_membership_status().to_string(),
         );
-        
+
         let entity = metadata.to_prov_entity();
-        
-        tracing::debug!(
-            "Exported federation metadata as PROV entity: {}",
-            entity.0
-        );
-        
+
+        tracing::debug!("Exported federation metadata as PROV entity: {}", entity.0);
+
         Ok(entity)
     }
 
@@ -12348,7 +12893,7 @@ impl Server {
         &self,
     ) -> Result<Vec<(String, crate::edition::provenance::ProvAgent)>, String> {
         let mut agents = Vec::new();
-        
+
         for member in self.federation.membership().active_members() {
             let server_agent = crate::edition::provenance::FederationServerAgent::new(
                 member.server_id.clone(),
@@ -12358,15 +12903,15 @@ impl Server {
                 member.endorsement_count(),
                 member.joined_at,
             );
-            
+
             agents.push(server_agent.to_prov_agent());
         }
-        
+
         tracing::debug!(
             "Exported {} federation server agents as PROV agents",
             agents.len()
         );
-        
+
         Ok(agents)
     }
 
@@ -12379,17 +12924,17 @@ impl Server {
         for activity in activities {
             let (activity_id, prov_activity) = activity.to_prov_activity();
             prov_doc.activity.insert(activity_id.clone(), prov_activity);
-            
+
             for (assoc_id, association) in activity.to_prov_associations() {
                 prov_doc.wasAssociatedWith.insert(assoc_id, association);
             }
         }
-        
+
         tracing::info!(
             "Integrated {} cluster verification activities into PROV document",
             activities.len()
         );
-        
+
         Ok(())
     }
 
@@ -12400,21 +12945,24 @@ impl Server {
         attestation_type: String,
     ) -> Result<crate::edition::provenance::FederationAttestation, String> {
         if !self.federation.membership().is_member(target_server_id) {
-            return Err(format!("Target server {} is not a federation member", target_server_id));
+            return Err(format!(
+                "Target server {} is not a federation member",
+                target_server_id
+            ));
         }
-        
+
         let attestation = self.federation.create_attestation(
             attestation_type,
             target_server_id.to_string(),
             &self.server_keypair.signing_key,
         )?;
-        
+
         tracing::info!(
             "Created cross-server attestation for {} from server {}",
             target_server_id,
             self.federation_server_id()
         );
-        
+
         Ok(attestation)
     }
 
@@ -12426,13 +12974,17 @@ impl Server {
         if attestation.attester_server_id == self.federation_server_id() {
             return Ok(false);
         }
-        
-        if !self.federation.membership().is_member(&attestation.attester_server_id) {
+
+        if !self
+            .federation
+            .membership()
+            .is_member(&attestation.attester_server_id)
+        {
             return Ok(false);
         }
-        
+
         let verified = self.federation.verify_attestation(attestation)?;
-        
+
         if verified {
             tracing::info!(
                 "Verified cross-server attestation from {} for type '{}'",
@@ -12445,7 +12997,7 @@ impl Server {
                 attestation.attester_server_id
             );
         }
-        
+
         Ok(verified)
     }
 
@@ -12454,12 +13006,12 @@ impl Server {
         &self,
     ) -> Result<Vec<crate::edition::provenance::ClusterVerificationActivity>, String> {
         let activities = self.federation.get_governance_activities();
-        
+
         tracing::debug!(
             "Exported {} governance activities from federation state",
             activities.len()
         );
-        
+
         Ok(activities)
     }
 
@@ -12477,14 +13029,14 @@ impl Server {
             consensus_type,
             threshold_met,
         )?;
-        
+
         tracing::info!(
             "Created cluster verification activity with {} verifying servers, consensus_type='{}', threshold_met={}",
             activity.verifying_servers.len(),
             activity.consensus_type,
             activity.threshold_met
         );
-        
+
         Ok(activity)
     }
 }
@@ -12625,6 +13177,12 @@ pub(crate) mod persist_snapshot {
         trail_id: BeId,
         owner_club: BeId,
         name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        introduction: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        categories: Vec<String>,
+        #[serde(default)]
+        published: bool,
         stops: Vec<TrailStopSnapshot>,
         created_at: u64,
         updated_at: u64,
@@ -12783,6 +13341,9 @@ pub(crate) mod persist_snapshot {
                         trail_id: t.trail_id,
                         owner_club: t.owner_club,
                         name: t.name.clone(),
+                        introduction: t.introduction.clone(),
+                        categories: t.categories.clone(),
+                        published: t.published,
                         stops: t
                             .stops
                             .iter()
@@ -12886,6 +13447,9 @@ pub(crate) mod persist_snapshot {
                                 trail_id: ts.trail_id,
                                 owner_club: ts.owner_club,
                                 name: ts.name.clone(),
+                                introduction: ts.introduction.clone(),
+                                categories: ts.categories.clone(),
+                                published: ts.published,
                                 stops: ts
                                     .stops
                                     .iter()
@@ -13245,6 +13809,9 @@ pub(crate) mod persist_snapshot {
                     trail_id: t.trail_id,
                     owner_club: t.owner_club,
                     name: t.name.clone(),
+                    introduction: t.introduction.clone(),
+                    categories: t.categories.clone(),
+                    published: t.published,
                     stops: t
                         .stops
                         .iter()
@@ -13669,6 +14236,9 @@ pub(crate) mod persist_snapshot {
                         trail_id: t.trail_id,
                         owner_club: t.owner_club,
                         name: t.name.clone(),
+                        introduction: t.introduction.clone(),
+                        categories: t.categories.clone(),
+                        published: t.published,
                         stops: t
                             .stops
                             .iter()
@@ -22561,7 +23131,9 @@ mod tests {
             let doc1 = server.create_work(sid, Edition::from_text("doc1")).unwrap();
             let doc2 = server.create_work(sid, Edition::from_text("doc2")).unwrap();
 
-            let trail = server.trail_create(sid, "My Trail".to_string()).unwrap();
+            let trail = server
+                .trail_create(sid, "My Trail".to_string(), None, vec![])
+                .unwrap();
             server
                 .trail_add_stop(sid, trail, doc1, None, None, None)
                 .unwrap();
@@ -22780,8 +23352,12 @@ mod tests {
         server.login_public(sid).unwrap();
 
         // Create
-        let t1 = server.trail_create(sid, "Trail One".to_string()).unwrap();
-        let t2 = server.trail_create(sid, "Trail Two".to_string()).unwrap();
+        let t1 = server
+            .trail_create(sid, "Trail One".to_string(), None, vec![])
+            .unwrap();
+        let t2 = server
+            .trail_create(sid, "Trail Two".to_string(), None, vec![])
+            .unwrap();
 
         // List
         let trails = server.trail_list(sid).unwrap();
@@ -22848,7 +23424,9 @@ mod tests {
         let doc = server
             .create_work(sid, Edition::from_text("Hello world."))
             .unwrap();
-        let trail = server.trail_create(sid, "Selections".to_string()).unwrap();
+        let trail = server
+            .trail_create(sid, "Selections".to_string(), None, vec![])
+            .unwrap();
         server
             .trail_add_stop(
                 sid,
@@ -22872,7 +23450,9 @@ mod tests {
         let sid = server.connect();
         server.login_public(sid).unwrap();
         let doc = server.create_work(sid, Edition::from_text("doc")).unwrap();
-        let trail = server.trail_create(sid, "T".to_string()).unwrap();
+        let trail = server
+            .trail_create(sid, "T".to_string(), None, vec![])
+            .unwrap();
 
         let before = server.trail_get(sid, trail).unwrap().updated_at;
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -23333,7 +23913,9 @@ mod tests {
 
             server.checkpoint_to_store().unwrap();
 
-            let trail = server.trail_create(sid, "My Trail".to_string()).unwrap();
+            let trail = server
+                .trail_create(sid, "My Trail".to_string(), None, vec![])
+                .unwrap();
             server
                 .trail_add_stop(sid, trail, doc1, None, None, None)
                 .unwrap();
@@ -23389,7 +23971,9 @@ mod tests {
             server.login_public(sid).unwrap();
             server.create_work(sid, Edition::from_text("doc")).unwrap();
 
-            let trail = server.trail_create(sid, "Delete Me".to_string()).unwrap();
+            let trail = server
+                .trail_create(sid, "Delete Me".to_string(), None, vec![])
+                .unwrap();
             server.checkpoint_to_store().unwrap();
 
             server.trail_delete(sid, trail).unwrap();
@@ -23482,7 +24066,9 @@ mod tests {
             server.work_star(sid, doc2).unwrap();
             server.work_unstar(sid, doc1).unwrap();
 
-            let trail = server.trail_create(sid, "Trail".to_string()).unwrap();
+            let trail = server
+                .trail_create(sid, "Trail".to_string(), None, vec![])
+                .unwrap();
             server
                 .trail_add_stop(sid, trail, doc1, None, None, None)
                 .unwrap();
@@ -26445,6 +27031,90 @@ mod tests {
         assert!(end_names.contains(&"RightEnd"), "should have RightEnd");
         assert!(end_names.contains(&"Footnote"), "should have Footnote");
         assert_eq!(end_names.len(), 3, "should have exactly 3 ends");
+    }
+
+    #[test]
+    fn backlinks_finds_incoming_link() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("original passage here"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("a comment on the passage"))
+            .unwrap();
+
+        let o_ref = crate::edition::links::HyperRef::single(
+            Some(Edition::from_text("original passage")),
+            Some(work_a),
+            None,
+            None,
+        )
+        .with_span(Some(0), Some(16));
+        let d_ref = crate::edition::links::HyperRef::single(
+            Some(Edition::from_text("a comment")),
+            Some(work_b),
+            None,
+            None,
+        )
+        .with_span(Some(0), Some(9));
+        let link_id = server
+            .create_link(sid, work_a, work_b, Some(o_ref), Some(d_ref))
+            .unwrap();
+
+        let backlinks = server.find_backlinks(sid, work_b).unwrap();
+        assert_eq!(backlinks.len(), 1, "work_b should have one backlink");
+        let bl = &backlinks[0];
+        assert_eq!(bl.source_work_id, work_a);
+        assert_eq!(bl.link_id, link_id);
+        assert_eq!(bl.link_type, "hyperlink_incoming");
+        assert!(
+            bl.excerpt.as_ref().map(|t| !t.is_empty()).unwrap_or(false),
+            "excerpt should be populated from origin end"
+        );
+    }
+
+    #[test]
+    fn backlinks_finds_outgoing_link() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("source text"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("target text"))
+            .unwrap();
+        let _link_id = server.create_link(sid, work_a, work_b, None, None).unwrap();
+
+        let backlinks = server.find_backlinks(sid, work_a).unwrap();
+        assert_eq!(backlinks.len(), 1, "work_a should report its outgoing link");
+        assert_eq!(backlinks[0].source_work_id, work_b);
+        assert_eq!(backlinks[0].link_type, "hyperlink_outgoing");
+    }
+
+    #[test]
+    fn backlinks_empty_for_isolated_work() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server.create_work(sid, Edition::from_text("a")).unwrap();
+        let work_c = server.create_work(sid, Edition::from_text("c")).unwrap();
+        let _lid = server.create_link(sid, work_a, work_c, None, None).unwrap();
+        let work_x = server.create_work(sid, Edition::from_text("x")).unwrap();
+
+        let backlinks = server.find_backlinks(sid, work_x).unwrap();
+        assert!(backlinks.is_empty(), "isolated work has no backlinks");
+    }
+
+    #[test]
+    fn backlinks_dedupes_per_source_work() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("alpha"))
+            .unwrap();
+        let work_b = server.create_work(sid, Edition::from_text("beta")).unwrap();
+        let _l1 = server.create_link(sid, work_a, work_b, None, None).unwrap();
+        let _l2 = server.create_link(sid, work_a, work_b, None, None).unwrap();
+
+        let backlinks = server.find_backlinks(sid, work_b).unwrap();
+        assert_eq!(backlinks.len(), 1, "deduped to one entry per source work");
+        assert_eq!(backlinks[0].source_work_id, work_a);
     }
 
     #[test]

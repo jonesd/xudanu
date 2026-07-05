@@ -99,6 +99,26 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
 .hero-notif:hover{border-color:#f85149;box-shadow:0 8px 24px rgba(248,81,73,0.15)}
 .hero-notif .hero-tag{background:rgba(248,81,73,0.15);color:#f85149}
 
+.hero-ent{border-color:#39d2c0}
+.hero-ent::before{background:linear-gradient(90deg,#39d2c0,#58a6ff)}
+.hero-ent:hover{border-color:#39d2c0;box-shadow:0 8px 24px rgba(57,210,192,0.15)}
+.hero-ent .hero-tag{background:rgba(57,210,192,0.15);color:#39d2c0}
+
+.hero-space{border-color:#a371f7}
+.hero-space::before{background:linear-gradient(90deg,#a371f7,#39d2c0)}
+.hero-space:hover{border-color:#a371f7;box-shadow:0 8px 24px rgba(163,113,247,0.15)}
+.hero-space .hero-tag{background:rgba(163,113,247,0.15);color:#a371f7}
+
+.hero-prov{border-color:#d29922}
+.hero-prov::before{background:linear-gradient(90deg,#d29922,#a371f7)}
+.hero-prov:hover{border-color:#d29922;box-shadow:0 8px 24px rgba(210,153,34,0.15)}
+.hero-prov .hero-tag{background:rgba(210,153,34,0.15);color:#d29922}
+
+.hero-trust{border-color:#f85149}
+.hero-trust::before{background:linear-gradient(90deg,#f85149,#d29922)}
+.hero-trust:hover{border-color:#f85149;box-shadow:0 8px 24px rgba(248,81,73,0.15)}
+.hero-trust .hero-tag{background:rgba(248,81,73,0.15);color:#f85149}
+
 .footer{margin-top:64px;padding-top:20px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
 
 @media(max-width:640px){
@@ -338,6 +358,11 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
         <p>How content reuse is detected, indexed, and queried across documents: BLAKE3 fingerprinting, Bert Canopy tree, Recorder pub/sub, Hoist propagation, and Backfollow queries. The core intellectual property of Xanadu.</p>
         <span class="hero-tag">9 sections &middot; 3 diagrams</span>
       </div>
+      <div class="hero-card hero-editions">
+        <h3><a href="links-and-backlinks.html">Links &amp; Backlinks</a></h3>
+        <p>Nelson's typed, bidirectional, unbreakable connections between passages. The five link types (Comment, Reference, Disagreement, Quotation, See Also), the two-part creation flow, backlinks, span migration, and profuse overlapping links &mdash; with code examples and canvas-render diagrams.</p>
+        <span class="hero-tag">14 sections &middot; 9 diagrams</span>
+      </div>
       <div class="hero-card hero-arch">
         <h3><a href="collaborative-editing.html">Collaborative Editing</a></h3>
         <p>Real-time multi-user editing with O-tree CRDT, Ed25519-signed author attribution, awareness state (cursors/selections), three-way merge fallback, and LLM-assisted change narration.</p>
@@ -352,6 +377,26 @@ h1{font-size:36px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing
         <h3><a href="wire-protocol.html">Wire Protocol</a></h3>
         <p>The complete 140+ operation WebSocket API: message framing, JSON and binary codecs, connection lifecycle, real-time subscriptions, and security features. The integration surface for building clients.</p>
         <span class="hero-tag">8 sections &middot; 1 diagram</span>
+      </div>
+      <div class="hero-card hero-ent">
+        <h3><a href="ent-dagwood-trace-dag.html">Ent, DagWood &amp; Trace DAG</a></h3>
+        <p>The versioning spine adapted from Udanax-Gold C++: partial-order TracePositions, Root/Tree/Dag branch topologies, the navigation cache (max-over-paths), assertion-based content with 13 payload types, conflict-preserving AlternativeSet materialization, the H-Tree, and the bridge to the Edition model &mdash; with code examples and SVG diagrams.</p>
+        <span class="hero-tag">18 sections &middot; 7 diagrams</span>
+      </div>
+      <div class="hero-card hero-space">
+        <h3><a href="space-algebra.html">The Space Algebra</a></h3>
+        <p>The mathematical foundation underlying every position, region, span, mapping, and address in Xudanu. The four core traits (Space, Position, Region, Dsp), the transition-set representation, the seven concrete spaces (Integer, Real, Sequence/Tumbler, CrossSpace2, CrossSpaceN, FilterSpace), span migration, shared-content detection, and tumbler addressing for federation &mdash; explained from the ground up for developers.</p>
+        <span class="hero-tag">20 sections &middot; 9 diagrams</span>
+      </div>
+      <div class="hero-card hero-prov">
+        <h3><a href="provenance-and-attribution.html">Provenance &amp; Cryptographic Attribution</a></h3>
+        <p>How Xudanu answers "who wrote this?" at the character level. Ed25519 span signing, content fingerprints, domain separation, the materialization pipeline, transclusion attribution, historical attestation for imported texts, the tamper-evident SHA-256-chained attribution log, provenance ancestry walks, exportable attestation reports, and federation cluster consensus with W3C PROV-JSON export.</p>
+        <span class="hero-tag">23 sections &middot; 7 diagrams</span>
+      </div>
+      <div class="hero-card hero-trust">
+        <h3><a href="federation-trust-analysis.html">Federation Trust Boundary Analysis</a></h3>
+        <p>A security audit of the multi-server federation layer. Maps seven trust boundaries from connection admission through governance, catalogs 14 authorization gaps by severity (CRITICAL/HIGH/MEDIUM/LOW), and provides a phased remediation roadmap to align federation access control with the single-server club model. Includes safe deployment patterns for current-state operation.</p>
+        <span class="hero-tag">13 sections &middot; 3 diagrams &middot; 14 gaps catalogued</span>
       </div>
     </div>
   </div>

@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Links &amp; Backlinks &mdash; Xudanu Developer Guide</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+.example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
+.example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.fast{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
+.naive{color:#f85149;font-family:'JetBrains Mono',monospace}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.toc .toc-sub{padding-left:16px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-cyan{color:#39d2c0}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0;font-size:12px;color:#8b949e}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+ol{margin-left:24px;margin-bottom:16px}
+.kw{color:#ff7b72}
+.str{color:#a5d6ff}
+.num{color:#79c0ff}
+.com{color:#8b949e;font-style:italic}
+.fn{color:#d2a8ff}
+.typ{color:#ffa657}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}.fast{color:#16a34a}.naive{color:#dc2626}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}.two-col{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Links &amp; Backlinks</h1>
+<p class="subtitle">Xudanu's typed, bidirectional, unbreakable connections between passages &mdash; the defining feature of Nelson-style hypertext. How to create them, render them, and navigate them consistently.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. Nelson's Two-Connection Model</a>
+  <a class="toc-section" href="#s2">2. The Data Model: HyperLink, HyperRef, Spans</a>
+  <a class="toc-section" href="#s3">3. Link Types &amp; Their Visual Style</a>
+  <a class="toc-section" href="#s4">4. The Client API (<code>crdt_sync.ts</code>)</a>
+  <a class="toc-section" href="#s5">5. The <code>useTransclusion</code> Hook</a>
+  <a class="toc-section" href="#s6">6. Example A: Create a Typed Comment Link</a>
+  <a class="toc-section" href="#s7">7. Example B: Transclusion (Same Content, Two Places)</a>
+  <a class="toc-section" href="#s8">8. Example C: Backlinks &mdash; Who Links Into You</a>
+  <a class="toc-section" href="#s9">9. Example D: Disagreement Links &amp; Structured Dissent</a>
+  <a class="toc-section" href="#s10">10. Example E: Profuse Overlapping Links + Density</a>
+  <a class="toc-section" href="#s11">11. Rendering: How Markers Paint on the Canvas</a>
+  <a class="toc-section" href="#s12">12. Span Migration: Links Survive Edits</a>
+  <a class="toc-section" href="#s13">13. Consistency Guidelines &amp; Gotchas</a>
+  <a class="toc-section" href="#s14">14. Source Code Map</a>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 1 -->
+<!-- ============================================================ -->
+<h2 id="s1">1. Nelson's Two-Connection Model</h2>
+
+<p>
+Xudanu implements Ted Nelson's fundamental distinction between <strong>two kinds of connections</strong>. They share the same <code>HyperLink</code> data model but serve opposite purposes. Getting this distinction straight is the single most important thing for new developers.
+</p>
+
+<table>
+  <tr><th>&nbsp;</th><th>Transclusion</th><th>Content Link</th></tr>
+  <tr><td><strong>Connects</strong></td><td>The <em>same</em> content in multiple places</td><td><em>Different</em> content with a typed relationship</td></tr>
+  <tr><td><strong>Example</strong></td><td>A quotation appears in 3 documents</td><td>A comment on a passage; a cross-reference</td></tr>
+  <tr><td><strong>Data signal</strong></td><td>Matching content fingerprint</td><td><code>link_types: Vec&lt;u64&gt;</code> (typed)</td></tr>
+  <tr><td><strong>UI today</strong></td><td>Margin bars + inline resolved spans</td><td>Coloured typed markers (this guide)</td></tr>
+  <tr><td><strong>Survives edits</strong></td><td>Yes (span migration)</td><td>Yes (span migration)</td></tr>
+</table>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrG1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrB1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#58a6ff"/></marker>
+    <marker id="arrR1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#f85149"/></marker>
+  </defs>
+
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">Transclusion vs Content Link</text>
+
+  <!-- Work A -->
+  <rect x="40" y="50" width="220" height="120" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="150" y="72" text-anchor="middle" fill="#8b949e" font-size="11" font-weight="600">Work A — "Essay on privacy"</text>
+  <rect x="60" y="90" width="180" height="24" rx="3" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1"/>
+  <text x="150" y="106" text-anchor="middle" fill="#3fb950" font-size="11" font-family="'JetBrains Mono',monospace">"privacy is a human right"</text>
+  <text x="150" y="150" text-anchor="middle" fill="#484f58" font-size="10">the canonical source span</text>
+
+  <!-- Work B (transclusion) -->
+  <rect x="520" y="50" width="220" height="120" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="630" y="72" text-anchor="middle" fill="#8b949e" font-size="11" font-weight="600">Work B — "Newsletter"</text>
+  <rect x="540" y="90" width="180" height="24" rx="3" fill="rgba(63,185,80,0.12)" stroke="#3fb950" stroke-width="1"/>
+  <text x="630" y="106" text-anchor="middle" fill="#3fb950" font-size="11" font-family="'JetBrains Mono',monospace">"privacy is a human right"</text>
+  <text x="630" y="150" text-anchor="middle" fill="#3fb950" font-size="10">SAME bytes — a copy</text>
+
+  <!-- Transclusion arrow (green, same content) -->
+  <line x1="240" y1="102" x2="540" y2="102" stroke="#3fb950" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrG1)"/>
+  <text x="390" y="94" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">transclusion (identical content)</text>
+
+  <!-- Work C (comment link) -->
+  <rect x="200" y="210" width="380" height="90" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="390" y="232" text-anchor="middle" fill="#8b949e" font-size="11" font-weight="600">Work C — "Reviewer notes"</text>
+  <rect x="220" y="248" width="340" height="26" rx="3" fill="rgba(88,166,255,0.10)" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="390" y="265" text-anchor="middle" fill="#58a6ff" font-size="11" font-family="'JetBrains Mono',monospace">"this claim is contested in case law"</text>
+  <text x="390" y="290" text-anchor="middle" fill="#58a6ff" font-size="10">DIFFERENT text — linked by type: Comment</text>
+
+  <!-- Link arrows from A and B into C -->
+  <line x1="150" y1="170" x2="300" y2="210" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrB1)"/>
+  <line x1="630" y1="170" x2="480" y2="210" stroke="#f85149" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrR1)"/>
+  <text x="215" y="200" fill="#58a6ff" font-size="10">Comment</text>
+  <text x="510" y="200" fill="#f85149" font-size="10">Disagreement</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 1: A transclusion (green) copies identical content between works. A content link (blue/red) connects different content with a typed relationship. A single document can have both.</p>
+
+<div class="gold">
+<strong>Xanalogical principle.</strong> "A link can apply to any content, wherever the content may be re-used" and "thousands of overlapping links on the same body of content, created without coordination by many users." &mdash; Ted Nelson. Links are profuse, typed, and bidirectional by design.
+</div>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 2 -->
+<!-- ============================================================ -->
+<h2 id="s2">2. The Data Model: HyperLink, HyperRef, Spans</h2>
+
+<p>
+Every connection &mdash; transclusion or typed link &mdash; is a <strong>HyperLink</strong>. A HyperLink has two (or more) named <strong>ends</strong>, conventionally <code>"LeftEnd"</code> (origin) and <code>"RightEnd"</code> (destination). Each end is a <strong>HyperRef</strong> that points at a specific span inside a specific work.
+</p>
+
+<pre><span class="kw">pub struct</span> <span class="typ">HyperLink</span> {
+    ends: <span class="typ">HashMap</span>&lt;<span class="typ">String</span>, <span class="typ">HyperRef</span>&gt;,   <span class="com">// "LeftEnd" → origin, "RightEnd" → destination</span>
+    link_types: <span class="typ">Vec</span>&lt;<span class="kw">u64</span>&gt;,             <span class="com">// empty = pure transclusion; non-empty = typed link</span>
+}
+
+<span class="kw">pub struct</span> <span class="typ">HyperRef</span> {
+    kind: <span class="typ">HyperRefKind</span>,             <span class="com">// "single" = a span inside one work</span>
+    work_context: <span class="typ">Option</span>&lt;<span class="typ">BeId</span>&gt;,        <span class="com">// which work this end points into</span>
+    excerpt: <span class="typ">Option</span>&lt;<span class="typ">Edition</span>&gt;,         <span class="com">// a copy of the span text (fallback for search)</span>
+    start_position: <span class="typ">Option</span>&lt;<span class="kw">i64</span>&gt;,       <span class="com">// canonical char offset (preferred)</span>
+    end_position: <span class="typ">Option</span>&lt;<span class="kw">i64</span>&gt;,         <span class="com">// canonical char offset (preferred)</span>
+    provenance_chain: <span class="typ">Vec</span>&lt;<span class="typ">ProvenanceHop</span>&gt;,
+}</pre>
+
+<div class="note">
+<strong>The two ways a marker finds its position.</strong> A HyperRef carries (a) canonical <code>start_position</code> / <code>end_position</code> char offsets, <em>and</em> (b) an <code>excerpt</code> of the text. The frontend prefers the stored span; if absent it falls back to <code>find_excerpt_positions</code> (a text search). <strong>Always pass <code>start</code>/<code>end</code> when creating a link</strong> &mdash; the excerpt search is ambiguous when the same phrase appears twice.
+</div>
+
+<h3>Wire operations</h3>
+<p>The client sends these op strings over the WebSocket. The opcodes live in <code>protocol.rs</code>:</p>
+
+<table>
+  <tr><th>Client op</th><th>Opcode</th><th>Purpose</th></tr>
+  <tr><td><code>link_create</code></td><td><span class="mono">0x0701</span></td><td>Create a HyperLink with origin/destination refs</td></tr>
+  <tr><td><code>link_get</code></td><td><span class="mono">0x0702</span></td><td>Fetch one link with both ends + titles</td></tr>
+  <tr><td><code>link_list_for_work</code></td><td><span class="mono">0x0705</span></td><td>All links touching a work (both directions)</td></tr>
+  <tr><td><code>link_delete</code></td><td><span class="mono">0x0704</span></td><td>Remove a link</td></tr>
+  <tr><td><code>link_set_types</code></td><td><span class="mono">0x0709</span></td><td>Assign typed <code>link_types</code> to a link</td></tr>
+  <tr><td><code>link_type_list</code></td><td><span class="mono">0x070B</span></td><td>List registered type ids + names</td></tr>
+  <tr><td><code>work_backlinks</code></td><td><span class="mono">0x0343</span></td><td>Incoming + outgoing links for a work</td></tr>
+  <tr><td><code>find_excerpt_positions</code></td><td><span class="mono">0x0706</span></td><td>Recover span offsets from excerpt text (fallback)</td></tr>
+</table>
+
+<div class="warning">
+<strong>Opcode correction.</strong> Earlier internal docs cited <code>LinkCreate = 0x0706</code>. That was wrong &mdash; <code>0x0706</code> is <code>FindExcerptPositions</code>. <code>LinkCreate</code> is <span class="mono">0x0701</span>. Custom type registration (<code>LinkTypeRegister</code>, <span class="mono">0x070A</span>) exists on the server via <code>register_link_type(type_id, name)</code> but is not yet exposed as a client method &mdash; the frontend ships with five built-in types.
+</div>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 3 -->
+<!-- ============================================================ -->
+<h2 id="s3">3. Link Types &amp; Their Visual Style</h2>
+
+<p>
+Five default types are pre-registered (see <code>DEFAULT_LINK_TYPES</code> in <code>useTransclusion.ts</code> and <code>LINK_TYPE_STYLES</code> in <code>CollaborativeEditor.tsx</code>). The colour and dash pattern are the contract &mdash; use them everywhere consistently.
+</p>
+
+<table>
+  <tr><th>ID</th><th>Name</th><th>Colour</th><th>Underline style</th><th>Typical use</th></tr>
+  <tr><td><code>1</code></td><td><span class="accent-blue">Comment</span></td><td><span class="mono">#58a6ff</span></td><td>dashed <span class="mono">[4,3]</span></td><td>Annotate a passage; scholarly note</td></tr>
+  <tr><td><code>2</code></td><td><span class="accent-green">Reference</span></td><td><span class="mono">#3fb950</span></td><td>solid <span class="mono">[]</span></td><td>Cross-reference, citation, "see this"</td></tr>
+  <tr><td><code>3</code></td><td><span class="accent-red">Disagreement</span></td><td><span class="mono">#f85149</span></td><td>long dash <span class="mono">[8,3]</span></td><td>Mark a contested claim; counter-argument</td></tr>
+  <tr><td><code>4</code></td><td><span class="accent-purple">Quotation</span></td><td><span class="mono">#a371f7</span></td><td>dotted <span class="mono">[1,3]</span></td><td>This passage quotes another</td></tr>
+  <tr><td><code>5</code></td><td><span class="accent-amber">See Also</span></td><td><span class="mono">#d29922</span></td><td>dash-dot <span class="mono">[6,2,1,2]</span></td><td>Reading path; related work</td></tr>
+</table>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 230" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">The Five Underline Styles (as painted on the canvas)</text>
+
+  <!-- Comment -->
+  <text x="40" y="62" fill="#58a6ff" font-size="12" font-weight="600">Comment</text>
+  <line x1="150" y1="58" x2="740" y2="58" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- Reference -->
+  <text x="40" y="97" fill="#3fb950" font-size="12" font-weight="600">Reference</text>
+  <line x1="150" y1="93" x2="740" y2="93" stroke="#3fb950" stroke-width="1.5"/>
+
+  <!-- Disagreement -->
+  <text x="40" y="132" fill="#f85149" font-size="12" font-weight="600">Disagreement</text>
+  <line x1="150" y1="128" x2="740" y2="128" stroke="#f85149" stroke-width="1.5" stroke-dasharray="8,3"/>
+
+  <!-- Quotation -->
+  <text x="40" y="167" fill="#a371f7" font-size="12" font-weight="600">Quotation</text>
+  <line x1="150" y1="163" x2="740" y2="163" stroke="#a371f7" stroke-width="1.5" stroke-dasharray="1,3"/>
+
+  <!-- See Also -->
+  <text x="40" y="202" fill="#d29922" font-size="12" font-weight="600">See Also</text>
+  <line x1="150" y1="198" x2="740" y2="198" stroke="#d29922" stroke-width="1.5" stroke-dasharray="6,2,1,2"/>
+</svg>
+</div>
+<p class="diagram-caption">Figure 2: Each type has a distinct dash pattern so overlapping links remain readable even without colour.</p>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 4 -->
+<!-- ============================================================ -->
+<h2 id="s4">4. The Client API (<code>crdt_sync.ts</code>)</h2>
+
+<p>These are the methods on <code>CrdtSyncClient</code> you will use. All are async and go over the WebSocket.</p>
+
+<pre><span class="com">// Create a link. ALWAYS pass { start, end } in the refs — they become</span>
+<span class="com">// start_position/end_position on the wire and are the canonical span.</span>
+<span class="kw">const</span> linkId = <span class="kw">await</span> client.<span class="fn">linkCreate</span>(
+  originWorkId,
+  destinationWorkId,
+  { excerpt: sourceText, start: srcStart, end: srcEnd },        <span class="com">// origin_ref</span>
+  { excerpt: targetText, start: tgtStart, end: tgtEnd },        <span class="com">// destination_ref</span>
+);
+
+<span class="com">// Assign a type (Comment=1, Reference=2, ...). Call right after linkCreate.</span>
+<span class="kw">await</span> client.<span class="fn">linkSetTypes</span>(linkId, [<span class="num">1</span>]);   <span class="com">// now it's a Comment link</span>
+
+<span class="com">// Read</span>
+<span class="kw">const</span> links   = <span class="kw">await</span> client.<span class="fn">linkListForWork</span>(workId);  <span class="com">// LinkEntry[]</span>
+<span class="kw">const</span> one     = <span class="kw">await</span> client.<span class="fn">linkGet</span>(linkId);             <span class="com">// full payload w/ both refs</span>
+<span class="kw">const</span> types   = <span class="kw">await</span> client.<span class="fn">linkTypeList</span>();             <span class="com">// {type_id, name}[]</span>
+
+<span class="com">// Backlinks: who links INTO this work (incoming) and what it links to (outgoing)</span>
+<span class="kw">const</span> backlinks = <span class="kw">await</span> client.<span class="fn">findBacklinks</span>(workId);   <span class="com">// BacklinkEntry[]</span>
+
+<span class="com">// Fallback position search (used internally when a ref lacks stored coords)</span>
+<span class="kw">const</span> hits = <span class="kw">await</span> client.<span class="fn">findExcerptPositions</span>(workId, excerpt);
+
+<span class="com">// Delete</span>
+<span class="kw">await</span> client.<span class="fn">linkDelete</span>(linkId);</pre>
+
+<h4>Key payload shapes</h4>
+<pre><span class="kw">interface</span> <span class="typ">LinkEntry</span> {
+  link_id: <span class="kw">number</span>; origin: <span class="kw">number</span>; destination: <span class="kw">number</span>;
+  origin_ref: <span class="typ">HyperRefPayload</span> | <span class="kw">null</span>; destination_ref: <span class="typ">HyperRefPayload</span> | <span class="kw">null</span>;
+  link_types?: <span class="kw">number</span>[];
+  origin_title?: <span class="kw">string</span>; destination_title?: <span class="kw">string</span>;
+  origin_archived?: <span class="kw">boolean</span>; destination_archived?: <span class="kw">boolean</span>;
+}
+
+<span class="kw">interface</span> <span class="typ">HyperRefPayload</span> {
+  kind: <span class="kw">string</span>; work_context: <span class="kw">number</span> | <span class="kw">null</span>;
+  excerpt: <span class="kw">string</span> | <span class="kw">null</span>;
+  start_position?: <span class="kw">number</span> | <span class="kw">null</span>;   <span class="com">// ← read this to place the marker</span>
+  end_position?: <span class="kw">number</span> | <span class="kw">null</span>;
+  provenance_chain?: <span class="typ">ProvenanceHop</span>[];
+}
+
+<span class="kw">interface</span> <span class="typ">BacklinkEntry</span> {
+  source_work_id: <span class="kw">number</span>; link_id: <span class="kw">number</span>;
+  link_type: <span class="kw">string</span>;   <span class="com">// "hyperlink_incoming" | "hyperlink_outgoing"</span>
+  excerpt?: <span class="kw">string</span>; title?: <span class="kw">string</span>;
+}</pre>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 5 -->
+<!-- ============================================================ -->
+<h2 id="s5">5. The <code>useTransclusion</code> Hook</h2>
+
+<p>The hook manages both transclusion and typed-link state for the active work. Despite the name, it is the single home for all link UI flows. (A separate <code>useContentLinks</code> hook was proposed in the FR-4 spec; the functionality lives here instead.)</p>
+
+<pre><span class="kw">const</span> t = <span class="fn">useTransclusion</span>();
+<span class="com">// t.links       — LinkEntry[] for the current work</span>
+<span class="com">// t.markers     — TransclusionMarker[] ready to hand to &lt;CollaborativeEditor&gt;</span>
+<span class="com">// t.backlinks   — BacklinkEntry[] (populated by loadBacklinks)</span>
+<span class="com">// t.linkTypes   — {type_id, name}[]</span>
+<span class="com">// t.pendingLink — held source selection while the user picks a target</span>
+
+<span class="com">// 1. User selects text in the source document:</span>
+t.<span class="fn">holdLinkSelection</span>(workId, workTitle, selStart, selEnd, selText);
+
+<span class="com">// 2. ...user navigates to the target document and selects target text...</span>
+
+<span class="com">// 3. Create the typed link:</span>
+<span class="kw">const</span> id = <span class="kw">await</span> t.<span class="fn">createContentLink</span>(
+  client, targetWorkId, targetStart, targetEnd, targetText, typeId
+);
+<span class="com">// createContentLink calls linkCreate (with start/end) then linkSetTypes([typeId])</span>
+
+<span class="com">// Refresh data on work switch:</span>
+t.<span class="fn">loadLinks</span>(client, workId, works);     <span class="com">// builds t.markers (prefers stored spans)</span>
+t.<span class="fn">loadBacklinks</span>(client, workId);
+t.<span class="fn">loadLinkTypes</span>(client);</pre>
+
+<div class="note">
+<strong><code>loadLinks</code> builds the markers for you.</strong> It reads each link's local HyperRef end, prefers the stored <code>start_position</code>/<code>end_position</code>, and only falls back to <code>findExcerptPositions</code> when those are absent. The resulting <code>TransclusionMarker[]</code> is passed straight to <code>&lt;CollaborativeEditor transclusionMarkers={...} /&gt;</code>.
+</div>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 6 -->
+<!-- ============================================================ -->
+<h2 id="s6">6. Example A: Create a Typed Comment Link</h2>
+
+<p><strong>Use case:</strong> A reviewer selects a passage in an essay and attaches a comment that lives in a separate notes document. This is the canonical two-part selection flow.</p>
+
+<div class="example-block">
+<div class="example-label">Code &mdash; the full flow</div>
+<pre><span class="com">// Source work: "Essay" (0x10). Target work: "Reviewer notes" (0x20).</span>
+<span class="com">// The user selected chars 142..168 in the essay ("privacy is a human right")</span>
+<span class="com">// and chars 0..34 in the notes ("this claim is contested in case law").</span>
+
+t.<span class="fn">holdLinkSelection</span>(<span class="num">0x10</span>, <span class="str">"Essay"</span>, <span class="num">142</span>, <span class="num">168</span>, <span class="str">"privacy is a human right"</span>);
+<span class="com">// ...navigate to the notes document, select the target span...</span>
+<span class="kw">await</span> t.<span class="fn">createContentLink</span>(client, <span class="num">0x20</span>, <span class="num">0</span>, <span class="num">34</span>, <span class="str">"this claim is contested in case law"</span>, <span class="num">1</span>);
+<span class="com">// typeId 1 = Comment (blue, dashed)</span></pre>
+</div>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 360" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">What it looks like in Xudanu — Work "Essay" (origin side)</text>
+
+  <!-- editor frame -->
+  <rect x="30" y="40" width="720" height="290" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+
+  <!-- left margin bar (outgoing) -->
+  <rect x="34" y="120" width="3" height="60" fill="#58a6ff"/>
+  <text x="44" y="135" fill="#58a6ff" font-size="9" font-family="'JetBrains Mono',monospace">C</text>
+
+  <!-- text lines -->
+  <text x="60" y="90"  fill="#c9d1d9" font-size="13" font-family="'JetBrains Mono',monospace">The modern discourse around digital autonomy</text>
+  <text x="60" y="112" fill="#c9d1d9" font-size="13" font-family="'JetBrains Mono',monospace">often takes a forceful tone. Many argue that</text>
+
+  <!-- the linked line with dashed underline -->
+  <text x="60" y="138" fill="#c9d1d9" font-size="13" font-family="'JetBrains Mono',monospace">privacy is a human right</text>
+  <line x1="59" y1="146" x2="285" y2="146" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <text x="60" y="168" fill="#c9d1d9" font-size="13" font-family="'JetBrains Mono',monospace">and that any backdoor, however well-meaning,</text>
+  <text x="60" y="190" fill="#c9d1d9" font-size="13" font-family="'JetBrains Mono',monospace">undermines the entire guarantee.</text>
+
+  <!-- hover tooltip -->
+  <rect x="300" y="100" width="260" height="78" rx="6" fill="#161b22" stroke="#58a6ff" stroke-width="1"/>
+  <text x="312" y="120" fill="#58a6ff" font-size="12" font-weight="600">Reviewer notes</text>
+  <text x="312" y="137" fill="#8b949e" font-size="10">Comment — links to</text>
+  <text x="312" y="153" fill="#8b949e" font-size="10" font-style="italic">“this claim is contested in case law”</text>
+  <rect x="312" y="158" width="70" height="16" rx="3" fill="rgba(88,166,255,0.15)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="347" y="170" text-anchor="middle" fill="#58a6ff" font-size="9">Go to 0020</text>
+
+  <!-- filter control (top-right) -->
+  <rect x="640" y="50" width="100" height="22" rx="5" fill="rgba(13,17,23,0.85)" stroke="#30363d"/>
+  <text x="650" y="65" fill="#c9d1d9" font-size="9">All</text>
+  <rect x="678" y="55" width="11" height="11" rx="2" fill="#58a6ff"/>
+  <rect x="693" y="55" width="11" height="11" rx="2" fill="none" stroke="#30363d"/>
+  <rect x="708" y="55" width="11" height="11" rx="2" fill="none" stroke="#30363d"/>
+  <rect x="722" y="55" width="11" height="11" rx="2" fill="none" stroke="#30363d"/>
+</svg>
+</div>
+<p class="diagram-caption">Figure 3: A Comment link in the origin document. The left margin shows a blue "C" bar; the passage has a blue dashed underline. Hovering reveals the target work, type, excerpt, and a "Go to" button.</p>
+
+<div class="note">
+<strong>Single-click navigates; double-click shows backlinks.</strong> Clicking the marker calls <code>onNavigateToWork</code> (jumps to the linked work). Double-click calls <code>onShowBacklinks</code> (jumps there and surfaces its connections). Both are wired in <code>AppShell.tsx</code>.
+</div>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 7 -->
+<!-- ============================================================ -->
+<h2 id="s7">7. Example B: Transclusion (Same Content, Two Places)</h2>
+
+<p><strong>Use case:</strong> A quotation appears in a source canon work and is re-used verbatim in a newsletter. Transclusion keeps the two in sync and records provenance.</p>
+
+<div class="example-block">
+<div class="example-label">Code &mdash; transclusion places the source span at a target position</div>
+<pre><span class="com">// Hold the source selection in the canon work (0x30)</span>
+t.<span class="fn">holdSelection</span>(<span class="num">0x30</span>, <span class="str">"Canon"</span>, <span class="num">200</span>, <span class="num">226</span>, <span class="str">"privacy is a human right"</span>);
+<span class="com">// ...navigate to the newsletter (0x40), click at the insertion point...</span>
+<span class="kw">await</span> t.<span class="fn">placeTransclusion</span>(client, <span class="num">0x40</span>, insertionPosition);
+<span class="com">// No linkSetTypes call → link_types stays empty → rendered as a transclusion</span>
+<span class="com">// (hatched margin bar, inline resolved span, provenance chain).</span></pre>
+</div>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Transclusion marker (no type) vs typed link</text>
+
+  <rect x="30" y="40" width="350" height="130" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+  <text x="205" y="60" text-anchor="middle" fill="#8b949e" font-size="11">Transclusion</text>
+  <rect x="34" y="90" width="6" height="40" fill="#00897b"/>
+  <text x="60" y="108" fill="#c9d1d9" font-size="12" font-family="'JetBrains Mono',monospace">weekly digest: as stated,</text>
+  <rect x="60" y="116" width="180" height="20" rx="3" fill="rgba(0,137,123,0.18)" stroke="#00897b" stroke-width="1"/>
+  <text x="68" y="131" fill="#3fb950" font-size="11" font-family="'JetBrains Mono',monospace">"privacy is a human right"</text>
+  <text x="60" y="156" fill="#8b949e" font-size="10">solid hatch bar · provenance chain to Canon</text>
+
+  <rect x="400" y="40" width="350" height="130" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+  <text x="575" y="60" text-anchor="middle" fill="#8b949e" font-size="11">Typed Comment link</text>
+  <rect x="404" y="90" width="3" height="40" fill="#58a6ff"/>
+  <text x="60" y="108" fill="#c9d1d9" font-size="12" font-family="'JetBrains Mono',monospace" transform="translate(380,0)">the essay claims that</text>
+  <text x="440" y="128" fill="#c9d1d9" font-size="12" font-family="'JetBrains Mono',monospace">privacy is a human right</text>
+  <line x1="439" y1="136" x2="665" y2="136" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="430" y="156" fill="#8b949e" font-size="10">dashed underline · left "C" bar</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 4: A transclusion (left) shows the resolved text inline with a hatched margin bar. A typed link (right) underlines the existing text without copying it.</p>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 8 -->
+<!-- ============================================================ -->
+<h2 id="s8">8. Example C: Backlinks &mdash; Who Links Into You</h2>
+
+<p><strong>Use case:</strong> You open your essay and want to see everyone who has commented on or referenced it. Backlinks are the incoming half of the bidirectional graph.</p>
+
+<div class="example-block">
+<div class="example-label">Code &mdash; query and render backlinks</div>
+<pre><span class="com">// On work switch, AppShell already does this for you via the hook:</span>
+<span class="kw">await</span> t.<span class="fn">loadBacklinks</span>(client, workId);
+<span class="com">// → t.backlinks is now BacklinkEntry[] with source_work_id, title, excerpt, link_type</span>
+
+<span class="com">// ...or call the client directly:</span>
+<span class="kw">const</span> incoming = (<span class="kw">await</span> client.<span class="fn">findBacklinks</span>(workId))
+  .<span class="fn">filter</span>(b =&gt; b.link_type === <span class="str">"hyperlink_incoming"</span>);
+incoming.<span class="fn">forEach</span>(b =&gt; console.<span class="fn">log</span>(<span class="str">`${b.title}: ${b.excerpt}`</span>));</pre>
+</div>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Incoming backlinks render on the RIGHT margin</text>
+
+  <rect x="30" y="40" width="720" height="260" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+
+  <!-- outgoing (left) -->
+  <rect x="34" y="90" width="3" height="34" fill="#3fb950"/>
+  <text x="60" y="112" fill="#c9d1d9" font-size="12" font-family="'JetBrains Mono',monospace">see Smith 2019 for background on this</text>
+
+  <!-- incoming (right) - two stacked -->
+  <rect x="743" y="150" width="3" height="30" fill="#58a6ff"/>
+  <rect x="739" y="186" width="3" height="30" fill="#f85149"/>
+  <text x="60" y="172" fill="#c9d1d9" font-size="12" font-family="'JetBrains Mono',monospace">privacy is a human right</text>
+  <line x1="59" y1="180" x2="285" y2="180" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="59" y1="216" x2="285" y2="216" stroke="#f85149" stroke-width="1.5" stroke-dasharray="8,3"/>
+
+  <!-- labels -->
+  <text x="60" y="262" fill="#8b949e" font-size="11">← left: outgoing (this work links out) · right: incoming (others link in) →</text>
+
+  <!-- connections panel -->
+  <rect x="430" y="148" width="300" height="100" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="442" y="168" fill="#e6edf3" font-size="11" font-weight="600">Connections</text>
+  <text x="442" y="188" fill="#58a6ff" font-size="10">← Reviewer notes · “contested in case law”</text>
+  <text x="442" y="206" fill="#f85149" font-size="10">← Rebuttal · “see Doe 2021 §4”</text>
+  <text x="442" y="224" fill="#8b949e" font-size="10">Backlinks (2)</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 5: Outgoing links paint on the left margin; incoming backlinks paint on the right. The Connections panel lists both with arrows (← incoming, → outgoing).</p>
+
+<div class="note">
+<strong>Backlinks are deduplicated per source work.</strong> <code>find_backlinks</code> returns at most one entry per linking work even if ten links come from it. Keep this in mind when counting &mdash; the count is "how many works reference me", not "how many links".
+</div>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 9 -->
+<!-- ============================================================ -->
+<h2 id="s9">9. Example D: Disagreement Links &amp; Structured Dissent</h2>
+
+<p><strong>Use case:</strong> Multiple authors contest a passage. Each attaches a <span class="accent-red">Disagreement</span> link to their counter-argument. Readers see all sides at the contested text.</p>
+
+<div class="example-block">
+<div class="example-label">Code &mdash; several reviewers each create a Disagreement link</div>
+<pre><span class="com">// Reviewer 1 holds the contested passage and links their rebuttal</span>
+t.<span class="fn">holdLinkSelection</span>(essayId, <span class="str">"Essay"</span>, <span class="num">142</span>, <span class="num">168</span>, <span class="str">"privacy is a human right"</span>);
+<span class="kw">await</span> t.<span class="fn">createContentLink</span>(client, rebuttalAId, s, e, <span class="str">"Doe 2021 disproves this"</span>, <span class="num">3</span>);
+
+<span class="com">// Reviewer 2 links a different rebuttal to the SAME passage</span>
+t.<span class="fn">holdLinkSelection</span>(essayId, <span class="str">"Essay"</span>, <span class="num">142</span>, <span class="num">168</span>, <span class="str">"privacy is a human right"</span>);
+<span class="kw">await</span> t.<span class="fn">createContentLink</span>(client, rebuttalBId, s, e, <span class="str">"the right is not absolute"</span>, <span class="num">3</span>);
+<span class="com">// Both render as red underlines; FR-4.5 layers them so both stay visible.</span></pre>
+</div>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 220" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Layered disagreements on one passage (FR-4.5)</text>
+
+  <rect x="30" y="40" width="720" height="150" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+
+  <!-- two stacked left bars -->
+  <rect x="34" y="90" width="3" height="34" fill="#f85149"/>
+  <rect x="42" y="90" width="3" height="34" fill="#f85149" opacity="0.6"/>
+
+  <text x="60" y="112" fill="#c9d1d9" font-size="12" font-family="'JetBrains Mono',monospace">privacy is a human right</text>
+  <!-- two layered underlines 2px apart -->
+  <line x1="59" y1="120" x2="285" y2="120" stroke="#f85149" stroke-width="1.5" stroke-dasharray="8,3"/>
+  <line x1="59" y1="124" x2="285" y2="124" stroke="#f85149" stroke-width="1.5" stroke-dasharray="8,3" opacity="0.6"/>
+
+  <text x="60" y="160" fill="#8b949e" font-size="10">lane 0 · lane 1 — overlapping links get distinct lanes (1px+ apart)</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 6: Two Disagreement links on the same passage. They stack on the left margin and layer their underlines vertically so neither hides the other.</p>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 10 -->
+<!-- ============================================================ -->
+<h2 id="s10">10. Example E: Profuse Overlapping Links + Density</h2>
+
+<p><strong>Use case:</strong> A heavily-annotated legal clause accumulates many overlapping links. Rather than paint a mess, the canvas collapses 5+ overlapping links into a single density pill; clicking expands the cluster.</p>
+
+<div class="two-col">
+<div class="example-block">
+<div class="example-label">Collapsed (5+ links)</div>
+<pre style="margin:0"><span class="com">// 6 overlapping Comment links</span>
+<span class="com">// on the same sentence → one pill:</span>
+<span class="com">//</span>
+<span class="com">//  ┌──┐ privacy is a human right</span>
+<span class="com">//  │6 │ ████████████████████</span>
+<span class="com">//  └──┘</span>
+<span class="com">// click → expands to individual</span>
+<span class="com">// lane-stacked markers</span></pre>
+</div>
+<div class="example-block">
+<div class="example-label">Filter by type</div>
+<pre style="margin:0"><span class="com">// Top-right control toggles types.</span>
+<span class="com">// null filter = show all;</span>
+<span class="com">// a Set = only those types</span>
+<span class="com">// (transclusions always show).</span>
+filterMarkersByType(markers, <span class="kw">new</span> <span class="typ">Set</span>([<span class="num">3</span>]));
+<span class="com">// → only Disagreement links</span></pre>
+</div>
+</div>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 240" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Density pill collapses a crowded region</text>
+
+  <rect x="30" y="40" width="720" height="170" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+
+  <!-- density pill -->
+  <rect x="34" y="95" width="18" height="40" fill="#d29922"/>
+  <text x="43" y="112" text-anchor="middle" fill="#0d1117" font-size="11" font-weight="700" font-family="'JetBrains Mono',monospace">6</text>
+  <text x="43" y="126" text-anchor="middle" fill="#0d1117" font-size="7" font-family="'JetBrains Mono',monospace">links</text>
+
+  <text x="70" y="120" fill="#c9d1d9" font-size="13" font-family="'JetBrains Mono',monospace">privacy is a human right</text>
+
+  <!-- tooltip on hover -->
+  <rect x="300" y="80" width="200" height="34" rx="6" fill="#161b22" stroke="#d29922" stroke-width="1"/>
+  <text x="400" y="101" text-anchor="middle" fill="#d29922" font-size="11">6 links in this region</text>
+
+  <text x="70" y="170" fill="#8b949e" font-size="10">Click the amber pill → cluster expands to individually lane-stacked, type-coloured markers.</text>
+</svg>
+</div>
+<p class="diagram-caption">Figure 7: Above the density threshold (5), overlapping links collapse to a single amber pill showing the count. The pure helpers <code>assignLinkLanes</code>, <code>clusterOverlappingMarkers</code>, and <code>filterMarkersByType</code> drive this (see <code>link-markers.ts</code>).</p>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 11 -->
+<!-- ============================================================ -->
+<h2 id="s11">11. Rendering: How Markers Paint on the Canvas</h2>
+
+<p><code>CollaborativeEditor.drawOverlay()</code> paints onto a canvas layered above the text. The link pass runs after attribution and transclusion passes:</p>
+
+<ol>
+  <li><strong>Underline</strong> &mdash; a dashed/solid line beneath the linked span, colour + dash from <code>LINK_TYPE_STYLES[linkTypeId]</code>. Overlapping links offset by <code>lane * 2px</code> (FR-4.5).</li>
+  <li><strong>Left margin bar</strong> &mdash; outgoing typed links, at x = <code>lane * 4px</code>. Provenance chains stack further right.</li>
+  <li><strong>Right margin bar</strong> &mdash; incoming typed backlinks, at <code>rect.width - 3 - lane*4</code>.</li>
+  <li><strong>Density pill</strong> &mdash; amber, count badge, when a cluster reaches 5+ links.</li>
+  <li><strong>Hit zones</strong> &mdash; every marker registers a <code>MarkerHitZone</code> used by mouse-move (tooltip) and click (navigate / expand).</li>
+</ol>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 280" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Anatomy of a marker (outgoing Comment link)</text>
+
+  <rect x="30" y="40" width="720" height="210" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+
+  <!-- left margin -->
+  <rect x="34" y="110" width="3" height="50" fill="#58a6ff"/>
+  <text x="60" y="60" fill="#8b949e" font-size="10">left margin (outgoing)</text>
+  <line x1="150" y1="56" x2="60" y2="100" stroke="#484f58" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- text + underline -->
+  <text x="60" y="138" fill="#c9d1d9" font-size="13" font-family="'JetBrains Mono',monospace">privacy is a human right</text>
+  <line x1="59" y1="146" x2="285" y2="146" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="300" y="138" fill="#8b949e" font-size="10">dashed underline (type style)</text>
+  <line x1="300" y1="142" x2="290" y2="145" stroke="#484f58" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- hit zone -->
+  <rect x="34" y="108" width="270" height="54" fill="none" stroke="#d29922" stroke-width="1" stroke-dasharray="2,3" opacity="0.7"/>
+  <text x="320" y="200" fill="#d29922" font-size="10">hit zone (click → navigate · hover → tooltip)</text>
+  <line x1="300" y1="195" x2="200" y2="150" stroke="#484f58" stroke-width="1" stroke-dasharray="3,2"/>
+</svg>
+</div>
+<p class="diagram-caption">Figure 8: A marker is three things at once: a margin bar, an underline, and an invisible hit zone. All driven by the same <code>TransclusionMarker</code> record.</p>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 12 -->
+<!-- ============================================================ -->
+<h2 id="s12">12. Span Migration: Links Survive Edits</h2>
+
+<p>
+A link's stored <code>start_position</code>/<code>end_position</code> are not fixed byte offsets &mdash; they are <strong>migrated</strong> whenever the text changes. When a user edits a work, the server walks every link touching that work and remaps each end's span through the edit delta. This is why stored coordinates beat excerpt re-search: they stay correct after edits, while a fresh excerpt search might land on a new copy of the same phrase.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 220" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="24" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Span migration through an insertion</text>
+
+  <text x="60" y="60" fill="#8b949e" font-size="11">Before: link spans [12..30]</text>
+  <rect x="60" y="70" width="180" height="26" rx="3" fill="rgba(88,166,255,0.10)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="150" y="87" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="'JetBrains Mono',monospace">privacy is a human right</text>
+  <line x1="84" y1="98" x2="216" y2="98" stroke="#58a6ff" stroke-width="2"/>
+
+  <text x="300" y="87" fill="#d29922" font-size="11">insert "fundamentally, " at pos 0</text>
+  <line x1="430" y1="83" x2="470" y2="83" stroke="#d29922" stroke-width="2" marker-end="url(#arrG1)"/>
+
+  <text x="60" y="140" fill="#8b949e" font-size="11">After: same link, spans [30..48] — migrated by +18</text>
+  <rect x="60" y="150" width="290" height="26" rx="3" fill="rgba(88,166,255,0.10)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="205" y="167" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="'JetBrains Mono',monospace">fundamentally, privacy is a human right</text>
+  <line x1="150" y1="178" x2="282" y2="178" stroke="#58a6ff" stroke-width="2"/>
+</svg>
+</div>
+<p class="diagram-caption">Figure 9: <code>migrate_link_spans_for_delta()</code> in <code>server.rs</code> remaps link endpoints on every edit. Thirteen dedicated tests cover insert/delete/replace/inside-span cases.</p>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 13 -->
+<!-- ============================================================ -->
+<h2 id="s13">13. Consistency Guidelines &amp; Gotchas</h2>
+
+<ul>
+  <li><strong>Always pass <code>start</code>/<code>end</code></strong> when creating a link. The client now transmits them as <code>start_position</code>/<code>end_position</code>. Omitting them forces the brittle excerpt-search fallback (ambiguous on duplicate phrases).</li>
+  <li><strong>Always call <code>linkSetTypes</code> right after <code>linkCreate</code></strong> for a content link. A link with empty <code>link_types</code> is a transclusion and renders with hatch bars, not typed underlines.</li>
+  <li><strong>Use the built-in type ids.</strong> Comment=1, Reference=2, Disagreement=3, Quotation=4, See Also=5. Don't invent client-side ids; custom types must be registered server-side via <code>register_link_type</code> first.</li>
+  <li><strong>Markers come from <code>loadLinks</code>, not hand-built.</strong> Let the hook resolve positions (stored span first, excerpt fallback second). Building <code>TransclusionMarker</code> objects yourself duplicates that logic.</li>
+  <li><strong>Direction is inferred from the work you're viewing.</strong> The same link is "outgoing" in its origin work and "incoming" in its destination work. Outgoing paints left; incoming paints right.</li>
+  <li><strong>Backlink count ≠ link count.</strong> <code>find_backlinks</code> dedupes per source work. Ten links from one reviewer show as one backlink entry.</li>
+  <li><strong>Render from data every frame.</strong> <code>drawOverlay</code> recomputes markers, lanes, and clusters each redraw &mdash; don't cache marker DOM. This keeps live multi-user edits correct.</li>
+  <li><strong>Archived works still link.</strong> A link endpoint may point at a soft-deleted (archived) work; the marker shows a "🗄 Archived work" notice in its tooltip. Don't drop the marker.</li>
+</ul>
+
+<div class="warning">
+<strong>Don't mix <code>kind</code>.</strong> The client hardcodes <code>kind: "single"</code> for both refs, which is correct for spans inside a single work. Other kinds (federated cross-peer refs) exist in the data model but have no selection UX yet &mdash; leave them to future work.
+</div>
+
+
+<!-- ============================================================ -->
+<!-- SECTION 14 -->
+<!-- ============================================================ -->
+<h2 id="s14">14. Source Code Map</h2>
+
+<table>
+  <tr><th>File</th><th>What It Implements</th></tr>
+  <tr><td><code>src/edition/links.rs</code></td><td><code>HyperLink</code>, <code>HyperRef</code>, spans, provenance hops, the multi-ended end map</td></tr>
+  <tr><td><code>src/server/server.rs</code></td><td><code>create_link</code>, <code>find_backlinks</code>, <code>migrate_link_spans_for_delta</code>, link persistence round-trip</td></tr>
+  <tr><td><code>src/server/transport/dispatch.rs</code></td><td>Wire handlers for <code>link_create</code>, <code>link_set_types</code>, <code>work_backlinks</code>, etc.</td></tr>
+  <tr><td><code>src/server/transport/protocol.rs</code></td><td>Opcodes, <code>HyperRefPayload</code>, <code>BacklinkEntryPayload</code>, <code>LinkPayload</code></td></tr>
+  <tr><td><code>src/persist/manifest.rs</code></td><td><code>LinkEntry</code> persistence shape, <code>links_hash</code> chunk, dual-slot round-trip</td></tr>
+  <tr><td><code>web/app/src/api/crdt_sync.ts</code></td><td><code>linkCreate</code> (with span coords), <code>linkSetTypes</code>, <code>findBacklinks</code>, <code>linkListForWork</code></td></tr>
+  <tr><td><code>web/app/src/link-markers.ts</code></td><td>Pure helpers: <code>resolveMarkerPositions</code>, <code>assignLinkLanes</code>, <code>clusterOverlappingMarkers</code>, <code>filterMarkersByType</code></td></tr>
+  <tr><td><code>web/app/src/hooks/useTransclusion.ts</code></td><td>Link + transclusion state, <code>createContentLink</code>, <code>holdLinkSelection</code>, <code>loadLinks</code>, <code>loadBacklinks</code></td></tr>
+  <tr><td><code>web/app/src/components/CollaborativeEditor.tsx</code></td><td><code>drawOverlay</code> marker pass, <code>LINK_TYPE_STYLES</code>, density pills, filter control, hit zones + tooltip</td></tr>
+  <tr><td><code>web/app/src/components/shell/AppShell.tsx</code></td><td>Wires markers + <code>onShowBacklinks</code> into the editor; backlinks into the Connections panel</td></tr>
+  <tr><td><code>web/app/src/components/panels/ConnectionsSection.tsx</code></td><td>Unified list of transclusions, typed links, and backlinks with filter dropdown</td></tr>
+</table>
+
+<div class="note">
+<strong>Test coverage.</strong> Backend: ~90 link tests incl. 13 span-migration tests and 4 backlink tests. Frontend: <code>link-markers.test.ts</code> (lane/density/filter/position math) and <code>link-create.test.ts</code> (span-coordinate payload). Run <code>cargo test --features server --lib link</code> and <code>npm test</code>.
+</div>
+
+<div class="footer">
+  Xudanu Links &amp; Backlinks &mdash; Developer Guide<br>
+  Part of the Xudanu hypertext system. See also: <a href="editions-and-works.html">Editions &amp; Works</a> &middot; <a href="transclusion-engine.html">Transclusion Engine</a> &middot; <a href="compound-documents.html">Compound Documents</a>
+</div>
+
+</div>
+</body>
+</html>

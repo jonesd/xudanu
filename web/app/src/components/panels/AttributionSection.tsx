@@ -7,11 +7,12 @@ interface AttributionSectionProps {
   attributionLogStatus: AttributionLogStatus | null;
   onOpenFullView?: () => void;
   onExportReport?: () => void;
+  onExportProvJson?: () => void;
   currentWorkId?: number | null;
   documentLength: number;
 }
 
-export function AttributionSection({ attributionSpans, attributionLogStatus, onOpenFullView, onExportReport, currentWorkId, documentLength }: AttributionSectionProps) {
+export function AttributionSection({ attributionSpans, attributionLogStatus, onOpenFullView, onExportReport, onExportProvJson, currentWorkId, documentLength }: AttributionSectionProps) {
   const [expanded, setExpanded] = useState(false);
 
   const effectiveLength = attributionSpans.length > 0
@@ -118,6 +119,25 @@ export function AttributionSection({ attributionSpans, attributionLogStatus, onO
                   }}
                 >
                   Export attestation report
+                </button>
+              )}
+              {onExportProvJson && (
+                <button
+                  type="button"
+                  onClick={onExportProvJson}
+                  style={{
+                    marginTop: 4,
+                    background: "none",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    color: "var(--purple, #a371f7)",
+                    fontSize: 11,
+                    padding: "3px 8px",
+                    cursor: "pointer",
+                    width: "100%",
+                  }}
+                >
+                  Export PROV-JSON (W3C)
                 </button>
               )}
             </div>

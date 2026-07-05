@@ -1,0 +1,33 @@
+{
+  "prefix": {
+    "prov": "http://www.w3.org/ns/prov#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "xudanu": "http://xudanu.example.org/ns#"
+  },
+  "entity": {
+    "xudanu:doc:04a2": {
+      "prov:type": {"$": "xudanu:Document", "type": "xsd:QName"},
+      "xudanu:title": {"$": "Chain Broken Report", "type": "xsd:string"},
+      "xudanu:revision": {"$": "1", "type": "xsd:integer"},
+      "xudanu:contentHash": {"$": "abc123", "type": "xsd:hexBinary"}
+    },
+    "xudanu:span:04a2:0:100": {
+      "prov:type": {"$": "xudanu:ContentSpan", "type": "xsd:QName"},
+      "xudanu:charRange": {"$": "[0, 100)", "type": "xsd:string"},
+      "xudanu:signatureValid": {"$": "true", "type": "xsd:boolean"},
+      "xudanu:timestamp": {"$": "1000", "type": "xsd:integer"}
+    },
+    "xudanu:log:04a2": {
+      "prov:type": {"$": "xudanu:AttributionLog", "type": "xsd:QName"},
+      "xudanu:entryCount": {"$": "5", "type": "xsd:integer"},
+      "xudanu:chainValid": {"$": "false", "type": "xsd:boolean"}
+    }
+  },
+  "agent": {
+    "xudanu:server:s1": {"prov:type": {"$": "xudanu:Server", "type": "xsd:QName"}}
+  },
+  "activity": {},
+  "wasAttributedTo": {
+    "_:1": {"prov:entity": "xudanu:span:04a2:0:100", "prov:agent": "xudanu:server:s1"}
+  }
+}

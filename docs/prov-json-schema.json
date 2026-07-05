@@ -1,0 +1,172 @@
+{
+  "$id": "https://openprovenance.org/prov-json/schema#",
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "allOf": [
+    { "$ref": "#/definitions/bundle" },
+    { "properties": {
+        "bundle": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/bundle" }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "literal-simple": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "boolean" },
+        { "type": "number" }
+      ]
+    },
+    "literal-typed": {
+      "type": "object",
+      "properties": {
+        "$": { "$ref": "#/definitions/literal-simple" },
+        "type": { "type": "string" }
+      },
+      "required": ["$", "type"],
+      "additionalProperties": false
+    },
+    "literal-international-string": {
+      "type": "object",
+      "properties": {
+        "$": { "type": "string" },
+        "lang": { "type": "string" }
+      },
+      "required": ["$", "lang"],
+      "additionalProperties": false
+    },
+    "literal-complex": {
+      "anyOf": [
+        { "$ref": "#/definitions/literal-typed" },
+        { "$ref": "#/definitions/literal-international-string" }
+      ]
+    },
+    "literal-single": {
+      "oneOf": [
+        { "$ref": "#/definitions/literal-simple" },
+        { "$ref": "#/definitions/literal-complex" }
+      ]
+    },
+    "literal-array": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/literal-single" }
+    },
+    "literal": {
+      "oneOf": [
+        { "$ref": "#/definitions/literal-single" },
+        { "$ref": "#/definitions/literal-array" }
+      ]
+    },
+    "entity": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/literal" }
+    },
+    "agent": { "$ref": "#/definitions/entity" },
+    "activity": {
+      "type": "object",
+      "properties": {
+        "prov:startTime": {"type": "string"},
+        "prov:endTime": {"type": "string"}
+      },
+      "additionalProperties": { "$ref": "#/definitions/literal" }
+    },
+    "generation": {
+      "type": "object",
+      "properties": {
+        "prov:entity": {"type": "string"},
+        "prov:activity": {"type": "string"},
+        "prov:time": {"type": "string"}
+      },
+      "required": ["prov:entity"],
+      "additionalProperties": { "$ref": "#/definitions/literal" }
+    },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "prov:entity": {"type": "string"},
+        "prov:activity": {"type": "string"},
+        "prov:time": {"type": "string"}
+      },
+      "required": ["prov:activity"],
+      "additionalProperties": { "$ref": "#/definitions/literal" }
+    },
+    "derivation": {
+      "type": "object",
+      "properties":{
+        "prov:generatedEntity": {"type": "string"},
+        "prov:usedEntity": {"type": "string"},
+        "prov:activity": {"type": "string"},
+        "prov:generation": {"type": "string"},
+        "prov:usage": {"type": "string"}
+      },
+      "required": ["prov:generatedEntity", "prov:usedEntity"],
+      "additionalProperties": { "$ref": "#/definitions/literal" }
+    },
+    "attribution": {
+      "type": "object",
+      "properties":{
+        "prov:entity": {"type": "string"},
+        "prov:agent": {"type": "string"}
+      },
+      "required": ["prov:entity", "prov:agent"],
+      "additionalProperties": { "$ref": "#/definitions/literal" }
+    },
+    "association": {
+      "type": "object",
+      "properties": {
+        "prov:activity": {"type": "string"},
+        "prov:agent": {"type": "string"},
+        "prov:plan": {"type": "string"}
+      },
+      "required": ["prov:activity"],
+      "additionalProperties": { "$ref": "#/definitions/literal" }
+    },
+    "bundle": {
+      "type": "object",
+      "properties": {
+        "prefix": {
+          "type": "object",
+          "patternProperties": {
+            "^[a-zA-Z0-9_\\-]+$": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "entity": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/entity" }
+        },
+        "agent": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/agent" }
+        },
+        "activity":{
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/activity" }
+        },
+        "wasGeneratedBy": {
+           "type": "object",
+           "additionalProperties": { "$ref": "#/definitions/generation" }
+        },
+        "used": {
+           "type": "object",
+           "additionalProperties": { "$ref": "#/definitions/usage" }
+         },
+        "wasDerivedFrom": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/derivation" }
+        },
+        "wasAttributedTo": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/attribution" }
+        },
+        "wasAssociatedWith": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/association" }
+        }
+      }
+    }
+  }
+}

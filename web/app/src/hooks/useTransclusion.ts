@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import type { CrdtSyncClient, LinkEntry, TransclusionMarker, WorkListEntry, BacklinkEntry, LinkTypeInfo } from "../api/crdt_sync";
+import { resolveMarkerPositions } from "../link-markers";
 
 export interface PendingTransclusion {
   sourceWorkId: number;
@@ -156,25 +157,26 @@ export function useTransclusion(): TransclusionState {
           const localRef = isOrigin ? link.origin_ref : link.destination_ref;
           const remoteRef = isOrigin ? link.destination_ref : link.origin_ref;
           const excerpt = localRef?.excerpt || remoteRef?.excerpt || "";
-          if (excerpt.length >= 3) {
-            const positions = await client.findExcerptPositions(workId, excerpt);
-            const chain = localRef?.provenance_chain || remoteRef?.provenance_chain;
-            for (const pos of positions) {
-              newMarkers.push({
-                start: pos.start,
-                end: pos.end,
-                linkId: link.link_id,
-                direction: isOrigin ? "outgoing" : "incoming",
-                otherWorkId,
-                otherWorkTitle: title,
-                color,
-                excerpt: excerpt.slice(0, 120),
-                provenanceChain: chain,
-                linkTypeId: link.link_types?.[0],
-                otherWorkIsArchived: !!otherArchived,
-                otherWorkOwner: otherOwner ?? null,
-              });
-            }
+          const chain = localRef?.provenance_chain || remoteRef?.provenance_chain;
+          const fallback = excerpt.length >= 3
+            ? await client.findExcerptPositions(workId, excerpt)
+            : [];
+          const positions = resolveMarkerPositions(localRef, fallback);
+          for (const pos of positions) {
+            newMarkers.push({
+              start: pos.start,
+              end: pos.end,
+              linkId: link.link_id,
+              direction: isOrigin ? "outgoing" : "incoming",
+              otherWorkId,
+              otherWorkTitle: title,
+              color,
+              excerpt: excerpt.slice(0, 120),
+              provenanceChain: chain,
+              linkTypeId: link.link_types?.[0],
+              otherWorkIsArchived: !!otherArchived,
+              otherWorkOwner: otherOwner ?? null,
+            });
           }
         }
         setMarkers(newMarkers);

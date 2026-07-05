@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Ent, DagWood &amp; Trace DAG &mdash; Xudanu Developer Guide</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+.example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
+.example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.fast{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
+.naive{color:#f85149;font-family:'JetBrains Mono',monospace}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.toc .toc-sub{padding-left:16px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-cyan{color:#39d2c0}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0;font-size:12px;color:#8b949e}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}.fast{color:#16a34a}.naive{color:#dc2626}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}.two-col{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>The Ent, DagWood &amp; Trace DAG</h1>
+<p class="subtitle">The versioning spine adapted from the original Udanax-Gold C++ code: partial-order positions, branch topologies, the navigation cache, assertion-based content, and conflict-preserving materialization.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. Heritage: From Udanax-Gold to Rust</a>
+  <a class="toc-section" href="#s2">2. The Three Layers</a>
+  <a class="toc-section" href="#s3">3. TracePosition: The Coordinate</a>
+  <a class="toc-section" href="#s4">4. BranchKind: Root, Tree, Dag</a>
+  <a class="toc-section" href="#s5">5. Position Numbering: Why Position 3?</a>
+  <a class="toc-section" href="#s6">6. The Partial Order: is_le and Visibility</a>
+  <a class="toc-section" href="#s7">7. The Navigation Cache: Max-Over-Paths</a>
+  <a class="toc-section" href="#s8">8. TraceView: The Read Face</a>
+  <a class="toc-section" href="#s9">9. The Branch Binary Tree: install_branch</a>
+  <a class="toc-section" href="#s10">10. AssertionPayload: The 13 Operations</a>
+  <a class="toc-section" href="#s11">11. AssertionStore and Visibility Filtering</a>
+  <a class="toc-section" href="#s12">12. Materialization: History Determines Meaning</a>
+  <a class="toc-section" href="#s13">13. AlternativeSet: Conflict Preservation</a>
+  <a class="toc-section" href="#s14">14. The H-Tree: Linking Trace to Canopy</a>
+  <a class="toc-section" href="#s15">15. BackfollowEngine: Bridging Ent to Editions</a>
+  <a class="toc-section" href="#s16">16. WASM Bindings: DagWood in the Browser</a>
+  <a class="toc-section" href="#s17">17. Properties Proven by the Test Suite</a>
+  <a class="toc-section" href="#s18">18. Source Code Map</a>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 1 -->
+<!-- ============================================================ -->
+<h2 id="s1">1. Heritage: From Udanax-Gold to Rust</h2>
+
+<p>
+The <code>ent/</code> module is one of the most direct lineages from the original
+Udanax-Gold C++ codebase. The original source files&mdash;<span class="mono">entx.hxx</span>,
+<span class="mono">dagwoodx.hxx</span>, <span class="mono">tracepx.hxx</span>,
+<span class="mono">branchx.hxx</span>&mdash;defined a partial-ordering data structure
+called a <em>trace DAG</em> that tracked the history of every edit, fork, and merge
+in a Xanadu document.
+</p>
+
+<p>
+Xudanu preserves this architecture faithfully. Every struct and method carries
+<code>[Original]</code> and <code>[Adapted]</code> comments citing the exact C++ source
+line numbers. The three C++ class hierarchies&mdash;<em>Ent</em>, <em>DagWood</em>, and
+<em>BranchDescription</em>&mdash;become Rust structs with the same names (modulo
+CamelCase-to-snake_case conventions).
+</p>
+
+<div class="gold">
+<strong>Why "DagWood"?</strong> The name is a triple pun from the original Xanadu team:
+(1) it is a <strong>DAG</strong> (directed acyclic graph) made of
+<strong>wood</strong> (a tree-like material), (2) it references the comic strip
+character Dagwood Bumstead, and (3) "DagWood" as one word was the C++ class name.
+Xudanu keeps the spelling intact.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 2 -->
+<!-- ============================================================ -->
+<h2 id="s2">2. The Three Layers</h2>
+
+<p>
+The <code>ent/</code> module has seven files organized into three conceptual layers:
+</p>
+
+<table>
+<tr><th>File</th><th>Lines</th><th>Role</th></tr>
+<tr><td><code class="accent-green">ent.rs</code></td><td>85</td><td>Thin wrapper; owns a DagWood, delegates <code>new_trace()</code></td></tr>
+<tr><td><code class="accent-blue">dagwood.rs</code></td><td>1,532</td><td>The DAG itself: position allocation, ordering (<code>is_le</code>), navigation cache, <code>TraceView</code></td></tr>
+<tr><td><code class="accent-blue">branch.rs</code></td><td>603</td><td>Branch identity, topology (Root/Tree/Dag), binary-tree-of-branches, stub eviction</td></tr>
+<tr><td><code class="accent-blue">trace.rs</code></td><td>140</td><td><code>TracePosition</code> &mdash; the (branch, position) coordinate</td></tr>
+<tr><td><code class="accent-purple">content.rs</code></td><td>2,549</td><td>AssertionPayload, AssertionStore, materialization, AlternativeSet</td></tr>
+<tr><td><code class="accent-amber">htree.rs</code></td><td>452</td><td>History crumbs (H-crum) linking trace positions to the canopy</td></tr>
+<tr><td><code class="accent-cyan">backfollow.rs</code></td><td>1,892</td><td>Bridges the ent DAG to the Edition/O-tree model (in <code>edition/</code>)</td></tr>
+</table>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 440" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrG" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#58a6ff"/></marker>
+    <marker id="arrP" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#a371f7"/></marker>
+    <marker id="arrA" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#d29922"/></marker>
+  </defs>
+
+  <!-- Layer labels -->
+  <text x="20" y="50" fill="#484f58" font-size="11" font-weight="600" letter-spacing="1">VERSIONING SPINE</text>
+  <text x="20" y="200" fill="#484f58" font-size="11" font-weight="600" letter-spacing="1">CONTENT MODEL</text>
+  <text x="20" y="340" fill="#484f58" font-size="11" font-weight="600" letter-spacing="1">BRIDGE</text>
+
+  <!-- Ent -->
+  <rect x="270" y="20" width="160" height="50" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="2"/>
+  <text x="350" y="42" text-anchor="middle" fill="#3fb950" font-size="14" font-weight="700">Ent</text>
+  <text x="350" y="60" text-anchor="middle" fill="#8b949e" font-size="10">owns, delegates</text>
+
+  <!-- DagWood -->
+  <rect x="130" y="100" width="180" height="55" rx="10" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="220" y="123" text-anchor="middle" fill="#58a6ff" font-size="13" font-weight="700">DagWood</text>
+  <text x="220" y="141" text-anchor="middle" fill="#8b949e" font-size="10">positions, is_le, cache</text>
+
+  <!-- BranchStore -->
+  <rect x="390" y="100" width="180" height="55" rx="10" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="480" y="123" text-anchor="middle" fill="#58a6ff" font-size="13" font-weight="700">BranchStore</text>
+  <text x="480" y="141" text-anchor="middle" fill="#8b949e" font-size="10">Root / Tree / Dag branches</text>
+
+  <!-- TracePosition -->
+  <rect x="610" y="20" width="140" height="45" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="680" y="40" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="600">TracePosition</text>
+  <text x="680" y="55" text-anchor="middle" fill="#8b949e" font-size="9">(branch, pos)</text>
+
+  <!-- Arrows: Ent -> DagWood -->
+  <line x1="330" y1="70" x2="260" y2="95" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arrG)"/>
+
+  <!-- DagWood <-> BranchStore -->
+  <line x1="320" y1="127" x2="380" y2="127" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrB)" marker-start="url(#arrB)"/>
+
+  <!-- DagWood -> TracePosition -->
+  <line x1="310" y1="100" x2="620" y2="55" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>
+
+  <!-- AssertionStore -->
+  <rect x="100" y="170" width="180" height="55" rx="10" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="2"/>
+  <text x="190" y="193" text-anchor="middle" fill="#a371f7" font-size="13" font-weight="700">AssertionStore</text>
+  <text x="190" y="211" text-anchor="middle" fill="#8b949e" font-size="10">13 payload types</text>
+
+  <!-- Materialize -->
+  <rect x="330" y="170" width="160" height="55" rx="10" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="2"/>
+  <text x="410" y="193" text-anchor="middle" fill="#a371f7" font-size="13" font-weight="700">Materialize</text>
+  <text x="410" y="211" text-anchor="middle" fill="#8b949e" font-size="10">AlternativeSet</text>
+
+  <!-- TraceView -->
+  <rect x="540" y="100" width="140" height="55" rx="10" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="610" y="123" text-anchor="middle" fill="#39d2c0" font-size="13" font-weight="700">TraceView</text>
+  <text x="610" y="141" text-anchor="middle" fill="#8b949e" font-size="10">frozen visibility</text>
+
+  <!-- Arrow: AssertionStore -> Materialize -->
+  <line x1="290" y1="197" x2="320" y2="197" stroke="#a371f7" stroke-width="1.5" marker-end="url(#arrP)"/>
+
+  <!-- Arrow: TraceView -> AssertionStore (filters) -->
+  <path d="M 560 155 Q 400 155 280 168" fill="none" stroke="#39d2c0" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrP)"/>
+  <text x="400" y="150" text-anchor="middle" fill="#39d2c0" font-size="9" font-style="italic">filters by visibility</text>
+
+  <!-- H-Tree -->
+  <rect x="100" y="260" width="180" height="50" rx="10" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="2"/>
+  <text x="190" y="282" text-anchor="middle" fill="#d29922" font-size="13" font-weight="700">H-Tree (HUpperCrumData)</text>
+  <text x="190" y="299" text-anchor="middle" fill="#8b949e" font-size="10">trace &times; canopy junction</text>
+
+  <!-- BackfollowEngine -->
+  <rect x="330" y="260" width="200" height="50" rx="10" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="430" y="282" text-anchor="middle" fill="#39d2c0" font-size="13" font-weight="700">BackfollowEngine</text>
+  <text x="430" y="299" text-anchor="middle" fill="#8b949e" font-size="10">bridges to Edition / O-tree</text>
+
+  <!-- Arrow: DagWood -> BackfollowEngine (owns) -->
+  <line x1="250" y1="155" x2="400" y2="255" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3 3" opacity="0.4"/>
+
+  <!-- Arrow: H-Tree -> BackfollowEngine -->
+  <line x1="290" y1="285" x2="320" y2="285" stroke="#d29922" stroke-width="1.5" marker-end="url(#arrA)"/>
+
+  <!-- Edition -->
+  <rect x="330" y="350" width="200" height="50" rx="10" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="430" y="372" text-anchor="middle" fill="#3fb950" font-size="13" font-weight="600">Edition / O-Tree</text>
+  <text x="430" y="389" text-anchor="middle" fill="#8b949e" font-size="10">the document model</text>
+
+  <!-- Arrow: BackfollowEngine -> Edition -->
+  <line x1="430" y1="315" x2="430" y2="345" stroke="#39d2c0" stroke-width="1.5" marker-end="url(#arrP)"/>
+  <text x="450" y="334" fill="#8b949e" font-size="9">bridge_edition_to_assertions</text>
+</svg>
+</div>
+<p class="diagram-caption">The three layers: versioning spine (blue/green), content model (purple), and bridge to the Edition world (amber/cyan).</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 3 -->
+<!-- ============================================================ -->
+<h2 id="s3">3. TracePosition: The Coordinate</h2>
+
+<p>
+Every point in the version history is identified by a <code>TracePosition</code>:
+a pair of a <code>BranchId</code> and a <code>u32</code> position within that branch.
+</p>
+
+<pre>pub struct TracePosition {
+    branch: BranchId,    // which branch of the DAG
+    position: u32,       // how far along the branch
+}</pre>
+
+<p>
+This replaces the original C++ <code>BoundedTrace</code> class hierarchy. The original
+had an abstract <code>TracePosition</code> with one concrete subclass; the Rust version
+collapses to a single struct since "only one concrete subclass existed in the original"
+(<span class="mono">tracepx.hxx lines 57&ndash;204</span>).
+</p>
+
+<div class="note">
+<strong>Equality:</strong> Two positions are equal iff they have the same branch AND
+the same position number. The hash formula uses the same arbitrary primes as the
+original: <code>(branch_hash + position) * 10993 &amp; 0x7FFFFFF</code>.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 4 -->
+<!-- ============================================================ -->
+<h2 id="s4">4. BranchKind: Root, Tree, Dag</h2>
+
+<p>
+The original C++ had three subclasses of <code>BranchDescription</code>:
+<code>RootBranch</code> (no parents), <code>TreeBranch</code> (one parent),
+and <code>DagBranch</code> (two parents). In Rust, these become a single enum:
+</p>
+
+<pre>pub enum BranchKind {
+    Root,
+    Tree { parent: TracePosition },
+    Dag  { parent1: TracePosition, parent2: TracePosition },
+}</pre>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 260" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrR" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrT" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#58a6ff"/></marker>
+    <marker id="arrD" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#a371f7"/></marker>
+  </defs>
+
+  <!-- Root branch -->
+  <rect x="40" y="20" width="120" height="36" rx="8" fill="rgba(63,185,80,0.10)" stroke="#3fb950" stroke-width="2"/>
+  <text x="100" y="42" text-anchor="middle" fill="#3fb950" font-size="13" font-weight="700">Root</text>
+  <text x="100" y="72" text-anchor="middle" fill="#8b949e" font-size="10">no parents</text>
+  <!-- positions -->
+  <circle cx="50" cy="100" r="3" fill="#3fb950"/>
+  <text x="50" y="118" text-anchor="middle" fill="#8b949e" font-size="8">1</text>
+  <circle cx="80" cy="100" r="3" fill="#3fb950"/>
+  <text x="80" y="118" text-anchor="middle" fill="#8b949e" font-size="8">3</text>
+  <circle cx="110" cy="100" r="3" fill="#3fb950"/>
+  <text x="110" y="118" text-anchor="middle" fill="#8b949e" font-size="8">4</text>
+  <circle cx="140" cy="100" r="3" fill="#3fb950"/>
+  <text x="140" y="118" text-anchor="middle" fill="#8b949e" font-size="8">5</text>
+  <line x1="50" y1="100" x2="140" y2="100" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="95" y="145" text-anchor="middle" fill="#3fb950" font-size="11" font-style="italic">entry point</text>
+
+  <!-- Tree branch -->
+  <rect x="260" y="20" width="120" height="36" rx="8" fill="rgba(88,166,255,0.10)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="320" y="42" text-anchor="middle" fill="#58a6ff" font-size="13" font-weight="700">Tree</text>
+  <text x="320" y="72" text-anchor="middle" fill="#8b949e" font-size="10">one parent</text>
+  <!-- parent position -->
+  <circle cx="260" cy="100" r="4" fill="#8b949e"/>
+  <text x="260" y="118" text-anchor="middle" fill="#8b949e" font-size="8">parent</text>
+  <!-- branch positions -->
+  <line x1="265" y1="100" x2="320" y2="150" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrT)"/>
+  <circle cx="320" cy="155" r="3" fill="#58a6ff"/>
+  <circle cx="350" cy="155" r="3" fill="#58a6ff"/>
+  <line x1="320" y1="155" x2="350" y2="155" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="335" y="175" text-anchor="middle" fill="#58a6ff" font-size="11" font-style="italic">fork/extend</text>
+
+  <!-- Dag branch -->
+  <rect x="490" y="20" width="120" height="36" rx="8" fill="rgba(163,113,247,0.10)" stroke="#a371f7" stroke-width="2"/>
+  <text x="550" y="42" text-anchor="middle" fill="#a371f7" font-size="13" font-weight="700">Dag</text>
+  <text x="550" y="72" text-anchor="middle" fill="#8b949e" font-size="10">two parents (merge)</text>
+  <!-- two parents -->
+  <circle cx="490" cy="100" r="4" fill="#8b949e"/>
+  <text x="490" y="118" text-anchor="middle" fill="#8b949e" font-size="8">p1</text>
+  <circle cx="610" cy="100" r="4" fill="#8b949e"/>
+  <text x="610" y="118" text-anchor="middle" fill="#8b949e" font-size="8">p2</text>
+  <!-- merge point -->
+  <line x1="495" y1="100" x2="540" y2="150" stroke="#a371f7" stroke-width="1.5" marker-end="url(#arrD)"/>
+  <line x1="605" y1="100" x2="560" y2="150" stroke="#a371f7" stroke-width="1.5" marker-end="url(#arrD)"/>
+  <circle cx="550" cy="155" r="4" fill="#a371f7"/>
+  <text x="550" y="175" text-anchor="middle" fill="#a371f7" font-size="11" font-style="italic">merge point</text>
+</svg>
+</div>
+<p class="diagram-caption">The three branch topologies. A Dag branch has two parents and is the mechanism for merge points.</p>
+
+<p>
+Each <code>Branch</code> also maintains:
+</p>
+<ul>
+  <li><code>last_position: u32</code> &mdash; the highest position allocated on this branch (starts at 2).</li>
+  <li><code>left / right: Option&lt;BranchId&gt;</code> &mdash; a binary tree of child branches (see Section 9).</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- SECTION 5 -->
+<!-- ============================================================ -->
+<h2 id="s5">5. Position Numbering: Why Position 3?</h2>
+
+<p>
+One of the most subtle aspects of the DagWood is its position numbering. Every new
+<code>DagWood</code> starts with a root branch, then immediately creates a trunk
+branch:
+</p>
+
+<pre>// dagwood.rs constructor
+let (root_branch_id, root_pos) = branches.create_root();  // root at position 1
+let _ = dagwood.create_after(root_branch_id, root);       // trunk branch created</pre>
+
+<p>
+The numbering convention is:
+</p>
+
+<table>
+<tr><th>Position</th><th>Meaning</th></tr>
+<tr><td><code>1</code></td><td>The implicit entry position of every branch (returned by <code>create_root/create_tree/create_dag</code>)</td></tr>
+<tr><td><code>2</code></td><td>Reserved &mdash; never assigned by <code>next_position</code></td></tr>
+<tr><td><code>3</code></td><td>First usable position on any branch &mdash; returned by <code>new_position()</code></td></tr>
+<tr><td><code>4, 5, 6&hellip;</code></td><td>Successive positions allocated by <code>next_position</code></td></tr>
+</table>
+
+<div class="note">
+<strong>Why is position 2 skipped?</strong> The original comment at
+<span class="mono">branchx.cxx line 241</span> says <code>lastPosition</code> "starts
+at 2; position 1 is the implicit entry position." Then <code>nextPosition</code>
+increments <em>before</em> returning, so the first call returns 3. Position 2 is the
+gap between the entry marker and the first real content&mdash;a reserved sentinel.
+Test T4 explicitly documents this: <em>"Position 2 is reserved (never assigned by
+nextPosition)."</em>
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 6 -->
+<!-- ============================================================ -->
+<h2 id="s6">6. The Partial Order: is_le and Visibility</h2>
+
+<p>
+The DagWood defines a <strong>partial ordering</strong> of TracePositions.
+<code>is_le(a, b)</code> returns true if position <code>a</code> is "less than or
+equal to" position <code>b</code>&mdash;meaning <code>a</code> is an ancestor of
+(or identical to) <code>b</code> in the DAG.
+</p>
+
+<p>
+This is the fundamental semantic operation. It answers: <em>"Does the history
+leading to <code>b</code> include everything at <code>a</code>?"</em> If yes, then
+content written at <code>a</code> is <strong>visible</strong> from <code>b</code>.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrG2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrR2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#f85149"/></marker>
+    <marker id="arrGy" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#8b949e"/></marker>
+  </defs>
+
+  <!-- Root -->
+  <circle cx="350" cy="20" r="6" fill="#3fb950"/>
+  <text x="350" y="12" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">root</text>
+  <text x="370" y="24" fill="#3fb950" font-size="9">pos 1</text>
+
+  <!-- Trunk -->
+  <circle cx="350" cy="55" r="5" fill="#3fb950"/>
+  <text x="370" y="58" fill="#3fb950" font-size="9">pos 3</text>
+  <line x1="350" y1="26" x2="350" y2="50" stroke="#3fb950" stroke-width="1.5"/>
+
+  <!-- Fork: A and B -->
+  <circle cx="200" cy="110" r="5" fill="#58a6ff"/>
+  <text x="200" y="102" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">A</text>
+  <text x="200" y="128" text-anchor="middle" fill="#8b949e" font-size="9">branch-a, pos 3</text>
+
+  <circle cx="500" cy="110" r="5" fill="#a371f7"/>
+  <text x="500" y="102" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="600">B</text>
+  <text x="500" y="128" text-anchor="middle" fill="#8b949e" font-size="9">branch-b, pos 3</text>
+
+  <line x1="345" y1="55" x2="205" y2="105" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrG2)"/>
+  <line x1="355" y1="55" x2="495" y2="105" stroke="#a371f7" stroke-width="1.5" marker-end="url(#arrG2)"/>
+
+  <!-- Extend A -->
+  <circle cx="200" cy="165" r="5" fill="#58a6ff"/>
+  <text x="200" y="157" text-anchor="middle" fill="#58a6ff" font-size="9">A2 (pos 4)</text>
+  <line x1="200" y1="115" x2="200" y2="160" stroke="#58a6ff" stroke-width="1.5"/>
+
+  <!-- Merge M -->
+  <circle cx="350" cy="220" r="7" fill="#f85149"/>
+  <text x="350" y="212" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">M (merge)</text>
+  <text x="350" y="245" text-anchor="middle" fill="#8b949e" font-size="9">dag-branch, pos 3</text>
+
+  <!-- Merge arrows -->
+  <path d="M 205 115 Q 280 170 343 213" fill="none" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 2"/>
+  <path d="M 495 115 Q 420 170 357 213" fill="none" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 2"/>
+
+  <!-- is_le annotations -->
+  <rect x="40" y="175" width="130" height="30" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="105" y="194" text-anchor="middle" fill="#3fb950" font-size="10">is_le(root, M) = true</text>
+
+  <rect x="40" y="210" width="130" height="30" rx="6" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="105" y="229" text-anchor="middle" fill="#58a6ff" font-size="10">is_le(A, M) = true</text>
+
+  <rect x="530" y="175" width="130" height="30" rx="6" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1"/>
+  <text x="595" y="194" text-anchor="middle" fill="#a371f7" font-size="10">is_le(B, M) = true</text>
+
+  <rect x="530" y="210" width="130" height="30" rx="6" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1"/>
+  <text x="595" y="229" text-anchor="middle" fill="#f85149" font-size="10">is_le(A, B) = false</text>
+
+  <rect x="260" y="265" width="180" height="25" rx="6" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="1"/>
+  <text x="350" y="282" text-anchor="middle" fill="#39d2c0" font-size="10">A and B are incomparable</text>
+</svg>
+</div>
+<p class="diagram-caption">A fork-and-merge DAG. Positions A and B are incomparable (neither is_le the other). Merge point M has both as ancestors.</p>
+
+<p>
+The partial order satisfies three properties that the test suite verifies
+exhaustively on random DAGs (tests D26&ndash;D29):
+</p>
+
+<ul>
+  <li><strong>Reflexivity:</strong> <code>is_le(p, p) = true</code></li>
+  <li><strong>Antisymmetry:</strong> <code>is_le(a,b) &amp;&amp; is_le(b,a) &rArr; a == b</code></li>
+  <li><strong>Transitivity:</strong> <code>is_le(a,b) &amp;&amp; is_le(b,c) &rArr; is_le(a,c)</code></li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- SECTION 7 -->
+<!-- ============================================================ -->
+<h2 id="s7">7. The Navigation Cache: Max-Over-Paths</h2>
+
+<p>
+The naive way to compute <code>is_le(a, b)</code> is to walk upward from <code>b</code>
+through parent links and check if you reach <code>a</code>'s branch. But this is
+O(branches) per query, and repeated queries re-traverse the same paths.
+</p>
+
+<p>
+The original Udanax-Gold code solved this with a <strong>navigation cache</strong>
+that stores, for each branch reachable from the reference position, the maximum
+position visible on that branch. The key insight is the
+<strong>max-over-paths</strong> invariant:
+</p>
+
+<div class="note">
+<strong>The Invariant:</strong> If position <code>b</code> is reachable from
+<code>a</code> via multiple DAG paths that enter <code>a</code>'s branch at different
+positions, the cache stores the <strong>maximum</strong> of those entry positions.
+This is because a later entry point on a branch <em>subsumes</em> an earlier one:
+if you can see position 5, you can certainly see position 3 on the same branch.
+</div>
+
+<p>
+The algorithm has three pieces, mirroring the original <code>cacheIn</code> /
+<code>cacheRecur</code> methods:
+</p>
+
+<h3>cache_in_into(pos)</h3>
+<p>
+For a given position <code>(branch, pos)</code>:
+</p>
+<ul>
+  <li>If <code>branch</code> is <strong>not yet visited</strong> (None in cache): store <code>pos</code>, then recurse to parents.</li>
+  <li>If <strong>already visited</strong>: update to <code>max(old, pos)</code>, <em>no recursion</em>.</li>
+</ul>
+
+<h3>cache_recur_into(branch_id)</h3>
+<p>
+Follows the branch topology:
+</p>
+<ul>
+  <li><code>Root</code> &rarr; stop (the recursion ends here).</li>
+  <li><code>Tree { parent }</code> &rarr; <code>cache_in_into(parent)</code>.</li>
+  <li><code>Dag { parent1, parent2 }</code> &rarr; recurse into <em>both</em> parents.</li>
+</ul>
+
+<h3>is_le(a, b)</h3>
+<pre>// Step 1: cache b's upward reachability
+self.cache_trace_pos(b);
+
+// Step 2: check if a's branch is reachable with a.position <= cached max
+match self.nav_cache.get(&a.branch()) {
+    Some(&mark) => a.position() <= mark,
+    None => false,
+}</pre>
+
+<div class="example-block">
+<div class="example-label">Worked Example: DAG Convergence</div>
+<pre>// Structure:
+//   trunk: root → pos3 → pos4 → pos5
+//   fork from pos3 → Y (pos 3)
+//   fork from pos4 → Z (pos 3)
+//   merge(Y, Z) → W (pos 3)
+
+// Path W → Z → trunk enters at position 4
+// Path W → Y → trunk enters at position 3
+// Cache[trunk] = max(3, 4) = 4
+
+// Therefore:
+is_le(trunk_pos3, W) = true   // 3 <= 4
+is_le(trunk_pos4, W) = true   // 4 <= 4
+is_le(trunk_pos5, W) = false  // 5 > 4  ← not visible!</pre>
+</div>
+
+<div class="gold">
+<strong>Cache Reuse:</strong> The cache is keyed by the reference position. If you
+call <code>is_le</code> many times against the <em>same</em> reference <code>b</code>,
+the cache is reused without rebuilding (test D16). Changing the reference invalidates
+and rebuilds (test D17). The original comment: <em>"many comparisons IN THE SAME
+ORDER will occur very fast."</em>
+</div>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 260" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrN" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#8b949e"/></marker>
+  </defs>
+
+  <!-- Trunk -->
+  <rect x="250" y="10" width="200" height="30" rx="6" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="350" y="30" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">trunk branch</text>
+
+  <!-- positions -->
+  <circle cx="270" cy="55" r="4" fill="#3fb950"/><text x="270" y="48" text-anchor="middle" fill="#3fb950" font-size="8">3</text>
+  <circle cx="320" cy="55" r="4" fill="#3fb950"/><text x="320" y="48" text-anchor="middle" fill="#3fb950" font-size="8">4</text>
+  <circle cx="370" cy="55" r="4" fill="#3fb950"/><text x="370" y="48" text-anchor="middle" fill="#3fb950" font-size="8">5</text>
+  <line x1="270" y1="55" x2="370" y2="55" stroke="#3fb950" stroke-width="1.5"/>
+
+  <!-- Y branch from pos 3 -->
+  <line x1="270" y1="60" x2="180" y2="120" stroke="#58a6ff" stroke-width="1.5"/>
+  <circle cx="180" cy="125" r="4" fill="#58a6ff"/>
+  <text x="160" y="128" text-anchor="middle" fill="#58a6ff" font-size="10" font-weight="600">Y</text>
+  <text x="160" y="143" text-anchor="middle" fill="#8b949e" font-size="8">enters trunk at 3</text>
+
+  <!-- Z branch from pos 4 -->
+  <line x1="320" y1="60" x2="480" y2="120" stroke="#a371f7" stroke-width="1.5"/>
+  <circle cx="480" cy="125" r="4" fill="#a371f7"/>
+  <text x="500" y="128" text-anchor="middle" fill="#a371f7" font-size="10" font-weight="600">Z</text>
+  <text x="500" y="143" text-anchor="middle" fill="#8b949e" font-size="8">enters trunk at 4</text>
+
+  <!-- W merge -->
+  <path d="M 180 130 Q 260 190 340 200" fill="none" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 2"/>
+  <path d="M 480 130 Q 400 190 340 200" fill="none" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 2"/>
+  <circle cx="340" cy="205" r="5" fill="#f85149"/>
+  <text x="340" y="197" text-anchor="middle" fill="#f85149" font-size="10" font-weight="600">W (merge)</text>
+
+  <!-- Cache annotation -->
+  <rect x="200" y="225" width="300" height="25" rx="6" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="1"/>
+  <text x="350" y="242" text-anchor="middle" fill="#39d2c0" font-size="11">cache[trunk] = max(3, 4) = 4</text>
+</svg>
+</div>
+<p class="diagram-caption">Two paths converge at W. The cache stores the maximum entry position (4), not the minimum.</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 8 -->
+<!-- ============================================================ -->
+<h2 id="s8">8. TraceView: The Read Face</h2>
+
+<p>
+<code>TraceView</code> is a <strong>frozen snapshot</strong> of visibility from a
+single reference position. It owns its own navigation cache, independent of
+DagWood's mutable internal cache:
+</p>
+
+<pre>pub struct TraceView {
+    reference: TracePosition,
+    nav_cache: HashMap&lt;BranchId, u32&gt;,
+}</pre>
+
+<p>
+This is important for concurrent reads: multiple TraceViews can exist simultaneously
+without interfering with each other or with DagWood's internal cache used by
+<code>is_le</code>. Test V2 verifies this independence explicitly.
+</p>
+
+<p>
+The TraceView API:
+</p>
+
+<table>
+<tr><th>Method</th><th>Returns</th><th>Semantics</th></tr>
+<tr><td><code>is_visible(pos)</code></td><td><code>bool</code></td><td>Same logic as <code>is_le(pos, reference)</code></td></tr>
+<tr><td><code>visible_max(branch_id)</code></td><td><code>Option&lt;u32&gt;</code></td><td>Max position visible on that branch</td></tr>
+<tr><td><code>visible_branches()</code></td><td>Iterator</td><td>All reachable branches with their max positions</td></tr>
+<tr><td><code>branch_count()</code></td><td><code>usize</code></td><td>How many branches are reachable</td></tr>
+</table>
+
+<div class="note">
+<strong>TraceView vs is_le:</strong> For any pair of positions, <code>view.is_visible(pos)</code>
+must equal <code>dagwood.is_le(pos, reference)</code>. Test V6 verifies this as a
+property test on 5 random DAGs with 25 operations each, checking all position pairs.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 9 -->
+<!-- ============================================================ -->
+<h2 id="s9">9. The Branch Binary Tree: install_branch</h2>
+
+<p>
+When a new branch is forked off from an existing position, it must be registered
+as a child of that position's branch. The original Udanax-Gold code used a peculiar
+insertion algorithm that builds a <strong>binary tree of branches</strong> with a
+swap-after-recurse pattern:
+</p>
+
+<pre>pub fn install_branch(&mut self, parent_id: BranchId, child_id: BranchId) {
+    if parent_id == child_id { return; }       // identity guard
+
+    // If left slot is empty, install there
+    if parent.left.is_none() {
+        parent.left = Some(child_id);
+        return;
+    }
+
+    // Left is occupied: recurse into left child, THEN swap left/right
+    let left_child = parent.left.unwrap();
+    self.install_branch(left_child, child_id)?;
+
+    // The swap (not a standard rotation!)
+    let tmp = parent.left;
+    parent.left = parent.right;
+    parent.right = tmp;
+}</pre>
+
+<div class="gold">
+<strong>Why swap?</strong> The original comment at <span class="mono">branchx.cxx lines 183&ndash;185</span>
+is terse: <code>tmpBr = myLeft; myLeft = myRight; myRight = tmpBr;</code>.
+The effect is to <strong>distribute growth</strong> across both subtrees by
+alternating which side the recursive insertion targets. This is not a standard tree
+rotation&mdash;it is a peculiar Xanaux-Gold balancing heuristic. Tests T5&ndash;T8
+verify the observed behavior, and the 100K-child stress test (P6) confirms
+all children remain reachable.
+</div>
+
+<p>
+This binary tree of branches is stored in the <code>trunk</code> map, which maps
+<code>TracePosition &rarr; BranchId</code>. When <code>new_position()</code> is called,
+it creates a new branch as a child of the root and registers it in the trunk.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 10 -->
+<!-- ============================================================ -->
+<h2 id="s10">10. AssertionPayload: The 13 Operations</h2>
+
+<p>
+On top of the versioning spine sits the <strong>content model</strong>. Content is
+expressed as a log of <em>assertions</em>&mdash;immutable, append-only operations
+stamped with a TracePosition. There are 13 payload types:
+</p>
+
+<table>
+<tr><th>Category</th><th>Payload</th><th>Effect</th></tr>
+<tr><td rowspan="4"><strong>Nodes</strong></td><td><code>CreateNode { node_id, kind }</code></td><td>Create a tree node (document, paragraph, etc.)</td></tr>
+<tr><td><code>AttachChild { parent_id, child_id, ordinal }</code></td><td>Attach child under parent at ordinal</td></tr>
+<tr><td><code>DetachChild { parent_id, child_id }</code></td><td>Remove child from parent</td></tr>
+<tr><td><code>DeleteNode { node_id }</code></td><td>Tombstone the node</td></tr>
+<tr><td rowspan="3"><strong>Spans</strong></td><td><code>CreateSpan { span_id }</code></td><td>Create a text span</td></tr>
+<tr><td><code>SetSpanText { span_id, text }</code></td><td>Set the text content</td></tr>
+<tr><td><code>DeleteSpan { span_id }</code></td><td>Tombstone the span</td></tr>
+<tr><td rowspan="2"><strong>Attachments</strong></td><td><code>AttachSpanToNode { node_id, span_id, ordinal }</code></td><td>Place span in node at ordinal</td></tr>
+<tr><td><code>DetachSpanFromNode { node_id, span_id }</code></td><td>Remove span from node</td></tr>
+<tr><td rowspan="4"><strong>Annotations</strong></td><td><code>CreateAnnotation { annotation_id, kind, payload }</code></td><td>Create annotation (bold, italic, comment...)</td></tr>
+<tr><td><code>AttachAnnotationToNode { annotation_id, node_id }</code></td><td>Attach annotation to a node</td></tr>
+<tr><td><code>AttachAnnotationToSpan { annotation_id, span_id }</code></td><td>Attach annotation to a span</td></tr>
+<tr><td><code>DeleteAnnotation { annotation_id }</code></td><td>Tombstone the annotation</td></tr>
+</table>
+
+<p>
+Each assertion is stored with its TracePosition:
+</p>
+
+<pre>pub struct Assertion {
+    pub id: AssertionId,
+    pub position: TracePosition,   // WHERE in the version DAG
+    pub payload: AssertionPayload, // WHAT was done
+}</pre>
+
+<div class="note">
+<strong>The key design principle:</strong> An assertion's <code>TracePosition</code>
+determines <em>when</em> it happened and <em>from which branches it is visible</em>.
+The payload determines <em>what</em> it does. These two concerns are cleanly separated.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 11 -->
+<!-- ============================================================ -->
+<h2 id="s11">11. AssertionStore and Visibility Filtering</h2>
+
+<p>
+The <code>AssertionStore</code> is a simple append-only log:
+</p>
+
+<pre>pub struct AssertionStore {
+    assertions: Vec&lt;Assertion&gt;,
+    next_id: u64,
+}</pre>
+
+<p>
+The sole filtering mechanism is visibility. Given a <code>TraceView</code>, the store
+returns only assertions whose position is visible from the view's reference:
+</p>
+
+<pre>pub fn visible_assertions&lt;'a&gt;(&amp;'a self, view: &amp;TraceView) -&gt; Vec&lt;&amp;'a Assertion&gt; {
+    self.assertions
+        .iter()
+        .filter(|a| view.is_visible(a.position))
+        .collect()
+}</pre>
+
+<div class="warning">
+<strong>No other rules apply.</strong> The comment in the source is emphatic:
+<em>"This is the SOLE filtering mechanism."</em> There are no soft deletes, no
+hidden flags, no server-side curation. If an assertion's position is visible, it
+participates in materialization. If not, it doesn't.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 12 -->
+<!-- ============================================================ -->
+<h2 id="s12">12. Materialization: History Determines Meaning</h2>
+
+<p>
+<code>materialize_document</code> turns a flat assertion log into a tree structure
+(nodes containing spans and annotations). The process:
+</p>
+
+<ol>
+  <li>Filter assertions by TraceView visibility.</li>
+  <li>Build a <code>VisibleIndex</code> &mdash; O(1) lookup HashMaps by entity ID.</li>
+  <li>Recursively materialize the root node, its children, their spans, and annotations.</li>
+</ol>
+
+<p>
+For single-valued properties (like span text or child ordinals), when multiple
+assertions exist on the <strong>same branch</strong>, the one at the highest position
+wins (last-writer-wins within a branch). This is how sequential edits work: position
+4 overrides position 3 on the same branch.
+</p>
+
+<pre>// Within a single branch, latest position wins
+fn collect_span_text_indexed(idx: &amp;VisibleIndex, span_id: SpanId) -&gt; AlternativeSet&lt;String&gt; {
+    let mut per_branch: HashMap&lt;BranchId, (u32, String)&gt; = HashMap::new();
+
+    for assertion in idx.set_span_text.get(&amp;span_id) {
+        let branch = assertion.position.branch();
+        let pos = assertion.position.position();
+        // Latest position on each branch wins
+        if pos &gt; existing_pos { per_branch.insert(branch, (pos, text)); }
+    }
+    // ...
+}</pre>
+
+<!-- ============================================================ -->
+<!-- SECTION 13 -->
+<!-- ============================================================ -->
+<h2 id="s13">13. AlternativeSet: Conflict Preservation</h2>
+
+<p>
+This is where the DagWood's conflict-preservation philosophy becomes visible. When
+two branches <strong>diverge</strong> and then <strong>merge</strong>, both versions
+of a span's text are visible. The materializer does <strong>not</strong> pick one.
+Instead, it returns an <code>AlternativeSet</code>:
+</p>
+
+<pre>pub enum AlternativeSet&lt;T&gt; {
+    Single(T),              // no conflict: one value
+    Alternatives(Vec&lt;T&gt;),   // conflict: all visible divergent values
+}</pre>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrA1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#58a6ff"/></marker>
+    <marker id="arrA2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#a371f7"/></marker>
+  </defs>
+
+  <!-- Root -->
+  <rect x="290" y="10" width="120" height="36" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="350" y="33" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">root</text>
+  <text x="370" y="28" fill="#8b949e" font-size="8">CreateSpan(1)</text>
+
+  <!-- Branch A -->
+  <rect x="120" y="90" width="140" height="45" rx="8" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="190" y="110" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">Branch A</text>
+  <text x="190" y="126" text-anchor="middle" fill="#8b949e" font-size="9">SetSpanText(1, "Hello!")</text>
+
+  <!-- Branch B -->
+  <rect x="440" y="90" width="140" height="45" rx="8" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="510" y="110" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="600">Branch B</text>
+  <text x="510" y="126" text-anchor="middle" fill="#8b949e" font-size="9">SetSpanText(1, "Hello world")</text>
+
+  <line x1="320" y1="46" x2="190" y2="85" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#arrA1)"/>
+  <line x1="380" y1="46" x2="510" y2="85" stroke="#a371f7" stroke-width="1.5" marker-end="url(#arrA2)"/>
+
+  <!-- Merge -->
+  <rect x="260" y="180" width="180" height="40" rx="8" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="2"/>
+  <text x="350" y="200" text-anchor="middle" fill="#f85149" font-size="12" font-weight="600">Merge M</text>
+  <text x="350" y="214" text-anchor="middle" fill="#8b949e" font-size="9">dag-branch (parents: A, B)</text>
+
+  <path d="M 190 135 Q 260 160 300 175" fill="none" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3 2"/>
+  <path d="M 510 135 Q 440 160 400 175" fill="none" stroke="#a371f7" stroke-width="1" stroke-dasharray="3 2"/>
+
+  <!-- Result -->
+  <rect x="200" y="250" width="300" height="50" rx="8" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="1.5"/>
+  <text x="350" y="270" text-anchor="middle" fill="#39d2c0" font-size="11" font-weight="600">materialize_span(span=1, view=TraceView(M))</text>
+  <text x="350" y="288" text-anchor="middle" fill="#8b949e" font-size="10">&rarr; AlternativeSet::Alternatives(["Hello!", "Hello world"])</text>
+</svg>
+</div>
+<p class="diagram-caption">Two branches set different text for the same span. After merge, both values are preserved as alternatives. The system never silently discards either.</p>
+
+<div class="warning">
+<strong>DO NOT silently resolve.</strong> The source code states this as a design
+axiom (line 219): <em>"For single-valued properties where multiple branches disagree.
+DO NOT silently resolve &mdash; preserve all visible alternatives."</em>
+</div>
+
+<p>
+This is the philosophical heart of the system. Unlike Git (which requires manual
+conflict resolution) or operational transforms (which merge automatically but may
+lose intent), the DagWood <strong>preserves all divergent states</strong> and lets
+the consumer decide what to present. The frontend can show alternatives
+side-by-side, offer a choice, or apply a merge strategy&mdash;but the data layer
+never throws anything away.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 14 -->
+<!-- ============================================================ -->
+<h2 id="s14">14. The H-Tree: Linking Trace to Canopy</h2>
+
+<p>
+The <strong>H-Tree</strong> (history tree) connects the trace DAG to the
+<em>canopy</em> &mdash; the hierarchical crum structure used for filtered queries
+(see <a href="transclusion-engine.html">Transclusion Engine</a> for canopy details).
+</p>
+
+<p>
+Each <code>HUpperCrumData</code> node sits at a TracePosition and holds:
+</p>
+
+<ul>
+  <li><code>hcut: TracePosition</code> &mdash; where in the version history this crum lives</li>
+  <li><code>bert_crum: Arc&lt;CanopyCrumData&gt;</code> &mdash; the corresponding canopy crum (permissions/endorsement flags)</li>
+  <li><code>o_parents: Vec&lt;Arc&lt;dyn HPart&gt;&gt;</code> &mdash; parent crumbs in the H-tree</li>
+</ul>
+
+<p>
+The H-tree enables <strong>delayed_store_backfollow</strong> &mdash; a filtered
+backward traversal through version history. Starting from a crum, it walks parent
+links, applying a <code>PropFinder</code> filter at each level. Only crumbs whose
+permission flags pass the filter are visited:
+</p>
+
+<pre>pub fn delayed_store_backfollow(
+    crum: &Arc&lt;Mutex&lt;HUpperCrumData&gt;&gt;,
+    finder: &PropFinder,
+    hcrum_cache: &mut HashSet&lt;u32&gt;,   // cycle prevention
+    visitor: &mut dyn FnMut(&Arc&lt;Mutex&lt;HUpperCrumData&gt;&gt;),
+) {
+    // Skip if already visited (by hash)
+    if hcrum_cache.contains(&hash) { return; }
+    hcrum_cache.insert(hash);
+
+    // Narrow the filter by this crum's flags
+    let new_finder = finder.pass(crum_flags);
+    if new_finder.is_empty() { return; } // filter closed: nothing more matches
+
+    visitor(crum);  // visit this crum
+
+    // Recurse into parents
+    for parent in &o_parents {
+        Self::delayed_store_backfollow(parent, &new_finder, cache, visitor);
+    }
+}</pre>
+
+<div class="note">
+<strong>The <code>HPart</code> trait:</strong> <code>HUpperCrumData</code> implements
+the <code>HPart</code> trait, which requires <code>h_crum() -&gt; Option&lt;Arc&lt;...&gt;&gt;</code>.
+This allows any node in the tree to optionally expose its H-crum, enabling the
+<code>BackfollowEngine</code>'s <code>EditionMeta</code> to participate in the tree
+as a polymorphic parent.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 15 -->
+<!-- ============================================================ -->
+<h2 id="s15">15. BackfollowEngine: Bridging Ent to Editions</h2>
+
+<p>
+The <code>BackfollowEngine</code> (in <code>edition/backfollow.rs</code>) is the
+bridge between the ent DAG world and the Edition/O-tree world. It owns:
+</p>
+
+<pre>pub struct BackfollowEngine {
+    transclusion_index: TransclusionIndex,
+    bert_canopy: BertCanopy,
+    sensor_canopy: SensorCanopy,
+    dagwood: DagWood,                    // ← the ent DAG
+    assertion_store: AssertionStore,     // ← the content model
+    edition_metas: HashMap&lt;u64, EditionMeta&gt;,
+    fingerprint_to_works: HashMap&lt;[u8;32], HashSet&lt;u64&gt;&gt;,
+    work_spans: HashMap&lt;u64, Vec&lt;SpanId&gt;&gt;,
+    // ...
+}</pre>
+
+<p>
+When a work is registered, the engine:
+</p>
+
+<ol>
+  <li>Allocates a TracePosition in the DagWood (<code>dagwood.new_position()</code>)</li>
+  <li>Creates an H-crum at that position with the work's permission flags</li>
+  <li>Calls <code>bridge_edition_to_assertions</code> to translate the Edition's O-tree content into assertions</li>
+</ol>
+
+<p>
+The bridge translates each O-tree entry into <code>CreateSpan</code> +
+<code>SetSpanText</code> + <code>AttachSpanToNode</code> assertions:
+</p>
+
+<pre>fn bridge_edition_to_assertions(&mut self, work_id: u64, edition: &Edition, tp: TracePosition) {
+    let node_id = DocumentId::new(work_id).node_id();
+
+    // First time: create the document node
+    if first_time {
+        self.assertion_store.add(tp, AssertionPayload::CreateNode {
+            node_id, kind: "document".into(),
+        });
+    }
+
+    // For each O-tree entry, create/update a span
+    for (i, (_, carrier)) in edition.all_entries().iter().enumerate() {
+        let span_id = spans[i];
+        let text = carrier.element.as_text().unwrap_or("");
+        self.assertion_store.add(tp, AssertionPayload::SetSpanText { span_id, text });
+    }
+}</pre>
+
+<p>
+This means the Edition model (per-line attribution, O-tree positions) and the ent
+model (assertions, visibility, alternatives) are <strong>two views of the same
+data</strong>. The Edition is the "fast path" for current-state access; the ent DAG
+is the "history path" for version-aware queries and cross-work materialization.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 240" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrB1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrB2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#39d2c0"/></marker>
+  </defs>
+
+  <!-- Edition world -->
+  <rect x="20" y="20" width="220" height="60" rx="10" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="130" y="42" text-anchor="middle" fill="#3fb950" font-size="13" font-weight="600">Edition (O-tree)</text>
+  <text x="130" y="60" text-anchor="middle" fill="#8b949e" font-size="10">RangeElement entries</text>
+  <text x="130" y="74" text-anchor="middle" fill="#8b949e" font-size="10">SpanProvenance</text>
+
+  <!-- Bridge -->
+  <rect x="280" y="30" width="220" height="50" rx="10" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="2"/>
+  <text x="390" y="52" text-anchor="middle" fill="#39d2c0" font-size="12" font-weight="700">bridge_edition_to_assertions</text>
+  <text x="390" y="68" text-anchor="middle" fill="#8b949e" font-size="9">for each entry → CreateSpan + SetSpanText + AttachSpanToNode</text>
+
+  <line x1="240" y1="50" x2="275" y2="50" stroke="#39d2c0" stroke-width="1.5" marker-end="url(#arrB2)"/>
+
+  <!-- Ent world -->
+  <rect x="540" y="20" width="220" height="60" rx="10" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="650" y="42" text-anchor="middle" fill="#58a6ff" font-size="13" font-weight="600">AssertionStore</text>
+  <text x="650" y="60" text-anchor="middle" fill="#8b949e" font-size="10">stamped with TracePosition</text>
+  <text x="650" y="74" text-anchor="middle" fill="#8b949e" font-size="10">visible via TraceView</text>
+
+  <line x1="500" y1="50" x2="535" y2="50" stroke="#39d2c0" stroke-width="1.5" marker-end="url(#arrB2)"/>
+
+  <!-- Reverse: materialize -->
+  <path d="M 650 85 Q 650 130 390 130 Q 130 130 130 85" fill="none" stroke="#a371f7" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrB1)"/>
+  <rect x="270" y="140" width="240" height="25" rx="6" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1"/>
+  <text x="390" y="157" text-anchor="middle" fill="#a371f7" font-size="10">materialize_document(store, view, doc_id) → MaterializedDocument</text>
+
+  <!-- Consumer -->
+  <rect x="270" y="190" width="240" height="35" rx="8" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1"/>
+  <text x="390" y="212" text-anchor="middle" fill="#d29922" font-size="11">Frontend / WASM consumer</text>
+  <line x1="390" y1="165" x2="390" y2="185" stroke="#a371f7" stroke-width="1" stroke-dasharray="2 2"/>
+</svg>
+</div>
+<p class="diagram-caption">The bridge is bidirectional. Editions are translated into assertions (forward); assertions are materialized back into documents (reverse).</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 16 -->
+<!-- ============================================================ -->
+<h2 id="s16">16. WASM Bindings: DagWood in the Browser</h2>
+
+<p>
+The <code>wasm.rs</code> module exposes the DagWood, TraceView, and AssertionStore
+to JavaScript via <code>wasm-bindgen</code>. The wrappers are thin:
+</p>
+
+<pre>// JavaScript-callable API
+let dw = WasmDagWood.new();
+let pos1 = dw.new_position();
+let pos2 = dw.new_position_after(pos1);
+let merged = dw.new_successor_after(pos1, anotherPos);
+
+let view = dw.trace_view(merged);
+console.log(view.is_visible(pos1));   // true
+
+let store = WasmAssertionStore.new();
+store.add(pos1, JSON.stringify({
+    CreateNode: { node_id: 1, kind: "document" }
+}));
+
+let doc = store.materialize_document_json(view, 1);
+// → JSON tree of MaterializedNode → MaterializedSpan → MaterializedAnnotation</pre>
+
+<p>
+The assertion payload is passed as a JSON string and parsed into
+<code>AssertionPayload</code> internally. This means the full assertion model is
+available in the browser without recompiling&mdash;the same Rust code runs in the
+server and in WASM.
+</p>
+
+<!-- ============================================================ -->
+<!-- SECTION 17 -->
+<!-- ============================================================ -->
+<h2 id="s17">17. Properties Proven by the Test Suite</h2>
+
+<p>
+The <code>ent/</code> module has one of the most rigorous test suites in the
+codebase. Beyond unit tests, it includes <strong>property-based tests</strong> on
+randomly generated DAGs and <strong>stress tests</strong> at scale:
+</p>
+
+<table>
+<tr><th>Test</th><th>Category</th><th>What It Verifies</th></tr>
+<tr><td><code>D7&ndash;D8</code></td><td>Ordering axioms</td><td>Monotonic ordering, reflexivity</td></tr>
+<tr><td><code>D9, D20</code></td><td>Ordering axioms</td><td>Antisymmetry, transitivity</td></tr>
+<tr><td><code>D10&ndash;D15</code></td><td>Fork/merge</td><td>Ancestry through forks, merge points, DAG convergence</td></tr>
+<tr><td><code>D13, D22</code></td><td>Max-over-paths</td><td>Cache stores max entry position across multiple paths</td></tr>
+<tr><td><code>D24&ndash;D25, D29</code></td><td>Cache equivalence</td><td>Cached <code>is_le</code> == from-scratch recomputation for all pairs</td></tr>
+<tr><td><code>D26&ndash;D28</code></td><td><strong>Property tests</strong></td><td>Reflexivity, antisymmetry, transitivity on 5 random DAGs</td></tr>
+<tr><td><code>V6</code></td><td>Property test</td><td><code>TraceView.is_visible</code> == <code>DagWood.is_le</code> for all pairs</td></tr>
+<tr><td><code>S7</code></td><td>Successor invariant</td><td>Every successor S of P satisfies <code>is_le(P, S)</code></td></tr>
+<tr><td><code>P1</code> <span class="accent-amber">(ignored)</span></td><td>Stress</td><td>100K-position linear chain: O(B) traversal</td></tr>
+<tr><td><code>P2</code> <span class="accent-amber">(ignored)</span></td><td>Stress</td><td>16K leaves + 14 merge levels: ~32K branches, cycle prevention</td></tr>
+<tr><td><code>P7</code> <span class="accent-amber">(ignored)</span></td><td>Stress</td><td>20K alternating-reference comparisons (cache thrashing)</td></tr>
+<tr><td><code>P10</code> <span class="accent-amber">(ignored)</span></td><td>Marathon</td><td>50 random DAGs &times; 500 ops: all-pairs all-triples property checks</td></tr>
+</table>
+
+<div class="note">
+<strong>Stress tests are <code>#[ignore]</code></strong> and run with
+<code>cargo test -- --ignored</code>. They exercise performance and correctness at
+scales that are slow for CI but important for confidence.
+</div>
+
+<!-- ============================================================ -->
+<!-- SECTION 18 -->
+<!-- ============================================================ -->
+<h2 id="s18">18. Source Code Map</h2>
+
+<table>
+<tr><th>File</th><th>Path</th><th>Key Types</th></tr>
+<tr><td><code class="accent-green">ent.rs</code></td><td><code>src/ent/ent.rs</code></td><td><code>Ent</code></td></tr>
+<tr><td><code class="accent-blue">trace.rs</code></td><td><code>src/ent/trace.rs</code></td><td><code>TracePosition</code></td></tr>
+<tr><td><code class="accent-blue">branch.rs</code></td><td><code>src/ent/branch.rs</code></td><td><code>BranchId</code>, <code>BranchKind</code>, <code>Branch</code>, <code>BranchStore</code>, <code>BranchStub</code>, <code>BranchState</code></td></tr>
+<tr><td><code class="accent-blue">dagwood.rs</code></td><td><code>src/ent/dagwood.rs</code></td><td><code>DagWood</code>, <code>TraceView</code></td></tr>
+<tr><td><code class="accent-purple">content.rs</code></td><td><code>src/ent/content.rs</code></td><td><code>AssertionPayload</code>, <code>Assertion</code>, <code>AssertionStore</code>, <code>AlternativeSet</code>, <code>MaterializedDocument/Node/Span/Annotation</code>, <code>VisibleIndex</code></td></tr>
+<tr><td><code class="accent-amber">htree.rs</code></td><td><code>src/ent/htree.rs</code></td><td><code>HPart</code>, <code>HUpperCrumData</code>, <code>HistoryCrumBase</code></td></tr>
+<tr><td><code class="accent-cyan">backfollow.rs</code></td><td><code>src/edition/backfollow.rs</code></td><td><code>BackfollowEngine</code>, <code>EditionMeta</code></td></tr>
+<tr><td><code>wasm.rs</code></td><td><code>src/wasm.rs</code></td><td><code>WasmDagWood</code>, <code>WasmTracePosition</code>, <code>WasmTraceView</code>, <code>WasmAssertionStore</code></td></tr>
+</table>
+
+<div class="legend" style="margin-top:24px">
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(63,185,80,0.3);border:1px solid #3fb950"></div> Ent wrapper</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(88,166,255,0.3);border:1px solid #58a6ff"></div> Versioning spine</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(163,113,247,0.3);border:1px solid #a371f7"></div> Content model</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(210,153,34,0.3);border:1px solid #d29922"></div> H-Tree</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:rgba(57,210,192,0.3);border:1px solid #39d2c0"></div> Bridge</div>
+</div>
+
+<div class="footer">
+  Xudanu Documentation &mdash; <a href="index.html">Home</a> &mdash; <a href="editions-and-works.html">Editions &amp; Works</a> &mdash; <a href="transclusion-engine.html">Transclusion Engine</a>
+</div>
+
+</div>
+</body>
+</html>

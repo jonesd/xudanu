@@ -595,9 +595,13 @@ fn dispatch_inner(
                 super::protocol::GraphPayload { nodes, edges },
             ))
         }
-        WireRequest::TrailCreate { name } => {
+        WireRequest::TrailCreate {
+            name,
+            introduction,
+            categories,
+        } => {
             srv.ensure_authenticated(session_id)?;
-            let trail_id = srv.trail_create(session_id, name)?;
+            let trail_id = srv.trail_create(session_id, name, introduction, categories)?;
             Ok(ResponseValue::Id(trail_id))
         }
         WireRequest::TrailDelete { trail_id } => {
@@ -646,6 +650,33 @@ fn dispatch_inner(
             srv.ensure_authenticated(session_id)?;
             let trail = srv.trail_get(session_id, trail_id)?;
             Ok(ResponseValue::TrailResult(trail))
+        }
+        WireRequest::TrailUpdate {
+            trail_id,
+            introduction,
+            categories,
+        } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.trail_update(session_id, trail_id, introduction, categories)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::TrailPublish { trail_id } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.trail_publish(session_id, trail_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::TrailUnpublish { trail_id } => {
+            srv.ensure_authenticated(session_id)?;
+            srv.trail_unpublish(session_id, trail_id)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::TrailListPublished { category } => {
+            let trails = srv.trail_list_published(session_id, category.as_deref())?;
+            Ok(ResponseValue::TrailListResult(trails))
+        }
+        WireRequest::TrailListCategories => {
+            let cats = srv.trail_list_categories();
+            Ok(ResponseValue::TrailCategories(cats))
         }
         WireRequest::WorkSetReadClub { work_id, club_id } => {
             srv.ensure_authenticated(session_id)?;
@@ -3180,7 +3211,10 @@ fn dispatch_inner(
             })
         }
         #[cfg(feature = "serde")]
-        WireRequest::ProvJsonExport { work_id, include_federation } => {
+        WireRequest::ProvJsonExport {
+            work_id,
+            include_federation,
+        } => {
             let wid = work_id.unwrap_or(0);
             if wid > 0 {
                 srv.ensure_can_read(session_id, wid)?;
@@ -3191,35 +3225,50 @@ fn dispatch_inner(
             Ok(ResponseValue::ProvJsonExportResult { prov_json })
         }
         #[cfg(feature = "serde")]
-        WireRequest::FederationAttestationCreate { attestation_type, subject_server_id } => {
+        WireRequest::FederationAttestationCreate {
+            attestation_type,
+            subject_server_id,
+        } => {
             srv.ensure_session(session_id)?;
-            Err(crate::server::ServerError::Internal(
-                format!("Federation attestation create not supported in dispatch: type={} subject={}", attestation_type, subject_server_id)
-            ))
+            Err(crate::server::ServerError::Internal(format!(
+                "Federation attestation create not supported in dispatch: type={} subject={}",
+                attestation_type, subject_server_id
+            )))
         }
         #[cfg(feature = "serde")]
         WireRequest::FederationAttestationVerify { attestation_json } => {
             srv.ensure_session(session_id)?;
-            Err(crate::server::ServerError::Internal(
-                format!("Federation attestation verify not supported in dispatch: json_len={}", attestation_json.len())
-            ))
+            Err(crate::server::ServerError::Internal(format!(
+                "Federation attestation verify not supported in dispatch: json_len={}",
+                attestation_json.len()
+            )))
         }
         #[cfg(feature = "serde")]
         WireRequest::FederationBundleExport { bundle_id } => {
             srv.ensure_session(session_id)?;
-            Err(crate::server::ServerError::Internal(
-                format!("Federation bundle export not supported in dispatch: bundle_id={}", bundle_id)
-            ))
+            Err(crate::server::ServerError::Internal(format!(
+                "Federation bundle export not supported in dispatch: bundle_id={}",
+                bundle_id
+            )))
         }
         #[cfg(feature = "serde")]
-        WireRequest::ClusterVerificationCreate { activity_type, verifying_servers, consensus_type, threshold_met } => {
+        WireRequest::ClusterVerificationCreate {
+            activity_type,
+            verifying_servers,
+            consensus_type,
+            threshold_met,
+        } => {
             srv.ensure_session(session_id)?;
             Err(crate::server::ServerError::Internal(
                 format!("Cluster verification create not supported in dispatch: type={} servers={} consensus={} threshold={}", activity_type, verifying_servers.len(), consensus_type, threshold_met)
             ))
         }
         #[cfg(feature = "serde")]
-        WireRequest::CrossServerSignatureVerify { server_id, signature, timestamp } => {
+        WireRequest::CrossServerSignatureVerify {
+            server_id,
+            signature,
+            timestamp,
+        } => {
             srv.ensure_session(session_id)?;
             Err(crate::server::ServerError::Internal(
                 format!("Cross-server signature verify not supported in dispatch: server={} sig_len={} ts={}", server_id, signature.len(), timestamp)
@@ -3299,6 +3348,14 @@ fn dispatch_inner_read(
             srv.ensure_authenticated(session_id)?;
             let trail = srv.trail_get(session_id, trail_id)?;
             Ok(ResponseValue::TrailResult(trail))
+        }
+        WireRequest::TrailListPublished { category } => {
+            let trails = srv.trail_list_published(session_id, category.as_deref())?;
+            Ok(ResponseValue::TrailListResult(trails))
+        }
+        WireRequest::TrailListCategories => {
+            let cats = srv.trail_list_categories();
+            Ok(ResponseValue::TrailCategories(cats))
         }
         WireRequest::WorkReadClub { work_id } => {
             let club = srv.work_read_club(work_id)?;
