@@ -989,10 +989,8 @@ fn verify_custom_report(report: &serde_json::Value) -> Result<(), Box<dyn std::e
             .and_then(|v| v.as_u64())
             .unwrap_or(0)
     );
-    println!(
-        "  BLAKE3:    {}...",
-        &doc["content_hash_blake3"].as_str().unwrap_or("?")[..32.min(64)]
-    );
+    let hash_str = doc["content_hash_blake3"].as_str().unwrap_or("?");
+    println!("  BLAKE3:    {}...", &hash_str[..32.min(hash_str.len())]);
     println!();
 
     let server_id = report["server_identity"]["server_id"]
@@ -1120,10 +1118,8 @@ fn verify_signed_report(signed: &serde_json::Value) -> Result<(), Box<dyn std::e
         "  Document:  {}",
         doc["title"].as_str().unwrap_or("(untitled)")
     );
-    println!(
-        "  BLAKE3:    {}...",
-        &doc["content_hash_blake3"].as_str().unwrap_or("?")[..32.min(64)]
-    );
+    let hash_str = doc["content_hash_blake3"].as_str().unwrap_or("?");
+    println!("  BLAKE3:    {}...", &hash_str[..32.min(hash_str.len())]);
     println!();
 
     let vk_hex = report["server_identity"]["verifying_key_ed25519"]
