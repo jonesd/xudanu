@@ -1005,13 +1005,13 @@ async fn handle_socket(
                                             "operation_failed"
                                         }
                                     };
-                                    
+
                                     if is_auth_op {
                                         sec.on_auth_failure(session_id, remote_addr, error_category.to_string());
                                     } else {
                                         sec.on_permission_denied(session_id, remote_addr, error_category.to_string());
                                     }
-                                    
+
                                     // Log detailed error only to debug level
                                     tracing::debug!(
                                         session_id = %session_id,

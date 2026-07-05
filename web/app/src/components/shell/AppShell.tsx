@@ -10,6 +10,7 @@ import { SourceTextViewer } from "../SourceTextViewer";
 import { ConnectionOverlay } from "../ConnectionOverlay";
 import { IdentityPanel } from "../IdentityPanel";
 import { ImportWizard } from "../ImportWizard";
+import { TrailsPanel } from "../TrailsPanel";
 import { DocumentSettings, loadDocPreferences } from "../DocumentSettings";
 import type { DocPreferences } from "../DocumentSettings";
 import type { WorkListEntry } from "../../api/crdt_sync";
@@ -19,12 +20,21 @@ import { BottomBar } from "./BottomBar";
 import { ContextPanel } from "./ContextPanel";
 import { LibrarySlideOut } from "./LibrarySlideOut";
 import { SearchOverlay } from "./SearchOverlay";
+import { PermissionBadge } from "./PermissionBadge";
+import { buildProvValidatorHtml } from "../../prov-validator";
 import "../../app-shell.css";
 
 const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
 
 export function AppShell() {
-  const [workBeId, setWorkBeId] = useState<number | null>(null);
+  const [workBeId, setWorkBeId] = useState<number | null>(() => {
+    const wid = new URLSearchParams(window.location.search).get("work");
+    if (wid) {
+      const parsed = wid.startsWith("0x") ? parseInt(wid, 16) : parseInt(wid, 10);
+      if (!isNaN(parsed)) return parsed;
+    }
+    return null;
+  });
   const [writeMode, setWriteMode] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [activeRail, setActiveRail] = useState("document");
@@ -34,6 +44,7 @@ export function AppShell() {
   const [showSettings, setShowSettings] = useState(false);
   const [showIdentity, setShowIdentity] = useState(false);
   const [showProvenance, setShowProvenance] = useState(false);
+  const [showTrails, setShowTrails] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [works, setWorks] = useState<WorkListEntry[]>([]);
@@ -42,13 +53,7 @@ export function AppShell() {
   const lastTypingRef = useRef(0);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const wid = params.get("work");
-    if (wid) {
-      const parsed = wid.startsWith("0x") ? parseInt(wid, 16) : parseInt(wid, 10);
-      if (!isNaN(parsed)) setWorkBeId(parsed);
-    }
-    if (params.get("auth") === "1") {
+    if (new URLSearchParams(window.location.search).get("auth") === "1") {
       window.history.replaceState({}, "", "/");
     }
   }, []);
@@ -84,7 +89,9 @@ export function AppShell() {
     try {
       const list = await fetchWorkList();
       if (list) setWorks(list);
-    } catch {}
+    } catch {
+      // work list fetch is best-effort; failures surface via empty library
+    }
   }, [fetchWorkList]);
 
   useEffect(() => {
@@ -199,6 +206,21 @@ export function AppShell() {
     }
   }, [clientRef, workBeId]);
 
+  const handleExportProvJson = useCallback(async () => {
+    if (!clientRef.current || workBeId === null) return;
+    try {
+      const provJson = await clientRef.current.exportProvJson(workBeId);
+      const parsed = JSON.parse(provJson);
+      const html = buildProvValidatorHtml(JSON.stringify(parsed, null, 2));
+      const blob = new Blob([html], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      console.error("Failed to export PROV-JSON:", e);
+    }
+  }, [clientRef, workBeId]);
+
   const selectWork = useCallback((id: number) => {
     setWorkBeId(id);
     const url = new URL(window.location.href);
@@ -206,6 +228,14 @@ export function AppShell() {
     window.history.replaceState({}, "", url.toString());
     setLibraryOpen(false);
   }, []);
+
+  const handleShowBacklinks = useCallback(
+    (workId: number) => {
+      setFocusMode(false);
+      selectWork(workId);
+    },
+    [selectWork],
+  );
 
   const handleCreate = useCallback(async () => {
     try {
@@ -409,6 +439,7 @@ export function AppShell() {
       if (item === "identity") setShowIdentity(true);
       else if (item === "settings") setShowSettings(true);
       else if (item === "provenance") setShowProvenance((s) => !s);
+      else if (item === "trails") setShowTrails((s) => !s);
       else if (item === "annotate") setActiveRail("annotate");
     },
     []
@@ -430,6 +461,7 @@ export function AppShell() {
         identityName={identityName}
         identityColor={identityColor}
         writeMode={writeMode}
+        canEdit={canEdit}
         onToggleWrite={() => setWriteMode((w) => !w)}
         onOpenSearch={() => setSearchOpen(true)}
         onOpenIdentity={() => setShowIdentity(true)}
@@ -512,6 +544,16 @@ export function AppShell() {
           <>
             <div className="doc-toolbar">
               <div className="doc-title">{currentWorkMeta?.title || `Work ${workIdDisplay}`}</div>
+              <PermissionBadge
+                canEdit={canEdit}
+                isAnonymous={!identity}
+                identityName={identityName}
+                isPublished={isPublished}
+                editOpen={editOpen}
+                isGrabbed={currentWorkMeta?.is_grabbed ?? false}
+                isOwner={!!identity && currentWorkMeta?.owner === identity.club_id}
+                documentTitle={currentWorkMeta?.title || null}
+              />
               <button
                 type="button"
                 className="publish-toggle"
@@ -606,6 +648,7 @@ export function AppShell() {
                 onPlaceTransclusion={handlePlaceTransclusion}
                 selectionRange={selectionRange}
                 onNavigateToWork={selectWork}
+                onShowBacklinks={handleShowBacklinks}
                 compoundSpanRanges={compound.spanRanges}
                 remoteCursors={awareness}
                 compoundSourceTitles={compound.sourceTitles}
@@ -658,6 +701,7 @@ export function AppShell() {
         onNavigateToWork={selectWork}
         onOpenProvenance={() => setShowProvenance(true)}
         onExportReport={handleExportReport}
+        onExportProvJson={handleExportProvJson}
         focusMode={focusMode}
         onToggleFocus={() => setFocusMode((f) => !f)}
       />
@@ -727,6 +771,16 @@ export function AppShell() {
           prefs={docPrefs}
           onPrefsChange={setDocPrefs}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {showTrails && (
+        <TrailsPanel
+          client={clientRef.current}
+          currentWorkId={workBeId}
+          works={works}
+          onSelectWork={selectWork}
+          onClose={() => setShowTrails(false)}
         />
       )}
     </div>

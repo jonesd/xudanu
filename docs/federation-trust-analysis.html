@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Federation Trust Boundary Analysis &mdash; Xudanu Developer Guide</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+.danger{background:rgba(248,81,73,0.10);border:2px solid #f85149;padding:16px 20px;margin:16px 0;border-radius:8px;font-size:14px;color:#c9d1d9}
+.danger strong{color:#f85149}
+.safe{background:rgba(63,185,80,0.06);border-left:3px solid #3fb950;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.safe strong{color:#3fb950}
+.fix{background:rgba(57,210,192,0.06);border:1px solid #39d2c0;padding:16px 20px;margin:16px 0;border-radius:8px;font-size:14px;color:#c9d1d9}
+.fix strong{color:#39d2c0}
+.fix-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#39d2c0;margin-bottom:8px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.severity-critical{color:#f85149;font-weight:700;font-family:'JetBrains Mono',monospace;font-size:12px}
+.severity-high{color:#d29922;font-weight:700;font-family:'JetBrains Mono',monospace;font-size:12px}
+.severity-medium{color:#58a6ff;font-weight:700;font-family:'JetBrains Mono',monospace;font-size:12px}
+.severity-low{color:#3fb950;font-weight:700;font-family:'JetBrains Mono',monospace;font-size:12px}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-cyan{color:#39d2c0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Federation Trust Boundary Analysis</h1>
+<p class="subtitle">A security audit of the multi-server federation layer: trust boundaries, authorization gaps, risk areas, and concrete recommendations to bring federation access control in line with the single-server club model.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. Executive Summary</a>
+  <a class="toc-section" href="#s2">2. Architecture Overview: Where the Boundaries Are</a>
+  <a class="toc-section" href="#s3">3. Boundary 1: Connection Admission</a>
+  <a class="toc-section" href="#s4">4. Boundary 2: Peer Authentication (Handshake)</a>
+  <a class="toc-section" href="#s5">5. Boundary 3: Read Access (Data Plane)</a>
+  <a class="toc-section" href="#s6">6. Boundary 4: Write Access (Data Plane)</a>
+  <a class="toc-section" href="#s7">7. Boundary 5: Membership (Web-of-Trust Join)</a>
+  <a class="toc-section" href="#s8">8. Boundary 6: Governance (PBFT Consensus)</a>
+  <a class="toc-section" href="#s9">9. Boundary 7: Identity Binding</a>
+  <a class="toc-section" href="#s10">10. Single-Server vs Federation: The Access Model Gap</a>
+  <a class="toc-section" href="#s11">11. The Gap Register (Prioritized)</a>
+  <a class="toc-section" href="#s12">12. Recommendations: Aligning Federation with the Club Model</a>
+  <a class="toc-section" href="#s13">13. Safe Deployment Patterns (Until Gaps Are Fixed)</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Executive Summary</h2>
+
+<p>
+The federation layer establishes an <strong>encrypted, mutually-authenticated channel</strong> between servers using sound cryptography (X25519 + Ed25519 + ChaCha20-Poly1305). Once a peer passes the handshake, however, it operates as a <strong>privileged super-user</strong> with broad read/write access to the local data store. There is <strong>no per-work, per-blob, or per-edition authorization</strong> on federation requests &mdash; the club-based access control that protects content in the single-server model is bypassed entirely on the federation data plane.
+</p>
+
+<div class="danger">
+<strong>Bottom line:</strong> A federated peer has <em>broader</em> access than any end-user. It can read private works (bypassing <code>read_club</code>), inject fabricated provenance, create works with no quota, and &mdash; through governance gaps &mdash; potentially rotate other servers' identity keys. The cryptography prevents outsiders from connecting, but a malicious or compromised peer faces almost no restrictions once connected.
+</div>
+
+<p>
+This document maps every trust boundary, catalogs the authorization gaps by severity, and provides concrete recommendations for aligning federation access control with the existing single-server club model.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Architecture Overview: Where the Boundaries Are</h2>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 520" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrT" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#8b949e"/></marker>
+  </defs>
+
+  <!-- External internet -->
+  <rect x="10" y="10" width="840" height="40" rx="8" fill="rgba(248,81,73,0.04)" stroke="#30363d" stroke-width="1" stroke-dasharray="5 3"/>
+  <text x="430" y="35" text-anchor="middle" fill="#8b949e" font-size="12" font-weight="600">Network (untrusted)</text>
+
+  <!-- Server box -->
+  <rect x="40" y="70" width="780" height="430" rx="12" fill="rgba(88,166,255,0.03)" stroke="#30363d" stroke-width="2"/>
+  <text x="430" y="90" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Xudanu Server</text>
+
+  <!-- Boundary 1: Connection -->
+  <rect x="60" y="105" width="740" height="30" rx="6" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="430" y="125" text-anchor="middle" fill="#d29922" font-size="11" font-weight="600">B1: Connection Admission &mdash; /federation route, no rate-limit, no IP filter</text>
+
+  <!-- Boundary 2: Handshake -->
+  <rect x="60" y="145" width="740" height="30" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="430" y="165" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">B2: Handshake &mdash; X25519 ECDH + Ed25519 signatures + AEAD (SAFE)</text>
+
+  <!-- Boundary 3/4: Data plane -->
+  <rect x="60" y="185" width="740" height="80" rx="6" fill="rgba(248,81,73,0.06)" stroke="#f85149" stroke-width="2"/>
+  <text x="430" y="205" text-anchor="middle" fill="#f85149" font-size="12" font-weight="700">B3/B4: Data Plane &mdash; NO read_club checks, NO write authorization</text>
+  <text x="430" y="222" text-anchor="middle" fill="#8b949e" font-size="10">Read: ContentGet, BlobGet, ContentFetch, CrdtSyncPull, SyncPull(editions unfiltered)</text>
+  <text x="430" y="237" text-anchor="middle" fill="#8b949e" font-size="10">Write: SyncPush, CrdtSyncPush, StateSyncPush, provenance import</text>
+  <text x="430" y="252" text-anchor="middle" fill="#f85149" font-size="10" font-style="italic">Federation access is BROADER than end-user access</text>
+
+  <!-- Boundary 5: Membership -->
+  <rect x="60" y="275" width="360" height="60" rx="6" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="240" y="295" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="600">B5: Membership</text>
+  <text x="240" y="310" text-anchor="middle" fill="#8b949e" font-size="9">OR-set CRDT merge (unauthenticated)</text>
+  <text x="240" y="322" text-anchor="middle" fill="#f85149" font-size="9">Privilege insertion loop risk</text>
+
+  <!-- Boundary 6: Governance -->
+  <rect x="440" y="275" width="360" height="60" rx="6" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="620" y="295" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="600">B6: Governance (PBFT)</text>
+  <text x="620" y="310" text-anchor="middle" fill="#8b949e" font-size="9">Sealed batches not re-validated</text>
+  <text x="620" y="322" text-anchor="middle" fill="#f85149" font-size="9">Votes unsigned; quorum-of-1 default</text>
+
+  <!-- Boundary 7: Identity -->
+  <rect x="60" y="345" width="740" height="30" rx="6" fill="rgba(248,81,73,0.06)" stroke="#f85149" stroke-width="1.5"/>
+  <text x="430" y="365" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">B7: server_id not bound to verifying key (TrustedServerRegistry unused)</text>
+
+  <!-- Single-server model (for contrast) -->
+  <rect x="60" y="395" width="740" height="90" rx="8" fill="rgba(63,185,80,0.04)" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="430" y="415" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">Single-Server Model (for comparison)</text>
+  <text x="430" y="432" text-anchor="middle" fill="#8b949e" font-size="10">Every operation checks KeyMaster authority + read_club + edit_club</text>
+  <text x="430" y="447" text-anchor="middle" fill="#8b949e" font-size="10">Rate limiting (per-club + per-IP), CSRF, SecurityMonitor, audit chain</text>
+  <text x="430" y="462" text-anchor="middle" fill="#8b949e" font-size="10">Provenance signed with per-author Ed25519 keys, verified before display</text>
+  <text x="430" y="477" text-anchor="middle" fill="#3fb950" font-size="10" font-style="italic">The federation data plane skips ALL of these checks</text>
+</svg>
+</div>
+<p class="diagram-caption">Seven trust boundaries in the federation stack. Green = cryptographically sound. Red = authorization gaps. Purple = consensus layer with gaps.</p>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Boundary 1: Connection Admission</h2>
+
+<h4>The mechanism</h4>
+<p>
+The <code>/federation</code> WebSocket route (<code>build_federation_router</code>, <code>federation_handler.rs:184</code>) accepts connections with no middleware, no CSRF guard, no rate limiter, and no IP allowlist. The handler <code>handle_federation_socket</code> performs the handshake inline.
+</p>
+
+<h4>Trust assumption</h4>
+<p>Anyone who can reach the port may open the socket; security rests entirely on the cryptographic handshake (Boundary 2).</p>
+
+<h4>Risks</h4>
+<table>
+<tr><th>Issue</th><th>Impact</th><th>Severity</th></tr>
+<tr><td>Handshake frames (Hello/Signature) sent in cleartext before encryption begins</td><td>Passive observer learns server identities, public keys, and ephemeral keys</td><td class="severity-medium">MEDIUM</td></tr>
+<tr><td>No rate limiting on handshake attempts</td><td>Resource-exhaustion DoS: each failed attempt holds a WebSocket + 30s timeout</td><td class="severity-medium">MEDIUM</td></tr>
+<tr><td>Dialer uses <code>ws://</code> (plaintext), not <code>wss://</code></td><td>Outbound handshake metadata exposed on the wire</td><td class="severity-medium">MEDIUM</td></tr>
+<tr><td>64 MiB frame size limit with no per-type caps</td><td>Peer can send 64 MiB garbage frames; connection stays alive through parse failures</td><td class="severity-low">LOW</td></tr>
+</table>
+
+<div class="fix">
+<div class="fix-label">Recommendation</div>
+Bind <code>/federation</code> behind TLS (enforce <code>wss://</code>). Add an explicit peer-address allowlist. Rate-limit handshake attempts per IP. Reduce frame size limit to something proportional to expected sync volumes (e.g., 4 MiB).
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Boundary 2: Peer Authentication (Handshake)</h2>
+
+<h4>The mechanism</h4>
+<p>Three-step handshake producing an encrypted channel:</p>
+<ol>
+  <li><strong>Hello:</strong> Exchange protocol version + X25519 ephemeral key + <code>server_id</code></li>
+  <li><strong>Signature:</strong> Each side signs <code>(my_eph, peer_eph)</code> with its Ed25519 identity key, sends verifying key + kex key</li>
+  <li><strong>Ready:</strong> First encrypted frame; session keys derived via X25519 + HKDF with domain-separated labels</li>
+</ol>
+<p>Then <code>federation_is_peer_known</code> (<code>server.rs:11116</code>) gates on the operator-configured <code>known_peer_keys</code> set.</p>
+
+<div class="safe">
+<strong>What's safe:</strong> The cryptography is sound. Authenticated ECDH (X25519 + Ed25519), ChaCha20-Poly1305 AEAD with sequence numbers, domain separation between handshake directions. An outsider cannot forge a connection without a known peer key.
+</div>
+
+<h4>Risks</h4>
+<table>
+<tr><th>Issue</th><th>Impact</th><th>Severity</th></tr>
+<tr><td><code>federation_is_peer_known</code> returns <code>true</code> unconditionally when federation is disabled</td><td>If operator forgets to enable federation but still exposes <code>/federation</code>, any valid-signature peer is accepted &mdash; and <code>is_peer_known</code> is the ONLY membership gate on the inbound path</td><td class="severity-high">HIGH</td></tr>
+<tr><td><code>known_peer_keys</code> has no expiry or rotation</td><td>Compromised keys remain valid indefinitely</td><td class="severity-medium">MEDIUM</td></tr>
+<tr><td><code>TrustedServerRegistry</code> / <code>verify_server_identity</code> never wired into federation path</td><td>The well-designed identity-verification layer (signed manifests, expiry, constant-time comparison) is unused</td><td class="severity-high">HIGH</td></tr>
+<tr><td>Membership (<code>MembershipState</code>) never consulted on inbound handler</td><td>A peer in <code>known_peer_keys</code> but ejected via governance still gets full data-plane access</td><td class="severity-high">HIGH</td></tr>
+</table>
+
+<div class="fix">
+<div class="fix-label">Recommendation</div>
+Wire <code>TrustedServerRegistry</code> into the handshake so peer keys are validated against signed manifests with expiry. Consult <code>MembershipState::is_member()</code> after the handshake and before any data-plane access. Default to <strong>denying</strong> peers when federation is disabled.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Boundary 3: Read Access (Data Plane)</h2>
+
+<p>This is the most critical area. After the handshake, an authenticated peer can issue read frames with <strong>no authorization check beyond "you passed the handshake"</strong>.</p>
+
+<table>
+<tr><th>Frame</th><th>What it returns</th><th>read_club check?</th><th>Severity</th></tr>
+<tr><td><code>SyncPull</code> (bulk)</td><td>All works + <strong>all standalone editions</strong> + <strong>all blobs</strong></td><td>Partial &mdash; works filtered to <code>public_club</code>, but editions and blobs are <strong>not filtered</strong></td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><code>ContentGet { work_id }</code></td><td>Full edition for a work by ID</td><td><strong>None</strong> &mdash; any work_id returns content</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><code>BlobGet { hash }</code></td><td>Raw blob bytes + MIME type</td><td><strong>None</strong> &mdash; any hash returns the blob</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><code>ContentFetch { fingerprint }</code></td><td>Edition or blob by content fingerprint</td><td><strong>None</strong> &mdash; resolves fingerprint to work, no club check</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><code>TranscludeQuery</code></td><td>Entire transclusion index entries</td><td><strong>None</strong> &mdash; leaks full transclusion graph</td><td class="severity-high">HIGH</td></tr>
+<tr><td><code>CrdtSyncPull { work_ids }</code></td><td>O-tree CRDT state for requested works</td><td>Checks <code>server_id == peer_server_id</code> only; work_ids <strong>not</strong> checked against read_club</td><td class="severity-critical">CRITICAL</td></tr>
+</table>
+
+<div class="danger">
+<strong>The core problem:</strong> Federation read access bypasses the club-based access model entirely. A federated peer can read private works, private editions, all blobs, and collaborative editing state &mdash; <em>broader</em> access than any end-user. The existing <code>read_club</code> filter on bulk <code>SyncPull</code> works signals the authors <em>intended</em> club-scoped replication, but the filter is missing on every other read path.
+</div>
+
+<div class="fix">
+<div class="fix-label">Recommendation: Apply read_club to every read path</div>
+Every federation read handler should check <code>work.read_club</code> against the peer's identity:
+<pre>// In every federation read handler:
+let work = self.works.get(&amp;work_id).ok_or(...)?;
+let read_club = work.work.current_edition().read_club()
+    .unwrap_or(self.system_clubs.public_club);
+
+// Option A: Only replicate public content
+if read_club != self.system_clubs.public_club {
+    return Err(FederationError::NotAuthorized);
+}
+
+// Option B: Check against a "federation read club" the peer belongs to
+if !peer_clubs.contains(&amp;read_club) {
+    return Err(FederationError::NotAuthorized);
+}</pre>
+Also filter <code>federation_export_editions</code> and <code>federation_export_blobs</code> the same way <code>federation_export_works</code> already filters.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Boundary 4: Write Access (Data Plane)</h2>
+
+<table>
+<tr><th>Frame</th><th>Effect</th><th>Auth check</th><th>Severity</th></tr>
+<tr><td><code>SyncPush</code></td><td>Creates new public works from pushed editions</td><td><strong>None</strong> &mdash; any peer mints arbitrary public works, no quota</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><code>CrdtSyncPush</code></td><td>Modifies collaborative editing buffer for any work_id; imports <code>span_provenance</code></td><td>Checks <code>server_id == peer_server_id</code> only; no edit-rights check; provenance imported verbatim</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><code>StateSyncPush</code></td><td>Merges foreign ReconcileState; can move "current edition" pointer</td><td><strong>None</strong> &mdash; peer can change which edition is presented as current</td><td class="severity-high">HIGH</td></tr>
+<tr><td><code>SyncPush</code> blobs</td><td>Imports blobs into blob store</td><td>BLAKE3 hash verified, but any peer can inject blobs with no quota</td><td class="severity-medium">MEDIUM</td></tr>
+</table>
+
+<h3>Provenance injection (CRITICAL)</h3>
+<p>
+<code>SpanProvenance</code> on <code>SyncWorkEntry</code> and <code>CrdtWorkUpdate</code> is imported verbatim with no signature verification. A peer can attach fabricated provenance &mdash; claiming a span originated from any author or server &mdash; to locally-stored content. Since provenance is the integrity spine of the system, this undermines the trustworthiness of all federated content.
+</p>
+
+<h3>LWW "current edition" hijack</h3>
+<p>
+<code>ReconcileState.current</code> uses last-writer-wins by <code>(timestamp, server_id)</code>. The timestamp is clamped to <code>now + 3600s</code>, but a peer that sets a near-future timestamp wins the "current" pointer for any work, effectively censoring other editions from the default view.
+</p>
+
+<div class="fix">
+<div class="fix-label">Recommendation: Verify provenance before accepting</div>
+<pre>// Before importing span_provenance from a peer:
+for sp in &amp;update.span_provenance {
+    let element_fingerprints = collect_fingerprints(&amp;edition, sp.start, sp.end);
+    if !verify_span_provenance(&amp;sp.provenance, &amp;element_fingerprints) {
+        tracing::warn!("peer {} sent invalid provenance, rejecting", peer_server_id);
+        continue; // skip this span's provenance
+    }
+    // Optionally: verify that provenance.author_public_key corresponds
+    // to the origin server's known signing key
+}</pre>
+Also: add edit-rights checks on <code>CrdtSyncPush</code> (peer must be in the work's <code>edit_club</code>), add quotas on <code>SyncPush</code> work creation, and clamp LWW timestamps to <code>now</code> (not <code>now + 1h</code>).
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Boundary 5: Membership (Web-of-Trust Join)</h2>
+
+<h4>The mechanism</h4>
+<p>
+<code>MembershipState</code> is an OR-set CRDT. Join requires <code>&ge; min_endorsements</code> valid endorsements from existing members. The default <code>min_endorsements = 2</code>.
+</p>
+
+<h4>Risks</h4>
+<table>
+<tr><th>Issue</th><th>Impact</th><th>Severity</th></tr>
+<tr><td>Membership OR-set merges are unauthenticated (<code>MembershipSyncPush</code>)</td><td>A peer can inject membership entries for arbitrary server_ids</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td>Endorser verification keys read from the merge result</td><td><strong>Privilege insertion loop:</strong> inject member &rarr; forge their endorsement &rarr; satisfy min_endorsements for further joins</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td>Bootstrap mode accepts joins with ZERO endorsements</td><td>If left on, any peer that passes the key check joins with no endorsement</td><td class="severity-medium">MEDIUM</td></tr>
+<tr><td>Membership not checked on inbound data plane</td><td>Ejected peers retain full data access</td><td class="severity-high">HIGH</td></tr>
+</table>
+
+<div class="fix">
+<div class="fix-label">Recommendation: Pin endorser keys to the registry</div>
+Endorser verification keys should come from the <code>TrustedServerRegistry</code> (signed manifests), not from the CRDT merge result. Membership sync should authenticate each entry against the registry before merging. This breaks the privilege-insertion loop because the attacker cannot forge registry signatures.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Boundary 6: Governance (PBFT Consensus)</h2>
+
+<h4>The mechanism</h4>
+<p>Lightweight PBFT: Proposal &rarr; Prepare &rarr; Commit &rarr; Sealed. Transactions: <code>Admit</code>, <code>Expel</code>, <code>KeyRegister</code>, <code>RoyaltyRecord</code>.</p>
+
+<h4>Risks</h4>
+<table>
+<tr><th>Issue</th><th>Impact</th><th>Severity</th></tr>
+<tr><td>Sealed batches not re-validated on receipt</td><td>Receiver checks only proposer_id + sequence; does not verify quorum or vote signatures</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td>PBFT votes carry no signatures</td><td>A Byzantine leader can fabricate a SealedBatch with fake vote list</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><code>KeyRegister</code> replaces any member's keys with no old-key proof</td><td>Combined with above, a leader can rotate all victim keys to attacker-controlled keys</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td>Default <code>cluster_size = 1</code> &rarr; quorum of 1</td><td>Single-node "consensus" &mdash; leader alone reaches both prepare and commit quorum</td><td class="severity-high">HIGH</td></tr>
+<tr><td>Non-leader can push <code>GovernancePrePrepare</code></td><td>Receiver prepare-votes for it without checking proposer is the current leader</td><td class="severity-medium">MEDIUM</td></tr>
+<tr><td><code>RoyaltyRecord</code> has no upper bound</td><td>Malicious peer can pollute the royalty ledger with arbitrary amounts</td><td class="severity-medium">MEDIUM</td></tr>
+</table>
+
+<div class="fix">
+<div class="fix-label">Recommendation: Sign PBFT votes and verify quorum</div>
+<ol>
+  <li><strong>Sign every vote:</strong> <code>PbftVote</code> should include an Ed25519 signature over <code>(view, seq, voter_id, phase)</code>. The receiver verifies each vote's signature against the voter's registry-pinned key.</li>
+  <li><strong>Verify quorum on sealed batches:</strong> On receiving <code>GovernanceSealed</code>, count distinct valid prepare + commit votes; reject if either count is below <code>quorum_size</code>.</li>
+  <li><strong>Require old-key proof for <code>KeyRegister</code>:</strong> The transaction must include a signature from the <em>old</em> key authorizing the rotation.</li>
+  <li><strong>Default <code>cluster_size = 3</code></strong> (minimum for meaningful PBFT). Refuse to start with quorum-of-1 in production mode.</li>
+  <li><strong>Verify proposer is the current leader</strong> before voting on a pre-prepare.</li>
+</ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Boundary 7: Identity Binding</h2>
+
+<h4>The problem</h4>
+<p>
+The authenticated principal is the Ed25519 verifying key (from the handshake), but authorization decisions throughout the frame handlers key off the <strong>self-declared <code>server_id</code> string</strong> from the <code>Hello</code> frame. There is no binding between the two.
+</p>
+
+<h4>Consequences</h4>
+<ul>
+  <li>A peer can claim <em>any</em> <code>server_id</code> &mdash; including one belonging to another server</li>
+  <li>Imported works/blobs attribute <code>origin_server_id</code> from the push payload (attacker-controlled)</li>
+  <li><code>MembershipLeave</code> trusts the self-declared <code>server_id</code> to evict</li>
+  <li><code>CrdtSyncPush/Pull</code> "authorization" only checks the frame's <code>server_id</code> matches the declared hello ID &mdash; both are unverified</li>
+</ul>
+
+<div class="fix">
+<div class="fix-label">Recommendation: Bind server_id to verifying key</div>
+The <code>TrustedServerRegistry</code> in <code>server_identity.rs</code> already implements exactly the right mechanism: signed attestations binding <code>server_id &harr; verifying_key</code> with expiry and constant-time comparison. <code>verify_server_identity()</code> should be called during the handshake, after <code>Hello</code>, to verify that the declared <code>server_id</code> matches the authenticated verifying key. If the registry has no entry for this binding, the connection is refused.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s10">10. Single-Server vs Federation: The Access Model Gap</h2>
+
+<p>
+The single-server model has a coherent, layered access control system. The federation data plane bypasses every layer:
+</p>
+
+<table>
+<tr><th>Access control mechanism</th><th>Single-server (end-user)</th><th>Federation (peer server)</th></tr>
+<tr><td><strong>Authentication</strong></td><td>Password (Argon2id) or Ed25519 key + rate limiting (10 attempts / 5 min)</td><td>X25519 + Ed25519 handshake (sound crypto)</td></tr>
+<tr><td><strong>read_club</strong> enforcement</td><td>Every read path checks <code>session.has_authority(read_club)</code></td><td class="severity-critical">BYPASSED on ContentGet, BlobGet, ContentFetch, CrdtSyncPull</td></tr>
+<tr><td><strong>edit_club</strong> enforcement</strong></td><td>Every write path checks <code>session.has_authority(edit_club)</code></td><td class="severity-critical">BYPASSED on SyncPush, CrdtSyncPush, StateSyncPush</td></tr>
+<tr><td><strong>Provenance verification</strong></td><td><code>verify_span_provenance()</code> checked on display; signatures verified against author keys</td><td class="severity-critical">Imported verbatim, no verification</td></tr>
+<tr><td><strong>Rate limiting</strong></td><td>Per-club login limit + per-session/per-IP sliding windows</td><td>None on data plane</td></tr>
+<tr><td><strong>Quota</strong></td><td>Personal club limit (<code>max_personal_clubs</code>)</td><td>None &mdash; unlimited work creation via SyncPush</td></tr>
+<tr><td><strong>Audit trail</strong></td><td>SecurityMonitor + tamper-evident security.log + attribution.log</td><td>Federation operations not audited</td></tr>
+<tr><td><strong>CSRF protection</strong></td><td>Token-based on WS upgrade</td><td>N/A (different protocol)</td></tr>
+</table>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- End-user path -->
+  <rect x="20" y="20" width="380" height="260" rx="10" fill="rgba(63,185,80,0.04)" stroke="#3fb950" stroke-width="2"/>
+  <text x="210" y="42" text-anchor="middle" fill="#3fb950" font-size="14" font-weight="700">End-User Path (single-server)</text>
+
+  <rect x="40" y="55" width="340" height="25" rx="5" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="210" y="72" text-anchor="middle" fill="#3fb950" font-size="10">1. CSRF token check</text>
+
+  <rect x="40" y="88" width="340" height="25" rx="5" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="210" y="105" text-anchor="middle" fill="#3fb950" font-size="10">2. Rate limit (per-club + per-IP)</text>
+
+  <rect x="40" y="121" width="340" height="25" rx="5" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="210" y="138" text-anchor="middle" fill="#3fb950" font-size="10">3. Login + KeyMaster authority</text>
+
+  <rect x="40" y="154" width="340" height="25" rx="5" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="210" y="171" text-anchor="middle" fill="#3fb950" font-size="10">4. read_club / edit_club check</text>
+
+  <rect x="40" y="187" width="340" height="25" rx="5" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="210" y="204" text-anchor="middle" fill="#3fb950" font-size="10">5. SecurityMonitor audit event</text>
+
+  <rect x="40" y="220" width="340" height="25" rx="5" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="210" y="237" text-anchor="middle" fill="#3fb950" font-size="10">6. Provenance signed with author's key</text>
+
+  <text x="210" y="270" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">Every layer enforced</text>
+
+  <!-- Federation path -->
+  <rect x="460" y="20" width="380" height="260" rx="10" fill="rgba(248,81,73,0.04)" stroke="#f85149" stroke-width="2"/>
+  <text x="650" y="42" text-anchor="middle" fill="#f85149" font-size="14" font-weight="700">Federation Path (peer server)</text>
+
+  <rect x="480" y="55" width="340" height="25" rx="5" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1"/>
+  <text x="650" y="72" text-anchor="middle" fill="#3fb950" font-size="10">1. X25519 + Ed25519 handshake (SAFE)</text>
+
+  <rect x="480" y="88" width="340" height="25" rx="5" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1" stroke-dasharray="4 2"/>
+  <text x="650" y="105" text-anchor="middle" fill="#f85149" font-size="10" font-style="italic">2&ndash;6. (skipped)</text>
+
+  <rect x="480" y="121" width="340" height="25" rx="5" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1"/>
+  <text x="650" y="138" text-anchor="middle" fill="#f85149" font-size="10">No read_club check</text>
+
+  <rect x="480" y="154" width="340" height="25" rx="5" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1"/>
+  <text x="650" y="171" text-anchor="middle" fill="#f85149" font-size="10">No edit_club check</text>
+
+  <rect x="480" y="187" width="340" height="25" rx="5" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1"/>
+  <text x="650" y="204" text-anchor="middle" fill="#f85149" font-size="10">No rate limiting or audit</text>
+
+  <rect x="480" y="220" width="340" height="25" rx="5" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1"/>
+  <text x="650" y="237" text-anchor="middle" fill="#f85149" font-size="10">Provenance imported without verification</text>
+
+  <text x="650" y="270" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">5 layers bypassed</text>
+</svg>
+</div>
+<p class="diagram-caption">The end-user path enforces 6 layers of access control. The federation path enforces 1 (the handshake) and skips the rest.</p>
+
+<!-- ============================================================ -->
+<h2 id="s11">11. The Gap Register (Prioritized)</h2>
+
+<table>
+<tr><th>#</th><th>Gap</th><th>Location</th><th>Impact</th><th>Severity</th></tr>
+<tr><td><strong>C1</strong></td><td><code>ContentGet</code>/<code>ContentFetch</code>/<code>BlobGet</code>/<code>TranscludeQuery</code> ignore <code>read_club</code></td><td><code>server.rs:11493, 11504, 11570, 11514</code></td><td>Private content read by any peer</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><strong>C2</strong></td><td><code>federation_export_editions</code> / <code>federation_export_blobs</code> unfiltered</td><td><code>server.rs:11216, 11341</code></td><td>Bulk exfiltration of all editions + blobs</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><strong>C3</strong></td><td><code>CrdtSyncPull</code> work_ids not club-checked</td><td><code>server.rs:11414</code></td><td>Private work CRDT state exposed</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><strong>W1</strong></td><td><code>SyncPush</code>/<code>CrdtSyncPush</code> import content + provenance with no auth</td><td><code>server.rs:11231, 11437</code></td><td>Content &amp; provenance injection</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><strong>W2</strong></td><td><code>StateSyncPush</code> LWW hijack of "current" edition</td><td><code>server.rs:11683</code></td><td>Edition censorship/swap</td><td class="severity-high">HIGH</td></tr>
+<tr><td><strong>M1</strong></td><td>Membership OR-set merge unauthenticated; endorser keys from merge result</td><td><code>federation.rs:1698</code>, <code>server.rs:11987</code></td><td>Privilege insertion loop</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><strong>G1</strong></td><td>Sealed PBFT batches not re-validated; votes unsigned</td><td><code>federation_handler.rs:778</code></td><td>Forged governance execution</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><strong>G2</strong></td><td><code>KeyRegister</code> needs no old-key proof</td><td><code>server.rs:12138</code></td><td>Key theft via governance</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><strong>G3</strong></td><td>Default <code>cluster_size=1</code> &rarr; quorum of 1</td><td><code>federation.rs:234</code></td><td>Single-node "consensus"</td><td class="severity-high">HIGH</td></tr>
+<tr><td><strong>A1</strong></td><td><code>server_id</code> not bound to verifying key on federation path</td><td><code>federation_handler.rs:439</code></td><td>Identity spoofing</td><td class="severity-high">HIGH</td></tr>
+<tr><td><strong>A2</strong></td><td><code>federation_is_peer_known</code> returns true when federation disabled</td><td><code>server.rs:11117</code></td><td>Open peer acceptance if misconfigured</td><td class="severity-high">HIGH</td></tr>
+<tr><td><strong>A3</strong></td><td><code>TrustedServerRegistry</code> / <code>verify_server_identity</code> never wired in</td><td><code>server_identity.rs:290</code></td><td>Unused strong identity layer</td><td class="severity-high">HIGH</td></tr>
+<tr><td><strong>T1</strong></td><td>Handshake frames in cleartext; <code>ws://</code> not <code>wss://</code></td><td><code>federation_handler.rs:225</code>, <code>federation_active.rs:145</code></td><td>Metadata leakage to passive observer</td><td class="severity-medium">MEDIUM</td></tr>
+<tr><td><strong>T2</strong></td><td>No rate limiting on handshake; 64 MiB frames</td><td><code>federation_handler.rs:184, 463</code></td><td>DoS via resource exhaustion</td><td class="severity-medium">MEDIUM</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s12">12. Recommendations: Aligning Federation with the Club Model</h2>
+
+<p>The goal is to make federation access control <strong>at least as restrictive</strong> as end-user access control. Here's the roadmap:</p>
+
+<h3>Phase 1: Stop the Bleeding (quick fixes, 1-2 days)</h3>
+
+<div class="fix">
+<div class="fix-label">Fix A2: Default-deny when federation is disabled</div>
+Change <code>federation_is_peer_known</code> to return <code>false</code> when federation mode is disabled. Currently it returns <code>true</code>, allowing any key-valid peer in.
+</div>
+
+<div class="fix">
+<div class="fix-label">Fix C2: Filter editions and blobs in bulk SyncPull</div>
+Apply the same <code>read_club == public_club</code> filter that <code>federation_export_works</code> already uses to <code>federation_export_editions</code> and <code>federation_export_blobs</code>. This is a few-line fix that closes the bulk exfiltration path.
+</div>
+
+<div class="fix">
+<div class="fix-label">Fix G3: Default cluster_size to 3</div>
+Change <code>GovernanceState::new(1)</code> to <code>GovernanceState::new(3)</code> and add a runtime warning if <code>cluster_size &lt; 3</code> in production mode.
+</div>
+
+<h3>Phase 2: Enforce Club Access Control (1-2 weeks)</h3>
+
+<div class="fix">
+<div class="fix-label">Fixes C1, C3, W1: Add read_club and edit_club checks to all federation handlers</div>
+<p>Introduce a <code>FederationAuthorization</code> struct that wraps the peer's identity and resolved clubs:</p>
+<pre>struct FederationAuthorization {
+    peer_server_id: String,
+    peer_verifying_key: [u8; 32],
+    resolved_clubs: HashSet&lt;BeId&gt;,  // clubs this peer belongs to
+}
+
+impl FederationAuthorization {
+    fn can_read(&amp;self, work: &amp;WorkState, server: &amp;Server) -&gt; bool {
+        let read_club = work.read_club()
+            .unwrap_or(server.system_clubs.public_club);
+        read_club == server.system_clubs.public_club
+            || self.resolved_clubs.contains(&amp;read_club)
+    }
+
+    fn can_edit(&amp;self, work: &amp;WorkState, server: &amp;Server) -&gt; bool {
+        let edit_club = work.edit_club()
+            .unwrap_or(server.system_clubs.empty_club);
+        self.resolved_clubs.contains(&amp;edit_club)
+    }
+}</pre>
+<p>Check <code>auth.can_read()</code> before every read handler and <code>auth.can_edit()</code> before every write handler. This mirrors the single-server pattern exactly.</p>
+</div>
+
+<div class="fix">
+<div class="fix-label">Fix W1: Verify provenance before importing</div>
+<p>Before accepting <code>span_provenance</code> from a peer, call <code>verify_span_provenance()</code> to confirm the Ed25519 signature is valid for the claimed content. Reject invalid provenance rather than importing it verbatim. Optionally verify that the <code>author_public_key</code> corresponds to the origin server's registered signing key.</p>
+</div>
+
+<h3>Phase 3: Fix Identity and Governance (2-4 weeks)</h3>
+
+<div class="fix">
+<div class="fix-label">Fix A1, A3: Wire TrustedServerRegistry into the handshake</div>
+<p>After <code>Hello</code> and before <code>Signature</code>, verify the declared <code>server_id</code> against the peer's authenticated verifying key using <code>verify_server_identity()</code>. Refuse the connection if no valid registry entry exists. This binds the self-declared identity to the cryptographic identity.</p>
+</div>
+
+<div class="fix">
+<div class="fix-label">Fix G1, G2: Sign PBFT votes and verify quorum</div>
+<ol>
+  <li>Add <code>signature: [u8; 64]</code> to <code>PbftVote</code>, signed over <code>(view, seq, voter_id, phase)</code> with the voter's key</li>
+  <li>On receiving <code>GovernanceSealed</code>, verify every embedded vote's signature and count distinct valid votes per phase; reject if below <code>quorum_size</code></li>
+  <li>Require <code>KeyRegister</code> transactions to include a signature from the <em>old</em> key</li>
+</ol>
+</div>
+
+<div class="fix">
+<div class="fix-label">Fix M1: Pin endorser keys to the registry</div>
+<p>Endorser verification keys must come from the <code>TrustedServerRegistry</code>, not from the CRDT merge result. This breaks the privilege-insertion loop because the attacker cannot forge registry signatures.</p>
+</div>
+
+<h3>Phase 4: Hardening (ongoing)</h3>
+
+<div class="fix">
+<div class="fix-label">Additional hardening</div>
+<ul>
+  <li><strong>Audit trail:</strong> Log every federation operation to the <code>security.log</code> chain (currently un-audited)</li>
+  <li><strong>Quotas:</strong> Limit <code>SyncPush</code> work creation rate per peer (prevents storage exhaustion)</li>
+  <li><strong>Replay protection:</strong> Persist <code>applied_sequences</code> across restarts to prevent governance replay after reconnection</li>
+  <li><strong>TLS enforcement:</strong> Require <code>wss://</code> for outbound dialing; refuse <code>ws://</code> in production</li>
+  <li><strong>Rate limiting:</strong> Apply per-peer sliding-window counters similar to <code>SecurityMonitor</code></li>
+  <li><strong>LWW clamp:</strong> Clamp <code>ReconcileState</code> timestamps to <code>now</code> (not <code>now + 3600s</code>)</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s13">13. Safe Deployment Patterns (Until Gaps Are Fixed)</h2>
+
+<p>Until the gaps in Phase 1 and 2 are fixed, federation should be deployed with these constraints:</p>
+
+<div class="warning">
+<strong>Only federate with servers you fully trust.</strong> The current model is full-trust: a peer can read all content and inject works/provenance. Treat federation peers as co-administrators of your server, not as untrusted network nodes.
+</div>
+
+<table>
+<tr><th>Pattern</th><th>Guidance</th></tr>
+<tr><td><strong>Network isolation</strong></td><td>Bind <code>/federation</code> to a private network interface or VPN. Do not expose it to the public internet.</td></tr>
+<tr><td><strong>Shared content only</strong></td><td>If you want to keep private works private, don't enable federation yet. The <code>SyncPull</code> works filter is partial; direct-fetch paths have no filter.</td></tr>
+<tr><td><strong>Disable federation by default</strong></td><td>Only enable <code>--peer</code> / <code>--federation-mode</code> when you intentionally want to federate. Ensure <code>federation_is_peer_known</code> returns false when disabled (Fix A2).</td></tr>
+<tr><td><strong>Minimize peer count</strong></td><td>Fewer peers = smaller attack surface. Each peer is a potential exfiltration and injection point.</td></tr>
+<tr><td><strong>Audit <code>known_peer_keys</code></strong></td><td>Review the key list regularly. Remove keys for decommissioned peers immediately.</td></tr>
+<tr><td><strong>Don't rely on governance</strong></td><td>The PBFT layer has gaps (G1-G3). Don't rely on it for security-critical decisions until Phase 3 fixes are in.</td></tr>
+</table>
+
+<div class="note">
+<strong>The positive framing:</strong> The cryptography is sound. The existing single-server access control model is well-designed with clubs, locks, KeyMaster, rate limiting, and audit trails. The federation layer just needs to <em>reuse</em> those mechanisms instead of bypassing them. The fixes are architectural-pattern reuse, not new cryptography.
+</div>
+
+<div class="footer">
+  Xudanu Documentation &mdash; <a href="index.html">Home</a> &mdash; <a href="identity-auth.html">Identity &amp; Authentication</a> &mdash; <a href="federation-activation.html">Federation Activation</a> &mdash; <a href="provenance-and-attribution.html">Provenance &amp; Attribution</a>
+</div>
+
+</div>
+</body>
+</html>

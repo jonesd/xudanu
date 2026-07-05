@@ -6,8 +6,8 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         ConnectInfo, State,
     },
-    routing::get,
     response::IntoResponse,
+    routing::get,
     Router,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -393,6 +393,50 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
         return;
     }
 
+    let peer_server_id = peer_hello.server_id.clone();
+    let registry_check = state.server.with_server_ref(|srv| {
+        srv.trusted_server_registry().map(|reg| {
+            (reg.server_count() > 0).then(|| {
+                crate::crypto::server_identity::verify_server_identity(
+                    &peer_server_id,
+                    &peer_verifying_key_bytes,
+                    reg,
+                )
+            })
+        })
+    });
+
+    match registry_check {
+        Some(Some(Err(e))) => {
+            tracing::warn!(
+                peer = %peer_server_id,
+                key = &peer_verifying_key_hex[..16],
+                error = %e,
+                event = "SECURITY:federation_identity_mismatch",
+                "Federation connection rejected: server_id does not match registry"
+            );
+            let _ = ws_sender
+                .send(Message::Text(
+                    format!("{{\"type\":\"error\",\"message\":\"server identity verification failed\"}}")
+                        .into(),
+                ))
+                .await;
+            return;
+        }
+        None => {
+            tracing::warn!(
+                "Federation: no TrustedServerRegistry configured — server_id binding not enforced"
+            );
+        }
+        Some(Some(Ok(()))) => {
+            tracing::info!(
+                peer = %peer_server_id,
+                "Federation: server identity verified against registry"
+            );
+        }
+        Some(None) => {}
+    }
+
     let peer_kex_bytes: [u8; 32] = match peer_sig.kex_key.as_slice().try_into() {
         Ok(b) => b,
         Err(_) => return,
@@ -436,7 +480,6 @@ async fn handle_federation_socket(socket: WebSocket, state: SharedState, remote_
         return;
     }
 
-    let peer_server_id = peer_hello.server_id.clone();
     let remote_addr_str = remote_addr.to_string();
 
     state.server.with_server(|srv| {
@@ -1528,14 +1571,17 @@ pub(crate) async fn process_federation_frame(
             );
             vec![]
         }
-        
+
         // Phase 3: Federation-PROV Integration frame handling
-        FederationFrame::ProvJsonExport { work_id, include_federation } => {
+        FederationFrame::ProvJsonExport {
+            work_id,
+            include_federation,
+        } => {
             let response = state.server.with_server_ref(|srv| {
                 match srv.federation_export_prov_json(work_id, include_federation) {
                     Ok(prov_json) => FederationFrame::ProvJsonExportResult { prov_json },
-                    Err(e) => FederationFrame::ProvJsonExportResult { 
-                        prov_json: format!("Error: {}", e) 
+                    Err(e) => FederationFrame::ProvJsonExportResult {
+                        prov_json: format!("Error: {}", e),
                     },
                 }
             });
@@ -1545,18 +1591,24 @@ pub(crate) async fn process_federation_frame(
         FederationFrame::FederationProvBundle { bundle } => {
             state.server.with_server(|srv| {
                 // Handle incoming federation provenance bundle
-                tracing::info!("Received federation provenance bundle: {}", bundle.bundle_id);
+                tracing::info!(
+                    "Received federation provenance bundle: {}",
+                    bundle.bundle_id
+                );
             });
             vec![]
         }
-        FederationFrame::FederationAttestationRequest { attestation_type, subject_server_id } => {
+        FederationFrame::FederationAttestationRequest {
+            attestation_type,
+            subject_server_id,
+        } => {
             let response = state.server.with_server_ref(|srv| {
                 match srv.federation_create_attestation_response(
                     attestation_type.clone(),
                     subject_server_id.clone(),
                     peer_server_id.to_string(),
                 ) {
-                    Ok(attestation) => FederationFrame::FederationAttestationResponse { 
+                    Ok(attestation) => FederationFrame::FederationAttestationResponse {
                         attestation: Some(attestation),
                         accepted: true,
                     },
@@ -1568,18 +1620,28 @@ pub(crate) async fn process_federation_frame(
             });
             vec![response]
         }
-        FederationFrame::FederationAttestationResponse { attestation, accepted } => {
+        FederationFrame::FederationAttestationResponse {
+            attestation,
+            accepted,
+        } => {
             if let Some(attestation) = attestation {
-                let verified = state.server.with_server_ref(|srv| {
-                    srv.federation_verify_attestation(&attestation)
-                });
+                let verified = state
+                    .server
+                    .with_server_ref(|srv| srv.federation_verify_attestation(&attestation));
                 tracing::info!("Attestation verification result: {:?}", verified);
             }
             vec![]
         }
-        FederationFrame::ClusterVerificationProv { timestamp, consensus_type } => {
+        FederationFrame::ClusterVerificationProv {
+            timestamp,
+            consensus_type,
+        } => {
             let response = state.server.with_server(|srv| {
-                match srv.federation_record_cluster_verification(timestamp, consensus_type.clone(), peer_server_id.to_string()) {
+                match srv.federation_record_cluster_verification(
+                    timestamp,
+                    consensus_type.clone(),
+                    peer_server_id.to_string(),
+                ) {
                     Ok(_) => FederationFrame::ClusterVerificationProv {
                         timestamp,
                         consensus_type: consensus_type.clone(),

@@ -1171,7 +1171,19 @@ impl OtreeCrdtManager {
 
     pub fn store_federated_provenance(&mut self, work_id: BeId, provenance: Vec<SpanProvenance>) {
         if let Some(wd) = self.docs.get_mut(&work_id) {
-            wd.federated_provenance = provenance;
+            let existing = std::mem::take(&mut wd.federated_provenance);
+            let mut merged: Vec<SpanProvenance> = existing
+                .iter()
+                .filter(|old| {
+                    !provenance
+                        .iter()
+                        .any(|new| new.start < old.end && old.start < new.end)
+                })
+                .cloned()
+                .collect();
+            merged.extend(provenance);
+            merged.sort_by_key(|s| s.start);
+            wd.federated_provenance = merged;
         }
     }
 

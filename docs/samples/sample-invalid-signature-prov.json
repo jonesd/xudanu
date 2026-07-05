@@ -1,0 +1,59 @@
+{
+  "prefix": {
+    "prov": "http://www.w3.org/ns/prov#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "xudanu": "http://xudanu.example.org/ns#"
+  },
+  "entity": {
+    "xudanu:doc:04a2": {
+      "prov:type": {"$": "xudanu:Document", "type": "xsd:QName"},
+      "xudanu:workId": {"$": "04a2", "type": "xsd:string"},
+      "xudanu:title": {"$": "Tampered Report", "type": "xsd:string"},
+      "xudanu:revision": {"$": "3", "type": "xsd:integer"},
+      "xudanu:contentHash": {"$": "deadbeef", "type": "xsd:hexBinary"},
+      "xudanu:charCount": {"$": "5000", "type": "xsd:integer"}
+    },
+    "xudanu:span:04a2:0:2500": {
+      "prov:type": {"$": "xudanu:ContentSpan", "type": "xsd:QName"},
+      "xudanu:charRange": {"$": "[0, 2500)", "type": "xsd:string"},
+      "xudanu:authorPublicKey": {"$": "efdf23c44d7c29a3509899eebddb3d40d8f70dcf71464e05c4c8df04a4331234", "type": "xsd:hexBinary"},
+      "xudanu:signatureValid": {"$": "true", "type": "xsd:boolean"},
+      "xudanu:timestamp": {"$": "1783130786", "type": "xsd:integer"},
+      "xudanu:authorType": {"$": "human", "type": "xsd:string"}
+    },
+    "xudanu:span:04a2:2500:5000": {
+      "prov:type": {"$": "xudanu:ContentSpan", "type": "xsd:QName"},
+      "xudanu:charRange": {"$": "[2500, 5000)", "type": "xsd:string"},
+      "xudanu:authorPublicKey": {"$": "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b", "type": "xsd:hexBinary"},
+      "xudanu:signatureValid": {"$": "false", "type": "xsd:boolean"},
+      "xudanu:timestamp": {"$": "1783130786", "type": "xsd:integer"},
+      "xudanu:authorType": {"$": "human", "type": "xsd:string"}
+    },
+    "xudanu:log:04a2": {
+      "prov:type": {"$": "xudanu:AttributionLog", "type": "xsd:QName"},
+      "xudanu:entryCount": {"$": "42", "type": "xsd:integer"},
+      "xudanu:chainValid": {"$": "true", "type": "xsd:boolean"}
+    }
+  },
+  "agent": {
+    "xudanu:server:16522a722cab6b18": {
+      "prov:type": {"$": "xudanu:Server", "type": "xsd:QName"},
+      "xudanu:verifyingKey": {"$": "16522a722cab6b18620208336c0550641ae2149442c9b70f9dbf087bd0b72d33", "type": "xsd:hexBinary"}
+    },
+    "xudanu:agent:efdf23c44d7c29a3": {
+      "prov:type": {"$": "prov:Person", "type": "xsd:QName"},
+      "xudanu:displayName": {"$": "Alice", "type": "xsd:string"}
+    }
+  },
+  "activity": {
+    "xudanu:signing:04a2:1783130786": {
+      "prov:type": {"$": "xudanu:ContentSigning", "type": "xsd:QName"},
+      "prov:startTime": "2026-07-04T02:06:26Z",
+      "prov:endTime": "2026-07-04T02:06:26Z"
+    }
+  },
+  "wasAttributedTo": {
+    "_:1": {"prov:entity": "xudanu:span:04a2:0:2500", "prov:agent": "xudanu:agent:efdf23c44d7c29a3", "prov:time": "2026-07-04T02:06:26Z"},
+    "_:2": {"prov:entity": "xudanu:span:04a2:2500:5000", "prov:agent": "xudanu:agent:efdf23c44d7c29a3", "prov:time": "2026-07-04T02:06:26Z"}
+  }
+}

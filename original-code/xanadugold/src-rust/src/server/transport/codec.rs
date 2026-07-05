@@ -2692,11 +2692,9 @@ impl JsonCodec {
                     OperationCode::CrdtAwarenessGet => Ok(WireRequest::CrdtAwarenessGet {
                         work_id: args.work_id,
                     }),
-                    OperationCode::AttestationReport => {
-                        Ok(WireRequest::AttestationReport {
-                            work_id: args.work_id,
-                        })
-                    }
+                    OperationCode::AttestationReport => Ok(WireRequest::AttestationReport {
+                        work_id: args.work_id,
+                    }),
                     _ => unreachable!(),
                 }
             }
@@ -3070,10 +3068,18 @@ impl JsonCodec {
                 #[derive(Deserialize)]
                 struct Args {
                     name: String,
+                    #[serde(default)]
+                    introduction: Option<String>,
+                    #[serde(default)]
+                    categories: Vec<String>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
-                Ok(WireRequest::TrailCreate { name: args.name })
+                Ok(WireRequest::TrailCreate {
+                    name: args.name,
+                    introduction: args.introduction,
+                    categories: args.categories,
+                })
             }
             OperationCode::TrailDelete => {
                 #[derive(Deserialize)]
@@ -3156,6 +3162,21 @@ impl JsonCodec {
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
                 Ok(WireRequest::TrailGet {
                     trail_id: args.trail_id,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::ProvJsonExport => {
+                #[derive(Deserialize)]
+                struct Args {
+                    #[serde(default)]
+                    work_id: Option<u64>,
+                    include_federation: bool,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ProvJsonExport {
+                    work_id: args.work_id,
+                    include_federation: args.include_federation,
                 })
             }
             _ => Err(FrameParseError::MissingPayload.into()),

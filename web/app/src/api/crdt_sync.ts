@@ -243,6 +243,8 @@ export interface HyperRefPayload {
   original_context: number | null;
   excerpt: string | null;
   provenance_chain?: ProvenanceHop[];
+  start_position?: number | null;
+  end_position?: number | null;
 }
 
 export interface SharedRegion {
@@ -344,6 +346,10 @@ export interface TrailStop {
 export interface TrailPayload {
   trail_id: number;
   name: string;
+  introduction?: string;
+  categories?: string[];
+  published?: boolean;
+  owner_club: number;
   stops: TrailStop[];
   created_at: number;
   updated_at: number;
@@ -786,6 +792,8 @@ export class CrdtSyncClient {
         original_context: null,
         path_context: null,
         excerpt: originRef.excerpt,
+        start_position: originRef.start,
+        end_position: originRef.end,
       };
     }
     if (destinationRef) {
@@ -795,6 +803,8 @@ export class CrdtSyncClient {
         original_context: null,
         path_context: null,
         excerpt: destinationRef.excerpt,
+        start_position: destinationRef.start,
+        end_position: destinationRef.end,
       };
     }
     const resp = await this.sendRequest("link_create", payload);
@@ -863,6 +873,16 @@ export class CrdtSyncClient {
     return (obj.report_json as string) || (obj.value as string) || JSON.stringify(val);
   }
 
+  async exportProvJson(workId: number, includeFederation: boolean = false): Promise<string> {
+    const resp = await this.sendRequest("prov_json_export", {
+      work_id: workId,
+      include_federation: includeFederation,
+    });
+    const val = extractValue(resp);
+    const obj = val as Record<string, unknown>;
+    return (obj.prov_json as string) || JSON.stringify(val);
+  }
+
   async findSharedRegions(workA: number, workB: number, filterText?: string): Promise<SharedRegion[]> {
     const payload: Record<string, unknown> = { work_a: workA, work_b: workB };
     if (filterText) payload.filter_text = filterText;
@@ -880,8 +900,9 @@ export class CrdtSyncClient {
       const v = val as Record<string, unknown>;
       if (typeof v.Text === "string") return v.Text;
       if (typeof v.text === "string") return v.text;
-      if (v.value && typeof (v.value as any).Text === "string") return (v.value as any).Text;
-      if (v.value && typeof (v.value as any).text === "string") return (v.value as any).text;
+      const inner = v.value as Record<string, unknown> | undefined;
+      if (inner && typeof inner.Text === "string") return inner.Text;
+      if (inner && typeof inner.text === "string") return inner.text;
     }
     return "";
   }
@@ -1049,8 +1070,11 @@ export class CrdtSyncClient {
     return extractValue(resp) as WorkGraphPayload;
   }
 
-  async trailCreate(name: string): Promise<number> {
-    const resp = await this.sendRequest("trail_create", { name });
+  async trailCreate(name: string, introduction?: string, categories?: string[]): Promise<number> {
+    const payload: Record<string, unknown> = { name };
+    if (introduction) payload.introduction = introduction;
+    if (categories && categories.length) payload.categories = categories;
+    const resp = await this.sendRequest("trail_create", payload);
     return extractValue(resp) as number;
   }
 
@@ -1060,6 +1084,22 @@ export class CrdtSyncClient {
 
   async trailRename(trailId: number, name: string): Promise<void> {
     await this.sendRequest("trail_rename", { trail_id: trailId, name });
+  }
+
+  async trailUpdate(trailId: number, introduction: string | null, categories: string[]): Promise<void> {
+    await this.sendRequest("trail_update", {
+      trail_id: trailId,
+      introduction,
+      categories,
+    });
+  }
+
+  async trailPublish(trailId: number): Promise<void> {
+    await this.sendRequest("trail_publish", { trail_id: trailId });
+  }
+
+  async trailUnpublish(trailId: number): Promise<void> {
+    await this.sendRequest("trail_unpublish", { trail_id: trailId });
   }
 
   async trailAddStop(trailId: number, workId: number, charStart?: number, charEnd?: number, note?: string): Promise<void> {
@@ -1086,6 +1126,18 @@ export class CrdtSyncClient {
   async trailGet(trailId: number): Promise<TrailPayload> {
     const resp = await this.sendRequest("trail_get", { trail_id: trailId });
     return extractValue(resp) as TrailPayload;
+  }
+
+  async trailListPublished(category?: string): Promise<TrailPayload[]> {
+    const payload: Record<string, unknown> = {};
+    if (category) payload.category = category;
+    const resp = await this.sendRequest("trail_list_published", payload);
+    return extractValue(resp) as TrailPayload[];
+  }
+
+  async trailListCategories(): Promise<string[]> {
+    const resp = await this.sendRequest("trail_list_categories");
+    return extractValue(resp) as string[];
   }
 
   async workSummary(workId: number): Promise<WorkSummary> {
@@ -1227,16 +1279,12 @@ export class CrdtSyncClient {
   async loginByName(clubName: string, password: string): Promise<void> {
     await this.sendRequest("session_login_by_name", { club_name: clubName });
     const pwBytes = Array.from(new TextEncoder().encode(password));
-    try {
-      await Promise.race([
-        this.sendRequest("session_authenticate", {
-          credential: { password: Array.from(pwBytes) },
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("session_authenticate timed out after 10s")), 10000)),
-      ]);
-    } catch (e) {
-      throw e;
-    }
+    await Promise.race([
+      this.sendRequest("session_authenticate", {
+        credential: { password: Array.from(pwBytes) },
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("session_authenticate timed out after 10s")), 10000)),
+    ]);
     const whoResp = await this.sendRequest("club_who_am_i");
     const val = extractValue(whoResp) as { clubs: [number, string][]; verifying_key?: string };
     const clubs = val.clubs || [];

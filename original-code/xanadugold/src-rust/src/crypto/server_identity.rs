@@ -72,22 +72,22 @@ pub struct TrustedServerRegistry {
 mod signature_serde {
     use super::*;
     use serde::{Deserialize, Deserializer, Serializer};
-    
+
     pub fn serialize<S>(signature: &Signature, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         serializer.serialize_bytes(&signature.to_bytes())
     }
-    
+
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Signature, D::Error>
     where
         D: Deserializer<'de>,
     {
         let bytes = <Vec<u8>>::deserialize(deserializer)?;
-        let arr: [u8; 64] = bytes.try_into().map_err(|_| {
-            serde::de::Error::custom("signature bytes must be exactly 64 bytes")
-        })?;
+        let arr: [u8; 64] = bytes
+            .try_into()
+            .map_err(|_| serde::de::Error::custom("signature bytes must be exactly 64 bytes"))?;
         Ok(Signature::from_bytes(&arr))
     }
 }
@@ -99,7 +99,7 @@ impl TrustedServerRegistry {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         // Create initial payload for empty registry
         let empty_payload = {
             let mut buf = Vec::new();
@@ -107,10 +107,10 @@ impl TrustedServerRegistry {
             buf.extend_from_slice(&0u64.to_be_bytes()); // 0 servers
             buf
         };
-        
+
         // Use the actual authority signing key for the initial registry signature
         let signature = sign_bytes(authority_signing_key, &empty_payload);
-        
+
         TrustedServerRegistry {
             servers: HashMap::new(),
             last_updated: now,
@@ -119,7 +119,11 @@ impl TrustedServerRegistry {
         }
     }
 
-    pub fn add_server(&mut self, identity: ServerIdentity, authority_signing_key: &ed25519_dalek::SigningKey) -> Result<(), String> {
+    pub fn add_server(
+        &mut self,
+        identity: ServerIdentity,
+        authority_signing_key: &ed25519_dalek::SigningKey,
+    ) -> Result<(), String> {
         let server_id = identity.server_id.clone();
         self.servers.insert(server_id.clone(), identity);
         self.last_updated = SystemTime::now()
@@ -135,7 +139,11 @@ impl TrustedServerRegistry {
         Ok(())
     }
 
-    pub fn remove_server(&mut self, server_id: &str, authority_signing_key: &ed25519_dalek::SigningKey) -> Result<(), String> {
+    pub fn remove_server(
+        &mut self,
+        server_id: &str,
+        authority_signing_key: &ed25519_dalek::SigningKey,
+    ) -> Result<(), String> {
         if self.servers.remove(server_id).is_some() {
             self.last_updated = SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
@@ -152,15 +160,23 @@ impl TrustedServerRegistry {
             Err(format!("server {} not found in registry", server_id))
         }
     }
-    
+
     // Cloneable version for CLI operations
-    pub fn add_server_clone(&self, identity: ServerIdentity, authority_signing_key: &ed25519_dalek::SigningKey) -> Result<TrustedServerRegistry, String> {
+    pub fn add_server_clone(
+        &self,
+        identity: ServerIdentity,
+        authority_signing_key: &ed25519_dalek::SigningKey,
+    ) -> Result<TrustedServerRegistry, String> {
         let mut new_registry = self.clone();
         new_registry.add_server(identity, authority_signing_key)?;
         Ok(new_registry)
     }
-    
-    pub fn remove_server_clone(&self, server_id: &str, authority_signing_key: &ed25519_dalek::SigningKey) -> Result<TrustedServerRegistry, String> {
+
+    pub fn remove_server_clone(
+        &self,
+        server_id: &str,
+        authority_signing_key: &ed25519_dalek::SigningKey,
+    ) -> Result<TrustedServerRegistry, String> {
         let mut new_registry = self.clone();
         new_registry.remove_server(server_id, authority_signing_key)?;
         Ok(new_registry)
@@ -194,33 +210,33 @@ impl TrustedServerRegistry {
 
     fn encode_payload(&self) -> Vec<u8> {
         let mut buf = Vec::new();
-        
+
         // Encode timestamp
         buf.extend_from_slice(&self.last_updated.to_be_bytes());
-        
+
         // Encode servers count
         buf.extend_from_slice(&(self.servers.len() as u64).to_be_bytes());
-        
+
         // Encode each server (sorted by server_id for determinism)
         let mut server_ids: Vec<_> = self.servers.keys().collect();
         server_ids.sort();
-        
+
         for server_id in server_ids {
             if let Some(identity) = self.servers.get(server_id) {
                 // Encode server_id length and bytes
                 buf.extend_from_slice(&(server_id.len() as u64).to_be_bytes());
                 buf.extend_from_slice(server_id.as_bytes());
-                
+
                 // Encode signing_key
                 buf.extend_from_slice(&identity.signing_key);
-                
+
                 // Encode kex_public
                 buf.extend_from_slice(&identity.kex_public);
-                
+
                 // Encode federation_domain length and bytes
                 buf.extend_from_slice(&(identity.federation_domain.len() as u64).to_be_bytes());
                 buf.extend_from_slice(identity.federation_domain.as_bytes());
-                
+
                 // Encode timestamps
                 buf.extend_from_slice(&identity.added_at.to_be_bytes());
                 if let Some(exp) = identity.expires_at {
@@ -228,7 +244,7 @@ impl TrustedServerRegistry {
                 }
             }
         }
-        
+
         buf
     }
 
@@ -268,86 +284,92 @@ impl ServerRegistryFile {
         let json = std::fs::read_to_string(path)?;
         let file: ServerRegistryFile = serde_json::from_str(&json)?;
         // Verify signature on load
-        file.registry.verify_signature()
+        file.registry
+            .verify_signature()
             .map_err(|e| format!("invalid registry signature: {}", e))?;
         Ok(file)
     }
-    
+
     // Delegate methods to the registry
     pub fn server_count(&self) -> usize {
         self.registry.server_count()
     }
-    
+
     pub fn is_trusted(&self, server_id: &str) -> bool {
         self.registry.is_trusted(server_id)
     }
-    
+
     pub fn get(&self, server_id: &str) -> Option<&ServerIdentity> {
         self.registry.get(server_id)
     }
 }
 
-    pub fn verify_server_identity(
-        server_id: &str,
-        reported_key: &[u8],
-        trusted_registry: &TrustedServerRegistry,
-    ) -> Result<(), String> {
-        // Perform all checks to prevent timing attacks
-        // Use generic error messages to avoid leaking which check failed
-        
-        let verification_result = || -> Result<(), String> {
-            // Check 1: Verify registry signature
-            trusted_registry.verify_signature()
-                .map_err(|_| "server identity verification failed".to_string())?;
-            
-            // Check 2: Get expected identity from registry
-            let expected_identity = trusted_registry.get(server_id)
-                .ok_or_else(|| "server identity verification failed".to_string())?;
-            
-            // Check 3: Validate key length
-            if reported_key.len() != 32 {
-                return Err("server identity verification failed".to_string());
-            }
-            
-            // Check 4: Check validity period
-            let now = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-            if !expected_identity.is_valid_at(now) {
-                return Err("server identity verification failed".to_string());
-            }
-            
-            // Check 5: Constant-time key comparison
-            let mut reported_key_bytes = [0u8; 32];
-            reported_key_bytes.copy_from_slice(reported_key);
-            
-            use subtle::ConstantTimeEq;
-            let keys_equal: bool = expected_identity.signing_key.ct_eq(&reported_key_bytes).into();
-            if !keys_equal {
-                return Err("server identity verification failed".to_string());
-            }
-            
-            Ok(())
-        }();
-        
-        if verification_result.is_err() {
-            tracing::warn!(
-                server_id = %server_id,
-                event = "SECURITY:server_identity_verification_failed",
-                "server identity verification failed"
-            );
-            return verification_result;
+pub fn verify_server_identity(
+    server_id: &str,
+    reported_key: &[u8],
+    trusted_registry: &TrustedServerRegistry,
+) -> Result<(), String> {
+    // Perform all checks to prevent timing attacks
+    // Use generic error messages to avoid leaking which check failed
+
+    let verification_result = || -> Result<(), String> {
+        // Check 1: Verify registry signature
+        trusted_registry
+            .verify_signature()
+            .map_err(|_| "server identity verification failed".to_string())?;
+
+        // Check 2: Get expected identity from registry
+        let expected_identity = trusted_registry
+            .get(server_id)
+            .ok_or_else(|| "server identity verification failed".to_string())?;
+
+        // Check 3: Validate key length
+        if reported_key.len() != 32 {
+            return Err("server identity verification failed".to_string());
         }
-        
-        tracing::debug!(
-            server_id = %server_id,
-            event = "SECURITY:server_identity_verified",
-            "successfully verified server identity"
-        );
-        
+
+        // Check 4: Check validity period
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if !expected_identity.is_valid_at(now) {
+            return Err("server identity verification failed".to_string());
+        }
+
+        // Check 5: Constant-time key comparison
+        let mut reported_key_bytes = [0u8; 32];
+        reported_key_bytes.copy_from_slice(reported_key);
+
+        use subtle::ConstantTimeEq;
+        let keys_equal: bool = expected_identity
+            .signing_key
+            .ct_eq(&reported_key_bytes)
+            .into();
+        if !keys_equal {
+            return Err("server identity verification failed".to_string());
+        }
+
         Ok(())
+    }();
+
+    if verification_result.is_err() {
+        tracing::warn!(
+            server_id = %server_id,
+            event = "SECURITY:server_identity_verification_failed",
+            "server identity verification failed"
+        );
+        return verification_result;
     }
+
+    tracing::debug!(
+        server_id = %server_id,
+        event = "SECURITY:server_identity_verified",
+        "successfully verified server identity"
+    );
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
@@ -375,7 +397,8 @@ mod tests {
             [1u8; 32],
             [2u8; 32],
             "xudanu".to_string(),
-        ).with_expiry(9999999999);
+        )
+        .with_expiry(9999999999);
         assert_eq!(identity.expires_at, Some(9999999999));
     }
 
@@ -385,7 +408,7 @@ mod tests {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         let valid_identity = ServerIdentity::new(
             "valid-server".to_string(),
             [1u8; 32],
@@ -393,15 +416,16 @@ mod tests {
             "xudanu".to_string(),
         );
         assert!(valid_identity.is_valid_at(now));
-        
+
         let expired_identity = ServerIdentity::new(
             "expired-server".to_string(),
             [1u8; 32],
             [2u8; 32],
             "xudanu".to_string(),
-        ).with_expiry(now - 3600);
+        )
+        .with_expiry(now - 3600);
         assert!(!expired_identity.is_valid_at(now));
-        
+
         let future_identity = ServerIdentity::new(
             "future-server".to_string(),
             [1u8; 32],
@@ -426,18 +450,20 @@ mod tests {
     fn trusted_registry_add_server() {
         let authority_key = SigningKey::generate(&mut rand::rngs::OsRng);
         let mut registry = TrustedServerRegistry::new(&authority_key);
-        
+
         let identity = ServerIdentity::new(
             "server1".to_string(),
             [1u8; 32],
             [2u8; 32],
             "xudanu".to_string(),
         );
-        
-        assert!(registry.add_server(identity.clone(), &authority_key).is_ok());
+
+        assert!(registry
+            .add_server(identity.clone(), &authority_key)
+            .is_ok());
         assert_eq!(registry.server_count(), 1);
         assert!(registry.is_trusted("server1"));
-        
+
         let retrieved = registry.get("server1").unwrap();
         assert_eq!(retrieved.server_id, "server1");
         assert_eq!(retrieved.signing_key, [1u8; 32]);
@@ -447,17 +473,17 @@ mod tests {
     fn trusted_registry_remove_server() {
         let authority_key = SigningKey::generate(&mut rand::rngs::OsRng);
         let mut registry = TrustedServerRegistry::new(&authority_key);
-        
+
         let identity = ServerIdentity::new(
             "server1".to_string(),
             [1u8; 32],
             [2u8; 32],
             "xudanu".to_string(),
         );
-        
+
         registry.add_server(identity, &authority_key).unwrap();
         assert_eq!(registry.server_count(), 1);
-        
+
         assert!(registry.remove_server("server1", &authority_key).is_ok());
         assert_eq!(registry.server_count(), 0);
         assert!(!registry.is_trusted("server1"));
@@ -467,17 +493,17 @@ mod tests {
     fn trusted_registry_signature_verification() {
         let authority_key = SigningKey::generate(&mut rand::rngs::OsRng);
         let mut registry = TrustedServerRegistry::new(&authority_key);
-        
+
         // Skip signature verification test for empty registry since it uses a temp key
         // The real signature verification will work after adding servers
-        
+
         let identity = ServerIdentity::new(
             "server1".to_string(),
             [1u8; 32],
             [2u8; 32],
             "xudanu".to_string(),
         );
-        
+
         registry.add_server(identity, &authority_key).unwrap();
         // Signature should be valid after adding server with proper authority key
         assert!(registry.verify_signature().is_ok());
@@ -487,16 +513,16 @@ mod tests {
     fn trusted_registry_tampered_detection() {
         let authority_key = SigningKey::generate(&mut rand::rngs::OsRng);
         let mut registry = TrustedServerRegistry::new(&authority_key);
-        
+
         let identity = ServerIdentity::new(
             "server1".to_string(),
             [1u8; 32],
             [2u8; 32],
             "xudanu".to_string(),
         );
-        
+
         registry.add_server(identity, &authority_key).unwrap();
-        
+
         // Tamper with the registry
         let mut tampered_identity = ServerIdentity::new(
             "malicious".to_string(),
@@ -504,8 +530,10 @@ mod tests {
             [88u8; 32],
             "xudanu".to_string(),
         );
-        registry.servers.insert("malicious".to_string(), tampered_identity);
-        
+        registry
+            .servers
+            .insert("malicious".to_string(), tampered_identity);
+
         // Signature verification should fail
         assert!(registry.verify_signature().is_err());
     }
@@ -514,16 +542,16 @@ mod tests {
     fn verify_server_identity_success() {
         let authority_key = SigningKey::generate(&mut rand::rngs::OsRng);
         let mut registry = TrustedServerRegistry::new(&authority_key);
-        
+
         let identity = ServerIdentity::new(
             "server1".to_string(),
             [1u8; 32],
             [2u8; 32],
             "xudanu".to_string(),
         );
-        
+
         registry.add_server(identity, &authority_key).unwrap();
-        
+
         // Verification with correct key should succeed
         assert!(verify_server_identity("server1", &[1u8; 32], &registry).is_ok());
     }
@@ -532,16 +560,16 @@ mod tests {
     fn verify_server_identity_wrong_key() {
         let authority_key = SigningKey::generate(&mut rand::rngs::OsRng);
         let mut registry = TrustedServerRegistry::new(&authority_key);
-        
+
         let identity = ServerIdentity::new(
             "server1".to_string(),
             [1u8; 32],
             [2u8; 32],
             "xudanu".to_string(),
         );
-        
+
         registry.add_server(identity, &authority_key).unwrap();
-        
+
         // Verification with wrong key should fail
         let result = verify_server_identity("server1", &[99u8; 32], &registry);
         assert!(result.is_err());
@@ -553,7 +581,7 @@ mod tests {
     fn verify_server_identity_unknown_server() {
         let authority_key = SigningKey::generate(&mut rand::rngs::OsRng);
         let registry = TrustedServerRegistry::new(&authority_key);
-        
+
         // Verification of unknown server should fail
         let result = verify_server_identity("unknown", &[1u8; 32], &registry);
         assert!(result.is_err());
@@ -565,21 +593,24 @@ mod tests {
     fn verify_server_identity_expired() {
         let authority_key = SigningKey::generate(&mut rand::rngs::OsRng);
         let mut registry = TrustedServerRegistry::new(&authority_key);
-        
+
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         let expired_identity = ServerIdentity::new(
             "expired-server".to_string(),
             [1u8; 32],
             [2u8; 32],
             "xudanu".to_string(),
-        ).with_expiry(now - 3600);
-        
-        registry.add_server(expired_identity, &authority_key).unwrap();
-        
+        )
+        .with_expiry(now - 3600);
+
+        registry
+            .add_server(expired_identity, &authority_key)
+            .unwrap();
+
         // Verification of expired server should fail
         let result = verify_server_identity("expired-server", &[1u8; 32], &registry);
         assert!(result.is_err());
@@ -591,27 +622,27 @@ mod tests {
     fn server_registry_file_roundtrip() {
         let authority_key = SigningKey::generate(&mut rand::rngs::OsRng);
         let mut registry = TrustedServerRegistry::new(&authority_key);
-        
+
         let identity = ServerIdentity::new(
             "server1".to_string(),
             [1u8; 32],
             [2u8; 32],
             "xudanu".to_string(),
         );
-        
+
         registry.add_server(identity, &authority_key).unwrap();
-        
+
         let file = ServerRegistryFile::new(registry.clone());
-        
+
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("registry.json");
-        
+
         assert!(file.save_to_file(&path).is_ok());
-        
+
         let loaded = ServerRegistryFile::load_from_file(&path).unwrap();
         assert_eq!(loaded.server_count(), 1);
         assert!(loaded.is_trusted("server1"));
-        
+
         let loaded_identity = loaded.get("server1").unwrap();
         assert_eq!(loaded_identity.server_id, "server1");
         assert_eq!(loaded_identity.signing_key, [1u8; 32]);
@@ -621,38 +652,41 @@ mod tests {
     fn server_registry_file_rejects_tampered() {
         let authority_key = SigningKey::generate(&mut rand::rngs::OsRng);
         let mut registry = TrustedServerRegistry::new(&authority_key);
-        
+
         let identity = ServerIdentity::new(
             "server1".to_string(),
             [1u8; 32],
             [2u8; 32],
             "xudanu".to_string(),
         );
-        
+
         registry.add_server(identity, &authority_key).unwrap();
-        
+
         let file = ServerRegistryFile::new(registry);
-        
+
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("registry.json");
-        
+
         file.save_to_file(&path).unwrap();
-        
+
         // Tamper with the file by modifying the registry data directly
         let json_str = std::fs::read_to_string(&path).unwrap();
         let mut value: serde_json::Value = serde_json::from_str(&json_str).unwrap();
-        
+
         // Change the signing key which should break the signature
         if let Some(servers) = value.get_mut("servers").and_then(|s| s.as_object_mut()) {
             if let Some(server1) = servers.get_mut("server1") {
-                if let Some(signing_key) = server1.get_mut("signing_key").and_then(|k| k.as_array_mut()) {
+                if let Some(signing_key) = server1
+                    .get_mut("signing_key")
+                    .and_then(|k| k.as_array_mut())
+                {
                     signing_key[0] = serde_json::json!(99u8);
                 }
             }
         }
-        
+
         std::fs::write(&path, serde_json::to_string(&value).unwrap().as_bytes()).unwrap();
-        
+
         // Loading tampered file should fail signature verification
         let result = ServerRegistryFile::load_from_file(&path);
         assert!(result.is_err());

@@ -1,0 +1,48 @@
+{
+  "type": "xudanu-attestation-report",
+  "version": 1,
+  "generated_at": 1783130786,
+  "document": {
+    "work_id": "04a2",
+    "title": "Unsigned Spans Report",
+    "revision": 2,
+    "character_count": 1000,
+    "content_hash_blake3": "abc123"
+  },
+  "server_identity": {
+    "server_id": "16522a722cab6b18",
+    "verifying_key_ed25519": "16522a722cab6b18620208336c0550641ae2149442c9b70f9dbf087bd0b72d33"
+  },
+  "attribution": {
+    "span_count": 3,
+    "spans": [
+      {
+        "range": [0, 300],
+        "author": "Alice",
+        "author_type": "human",
+        "signature_valid": true,
+        "timestamp": 1783130786
+      },
+      {
+        "range": [300, 700],
+        "author": "unknown",
+        "author_type": "human",
+        "signature_valid": false,
+        "timestamp": 1783130000
+      },
+      {
+        "range": [700, 1000],
+        "author": "unknown",
+        "author_type": "human",
+        "signature_valid": false,
+        "timestamp": 1783130000
+      }
+    ]
+  },
+  "attribution_log": {
+    "entry_count": 10,
+    "chain_valid": false,
+    "last_sequence": 10,
+    "has_log": true
+  }
+}

@@ -5,6 +5,7 @@ interface TopBarProps {
   identityName: string | null;
   identityColor: string;
   writeMode: boolean;
+  canEdit: boolean;
   onToggleWrite: () => void;
   onOpenSearch: () => void;
   onOpenIdentity: () => void;
@@ -15,6 +16,7 @@ export function TopBar({
   identityName,
   identityColor,
   writeMode,
+  canEdit,
   onToggleWrite,
   onOpenSearch,
   onOpenIdentity,
@@ -36,8 +38,10 @@ export function TopBar({
       <div className="top-bar-actions">
         <button
           className={`write-toggle ${writeMode ? "active" : ""}`}
-          onClick={onToggleWrite}
-          title="Toggle read/write mode"
+          onClick={canEdit ? onToggleWrite : undefined}
+          disabled={!canEdit}
+          title={canEdit ? "Toggle read/write mode" : "You don't have edit access to this document"}
+          style={canEdit ? {} : { opacity: 0.4, cursor: "not-allowed" }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 20h9" />
