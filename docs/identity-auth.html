@@ -3,19 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Identity &amp; Authentication &mdash; Xudanu</title>
+<title>Identity &amp; Authentication &mdash; Xudanu Developer Guide</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
 a{color:#58a6ff;text-decoration:none}
 a:hover{text-decoration:underline}
 h1,h2,h3,h4{color:#e6edf3}
 h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
 h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
 h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
-code{font-family:'JetBrains Mono',monospace;font-size:.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
 .content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
 .subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
 .diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
@@ -25,36 +29,59 @@ code{font-family:'JetBrains Mono',monospace;font-size:.9em;background:rgba(110,1
 .note strong{color:#58a6ff}
 .gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
 .gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+.example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
+.example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
 table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
-th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
 td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
 .toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
 .toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
 .toc a:hover{color:#58a6ff}
 .toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
-.footer{margin-top:64px;padding-top:20px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
-@media(max-width:768px){.two-col{grid-template-columns:1fr}.content-wrap{padding:24px 16px 60px}}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-cyan{color:#39d2c0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}.two-col{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="content-wrap">
 
 <h1>Identity &amp; Authentication</h1>
-<p class="subtitle">Clubs, credentials, the lock hierarchy, KeyMaster authority tracking, and Ed25519-signed provenance &mdash; the Udanax-Gold permission model, enhanced with modern cryptography.</p>
+<p class="subtitle">Clubs, credentials, the lock hierarchy, KeyMaster authority, OAuth2 login, email verification, the authentication flow with rate limiting, CSRF protection, and the tamper-evident security audit chain &mdash; the complete identity and access control system.</p>
 
 <div class="toc">
-  <a href="#clubs" class="toc-section">1. Clubs &mdash; Identity and Permission Units</a>
-  <a href="#credentials" class="toc-section">2. Credentials</a>
-  <a href="#locks" class="toc-section">3. The Lock Hierarchy</a>
-  <a href="#keymaster" class="toc-section">4. KeyMaster &mdash; Authority Tracking</a>
-  <a href="#provenance" class="toc-section">5. Provenance &amp; Attribution</a>
-  <a href="#sessions" class="toc-section">6. Session Lifecycle</a>
-  <a href="#security" class="toc-section">7. Security Monitor</a>
-  <a href="#gold-comparison" class="toc-section">8. Udanax-Gold Comparison</a>
+  <a class="toc-section" href="#clubs">1. Clubs &mdash; Identity and Permission Units</a>
+  <a class="toc-section" href="#credentials">2. Credentials</a>
+  <a class="toc-section" href="#locks">3. The Lock Hierarchy</a>
+  <a class="toc-section" href="#keymaster">4. KeyMaster &mdash; Authority Tracking</a>
+  <a class="toc-section" href="#auth-flow">5. The Authentication Flow</a>
+  <a class="toc-section" href="#rate-limit">6. Rate Limiting &amp; Brute-Force Protection</a>
+  <a class="toc-section" href="#csrf">7. CSRF Protection</a>
+  <a class="toc-section" href="#oauth">8. OAuth2: GitHub &amp; Google Login</a>
+  <a class="toc-section" href="#email-verify">9. Email Verification</a>
+  <a class="toc-section" href="#sessions">10. Session Lifecycle</a>
+  <a class="toc-section" href="#audit">11. The Security Audit Chain</a>
+  <a class="toc-section" href="#monitor">12. SecurityMonitor &amp; Threat Detection</a>
+  <a class="toc-section" href="#audit-config">13. Security Configuration Reference</a>
+  <a class="toc-section" href="#provenance-link">14. Provenance &amp; Attribution</a>
+  <a class="toc-section" href="#gold-comparison">15. Udanax-Gold Comparison</a>
+  <a class="toc-section" href="#source-map">16. Source Code Map</a>
 </div>
 
+<!-- ============================================================ -->
 <h2 id="clubs">1. Clubs &mdash; Identity and Permission Units</h2>
+
 <p>In Udanax-Gold, a <strong>Club</strong> is the fundamental identity unit. Every user, group, and permission set is a Club. Clubs own works, control access, and sign content. There is no separate "user" concept &mdash; everything is a Club.</p>
 
 <h3>Club structure</h3>
@@ -70,47 +97,80 @@ td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
   <tr><td><code>sponsored_works</code></td><td><code>HashSet&lt;BeId&gt;</code></td><td>Works vouched for by this club</td></tr>
   <tr><td><code>default_read_club</code></td><td><code>Option&lt;BeId&gt;</code></td><td>Default read-access club for new works</td></tr>
   <tr><td><code>default_edit_club</code></td><td><code>Option&lt;BeId&gt;</code></td><td>Default edit-access club for new works</td></tr>
+  <tr><td><code>email</code></td><td><code>Option&lt;String&gt;</code></td><td>Email for verification (personal clubs only)</td></tr>
+  <tr><td><code>verified</code></td><td><code>bool</code></td><td>Whether email has been verified</td></tr>
 </table>
 
 <h3>Club types</h3>
 <div class="two-col">
   <div>
-    <h4 style="color:#22c55e">Personal Club</h4>
-    <p>One per user. Has credentials (password or public key). Owns the user's works and edits. Has an encrypted Ed25519 signing key for attribution.</p>
+    <h4 style="color:#3fb950">Personal Club</h4>
+    <p>One per user. Has credentials (password or public key). Owns the user's works and edits. Has an encrypted Ed25519 signing key for attribution. Can have an email address for verification.</p>
   </div>
   <div>
     <h4 style="color:#58a6ff">Group Club</h4>
     <p>A named collection of member clubs. Used for team permissions: "editors", "reviewers", "public". Members inherit the group's access rights.</p>
   </div>
   <div>
-    <h4 style="color:#a855f7">Public Club</h4>
+    <h4 style="color:#a371f7">Public Club</h4>
     <p>Special club for anonymous/guest access. Users who haven't signed in operate under the public club. Their edits are attributed to "anonymous".</p>
   </div>
   <div>
-    <h4 style="color:#f59e0b">Signature Club</h4>
+    <h4 style="color:#d29922">Signature Club</h4>
     <p>Internal club that holds signing keys. Every personal club has a signature club that owns its Ed25519 keypair.</p>
   </div>
 </div>
 
 <div class="gold">
-  <strong>Udanax-Gold origin:</strong> Clubs are directly from the original C++ codebase. Gold had a <code>Club</code> class with recursive membership (clubs containing clubs). Xudanu currently implements flat membership (no nesting) but retains the sponsorship concept for work vouching.
+<strong>Udanax-Gold origin:</strong> Clubs are directly from the original C++ codebase. Gold had a <code>Club</code> class with recursive membership (clubs containing clubs). Xudanu currently implements flat membership (no nesting) but retains the sponsorship concept for work vouching.
 </div>
 
+<h3>System clubs</h3>
+<p>Every server starts with four system clubs created at initialization:</p>
+<table>
+<tr><th>Club</th><th>Purpose</th></tr>
+<tr><td><code>public_club</code></td><td>Anonymous/guest access. All unauthenticated sessions operate under this club.</td></tr>
+<tr><td><code>admin_club</code></td><td>Server administration. Members can accept/reject connections, run preflight, manage other clubs.</td></tr>
+<tr><td><code>access_club</code></td><td>Used for general access control internally.</td></tr>
+<tr><td><code>empty_club</code></td><td>The empty set &mdash; no authority. Used as a sentinel.</td></tr>
+</table>
+
+<!-- ============================================================ -->
 <h2 id="credentials">2. Credentials</h2>
 <p>A club can have one of two credential types:</p>
 <div class="two-col">
   <div>
-    <h4 style="color:#22c55e">Password</h4>
+    <h4 style="color:#3fb950">Password</h4>
     <p><code>Credential::Password { phc_hash }</code></p>
-    <p>Stored as a PHC-format Argon2id hash. The PHC string encodes the algorithm, parameters, salt, and hash, making it self-describing and future-proof.</p>
+    <p>Stored as a PHC-format Argon2id hash. The PHC string encodes the algorithm, parameters, salt, and hash, making it self-describing and future-proof. Passwords must be 10&ndash;256 bytes.</p>
   </div>
   <div>
-    <h4 style="color:#a855f7">Public Key</h4>
+    <h4 style="color:#a371f7">Public Key</h4>
     <p><code>Credential::PublicKey { verifying_key }</code></p>
     <p>A 32-byte Ed25519 verifying key. The client proves identity by signing a challenge with the corresponding private key.</p>
   </div>
 </div>
 
+<p>When a password is set, the server also generates (or re-encrypts) the club's Ed25519 signing key, encrypted with a key derived from the password via Argon2id:</p>
+<pre>// From identity.rs club_set_password()
+if is_personal {
+    if let Some(existing_sk) = existing_signing_key {
+        // Re-encrypt the signing key with the new password
+        let encrypted = encrypt_signing_key(&amp;sk, password)?;
+        club.set_encrypted_signing_key(Some(encrypted));
+    } else if club.encrypted_signing_key().is_none() {
+        // Generate a new Ed25519 keypair for this club
+        let (encrypted, signing_key) = generate_club_keypair(password)?;
+        club.set_encrypted_signing_key(Some(encrypted));
+        session.set_club_signing_key(Some(signing_key));  // available in-session
+    }
+}</pre>
+
+<div class="note">
+<strong>Key point:</strong> The signing key is <em>encrypted at rest</em> with AES-256-GCM, using an Argon2id-derived key from the password. The server only holds the decrypted signing key during the session (in-memory). When the password changes, the signing key is re-encrypted under the new password.
+</div>
+
+<!-- ============================================================ -->
 <h2 id="locks">3. The Lock Hierarchy</h2>
 <p>Locks control access to clubs. A club may have a lock that must be opened before the club's authority can be used. The lock system implements the Strategy pattern via the <code>Lock</code> trait:</p>
 
@@ -120,10 +180,10 @@ td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
 
   <rect x="260" y="20" width="180" height="50" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
   <text x="350" y="42" text-anchor="middle" fill="#58a6ff" font-family="JetBrains Mono" font-size="12" font-weight="600">trait Lock</text>
-  <text x="350" y="58" text-anchor="middle" fill="#8b949e" font-family="JetBrains Mono" font-size="10">try_open() → KeyMaster</text>
+  <text x="350" y="58" text-anchor="middle" fill="#8b949e" font-family="JetBrains Mono" font-size="10">try_open() &rarr; KeyMaster</text>
 
-  <rect x="20" y="120" width="130" height="50" rx="8" fill="#161b22" stroke="#22c55e" stroke-width="1.5"/>
-  <text x="85" y="142" text-anchor="middle" fill="#22c55e" font-family="JetBrains Mono" font-size="11" font-weight="600">BooLock</text>
+  <rect x="20" y="120" width="130" height="50" rx="8" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="85" y="142" text-anchor="middle" fill="#3fb950" font-family="JetBrains Mono" font-size="11" font-weight="600">BooLock</text>
   <text x="85" y="158" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="10">Open access</text>
 
   <rect x="170" y="120" width="130" height="50" rx="8" fill="#161b22" stroke="#f85149" stroke-width="1.5"/>
@@ -138,102 +198,531 @@ td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
   <text x="555" y="142" text-anchor="middle" fill="#a371f7" font-family="JetBrains Mono" font-size="11" font-weight="600">MatchLock</text>
   <text x="555" y="158" text-anchor="middle" fill="#8b949e" font-family="Inter" font-size="10">Credential match</text>
 
-  <!-- Arrows from Lock trait -->
   <line x1="310" y1="72" x2="100" y2="118" stroke="#30363d" stroke-width="1" stroke-dasharray="4 3"/>
   <line x1="340" y1="72" x2="235" y2="118" stroke="#30363d" stroke-width="1" stroke-dasharray="4 3"/>
   <line x1="380" y1="72" x2="390" y2="118" stroke="#30363d" stroke-width="1" stroke-dasharray="4 3"/>
   <line x1="420" y1="72" x2="530" y2="118" stroke="#30363d" stroke-width="1" stroke-dasharray="4 3"/>
 
-  <!-- MultiLock -->
   <rect x="220" y="210" width="260" height="40" rx="8" fill="#161b22" stroke="#8b949e" stroke-width="1"/>
   <text x="350" y="235" text-anchor="middle" fill="#8b949e" font-family="JetBrains Mono" font-size="11" font-weight="600">MultiLock { locks: Vec&lt;Box&lt;dyn Lock&gt;&gt; }</text>
 </svg>
 </div>
-<p class="diagram-caption">Figure 1: The Lock hierarchy. Each lock type implements the <code>Lock</code> trait. <code>MultiLock</code> composes multiple locks.</p>
+<p class="diagram-caption">The Lock hierarchy. Each lock type implements the <code>Lock</code> trait. <code>MultiLock</code> composes multiple locks (OR semantics).</p>
 
 <h3>Lock types</h3>
 <table>
   <tr><th>Lock</th><th>Behavior</th><th>Use case</th></tr>
   <tr><td><code>BooLock</code></td><td>Always opens with <code>LockCredential::Boo</code></td><td>Open/public access, anonymous login</td></tr>
-  <tr><td><code>WallLock</code></td><td>Never opens &mdash; always returns <code>LockFailed</code></td><td>Permanently locked accounts, disabled users</td></tr>
+  <tr><td><code>WallLock</code></td><td>Never opens &mdash; always returns <code>LockFailed</code></td><td>Permanently locked accounts, disabled users, clubs with no credential</td></tr>
   <tr><td><code>ChallengeLock</code></td><td>Requires correct password response</td><td>Standard password authentication</td></tr>
   <tr><td><code>MatchLock</code></td><td>Matches stored credential (password hash or public key)</td><td>Username/password login, key-based auth</td></tr>
   <tr><td><code>MultiLock</code></td><td>Composes multiple locks; opens if ANY child opens</td><td>Multi-factor: accept either password OR key</td></tr>
 </table>
 
+<!-- ============================================================ -->
 <h2 id="keymaster">4. KeyMaster &mdash; Authority Tracking</h2>
 <p>The <code>KeyMaster</code> tracks which clubs a session has proven identity for. When a lock is opened, the resulting <code>KeyMaster</code> contains the set of authorized club IDs.</p>
 
-<h3>Authority operations</h3>
-<ul>
-  <li><code>KeyMaster::make(club_id)</code> &mdash; create authority for a single club</li>
-  <li><code>KeyMaster::merge(other)</code> &mdash; combine authority from multiple authentications</li>
-  <li><code>KeyMaster::has_authority(club_id)</code> &mdash; check if the session can act as this club</li>
-  <li><code>KeyMaster::clubs()</code> &mdash; iterate all authorized clubs</li>
-</ul>
+<h3>Two kinds of authority</h3>
+<table>
+<tr><th>Authority type</th><th>Source</th><th>Used for</th></tr>
+<tr><td><code>login_authority</code></td><td>Direct lock opening (password/key match)</td><td>Acting as this club, editing, managing</td></tr>
+<tr><td><code>actual_authority</code></td><td>Login authority + membership-derived authority</td><td>All operations the session can perform, including group-club access</td></tr>
+</table>
+
+<p>After successful login, <code>update_authority()</code> walks the club membership graph to expand <code>actual_authority</code> &mdash; if you're a member of "editors" and "editors" is a member of "staff", you get authority over all three.</p>
+
+<h3>Signature authority</h3>
+<p>For provenance signing, the KeyMaster also tracks <strong>signature authority</strong> &mdash; the right to use a club's signing key. This is checked via <code>has_signature_authority(club_id, &amp;clubs)</code>, which walks the <code>signature_club</code> chain to verify the session controls the key.</p>
 
 <div class="gold">
-  <strong>Udanax-Gold origin:</strong> The original C++ <code>KeyMaster</code> had <code>incorporate()</code> (merge authority) and <code>removeLogins()</code> (revoke). Xudanu implements <code>make()</code> and <code>merge()</code> but not revocation yet.
+<strong>Udanax-Gold origin:</strong> The original C++ <code>KeyMaster</code> had <code>incorporate()</code> (merge authority) and <code>removeLogins()</code> (revoke). Xudanu implements <code>make()</code>, <code>merge()</code>, and <code>incorporate_authority()</code> but not full revocation.
 </div>
 
-<h2 id="provenance">5. Provenance &amp; Attribution</h2>
-<p>Every piece of content has a cryptographic provenance chain. The system tracks:</p>
-<ul>
-  <li><strong>ElementProvenance</strong> &mdash; author public key, display name, club ID, timestamp, and author type (Human/LLM/Historical) for individual elements</li>
-  <li><strong>SpanProvenance</strong> &mdash; Ed25519-signed proof covering a contiguous range of characters, linking them to their author</li>
-</ul>
+<!-- ============================================================ -->
+<h2 id="auth-flow">5. The Authentication Flow</h2>
 
-<h3>Signing and verification</h3>
-<ul>
-  <li><code>sign_element(signing_key, element, author_identity)</code> &mdash; creates <code>ElementProvenance</code></li>
-  <li><code>sign_span(signing_key, text, author_identity, region)</code> &mdash; creates <code>SpanProvenance</code> with a signature over the text + region</li>
-  <li><code>verify_span_provenance(provenance)</code> &mdash; verifies the Ed25519 signature, returns true if valid</li>
-</ul>
+<p>
+Authentication is a <strong>two-step challenge-response</strong> protocol. The client first requests a lock (step 1), then submits credentials to open it (step 2):
+</p>
 
-<h3>Attribution log</h3>
-<p>The server maintains an <code>AttributionLog</code> (<code>src/server/transport/attribution_log.rs</code>) that records every authorship change. The log:</p>
-<ul>
-  <li>Writes to <code>attribution.log</code> in the data directory</li>
-  <li>Supports verification: <code>verify_log()</code> checks every entry's cryptographic integrity</li>
-  <li>Is append-only: entries are never modified or deleted</li>
-  <li>Is checked by <code>preflight_check()</code> on server startup</li>
-</ul>
+<div class="diagram-container">
+<svg viewBox="0 0 780 350" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrAF" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#58a6ff"/></marker>
+    <marker id="arrAG" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrAR" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#f85149"/></marker>
+  </defs>
 
-<h2 id="sessions">6. Session Lifecycle</h2>
+  <!-- Client -->
+  <rect x="20" y="20" width="120" height="300" rx="10" fill="rgba(88,166,255,0.04)" stroke="#30363d" stroke-width="1.5"/>
+  <text x="80" y="42" text-anchor="middle" fill="#58a6ff" font-size="13" font-weight="700">Client</text>
+
+  <!-- Server -->
+  <rect x="320" y="20" width="140" height="300" rx="10" fill="rgba(163,113,247,0.04)" stroke="#30363d" stroke-width="1.5"/>
+  <text x="390" y="42" text-anchor="middle" fill="#a371f7" font-size="13" font-weight="700">Server</text>
+
+  <!-- Step 1 -->
+  <line x1="145" y1="80" x2="315" y2="80" stroke="#58a6ff" stroke-width="2" marker-end="url(#arrAF)"/>
+  <text x="230" y="72" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">1. login(club_id)</text>
+  <text x="230" y="93" text-anchor="middle" fill="#8b949e" font-size="10">"I want to authenticate as this club"</text>
+
+  <!-- Step 1 response -->
+  <line x1="315" y1="120" x2="145" y2="120" stroke="#a371f7" stroke-width="2" marker-end="url(#arrAF)"/>
+  <text x="230" y="112" text-anchor="middle" fill="#a371f7" font-size="11" font-weight="600">2. Lock (challenge)</text>
+  <text x="230" y="133" text-anchor="middle" fill="#8b949e" font-size="10">MatchLock or ChallengeLock stored as pending</text>
+
+  <!-- Step 2 -->
+  <line x1="145" y1="170" x2="315" y2="170" stroke="#58a6ff" stroke-width="2" marker-end="url(#arrAF)"/>
+  <text x="230" y="162" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">3. authenticate_with_pending(credential)</text>
+  <text x="230" y="183" text-anchor="middle" fill="#8b949e" font-size="10">"Here's my password / signature"</text>
+
+  <!-- Decision -->
+  <rect x="540" y="150" width="200" height="80" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="640" y="172" text-anchor="middle" fill="#8b949e" font-size="10" font-weight="600">Rate limit check</text>
+  <text x="640" y="187" text-anchor="middle" fill="#8b949e" font-size="9">MAX_CLUB_LOGIN_ATTEMPTS = 10</text>
+  <text x="640" y="202" text-anchor="middle" fill="#8b949e" font-size="9">window = 5 minutes</text>
+  <text x="640" y="218" text-anchor="middle" fill="#8b949e" font-size="9">Per-club, not per-IP</text>
+  <line x1="460" y1="170" x2="535" y2="180" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 2"/>
+
+  <!-- Success -->
+  <line x1="315" y1="230" x2="145" y2="230" stroke="#3fb950" stroke-width="2" marker-end="url(#arrAG)"/>
+  <text x="230" y="222" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">4a. KeyMaster (success)</text>
+  <text x="230" y="243" text-anchor="middle" fill="#8b949e" font-size="10">+ decrypted signing key in session</text>
+
+  <!-- Failure -->
+  <line x1="315" y1="280" x2="145" y2="280" stroke="#f85149" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrAR)"/>
+  <text x="230" y="272" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">4b. Error (failure)</text>
+  <text x="230" y="293" text-anchor="middle" fill="#8b949e" font-size="10">attempt_count++, logged as SECURITY:login_failed</text>
+</svg>
+</div>
+<p class="diagram-caption">The two-step authentication flow. The server stores the lock as "pending" on the session between steps 1 and 2.</p>
+
+<h3>What happens on success</h3>
 <ol>
-  <li><strong>Connect:</strong> WebSocket connection established. A <code>Session</code> is created with a unique <code>SessionId</code>.</li>
-  <li><strong>Authenticate:</strong> Client sends credentials. Server opens the club's lock, producing a <code>KeyMaster</code>.</li>
-  <li><strong>Author identity:</strong> The session is assigned an <code>OtreeAuthorIdentity</code> (public key, display name, club ID) for CRDT attribution.</li>
-  <li><strong>Operate:</strong> All subsequent operations (read, edit, star, trail) are performed under the session's authority.</li>
-  <li><strong>Disconnect:</strong> Session is cleaned up. Awareness state is removed. Active edits are preserved (auto-saved via CRDT).</li>
+  <li>The <code>KeyMaster</code> is created with authority for the club</li>
+  <li><code>update_authority()</code> expands to include group memberships</li>
+  <li>If login was via password, the club's <strong>encrypted signing key is decrypted</strong> and stored in the session (in-memory only)</li>
+  <li>The rate-limit counter is cleared</li>
+  <li>The event is logged as <code>SECURITY:login_succeeded</code></li>
 </ol>
 
-<h2 id="security">7. Security Monitor</h2>
-<p>The <code>SecurityMonitor</code> (<code>src/server/transport/audit.rs</code>) tracks threat levels per session and IP address:</p>
-<ul>
-  <li><strong>Auth failures</strong> &mdash; repeated wrong passwords</li>
-  <li><strong>Protocol violations</strong> &mdash; malformed messages, invalid operation codes</li>
-  <li><strong>Permission denials</strong> &mdash; attempts to access unauthorized resources</li>
-  <li><strong>Grab conflicts</strong> &mdash; concurrent edit conflicts</li>
-</ul>
-<p>Threat levels escalate: <code>None → Low → Medium → High → Critical</code>. At Critical, the session is recommended for disconnection. All events are written to a structured audit log.</p>
+<h3>Public login (anonymous)</h3>
+<p>For anonymous access, the server uses a <code>BooLock</code> that always opens:</p>
+<pre>pub fn login_public(&amp;mut self, session_id: SessionId) -&gt; Result&lt;KeyMaster, ServerError&gt; {
+    let lock = BooLock::new(self.system_clubs.public_club);
+    self.authenticate(session_id, &amp;lock, &amp;LockCredential::Boo)
+}</pre>
 
-<h2 id="gold-comparison">8. Udanax-Gold Comparison</h2>
+<!-- ============================================================ -->
+<h2 id="rate-limit">6. Rate Limiting &amp; Brute-Force Protection</h2>
+
+<p>
+Xudanu implements <strong>per-club rate limiting</strong> for login attempts. This is deliberately per-club (not per-IP) because:
+</p>
+<ul>
+  <li>Multiple users may share an IP (NAT, corporate network)</li>
+  <li>An attacker targeting a specific account should be blocked regardless of source IP</li>
+  <li>The IP-level rate limiting is handled separately by the <a href="#monitor">SecurityMonitor</a></li>
+</ul>
+
+<table>
+<tr><th>Parameter</th><th>Default</th><th>Code constant</th></tr>
+<tr><td>Max attempts per club</td><td>10</td><td><code>MAX_CLUB_LOGIN_ATTEMPTS</code></td></tr>
+<tr><td>Window duration</td><td>5 minutes (300s)</td><td><code>CLUB_LOGIN_ATTEMPT_WINDOW</code></td></tr>
+<tr><td>Tracking</td><td>Per-club <code>ClubAttemptTracker</code></td><td><code>HashMap&lt;BeId, ClubAttemptTracker&gt;</code></td></tr>
+</table>
+
+<p>The rate limit is checked in <code>authenticate_with_pending</code> before attempting to open the lock:</p>
+
+<pre>if let Some(tracker) = self.login_attempts.get_mut(&amp;club_id) {
+    if now.duration_since(tracker.window_start) > CLUB_LOGIN_ATTEMPT_WINDOW {
+        tracker.count = 0;     // window reset
+        tracker.window_start = now;
+    }
+    if tracker.count >= MAX_CLUB_LOGIN_ATTEMPTS {
+        security_warn!(
+            club_id = ?club_id,
+            event = "SECURITY:login_rate_limited",
+            "login rate limited"
+        );
+        return Err(ServerError::Unauthorized(
+            "too many login attempts for this account, try again later".into()
+        ));
+    }
+}</pre>
+
+<div class="note">
+<strong>Rate limit resets on success.</strong> A successful login clears the counter (<code>self.login_attempts.remove(&amp;club_id)</code>). This means a user who mistypes their password a few times but eventually gets it right doesn't carry a partial counter forward.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="csrf">7. CSRF Protection</h2>
+
+<p>
+The WebSocket connection is protected by CSRF (Cross-Site Request Forgery) tokens. The server generates a random token that the client must include in the WebSocket upgrade request:
+</p>
+
+<table>
+<tr><th>Component</th><th>Implementation</th></tr>
+<tr><td>Token generation</td><td>32 random bytes via <code>OsRng</code>, hex-encoded</td></tr>
+<tr><td>Storage</td><td>In-memory <code>HashSet&lt;String&gt;</code>, capped at <code>MAX_CSRF_TOKENS = 10,000</code></td></tr>
+<tr><td>Delivery</td><td>Client fetches from <code>GET /csrf-token</code> before connecting</td></tr>
+<tr><td>Validation</td><td>Token must be present in the <code>?csrf_token=</code> query param on WS upgrade</td></tr>
+<tr><td>Toggle</td><td><code>--csrf-token</code> CLI flag; can be disabled for development</td></tr>
+</table>
+
+<div class="warning">
+<strong>Production guidance:</strong> CSRF protection should be enabled in any deployment where the server is accessible from a browser. The <code>allowed_origins</code> list in <code>AppState</code> provides an additional layer, checking the <code>Origin</code> header on WS upgrades.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="oauth">8. OAuth2: GitHub &amp; Google Login</h2>
+
+<p>
+Xudanu supports OAuth2 login through GitHub and Google, allowing users to authenticate without creating a password. The flow follows the standard OAuth2 authorization code pattern.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 340" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrO1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#58a6ff"/></marker>
+    <marker id="arrO2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrO3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#a371f7"/></marker>
+    <marker id="arrO4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#d29922"/></marker>
+  </defs>
+
+  <!-- Browser -->
+  <rect x="20" y="20" width="100" height="280" rx="8" fill="rgba(88,166,255,0.04)" stroke="#30363d" stroke-width="1.5"/>
+  <text x="70" y="42" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="700">Browser</text>
+
+  <!-- Xudanu -->
+  <rect x="200" y="20" width="120" height="280" rx="8" fill="rgba(163,113,247,0.04)" stroke="#30363d" stroke-width="1.5"/>
+  <text x="260" y="42" text-anchor="middle" fill="#a371f7" font-size="12" font-weight="700">Xudanu</text>
+
+  <!-- GitHub/Google -->
+  <rect x="430" y="20" width="140" height="280" rx="8" fill="rgba(210,153,34,0.04)" stroke="#30363d" stroke-width="1.5"/>
+  <text x="500" y="42" text-anchor="middle" fill="#d29922" font-size="12" font-weight="700">GitHub/Google</text>
+
+  <!-- Step 1: redirect -->
+  <line x1="120" y1="70" x2="195" y2="70" stroke="#58a6ff" stroke-width="2" marker-end="url(#arrO1)"/>
+  <text x="157" y="62" text-anchor="middle" fill="#58a6ff" font-size="9">click "Sign in"</text>
+
+  <!-- Step 2: state + redirect -->
+  <line x1="200" y1="95" x2="425" y2="95" stroke="#a371f7" stroke-width="2" marker-end="url(#arrO3)"/>
+  <text x="312" y="87" text-anchor="middle" fill="#a371f7" font-size="9">1. redirect + state token</text>
+
+  <!-- Step 3: user authorizes -->
+  <line x1="430" y1="120" x2="125" y2="120" stroke="#d29922" stroke-width="2" marker-end="url(#arrO4)"/>
+  <text x="275" y="112" text-anchor="middle" fill="#d29922" font-size="9">2. "Authorize Xudanu?"</text>
+
+  <!-- Step 4: callback -->
+  <line x1="120" y1="150" x2="195" y2="150" stroke="#58a6ff" stroke-width="2" marker-end="url(#arrO1)"/>
+  <text x="157" y="142" text-anchor="middle" fill="#58a6ff" font-size="9">redirect back</text>
+
+  <line x1="430" y1="165" x2="325" y2="165" stroke="#d29922" stroke-width="2" stroke-dasharray="4 2" marker-end="url(#arrO4)"/>
+  <text x="375" y="157" text-anchor="middle" fill="#d29922" font-size="9">3. ?code=...&amp;state=...</text>
+
+  <!-- Step 5: validate state + exchange -->
+  <rect x="180" y="185" width="160" height="50" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="260" y="202" text-anchor="middle" fill="#a371f7" font-size="9" font-weight="600">4. validate_state(token)</text>
+  <text x="260" y="216" text-anchor="middle" fill="#8b949e" font-size="8">exchange code for access token</text>
+  <text x="260" y="228" text-anchor="middle" fill="#8b949e" font-size="8">fetch user profile</text>
+
+  <!-- Step 6: find or create club -->
+  <line x1="260" y1="240" x2="260" y2="260" stroke="#a371f7" stroke-width="1.5"/>
+
+  <rect x="160" y="265" width="200" height="35" rx="6" fill="rgba(57,210,192,0.08)" stroke="#39d2c0" stroke-width="1.5"/>
+  <text x="260" y="287" text-anchor="middle" fill="#39d2c0" font-size="10" font-weight="600">5. find_link or create club + session</text>
+
+  <!-- Step 7: session token back -->
+  <line x1="195" y1="290" x2="125" y2="290" stroke="#3fb950" stroke-width="2" marker-end="url(#arrO2)"/>
+  <text x="160" y="282" text-anchor="middle" fill="#3fb950" font-size="9">6. session cookie</text>
+</svg>
+</div>
+<p class="diagram-caption">The OAuth2 flow. The state token prevents CSRF attacks on the callback. After fetching the user profile, the server finds or creates a club and establishes a session.</p>
+
+<h3>OAuth state management</h3>
+<table>
+<tr><th>Structure</th><th>Purpose</th><th>TTL</th></tr>
+<tr><td><code>pending_states</code></td><td>Maps state tokens to timestamps; prevents replay</td><td>5 minutes (300s)</td></tr>
+<tr><td><code>links</code></td><td>Maps (provider, provider_user_id) to club_id; persists across sessions</td><td>Until server restart</td></tr>
+<tr><td><code>sessions</code></td><td>OAuth session tokens with club_id and display name</td><td>30 days</td></tr>
+</table>
+
+<h3>Account linking</h3>
+<p>When a user signs in via OAuth for the first time, the server creates a personal club with no password (OAuth is the credential). On subsequent logins, the <code>find_link()</code> method looks up the existing club by <code>(provider, provider_user_id)</code>. A single club can be linked to both GitHub and Google simultaneously.</p>
+
+<h3>CLI flags</h3>
+<pre>--github-client-id &lt;id&gt;       --github-client-secret &lt;secret&gt;
+--google-client-id &lt;id&gt;       --google-client-secret &lt;secret&gt;
+--oauth-redirect-base &lt;url&gt;</pre>
+
+<!-- ============================================================ -->
+<h2 id="email-verify">9. Email Verification</h2>
+
+<p>
+Personal clubs can have an email address that must be verified before the account is considered trusted. The verification system uses single-use BLAKE3-hashed tokens with a 24-hour TTL.
+</p>
+
+<h3>The flow</h3>
+<ol>
+  <li><strong>Signup:</strong> Client creates a personal club and sets an email via <code>club_set_email()</code></li>
+  <li><strong>Issue:</strong> <code>VerificationTokenStore::issue(club_id, email)</code> generates a 32-byte random token, stores its BLAKE3 hash (the raw token is never persisted), and returns the raw token</li>
+  <li><strong>Deliver:</strong> The <code>EmailProvider</code> sends a verification URL (<code>https://server/verify?token=...</code>) to the email address</li>
+  <li><strong>Redeem:</strong> The user clicks the link; <code>redeem(raw_token)</code> hashes it, looks up the pending entry, checks expiry, atomically removes it (single-use), and returns <code>(club_id, email)</code></li>
+  <li><strong>Mark verified:</strong> <code>mark_club_verified(club_id)</code> sets the club's <code>verified</code> flag</li>
+</ol>
+
+<div class="note">
+<strong>Token security:</strong> The raw token is returned exactly once (at issue time) and never persisted. The store keeps only the BLAKE3 hash. This means tokens can't be stolen from the server's memory or disk &mdash; only the user who receives the email link can redeem them. Expired tokens are cleaned up by <code>sweep_expired()</code>.
+</div>
+
+<h3>Email providers</h3>
+<table>
+<tr><th>Provider</th><th>Behavior</th></tr>
+<tr><td><code>DevProvider</code> (default)</td><td>Logs the verification URL to the server console &mdash; fully testable without SMTP infrastructure</td></tr>
+<tr><td>Future: SMTP provider</td><td>The <code>EmailProvider</code> trait (<code>fn send_verification(&amp;self, to_email, url)</code>) supports plugging in a real SMTP transport</td></tr>
+</table>
+
+<h3>Token parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Value</th></tr>
+<tr><td>TTL</td><td>24 hours (<code>TOKEN_TTL_SECS = 86400</code>)</td></tr>
+<tr><td>Hash algorithm</td><td>BLAKE3</td></tr>
+<tr><td>Token entropy</td><td>256 bits (32 bytes from <code>OsRng</code>)</td></tr>
+<tr><td>Single-use</td><td>Yes &mdash; token is removed on successful redemption</td></tr>
+<tr><td>Persistence</td><td>In-memory (tokens issued before a restart are lost; users re-request)</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="sessions">10. Session Lifecycle</h2>
+<ol>
+  <li><strong>Connect:</strong> WebSocket connection established. A <code>Session</code> is created with a unique <code>SessionId</code>. Default timeout: 1 hour (<code>DEFAULT_SESSION_TIMEOUT = 3600s</code>).</li>
+  <li><strong>Authenticate:</strong> Client calls <code>login(club_id)</code> then <code>authenticate_with_pending(credential)</code>. On success, the session gains KeyMaster authority and (if password login) the decrypted Ed25519 signing key.</li>
+  <li><strong>Author identity:</strong> For CRDT editing, the session registers an <code>OtreeAuthorIdentity</code> (public key, display name, club ID) for attribution.</li>
+  <li><strong>Operate:</strong> All subsequent operations are performed under the session's authority. The <a href="#monitor">SecurityMonitor</a> tracks request rate, violations, and permission denials.</li>
+  <li><strong>Disconnect / timeout:</strong> Session is cleaned up. Awareness state is removed from CRDT. Active edits are preserved (auto-saved via CRDT materialization). The signing key is dropped from memory.</li>
+</ol>
+
+<h3>Session fields</h3>
+<table>
+<tr><th>Field</th><th>Type</th><th>Purpose</th></tr>
+<tr><td><code>key_master</code></td><td><code>Option&lt;KeyMaster&gt;</code></td><td>Login + actual authority</td></tr>
+<tr><td><code>club_signing_key</code></td><td><code>Option&lt;SigningKey&gt;</code></td><td>Decrypted Ed25519 key (in-memory only)</td></tr>
+<tr><td><code>pending_lock</code></td><td><code>Option&lt;Box&lt;dyn Lock&gt;&gt;</code></td><td>Lock awaiting credential response</td></tr>
+<tr><td><code>login_time</code></td><td><code>Option&lt;Instant&gt;</code></td><td>When authentication succeeded</td></tr>
+<tr><td><code>last_activity</code></td><td><code>Instant</code></td><td>For timeout enforcement</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="audit">11. The Security Audit Chain</h2>
+
+<p>
+Every security-relevant event is written to a <strong>tamper-evident chained log</strong> at <code>data/security.log.*</code>. The log uses SHA-256 chaining: each line's hash incorporates the previous line's hash, forming an unbreakable chain from a random seed file (<code>security.log.seed</code>).
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Seed -->
+  <rect x="20" y="20" width="100" height="30" rx="6" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="70" y="40" text-anchor="middle" fill="#d29922" font-size="10" font-weight="600">security.log.seed</text>
+
+  <!-- Entry 1 -->
+  <rect x="150" y="20" width="180" height="30" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="240" y="40" text-anchor="middle" fill="#3fb950" font-size="9">AuthSuccess session=42 ip=10.0.0.1</text>
+
+  <rect x="360" y="20" width="120" height="30" rx="6" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="420" y="40" text-anchor="middle" fill="#a371f7" font-size="8" font-family="JetBrains Mono">chain=hash(s+e0)</text>
+
+  <line x1="120" y1="35" x2="145" y2="35" stroke="#8b949e" stroke-width="1.5"/>
+
+  <!-- Entry 2 -->
+  <rect x="150" y="70" width="180" height="30" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="240" y="90" text-anchor="middle" fill="#3fb950" font-size="9">AuthFailure session=43 ip=10.0.0.2</text>
+
+  <rect x="360" y="70" width="120" height="30" rx="6" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="420" y="90" text-anchor="middle" fill="#a371f7" font-size="8" font-family="JetBrains Mono">chain=hash(c1+e1)</text>
+
+  <line x1="420" y1="50" x2="240" y2="65" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 2"/>
+
+  <!-- Entry 3 (tampered) -->
+  <rect x="150" y="120" width="180" height="30" rx="6" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1.5"/>
+  <text x="240" y="140" text-anchor="middle" fill="#f85149" font-size="9">TAMPERED: session=99</text>
+
+  <rect x="360" y="120" width="120" height="30" rx="6" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1.5"/>
+  <text x="420" y="140" text-anchor="middle" fill="#f85149" font-size="8" font-family="JetBrains Mono">MISMATCH!</text>
+
+  <text x="240" y="163" text-anchor="middle" fill="#f85149" font-size="9" font-style="italic">Changing any field in Entry 3 breaks the chain at that point</text>
+</svg>
+</div>
+<p class="diagram-caption">The chained hash makes tampering detectable. Modifying any line invalidates all subsequent chain hashes.</p>
+
+<h3>The ChainedLogWriter</h3>
+<p>The <code>ChainedLogWriter&lt;W: Write&gt;</code> is a generic writer that transparently adds chain hashes. It wraps any <code>Write</code> target (file, stdout):</p>
+
+<pre>impl&lt;W: Write&gt; Write for ChainedLogWriter&lt;W&gt; {
+    fn write(&amp;mut self, buf: &[u8]) -&gt; io::Result&lt;usize&gt; {
+        let line = String::from_utf8_lossy(buf);
+        let chain_input = format!("{}{}", self.prev_hash, line.trim());
+        let chain_hash = sha256_hex(chain_input.as_bytes());
+        self.prev_hash = chain_hash.clone();
+        let chained_line = format!("{} chain={}\n", line.trim(), chain_hash);
+        self.inner.write_all(chained_line.as_bytes())?;
+        Ok(buf.len())
+    }
+}</pre>
+
+<h3>Verification</h3>
+<p>The <code>verify-security-log</code> CLI subcommand walks the entire log from the seed and checks every chain hash:</p>
+<pre>cargo run --release --features server --bin xudanu-server -- verify-security-log data</pre>
+
+<p>The same chain technique is used by the <a href="provenance-and-attribution.html#s15">attribution log</a> for tamper-evident provenance recording.</p>
+
+<div class="note">
+<strong>Multi-file chains:</strong> Logs can span multiple files (e.g., <code>security.log.2026-05-15</code>, <code>security.log.2026-05-16</code>). The chain continues across files: the final hash of one file becomes the seed for the next. The test suite verifies this in <code>multi_file_chain_verification</code>.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="monitor">12. SecurityMonitor &amp; Threat Detection</h2>
+
+<p>
+The <code>SecurityMonitor</code> (in <code>transport/audit.rs</code>) is the real-time defense layer. It tracks counters per-session and per-IP, escalating threat levels when patterns are detected.
+</p>
+
+<h3>Audit event types</h3>
+<table>
+<tr><th>Event</th><th>Severity</th><th>Trigger</th></tr>
+<tr><td><code>AuthSuccess</code></td><td>Info</td><td>Successful login</td></tr>
+<tr><td><code>AuthFailure</code></td><td>Warn</td><td>Failed login attempt</td></tr>
+<tr><td><code>PermissionDenied</code></td><td>Warn</td><td>Unauthorized operation attempted</td></tr>
+<tr><td><code>ProtocolViolation</code></td><td>Warn</td><td>Malformed message, invalid opcode</td></tr>
+<tr><td><code>ResourceExhaustion</code></td><td>Error</td><td>Server resources depleted</td></tr>
+<tr><td><code>SuspiciousPattern</code></td><td>Warn</td><td>Unusual access pattern detected</td></tr>
+<tr><td><code>RateLimit</code></td><td>Warn</td><td>Rate limit exceeded</td></tr>
+<tr><td><code>SessionOpened</code></td><td>Info</td><td>New WebSocket connection</td></tr>
+<tr><td><code>SessionClosed</code></td><td>Info</td><td>Session ended</td></tr>
+<tr><td><code>GrabConflict</code></td><td>Warn</td><td>Concurrent edit conflict on a work</td></tr>
+<tr><td><code>StateCorruption</code></td><td>Error</td><td>Internal state inconsistency detected</td></tr>
+</table>
+
+<h3>Threat levels</h3>
+<p>Each session and IP accumulates a <code>ThreatLevel</code> based on sliding-window counters:</p>
+<table>
+<tr><th>Level</th><th>Meaning</th><th>Triggers</th></tr>
+<tr><td><code>Normal</code></td><td>No threats</td><td>Baseline</td></tr>
+<tr><td><code>Elevated</code></td><td>Suspicious activity</td><td>A few auth failures or protocol violations</td></tr>
+<tr><td><code>High</code></td><td>Active attack likely</td><td>Repeated violations, rate-limit hits</td></tr>
+<tr><td><code>Critical</code></td><td>Severe threat</td><td>Sustained abuse; session recommended for disconnection</td></tr>
+</table>
+
+<h3>Sliding window counters</h3>
+<p>The monitor uses <code>SlidingCounter</code> &mdash; a fixed-window counter that resets after the window expires:</p>
+<pre>struct SlidingCounter {
+    count: u32,
+    window_start: Instant,
+    window_secs: u64,
+}
+
+impl SlidingCounter {
+    fn bump(&amp;mut self) -&gt; u32 {
+        if self.window_start.elapsed().as_secs() &gt;= self.window_secs {
+            self.count = 0;                    // window expired, reset
+            self.window_start = Instant::now();
+        }
+        self.count += 1;
+        self.count
+    }
+}</pre>
+
+<p>Counters are tracked both <strong>per-session</strong> and <strong>per-IP</strong>, giving both granular (this session is malicious) and aggregate (this IP is running a botnet) detection.</p>
+
+<!-- ============================================================ -->
+<h2 id="audit-config">13. Security Configuration Reference</h2>
+
+<p>The <code>SecurityConfig</code> struct controls all rate-limiting thresholds:</p>
+
+<table>
+<tr><th>Parameter</th><th>Default</th><th>Scope</th></tr>
+<tr><td><code>max_auth_failures_per_minute</code></td><td>10</td><td>Per-session and per-IP</td></tr>
+<tr><td><code>max_protocol_violations_per_minute</code></td><td>20</td><td>Per-session and per-IP</td></tr>
+<tr><td><code>max_requests_per_second</code></td><td>100</td><td>Per-session</td></tr>
+<tr><td><code>max_sessions_per_ip</code></td><td>50</td><td>Per-IP</td></tr>
+<tr><td><code>max_permission_denials_per_minute</code></td><td>30</td><td>Per-session and per-IP</td></tr>
+<tr><td><code>max_grab_conflicts_per_minute</code></td><td>15</td><td>Per-session</td></tr>
+</table>
+
+<h3>Club login rate limiting (separate)</h3>
+<table>
+<tr><th>Parameter</th><th>Default</th><th>Scope</th></tr>
+<tr><td><code>MAX_CLUB_LOGIN_ATTEMPTS</code></td><td>10</td><td>Per-club</td></tr>
+<tr><td><code>CLUB_LOGIN_ATTEMPT_WINDOW</code></td><td>300s (5 min)</td><td>Fixed window</td></tr>
+</table>
+
+<h3>Audit log backends</h3>
+<table>
+<tr><th>Backend</th><th>Behavior</th></tr>
+<tr><td><code>TracingAuditLog</code> (production)</td><td>Events go to <code>tracing</code> which feeds the <code>ChainedLogWriter</code> writing to <code>security.log</code></td></tr>
+<tr><td><code>CollectorAuditLog</code> (testing)</td><td>Events stored in-memory <code>Vec&lt;AuditEvent&gt;</code> for test assertions</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="provenance-link">14. Provenance &amp; Attribution</h2>
+
+<p>
+Once authenticated, every edit a session makes is cryptographically signed with the club's Ed25519 key. This creates per-span provenance that answers "who wrote this?" at the character level. The full provenance system &mdash; signing, verification, the tamper-evident attribution log, transclusion attribution, historical attestation, attestation reports, federation cluster consensus, and W3C PROV-JSON export &mdash; is documented in the dedicated guide:
+</p>
+
+<div class="note">
+<strong>See:</strong> <a href="provenance-and-attribution.html"><strong>Provenance &amp; Cryptographic Attribution</strong></a> &mdash; the complete deep dive (23 sections, 7 diagrams).
+</div>
+
+<!-- ============================================================ -->
+<h2 id="gold-comparison">15. Udanax-Gold Comparison</h2>
 <table>
   <tr><th>Aspect</th><th>Udanax-Gold</th><th>Xudanu</th></tr>
   <tr><td>Identity</td><td>Clubs with recursive membership</td><td>Clubs with flat membership (nesting planned)</td></tr>
-  <tr><td>Authentication</td><td>Password-only</td><td>Password (Argon2id) + Ed25519 public key</td></tr>
-  <tr><td>Signing</td><td>No cryptographic signing</td><td>Ed25519 per-club signing keys (encrypted at rest)</td></tr>
-  <tr><td>Provenance</td><td>Club ownership of entire works</td><td>Per-span Ed25519-signed attribution</td></tr>
+  <tr><td>Authentication</td><td>Password-only</td><td>Password (Argon2id) + Ed25519 public key + OAuth2 (GitHub/Google)</td></tr>
+  <tr><td>Email verification</td><td>None</td><td>BLAKE3-hashed single-use tokens, 24h TTL, pluggable email provider</td></tr>
+  <tr><td>Signing</td><td>No cryptographic signing</td><td>Ed25519 per-club signing keys (encrypted at rest with Argon2id-derived KEK)</td></tr>
+  <tr><td>Provenance</td><td>Club ownership of entire works</td><td>Per-span Ed25519-signed attribution (<a href="provenance-and-attribution.html">full doc</a>)</td></tr>
   <tr><td>Locks</td><td>Boo, Wall, Challenge, Match, Multi</td><td>Same hierarchy, enhanced with modern hash verification</td></tr>
-  <tr><td>Key delegation</td><td>Full incorporate/removeLogins</td><td>make/merge (remove planned)</td></tr>
-  <tr><td>Audit</td><td>No security monitoring</td><td>SecurityMonitor with per-IP/per-session threat levels</td></tr>
-  <tr><td>Key storage</td><td>Plaintext keys in memory</td><td>Encrypted signing keys (AES-256-GCM + Argon2id-derived KEK)</td></tr>
+  <tr><td>Key delegation</td><td>Full incorporate/removeLogins</td><td>make/merge/incorporate (remove planned)</td></tr>
+  <tr><td>Rate limiting</td><td>None</td><td>Per-club login limit + per-session/per-IP sliding window monitors</td></tr>
+  <tr><td>CSRF</td><td>N/A (no web)</td><td>Token-based CSRF on WebSocket upgrade, configurable</td></tr>
+  <tr><td>Audit</td><td>No security monitoring</td><td>SecurityMonitor (11 event types, 4 threat levels) + tamper-evident SHA-256 chained log</td></tr>
+  <tr><td>Key storage</td><td>Plaintext keys in memory</td><td>Encrypted signing keys (AES-256-GCM + Argon2id-derived KEK), decrypted only during authenticated sessions</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="source-map">16. Source Code Map</h2>
+
+<table>
+<tr><th>File</th><th>Path</th><th>Key Types / Functions</th></tr>
+<tr><td colspan="3"><strong>Identity model</strong></td></tr>
+<tr><td><code class="accent-blue">club.rs</code></td><td><code>src/server/club.rs</code></td><td><code>Club</code>, <code>Credential</code> (Password/PublicKey)</td></tr>
+<tr><td><code class="accent-blue">session.rs</code></td><td><code>src/server/session.rs</code></td><td><code>SessionId</code>, <code>Session</code> (key_master, signing_key, pending_lock, timeout)</td></tr>
+<tr><td><code class="accent-blue">keymaster.rs</code></td><td><code>src/server/keymaster.rs</code></td><td><code>KeyMaster</code> (login_authority, actual_authority)</td></tr>
+<tr><td><code class="accent-blue">lock.rs</code></td><td><code>src/server/lock.rs</code></td><td><code>Lock</code> trait, <code>BooLock</code>, <code>WallLock</code>, <code>ChallengeLock</code>, <code>MatchLock</code>, <code>MultiLock</code></td></tr>
+<tr><td colspan="3"><strong>Authentication</strong></td></tr>
+<tr><td><code class="accent-purple">identity.rs</code></td><td><code>src/server/identity.rs</code></td><td><code>login</code>, <code>authenticate_with_pending</code>, <code>login_public</code>, <code>create_personal_club</code>, <code>ClubAttemptTracker</code>, rate limiting, email verification, club rosters, OAuth session creation</td></tr>
+<tr><td><code class="accent-purple">oauth.rs</code></td><td><code>src/server/transport/oauth.rs</code></td><td><code>OAuthConfig</code>, <code>OAuthState</code>, <code>OAuthLink</code>, <code>OAuthSession</code>, <code>github_redirect_handler</code>, <code>github_callback_handler</code>, <code>google_redirect_handler</code>, <code>google_callback_handler</code></td></tr>
+<tr><td><code class="accent-purple">verification/</code></td><td><code>src/server/verification/</code></td><td><code>VerificationState</code>, <code>VerificationTokenStore</code> (BLAKE3-hashed, single-use, 24h TTL), <code>EmailProvider</code> trait, <code>DevProvider</code></td></tr>
+<tr><td colspan="3"><strong>Security audit</strong></td></tr>
+<tr><td><code class="accent-red">audit.rs</code></td><td><code>src/server/transport/audit.rs</code></td><td><code>AuditEvent</code>, <code>AuditEventKind</code> (11 variants), <code>AuditLog</code> trait, <code>TracingAuditLog</code>, <code>CollectorAuditLog</code>, <code>ThreatLevel</code>, <code>SecurityConfig</code>, <code>SecurityMonitor</code>, <code>SlidingCounter</code></td></tr>
+<tr><td><code class="accent-red">chained_log.rs</code></td><td><code>src/server/transport/chained_log.rs</code></td><td><code>ChainedLogWriter&lt;W&gt;</code>, <code>verify_log()</code>, <code>ChainVerifyError</code></td></tr>
+<tr><td><code class="accent-amber">attribution_log.rs</code></td><td><code>src/server/transport/attribution_log.rs</code></td><td><code>AttributionLog</code>, <code>AttributionEntry</code>, <code>verify_attribution_log()</code> (same chain technique, for provenance &mdash; see <a href="provenance-and-attribution.html#s15">Provenance doc</a>)</td></tr>
+<tr><td colspan="3"><strong>Crypto</strong></td></tr>
+<tr><td><code class="accent-green">password.rs</code></td><td><code>src/crypto/password.rs</code></td><td><code>hash_password</code> (Argon2id PHC), <code>verify_password</code></td></tr>
+<tr><td><code class="accent-green">club_keys.rs</code></td><td><code>src/crypto/club_keys.rs</code></td><td><code>generate_club_keypair</code>, <code>encrypt_signing_key</code>, <code>decrypt_signing_key</code></td></tr>
+<tr><td><code class="accent-green">sign.rs</code></td><td><code>src/crypto/sign.rs</code></td><td><code>sign_bytes</code> (Ed25519), <code>verify_signature</code>, <code>generate_signing_key</code></td></tr>
+<tr><td><code class="accent-green">keys.rs</code></td><td><code>src/crypto/keys.rs</code></td><td><code>ServerIdentity</code>, <code>ServerKeyPair</code>, <code>KeyHistory</code>, <code>hex_encode/decode</code></td></tr>
 </table>
 
 <div class="footer">
-  <a href="index.html">Back to Documentation</a> &mdash; Xudanu v0.7.0 &mdash; <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a>
+  Xudanu Documentation &mdash; <a href="index.html">Home</a> &mdash; <a href="provenance-and-attribution.html">Provenance &amp; Attribution</a> &mdash; <a href="federation-activation.html">Federation</a> &mdash; <a href="editions-and-works.html">Editions &amp; Works</a>
 </div>
+
 </div>
 </body>
 </html>

@@ -132,15 +132,33 @@ impl FederationMetadata {
     pub fn to_prov_entity(&self) -> (String, ProvEntity) {
         let entity_id = generate_prov_id("xudanu:federation", &self.server_id);
         let mut attributes = std::collections::HashMap::new();
-        
-        attributes.insert("prov:type".to_string(), ProvValue::qname("xudanu:FederationMetadata"));
-        attributes.insert("xudanu:serverId".to_string(), ProvValue::string(&self.server_id));
-        attributes.insert("xudanu:federationDomain".to_string(), ProvValue::string(&self.federation_domain));
-        attributes.insert("xudanu:clusterSize".to_string(), ProvValue::typed(&self.cluster_size.to_string(), "xsd:integer"));
+
+        attributes.insert(
+            "prov:type".to_string(),
+            ProvValue::qname("xudanu:FederationMetadata"),
+        );
+        attributes.insert(
+            "xudanu:serverId".to_string(),
+            ProvValue::string(&self.server_id),
+        );
+        attributes.insert(
+            "xudanu:federationDomain".to_string(),
+            ProvValue::string(&self.federation_domain),
+        );
+        attributes.insert(
+            "xudanu:clusterSize".to_string(),
+            ProvValue::typed(&self.cluster_size.to_string(), "xsd:integer"),
+        );
         attributes.insert("xudanu:mode".to_string(), ProvValue::string(&self.mode));
-        attributes.insert("xudanu:minEndorsements".to_string(), ProvValue::typed(&self.min_endorsements.to_string(), "xsd:integer"));
-        attributes.insert("xudanu:membershipStatus".to_string(), ProvValue::string(&self.membership_status));
-        
+        attributes.insert(
+            "xudanu:minEndorsements".to_string(),
+            ProvValue::typed(&self.min_endorsements.to_string(), "xsd:integer"),
+        );
+        attributes.insert(
+            "xudanu:membershipStatus".to_string(),
+            ProvValue::string(&self.membership_status),
+        );
+
         (entity_id, ProvEntity { attributes })
     }
 }
@@ -166,18 +184,42 @@ impl FederationServerAgent {
 
     #[cfg(feature = "serde")]
     pub fn to_prov_agent(&self) -> (String, ProvAgent) {
-        let agent_id = generate_prov_id("xudanu:server", &crate::crypto::keys::hex_encode(self.server_id.as_bytes())[..8]);
+        let agent_id = generate_prov_id(
+            "xudanu:server",
+            &crate::crypto::keys::hex_encode(self.server_id.as_bytes())[..8],
+        );
         let mut attributes = std::collections::HashMap::new();
-        
-        attributes.insert("prov:type".to_string(), ProvValue::qname("xudanu:FederationServer"));
-        attributes.insert("xudanu:serverId".to_string(), ProvValue::string(&self.server_id));
-        attributes.insert("xudanu:verifyingKey".to_string(), ProvValue::typed(&self.verifying_key_hex, "xsd:hexBinary"));
-        attributes.insert("xudanu:kexPublicKey".to_string(), ProvValue::typed(&self.kex_public_hex, "xsd:hexBinary"));
-        attributes.insert("xudanu:membershipStatus".to_string(), ProvValue::string(&self.membership_status));
-        attributes.insert("xudanu:endorsementCount".to_string(), ProvValue::typed(&self.endorsement_count.to_string(), "xsd:integer"));
-        
-        attributes.insert("xudanu:joinedAt".to_string(), ProvValue::string(&unix_to_iso8601(self.joined_at).unwrap_or_default()));
-        
+
+        attributes.insert(
+            "prov:type".to_string(),
+            ProvValue::qname("xudanu:FederationServer"),
+        );
+        attributes.insert(
+            "xudanu:serverId".to_string(),
+            ProvValue::string(&self.server_id),
+        );
+        attributes.insert(
+            "xudanu:verifyingKey".to_string(),
+            ProvValue::typed(&self.verifying_key_hex, "xsd:hexBinary"),
+        );
+        attributes.insert(
+            "xudanu:kexPublicKey".to_string(),
+            ProvValue::typed(&self.kex_public_hex, "xsd:hexBinary"),
+        );
+        attributes.insert(
+            "xudanu:membershipStatus".to_string(),
+            ProvValue::string(&self.membership_status),
+        );
+        attributes.insert(
+            "xudanu:endorsementCount".to_string(),
+            ProvValue::typed(&self.endorsement_count.to_string(), "xsd:integer"),
+        );
+
+        attributes.insert(
+            "xudanu:joinedAt".to_string(),
+            ProvValue::string(&unix_to_iso8601(self.joined_at).unwrap_or_default()),
+        );
+
         (agent_id, ProvAgent { attributes })
     }
 }
@@ -203,47 +245,92 @@ impl FederationAttestation {
 
     #[cfg(feature = "serde")]
     pub fn to_prov_activity(&self) -> (String, ProvActivity) {
-        let activity_id = generate_prov_id("xudanu:attestation", &format!("{}:{}:{}", 
-            self.attestation_type, self.attester_server_id, self.timestamp));
+        let activity_id = generate_prov_id(
+            "xudanu:attestation",
+            &format!(
+                "{}:{}:{}",
+                self.attestation_type, self.attester_server_id, self.timestamp
+            ),
+        );
         let mut attributes = std::collections::HashMap::new();
-        
-        attributes.insert("prov:type".to_string(), ProvValue::qname("xudanu:FederationAttestation"));
-        attributes.insert("xudanu:attestationType".to_string(), ProvValue::string(&self.attestation_type));
-        attributes.insert("xudanu:attesterServerId".to_string(), ProvValue::string(&self.attester_server_id));
-        attributes.insert("xudanu:subjectServerId".to_string(), ProvValue::string(&self.subject_server_id));
-        attributes.insert("xudanu:signature".to_string(), ProvValue::typed(&crate::crypto::keys::hex_encode(&self.signature), "xsd:hexBinary"));
-        
+
+        attributes.insert(
+            "prov:type".to_string(),
+            ProvValue::qname("xudanu:FederationAttestation"),
+        );
+        attributes.insert(
+            "xudanu:attestationType".to_string(),
+            ProvValue::string(&self.attestation_type),
+        );
+        attributes.insert(
+            "xudanu:attesterServerId".to_string(),
+            ProvValue::string(&self.attester_server_id),
+        );
+        attributes.insert(
+            "xudanu:subjectServerId".to_string(),
+            ProvValue::string(&self.subject_server_id),
+        );
+        attributes.insert(
+            "xudanu:signature".to_string(),
+            ProvValue::typed(
+                &crate::crypto::keys::hex_encode(&self.signature),
+                "xsd:hexBinary",
+            ),
+        );
+
         for (key, value) in &self.metadata {
             attributes.insert(format!("xudanu:meta_{}", key), ProvValue::string(value));
         }
-        
+
         let time_str = unix_to_iso8601(self.timestamp);
-        
-        (activity_id, ProvActivity {
-            start_time: time_str.clone(),
-            end_time: time_str,
-            attributes,
-        })
+
+        (
+            activity_id,
+            ProvActivity {
+                start_time: time_str.clone(),
+                end_time: time_str,
+                attributes,
+            },
+        )
     }
 
     #[cfg(feature = "serde")]
     pub fn to_prov_association(&self) -> (String, ProvAssociation) {
-        let assoc_id = generate_prov_id("xudanu:assoc", &format!("{}:{}:{}", 
-            self.attestation_type, self.attester_server_id, self.timestamp));
-        let activity_id = generate_prov_id("xudanu:attestation", &format!("{}:{}:{}", 
-            self.attestation_type, self.attester_server_id, self.timestamp));
-        let agent_id = generate_prov_id("xudanu:server", &crate::crypto::keys::hex_encode(self.attester_server_id.as_bytes())[..8]);
-        
+        let assoc_id = generate_prov_id(
+            "xudanu:assoc",
+            &format!(
+                "{}:{}:{}",
+                self.attestation_type, self.attester_server_id, self.timestamp
+            ),
+        );
+        let activity_id = generate_prov_id(
+            "xudanu:attestation",
+            &format!(
+                "{}:{}:{}",
+                self.attestation_type, self.attester_server_id, self.timestamp
+            ),
+        );
+        let agent_id = generate_prov_id(
+            "xudanu:server",
+            &crate::crypto::keys::hex_encode(self.attester_server_id.as_bytes())[..8],
+        );
+
         let mut attributes = std::collections::HashMap::new();
-        attributes.insert("xudanu:attestationType".to_string(), ProvValue::string(&self.attestation_type));
-        
-        (assoc_id, ProvAssociation {
-            activity: activity_id,
-            agent: Some(agent_id),
-            plan: None,
-            role: Some("attester".to_string()),
-            attributes,
-        })
+        attributes.insert(
+            "xudanu:attestationType".to_string(),
+            ProvValue::string(&self.attestation_type),
+        );
+
+        (
+            assoc_id,
+            ProvAssociation {
+                activity: activity_id,
+                agent: Some(agent_id),
+                plan: None,
+                role: Some(ProvValue::qname("attester")),
+                attributes,
+            },
+        )
     }
 }
 
@@ -271,50 +358,66 @@ impl ClusterVerificationActivity {
     #[cfg(feature = "serde")]
     pub fn to_prov_activity(&self) -> (String, ProvActivity) {
         let mut attributes = std::collections::HashMap::new();
-        
-        attributes.insert("prov:type".to_string(), ProvValue::qname(&self.activity_type));
-        attributes.insert("xudanu:consensusType".to_string(), ProvValue::string(&self.consensus_type));
-        attributes.insert("xudanu:thresholdMet".to_string(), ProvValue::string(&self.threshold_met.to_string()));
-        attributes.insert("xudanu:verifyingServerCount".to_string(), 
-            ProvValue::typed(&self.verifying_servers.len().to_string(), "xsd:integer"));
-        
-        (self.activity_id.clone(), ProvActivity {
-            start_time: unix_to_iso8601(self.start_time),
-            end_time: unix_to_iso8601(self.end_time),
-            attributes,
-        })
+
+        attributes.insert(
+            "prov:type".to_string(),
+            ProvValue::qname(&self.activity_type),
+        );
+        attributes.insert(
+            "xudanu:consensusType".to_string(),
+            ProvValue::string(&self.consensus_type),
+        );
+        attributes.insert(
+            "xudanu:thresholdMet".to_string(),
+            ProvValue::string(&self.threshold_met.to_string()),
+        );
+        attributes.insert(
+            "xudanu:verifyingServerCount".to_string(),
+            ProvValue::typed(&self.verifying_servers.len().to_string(), "xsd:integer"),
+        );
+
+        (
+            self.activity_id.clone(),
+            ProvActivity {
+                start_time: unix_to_iso8601(self.start_time),
+                end_time: unix_to_iso8601(self.end_time),
+                attributes,
+            },
+        )
     }
 
     #[cfg(feature = "serde")]
     pub fn to_prov_associations(&self) -> Vec<(String, ProvAssociation)> {
         let mut associations = Vec::new();
-        
+
         for (idx, server_id) in self.verifying_servers.iter().enumerate() {
             let assoc_id = format!("{}:assoc:{}", self.activity_id, idx);
-            let agent_id = generate_prov_id("xudanu:server", &crate::crypto::keys::hex_encode(server_id.as_bytes())[..8]);
-            
+            let agent_id = generate_prov_id(
+                "xudanu:server",
+                &crate::crypto::keys::hex_encode(server_id.as_bytes())[..8],
+            );
+
             let mut attributes = std::collections::HashMap::new();
             attributes.insert("xudanu:role".to_string(), ProvValue::string("verifier"));
-            
-            associations.push((assoc_id, ProvAssociation {
-                activity: self.activity_id.clone(),
-                agent: Some(agent_id),
-                plan: None,
-                role: Some("verifier".to_string()),
-                attributes,
-            }));
+
+            associations.push((
+                assoc_id,
+                ProvAssociation {
+                    activity: self.activity_id.clone(),
+                    agent: Some(agent_id),
+                    plan: None,
+                    role: Some(ProvValue::qname("verifier")),
+                    attributes,
+                },
+            ));
         }
-        
+
         associations
     }
 }
 
 impl FederationProvenanceBundle {
-    pub fn new(
-        bundle_id: String,
-        timestamp: u64,
-        federation_metadata: FederationMetadata,
-    ) -> Self {
+    pub fn new(bundle_id: String, timestamp: u64, federation_metadata: FederationMetadata) -> Self {
         FederationProvenanceBundle {
             bundle_id,
             timestamp,
@@ -329,71 +432,101 @@ impl FederationProvenanceBundle {
     #[cfg(feature = "serde")]
     pub fn to_prov_bundle(&self) -> (String, ProvBundle) {
         let mut bundle_doc = ProvJsonDocument::with_default_prefix();
-        
+
         // Add federation metadata as entity
         let (meta_entity_id, meta_entity) = self.federation_metadata.to_prov_entity();
         bundle_doc.entity.insert(meta_entity_id, meta_entity);
-        
+
         // Add server agents
         for server_agent in &self.server_agents {
             let (agent_id, agent) = server_agent.to_prov_agent();
             bundle_doc.agent.insert(agent_id, agent);
         }
-        
+
         // Add verification activities
         for verification in &self.verification_activities {
             let (activity_id, activity) = verification.to_prov_activity();
             bundle_doc.activity.insert(activity_id, activity);
-            
+
             // Add associations for verifying servers
             for (assoc_id, association) in verification.to_prov_associations() {
                 bundle_doc.wasAssociatedWith.insert(assoc_id, association);
             }
         }
-        
+
         // Add attestations as activities and associations
         for attestation in &self.attestations {
             let (activity_id, activity) = attestation.to_prov_activity();
             bundle_doc.activity.insert(activity_id, activity);
-            
+
             let (assoc_id, association) = attestation.to_prov_association();
             bundle_doc.wasAssociatedWith.insert(assoc_id, association);
         }
-        
+
         // Add cross-server signatures as entities
         for (idx, sig) in self.cross_server_signatures.iter().enumerate() {
             let sig_entity_id = format!("{}:sig:{}", self.bundle_id, idx);
             let mut attributes = std::collections::HashMap::new();
-            
-            attributes.insert("prov:type".to_string(), ProvValue::qname("xudanu:CrossServerSignature"));
-            attributes.insert("xudanu:serverId".to_string(), ProvValue::string(&crate::crypto::keys::hex_encode(&sig.server_id)));
-            attributes.insert("xudanu:signature".to_string(), ProvValue::typed(&crate::crypto::keys::hex_encode(&sig.signature), "xsd:hexBinary"));
-            attributes.insert("xudanu:timestamp".to_string(), ProvValue::typed(&sig.timestamp.to_string(), "xsd:integer"));
-            
+
+            attributes.insert(
+                "prov:type".to_string(),
+                ProvValue::qname("xudanu:CrossServerSignature"),
+            );
+            attributes.insert(
+                "xudanu:serverId".to_string(),
+                ProvValue::string(&crate::crypto::keys::hex_encode(&sig.server_id)),
+            );
+            attributes.insert(
+                "xudanu:signature".to_string(),
+                ProvValue::typed(
+                    &crate::crypto::keys::hex_encode(&sig.signature),
+                    "xsd:hexBinary",
+                ),
+            );
+            attributes.insert(
+                "xudanu:timestamp".to_string(),
+                ProvValue::typed(&sig.timestamp.to_string(), "xsd:integer"),
+            );
+
             if let Some(time_str) = unix_to_iso8601(sig.timestamp) {
                 attributes.insert("xudanu:signedAt".to_string(), ProvValue::string(&time_str));
             }
-            
-            bundle_doc.entity.insert(sig_entity_id, ProvEntity { attributes });
+
+            bundle_doc
+                .entity
+                .insert(sig_entity_id, ProvEntity { attributes });
         }
-        
+
         // Add federation metadata generation activity
         let meta_activity_id = format!("{}:meta_gen", self.bundle_id);
         let mut meta_activity_attrs = std::collections::HashMap::new();
-        meta_activity_attrs.insert("prov:type".to_string(), ProvValue::qname("xudanu:FederationMetadataGeneration"));
-        
+        meta_activity_attrs.insert(
+            "prov:type".to_string(),
+            ProvValue::qname("xudanu:FederationMetadataGeneration"),
+        );
+
         if let Some(time_str) = unix_to_iso8601(self.timestamp) {
-            meta_activity_attrs.insert("prov:startTime".to_string(), ProvValue::string(&time_str));
-            meta_activity_attrs.insert("prov:endTime".to_string(), ProvValue::string(&time_str));
+            meta_activity_attrs.insert(
+                "xudanu:generatedAt".to_string(),
+                ProvValue::string(&time_str),
+            );
         }
-        
-        bundle_doc.activity.insert(meta_activity_id, ProvActivity {
-            start_time: unix_to_iso8601(self.timestamp),
-            end_time: unix_to_iso8601(self.timestamp),
-            attributes: meta_activity_attrs,
-        });
-        
-        (self.bundle_id.clone(), ProvBundle { content: bundle_doc })
+
+        bundle_doc.activity.insert(
+            meta_activity_id,
+            ProvActivity {
+                start_time: unix_to_iso8601(self.timestamp),
+                end_time: unix_to_iso8601(self.timestamp),
+                attributes: meta_activity_attrs,
+            },
+        );
+
+        (
+            self.bundle_id.clone(),
+            ProvBundle {
+                content: bundle_doc,
+            },
+        )
     }
 
     pub fn add_server_agent(&mut self, agent: FederationServerAgent) {
@@ -421,38 +554,75 @@ impl CrossServerSignature {
     #[cfg(feature = "serde")]
     pub fn to_prov_entity(&self) -> (String, ProvEntity) {
         let server_id_hex = crate::crypto::keys::hex_encode(&self.server_id);
-        let entity_id = generate_prov_id("xudanu:crosssig", &format!("{}:{}", 
-            &server_id_hex[..8.min(server_id_hex.len())], self.timestamp));
+        let entity_id = generate_prov_id(
+            "xudanu:crosssig",
+            &format!(
+                "{}:{}",
+                &server_id_hex[..8.min(server_id_hex.len())],
+                self.timestamp
+            ),
+        );
         let mut attributes = std::collections::HashMap::new();
-        
-        attributes.insert("prov:type".to_string(), ProvValue::qname("xudanu:CrossServerSignature"));
-        attributes.insert("xudanu:serverId".to_string(), ProvValue::string(&crate::crypto::keys::hex_encode(&self.server_id)));
-        attributes.insert("xudanu:signature".to_string(), ProvValue::typed(&crate::crypto::keys::hex_encode(&self.signature), "xsd:hexBinary"));
-        attributes.insert("xudanu:timestamp".to_string(), ProvValue::typed(&self.timestamp.to_string(), "xsd:integer"));
-        
+
+        attributes.insert(
+            "prov:type".to_string(),
+            ProvValue::qname("xudanu:CrossServerSignature"),
+        );
+        attributes.insert(
+            "xudanu:serverId".to_string(),
+            ProvValue::string(&crate::crypto::keys::hex_encode(&self.server_id)),
+        );
+        attributes.insert(
+            "xudanu:signature".to_string(),
+            ProvValue::typed(
+                &crate::crypto::keys::hex_encode(&self.signature),
+                "xsd:hexBinary",
+            ),
+        );
+        attributes.insert(
+            "xudanu:timestamp".to_string(),
+            ProvValue::typed(&self.timestamp.to_string(), "xsd:integer"),
+        );
+
         if let Some(time_str) = unix_to_iso8601(self.timestamp) {
             attributes.insert("xudanu:signedAt".to_string(), ProvValue::string(&time_str));
         }
-        
+
         (entity_id, ProvEntity { attributes })
     }
 
     #[cfg(feature = "serde")]
     pub fn to_prov_association(&self, activity_id: &str) -> (String, ProvAssociation) {
         let server_id_hex = crate::crypto::keys::hex_encode(&self.server_id);
-        let assoc_id = format!("{}:assoc:{}", activity_id, &server_id_hex[..8.min(server_id_hex.len())]);
-        let agent_id = generate_prov_id("xudanu:server", &server_id_hex[..8.min(server_id_hex.len())]);
-        
+        let assoc_id = format!(
+            "{}:assoc:{}",
+            activity_id,
+            &server_id_hex[..8.min(server_id_hex.len())]
+        );
+        let agent_id = generate_prov_id(
+            "xudanu:server",
+            &server_id_hex[..8.min(server_id_hex.len())],
+        );
+
         let mut attributes = std::collections::HashMap::new();
-        attributes.insert("xudanu:signature".to_string(), ProvValue::typed(&crate::crypto::keys::hex_encode(&self.signature), "xsd:hexBinary"));
-        
-        (assoc_id, ProvAssociation {
-            activity: activity_id.to_string(),
-            agent: Some(agent_id),
-            plan: None,
-            role: Some("verifier".to_string()),
-            attributes,
-        })
+        attributes.insert(
+            "xudanu:signature".to_string(),
+            ProvValue::typed(
+                &crate::crypto::keys::hex_encode(&self.signature),
+                "xsd:hexBinary",
+            ),
+        );
+
+        (
+            assoc_id,
+            ProvAssociation {
+                activity: activity_id.to_string(),
+                agent: Some(agent_id),
+                plan: None,
+                role: Some(ProvValue::qname("verifier")),
+                attributes,
+            },
+        )
     }
 }
 
@@ -462,79 +632,131 @@ impl CrossServerSignature {
 
 impl ClusterConsensus {
     #[cfg(feature = "serde")]
-    pub fn to_prov_bundle(&self, bundle_id: String, base_provenance: &Provenance) -> (String, ProvBundle) {
+    pub fn to_prov_bundle(
+        &self,
+        bundle_id: String,
+        base_provenance: &Provenance,
+    ) -> (String, ProvBundle) {
         let mut bundle_doc = ProvJsonDocument::with_default_prefix();
-        
+
         // Add consensus entity
         let consensus_entity_id = format!("{}:consensus", bundle_id);
         let mut consensus_attrs = std::collections::HashMap::new();
-        
+
         consensus_attrs.insert("prov:type".to_string(), ProvValue::qname("prov:Collection"));
-        consensus_attrs.insert("xudanu:consensusType".to_string(), 
+        consensus_attrs.insert(
+            "xudanu:consensusType".to_string(),
             ProvValue::string(match self.consensus_type {
                 ConsensusType::Unanimous => "unanimous",
                 ConsensusType::Majority => "majority",
                 ConsensusType::Supermajority => "supermajority",
-            }));
-        consensus_attrs.insert("xudanu:thresholdMet".to_string(), ProvValue::string(&self.threshold_met.to_string()));
-        consensus_attrs.insert("xudanu:totalServers".to_string(), 
-            ProvValue::typed(&self.total_servers.to_string(), "xsd:integer"));
-        consensus_attrs.insert("xudanu:approvingServers".to_string(), 
-            ProvValue::typed(&self.approving_servers.to_string(), "xsd:integer"));
-        
-        bundle_doc.entity.insert(consensus_entity_id.clone(), ProvEntity { attributes: consensus_attrs });
-        
+            }),
+        );
+        consensus_attrs.insert(
+            "xudanu:thresholdMet".to_string(),
+            ProvValue::string(&self.threshold_met.to_string()),
+        );
+        consensus_attrs.insert(
+            "xudanu:totalServers".to_string(),
+            ProvValue::typed(&self.total_servers.to_string(), "xsd:integer"),
+        );
+        consensus_attrs.insert(
+            "xudanu:approvingServers".to_string(),
+            ProvValue::typed(&self.approving_servers.to_string(), "xsd:integer"),
+        );
+
+        bundle_doc.entity.insert(
+            consensus_entity_id.clone(),
+            ProvEntity {
+                attributes: consensus_attrs,
+            },
+        );
+
         // Add verification activity
         let activity_id = format!("{}:verification", bundle_id);
         let mut activity_attrs = std::collections::HashMap::new();
-        
-        activity_attrs.insert("prov:type".to_string(), ProvValue::qname("xudanu:ClusterVerification"));
-        
+
+        activity_attrs.insert(
+            "prov:type".to_string(),
+            ProvValue::qname("xudanu:ClusterVerification"),
+        );
+
         let timestamp = base_provenance.timestamp;
         if let Some(time_str) = unix_to_iso8601(timestamp) {
-            activity_attrs.insert("prov:startTime".to_string(), ProvValue::string(&time_str));
-            activity_attrs.insert("prov:endTime".to_string(), ProvValue::string(&time_str));
+            activity_attrs.insert(
+                "xudanu:verifiedAt".to_string(),
+                ProvValue::string(&time_str),
+            );
         }
-        
-        bundle_doc.activity.insert(activity_id.clone(), ProvActivity {
-            start_time: unix_to_iso8601(timestamp),
-            end_time: unix_to_iso8601(timestamp),
-            attributes: activity_attrs,
-        });
-        
+
+        bundle_doc.activity.insert(
+            activity_id.clone(),
+            ProvActivity {
+                start_time: unix_to_iso8601(timestamp),
+                end_time: unix_to_iso8601(timestamp),
+                attributes: activity_attrs,
+            },
+        );
+
         // Add server associations for verifications
         for verification in &self.verifications {
             if verification.verified {
                 let server_id_hex = crate::crypto::keys::hex_encode(&verification.server_id);
-                let server_agent_id = generate_prov_id("xudanu:server", &server_id_hex[..8.min(server_id_hex.len())]);
-                
-                let assoc_id = format!("{}:assoc:{}", activity_id, &server_id_hex[..8.min(server_id_hex.len())]);
+                let server_agent_id = generate_prov_id(
+                    "xudanu:server",
+                    &server_id_hex[..8.min(server_id_hex.len())],
+                );
+
+                let assoc_id = format!(
+                    "{}:assoc:{}",
+                    activity_id,
+                    &server_id_hex[..8.min(server_id_hex.len())]
+                );
                 let mut assoc_attrs = std::collections::HashMap::new();
-                
+
                 if let Some(time_str) = unix_to_iso8601(verification.timestamp) {
-                    assoc_attrs.insert("xudanu:verifiedAt".to_string(), ProvValue::string(&time_str));
+                    assoc_attrs.insert(
+                        "xudanu:verifiedAt".to_string(),
+                        ProvValue::string(&time_str),
+                    );
                 }
-                
-                bundle_doc.wasAssociatedWith.insert(assoc_id, ProvAssociation {
-                    activity: activity_id.clone(),
-                    agent: Some(server_agent_id.clone()),
-                    plan: None,
-                    role: Some("verifier".to_string()),
-                    attributes: assoc_attrs,
-                });
-                
+
+                bundle_doc.wasAssociatedWith.insert(
+                    assoc_id,
+                    ProvAssociation {
+                        activity: activity_id.clone(),
+                        agent: Some(server_agent_id.clone()),
+                        plan: None,
+                        role: Some(ProvValue::qname("verifier")),
+                        attributes: assoc_attrs,
+                    },
+                );
+
                 // Add server agent if not present
                 if !bundle_doc.agent.contains_key(&server_agent_id) {
                     let mut server_attrs = std::collections::HashMap::new();
                     server_attrs.insert("prov:type".to_string(), ProvValue::qname("xudanu:Server"));
-                    server_attrs.insert("xudanu:serverId".to_string(), ProvValue::string(&server_id_hex));
-                    
-                    bundle_doc.agent.insert(server_agent_id, ProvAgent { attributes: server_attrs });
+                    server_attrs.insert(
+                        "xudanu:serverId".to_string(),
+                        ProvValue::string(&server_id_hex),
+                    );
+
+                    bundle_doc.agent.insert(
+                        server_agent_id,
+                        ProvAgent {
+                            attributes: server_attrs,
+                        },
+                    );
                 }
             }
         }
-        
-        (bundle_id, ProvBundle { content: bundle_doc })
+
+        (
+            bundle_id,
+            ProvBundle {
+                content: bundle_doc,
+            },
+        )
     }
 }
 
@@ -546,22 +768,26 @@ impl FederatedProvenance {
     #[cfg(feature = "serde")]
     pub fn to_prov_json_with_federation(&self) -> Result<ProvJsonDocument, String> {
         let mut doc = self.to_prov_json()?;
-        
+
         // Add federation-specific bundle
         if !self.cross_server_signatures.is_empty() {
             let bundle_id = generate_federation_bundle_id(self.base_provenance.timestamp);
-            let (bundle_id_str, bundle) = self.consensus.to_prov_bundle(bundle_id, &self.base_provenance);
-            
+            let (bundle_id_str, bundle) = self
+                .consensus
+                .to_prov_bundle(bundle_id, &self.base_provenance);
+
             let mut bundles = std::collections::HashMap::new();
             bundles.insert(bundle_id_str, bundle);
             doc.bundle = Some(bundles);
         }
-        
+
         Ok(doc)
     }
 
     #[cfg(feature = "serde")]
-    pub fn export_federation_provenance_bundle(&self) -> Result<FederationProvenanceBundle, String> {
+    pub fn export_federation_provenance_bundle(
+        &self,
+    ) -> Result<FederationProvenanceBundle, String> {
         let bundle_id = generate_federation_bundle_id(self.base_provenance.timestamp);
         let mut bundle = FederationProvenanceBundle::new(
             bundle_id.clone(),
@@ -579,7 +805,7 @@ impl FederatedProvenance {
                 "active".to_string(),
             ),
         );
-        
+
         // Add server agents from verifications
         for verification in &self.consensus.verifications {
             if verification.verified {
@@ -594,19 +820,21 @@ impl FederatedProvenance {
                 ));
             }
         }
-        
+
         // Add cross-server signatures
         for sig in &self.cross_server_signatures {
             bundle.add_cross_server_signature(sig.clone());
         }
-        
+
         // Add verification activity
         let verification_activity = ClusterVerificationActivity::new(
             format!("{}:verification", bundle_id),
             "xudanu:ClusterVerification".to_string(),
             self.base_provenance.timestamp,
             self.base_provenance.timestamp,
-            self.consensus.verifications.iter()
+            self.consensus
+                .verifications
+                .iter()
                 .filter(|v| v.verified)
                 .map(|v| crate::crypto::keys::hex_encode(&v.server_id))
                 .collect(),
@@ -618,7 +846,7 @@ impl FederatedProvenance {
             self.consensus.threshold_met,
         );
         bundle.add_verification_activity(verification_activity);
-        
+
         Ok(bundle)
     }
 }
@@ -1251,6 +1479,9 @@ pub fn sign_span(
     timestamp: u64,
     server_id: &[u8; 32],
 ) -> Provenance {
+    if element_fingerprints.is_empty() {
+        panic!("sign_span called with empty element_fingerprints");
+    }
     let span_fp = compute_span_fingerprint(element_fingerprints);
     let payload = compute_signing_payload(
         &span_fp,
@@ -1356,7 +1587,7 @@ fn compute_federation_payload(
 #[cfg(feature = "serde")]
 pub(crate) fn unix_to_iso8601(timestamp: u64) -> Option<String> {
     use std::time::SystemTime;
-    
+
     SystemTime::UNIX_EPOCH
         .checked_add(std::time::Duration::from_secs(timestamp))
         .and_then(|dt| {
@@ -1384,41 +1615,55 @@ pub fn sign_cross_server(
 
 pub fn verify_federation_provenance(
     federated: &FederatedProvenance,
-    _server_verifying_keys: &[[u8; 32]],
+    element_fingerprints: &[[u8; 32]],
+    server_verifying_keys: &[[u8; 32]],
 ) -> bool {
-    let verifying_key = match VerifyingKey::from_bytes(&federated.base_provenance.author_public_key) {
+    let span_fp = compute_span_fingerprint(element_fingerprints);
+
+    let verifying_key = match VerifyingKey::from_bytes(&federated.base_provenance.author_public_key)
+    {
         Ok(vk) => vk,
         Err(_) => return false,
     };
-    
+
     let signature = Signature::from_bytes(&federated.base_provenance.signature);
     let payload = compute_signing_payload(
-        &compute_span_fingerprint(&[federated.base_provenance.author_public_key]),
+        &span_fp,
         &federated.base_provenance.author_public_key,
         federated.base_provenance.timestamp,
         &federated.base_provenance.server_id,
     );
-    
+
     if !crate::crypto::sign::verify_signature(&verifying_key, &payload, &signature).is_ok() {
         return false;
     }
-    
+
     for cross_sig in &federated.cross_server_signatures {
-        let key_bytes: [u8; 32] = cross_sig.server_id;
-        let verifying_key = match VerifyingKey::from_bytes(&key_bytes) {
+        let verifying_key = match VerifyingKey::from_bytes(&cross_sig.verifying_key) {
             Ok(vk) => vk,
             Err(_) => continue,
         };
-        let payload = compute_federation_payload(&federated.base_provenance, &cross_sig.server_id, cross_sig.timestamp);
+        let payload = compute_federation_payload(
+            &federated.base_provenance,
+            &cross_sig.server_id,
+            cross_sig.timestamp,
+        );
         let signature = Signature::from_bytes(&cross_sig.signature);
         if crate::crypto::sign::verify_signature(&verifying_key, &payload, &signature).is_err() {
             return false;
         }
+        if !server_verifying_keys.contains(&cross_sig.verifying_key) {
+            return false;
+        }
     }
-    
+
     match federated.consensus.consensus_type {
-        ConsensusType::Unanimous => federated.cross_server_signatures.len() as u32 == federated.consensus.total_servers,
-        ConsensusType::Majority => federated.cross_server_signatures.len() as u32 > federated.consensus.total_servers / 2,
+        ConsensusType::Unanimous => {
+            federated.cross_server_signatures.len() as u32 == federated.consensus.total_servers
+        }
+        ConsensusType::Majority => {
+            federated.cross_server_signatures.len() as u32 > federated.consensus.total_servers / 2
+        }
         ConsensusType::Supermajority => {
             let threshold = (federated.consensus.total_servers as f64 * 0.67).ceil() as u32;
             federated.cross_server_signatures.len() as u32 >= threshold
@@ -1537,7 +1782,7 @@ mod tests {
             end: 3,
             provenance: prov,
         };
- 
+
         let json = serde_json::to_string(&sp).unwrap();
         let restored: SpanProvenance = serde_json::from_str(&json).unwrap();
         assert_eq!(sp, restored);
@@ -1558,7 +1803,10 @@ const XUDANU_NS: &str = "http://xudanu.example.org/ns#";
 pub struct ProvValue {
     #[cfg_attr(feature = "serde", serde(rename = "$"))]
     pub value: String,
-    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(rename = "type", skip_serializing_if = "Option::is_none")
+    )]
     #[serde(default)]
     pub type_: Option<String>,
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
@@ -1570,11 +1818,11 @@ impl ProvValue {
     pub fn string(value: &str) -> Self {
         ProvValue {
             value: value.to_string(),
-            type_: None,
+            type_: Some("xsd:string".to_string()),
             lang: None,
         }
     }
-    
+
     pub fn typed(value: &str, type_: &str) -> Self {
         ProvValue {
             value: value.to_string(),
@@ -1582,7 +1830,7 @@ impl ProvValue {
             lang: None,
         }
     }
-    
+
     pub fn typed_with_namespace(value: &str, type_: &str) -> Self {
         ProvValue {
             value: value.to_string(),
@@ -1590,7 +1838,7 @@ impl ProvValue {
             lang: None,
         }
     }
-    
+
     pub fn qname(value: &str) -> Self {
         ProvValue {
             value: value.to_string(),
@@ -1678,9 +1926,11 @@ pub struct ProvAssociation {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "prov:plan")]
     pub plan: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "prov:role")]
-    pub role: Option<String>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip_serializing_if = "Option::is_none", rename = "prov:role")
+    )]
+    pub role: Option<ProvValue>,
     #[serde(flatten)]
     pub attributes: std::collections::HashMap<String, ProvValue>,
 }
@@ -1729,7 +1979,7 @@ pub struct ProvJsonDocument {
     pub wasAssociatedWith: std::collections::HashMap<String, ProvAssociation>,
     #[serde(default)]
     pub wasGeneratedBy: std::collections::HashMap<String, ProvGeneration>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bundle: Option<std::collections::HashMap<String, ProvBundle>>,
 }
 
@@ -1746,15 +1996,19 @@ impl ProvJsonDocument {
             wasGeneratedBy: std::collections::HashMap::new(),
             bundle: None,
         };
-        
+
         // Add default prefixes
         doc.prefix.insert("prov".to_string(), PROV_NS.to_string());
-        doc.prefix.insert("xsd".to_string(), "http://www.w3.org/2001/XMLSchema#".to_string());
-        doc.prefix.insert("xudanu".to_string(), XUDANU_NS.to_string());
-        
+        doc.prefix.insert(
+            "xsd".to_string(),
+            "http://www.w3.org/2001/XMLSchema#".to_string(),
+        );
+        doc.prefix
+            .insert("xudanu".to_string(), XUDANU_NS.to_string());
+
         doc
     }
-    
+
     pub fn with_default_prefix() -> Self {
         Self::new()
     }
@@ -1769,7 +2023,10 @@ pub fn generate_prov_id(prefix: &str, base_id: &str) -> String {
 
 /// Generate entity ID for span
 pub fn generate_span_prov_id(work_id: BeId, span_start: i64, span_end: i64) -> String {
-    generate_prov_id("xudanu:span", &format!("{}:{}:{}", work_id, span_start, span_end))
+    generate_prov_id(
+        "xudanu:span",
+        &format!("{}:{}:{}", work_id, span_start, span_end),
+    )
 }
 
 /// Generate agent ID for author
@@ -1793,96 +2050,176 @@ impl FederatedProvenance {
     #[cfg(feature = "serde")]
     pub fn to_prov_json(&self) -> Result<ProvJsonDocument, String> {
         let mut doc = ProvJsonDocument::with_default_prefix();
-        
+
         // Create entity for the span (using generic entity ID since we don't have span info)
         let entity_id = generate_span_prov_id(0, 0, 1);
         let mut entity_attrs = std::collections::HashMap::new();
-        entity_attrs.insert("xudanu:timestamp".to_string(), 
-            ProvValue::typed(&self.base_provenance.timestamp.to_string(), "xsd:integer"));
-        entity_attrs.insert("xudanu:serverId".to_string(), 
-            ProvValue::typed(&crate::crypto::keys::hex_encode(&self.base_provenance.server_id), "xsd:hexBinary"));
-        
-        doc.entity.insert(entity_id.clone(), ProvEntity { attributes: entity_attrs });
-        
+        entity_attrs.insert(
+            "xudanu:timestamp".to_string(),
+            ProvValue::typed(&self.base_provenance.timestamp.to_string(), "xsd:integer"),
+        );
+        entity_attrs.insert(
+            "xudanu:serverId".to_string(),
+            ProvValue::typed(
+                &crate::crypto::keys::hex_encode(&self.base_provenance.server_id),
+                "xsd:hexBinary",
+            ),
+        );
+
+        doc.entity.insert(
+            entity_id.clone(),
+            ProvEntity {
+                attributes: entity_attrs,
+            },
+        );
+
         // Create agent for the author
         let author_id = generate_author_prov_id(&self.base_provenance.author_public_key);
         let mut agent_attrs = std::collections::HashMap::new();
-        agent_attrs.insert("prov:type".to_string(), 
-            ProvValue::qname("prov:Person")); // Default to person
-        agent_attrs.insert("xudanu:publicKey".to_string(), 
-            ProvValue::typed(&crate::crypto::keys::hex_encode(&self.base_provenance.author_public_key), "xsd:hexBinary"));
-        agent_attrs.insert("xudanu:signature".to_string(), 
-            ProvValue::typed(&crate::crypto::keys::hex_encode(&self.base_provenance.signature), "xsd:hexBinary"));
-        
-        doc.agent.insert(author_id.clone(), ProvAgent { attributes: agent_attrs });
-        
+        agent_attrs.insert("prov:type".to_string(), ProvValue::qname("prov:Person")); // Default to person
+        agent_attrs.insert(
+            "xudanu:publicKey".to_string(),
+            ProvValue::typed(
+                &crate::crypto::keys::hex_encode(&self.base_provenance.author_public_key),
+                "xsd:hexBinary",
+            ),
+        );
+        agent_attrs.insert(
+            "xudanu:signature".to_string(),
+            ProvValue::typed(
+                &crate::crypto::keys::hex_encode(&self.base_provenance.signature),
+                "xsd:hexBinary",
+            ),
+        );
+
+        doc.agent.insert(
+            author_id.clone(),
+            ProvAgent {
+                attributes: agent_attrs,
+            },
+        );
+
         // Create attribution
         let attribution_id = format!("attr:{}", entity_id);
-        doc.wasAttributedTo.insert(attribution_id, ProvAttribution {
-            entity: entity_id.clone(),
-            agent: author_id.clone(),
-            time: None,
-            attributes: std::collections::HashMap::new(),
-        });
-        
+        doc.wasAttributedTo.insert(
+            attribution_id,
+            ProvAttribution {
+                entity: entity_id.clone(),
+                agent: author_id.clone(),
+                time: None,
+                attributes: std::collections::HashMap::new(),
+            },
+        );
+
         // Add cross-server signatures as activities and associations
         for (idx, sig) in self.cross_server_signatures.iter().enumerate() {
             let activity_id = format!("cross_sig:{}", idx);
             let mut activity_attrs = std::collections::HashMap::new();
-            activity_attrs.insert("prov:type".to_string(), 
-                ProvValue::qname("xudanu:CrossServerSignature"));
-            activity_attrs.insert("xudanu:timestamp".to_string(), 
-                ProvValue::typed(&sig.timestamp.to_string(), "xsd:integer"));
-            activity_attrs.insert("xudanu:serverId".to_string(), 
-                ProvValue::typed(&crate::crypto::keys::hex_encode(&sig.server_id), "xsd:hexBinary"));
-            activity_attrs.insert("xudanu:verifyingKey".to_string(), 
-                ProvValue::typed(&crate::crypto::keys::hex_encode(&sig.verifying_key), "xsd:hexBinary"));
-            activity_attrs.insert("xudanu:signature".to_string(), 
-                ProvValue::typed(&crate::crypto::keys::hex_encode(&sig.signature), "xsd:hexBinary"));
-            
-            doc.activity.insert(activity_id.clone(), ProvActivity {
-                start_time: None,
-                end_time: None,
-                attributes: activity_attrs,
-            });
-            
+            activity_attrs.insert(
+                "prov:type".to_string(),
+                ProvValue::qname("xudanu:CrossServerSignature"),
+            );
+            activity_attrs.insert(
+                "xudanu:timestamp".to_string(),
+                ProvValue::typed(&sig.timestamp.to_string(), "xsd:integer"),
+            );
+            activity_attrs.insert(
+                "xudanu:serverId".to_string(),
+                ProvValue::typed(
+                    &crate::crypto::keys::hex_encode(&sig.server_id),
+                    "xsd:hexBinary",
+                ),
+            );
+            activity_attrs.insert(
+                "xudanu:verifyingKey".to_string(),
+                ProvValue::typed(
+                    &crate::crypto::keys::hex_encode(&sig.verifying_key),
+                    "xsd:hexBinary",
+                ),
+            );
+            activity_attrs.insert(
+                "xudanu:signature".to_string(),
+                ProvValue::typed(
+                    &crate::crypto::keys::hex_encode(&sig.signature),
+                    "xsd:hexBinary",
+                ),
+            );
+
+            doc.activity.insert(
+                activity_id.clone(),
+                ProvActivity {
+                    start_time: None,
+                    end_time: None,
+                    attributes: activity_attrs,
+                },
+            );
+
             // Associate server agent with activity
-            let server_agent_id = generate_prov_id("xudanu:server", 
-                &crate::crypto::keys::hex_encode(&sig.server_id)[..8]);
+            let server_agent_id = generate_prov_id(
+                "xudanu:server",
+                &crate::crypto::keys::hex_encode(&sig.server_id)[..8],
+            );
             let mut server_attrs = std::collections::HashMap::new();
-            server_attrs.insert("prov:type".to_string(), 
-                ProvValue::qname("xudanu:Server"));
-            server_attrs.insert("xudanu:serverId".to_string(), 
-                ProvValue::typed(&crate::crypto::keys::hex_encode(&sig.server_id), "xsd:hexBinary"));
-            
-            doc.agent.insert(server_agent_id.clone(), ProvAgent { attributes: server_attrs });
-            
+            server_attrs.insert("prov:type".to_string(), ProvValue::qname("xudanu:Server"));
+            server_attrs.insert(
+                "xudanu:serverId".to_string(),
+                ProvValue::typed(
+                    &crate::crypto::keys::hex_encode(&sig.server_id),
+                    "xsd:hexBinary",
+                ),
+            );
+
+            doc.agent.insert(
+                server_agent_id.clone(),
+                ProvAgent {
+                    attributes: server_attrs,
+                },
+            );
+
             let assoc_id = format!("assoc:{}:{}", activity_id, idx);
-            doc.wasAssociatedWith.insert(assoc_id, ProvAssociation {
-                activity: activity_id.clone(),
-                agent: Some(server_agent_id.clone()),
-                role: Some("verifier".to_string()),
-                plan: None,
-                attributes: std::collections::HashMap::new(),
-            });
+            doc.wasAssociatedWith.insert(
+                assoc_id,
+                ProvAssociation {
+                    activity: activity_id.clone(),
+                    agent: Some(server_agent_id.clone()),
+                    role: Some(ProvValue::qname("verifier")),
+                    plan: None,
+                    attributes: std::collections::HashMap::new(),
+                },
+            );
         }
-        
+
         // Add consensus as an entity
         let consensus_entity_id = format!("consensus:{}", self.consensus.timestamp);
         let mut consensus_attrs = std::collections::HashMap::new();
-        consensus_attrs.insert("prov:type".to_string(), 
-            ProvValue::qname("xudanu:ClusterConsensus"));
-        consensus_attrs.insert("xudanu:consensusType".to_string(), 
-            ProvValue::string(&self.consensus.consensus_type.to_string()));
-        consensus_attrs.insert("xudanu:thresholdMet".to_string(), 
-            ProvValue::string(&self.consensus.threshold_met.to_string()));
-        consensus_attrs.insert("xudanu:totalServers".to_string(), 
-            ProvValue::typed(&self.consensus.total_servers.to_string(), "xsd:integer"));
-        consensus_attrs.insert("xudanu:approvingServers".to_string(), 
-            ProvValue::typed(&self.consensus.approving_servers.to_string(), "xsd:integer"));
-        
-        doc.entity.insert(consensus_entity_id, ProvEntity { attributes: consensus_attrs });
-        
+        consensus_attrs.insert(
+            "prov:type".to_string(),
+            ProvValue::qname("xudanu:ClusterConsensus"),
+        );
+        consensus_attrs.insert(
+            "xudanu:consensusType".to_string(),
+            ProvValue::string(&self.consensus.consensus_type.to_string()),
+        );
+        consensus_attrs.insert(
+            "xudanu:thresholdMet".to_string(),
+            ProvValue::string(&self.consensus.threshold_met.to_string()),
+        );
+        consensus_attrs.insert(
+            "xudanu:totalServers".to_string(),
+            ProvValue::typed(&self.consensus.total_servers.to_string(), "xsd:integer"),
+        );
+        consensus_attrs.insert(
+            "xudanu:approvingServers".to_string(),
+            ProvValue::typed(&self.consensus.approving_servers.to_string(), "xsd:integer"),
+        );
+
+        doc.entity.insert(
+            consensus_entity_id,
+            ProvEntity {
+                attributes: consensus_attrs,
+            },
+        );
+
         Ok(doc)
     }
 }

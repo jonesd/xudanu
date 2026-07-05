@@ -119,6 +119,12 @@ pub struct TrailManifestEntry {
     pub trail_id: BeId,
     pub owner_club: BeId,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub introduction: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<String>,
+    #[serde(default)]
+    pub published: bool,
     pub stops: Vec<TrailStopManifestEntry>,
     pub created_at: u64,
     pub updated_at: u64,

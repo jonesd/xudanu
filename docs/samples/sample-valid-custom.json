@@ -1,0 +1,41 @@
+{
+  "type": "xudanu-attestation-report",
+  "version": 1,
+  "generated_at": 1783130786,
+  "document": {
+    "work_id": "04a2",
+    "title": "Custom Format Report",
+    "revision": 5,
+    "character_count": 3000,
+    "content_hash_blake3": "a3b1c2d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
+  },
+  "server_identity": {
+    "server_id": "16522a722cab6b18",
+    "verifying_key_ed25519": "16522a722cab6b18620208336c0550641ae2149442c9b70f9dbf087bd0b72d33"
+  },
+  "attribution": {
+    "span_count": 2,
+    "spans": [
+      {
+        "range": [0, 1500],
+        "author": "Alice",
+        "author_type": "human",
+        "signature_valid": true,
+        "timestamp": 1783130786
+      },
+      {
+        "range": [1500, 3000],
+        "author": "GPT-4",
+        "author_type": "llm",
+        "signature_valid": true,
+        "timestamp": 1783130000
+      }
+    ]
+  },
+  "attribution_log": {
+    "entry_count": 42,
+    "chain_valid": true,
+    "last_sequence": 42,
+    "has_log": true
+  }
+}

@@ -1784,6 +1784,7 @@ export function WorkspacePage() {
         <TrailsPanel
           client={clientRef.current}
           currentWorkId={workBeId}
+          works={works}
           onSelectWork={(id) => selectWork(id)}
           onClose={() => setShowTrails(false)}
         />

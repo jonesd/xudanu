@@ -3753,6 +3753,22 @@ canvas._bridge {
   padding: 20px 0;
 }
 
+.trail-float-panel {
+  position: fixed;
+  top: 72px;
+  right: 16px;
+  width: 400px;
+  max-width: 95vw;
+  max-height: calc(100vh - 90px);
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+}
+
 .trail-create-row {
   display: flex;
   gap: 8px;
@@ -3882,6 +3898,183 @@ canvas._bridge {
   color: #c44;
   padding: 0 2px;
   line-height: 1;
+}
+
+/* Trail tabs */
+.trail-tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: 12px;
+}
+
+.trail-tab {
+  padding: 3px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+}
+
+.trail-tab.active {
+  background: #4361ee;
+  color: #fff;
+  border-color: #4361ee;
+}
+
+/* Create form */
+.trail-create-toggle {
+  width: 100%;
+  padding: 8px;
+  background: transparent;
+  border: 1px dashed #ccc;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #4361ee;
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
+.trail-create-toggle:hover { border-color: #4361ee; }
+
+.trail-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: #f9f9ff;
+  border-radius: 6px;
+  border: 1px solid #e0e0ee;
+}
+
+.trail-intro-input {
+  resize: vertical;
+  font-family: inherit;
+  min-height: 40px;
+}
+
+.trail-create-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.trail-cancel-btn {
+  padding: 6px 14px;
+  background: #eee;
+  color: #555;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.trail-cancel-btn:hover { background: #ddd; }
+
+/* Expanded trail */
+.trail-expanded {
+  padding: 8px 12px;
+}
+
+.trail-introduction {
+  font-size: 12px;
+  color: #555;
+  line-height: 1.5;
+  margin-bottom: 8px;
+  padding: 8px;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.trail-category-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.trail-category-tag {
+  font-size: 10px;
+  padding: 2px 8px;
+  background: #e8e8f0;
+  color: #555;
+  border-radius: 10px;
+}
+
+.trail-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.trail-action-btn {
+  padding: 4px 10px;
+  background: #f0f0f0;
+  color: #555;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.trail-action-btn:hover { background: #e5e5e5; }
+
+.trail-publish-btn {
+  background: #e0f5e0;
+  color: #2a7a2a;
+  border-color: #a0d0a0;
+}
+
+.trail-publish-btn:hover { background: #d0eed0; }
+
+.trail-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.trail-badge-published {
+  background: #e0f5e0;
+  color: #2a7a2a;
+}
+
+/* Category filter */
+.trail-category-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.trail-cat-chip {
+  padding: 3px 10px;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  background: transparent;
+  font-size: 11px;
+  color: #666;
+  cursor: pointer;
+}
+
+.trail-cat-chip.active {
+  background: #4361ee;
+  color: #fff;
+  border-color: #4361ee;
+}
+
+.trail-cat-chip:hover { border-color: #4361ee; }
+
+/* Edit form */
+.trail-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 /* Version Genealogy Panel */

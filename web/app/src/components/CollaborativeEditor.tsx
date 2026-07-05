@@ -6,6 +6,13 @@ import { TextBuffer } from "../api/text_buffer";
 import { SearchPanel } from "./SearchPanel";
 import { OutlinePanel } from "./OutlinePanel";
 import { RemoteCursors } from "./RemoteCursors";
+import {
+  DENSITY_THRESHOLD,
+  assignLinkLanes,
+  clusterOverlappingMarkers,
+  filterMarkersByType,
+  presentLinkTypeIds,
+} from "../link-markers";
 
 interface UndoEntry {
   text: string;
@@ -81,6 +88,8 @@ interface MarkerHitZone {
   y: number;
   width: number;
   height: number;
+  densityCluster?: number;
+  densityCount?: number;
 }
 
 const LINK_TYPE_STYLES: Record<number, { color: string; dash: number[] }> = {
@@ -156,6 +165,7 @@ function drawOverlay(
   compoundSpans: SpanRangePayload[] = [],
   recentChanges: ChangeHighlight[] = [],
   showAttribution: boolean = true,
+  expandedClusters: Set<number> = new Set(),
 ): MarkerHitZone[] {
   const hitZones: MarkerHitZone[] = [];
   if (!editor || !canvas) return hitZones;
@@ -219,24 +229,39 @@ function drawOverlay(
 
     const rangeRects = range.getClientRects();
     const isHistorical = style.authorType === "historical";
+    const isUnsigned = !span.signature_valid;
     for (const r of rangeRects) {
       const x = r.left - rect.left;
       const y = r.top - rect.top;
-      ctx.fillStyle = style.color + (isHistorical ? "18" : "25");
-      ctx.fillRect(x, y, r.width, r.height);
-      if (isHistorical) {
+      if (isUnsigned) {
+        ctx.fillStyle = "#f8514922";
+        ctx.fillRect(x, y, r.width, r.height);
         ctx.save();
-        ctx.setLineDash([4, 3]);
-        ctx.strokeStyle = style.color + "90";
+        ctx.strokeStyle = "#f85149";
         ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 3]);
         ctx.beginPath();
         ctx.moveTo(x, y + r.height - 1);
         ctx.lineTo(x + r.width, y + r.height - 1);
         ctx.stroke();
         ctx.restore();
       } else {
-        ctx.fillStyle = style.color + "60";
-        ctx.fillRect(x, y + r.height - 2, r.width, 2);
+        ctx.fillStyle = style.color + (isHistorical ? "18" : "25");
+        ctx.fillRect(x, y, r.width, r.height);
+        if (isHistorical) {
+          ctx.save();
+          ctx.setLineDash([4, 3]);
+          ctx.strokeStyle = style.color + "90";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(x, y + r.height - 1);
+          ctx.lineTo(x + r.width, y + r.height - 1);
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          ctx.fillStyle = style.color + "60";
+          ctx.fillRect(x, y + r.height - 2, r.width, 2);
+        }
       }
     }
   }
@@ -341,7 +366,29 @@ function drawOverlay(
     }
   }
 
-  for (const marker of markers) {
+  // FR-4.5: profuse overlapping links — assign stack lanes and detect dense
+  // regions so overlapping links stay legible.
+  const lanes = assignLinkLanes(markers);
+  const clusters = clusterOverlappingMarkers(markers);
+  const collapsed = new Set<number>();
+  const densityPills: Array<{ clusterIndex: number; count: number; start: number; end: number; first: TransclusionMarker }> = [];
+  clusters.forEach((c, ci) => {
+    if (c.indices.length >= DENSITY_THRESHOLD && !expandedClusters.has(ci)) {
+      for (const idx of c.indices) collapsed.add(idx);
+      densityPills.push({
+        clusterIndex: ci,
+        count: c.indices.length,
+        start: c.start,
+        end: c.end,
+        first: markers[c.indices[0]],
+      });
+    }
+  });
+
+  for (let mi = 0; mi < markers.length; mi++) {
+    if (collapsed.has(mi)) continue;
+    const marker = markers[mi];
+    const lane = lanes.get(mi) ?? 0;
     const drawStart = Math.max(marker.start, 0);
     const drawEnd = Math.min(marker.end, textLen);
     if (drawStart >= drawEnd) continue;
@@ -378,9 +425,10 @@ function drawOverlay(
       ctx.strokeStyle = barColor + "cc";
       ctx.lineWidth = 1.5;
       ctx.setLineDash(typeStyle.dash);
+      // FR-4.5: layer overlapping underlines at 2px vertical offsets.
       for (const r of rangeRects) {
         const rx = r.left - rect.left;
-        const ry = r.bottom - rect.top - 1;
+        const ry = r.bottom - rect.top - 1 + lane * 2;
         ctx.beginPath();
         ctx.moveTo(rx, ry);
         ctx.lineTo(rx + r.width, ry);
@@ -398,17 +446,20 @@ function drawOverlay(
       const pattern = getHatchPattern(ctx, marker.otherWorkId);
       ctx.fillStyle = pattern || marker.color + "60";
     }
+    // FR-4.5: stack margin bars per lane (left outgoing / right incoming).
     if (isIncoming && typeStyle) {
-      ctx.fillRect(rect.width - 3, firstTop, 3, height);
+      const rightX = rect.width - 3 - lane * 4;
+      ctx.fillRect(rightX, firstTop, 3, height);
       hitZones.push({
         marker,
-        x: rect.width - Math.max(barWidth, 12),
+        x: Math.max(0, rightX - 9),
         y: firstTop,
         width: Math.max(barWidth, 12),
         height,
       });
     } else {
-      ctx.fillRect(0, firstTop, 3, height);
+      const leftX = lane * 4;
+      ctx.fillRect(leftX, firstTop, 3, height);
 
       if (marker.provenanceChain && marker.provenanceChain.length > 0) {
         const chainCount = marker.provenanceChain.length;
@@ -416,7 +467,7 @@ function drawOverlay(
         const gap = 1;
         const chainColor = "#c4a35a";
         for (let i = 0; i < chainCount; i++) {
-          const stackX = 3 + gap + i * (stackWidth + gap);
+          const stackX = leftX + 3 + gap + i * (stackWidth + gap);
           ctx.fillStyle = chainColor + "80";
           ctx.fillRect(stackX, firstTop, stackWidth, height);
         }
@@ -424,12 +475,59 @@ function drawOverlay(
 
       hitZones.push({
         marker,
-        x: 0,
+        x: leftX,
         y: firstTop,
         width: Math.max(barWidth, 12),
         height,
       });
     }
+  }
+
+  // FR-4.5: density pills collapse DENSITY_THRESHOLD+ overlapping links into
+  // one summary badge; clicking the pill expands the cluster.
+  for (const pill of densityPills) {
+    const drawStart = Math.max(pill.start, 0);
+    const drawEnd = Math.min(pill.end, textLen);
+    if (drawStart >= drawEnd) continue;
+    const range = document.createRange();
+    try {
+      if (singleNode) {
+        range.setStart(textNode as Text, drawStart);
+        range.setEnd(textNode as Text, drawEnd);
+      } else {
+        const sn = findTextNodeAt(editor, drawStart);
+        const en = findTextNodeAt(editor, drawEnd - 1);
+        if (!sn || !en) continue;
+        range.setStart(sn.node, sn.offset);
+        range.setEnd(en.node, en.offset + 1);
+      }
+    } catch {
+      continue;
+    }
+    const rr = range.getClientRects();
+    if (rr.length === 0) continue;
+    const firstTop = rr[0].top - rect.top;
+    const lastRect = rr[rr.length - 1];
+    const height = Math.max((lastRect.bottom - rect.top) - firstTop, 14);
+
+    ctx.save();
+    ctx.fillStyle = "#d29922";
+    ctx.fillRect(0, firstTop, 18, height);
+    ctx.fillStyle = "#0d1117";
+    ctx.font = "bold 10px ui-monospace, SFMono-Regular, monospace";
+    ctx.textBaseline = "top";
+    ctx.fillText(String(pill.count), 5, firstTop + 2);
+    ctx.restore();
+
+    hitZones.push({
+      marker: pill.first,
+      x: 0,
+      y: firstTop,
+      width: 18,
+      height,
+      densityCluster: pill.clusterIndex,
+      densityCount: pill.count,
+    });
   }
 
   const now2 = Date.now();
@@ -562,6 +660,14 @@ export function CollaborativeEditor({
   const [showBoilerplate, setShowBoilerplate] = useState(false);
   const [hoveredMarker, setHoveredMarker] = useState<TransclusionMarker | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const [linkTypeFilter, setLinkTypeFilter] = useState<Set<number> | null>(null);
+  const [expandedClusters, setExpandedClusters] = useState<Set<number>>(new Set());
+
+  const presentTypes = useMemo(() => presentLinkTypeIds(transclusionMarkers), [transclusionMarkers]);
+  const filteredMarkers = useMemo(
+    () => filterMarkersByType(transclusionMarkers, linkTypeFilter),
+    [transclusionMarkers, linkTypeFilter],
+  );
 
   const hasContentRange = (contentStartLine != null && contentStartLine > 0) || (contentEndLine != null);
 
@@ -688,11 +794,11 @@ export function CollaborativeEditor({
     const redraw = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors);
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters);
       });
     };
 
-    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers, [], compoundSpanRanges, recentChanges, showAttributionColors);
+    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters);
 
     const ro = new ResizeObserver(redraw);
     ro.observe(container);
@@ -703,7 +809,7 @@ export function CollaborativeEditor({
       container.removeEventListener("scroll", redraw);
       cancelAnimationFrame(rafId);
     };
-  }, [attributionSpans, authorColorMap, transclusionMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors]);
+  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters]);
 
   useEffect(() => {
     if (recentChanges.length === 0) return;
@@ -711,10 +817,10 @@ export function CollaborativeEditor({
       const el = editorRef.current;
       const canvas = overlayRef.current;
       if (!el || !canvas) return;
-      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, transclusionMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors);
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters);
     }, 200);
     return () => clearInterval(interval);
-  }, [recentChanges, attributionSpans, authorColorMap, transclusionMarkers, annotations, compoundSpanRanges, showAttributionColors]);
+  }, [recentChanges, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, showAttributionColors, expandedClusters]);
 
   const hideTooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -730,6 +836,15 @@ export function CollaborativeEditor({
     if (hideTooltipTimer.current) { clearTimeout(hideTooltipTimer.current); hideTooltipTimer.current = null; }
   }, []);
 
+  const toggleClusterExpansion = useCallback((clusterIndex: number) => {
+    setExpandedClusters((prev) => {
+      const next = new Set(prev);
+      if (next.has(clusterIndex)) next.delete(clusterIndex);
+      else next.add(clusterIndex);
+      return next;
+    });
+  }, []);
+
   const handleOverlayMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (hideTooltipTimer.current) { clearTimeout(hideTooltipTimer.current); hideTooltipTimer.current = null; }
     const rect = e.currentTarget.getBoundingClientRect();
@@ -739,7 +854,10 @@ export function CollaborativeEditor({
       x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
     );
     if (hit) {
-      setHoveredMarker(hit.marker);
+      const m = (hit.densityCluster != null && hit.densityCount != null)
+        ? { ...hit.marker, otherWorkTitle: `${hit.densityCount} links in this region` }
+        : hit.marker;
+      setHoveredMarker(m);
       setTooltipPos({ x: e.clientX, y: e.clientY });
       e.currentTarget.style.cursor = "pointer";
     } else {
@@ -762,13 +880,17 @@ export function CollaborativeEditor({
       x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
     );
     if (!hit) return;
+    if (hit.densityCluster != null) {
+      toggleClusterExpansion(hit.densityCluster);
+      return;
+    }
     if (e.detail === 2 && onShowBacklinks) {
       const excerpt = (hit.marker as unknown as Record<string, unknown>).excerpt as string || "";
       onShowBacklinks(hit.marker.otherWorkId, excerpt);
     } else if (e.detail === 1 && onNavigateToWork) {
       onNavigateToWork(hit.marker.otherWorkId);
     }
-  }, [onNavigateToWork, onShowBacklinks]);
+  }, [onNavigateToWork, onShowBacklinks, toggleClusterExpansion]);
 
   const getSelectionInEditor = useCallback((): { start: number; end: number } => {
     const el = editorRef.current;
@@ -968,31 +1090,6 @@ export function CollaborativeEditor({
     }
   }, [onCursorChange, onSelectionChange]);
 
-  const handleEditorClick = useCallback((e: React.MouseEvent) => {
-    const el = editorRef.current;
-    if (!el) return;
-
-    const target = e.target as HTMLElement;
-    const transclusionSpan = target.closest(".inline-transclusion");
-    if (transclusionSpan && onNavigateToWork) {
-      const sourceId = parseInt((transclusionSpan as HTMLElement).dataset.sourceWorkId || "0", 10);
-      if (sourceId) {
-        onNavigateToWork(sourceId);
-        return;
-      }
-    }
-
-    if (!pendingTransclusion || !onPlaceTransclusion) return;
-    if (!el.contains(e.target as Node)) return;
-
-    const result = computePlacementPosition(e.clientX, e.clientY, el);
-    if (result !== null) {
-      console.log("[placement] O-tree position:", result.pos);
-      onPlaceTransclusion(result.pos);
-    }
-    setPlacementIndicator(null);
-  }, [pendingTransclusion, onPlaceTransclusion, onNavigateToWork]);
-
   const computePlacementPosition = useCallback((clientX: number, clientY: number, el: HTMLElement): { pos: number; rect: DOMRect; padding?: string } | null => {
     const doc = el.ownerDocument as Document & {
       caretRangeFromPoint?: (x: number, y: number) => Range | null;
@@ -1057,6 +1154,31 @@ export function CollaborativeEditor({
 
     return { pos: fullPos - readonlyChars, rect };
   }, []);
+
+  const handleEditorClick = useCallback((e: React.MouseEvent) => {
+    const el = editorRef.current;
+    if (!el) return;
+
+    const target = e.target as HTMLElement;
+    const transclusionSpan = target.closest(".inline-transclusion");
+    if (transclusionSpan && onNavigateToWork) {
+      const sourceId = parseInt((transclusionSpan as HTMLElement).dataset.sourceWorkId || "0", 10);
+      if (sourceId) {
+        onNavigateToWork(sourceId);
+        return;
+      }
+    }
+
+    if (!pendingTransclusion || !onPlaceTransclusion) return;
+    if (!el.contains(e.target as Node)) return;
+
+    const result = computePlacementPosition(e.clientX, e.clientY, el);
+    if (result !== null) {
+      console.log("[placement] O-tree position:", result.pos);
+      onPlaceTransclusion(result.pos);
+    }
+    setPlacementIndicator(null);
+  }, [pendingTransclusion, onPlaceTransclusion, onNavigateToWork, computePlacementPosition]);
 
   const handleEditorMouseMove = useCallback((e: React.MouseEvent) => {
     if (!pendingTransclusion) {
@@ -1148,6 +1270,73 @@ export function CollaborativeEditor({
         />
       )}
       <div style={{ position: "relative", flex: 1, display: "flex", minHeight: 0 }}>
+        {presentTypes.length > 0 && (
+          <div
+            className="link-type-filter"
+            style={{
+              position: "absolute",
+              top: 6,
+              right: 6,
+              zIndex: 50,
+              display: "flex",
+              gap: 4,
+              alignItems: "center",
+              background: "rgba(13, 17, 23, 0.85)",
+              border: "1px solid #30363d",
+              borderRadius: 6,
+              padding: "2px 5px",
+            }}
+          >
+            <button
+              type="button"
+              className="link-type-filter-all"
+              onClick={() => setLinkTypeFilter(null)}
+              title="Show all links"
+              style={{
+                background: "transparent",
+                border: linkTypeFilter === null ? "1px solid #8b949e" : "1px solid transparent",
+                color: linkTypeFilter === null ? "#c9d1d9" : "#8b949e",
+                borderRadius: 3,
+                padding: "0 4px",
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              All
+            </button>
+            {presentTypes.map((tid) => {
+              const style = LINK_TYPE_STYLES[tid];
+              const active = linkTypeFilter !== null && linkTypeFilter.has(tid);
+              const color = style?.color ?? "#8b949e";
+              const name = LINK_TYPE_NAMES[tid] ?? `Type ${tid}`;
+              return (
+                <button
+                  key={tid}
+                  type="button"
+                  className="link-type-filter-dot"
+                  title={name}
+                  onClick={() =>
+                    setLinkTypeFilter((prev) => {
+                      const next = new Set(prev ?? []);
+                      if (next.has(tid)) next.delete(tid);
+                      else next.add(tid);
+                      return next;
+                    })
+                  }
+                  style={{
+                    width: 14,
+                    height: 14,
+                    borderRadius: 3,
+                    border: active ? `1px solid ${color}` : "1px solid #30363d",
+                    background: active ? color : "transparent",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
         <div
           className="editor-container"
           style={pendingTransclusion ? { cursor: "crosshair" } : undefined}
@@ -1284,6 +1473,11 @@ export function CollaborativeEditor({
         <span className={`sync-indicator ${connected ? "sync-connected" : "sync-disconnected"}`}>
           {connected ? "Synced" : "Offline"}
         </span>
+        {attributionSpans.length > 0 && attributionSpans.some(s => !s.signature_valid) && (
+          <span className="attribution-mode-label" style={{ color: "#f85149", fontWeight: 700 }}>
+            {attributionSpans.filter(s => !s.signature_valid).length} unsigned span{attributionSpans.filter(s => !s.signature_valid).length !== 1 ? "s" : ""} &mdash; signatures not verified
+          </span>
+        )}
         {attributionSpans.length > 0 && (
           <span className="attribution-mode-label">
             Attribution view
