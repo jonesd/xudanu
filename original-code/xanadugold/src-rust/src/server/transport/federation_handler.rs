@@ -1612,7 +1612,7 @@ pub(crate) async fn process_federation_frame(
                         attestation: Some(attestation),
                         accepted: true,
                     },
-                    Err(e) => FederationFrame::FederationAttestationResponse {
+                    Err(_) => FederationFrame::FederationAttestationResponse {
                         attestation: None,
                         accepted: false,
                     },
