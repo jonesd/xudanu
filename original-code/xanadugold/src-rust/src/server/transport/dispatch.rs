@@ -3225,6 +3225,56 @@ fn dispatch_inner(
             Ok(ResponseValue::ProvJsonExportResult { prov_json })
         }
         #[cfg(feature = "serde")]
+        WireRequest::ServerDirectoryList => {
+            srv.ensure_session(session_id)?;
+            let servers: Vec<serde_json::Value> = srv
+                .server_directory()
+                .list()
+                .into_iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "server_id": e.server_id,
+                        "address": e.address,
+                        "port": e.port,
+                        "verifying_key": e.verifying_key,
+                        "name": e.name,
+                        "description": e.description,
+                        "trusted": e.trusted,
+                        "discovered": e.discovered,
+                        "referred_by": e.referred_by,
+                        "last_seen": e.last_seen,
+                    })
+                })
+                .collect();
+            Ok(ResponseValue::ServerDirectoryListResult { servers })
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::ServerDirectoryAdd { address, port } => {
+            srv.ensure_logged_in(session_id)?;
+            let entry = srv.server_directory_add(&address, port)?;
+            srv.server_directory_save()?;
+            Ok(ResponseValue::ServerDirectoryAddResult {
+                server_id: entry.server_id,
+                name: entry.name,
+                address: entry.address,
+                trusted: entry.trusted,
+            })
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::ServerDirectoryRemove { server_id } => {
+            srv.ensure_logged_in(session_id)?;
+            let removed = srv.server_directory_remove(server_id);
+            srv.server_directory_save()?;
+            Ok(ResponseValue::ServerDirectoryRemoveResult { removed })
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::ServerDirectorySetTrust { server_id, trusted } => {
+            srv.ensure_logged_in(session_id)?;
+            srv.server_directory_set_trust(server_id, trusted);
+            srv.server_directory_save()?;
+            Ok(ResponseValue::ServerDirectorySetTrustResult { server_id, trusted })
+        }
+        #[cfg(feature = "serde")]
         WireRequest::FederationAttestationCreate {
             attestation_type,
             subject_server_id,

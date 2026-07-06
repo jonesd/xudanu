@@ -644,6 +644,8 @@ impl JsonCodec {
             OperationCode::WorkGraph,
             OperationCode::TrailList,
             OperationCode::WorkListArchived,
+            #[cfg(feature = "serde")]
+            OperationCode::ServerDirectoryList,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -680,6 +682,8 @@ impl JsonCodec {
                 OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
                 OperationCode::TrailList => Ok(WireRequest::TrailList),
                 OperationCode::WorkListArchived => Ok(WireRequest::WorkListArchived),
+                #[cfg(feature = "serde")]
+                OperationCode::ServerDirectoryList => Ok(WireRequest::ServerDirectoryList),
                 _ => unreachable!(),
             };
         }
@@ -3177,6 +3181,49 @@ impl JsonCodec {
                 Ok(WireRequest::ProvJsonExport {
                     work_id: args.work_id,
                     include_federation: args.include_federation,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::ServerDirectoryList => Ok(WireRequest::ServerDirectoryList),
+            #[cfg(feature = "serde")]
+            OperationCode::ServerDirectoryAdd => {
+                #[derive(Deserialize)]
+                struct Args {
+                    address: String,
+                    #[serde(default)]
+                    port: Option<u16>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ServerDirectoryAdd {
+                    address: args.address,
+                    port: args.port,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::ServerDirectoryRemove => {
+                #[derive(Deserialize)]
+                struct Args {
+                    server_id: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ServerDirectoryRemove {
+                    server_id: args.server_id,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::ServerDirectorySetTrust => {
+                #[derive(Deserialize)]
+                struct Args {
+                    server_id: u64,
+                    trusted: bool,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ServerDirectorySetTrust {
+                    server_id: args.server_id,
+                    trusted: args.trusted,
                 })
             }
             _ => Err(FrameParseError::MissingPayload.into()),

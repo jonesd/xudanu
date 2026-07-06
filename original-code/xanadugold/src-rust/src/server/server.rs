@@ -256,6 +256,10 @@ pub struct Server {
     /// Cleared by an explicit admin action once the root cause is fixed.
     restore_errors: Vec<String>,
     trusted_server_registry: Option<crate::crypto::server_identity::TrustedServerRegistry>,
+    server_name: String,
+    server_description: String,
+    server_namespace_id: u64,
+    server_directory: crate::server::server_directory::ServerDirectory,
 }
 
 #[derive(Debug, Clone)]
@@ -734,6 +738,10 @@ impl Server {
             wal: crate::persist::wal::WalLog::disabled(),
             restore_errors: Vec::new(),
             trusted_server_registry: None,
+            server_name: "Xudanu Server".to_string(),
+            server_description: String::new(),
+            server_namespace_id: 0,
+            server_directory: crate::server::server_directory::ServerDirectory::new(),
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
             // transclusion survival, and materialize_annotation_indexed support.
@@ -850,6 +858,175 @@ impl Server {
         &self,
     ) -> Option<&crate::crypto::server_identity::TrustedServerRegistry> {
         self.trusted_server_registry.as_ref()
+    }
+
+    pub fn server_name(&self) -> &str {
+        &self.server_name
+    }
+
+    pub fn set_server_name(&mut self, name: String) {
+        self.server_name = name;
+    }
+
+    pub fn server_description(&self) -> &str {
+        &self.server_description
+    }
+
+    pub fn set_server_description(&mut self, desc: String) {
+        self.server_description = desc;
+    }
+
+    pub fn server_namespace_id(&self) -> u64 {
+        if self.server_namespace_id == 0 {
+            let vk = self.server_keypair.signing_verifying_key().to_bytes();
+            u32::from_be_bytes([vk[0], vk[1], vk[2], vk[3]]) as u64
+        } else {
+            self.server_namespace_id
+        }
+    }
+
+    pub fn set_server_namespace_id(&mut self, id: u64) {
+        self.server_namespace_id = id;
+    }
+
+    pub fn total_revision_count(&self) -> u64 {
+        self.works
+            .values()
+            .map(|ws| ws.work.revision_count() as u64)
+            .sum()
+    }
+
+    pub fn well_known_identity(&self) -> serde_json::Value {
+        let vk_bytes = self.server_keypair.signing_verifying_key().to_bytes();
+        let vk_hex: String = vk_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+        serde_json::json!({
+            "protocol_version": 1,
+            "server_id": self.server_namespace_id(),
+            "address": "", // filled by handler which knows the bind address
+            "verifying_key_ed25519": vk_hex,
+            "name": self.server_name,
+            "description": self.server_description,
+            "public_content": true,
+            "started_at": self.start_time,
+            "stats": {
+                "work_count": self.work_count(),
+                "revision_count": self.total_revision_count(),
+            }
+        })
+    }
+
+    pub fn server_directory(&self) -> &crate::server::server_directory::ServerDirectory {
+        &self.server_directory
+    }
+
+    pub fn server_directory_add(
+        &mut self,
+        address: &str,
+        port: Option<u16>,
+    ) -> Result<crate::server::server_directory::DirectoryEntry, ServerError> {
+        let url = if let Some(p) = port {
+            if address.starts_with("http") {
+                format!(
+                    "{}/.well-known/xudanu-server.json",
+                    address.trim_end_matches('/')
+                )
+            } else {
+                format!("http://{}:{}/.well-known/xudanu-server.json", address, p)
+            }
+        } else if address.starts_with("http") {
+            format!(
+                "{}/.well-known/xudanu-server.json",
+                address.trim_end_matches('/')
+            )
+        } else {
+            format!("http://{}:8080/.well-known/xudanu-server.json", address)
+        };
+
+        tracing::info!("Fetching server identity from {}", url);
+
+        let response = reqwest::blocking::Client::new()
+            .get(&url)
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .map_err(|e| {
+                ServerError::Internal(format!("Failed to fetch server identity: {}", e))
+            })?;
+
+        if !response.status().is_success() {
+            return Err(ServerError::Internal(format!(
+                "Server returned {}",
+                response.status()
+            )));
+        }
+
+        let identity: serde_json::Value = response
+            .json()
+            .map_err(|e| ServerError::Internal(format!("Invalid identity JSON: {}", e)))?;
+
+        let server_id = identity["server_id"]
+            .as_u64()
+            .ok_or_else(|| ServerError::Internal("Missing server_id".into()))?;
+        let verifying_key = identity["verifying_key_ed25519"]
+            .as_str()
+            .ok_or_else(|| ServerError::Internal("Missing verifying_key".into()))?
+            .to_string();
+        let name = identity["name"].as_str().unwrap_or("Unknown").to_string();
+        let description = identity["description"].as_str().unwrap_or("").to_string();
+
+        let entry = crate::server::server_directory::DirectoryEntry {
+            server_id,
+            address: address.to_string(),
+            port,
+            verifying_key,
+            name,
+            description,
+            trusted: false,
+            discovered: "manual".to_string(),
+            referred_by: None,
+            last_seen: Some(Self::current_timestamp_secs()),
+        };
+
+        tracing::info!(
+            server_id,
+            name = entry.name.as_str(),
+            "Added server to directory"
+        );
+
+        self.server_directory.add(entry.clone());
+        Ok(entry)
+    }
+
+    pub fn server_directory_remove(&mut self, server_id: u64) -> bool {
+        self.server_directory.remove(server_id)
+    }
+
+    pub fn server_directory_set_trust(&mut self, server_id: u64, trusted: bool) -> bool {
+        self.server_directory.set_trust(server_id, trusted)
+    }
+
+    pub fn server_directory_save(&self) -> Result<(), ServerError> {
+        if let Some(dir) = &self.data_dir {
+            let path = dir.join("server_directory.json");
+            self.server_directory
+                .save_to_file(&path)
+                .map_err(|e| ServerError::Internal(format!("Failed to save directory: {}", e)))?;
+        }
+        Ok(())
+    }
+
+    pub fn server_directory_load(&mut self) -> Result<(), ServerError> {
+        if let Some(dir) = &self.data_dir {
+            let path = dir.join("server_directory.json");
+            match crate::server::server_directory::ServerDirectory::load_from_file(&path) {
+                Ok(d) => {
+                    self.server_directory = d;
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load server directory: {}", e);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn verify_server_identity(
@@ -3744,6 +3921,98 @@ impl Server {
         self.works.len()
     }
 
+    pub fn public_work_edition(&self, work_be_id: BeId) -> Result<serde_json::Value, ServerError> {
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+
+        if ws.work.read_club() != Some(self.system_clubs.public_club) {
+            return Err(ServerError::WorkNotFound(work_be_id));
+        }
+
+        let edition = ws.work.current_edition();
+        let text = edition.to_text();
+        let revision = ws.work.revision_count();
+        let title = ws.title().to_string();
+
+        let content_hash = {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(text.as_bytes());
+            hasher.finalize().to_hex().to_string()
+        };
+
+        let span_provenance: Vec<serde_json::Value> = edition
+            .span_provenance
+            .iter()
+            .map(|sp| {
+                serde_json::json!({
+                    "start": sp.start,
+                    "end": sp.end,
+                    "author_public_key": sp.provenance.author_public_key.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                    "signature": sp.provenance.signature.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                    "timestamp": sp.provenance.timestamp,
+                    "server_id": sp.provenance.server_id.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+                })
+            })
+            .collect();
+
+        Ok(serde_json::json!({
+            "work_id": format!("{:04x}", work_be_id),
+            "title": title,
+            "revision": revision,
+            "text": text,
+            "char_count": text.chars().count(),
+            "content_hash_blake3": content_hash,
+            "span_provenance": span_provenance,
+            "server_namespace_id": self.server_namespace_id(),
+        }))
+    }
+
+    pub fn public_work_range(
+        &self,
+        work_be_id: BeId,
+        start: usize,
+        end: usize,
+    ) -> Result<serde_json::Value, ServerError> {
+        let ws = self
+            .works
+            .get(&work_be_id)
+            .ok_or(ServerError::WorkNotFound(work_be_id))?;
+
+        if ws.work.read_club() != Some(self.system_clubs.public_club) {
+            return Err(ServerError::WorkNotFound(work_be_id));
+        }
+
+        let text = ws.work.current_edition().to_text();
+        let chars: Vec<char> = text.chars().collect();
+        let start = start.min(chars.len());
+        let end = end.min(chars.len());
+        if start >= end {
+            return Ok(serde_json::json!({
+                "work_id": format!("{:04x}", work_be_id),
+                "text": "",
+                "range": [start, end],
+            }));
+        }
+
+        let range_text: String = chars[start..end].iter().collect();
+        let content_hash = {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(range_text.as_bytes());
+            hasher.finalize().to_hex().to_string()
+        };
+
+        Ok(serde_json::json!({
+            "work_id": format!("{:04x}", work_be_id),
+            "title": ws.title(),
+            "text": range_text,
+            "range": [start, end],
+            "content_hash_blake3": content_hash,
+            "server_namespace_id": self.server_namespace_id(),
+        }))
+    }
+
     #[cfg(feature = "server")]
     pub fn is_work_dirty(&self, work_id: BeId) -> Option<bool> {
         self.works.get(&work_id).map(|ws| ws.chunk_ref.is_none())
@@ -6331,6 +6600,8 @@ impl Server {
             };
         self.wal = crate::persist::wal::WalLog::open(data_dir)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+        let _ = self.server_directory_load();
 
         let wal_path = data_dir.join("wal.log");
         if wal_path.exists() {
@@ -13474,6 +13745,10 @@ pub(crate) mod persist_snapshot {
                 wal: crate::persist::wal::WalLog::disabled(),
                 restore_errors: Vec::new(),
                 trusted_server_registry: None,
+                server_name: "Xudanu Server".to_string(),
+                server_description: String::new(),
+                server_namespace_id: 0,
+                server_directory: crate::server::server_directory::ServerDirectory::new(),
             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap

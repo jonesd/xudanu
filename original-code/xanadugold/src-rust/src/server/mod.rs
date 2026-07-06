@@ -25,6 +25,7 @@ pub mod otree_crdt;
 pub mod ollama;
 #[cfg(feature = "server")]
 pub mod server;
+pub mod server_directory;
 #[cfg(feature = "server")]
 pub mod session;
 #[cfg(feature = "server")]
