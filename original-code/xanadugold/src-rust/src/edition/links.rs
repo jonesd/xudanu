@@ -319,6 +319,7 @@ pub struct CrossServerRef {
     pub origin_author_key: [u8; 32],
     pub origin_server_sig: Vec<u8>,
     pub fetched_at: u64,
+    pub excerpt: String,
 }
 
 impl CrossServerRef {
@@ -344,6 +345,7 @@ impl CrossServerRef {
             origin_author_key,
             origin_server_sig: Vec::new(),
             fetched_at: 0,
+            excerpt: String::new(),
         }
     }
 
@@ -365,6 +367,19 @@ impl CrossServerRef {
     pub fn with_fetched_at(mut self, ts: u64) -> Self {
         self.fetched_at = ts;
         self
+    }
+
+    pub fn with_excerpt(mut self, excerpt: impl Into<String>) -> Self {
+        self.excerpt = excerpt.into();
+        self
+    }
+
+    pub fn excerpt(&self) -> &str {
+        &self.excerpt
+    }
+
+    pub fn has_excerpt(&self) -> bool {
+        !self.excerpt.is_empty()
     }
 
     pub fn tumbler(&self) -> &str {
