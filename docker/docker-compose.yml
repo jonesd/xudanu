@@ -1,0 +1,97 @@
+# docker-compose.yml — 3-node Xudanu FR-6 test network
+#
+# Each node is an independent server. They discover each other via the
+# well-known endpoint and resolve cross-server references via the public API.
+#
+# Usage:
+#   docker compose up --build
+#
+# Then from any node (or your host):
+#   curl http://localhost:8081/.well-known/xudanu-server.json
+#   curl http://localhost:8082/.well-known/xudanu-server.json
+#   curl http://localhost:8083/.well-known/xudanu-server.json
+
+services:
+  node1:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+    volumes:
+      - node1-data:/data
+    command:
+      - "run"
+      - "0.0.0.0:8080"
+      - "/data"
+      - "--static-dir"
+      - "/app/dist"
+      - "--server-name"
+      - "Node 1 (Alice)"
+      - "--server-description"
+      - "First test node"
+      - "--server-namespace-id"
+      - "1"
+    networks:
+      xudanu-net:
+        aliases:
+          - node1
+
+  node2:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8080"
+    volumes:
+      - node2-data:/data
+    command:
+      - "run"
+      - "0.0.0.0:8080"
+      - "/data"
+      - "--static-dir"
+      - "/app/dist"
+      - "--server-name"
+      - "Node 2 (Bob)"
+      - "--server-description"
+      - "Second test node"
+      - "--server-namespace-id"
+      - "2"
+    networks:
+      xudanu-net:
+        aliases:
+          - node2
+
+  node3:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8080"
+    volumes:
+      - node3-data:/data
+    command:
+      - "run"
+      - "0.0.0.0:8080"
+      - "/data"
+      - "--static-dir"
+      - "/app/dist"
+      - "--server-name"
+      - "Node 3 (Carol)"
+      - "--server-description"
+      - "Third test node"
+      - "--server-namespace-id"
+      - "3"
+    networks:
+      xudanu-net:
+        aliases:
+          - node3
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
+
+networks:
+  xudanu-net:
+    driver: bridge
