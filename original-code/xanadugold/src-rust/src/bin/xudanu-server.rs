@@ -419,6 +419,12 @@ async fn main() {
                 std::env::var("XUDANU_GOOGLE_CLIENT_SECRET").ok();
             let mut oauth_redirect_base: Option<String> =
                 std::env::var("XUDANU_OAUTH_REDIRECT_BASE").ok();
+            let mut server_name: Option<String> = std::env::var("XUDANU_SERVER_NAME").ok();
+            let mut server_description: Option<String> =
+                std::env::var("XUDANU_SERVER_DESCRIPTION").ok();
+            let mut server_namespace_id: Option<u64> = std::env::var("XUDANU_SERVER_NAMESPACE_ID")
+                .ok()
+                .and_then(|s| s.parse().ok());
             let mut i = 2;
             while i < args.len() {
                 match args[i].as_str() {
@@ -539,6 +545,25 @@ async fn main() {
                                 std::process::exit(1);
                             }));
                     }
+                    "--server-name" => {
+                        i += 1;
+                        server_name = Some(args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
+                            eprintln!("Error: --server-name requires a value");
+                            std::process::exit(1);
+                        }));
+                    }
+                    "--server-description" => {
+                        i += 1;
+                        server_description =
+                            Some(args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
+                                eprintln!("Error: --server-description requires a value");
+                                std::process::exit(1);
+                            }));
+                    }
+                    "--server-namespace-id" => {
+                        i += 1;
+                        server_namespace_id = args.get(i).and_then(|s| s.parse::<u64>().ok());
+                    }
                     s if s.contains(':') => {
                         addr = s.to_string();
                     }
@@ -607,6 +632,23 @@ async fn main() {
             } else {
                 Server::new()
             };
+
+            if let Some(ref name) = server_name {
+                server.set_server_name(name.clone());
+                tracing::info!("Server name: {}", name);
+            }
+            if let Some(ref desc) = server_description {
+                server.set_server_description(desc.clone());
+            }
+            if let Some(id) = server_namespace_id {
+                server.set_server_namespace_id(id);
+                tracing::info!("Server namespace ID: {} (operator-set)", id);
+            } else {
+                tracing::info!(
+                    "Server namespace ID: {} (derived from verifying key)",
+                    server.server_namespace_id()
+                );
+            }
 
             if !federation_peers.is_empty() {
                 let peers: Vec<xudanu::server::federation::PeerAddress> = federation_peers

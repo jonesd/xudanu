@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Xanadu Network &amp; the Docuverse &mdash; Xudanu Developer Guide</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+.safe{background:rgba(63,185,80,0.06);border-left:3px solid #3fb950;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.safe strong{color:#3fb950}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-cyan{color:#39d2c0}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0;font-size:12px;color:#8b949e}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>The Xanadu Network &amp; the Docuverse</h1>
+<p class="subtitle">How independent Xudanu servers form a connected literature &mdash; the tumbler address space, content sharing, transclusion across boundaries, server operator responsibilities, and inherent risks.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. The Vision: A Connected Literature</a>
+  <a class="toc-section" href="#s2">2. Do All Nodes Run the Same Code?</a>
+  <a class="toc-section" href="#s3">3. The Tumbler Address Space</a>
+  <a class="toc-section" href="#s4">4. How Content Is Shared</a>
+  <a class="toc-section" href="#s5">5. The Three Layers of Reference</a>
+  <a class="toc-section" href="#s6">6. Server Operator Responsibilities</a>
+  <a class="toc-section" href="#s7">7. What Each Server Stores</a>
+  <a class="toc-section" href="#s8">8. Cryptographic Guarantees</a>
+  <a class="toc-section" href="#s9">9. Risks and Mitigations</a>
+  <a class="toc-section" href="#s10">10. Comparison: Linked Servers vs Cluster vs The Web</a>
+  <a class="toc-section" href="#s11">11. Scaling to Hundreds of Servers</a>
+  <a class="toc-section" href="#s12">12. The Docuverse in Practice</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. The Vision: A Connected Literature</h2>
+
+<p>
+Ted Nelson's original Xanadu vision, conceived in 1960, was of a <strong>docuverse</strong> &mdash;
+a universe of documents where every quotation maintains its bond to the original,
+every reference is permanent, and every reuse carries its full provenance. This is
+not the web, where links break and copies diverge. In the docuverse, connections
+are unbreakable and attribution is cryptographic.
+</p>
+
+<p>
+Xudanu implements this vision as a network of <strong>independent servers</strong>,
+each owning its own content, each signing its own provenance, connected by
+<strong>tumbler addresses</strong> &mdash; a global hierarchical addressing scheme
+that lets any server reference any other server's content without replicating it.
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 400" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrN" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#8b949e"/></marker>
+    <marker id="arrG" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#58a6ff"/></marker>
+    <marker id="arrP" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#a371f7"/></marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="430" y="20" text-anchor="middle" fill="#e6edf3" font-size="14" font-weight="700">The Docuverse</text>
+
+  <!-- Server 1 -->
+  <rect x="40" y="50" width="180" height="120" rx="10" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="2"/>
+  <text x="130" y="72" text-anchor="middle" fill="#3fb950" font-size="13" font-weight="700">Server 1</text>
+  <text x="130" y="88" text-anchor="middle" fill="#8b949e" font-size="10">alice.example.com</text>
+  <text x="55" y="108" fill="#c9d1d9" font-size="10">Owns: works 1-3</text>
+  <text x="55" y="122" fill="#c9d1d9" font-size="10">Tumblers: 1.*</text>
+  <text x="55" y="138" fill="#c9d1d9" font-size="10">12 cross-server refs</text>
+  <text x="55" y="154" fill="#8b949e" font-size="9">~50 KB external content</text>
+
+  <!-- Server 2 -->
+  <rect x="340" y="50" width="180" height="120" rx="10" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="430" y="72" text-anchor="middle" fill="#58a6ff" font-size="13" font-weight="700">Server 2</text>
+  <text x="430" y="88" text-anchor="middle" fill="#8b949e" font-size="10">bob.example.com</text>
+  <text x="355" y="108" fill="#c9d1d9" font-size="10">Owns: works 5-8</text>
+  <text x="355" y="122" fill="#c9d1d9" font-size="10">Tumblers: 2.*</text>
+  <text x="355" y="138" fill="#c9d1d9" font-size="10">3 cross-server refs</text>
+  <text x="355" y="154" fill="#8b949e" font-size="9">~8 KB external content</text>
+
+  <!-- Server 3 -->
+  <rect x="640" y="50" width="180" height="120" rx="10" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="2"/>
+  <text x="730" y="72" text-anchor="middle" fill="#a371f7" font-size="13" font-weight="700">Server 3</text>
+  <text x="730" y="88" text-anchor="middle" fill="#8b949e" font-size="10">carol.example.com</text>
+  <text x="655" y="108" fill="#c9d1d9" font-size="10">Owns: works 10-15</text>
+  <text x="655" y="122" fill="#c9d1d9" font-size="10">Tumblers: 3.*</text>
+  <text x="655" y="138" fill="#c9d1d9" font-size="10">0 cross-server refs</text>
+  <text x="655" y="154" fill="#8b949e" font-size="9">0 KB external content</text>
+
+  <!-- Reference arrows -->
+  <path d="M 220 110 Q 280 90 340 110" fill="none" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrG)"/>
+  <text x="280" y="85" text-anchor="middle" fill="#3fb950" font-size="9">tumbler 2.5</text>
+
+  <path d="M 520 130 Q 580 150 640 130" fill="none" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrB)"/>
+  <text x="580" y="155" text-anchor="middle" fill="#58a6ff" font-size="9">tumbler 3.12</text>
+
+  <path d="M 220 160 Q 430 200 640 160" fill="none" stroke="#a371f7" stroke-width="1" stroke-dasharray="3 4" opacity="0.4" marker-end="url(#arrP)"/>
+  <text x="430" y="215" text-anchor="middle" fill="#a371f7" font-size="9" opacity="0.5">tumbler 3.10 (indirect)</text>
+
+  <!-- Bottom layer -->
+  <text x="430" y="260" text-anchor="middle" fill="#484f58" font-size="11" font-weight="600" letter-spacing="1">EACH SERVER IS SOVEREIGN</text>
+  <text x="430" y="280" text-anchor="middle" fill="#8b949e" font-size="11">Owns its content &middot; Signs its provenance &middot; Controls its access</text>
+  <text x="430" y="298" text-anchor="middle" fill="#8b949e" font-size="11">References others via tumbler addresses &middot; Caches only what it needs</text>
+
+  <!-- Key properties -->
+  <rect x="80" y="320" width="700" height="60" rx="8" fill="#161b22" stroke="#30363d"/>
+  <text x="430" y="342" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">No central authority &middot; No consensus protocol &middot; No shared database</text>
+  <text x="430" y="360" text-anchor="middle" fill="#8b949e" font-size="11">Joining = start server + publish identity &middot; Leaving = go offline (cached refs survive)</text>
+</svg>
+</div>
+<p class="diagram-caption">The docuverse: independent servers connected by tumbler references. Each server stores only its own content plus small cached excerpts of what it references.</p>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Do All Nodes Run the Same Code?</h2>
+
+<p>
+<strong>Yes.</strong> Every Xudanu server runs the same Rust binary (<code>xudanu-server</code>).
+There is no "master" or "worker" role. There is no "coordinator" or "follower." Every
+server is an equal peer.
+</p>
+
+<p>
+However, each server operator configures their instance independently:
+</p>
+
+<table>
+<tr><th>Configuration</th><th>Who decides</th><th>Example</th></tr>
+<tr><td>Server ID (tumbler namespace)</td><td>Operator</td><td>Server 1, Server 2, Server 42</td></tr>
+<tr><td>Display name &amp; description</td><td>Operator</td><td>"Alice's Literature Server"</td></tr>
+<tr><td>Ed25519 signing key</td><td>Generated at init</td><td>Unique per server, used for provenance</td></tr>
+<tr><td>Which servers to trust</td><td>Operator</td><td>Per-server toggle in server directory</td></tr>
+<tr><td>Storage limits</td><td>Operator</td><td>Max blob size, cache policy, quotas</td></tr>
+<tr><td>Access policies</td><td>Operator</td><td>Who can create accounts, edit content</td></tr>
+</table>
+
+<div class="note">
+<strong>The code is the same; the policy is local.</strong> One operator might run a
+$5/month VPS for personal use. Another might run a dedicated server for a university.
+Both run the same binary, but each has its own data, users, and trust decisions.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. The Tumbler Address Space</h2>
+
+<p>
+Every piece of content in the docuverse has a globally unique address called a
+<strong>tumbler</strong>. The tumbler is hierarchical:
+</p>
+
+<pre>server . work . edition . position . element
+   2   .   5  .    3    .    10    .    7</pre>
+
+<table>
+<tr><th>Level</th><th>Meaning</th><th>Example</th><th>Who assigns</th></tr>
+<tr><td><code class="accent-green">server</code></td><td>Which server hosts the content</td><td>2 = bob.example.com</td><td>Self-assigned or derived from verifying key</td></tr>
+<tr><td><code class="accent-blue">work</code></td><td>Which document on that server</td><td>5 = "Moby Dick Analysis"</td><td>The host server (local BeId)</td></tr>
+<tr><td><code class="accent-purple">edition</code></td><td>Which revision of the work</td><td>3 = third revision</td><td>The host server</td></tr>
+<tr><td><code class="accent-amber">position</code></td><td>Character position within the edition</td><td>10 = starting at char 10</td><td>The O-tree CRDT</td></tr>
+<tr><td><code class="accent-cyan">element</code></td><td>Element within a position</td><td>7 = 7th element</td><td>The O-tree CRDT</td></tr>
+</table>
+
+<div class="diagram-container">
+<svg viewBox="0 0 700 280" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Root -->
+  <rect x="280" y="10" width="140" height="36" rx="8" fill="rgba(63,185,80,0.10)" stroke="#3fb950" stroke-width="2"/>
+  <text x="350" y="33" text-anchor="middle" fill="#3fb950" font-size="13" font-weight="700">Docuverse</text>
+
+  <!-- Server level -->
+  <line x1="350" y1="46" x2="150" y2="70" stroke="#30363d" stroke-width="1"/>
+  <line x1="350" y1="46" x2="350" y2="70" stroke="#30363d" stroke-width="1"/>
+  <line x1="350" y1="46" x2="550" y2="70" stroke="#30363d" stroke-width="1"/>
+
+  <rect x="80" y="70" width="140" height="36" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="150" y="93" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">Server 1.*</text>
+
+  <rect x="280" y="70" width="140" height="36" rx="8" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="350" y="93" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="600">Server 2.*</text>
+
+  <rect x="480" y="70" width="140" height="36" rx="8" fill="rgba(163,113,247,0.08)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="550" y="93" text-anchor="middle" fill="#a371f7" font-size="12" font-weight="600">Server 3.*</text>
+
+  <!-- Work level -->
+  <line x1="150" y1="106" x2="100" y2="130" stroke="#30363d" stroke-width="1"/>
+  <line x1="150" y1="106" x2="200" y2="130" stroke="#30363d" stroke-width="1"/>
+  <line x1="350" y1="106" x2="350" y2="130" stroke="#30363d" stroke-width="1"/>
+
+  <rect x="50" y="130" width="100" height="30" rx="6" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1"/>
+  <text x="100" y="150" text-anchor="middle" fill="#3fb950" font-size="11">Work 1.1</text>
+
+  <rect x="160" y="130" width="100" height="30" rx="6" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1"/>
+  <text x="210" y="150" text-anchor="middle" fill="#3fb950" font-size="11">Work 1.3</text>
+
+  <rect x="300" y="130" width="100" height="30" rx="6" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1"/>
+  <text x="350" y="150" text-anchor="middle" fill="#58a6ff" font-size="11">Work 2.5</text>
+
+  <!-- Edition/Position level -->
+  <line x1="350" y1="160" x2="350" y2="185" stroke="#30363d" stroke-width="1"/>
+  <rect x="290" y="185" width="120" height="28" rx="6" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1"/>
+  <text x="350" y="204" text-anchor="middle" fill="#a371f7" font-size="11">Edition 2.5.3</text>
+
+  <line x1="350" y1="213" x2="350" y2="235" stroke="#30363d" stroke-width="1"/>
+  <rect x="280" y="235" width="140" height="28" rx="6" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1"/>
+  <text x="350" y="254" text-anchor="middle" fill="#d29922" font-size="11">Position 2.5.3.10</text>
+
+  <!-- Annotation -->
+  <text x="570" y="150" fill="#8b949e" font-size="10">Full tumbler:</text>
+  <text x="570" y="165" fill="#e6edf3" font-size="11" font-family="JetBrains Mono">2.5.3.10.7</text>
+  <text x="570" y="180" fill="#8b949e" font-size="9">= server 2, work 5,</text>
+  <text x="570" y="192" fill="#8b949e" font-size="9">  edition 3, pos 10,</text>
+  <text x="570" y="204" fill="#8b949e" font-size="9">  element 7</text>
+</svg>
+</div>
+<p class="diagram-caption">The tumbler namespace. Each level is owned by the level above. Server 2 owns all 2.* addresses. Work 5 owns all 2.5.* addresses.</p>
+
+<div class="gold">
+<strong>Gold heritage:</strong> Tumblers were one of the most important innovations
+in Udanax-Gold. They give every transcluded or linked passage a permanent, globally
+unique, hierarchically-delegated address. When server 2 creates a work, it assigns
+a local number. The full tumbler <code>2.5.3.2.7</code> is unique across the entire
+docuverse because no other server uses server-id 2.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. How Content Is Shared</h2>
+
+<p>
+Content is <strong>never replicated</strong> across servers. Instead, servers reference
+each other's content. There are three mechanisms:
+</p>
+
+<h3>4.1 Transclusion (read-only reference)</h3>
+
+<p>
+When Alice on Server 1 wants to quote a passage from Bob's work on Server 2:
+</p>
+
+<ol>
+  <li>Alice's client fetches the passage from Server 2's public API</li>
+  <li>Client computes the BLAKE3 hash of the passage</li>
+  <li>Client stores a <strong>reference manifest</strong> on Server 1:
+    <ul>
+      <li>Tumbler address (<code>2.5.3.10.7</code>)</li>
+      <li>BLAKE3 content hash</li>
+      <li>The excerpt text (permanent cache)</li>
+      <li>Author and server identity</li>
+    </ul>
+  </li>
+  <li>Server 1 signs the reference with its own key</li>
+</ol>
+
+<p>
+Server 1 stores a few hundred bytes of metadata + the excerpt text. It does
+<strong>not</strong> store Bob's entire library.
+</p>
+
+<h3>4.2 Content caching (BLAKE3-addressed)</h3>
+
+<p>
+When Alice's document is opened and the transclusion needs to render, the
+resolution order is:
+</p>
+
+<ol>
+  <li><strong>Check blob store cache</strong> &mdash; keyed by BLAKE3 hash. If cached, render immediately.</li>
+  <li><strong>Fetch from origin server</strong> &mdash; hit the public API on Server 2, verify BLAKE3 hash, cache in blob store, render.</li>
+  <li><strong>Fall back to excerpt</strong> &mdash; if Server 2 is offline, render the stored excerpt text with an "offline" indicator.</li>
+</ol>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <defs>
+    <marker id="arrN6" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#8b949e"/></marker>
+    <marker id="arrG6" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#3fb950"/></marker>
+    <marker id="arrA6" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#d29922"/></marker>
+    <marker id="arrR6" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#f85149"/></marker>
+  </defs>
+
+  <!-- Step 1: Cache check -->
+  <rect x="40" y="20" width="220" height="60" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="150" y="42" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">1. Check blob store cache</text>
+  <text x="150" y="60" text-anchor="middle" fill="#8b949e" font-size="10">Keyed by BLAKE3 hash</text>
+  <text x="150" y="74" text-anchor="middle" fill="#8b949e" font-size="10">O(1) lookup</text>
+
+  <text x="280" y="55" fill="#3fb950" font-size="14" font-weight="600">hit?</text>
+  <line x1="310" y1="50" x2="360" y2="50" stroke="#3fb950" stroke-width="2" marker-end="url(#arrG6)"/>
+  <text x="400" y="45" text-anchor="middle" fill="#3fb950" font-size="11">YES</text>
+  <rect x="370" y="30" width="120" height="36" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950"/>
+  <text x="430" y="52" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">Render from cache</text>
+
+  <!-- Step 2: Fetch -->
+  <line x1="280" y1="80" x2="280" y2="120" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arrN6)"/>
+  <text x="300" y="105" fill="#d29922" font-size="14" font-weight="600">miss</text>
+
+  <rect x="40" y="120" width="220" height="60" rx="8" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="150" y="142" text-anchor="middle" fill="#d29922" font-size="12" font-weight="600">2. Fetch from origin server</text>
+  <text x="150" y="160" text-anchor="middle" fill="#8b949e" font-size="10">GET /api/public/work/{id}</text>
+  <text x="150" y="174" text-anchor="middle" fill="#8b949e" font-size="10">Verify BLAKE3 hash</text>
+
+  <text x="280" y="155" fill="#d29922" font-size="14" font-weight="600">ok?</text>
+  <line x1="310" y1="150" x2="360" y2="150" stroke="#d29922" stroke-width="2" marker-end="url(#arrA6)"/>
+  <text x="400" y="145" text-anchor="middle" fill="#d29922" font-size="11">YES</text>
+  <rect x="370" y="130" width="120" height="36" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950"/>
+  <text x="430" y="152" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">Cache + render</text>
+
+  <!-- Step 3: Fallback -->
+  <line x1="280" y1="180" x2="280" y2="220" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arrN6)"/>
+  <text x="300" y="205" fill="#f85149" font-size="14" font-weight="600">fail</text>
+
+  <rect x="40" y="220" width="220" height="60" rx="8" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="1.5"/>
+  <text x="150" y="242" text-anchor="middle" fill="#f85149" font-size="12" font-weight="600">3. Fall back to excerpt</text>
+  <text x="150" y="260" text-anchor="middle" fill="#8b949e" font-size="10">Stored in link metadata</text>
+  <text x="150" y="274" text-anchor="middle" fill="#8b949e" font-size="10">Show "offline" indicator</text>
+
+  <text x="280" y="255" fill="#f85149" font-size="14" font-weight="600">&rarr;</text>
+  <line x1="310" y1="250" x2="360" y2="250" stroke="#f85149" stroke-width="2" marker-end="url(#arrR6)"/>
+  <rect x="370" y="230" width="120" height="36" rx="8" fill="rgba(248,81,73,0.06)" stroke="#f85149"/>
+  <text x="430" y="252" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">Render excerpt</text>
+
+  <!-- Status indicators -->
+  <rect x="530" y="30" width="200" height="200" rx="8" fill="#161b22" stroke="#30363d"/>
+  <text x="630" y="52" text-anchor="middle" fill="#e6edf3" font-size="12" font-weight="600">Visual Status</text>
+  <circle cx="550" cy="74" r="5" fill="#3fb950"/>
+  <text x="565" y="78" fill="#3fb950" font-size="11">Live (fresh from origin)</text>
+  <circle cx="550" cy="100" r="5" fill="#3fb950" fill-opacity="0.5"/>
+  <text x="565" y="104" fill="#3fb950" font-size="11" fill-opacity="0.7">Cached (hash verified)</text>
+  <circle cx="550" cy="126" r="5" fill="#d29922"/>
+  <text x="565" y="130" fill="#d29922" font-size="11">Offline (using excerpt)</text>
+  <circle cx="550" cy="152" r="5" fill="#f85149"/>
+  <text x="565" y="156" fill="#f85149" font-size="11">Error (no data available)</text>
+  <text x="630" y="190" text-anchor="middle" fill="#8b949e" font-size="9">Excerpt is permanent proof</text>
+  <text x="630" y="204" text-anchor="middle" fill="#8b949e" font-size="9">that content existed</text>
+</svg>
+</div>
+<p class="diagram-caption">Three-tier resolution: cache &rarr; fetch &rarr; excerpt fallback. Content is always available at some level.</p>
+
+<h3>4.3 Binary content (images, datasets, videos)</h3>
+
+<p>
+Binary content uses the same tumbler + hash reference model, but with caching
+policies:
+</p>
+
+<table>
+<tr><th>Content type</th><th>Default policy</th><th>Storage cost on referencing server</th></tr>
+<tr><td>Text excerpt</td><td>Always cached (permanent)</td><td>~100 bytes - 2 KB</td></tr>
+<tr><td>Small image (&lt; 1 MB)</td><td>Cache on demand</td><td>~1 MB (if rendered)</td></tr>
+<tr><td>Large image / PDF (&gt; 10 MB)</td><td>Reference only</td><td>~200 bytes (metadata)</td></tr>
+<tr><td>Video</td><td>Reference only (never cached)</td><td>~200 bytes (metadata)</td></tr>
+<tr><td>Dataset (CSV/JSON)</td><td>Cache on demand</td><td>Varies</td></tr>
+</table>
+
+<div class="note">
+<strong>Operator controls the policy.</strong> Each server can configure maximum blob
+sizes, allowed MIME types, and cross-server caching rules through a configuration
+panel at startup or via the settings UI.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. The Three Layers of Reference</h2>
+
+<p>
+When Alice on Server 1 quotes Bob's content on Server 2, three independent layers
+of verification apply:
+</p>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 280" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Layer 1: Address -->
+  <rect x="20" y="20" width="740" height="60" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="40" y="42" fill="#3fb950" font-size="12" font-weight="700">LAYER 1: Tumbler Address</text>
+  <text x="40" y="60" fill="#8b949e" font-size="11">2.5.3.10.7 &mdash; tells you WHERE the content lives (Server 2, Work 5, Edition 3, Position 10)</text>
+  <text x="500" y="50" fill="#3fb950" font-size="10" font-style="italic">Hierarchical &middot; globally unique &middot; permanent</text>
+
+  <!-- Layer 2: Content hash -->
+  <rect x="20" y="100" width="740" height="60" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="40" y="122" fill="#58a6ff" font-size="12" font-weight="700">LAYER 2: BLAKE3 Content Hash</text>
+  <text x="40" y="140" fill="#8b949e" font-size="11">a3b1c2d4... &mdash; tells you WHAT the content is (fingerprint of the exact bytes)</text>
+  <text x="500" y="130" fill="#58a6ff" font-size="10" font-style="italic">Tamper-proof &middot; deterministic &middot; content-addressed</text>
+
+  <!-- Layer 3: Signature -->
+  <rect x="20" y="180" width="740" height="60" rx="8" fill="rgba(163,113,247,0.06)" stroke="#a371f7" stroke-width="1.5"/>
+  <text x="40" y="202" fill="#a371f7" font-size="12" font-weight="700">LAYER 3: Ed25519 Signature</text>
+  <text x="40" y="220" fill="#8b949e" font-size="11">Server 2's signature over (hash + timestamp + server_id) &mdash; tells you WHO vouches for it</text>
+  <text x="500" y="210" fill="#a371f7" font-size="10" font-style="italic">Cryptographic &middot; independently verifiable &middot; per-server</text>
+</svg>
+</div>
+<p class="diagram-caption">Three independent layers of verification. Removing or changing any one layer is detectable.</p>
+
+<p>
+These three layers compose to provide end-to-end provenance:
+</p>
+
+<ul>
+  <li><strong>Where</strong> &mdash; tumbler address resolves to a specific server</li>
+  <li><strong>What</strong> &mdash; BLAKE3 hash verifies the content hasn't changed</li>
+  <li><strong>Who</strong> &mdash; Ed25519 signature proves which server vouches for it</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Server Operator Responsibilities</h2>
+
+<p>
+Running a Xudanu server is like running a website &mdash; you are responsible for
+your own content, your own users, and your own uptime. But unlike a website, your
+content can be referenced by other servers even when you're offline.
+</p>
+
+<table>
+<tr><th>Responsibility</th><th>What it means</th><th>What happens if you don't</th></tr>
+<tr><td><strong>Keep the server running</strong></td><td>Server must be reachable for live content fetches</td><td>References fall back to cached excerpts (still readable)</td></tr>
+<tr><td><strong>Maintain the signing key</strong></td><td>The Ed25519 key is your server's identity</td><td>If lost, old signatures still verify; new content can't be signed with the same identity</td></tr>
+<tr><td><strong>Manage user accounts</strong></td><td>Clubs (users), credentials, passwords</td><td>Unauthorized access; no accountability for edits</td></tr>
+<tr><td><strong>Configure access policies</strong></td><td>read_club, edit_club per work</td><td>Private content might be accidentally published</td></tr>
+<tr><td><strong>Monitor storage</strong></td><td>Disk space for works, blobs, and cache</td><td>Server may fail to checkpoint or accept new content</td></tr>
+<tr><td><strong>Curate server directory</strong></td><td>Decide which other servers to trust</td><td>Untrusted content displays with warnings</td></tr>
+<tr><td><strong>Keep backups</strong></td><td>The data directory contains everything</td><td>Data loss; cached excerpts on other servers are not full backups</td></tr>
+</table>
+
+<h3>Minimum viable server</h3>
+
+<pre># Start a personal server for $5/month
+xudanu-server run 0.0.0.0:8080 /data --server-name "My Server"
+
+# That's it. Other servers can now reference your public content.
+# You can also reference theirs by adding them to your directory.</pre>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. What Each Server Stores</h2>
+
+<p>
+A server's storage is proportional to <strong>its own users' activity</strong>, not
+to the total size of the network:
+</p>
+
+<table>
+<tr><th>Content type</th><th>How much</th><th>Why</th></tr>
+<tr><td>Own works (documents)</td><td>Everything your users create</td><td>You own and host them</td></tr>
+<tr><td>Excerpts from other servers</td><td>Only specific passages your users transcluded</td><td>Permanent cache in link metadata</td></tr>
+<tr><td>Cached full content</td><td>Only content actually fetched and rendered</td><td>Blob store, garbage-collectible</td></tr>
+<tr><td>Server directory</td><td>Servers you know about (~200 bytes each)</td><td>Local lookup table</td></tr>
+<tr><td>Attribution log</td><td>One entry per revision (~300 bytes each)</td><td>Tamper-evident audit trail</td></tr>
+</table>
+
+<div class="diagram-container">
+<svg viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <text x="390" y="20" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">Storage Comparison</text>
+
+  <!-- Server 1 -->
+  <rect x="40" y="40" width="700" height="36" rx="4" fill="rgba(63,185,80,0.06)" stroke="#3fb950"/>
+  <rect x="44" y="44" width="200" height="28" rx="3" fill="rgba(63,185,80,0.20)"/>
+  <text x="144" y="63" text-anchor="middle" fill="#3fb950" font-size="10">Own content (500 MB)</text>
+  <rect x="248" y="44" width="30" height="28" rx="3" fill="rgba(210,153,34,0.20)"/>
+  <text x="263" y="63" text-anchor="middle" fill="#d29922" font-size="8">cache</text>
+  <rect x="282" y="44" width="15" height="28" rx="3" fill="rgba(88,166,255,0.20)"/>
+  <text x="289" y="63" text-anchor="middle" fill="#58a6ff" font-size="7">dir</text>
+  <text x="400" y="63" fill="#8b949e" font-size="10">Server 1 total: ~520 MB (for 500 works + 12 refs)</text>
+
+  <!-- Server 2 -->
+  <rect x="40" y="90" width="700" height="36" rx="4" fill="rgba(88,166,255,0.06)" stroke="#58a6ff"/>
+  <rect x="44" y="94" width="350" height="28" rx="3" fill="rgba(88,166,255,0.20)"/>
+  <text x="219" y="113" text-anchor="middle" fill="#58a6ff" font-size="10">Own content (900 MB)</text>
+  <rect x="398" y="94" width="8" height="28" rx="3" fill="rgba(210,153,34,0.20)"/>
+  <rect x="410" y="94" width="10" height="28" rx="3" fill="rgba(88,166,255,0.20)"/>
+  <text x="500" y="113" fill="#8b949e" font-size="10">Server 2 total: ~910 MB (for 800 works + 3 refs)</text>
+
+  <!-- Cluster model comparison -->
+  <rect x="40" y="140" width="700" height="36" rx="4" fill="rgba(248,81,73,0.04)" stroke="#f85149" stroke-dasharray="5 3"/>
+  <rect x="44" y="144" width="690" height="28" rx="3" fill="rgba(248,81,73,0.10)"/>
+  <text x="390" y="163" text-anchor="middle" fill="#f85149" font-size="10">FR-3 Cluster model: each server stores EVERYTHING (~1.4 GB on every server)</text>
+</svg>
+</div>
+<p class="diagram-caption">Storage is proportional to your own activity, not the network size. The cluster model (bottom) replicates everything everywhere.</p>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Cryptographic Guarantees</h2>
+
+<p>
+Every reference in the docuverse carries three cryptographic properties:
+</p>
+
+<h3>Content integrity (BLAKE3)</h3>
+<p>
+Every piece of content is fingerprinted with BLAKE3. If anyone modifies a single
+byte, the hash changes completely. This means:
+</p>
+<ul>
+  <li>Cached content can be verified against its hash</li>
+  <li>Fetched content is rejected if the hash doesn't match</li>
+  <li>The same content always produces the same hash (deterministic)</li>
+</ul>
+
+<h3>Author attribution (Ed25519)</h3>
+<p>
+Every span of text is signed with the author's Ed25519 key. The signature covers
+the content hash + timestamp + server identity. This means:
+</p>
+<ul>
+  <li>Anyone can verify who wrote what without trusting the server</li>
+  <li>Signatures are 64 bytes &mdash; compact and fast to verify</li>
+  <li>The signing key is encrypted at rest (AES-256-GCM + Argon2id)</li>
+</ul>
+
+<h3>Tamper-evident audit trail (SHA-256 chain)</h3>
+<p>
+Every attribution event is appended to a chained log where each entry's hash
+incorporates the previous entry's hash. This means:
+</p>
+<ul>
+  <li>Modifying any past entry invalidates all subsequent entries</li>
+  <li>Deleting entries is detectable (chain breaks)</li>
+  <li>The log can be verified offline with <code>xudanu-cli verify-report</code></li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Risks and Mitigations</h2>
+
+<h3>What can go wrong</h3>
+
+<table>
+<tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr>
+<tr><td><strong>Server goes offline permanently</strong></td><td>Medium</td><td>Cached excerpts survive on referencing servers; full content is lost if no other server cached it</td><td>Keep backups; content-addressed chunks survive in other servers' caches</td></tr>
+<tr><td><strong>Signing key compromised</strong></td><td>Low</td><td>Attacker can sign fake content as the server</td><td>Key is encrypted at rest; operator can rotate keys; old signatures still verify with old key</td></tr>
+<tr><td><strong>Malicious server joins network</strong></td><td>Medium</td><td>Serves fake or low-quality content</td><td>BLAKE3 hash mismatch rejects modified content; Ed25519 verification rejects forged signatures; each operator curates their own trusted server list</td></tr>
+<tr><td><strong>Man-in-the-middle attack</strong></td><td>Low</td><td>Attacker intercepts content fetch</td><td>TLS (WSS) for transport; Ed25519 signatures for content; BLAKE3 for integrity</td></tr>
+<tr><td><strong>Content drift (origin server changes content)</strong></td><td>Medium</td><td>Referenced content doesn't match what was originally quoted</td><td>BLAKE3 hash in reference manifest always points to the original; cached excerpt is permanent proof</td></tr>
+<tr><td><strong>Sybil attack (many fake servers)</strong></td><td>Low</td><td>Network flooded with low-quality servers</td><td>Each operator curates their own directory; no broadcast mechanism; reputation is organic</td></tr>
+<tr><td><strong>Disk space exhaustion</strong></td><td>Medium</td><td>Server can't accept new content</td><td>Operator configures storage quotas; GC cleans unreferenced cache; blob policy limits binary caching</td></tr>
+</table>
+
+<div class="warning">
+<strong>What a hostile server CANNOT do:</strong>
+<ul>
+  <li>Read private content on other servers (only public content is fetchable)</li>
+  <li>Write to other servers (no cross-server write path exists)</li>
+  <li>Forge another server's provenance (Ed25519 keys are unique)</li>
+  <li>Corrupt the tumbler namespace (content is verified by hash, not by server ID)</li>
+  <li>Take down the network (no central point of failure)</li>
+</ul>
+</div>
+
+<div class="safe">
+<strong>What happens when a hostile server IS detected:</strong>
+<ul>
+  <li>Remove it from your server directory (one click)</li>
+  <li>Content from it shows "UNVERIFIED" warnings</li>
+  <li>Cached excerpts from it are still readable but flagged</li>
+  <li>Other servers are unaffected &mdash; each has its own trust list</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s10">10. Comparison: Linked Servers vs Cluster vs The Web</h2>
+
+<table>
+<tr><th>Aspect</th><th>Xudanu Linked (FR-6)</th><th>Xudanu Cluster (FR-3)</th><th>The Web</th></tr>
+<tr><td>Servers share data?</td><td>No &mdash; references only</td><td>Yes &mdash; full replication</td><td>No &mdash; links only</td></tr>
+<tr><td>Links break?</td><td><strong class="accent-green">No</strong> &mdash; cached excerpts survive</td><td>No &mdash; all data replicated</td><td><strong class="accent-red">Yes</strong> &mdash; link rot</td></tr>
+<tr><td>Attribution?</td><td>Cryptographic (Ed25519)</td><td>Cryptographic (Ed25519)</td><td>Manual (copy-paste)</td></tr>
+<tr><td>Content verification?</td><td>BLAKE3 hash + signature</td><td>BLAKE3 hash + signature</td><td>None</td></tr>
+<tr><td>Trust model</td><td>Per-server, independent</td><td>All-or-nothing cluster</td><td>CA-based (TLS)</td></tr>
+<tr><td>Min servers needed</td><td>1</td><td>3-4 (Byzantine tolerance)</td><td>1</td></tr>
+<tr><td>Joining</td><td>Start server + publish identity</td><td>PBFT membership vote</td><td>Register domain + host</td></tr>
+<tr><td>Leaving</td><td>Go offline (cached refs survive)</td><td>Membership removal protocol</td><td>Site disappears (404)</td></tr>
+<tr><td>Cost</td><td>$5/month VPS</td><td>$30+/month (3+ servers)</td><td>$5/month hosting</td></tr>
+<tr><td>Standards compliant?</td><td>W3C PROV-JSON</td><td>W3C PROV-JSON</td><td>No</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s11">11. Scaling to Hundreds of Servers</h2>
+
+<div class="diagram-container">
+<svg viewBox="0 0 860 420" xmlns="http://www.w3.org/2000/svg" font-family="'Inter',system-ui,sans-serif">
+  <!-- Center -->
+  <text x="430" y="20" text-anchor="middle" fill="#e6edf3" font-size="13" font-weight="700">500 Servers, No Central Bottleneck</text>
+
+  <!-- Ring of servers -->
+  <g transform="translate(430, 210)">
+    <!-- Servers as circles -->
+    <g id="servers">
+      <!-- We'll draw 12 representative servers in a ring -->
+      <circle cx="0" cy="-150" r="22" fill="rgba(63,185,80,0.10)" stroke="#3fb950" stroke-width="1.5"/>
+      <text x="0" y="-146" text-anchor="middle" fill="#3fb950" font-size="9">S1</text>
+
+      <circle cx="75" cy="-130" r="22" fill="rgba(88,166,255,0.10)" stroke="#58a6ff" stroke-width="1.5"/>
+      <text x="75" y="-126" text-anchor="middle" fill="#58a6ff" font-size="9">S2</text>
+
+      <circle cx="130" cy="-75" r="22" fill="rgba(163,113,247,0.10)" stroke="#a371f7" stroke-width="1.5"/>
+      <text x="130" y="-71" text-anchor="middle" fill="#a371f7" font-size="9">S3</text>
+
+      <circle cx="150" cy="0" r="22" fill="rgba(210,153,34,0.10)" stroke="#d29922" stroke-width="1.5"/>
+      <text x="150" y="4" text-anchor="middle" fill="#d29922" font-size="9">S4</text>
+
+      <circle cx="130" cy="75" r="22" fill="rgba(63,185,80,0.10)" stroke="#3fb950" stroke-width="1.5"/>
+      <text x="130" y="79" text-anchor="middle" fill="#3fb950" font-size="9">S5</text>
+
+      <circle cx="75" cy="130" r="22" fill="rgba(88,166,255,0.10)" stroke="#58a6ff" stroke-width="1.5"/>
+      <text x="75" y="134" text-anchor="middle" fill="#58a6ff" font-size="9">S42</text>
+
+      <circle cx="0" cy="150" r="22" fill="rgba(163,113,247,0.10)" stroke="#a371f7" stroke-width="1.5"/>
+      <text x="0" y="154" text-anchor="middle" fill="#a371f7" font-size="9">S99</text>
+
+      <circle cx="-75" cy="130" r="22" fill="rgba(210,153,34,0.10)" stroke="#d29922" stroke-width="1.5"/>
+      <text x="-75" y="134" text-anchor="middle" fill="#d29922" font-size="9">S100</text>
+
+      <circle cx="-130" cy="75" r="22" fill="rgba(63,185,80,0.10)" stroke="#3fb950" stroke-width="1.5"/>
+      <text x="-130" y="79" text-anchor="middle" fill="#3fb950" font-size="9">S200</text>
+
+      <circle cx="-150" cy="0" r="22" fill="rgba(88,166,255,0.10)" stroke="#58a6ff" stroke-width="1.5"/>
+      <text x="-150" y="4" text-anchor="middle" fill="#58a6ff" font-size="9">S300</text>
+
+      <circle cx="-130" cy="-75" r="22" fill="rgba(163,113,247,0.10)" stroke="#a371f7" stroke-width="1.5"/>
+      <text x="-130" y="-71" text-anchor="middle" fill="#a371f7" font-size="9">S400</text>
+
+      <circle cx="-75" cy="-130" r="22" fill="rgba(210,153,34,0.10)" stroke="#d29922" stroke-width="1.5"/>
+      <text x="-75" y="-126" text-anchor="middle" fill="#d29922" font-size="9">S500</text>
+    </g>
+
+    <!-- Some reference lines -->
+    <line x1="0" y1="-128" x2="65" y2="-115" stroke="#3fb950" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>
+    <line x1="95" y1="-115" x2="120" y2="-85" stroke="#58a6ff" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>
+    <line x1="0" y1="128" x2="-60" y2="115" stroke="#a371f7" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>
+    <line x1="-120" y1="60" x2="-100" y2="-50" stroke="#d29922" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>
+    <line x1="120" y1="60" x2="100" y2="-50" stroke="#3fb950" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>
+
+    <!-- Center text -->
+    <text x="0" y="-5" text-anchor="middle" fill="#484f58" font-size="10" font-weight="600">No central</text>
+    <text x="0" y="8" text-anchor="middle" fill="#484f58" font-size="10" font-weight="600">authority</text>
+    <text x="0" y="25" text-anchor="middle" fill="#8b949e" font-size="9">Each server</text>
+    <text x="0" y="38" text-anchor="middle" fill="#8b949e" font-size="9">knows ~5 others</text>
+  </g>
+
+  <!-- Properties -->
+  <rect x="60" y="380" width="740" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="430" y="400" text-anchor="middle" fill="#8b949e" font-size="11">No consensus &middot; No all-to-all communication &middot; No global sync &middot; Organic growth through references</text>
+</svg>
+</div>
+<p class="diagram-caption">Each server only knows about servers it has referenced or been referred by. No server needs a global view.</p>
+
+<h3>Why this scales</h3>
+
+<ul>
+  <li><strong>No central bottleneck</strong> &mdash; there is no registry, coordinator, or consensus node</li>
+  <li><strong>No all-to-all communication</strong> &mdash; a server with 10 references only contacts those 10 origin servers</li>
+  <li><strong>Storage is local</strong> &mdash; your $5 VPS doesn't store the network's 500 GB of content</li>
+  <li><strong>Trust is local</strong> &mdash; each operator curates their own trusted server list</li>
+  <li><strong>Discovery is organic</strong> &mdash; you find new servers by following reference chains, like the web</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s12">12. The Docuverse in Practice</h2>
+
+<h3>A day in the life of a reference</h3>
+
+<ol>
+  <li><strong>Alice writes on Server 1:</strong> "As Bob argues in his analysis of Moby Dick..."</li>
+  <li><strong>She selects Bob's passage</strong> on Server 2 and creates a transclusion</li>
+  <li><strong>Server 1 stores:</strong> tumbler <code>2.5.3.10.7</code>, BLAKE3 hash, excerpt text, Bob's public key, Server 2's signature</li>
+  <li><strong>The reference is now permanent.</strong> Even if Server 2 changes the content, Alice's reference points to the original</li>
+  <li><strong>Carol on Server 3</strong> reads Alice's document. The transclusion renders from cache or fetches from Server 2.</li>
+  <li><strong>Server 2 goes offline.</strong> Carol sees the excerpt with an "offline" indicator. The text is still readable.</li>
+  <li><strong>Server 2 comes back.</strong> Next time Carol opens the document, the transclusion re-fetches and verifies.</li>
+  <li><strong>Years later,</strong> someone verifies the reference with <code>xudanu-cli verify-report</code>. The Ed25519 signature still checks out. The BLAKE3 hash still matches the excerpt. The tumbler address still resolves (or the cached excerpt is permanent proof).</li>
+</ol>
+
+<div class="gold">
+<strong>This is what Xanadu was always meant to be.</strong> Not a cluster of machines
+sharing a database, but a docuverse of independent servers connected by permanent,
+cryptographically verified, attribution-preserving references. Every quotation
+maintains its bond to the original. Every reuse carries its full provenance. Every
+connection is unbreakable.
+</div>
+
+<div class="footer">
+  Xudanu Documentation &mdash; <a href="index.html">Home</a> &mdash; <a href="editions-and-works.html">Editions &amp; Works</a> &mdash; <a href="ent-dagwood-trace-dag.html">Ent, DagWood &amp; Trace DAG</a> &mdash; <a href="space-algebra.html">The Space Algebra</a> &mdash; <a href="provenance-and-attribution.html">Provenance &amp; Attribution</a> &mdash; <a href="dev/FR-6.md">FR-6 Spec</a>
+</div>
+
+</div>
+</body>
+</html>

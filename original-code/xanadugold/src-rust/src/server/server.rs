@@ -921,7 +921,11 @@ impl Server {
     pub fn server_namespace_id(&self) -> u64 {
         if self.server_namespace_id == 0 {
             let vk = self.server_keypair.signing_verifying_key().to_bytes();
-            u32::from_be_bytes([vk[0], vk[1], vk[2], vk[3]]) as u64
+            let hash = blake3::hash(&vk);
+            let bytes = hash.as_bytes();
+            u64::from_be_bytes([
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+            ])
         } else {
             self.server_namespace_id
         }
