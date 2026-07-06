@@ -3275,6 +3275,37 @@ fn dispatch_inner(
             Ok(ResponseValue::ServerDirectorySetTrustResult { server_id, trusted })
         }
         #[cfg(feature = "serde")]
+        WireRequest::CrossServerResolve {
+            tumbler,
+            content_hash_hex,
+        } => {
+            srv.ensure_session(session_id)?;
+            let hash_bytes = match crate::crypto::keys::hex_decode(&content_hash_hex) {
+                Ok(b) if b.len() == 32 => {
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&b);
+                    arr
+                }
+                _ => {
+                    return Err(crate::server::ServerError::InvalidArgument(
+                        "invalid content_hash_hex: expected 64 hex chars".into(),
+                    ))
+                }
+            };
+            match srv.resolve_cross_server_ref(&tumbler, hash_bytes) {
+                Ok(resolution) => Ok(ResponseValue::CrossServerResolveResult {
+                    text: resolution.text().to_string(),
+                    hash_verified: true,
+                    cached: !resolution.was_fetched(),
+                    origin_server_id: resolution.origin_server_id(),
+                }),
+                Err(e) => {
+                    tracing::warn!("cross-server resolve failed: {}", e);
+                    Err(e)
+                }
+            }
+        }
+        #[cfg(feature = "serde")]
         WireRequest::FederationAttestationCreate {
             attestation_type,
             subject_server_id,

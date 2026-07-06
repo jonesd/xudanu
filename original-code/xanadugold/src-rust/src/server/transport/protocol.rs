@@ -340,6 +340,8 @@ pub enum OperationCode {
     #[cfg(feature = "serde")]
     ServerDirectorySetTrust,
     #[cfg(feature = "serde")]
+    CrossServerResolve,
+    #[cfg(feature = "serde")]
     FederationAttestationCreate,
     #[cfg(feature = "serde")]
     FederationAttestationVerify,
@@ -663,6 +665,8 @@ impl OperationCode {
             0x0F03 => Some(OperationCode::ServerDirectoryRemove),
             #[cfg(feature = "serde")]
             0x0F04 => Some(OperationCode::ServerDirectorySetTrust),
+            #[cfg(feature = "serde")]
+            0x0F05 => Some(OperationCode::CrossServerResolve),
 
             _ => None,
         }
@@ -953,6 +957,8 @@ impl OperationCode {
             OperationCode::ServerDirectoryRemove => 0x0F03,
             #[cfg(feature = "serde")]
             OperationCode::ServerDirectorySetTrust => 0x0F04,
+            #[cfg(feature = "serde")]
+            OperationCode::CrossServerResolve => 0x0F05,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -1925,6 +1931,11 @@ pub enum WireRequest {
         trusted: bool,
     },
     #[cfg(feature = "serde")]
+    CrossServerResolve {
+        tumbler: String,
+        content_hash_hex: String,
+    },
+    #[cfg(feature = "serde")]
     FederationAttestationCreate {
         attestation_type: String,
         subject_server_id: String,
@@ -2595,6 +2606,13 @@ pub enum ResponseValue {
     ServerDirectorySetTrustResult {
         server_id: u64,
         trusted: bool,
+    },
+    #[cfg(feature = "serde")]
+    CrossServerResolveResult {
+        text: String,
+        hash_verified: bool,
+        cached: bool,
+        origin_server_id: Option<u64>,
     },
     #[cfg(feature = "serde")]
     FederationAttestationCreateResult {

@@ -3226,6 +3226,20 @@ impl JsonCodec {
                     trusted: args.trusted,
                 })
             }
+            #[cfg(feature = "serde")]
+            OperationCode::CrossServerResolve => {
+                #[derive(Deserialize)]
+                struct Args {
+                    tumbler: String,
+                    content_hash_hex: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::CrossServerResolve {
+                    tumbler: args.tumbler,
+                    content_hash_hex: args.content_hash_hex,
+                })
+            }
             _ => Err(FrameParseError::MissingPayload.into()),
         }
     }
