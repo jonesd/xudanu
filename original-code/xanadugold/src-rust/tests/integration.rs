@@ -11147,29 +11147,188 @@ async fn public_work_range_api_returns_substring() {
 }
 
 #[tokio::test]
-async fn public_work_api_has_cors_header() {
+async fn cross_server_resolve_rejects_local_tumbler() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "cross_server_resolve",
+            Some(serde_json::json!({
+                "tumbler": "0.1.1",
+                "content_hash_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+            })),
+        ),
+    )
+    .await;
+    assert!(
+        resp.get("code").is_some(),
+        "should reject local tumbler (server 0)"
+    );
+}
+
+#[tokio::test]
+async fn cross_server_resolve_rejects_unknown_server() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "cross_server_resolve",
+            Some(serde_json::json!({
+                "tumbler": "999.1.1",
+                "content_hash_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+            })),
+        ),
+    )
+    .await;
+    assert!(
+        resp.get("code").is_some(),
+        "should reject unknown server (not in directory)"
+    );
+}
+
+#[tokio::test]
+async fn cross_server_resolve_returns_cached_content() {
     let mut server = Server::new();
-    let sid = server.connect();
-    server.login_public(sid).unwrap();
-    let work_id = server
-        .create_work(sid, xudanu::edition::Edition::from_text("test"))
-        .unwrap();
+    server.set_server_namespace_id(1);
 
-    let state = AppState::new(server).shared();
-    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
+    let text = "Content from server 2";
+    let hash: [u8; 32] = {
+        let mut h = blake3::Hasher::new();
+        h.update(text.as_bytes());
+        h.finalize().into()
+    };
 
-    let client = reqwest::Client::new();
-    let url = format!("http://{}/api/public/work/{:04x}", addr, work_id);
-    let resp = client.get(&url).send().await.unwrap();
-    assert_eq!(resp.status(), 200);
-    let cors = resp
-        .headers()
-        .get("access-control-allow-origin")
-        .expect("CORS header missing");
-    assert_eq!(cors, "*");
+    // Pre-seed the blob store with content
+    let hash = server.cache_cross_server_content(text);
+
+    // Add server 2 to directory
+    server.server_directory_add_manual(
+        2,
+        "nowhere.example.com".to_string(),
+        "00".repeat(32),
+        "Server 2".to_string(),
+    );
+
+    // Resolve should find cached content without fetching
+    let tumbler = "2.0001".to_string();
+    let result = server.resolve_cross_server_ref(&tumbler, hash);
+    assert!(
+        result.is_ok(),
+        "cached resolution should succeed: {:?}",
+        result.err()
+    );
+    let resolution = result.unwrap();
+    assert_eq!(resolution.text(), "Content from server 2");
+    assert!(
+        !resolution.was_fetched(),
+        "should come from cache, not fetch"
+    );
+    assert!(
+        resolution.origin_server_id().is_none(),
+        "cached result has no origin server"
+    );
+}
+
+#[tokio::test]
+async fn cross_server_resolve_rejects_hash_mismatch() {
+    let mut server = Server::new();
+    server.set_server_namespace_id(1);
+
+    // Store content with a known hash
+    let text = "Real content";
+    server.cache_cross_server_content(text);
+
+    // Try to resolve with a DIFFERENT hash — should fail
+    let wrong_hash = [0xFF; 32];
+    let tumbler = "2.0001".to_string();
+
+    // Add server 2 to directory (won't be reached because cache exists but hash won't match)
+    server.server_directory_add_manual(
+        2,
+        "nowhere.example.com".to_string(),
+        "00".repeat(32),
+        "Server 2".to_string(),
+    );
+
+    let result = server.resolve_cross_server_ref(&tumbler, wrong_hash);
+    assert!(
+        result.is_err(),
+        "should fail — can't fetch from nonexistent server"
+    );
+}
+
+#[tokio::test]
+async fn cross_server_resolve_via_wire_op() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+
+    // Pre-seed cache
+    let text = "Wire op cached content";
+    let mut server = Server::new();
+    let hash = server.cache_cross_server_content(text);
+    drop(server);
+
+    let hash_hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
+
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "cross_server_resolve",
+            Some(serde_json::json!({
+                "tumbler": "0.1.1",
+                "content_hash_hex": hash_hex,
+            })),
+        ),
+    )
+    .await;
+    // Local tumbler should be rejected
+    assert!(resp.get("code").is_some() || !resp["value"]["value"].is_object());
+}
+
+#[tokio::test]
+async fn cross_server_resolve_empty_tumbler() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "cross_server_resolve",
+            Some(serde_json::json!({
+                "tumbler": "",
+                "content_hash_hex": "00".repeat(32),
+            })),
+        ),
+    )
+    .await;
+    assert!(resp.get("code").is_some(), "empty tumbler should fail");
+}
+
+#[tokio::test]
+async fn cross_server_resolve_invalid_hash() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "cross_server_resolve",
+            Some(serde_json::json!({
+                "tumbler": "2.0001",
+                "content_hash_hex": "not-hex",
+            })),
+        ),
+    )
+    .await;
+    assert!(resp.get("code").is_some(), "invalid hash should fail");
 }

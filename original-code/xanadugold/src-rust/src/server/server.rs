@@ -8,6 +8,48 @@ use super::error::ServerError;
 use super::keymaster::KeyMaster;
 use super::session::{Session, SessionId};
 use super::wait_barrier::{ConsequenceTracker, OperationGuard, WriteBarrier, WriteGuard};
+
+#[derive(Debug, Clone)]
+pub enum CrossServerResolution {
+    Cached {
+        text: String,
+        hash: [u8; 32],
+    },
+    Fetched {
+        text: String,
+        hash: [u8; 32],
+        origin_server_id: u64,
+    },
+}
+
+impl CrossServerResolution {
+    pub fn text(&self) -> &str {
+        match self {
+            CrossServerResolution::Cached { text, .. } => text,
+            CrossServerResolution::Fetched { text, .. } => text,
+        }
+    }
+
+    pub fn hash(&self) -> &[u8; 32] {
+        match self {
+            CrossServerResolution::Cached { hash, .. } => hash,
+            CrossServerResolution::Fetched { hash, .. } => hash,
+        }
+    }
+
+    pub fn was_fetched(&self) -> bool {
+        matches!(self, CrossServerResolution::Fetched { .. })
+    }
+
+    pub fn origin_server_id(&self) -> Option<u64> {
+        match self {
+            CrossServerResolution::Cached { .. } => None,
+            CrossServerResolution::Fetched {
+                origin_server_id, ..
+            } => Some(*origin_server_id),
+        }
+    }
+}
 use crate::edition::backfollow::BackfollowEngine;
 use crate::edition::blob_store::{BlobMeta, BlobStore};
 use crate::edition::links::{HyperLink, HyperRef};
@@ -944,23 +986,11 @@ impl Server {
 
         tracing::info!("Fetching server identity from {}", url);
 
-        let response = reqwest::blocking::Client::new()
-            .get(&url)
-            .timeout(std::time::Duration::from_secs(10))
-            .send()
-            .map_err(|e| {
-                ServerError::Internal(format!("Failed to fetch server identity: {}", e))
-            })?;
+        let response_text = http_get_json(&url, 10).map_err(|e| {
+            ServerError::Internal(format!("Failed to fetch server identity: {}", e))
+        })?;
 
-        if !response.status().is_success() {
-            return Err(ServerError::Internal(format!(
-                "Server returned {}",
-                response.status()
-            )));
-        }
-
-        let identity: serde_json::Value = response
-            .json()
+        let identity: serde_json::Value = serde_json::from_str(&response_text)
             .map_err(|e| ServerError::Internal(format!("Invalid identity JSON: {}", e)))?;
 
         let server_id = identity["server_id"]
@@ -1000,8 +1030,39 @@ impl Server {
         self.server_directory.remove(server_id)
     }
 
+    pub fn server_directory_add_manual(
+        &mut self,
+        server_id: u64,
+        address: String,
+        verifying_key: String,
+        name: String,
+    ) {
+        let entry = crate::server::server_directory::DirectoryEntry {
+            server_id,
+            address,
+            port: None,
+            verifying_key,
+            name,
+            description: String::new(),
+            trusted: false,
+            discovered: "manual".to_string(),
+            referred_by: None,
+            last_seen: Some(Self::current_timestamp_secs()),
+        };
+        self.server_directory.add(entry);
+    }
+
     pub fn server_directory_set_trust(&mut self, server_id: u64, trusted: bool) -> bool {
         self.server_directory.set_trust(server_id, trusted)
+    }
+
+    pub fn server_directory_set_port(&mut self, server_id: u64, port: Option<u16>) -> bool {
+        if let Some(entry) = self.server_directory.get_mut(server_id) {
+            entry.port = port;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn server_directory_save(&self) -> Result<(), ServerError> {
@@ -1027,6 +1088,100 @@ impl Server {
             }
         }
         Ok(())
+    }
+
+    pub fn resolve_cross_server_ref(
+        &mut self,
+        tumbler: &str,
+        expected_hash: [u8; 32],
+    ) -> Result<CrossServerResolution, ServerError> {
+        let server_id = tumbler
+            .split('.')
+            .next()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
+
+        if server_id == 0 || server_id == self.server_namespace_id() {
+            return Err(ServerError::Internal(
+                "tumbler does not reference a remote server".into(),
+            ));
+        }
+
+        if self.blob_store.exists(&expected_hash).unwrap_or(false) {
+            let data = self
+                .blob_store
+                .retrieve(&expected_hash)
+                .map_err(|e| ServerError::Internal(format!("cache read failed: {}", e)))?;
+            return Ok(CrossServerResolution::Cached {
+                text: String::from_utf8_lossy(&data).to_string(),
+                hash: expected_hash,
+            });
+        }
+
+        let base_url = self
+            .server_directory
+            .resolve_address(server_id)
+            .ok_or_else(|| {
+                ServerError::Internal(format!(
+                    "server {} not in directory — add it first",
+                    server_id
+                ))
+            })?;
+
+        let work_id_hex = tumbler
+            .split('.')
+            .nth(1)
+            .ok_or_else(|| ServerError::Internal("tumbler missing work component".into()))?;
+
+        let url = format!(
+            "{}/api/public/work/{}",
+            base_url.trim_end_matches('/'),
+            work_id_hex
+        );
+
+        tracing::info!("Fetching cross-server content from {}", url);
+
+        let response_text = http_get_json(&url, 15).map_err(|e| {
+            ServerError::Internal(format!("fetch from server {} failed: {}", server_id, e))
+        })?;
+
+        let body: serde_json::Value = serde_json::from_str(&response_text)
+            .map_err(|e| ServerError::Internal(format!("invalid JSON from server: {}", e)))?;
+
+        let text = body["text"]
+            .as_str()
+            .ok_or_else(|| ServerError::Internal("response missing 'text' field".into()))?
+            .to_string();
+
+        let content_hash = {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(text.as_bytes());
+            let computed: [u8; 32] = hasher.finalize().into();
+            computed
+        };
+
+        if content_hash != expected_hash {
+            tracing::warn!(
+                expected = crate::crypto::keys::hex_encode(&expected_hash),
+                got = crate::crypto::keys::hex_encode(&content_hash),
+                "cross-server content hash mismatch"
+            );
+            return Err(ServerError::Internal(
+                "content hash mismatch — possible tampering".into(),
+            ));
+        }
+
+        let _ = self
+            .blob_store
+            .store(text.as_bytes(), "text/plain".to_string());
+
+        let origin_server_id = body["server_namespace_id"].as_u64().unwrap_or(server_id);
+
+        Ok(CrossServerResolution::Fetched {
+            text,
+            hash: content_hash,
+            origin_server_id,
+        })
     }
 
     pub fn verify_server_identity(
@@ -10342,6 +10497,14 @@ impl Server {
     pub fn blob_stats(&self) -> (u64, u64) {
         let stats = self.blob_store.stats();
         (stats.total_blobs, stats.total_bytes)
+    }
+
+    pub fn cache_cross_server_content(&mut self, text: &str) -> [u8; 32] {
+        let meta = self
+            .blob_store
+            .store(text.as_bytes(), "text/plain".to_string())
+            .expect("failed to cache content");
+        meta.content_hash
     }
 
     pub fn blob_apply_overlay(
@@ -28739,4 +28902,79 @@ mod tests {
             "chain should end at source"
         );
     }
+}
+
+fn http_get_json(url: &str, timeout_secs: u64) -> Result<String, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    let no_scheme = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+
+    let (host_port, path) = no_scheme
+        .split_once('/')
+        .map(|(h, p)| (h, format!("/{}", p)))
+        .unwrap_or((no_scheme, "/".to_string()));
+
+    let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
+        (h, p.parse::<u16>().unwrap_or(80))
+    } else {
+        (host_port, 80u16)
+    };
+
+    let mut stream =
+        TcpStream::connect((host, port)).map_err(|e| format!("connect failed: {}", e))?;
+
+    let request = format!(
+        "GET {} HTTP/1.0\r\nHost: {}\r\nAccept: application/json\r\n\r\n",
+        path, host
+    );
+
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| format!("write failed: {}", e))?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(timeout_secs)))
+        .ok();
+
+    let mut all = Vec::new();
+    let mut buf = [0u8; 8192];
+    let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs);
+    loop {
+        if std::time::Instant::now() > deadline {
+            break;
+        }
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                all.extend_from_slice(&buf[..n]);
+                if all.windows(1).any(|w| w[0] == b'}') && all.contains(&b'\n') {
+                    let s = String::from_utf8_lossy(&all);
+                    if let Some(body_start) = s.find("\r\n\r\n") {
+                        let body = &s[body_start + 4..];
+                        if body.trim_end().ends_with('}') {
+                            break;
+                        }
+                    }
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+    }
+
+    let response_str = String::from_utf8_lossy(&all);
+    let status_line = response_str.lines().next().unwrap_or("");
+    if !status_line.contains("200") {
+        return Err(format!("HTTP error: {}", status_line));
+    }
+
+    let body_start = response_str.find("\r\n\r\n").ok_or("no body separator")?;
+    Ok(response_str[body_start + 4..].to_string())
 }
