@@ -5306,6 +5306,7 @@ impl Server {
         ) {
             tracing::warn!("WAL write failed for trail_create: {}", e);
         }
+        self.auto_checkpoint();
         Ok(trail_id)
     }
 
@@ -5326,6 +5327,7 @@ impl Server {
         if let Err(e) = self.wal.append_trail_delete(trail_id) {
             tracing::warn!("WAL write failed for trail_delete: {}", e);
         }
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -5352,6 +5354,7 @@ impl Server {
         if let Err(e) = self.wal.append_trail_rename(trail_id, &old_name, &name) {
             tracing::warn!("WAL write failed for trail_rename: {}", e);
         }
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -5389,6 +5392,7 @@ impl Server {
         {
             tracing::warn!("WAL write failed for trail_add_stop: {}", e);
         }
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -5421,6 +5425,7 @@ impl Server {
         if let Err(e) = self.wal.append_trail_remove_stop(trail_id, work_id) {
             tracing::warn!("WAL write failed for trail_remove_stop: {}", e);
         }
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -5458,6 +5463,7 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -5533,6 +5539,7 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -5554,6 +5561,7 @@ impl Server {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        self.auto_checkpoint();
         Ok(())
     }
 
