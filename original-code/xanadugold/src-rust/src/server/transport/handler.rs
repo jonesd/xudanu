@@ -45,6 +45,12 @@ pub fn build_router(state: SharedState) -> Router {
         .route("/blobs/{hash}", get(blob_get_handler))
         .route("/blobs/{hash}/preview", get(blob_preview_handler))
         .route("/health", get(health_handler))
+        .route("/.well-known/xudanu-server.json", get(well_known_handler))
+        .route("/api/public/work/{work_id}", get(public_work_handler))
+        .route(
+            "/api/public/work/{work_id}/range/{start}/{end}",
+            get(public_work_range_handler),
+        )
         .route("/csrf-token", get(csrf_token_handler))
         .route("/auth/login", post(auth_login_handler))
         .route("/auth/logout", post(auth_logout_handler))
@@ -104,6 +110,83 @@ async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         json,
     )
+}
+
+async fn well_known_handler(State(state): State<SharedState>) -> impl IntoResponse {
+    let json = state
+        .server
+        .with_server_ref(|srv| srv.well_known_identity().to_string());
+    (
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/json; charset=utf-8",
+            ),
+            (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+        ],
+        json,
+    )
+}
+
+async fn public_work_handler(
+    State(state): State<SharedState>,
+    axum::extract::Path(work_id_hex): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let work_id = match parse_work_id(&work_id_hex) {
+        Some(id) => id,
+        None => return (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
+    };
+
+    match state
+        .server
+        .with_server_ref(|srv| srv.public_work_edition(work_id))
+    {
+        Ok(json) => (
+            [
+                (
+                    axum::http::header::CONTENT_TYPE,
+                    "application/json; charset=utf-8",
+                ),
+                (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            ],
+            json.to_string(),
+        )
+            .into_response(),
+        Err(_) => (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
+    }
+}
+
+async fn public_work_range_handler(
+    State(state): State<SharedState>,
+    axum::extract::Path((work_id_hex, start, end)): axum::extract::Path<(String, usize, usize)>,
+) -> impl IntoResponse {
+    let work_id = match parse_work_id(&work_id_hex) {
+        Some(id) => id,
+        None => return (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
+    };
+
+    match state
+        .server
+        .with_server_ref(|srv| srv.public_work_range(work_id, start, end))
+    {
+        Ok(json) => (
+            [
+                (
+                    axum::http::header::CONTENT_TYPE,
+                    "application/json; charset=utf-8",
+                ),
+                (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            ],
+            json.to_string(),
+        )
+            .into_response(),
+        Err(_) => (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
+    }
+}
+
+fn parse_work_id(hex: &str) -> Option<u64> {
+    let clean = hex.trim_start_matches("0x");
+    u64::from_str_radix(clean, 16).ok()
 }
 
 async fn csrf_token_handler(State(state): State<SharedState>) -> impl IntoResponse {

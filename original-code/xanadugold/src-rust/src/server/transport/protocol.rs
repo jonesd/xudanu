@@ -332,6 +332,14 @@ pub enum OperationCode {
     #[cfg(feature = "serde")]
     ProvJsonExport,
     #[cfg(feature = "serde")]
+    ServerDirectoryList,
+    #[cfg(feature = "serde")]
+    ServerDirectoryAdd,
+    #[cfg(feature = "serde")]
+    ServerDirectoryRemove,
+    #[cfg(feature = "serde")]
+    ServerDirectorySetTrust,
+    #[cfg(feature = "serde")]
     FederationAttestationCreate,
     #[cfg(feature = "serde")]
     FederationAttestationVerify,
@@ -647,6 +655,15 @@ impl OperationCode {
             0x0D15 => Some(OperationCode::PassageComposition),
             0x0D16 => Some(OperationCode::GlobalTextSearch),
 
+            #[cfg(feature = "serde")]
+            0x0F01 => Some(OperationCode::ServerDirectoryList),
+            #[cfg(feature = "serde")]
+            0x0F02 => Some(OperationCode::ServerDirectoryAdd),
+            #[cfg(feature = "serde")]
+            0x0F03 => Some(OperationCode::ServerDirectoryRemove),
+            #[cfg(feature = "serde")]
+            0x0F04 => Some(OperationCode::ServerDirectorySetTrust),
+
             _ => None,
         }
     }
@@ -928,6 +945,14 @@ impl OperationCode {
 
             #[cfg(feature = "serde")]
             OperationCode::ProvJsonExport => 0x0E01,
+            #[cfg(feature = "serde")]
+            OperationCode::ServerDirectoryList => 0x0F01,
+            #[cfg(feature = "serde")]
+            OperationCode::ServerDirectoryAdd => 0x0F02,
+            #[cfg(feature = "serde")]
+            OperationCode::ServerDirectoryRemove => 0x0F03,
+            #[cfg(feature = "serde")]
+            OperationCode::ServerDirectorySetTrust => 0x0F04,
             #[cfg(feature = "serde")]
             OperationCode::FederationAttestationCreate => 0x0E02,
             #[cfg(feature = "serde")]
@@ -1883,6 +1908,23 @@ pub enum WireRequest {
         include_federation: bool,
     },
     #[cfg(feature = "serde")]
+    ServerDirectoryList,
+    #[cfg(feature = "serde")]
+    ServerDirectoryAdd {
+        address: String,
+        #[serde(default)]
+        port: Option<u16>,
+    },
+    #[cfg(feature = "serde")]
+    ServerDirectoryRemove {
+        server_id: u64,
+    },
+    #[cfg(feature = "serde")]
+    ServerDirectorySetTrust {
+        server_id: u64,
+        trusted: bool,
+    },
+    #[cfg(feature = "serde")]
     FederationAttestationCreate {
         attestation_type: String,
         subject_server_id: String,
@@ -2533,6 +2575,26 @@ pub enum ResponseValue {
     #[cfg(feature = "serde")]
     ProvJsonExportResult {
         prov_json: String,
+    },
+    #[cfg(feature = "serde")]
+    ServerDirectoryListResult {
+        servers: Vec<serde_json::Value>,
+    },
+    #[cfg(feature = "serde")]
+    ServerDirectoryAddResult {
+        server_id: u64,
+        name: String,
+        address: String,
+        trusted: bool,
+    },
+    #[cfg(feature = "serde")]
+    ServerDirectoryRemoveResult {
+        removed: bool,
+    },
+    #[cfg(feature = "serde")]
+    ServerDirectorySetTrustResult {
+        server_id: u64,
+        trusted: bool,
     },
     #[cfg(feature = "serde")]
     FederationAttestationCreateResult {

@@ -7176,6 +7176,122 @@ async fn health_endpoint_via_http() {
     assert!(body["server_id"].is_string());
 }
 
+#[tokio::test]
+async fn well_known_identity_returns_valid_json() {
+    let server = Server::new();
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{}/.well-known/xudanu-server.json", addr))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = serde_json::from_str(&resp.text().await.unwrap()).unwrap();
+    assert_eq!(body["protocol_version"], 1);
+    assert_eq!(body["public_content"], true);
+    assert!(body["server_id"].is_number());
+    assert!(body["verifying_key_ed25519"].is_string());
+    assert!(body["name"].is_string());
+    assert!(body["started_at"].is_number());
+    assert!(body["stats"]["work_count"].is_number());
+    assert!(body["stats"]["revision_count"].is_number());
+}
+
+#[tokio::test]
+async fn well_known_identity_has_cors_header() {
+    let server = Server::new();
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{}/.well-known/xudanu-server.json", addr))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let cors = resp
+        .headers()
+        .get("access-control-allow-origin")
+        .expect("CORS header missing");
+    assert_eq!(cors, "*");
+}
+
+#[tokio::test]
+async fn well_known_identity_reflects_work_count() {
+    let mut server = Server::new();
+    let sid = server.connect();
+    server.login_public(sid).unwrap();
+    server
+        .create_work(sid, xudanu::edition::Edition::from_text("hello"))
+        .unwrap();
+    server
+        .create_work(sid, xudanu::edition::Edition::from_text("world"))
+        .unwrap();
+
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{}/.well-known/xudanu-server.json", addr))
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_str(&resp.text().await.unwrap()).unwrap();
+    assert_eq!(body["stats"]["work_count"], 2);
+}
+
+#[test]
+fn server_namespace_id_is_deterministic() {
+    let s1 = Server::new();
+    let s2 = Server::new();
+    // Different server instances get different keys, so different namespace IDs
+    assert_ne!(s1.server_namespace_id(), s2.server_namespace_id());
+
+    // Same instance returns same value
+    let id = s1.server_namespace_id();
+    assert_eq!(s1.server_namespace_id(), id);
+}
+
+#[test]
+fn server_namespace_id_can_be_overridden() {
+    let mut s = Server::new();
+    let auto_id = s.server_namespace_id();
+    s.set_server_namespace_id(42);
+    assert_eq!(s.server_namespace_id(), 42);
+    assert_ne!(s.server_namespace_id(), auto_id);
+}
+
+#[test]
+fn well_known_identity_json_structure() {
+    let s = Server::new();
+    let identity = s.well_known_identity();
+    assert_eq!(identity["protocol_version"], 1);
+    assert_eq!(identity["public_content"], true);
+    assert!(identity["verifying_key_ed25519"].as_str().unwrap().len() == 64);
+    assert!(identity["server_id"].as_u64().is_some());
+    assert!(identity["stats"]["work_count"].as_u64() == Some(0));
+}
+
 #[test]
 fn recovery_stats_format() {
     let dir = temp_data_dir("recovery_stats");
@@ -10858,4 +10974,202 @@ async fn csrf_disabled_connects_without_token() {
     );
     let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
     let _ = stream;
+}
+
+#[tokio::test]
+async fn server_directory_list_returns_empty_initially() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(1, "server_directory_list", None)).await;
+    let servers = &resp["value"]["value"]["servers"];
+    assert!(servers.is_array());
+    assert_eq!(servers.as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn server_directory_remove_nonexistent_returns_false() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_login_public", None)).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "server_directory_remove",
+            Some(serde_json::json!({"server_id": 999})),
+        ),
+    )
+    .await;
+    assert_eq!(resp["value"]["value"]["removed"], false);
+}
+
+#[tokio::test]
+async fn server_directory_set_trust_nonexistent() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+    let _ = send_recv_json(&mut s, &mut r, json_req(1, "session_login_public", None)).await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            2,
+            "server_directory_set_trust",
+            Some(serde_json::json!({"server_id": 555, "trusted": true})),
+        ),
+    )
+    .await;
+    assert_eq!(resp["value"]["value"]["server_id"], 555);
+    assert_eq!(resp["value"]["value"]["trusted"], true);
+}
+
+#[tokio::test]
+async fn server_directory_add_requires_login() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv, "json").await;
+    let resp = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            1,
+            "server_directory_add",
+            Some(serde_json::json!({"address": "example.com", "port": 8080})),
+        ),
+    )
+    .await;
+    assert!(
+        resp.get("code").is_some() || resp["value"].is_null(),
+        "should reject without login"
+    );
+}
+
+#[tokio::test]
+async fn public_work_api_returns_404_for_missing_work() {
+    let server = Server::new();
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{}/api/public/work/ffff", addr))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn public_work_api_returns_public_work_content() {
+    let mut server = Server::new();
+    let sid = server.connect();
+    server.login_public(sid).unwrap();
+    let work_id = server
+        .create_work(sid, xudanu::edition::Edition::from_text("Hello world"))
+        .unwrap();
+
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let url = format!("http://{}/api/public/work/{:04x}", addr, work_id);
+    let resp = client.get(&url).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = serde_json::from_str(&resp.text().await.unwrap()).unwrap();
+    assert_eq!(body["text"], "Hello world");
+    assert!(body["content_hash_blake3"].as_str().unwrap().len() == 64);
+    assert_eq!(body["char_count"], 11);
+    assert!(body["revision"].as_u64().is_some());
+}
+
+#[tokio::test]
+async fn public_work_api_returns_404_for_private_work() {
+    let mut server = Server::new();
+    let sid = server.connect();
+    server.login_public(sid).unwrap();
+    let work_id = server
+        .create_work(sid, xudanu::edition::Edition::from_text("Secret"))
+        .unwrap();
+    // Make it private
+    server.work_set_read_club(sid, work_id, Some(999)).unwrap();
+
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let url = format!("http://{}/api/public/work/{:04x}", addr, work_id);
+    let resp = client.get(&url).send().await.unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
+async fn public_work_range_api_returns_substring() {
+    let mut server = Server::new();
+    let sid = server.connect();
+    server.login_public(sid).unwrap();
+    let work_id = server
+        .create_work(
+            sid,
+            xudanu::edition::Edition::from_text("Hello brave new world"),
+        )
+        .unwrap();
+
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let url = format!("http://{}/api/public/work/{:04x}/range/6/17", addr, work_id);
+    let resp = client.get(&url).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = serde_json::from_str(&resp.text().await.unwrap()).unwrap();
+    assert_eq!(body["text"], "brave new w");
+    assert_eq!(body["range"][0], 6);
+    assert_eq!(body["range"][1], 17);
+}
+
+#[tokio::test]
+async fn public_work_api_has_cors_header() {
+    let mut server = Server::new();
+    let sid = server.connect();
+    server.login_public(sid).unwrap();
+    let work_id = server
+        .create_work(sid, xudanu::edition::Edition::from_text("test"))
+        .unwrap();
+
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let url = format!("http://{}/api/public/work/{:04x}", addr, work_id);
+    let resp = client.get(&url).send().await.unwrap();
+    assert_eq!(resp.status(), 200);
+    let cors = resp
+        .headers()
+        .get("access-control-allow-origin")
+        .expect("CORS header missing");
+    assert_eq!(cors, "*");
 }
