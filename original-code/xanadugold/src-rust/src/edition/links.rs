@@ -305,6 +305,107 @@ pub struct HyperRef {
     provenance_chain: Vec<ProvenanceHop>,
     start_position: Option<i64>,
     end_position: Option<i64>,
+    cross_server_ref: Option<CrossServerRef>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CrossServerRef {
+    pub tumbler: String,
+    pub origin_server_id: u64,
+    pub content_hash: [u8; 32],
+    pub mime_type: String,
+    pub byte_size: u64,
+    pub origin_author: String,
+    pub origin_author_key: [u8; 32],
+    pub origin_server_sig: Vec<u8>,
+    pub fetched_at: u64,
+}
+
+impl CrossServerRef {
+    pub fn new(
+        tumbler: impl Into<String>,
+        content_hash: [u8; 32],
+        origin_author: impl Into<String>,
+        origin_author_key: [u8; 32],
+    ) -> Self {
+        let tumbler_str: String = tumbler.into();
+        let origin_server_id = tumbler_str
+            .split('.')
+            .next()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
+        CrossServerRef {
+            tumbler: tumbler_str,
+            origin_server_id,
+            content_hash,
+            mime_type: "text/plain".to_string(),
+            byte_size: 0,
+            origin_author: origin_author.into(),
+            origin_author_key,
+            origin_server_sig: Vec::new(),
+            fetched_at: 0,
+        }
+    }
+
+    pub fn with_mime_type(mut self, mime: impl Into<String>) -> Self {
+        self.mime_type = mime.into();
+        self
+    }
+
+    pub fn with_byte_size(mut self, size: u64) -> Self {
+        self.byte_size = size;
+        self
+    }
+
+    pub fn with_server_sig(mut self, sig: Vec<u8>) -> Self {
+        self.origin_server_sig = sig;
+        self
+    }
+
+    pub fn with_fetched_at(mut self, ts: u64) -> Self {
+        self.fetched_at = ts;
+        self
+    }
+
+    pub fn tumbler(&self) -> &str {
+        &self.tumbler
+    }
+
+    pub fn origin_server_id(&self) -> u64 {
+        self.origin_server_id
+    }
+
+    pub fn content_hash(&self) -> &[u8; 32] {
+        &self.content_hash
+    }
+
+    pub fn mime_type(&self) -> &str {
+        &self.mime_type
+    }
+
+    pub fn byte_size(&self) -> u64 {
+        self.byte_size
+    }
+
+    pub fn origin_author(&self) -> &str {
+        &self.origin_author
+    }
+
+    pub fn origin_author_key(&self) -> &[u8; 32] {
+        &self.origin_author_key
+    }
+
+    pub fn origin_server_sig(&self) -> &[u8] {
+        &self.origin_server_sig
+    }
+
+    pub fn fetched_at(&self) -> u64 {
+        self.fetched_at
+    }
+
+    pub fn is_cross_server(&self) -> bool {
+        self.origin_server_id != 0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -328,6 +429,7 @@ impl HyperRef {
             provenance_chain: Vec::new(),
             start_position: None,
             end_position: None,
+            cross_server_ref: None,
         }
     }
 
@@ -345,6 +447,7 @@ impl HyperRef {
             provenance_chain: Vec::new(),
             start_position: None,
             end_position: None,
+            cross_server_ref: None,
         }
     }
 
@@ -390,6 +493,27 @@ impl HyperRef {
         &self.provenance_chain
     }
 
+    pub fn cross_server_ref(&self) -> Option<&CrossServerRef> {
+        self.cross_server_ref.as_ref()
+    }
+
+    pub fn is_cross_server(&self) -> bool {
+        self.cross_server_ref.is_some()
+    }
+
+    pub fn with_cross_server_ref(&self, csr: CrossServerRef) -> Self {
+        HyperRef {
+            kind: self.kind.clone(),
+            work_context: self.work_context,
+            original_context: self.original_context,
+            path_context: self.path_context.clone(),
+            provenance_chain: self.provenance_chain.clone(),
+            start_position: self.start_position,
+            end_position: self.end_position,
+            cross_server_ref: Some(csr),
+        }
+    }
+
     pub fn start_position(&self) -> Option<i64> {
         self.start_position
     }
@@ -407,6 +531,7 @@ impl HyperRef {
             provenance_chain: chain,
             start_position: self.start_position,
             end_position: self.end_position,
+            cross_server_ref: self.cross_server_ref.clone(),
         }
     }
 
@@ -421,6 +546,7 @@ impl HyperRef {
             provenance_chain: self.provenance_chain.clone(),
             start_position: self.start_position,
             end_position: self.end_position,
+            cross_server_ref: self.cross_server_ref.clone(),
         }
     }
 
@@ -433,6 +559,7 @@ impl HyperRef {
             provenance_chain: self.provenance_chain.clone(),
             start_position: self.start_position,
             end_position: self.end_position,
+            cross_server_ref: self.cross_server_ref.clone(),
         }
     }
 
@@ -445,6 +572,7 @@ impl HyperRef {
             provenance_chain: self.provenance_chain.clone(),
             start_position: self.start_position,
             end_position: self.end_position,
+            cross_server_ref: self.cross_server_ref.clone(),
         }
     }
 
@@ -457,6 +585,7 @@ impl HyperRef {
             provenance_chain: self.provenance_chain.clone(),
             start_position: self.start_position,
             end_position: self.end_position,
+            cross_server_ref: self.cross_server_ref.clone(),
         }
     }
 
@@ -469,6 +598,7 @@ impl HyperRef {
             provenance_chain: self.provenance_chain.clone(),
             start_position: start,
             end_position: end,
+            cross_server_ref: self.cross_server_ref.clone(),
         }
     }
 
@@ -488,6 +618,7 @@ impl HyperRef {
                     provenance_chain: self.provenance_chain.clone(),
                     start_position: self.start_position,
                     end_position: self.end_position,
+                    cross_server_ref: self.cross_server_ref.clone(),
                 }
             }
             HyperRefKind::Single { .. } => self.clone(),
@@ -507,6 +638,7 @@ impl HyperRef {
                     provenance_chain: self.provenance_chain.clone(),
                     start_position: self.start_position,
                     end_position: self.end_position,
+                    cross_server_ref: self.cross_server_ref.clone(),
                 }
             }
             HyperRefKind::Single { .. } => self.clone(),
@@ -530,6 +662,7 @@ impl HyperRef {
                     provenance_chain: self.provenance_chain.clone(),
                     start_position: self.start_position,
                     end_position: self.end_position,
+                    cross_server_ref: self.cross_server_ref.clone(),
                 }
             }
             _ => self.clone(),
@@ -552,6 +685,7 @@ impl HyperRef {
                     provenance_chain: self.provenance_chain.clone(),
                     start_position: self.start_position,
                     end_position: self.end_position,
+                    cross_server_ref: self.cross_server_ref.clone(),
                 }
             }
             _ => self.clone(),
@@ -574,6 +708,7 @@ impl HyperRef {
                     provenance_chain: self.provenance_chain.clone(),
                     start_position: self.start_position,
                     end_position: self.end_position,
+                    cross_server_ref: self.cross_server_ref.clone(),
                 }
             }
             _ => self.clone(),
@@ -1300,5 +1435,99 @@ mod tests {
             .with_provenance_chain(vec![ProvenanceHop::new(5, 15)]);
         let updated = href.with_work_context(Some(42));
         assert_eq!(updated.provenance_chain().len(), 1);
+    }
+
+    #[test]
+    fn cross_server_ref_creation() {
+        let hash = [0xab; 32];
+        let key = [0xcd; 32];
+        let csr = CrossServerRef::new("2.5.3.10.7", hash, "Bob", key);
+        assert_eq!(csr.tumbler(), "2.5.3.10.7");
+        assert_eq!(csr.origin_server_id(), 2);
+        assert!(csr.is_cross_server());
+        assert_eq!(csr.mime_type(), "text/plain");
+    }
+
+    #[test]
+    fn cross_server_ref_builder_methods() {
+        let hash = [0x11; 32];
+        let key = [0x22; 32];
+        let csr = CrossServerRef::new("3.8.1.0.5", hash, "Carol", key)
+            .with_mime_type("image/png")
+            .with_byte_size(1048576)
+            .with_fetched_at(1783130786);
+        assert_eq!(csr.mime_type(), "image/png");
+        assert_eq!(csr.byte_size(), 1048576);
+        assert_eq!(csr.fetched_at(), 1783130786);
+    }
+
+    #[test]
+    fn cross_server_ref_local_server_id_zero() {
+        let hash = [0; 32];
+        let key = [0; 32];
+        let csr = CrossServerRef::new("0.1.1", hash, "Local", key);
+        assert_eq!(csr.origin_server_id(), 0);
+        assert!(!csr.is_cross_server());
+    }
+
+    #[test]
+    fn hyper_ref_with_cross_server_ref() {
+        let hash = [0xab; 32];
+        let key = [0xcd; 32];
+        let csr = CrossServerRef::new("2.5.3.10.7", hash, "Bob", key);
+        let href = HyperRef::single(None, Some(1), None, None).with_cross_server_ref(csr);
+
+        assert!(href.is_cross_server());
+        assert_eq!(href.cross_server_ref().unwrap().tumbler(), "2.5.3.10.7");
+    }
+
+    #[test]
+    fn cross_server_ref_survives_with_span() {
+        let hash = [0xab; 32];
+        let key = [0xcd; 32];
+        let csr = CrossServerRef::new("2.5.3", hash, "Bob", key);
+        let href = HyperRef::single(None, Some(1), None, None)
+            .with_cross_server_ref(csr)
+            .with_span(Some(10), Some(20));
+
+        assert!(href.is_cross_server());
+        assert_eq!(href.start_position(), Some(10));
+        assert_eq!(href.end_position(), Some(20));
+    }
+
+    #[test]
+    fn cross_server_ref_survives_with_excerpt() {
+        let hash = [0xab; 32];
+        let key = [0xcd; 32];
+        let csr = CrossServerRef::new("2.5.3", hash, "Bob", key);
+        let edition = Edition::from_text("Hello");
+        let href = HyperRef::single(None, Some(1), None, None)
+            .with_cross_server_ref(csr)
+            .with_excerpt(edition);
+
+        assert!(href.is_cross_server());
+        assert!(href.excerpt().is_some());
+    }
+
+    #[test]
+    fn hyper_ref_without_cross_server_ref() {
+        let href = HyperRef::single(None, Some(1), None, None);
+        assert!(!href.is_cross_server());
+        assert!(href.cross_server_ref().is_none());
+    }
+
+    #[test]
+    fn cross_server_ref_tumbler_parsing() {
+        let hash = [0; 32];
+        let key = [0; 32];
+
+        let csr1 = CrossServerRef::new("1.5.3.2.7", hash, "A", key);
+        assert_eq!(csr1.origin_server_id(), 1);
+
+        let csr2 = CrossServerRef::new("999.1.1", hash, "B", key);
+        assert_eq!(csr2.origin_server_id(), 999);
+
+        let csr3 = CrossServerRef::new("0.1.1", hash, "C", key);
+        assert_eq!(csr3.origin_server_id(), 0);
     }
 }
