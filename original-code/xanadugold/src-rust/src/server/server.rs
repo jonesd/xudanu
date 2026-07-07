@@ -301,6 +301,7 @@ pub struct Server {
     server_name: String,
     server_description: String,
     server_namespace_id: u64,
+    public_address: Option<String>,
     server_directory: crate::server::server_directory::ServerDirectory,
 }
 
@@ -783,6 +784,7 @@ impl Server {
             server_name: "Xudanu Server".to_string(),
             server_description: String::new(),
             server_namespace_id: 0,
+            public_address: None,
             server_directory: crate::server::server_directory::ServerDirectory::new(),
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
@@ -935,6 +937,22 @@ impl Server {
         self.server_namespace_id = id;
     }
 
+    pub fn public_address(&self) -> Option<&str> {
+        self.public_address.as_deref()
+    }
+
+    pub fn set_public_address(&mut self, addr: Option<String>) {
+        self.public_address = addr;
+    }
+
+    pub fn server_tumbler_prefix(&self) -> String {
+        if let Some(ref addr) = self.public_address {
+            format!("\"{}\"", addr)
+        } else {
+            self.server_namespace_id().to_string()
+        }
+    }
+
     pub fn total_revision_count(&self) -> u64 {
         self.works
             .values()
@@ -948,7 +966,9 @@ impl Server {
         serde_json::json!({
             "protocol_version": 1,
             "server_id": self.server_namespace_id(),
-            "address": "", // filled by handler which knows the bind address
+            "public_address": self.public_address,
+            "tumbler_prefix": self.server_tumbler_prefix(),
+            "address": "",
             "verifying_key_ed25519": vk_hex,
             "name": self.server_name,
             "description": self.server_description,
@@ -1099,17 +1119,7 @@ impl Server {
         tumbler: &str,
         expected_hash: [u8; 32],
     ) -> Result<CrossServerResolution, ServerError> {
-        let server_id = tumbler
-            .split('.')
-            .next()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
-
-        if server_id == 0 || server_id == self.server_namespace_id() {
-            return Err(ServerError::Internal(
-                "tumbler does not reference a remote server".into(),
-            ));
-        }
+        use crate::edition::links::{parse_tumbler_server, tumbler_local_path};
 
         if self.blob_store.exists(&expected_hash).unwrap_or(false) {
             let data = self
@@ -1122,20 +1132,39 @@ impl Server {
             });
         }
 
-        let base_url = self
-            .server_directory
-            .resolve_address(server_id)
-            .ok_or_else(|| {
-                ServerError::Internal(format!(
-                    "server {} not in directory — add it first",
-                    server_id
-                ))
-            })?;
-
-        let work_id_hex = tumbler
+        let (server_id, server_address) = parse_tumbler_server(tumbler);
+        let local_path = tumbler_local_path(tumbler);
+        let work_id_hex = local_path
             .split('.')
-            .nth(1)
+            .next()
             .ok_or_else(|| ServerError::Internal("tumbler missing work component".into()))?;
+
+        let (base_url, server_label) = if let Some(ref addr) = server_address {
+            let url = if addr.starts_with("http") {
+                addr.clone()
+            } else if addr.contains(':') {
+                format!("http://{}", addr)
+            } else {
+                format!("https://{}", addr)
+            };
+            (url, addr.clone())
+        } else {
+            if server_id == 0 || server_id == self.server_namespace_id() {
+                return Err(ServerError::Internal(
+                    "tumbler does not reference a remote server".into(),
+                ));
+            }
+            let url = self
+                .server_directory
+                .resolve_address(server_id)
+                .ok_or_else(|| {
+                    ServerError::Internal(format!(
+                        "server {} not in directory — add it first",
+                        server_id
+                    ))
+                })?;
+            (url, server_id.to_string())
+        };
 
         let url = format!(
             "{}/api/public/work/{}",
@@ -1146,7 +1175,7 @@ impl Server {
         tracing::info!("Fetching cross-server content from {}", url);
 
         let response_text = http_get_json(&url, 15).map_err(|e| {
-            ServerError::Internal(format!("fetch from server {} failed: {}", server_id, e))
+            ServerError::Internal(format!("fetch from {} failed: {}", server_label, e))
         })?;
 
         let body: serde_json::Value = serde_json::from_str(&response_text)
@@ -13923,6 +13952,7 @@ pub(crate) mod persist_snapshot {
                 server_name: "Xudanu Server".to_string(),
                 server_description: String::new(),
                 server_namespace_id: 0,
+                public_address: None,
                 server_directory: crate::server::server_directory::ServerDirectory::new(),
             };
             for club_snap in &snapshot.clubs {
