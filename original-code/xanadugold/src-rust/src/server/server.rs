@@ -6481,7 +6481,104 @@ impl Server {
         self.operation_counter = manifest.operation_counter;
         self.system_clubs = manifest.system_clubs;
         self.link_counter = manifest.link_counter;
-        self.starred_works = manifest.starred_works;
+        self.starred_works = if let Some(hash) = manifest.social_chunk_hash {
+            {
+                let hex_str: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
+                let p = chunk_store
+                    .base_dir()
+                    .join("chunks")
+                    .join(&hex_str[..2])
+                    .join(format!("{}.xchunk", hex_str));
+                let legacy = chunk_store
+                    .base_dir()
+                    .join("chunks")
+                    .join(&hex_str[..2])
+                    .join(&hex_str);
+            }
+            let raw = chunk_store.read_chunk(&hash);
+            match raw {
+                Ok(data) => {
+                    let untagged = crate::persist::chunk_store::untag_chunk_data(&data);
+                    match untagged {
+                        Ok((_, json)) => {
+                            let parsed: Result<crate::persist::manifest::SocialSection, _> =
+                                serde_json::from_slice(json);
+                            match parsed {
+                                Ok(social) => {
+                                    self.trail_counter = social.trail_counter;
+                                    for t in social.trails {
+                                        self.trails.insert(
+                                            t.trail_id,
+                                            TrailState {
+                                                trail_id: t.trail_id,
+                                                owner_club: t.owner_club,
+                                                name: t.name,
+                                                introduction: t.introduction,
+                                                categories: t.categories,
+                                                published: t.published,
+                                                stops: t
+                                                    .stops
+                                                    .into_iter()
+                                                    .map(|s| TrailStop {
+                                                        work_id: s.work_id,
+                                                        char_start: s.char_start,
+                                                        char_end: s.char_end,
+                                                        note: s.note,
+                                                    })
+                                                    .collect(),
+                                                created_at: t.created_at,
+                                                updated_at: t.updated_at,
+                                            },
+                                        );
+                                    }
+                                    self.compound_editions =
+                                        social.compound_editions.into_iter().collect();
+                                    social.starred_works
+                                }
+                                Err(e) => {
+                                    tracing::warn!("social chunk parse error: {}", e);
+                                    std::collections::HashMap::new()
+                                }
+                            }
+                        }
+                        Err(_) => std::collections::HashMap::new(),
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("social chunk read error: {}", e);
+                    std::collections::HashMap::new()
+                }
+            }
+        } else {
+            self.trail_counter = manifest.trail_counter;
+            for t in manifest.trails {
+                self.trails.insert(
+                    t.trail_id,
+                    TrailState {
+                        trail_id: t.trail_id,
+                        owner_club: t.owner_club,
+                        name: t.name,
+                        introduction: t.introduction,
+                        categories: t.categories,
+                        published: t.published,
+                        stops: t
+                            .stops
+                            .into_iter()
+                            .map(|s| TrailStop {
+                                work_id: s.work_id,
+                                char_start: s.char_start,
+                                char_end: s.char_end,
+                                note: s.note,
+                            })
+                            .collect(),
+                        created_at: t.created_at,
+                        updated_at: t.updated_at,
+                    },
+                );
+            }
+            self.compound_editions = manifest.compound_editions.into_iter().collect();
+            manifest.starred_works
+        };
         {
             let total: usize = self.starred_works.values().map(|s| s.len()).sum();
             tracing::info!(
@@ -6490,35 +6587,55 @@ impl Server {
                 total
             );
         }
-        self.trail_counter = manifest.trail_counter;
-        for t in manifest.trails {
-            self.trails.insert(
-                t.trail_id,
-                TrailState {
-                    trail_id: t.trail_id,
-                    owner_club: t.owner_club,
-                    name: t.name,
-                    introduction: t.introduction,
-                    categories: t.categories,
-                    published: t.published,
-                    stops: t
-                        .stops
-                        .into_iter()
-                        .map(|s| TrailStop {
-                            work_id: s.work_id,
-                            char_start: s.char_start,
-                            char_end: s.char_end,
-                            note: s.note,
-                        })
-                        .collect(),
-                    created_at: t.created_at,
-                    updated_at: t.updated_at,
+        self.reconcile_store = if let Some(hash) = manifest.federation_chunk_hash {
+            match chunk_store.read_chunk(&hash) {
+                Ok(data) => match crate::persist::chunk_store::untag_chunk_data(&data) {
+                    Ok((_, json)) => {
+                        match serde_json::from_slice::<crate::persist::manifest::FederationSection>(
+                            json,
+                        ) {
+                            Ok(fed) => {
+                                self.reconcile_counter = fed.reconcile_counter;
+                                self.federation = fed
+                                    .federation
+                                    .as_ref()
+                                    .map(|fs| {
+                                        crate::server::federation::FederationState::from_snapshot(
+                                            fs,
+                                        )
+                                    })
+                                    .unwrap_or_else(|| {
+                                        crate::server::federation::FederationState::disabled()
+                                    });
+                                fed.reconcile_store
+                            }
+                            Err(e) => {
+                                tracing::warn!("federation chunk parse error: {}", e);
+                                self.federation =
+                                    crate::server::federation::FederationState::disabled();
+                                crate::server::federation::ReconcileStore::new()
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        self.federation = crate::server::federation::FederationState::disabled();
+                        crate::server::federation::ReconcileStore::new()
+                    }
                 },
-            );
-        }
-        self.compound_editions = manifest.compound_editions.into_iter().collect();
-        self.reconcile_store = manifest.reconcile_store;
-        self.reconcile_counter = manifest.reconcile_counter;
+                Err(e) => {
+                    tracing::warn!("federation chunk read error: {}", e);
+                    self.federation = crate::server::federation::FederationState::disabled();
+                    crate::server::federation::ReconcileStore::new()
+                }
+            }
+        } else {
+            self.federation = manifest
+                .federation
+                .as_ref()
+                .map(|fs| crate::server::federation::FederationState::from_snapshot(fs))
+                .unwrap_or_else(|| crate::server::federation::FederationState::disabled());
+            manifest.reconcile_store
+        };
         self.content_address = if let Some(hash) = manifest.content_address_hash {
             match chunk_store.read_chunk(&hash) {
                 Ok(data) => match crate::persist::chunk_store::untag_chunk_data(&data) {
@@ -6781,12 +6898,6 @@ impl Server {
                 .or_default()
                 .push(link.link_id);
         }
-
-        self.federation = manifest
-            .federation
-            .as_ref()
-            .map(|fs| crate::server::federation::FederationState::from_snapshot(fs))
-            .unwrap_or_else(crate::server::federation::FederationState::disabled);
 
         self.chunk_store = Some(Arc::new(chunk_store));
         self.data_dir = Some(data_dir.to_path_buf());
@@ -14753,6 +14864,62 @@ pub(crate) mod persist_snapshot {
                 social_chunk_hash: None,
             };
 
+            // ── Migrate large sections to chunks before writing manifest ──
+            // Write social section (starred_works + trails + compound_editions) as a chunk
+            let social = crate::persist::manifest::SocialSection {
+                starred_works: manifest.starred_works.clone(),
+                trails: manifest.trails.clone(),
+                trail_counter: manifest.trail_counter,
+                compound_editions: manifest.compound_editions.clone(),
+            };
+            if !social.starred_works.is_empty()
+                || !social.trails.is_empty()
+                || !social.compound_editions.is_empty()
+            {
+                let social_json = serde_json::to_vec(&social)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                let tagged = crate::persist::chunk_store::tag_chunk_data(
+                    crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                    &social_json,
+                );
+                let hash = chunk_store
+                    .write_chunk(&tagged)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                {
+                    let hex_str: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
+                    let chunk_path = std::path::Path::new(chunk_store.base_dir())
+                        .join("chunks")
+                        .join(&hex_str[..2])
+                        .join(format!("{}.xchunk", hex_str));
+                }
+                let read_back = chunk_store.read_chunk(&hash);
+                manifest.social_chunk_hash = Some(hash);
+                manifest.starred_works.clear();
+                manifest.trails.clear();
+                manifest.compound_editions.clear();
+            }
+
+            // Write federation section (reconcile_store + federation snapshot) as a chunk
+            if !manifest.reconcile_store.is_empty() || manifest.federation.is_some() {
+                let fed = crate::persist::manifest::FederationSection {
+                    reconcile_store: manifest.reconcile_store.clone(),
+                    reconcile_counter: manifest.reconcile_counter,
+                    federation: manifest.federation.clone(),
+                };
+                let fed_json = serde_json::to_vec(&fed)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                let tagged = crate::persist::chunk_store::tag_chunk_data(
+                    crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+                    &fed_json,
+                );
+                let hash = chunk_store
+                    .write_chunk(&tagged)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                manifest.federation_chunk_hash = Some(hash);
+                manifest.reconcile_store = crate::server::federation::ReconcileStore::new();
+                manifest.federation = None;
+            }
+
             let data_dir = match self.data_dir.as_ref() {
                 Some(d) => d.as_path(),
                 None => {
@@ -14884,13 +15051,19 @@ pub(crate) mod persist_snapshot {
                 };
                 // CHECKLIST: every Option<[u8; 32]> field in Manifest must be
                 // inserted into `referenced` here, or the GC will delete the
-                // chunk. Current fields (as of 2026-06):
+                // chunk. Current fields (as of v0.9.0):
                 //   - historical_authors_hash
                 //   - blob_metas_hash
                 //   - content_address_hash
                 //   - links_hash
                 //   - annotations_hash
                 //   - fossil_snapshots_hash
+                //   - links_chunk_hash (v0.9.0 manifest refactor)
+                //   - federation_chunk_hash (v0.9.0 manifest refactor)
+                //   - content_address_chunk_hash (v0.9.0 manifest refactor)
+                //   - blob_metas_chunk_hash (v0.9.0 manifest refactor)
+                //   - historical_authors_chunk_hash (v0.9.0 manifest refactor)
+                //   - social_chunk_hash (v0.9.0 manifest refactor)
                 if let Some(hash) = manifest.historical_authors_hash {
                     referenced.insert(hash);
                 }
@@ -14907,6 +15080,24 @@ pub(crate) mod persist_snapshot {
                     referenced.insert(hash);
                 }
                 if let Some(hash) = manifest.fossil_snapshots_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.links_chunk_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.federation_chunk_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.content_address_chunk_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.blob_metas_chunk_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.historical_authors_chunk_hash {
+                    referenced.insert(hash);
+                }
+                if let Some(hash) = manifest.social_chunk_hash {
                     referenced.insert(hash);
                 }
             }
