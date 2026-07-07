@@ -425,6 +425,7 @@ async fn main() {
             let mut server_namespace_id: Option<u64> = std::env::var("XUDANU_SERVER_NAMESPACE_ID")
                 .ok()
                 .and_then(|s| s.parse().ok());
+            let mut public_address: Option<String> = std::env::var("XUDANU_PUBLIC_ADDRESS").ok();
             let mut i = 2;
             while i < args.len() {
                 match args[i].as_str() {
@@ -564,6 +565,14 @@ async fn main() {
                         i += 1;
                         server_namespace_id = args.get(i).and_then(|s| s.parse::<u64>().ok());
                     }
+                    "--public-address" => {
+                        i += 1;
+                        public_address =
+                            Some(args.get(i).map(|s| s.clone()).unwrap_or_else(|| {
+                                eprintln!("Error: --public-address requires a value");
+                                std::process::exit(1);
+                            }));
+                    }
                     s if s.contains(':') => {
                         addr = s.to_string();
                     }
@@ -648,6 +657,10 @@ async fn main() {
                     "Server namespace ID: {} (derived from verifying key)",
                     server.server_namespace_id()
                 );
+            }
+            if let Some(ref addr) = public_address {
+                server.set_public_address(Some(addr.clone()));
+                tracing::info!("Public address: {} (tumbler prefix: \"{}\")", addr, addr);
             }
 
             if !federation_peers.is_empty() {

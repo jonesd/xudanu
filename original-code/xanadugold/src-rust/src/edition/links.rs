@@ -312,6 +312,7 @@ pub struct HyperRef {
 pub struct CrossServerRef {
     pub tumbler: String,
     pub origin_server_id: u64,
+    pub origin_server_address: Option<String>,
     pub content_hash: [u8; 32],
     pub mime_type: String,
     pub byte_size: u64,
@@ -322,6 +323,42 @@ pub struct CrossServerRef {
     pub excerpt: String,
 }
 
+/// Parse the server component from a tumbler string.
+/// Returns (numeric_id, optional_domain_address).
+///
+/// `"alice.example.com".5.3.10.7` → (0, Some("alice.example.com"))
+/// `1.5.3.10.7`                   → (1, None)
+pub fn parse_tumbler_server(tumbler: &str) -> (u64, Option<String>) {
+    let tumbler = tumbler.trim();
+    if tumbler.starts_with('"') {
+        if let Some(end) = tumbler[1..].find('"') {
+            let domain = &tumbler[1..1 + end];
+            return (0, Some(domain.to_string()));
+        }
+    }
+    let id = tumbler
+        .split('.')
+        .next()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+    (id, None)
+}
+
+/// Strip the server prefix from a tumbler, returning the local numeric path.
+///
+/// `"alice.example.com".5.3.10.7` → "5.3.10.7"
+/// `1.5.3.10.7`                   → "5.3.10.7"
+pub fn tumbler_local_path(tumbler: &str) -> &str {
+    let tumbler = tumbler.trim();
+    if tumbler.starts_with('"') {
+        if let Some(end) = tumbler[1..].find('"') {
+            let after = &tumbler[2 + end..];
+            return after.strip_prefix('.').unwrap_or(after);
+        }
+    }
+    tumbler.split_once('.').map(|(_, rest)| rest).unwrap_or("")
+}
+
 impl CrossServerRef {
     pub fn new(
         tumbler: impl Into<String>,
@@ -330,14 +367,11 @@ impl CrossServerRef {
         origin_author_key: [u8; 32],
     ) -> Self {
         let tumbler_str: String = tumbler.into();
-        let origin_server_id = tumbler_str
-            .split('.')
-            .next()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
+        let (origin_server_id, origin_server_address) = parse_tumbler_server(&tumbler_str);
         CrossServerRef {
             tumbler: tumbler_str,
             origin_server_id,
+            origin_server_address,
             content_hash,
             mime_type: "text/plain".to_string(),
             byte_size: 0,
@@ -419,7 +453,11 @@ impl CrossServerRef {
     }
 
     pub fn is_cross_server(&self) -> bool {
-        self.origin_server_id != 0
+        self.origin_server_id != 0 || self.origin_server_address.is_some()
+    }
+
+    pub fn origin_server_address(&self) -> Option<&str> {
+        self.origin_server_address.as_deref()
     }
 }
 
@@ -1544,5 +1582,78 @@ mod tests {
 
         let csr3 = CrossServerRef::new("0.1.1", hash, "C", key);
         assert_eq!(csr3.origin_server_id(), 0);
+    }
+
+    #[test]
+    fn domain_tumbler_parses_correctly() {
+        let hash = [0; 32];
+        let key = [0; 32];
+
+        let csr = CrossServerRef::new("\"alice.example.com\".5.3.10.7", hash, "Alice", key);
+        assert_eq!(csr.origin_server_id(), 0);
+        assert_eq!(csr.origin_server_address().unwrap(), "alice.example.com");
+        assert!(csr.is_cross_server());
+    }
+
+    #[test]
+    fn domain_tumbler_with_port() {
+        let hash = [0; 32];
+        let key = [0; 32];
+
+        let csr = CrossServerRef::new("\"192.168.1.5:8080\".3.1", hash, "Bob", key);
+        assert_eq!(csr.origin_server_id(), 0);
+        assert_eq!(csr.origin_server_address().unwrap(), "192.168.1.5:8080");
+        assert!(csr.is_cross_server());
+    }
+
+    #[test]
+    fn numeric_tumbler_still_works() {
+        let hash = [0; 32];
+        let key = [0; 32];
+
+        let csr = CrossServerRef::new("1.5.3.10.7", hash, "A", key);
+        assert_eq!(csr.origin_server_id(), 1);
+        assert!(csr.origin_server_address().is_none());
+        assert!(csr.is_cross_server());
+    }
+
+    #[test]
+    fn local_tumbler_is_not_cross_server() {
+        let hash = [0; 32];
+        let key = [0; 32];
+
+        let csr = CrossServerRef::new("0.1.1", hash, "Local", key);
+        assert!(!csr.is_cross_server());
+    }
+
+    #[test]
+    fn tumbler_local_path_numeric() {
+        assert_eq!(tumbler_local_path("1.5.3.10.7"), "5.3.10.7");
+        assert_eq!(tumbler_local_path("42.1"), "1");
+        assert_eq!(tumbler_local_path("0"), "");
+    }
+
+    #[test]
+    fn tumbler_local_path_domain() {
+        assert_eq!(
+            tumbler_local_path("\"alice.example.com\".5.3.10.7"),
+            "5.3.10.7"
+        );
+        assert_eq!(tumbler_local_path("\"192.168.1.5:8080\".3.1"), "3.1");
+    }
+
+    #[test]
+    fn parse_tumbler_server_variants() {
+        let (id, addr) = parse_tumbler_server("\"alice.example.com\".5.3");
+        assert_eq!(id, 0);
+        assert_eq!(addr.as_deref(), Some("alice.example.com"));
+
+        let (id, addr) = parse_tumbler_server("1.5.3");
+        assert_eq!(id, 1);
+        assert!(addr.is_none());
+
+        let (id, addr) = parse_tumbler_server("0.1");
+        assert_eq!(id, 0);
+        assert!(addr.is_none());
     }
 }
