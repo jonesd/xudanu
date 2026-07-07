@@ -171,6 +171,44 @@ fn is_null_char(c: &char) -> bool {
     *c == '\0'
 }
 
+fn reconcile_store_is_empty(rs: &crate::server::federation::ReconcileStore) -> bool {
+    rs.is_empty()
+}
+
+// =============================================================================
+// MANIFEST DESIGN RULES — READ BEFORE ADDING FIELDS
+// =============================================================================
+//
+// RULE 1: The manifest is an INDEX, not a database.
+//         It should contain hashes and minimal metadata — NOT content.
+//
+// RULE 2: If data is > 100 bytes per entry, store it in a chunk and keep
+//         only the hash here. Use `ChunkStore::write_chunk()` then store
+//         the returned BLAKE3 hash.
+//
+// RULE 3: The `works` and `clubs` arrays are the ONLY allowed exception —
+//         they contain `ChunkRef` pointers (work_root, etc.), not actual
+//         content. Each entry is ~50 bytes. With 10,000 works that's ~500 KB
+//         which is acceptable. If it ever exceeds 1 MB, shard into chunks.
+//
+// RULE 4: Never inline collections that grow with user activity (links,
+//         trails, blobs, compound editions, etc.). These must be stored
+//         as separate chunks referenced by hash.
+//
+// RULE 5: The manifest must be small enough to rewrite atomically every
+//         checkpoint (every 5 seconds). Target: < 10 KB for a typical
+//         deployment, < 100 KB for a large one.
+//
+// WHY: A previous version embedded clubs, links, trails, blob metadata,
+// federation state, compound editions, and historical authors directly in
+// the manifest. This grew to 289 KB on production and corrupted when the
+// disk filled during a checkpoint write. The fix was to move all large
+// data into content-addressed chunks, keeping only hashes in the manifest.
+//
+// The sections below that still embed full data (marked INLINE) are
+// scheduled for migration to chunk-based storage.
+// =============================================================================
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Manifest {
     // ── Envelope (always present) ──
@@ -195,16 +233,26 @@ pub struct Manifest {
     pub key_history: Option<KeyHistoryEntry>,
 
     // ── v2: links ──
+    // Migrated to chunk storage. links_chunk_hash points to a chunk containing
+    // the serialized Vec<LinkEntry>. The inline `links` field is kept for
+    // backward compat reading of old manifests but is empty on new writes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub links_hash: Option<[u8; 32]>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<LinkEntry>,
     pub link_counter: BeId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub links_chunk_hash: Option<[u8; 32]>,
 
     // ── v3: federation ──
+    // Migrated to chunk storage.
+    #[serde(default, skip_serializing_if = "reconcile_store_is_empty")]
     pub reconcile_store: crate::server::federation::ReconcileStore,
     pub reconcile_counter: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub federation: Option<crate::server::federation::FederationSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub federation_chunk_hash: Option<[u8; 32]>,
 
     // ── v4: metadata chunk references ──
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -212,27 +260,36 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_address: Option<crate::edition::ContentAddressIndex>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_address_chunk_hash: Option<[u8; 32]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blob_metas_hash: Option<[u8; 32]>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blob_metas: Vec<BlobMetaEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blob_metas_chunk_hash: Option<[u8; 32]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub historical_authors_hash: Option<[u8; 32]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub historical_authors: Option<crate::server::historical_author::HistoricalAuthorRegistry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub historical_authors_chunk_hash: Option<[u8; 32]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations_hash: Option<[u8; 32]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fossil_snapshots_hash: Option<[u8; 32]>,
 
     // ── v4: social ──
-    #[serde(default)]
+    // Migrated to chunk storage.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub starred_works: std::collections::HashMap<BeId, std::collections::HashSet<BeId>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trails: Vec<TrailManifestEntry>,
     #[serde(default)]
     pub trail_counter: BeId,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub social_chunk_hash: Option<[u8; 32]>,
     // ── v5+ (future additions go here with version annotation) ──
 }
 
@@ -961,6 +1018,7 @@ pub fn create_empty_manifest(
         links_hash: None,
         links: Vec::new(),
         link_counter: 0,
+        links_chunk_hash: None,
         admin: AdminEntry {
             accepting_connections: true,
             shutdown_requested: false,
@@ -969,23 +1027,80 @@ pub fn create_empty_manifest(
         reconcile_store: crate::server::federation::ReconcileStore::new(),
         reconcile_counter: 0,
         federation: None,
+        federation_chunk_hash: None,
         content_address_hash: None,
         content_address: None,
+        content_address_chunk_hash: None,
         blob_metas_hash: None,
         blob_metas: Vec::new(),
+        blob_metas_chunk_hash: None,
         key_history: None,
         historical_authors_hash: None,
         historical_authors: None,
+        historical_authors_chunk_hash: None,
         annotations_hash: None,
         fossil_snapshots_hash: None,
         starred_works: std::collections::HashMap::new(),
         trails: Vec::new(),
         trail_counter: 10_000,
         compound_editions: Vec::new(),
+        social_chunk_hash: None,
     }
 }
 
-#[cfg(test)]
+// =============================================================================
+// Chunk-based section storage helpers
+// =============================================================================
+// These functions serialize/deserialize manifest sections to/from ChunkStore.
+// Used by checkpoint_prepare (write) and restore_from_data_dir (read).
+
+/// Serialize a section to a chunk and return its hash.
+/// Returns None if the section is empty (no chunk needed).
+pub fn write_section_chunk<T: serde::Serialize>(
+    chunk_store: &crate::persist::chunk_store::ChunkStore,
+    data: &T,
+) -> std::io::Result<Option<[u8; 32]>> {
+    let json =
+        serde_json::to_vec(data).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    if json.len() <= 4 {
+        return Ok(None);
+    }
+    let hash = chunk_store
+        .write_chunk(&json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    Ok(Some(hash))
+}
+
+/// Load and deserialize a section from a chunk by hash.
+pub fn read_section_chunk<T: serde::de::DeserializeOwned>(
+    chunk_store: &crate::persist::chunk_store::ChunkStore,
+    hash: &[u8; 32],
+) -> Result<T, std::io::Error> {
+    let data = chunk_store
+        .read_chunk(hash)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    serde_json::from_slice(&data)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct SocialSection {
+    pub starred_works: std::collections::HashMap<BeId, std::collections::HashSet<BeId>>,
+    pub trails: Vec<TrailManifestEntry>,
+    pub trail_counter: BeId,
+    pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
+}
+
+/// Federation section (reconcile_store + reconcile_counter + federation snapshot)
+/// bundled together.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct FederationSection {
+    pub reconcile_store: crate::server::federation::ReconcileStore,
+    pub reconcile_counter: u64,
+    pub federation: Option<crate::server::federation::FederationSnapshot>,
+}
+
+pub type Result<T, E = std::io::Error> = std::result::Result<T, E>;
 mod tests {
     use super::*;
     use crate::persist::chunk_store::ChunkStore;

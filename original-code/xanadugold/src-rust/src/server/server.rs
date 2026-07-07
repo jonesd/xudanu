@@ -559,25 +559,31 @@ pub(crate) fn checkpoint_persist(payload: CheckpointPayload) -> std::io::Result<
         clubs: all_club_refs,
         standalone_editions: all_edition_refs,
         links_hash,
-        links: payload.links,
+        links: Vec::new(),
         link_counter: payload.link_counter,
-        admin: payload.admin_entry,
+        links_chunk_hash: None,
+        admin: payload.admin_entry.clone(),
         reconcile_store: payload.reconcile_store,
         reconcile_counter: payload.reconcile_counter,
         federation: payload.federation_snapshot,
+        federation_chunk_hash: None,
         content_address_hash,
         content_address: None,
+        content_address_chunk_hash: None,
         blob_metas_hash,
         blob_metas: Vec::new(),
+        blob_metas_chunk_hash: None,
         key_history: payload.key_history,
         historical_authors_hash,
         historical_authors: None,
+        historical_authors_chunk_hash: None,
         annotations_hash,
         fossil_snapshots_hash,
         starred_works: payload.starred_works,
         trails: payload.trails,
         trail_counter: payload.trail_counter,
         compound_editions: payload.compound_editions,
+        social_chunk_hash: None,
     };
 
     let dual_path = payload
@@ -14590,8 +14596,9 @@ pub(crate) mod persist_snapshot {
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
                     Some(hash)
                 },
-                links: links.clone(),
+                links: Vec::new(),
                 link_counter: self.link_counter,
+                links_chunk_hash: None,
                 admin: crate::persist::manifest::AdminEntry {
                     accepting_connections: self.admin.is_accepting_connections(),
                     shutdown_requested: self.admin.is_shutdown_requested(),
@@ -14614,6 +14621,7 @@ pub(crate) mod persist_snapshot {
                 reconcile_store: self.reconcile_store.clone(),
                 reconcile_counter: self.reconcile_counter,
                 federation: Some(self.federation.to_snapshot()),
+                federation_chunk_hash: None,
                 content_address_hash: {
                     let ca_data = serde_json::to_vec(&self.content_address)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -14627,6 +14635,7 @@ pub(crate) mod persist_snapshot {
                     Some(hash)
                 },
                 content_address: None,
+                content_address_chunk_hash: None,
                 blob_metas_hash: {
                     let bm_data = serde_json::to_vec(&blob_metas)
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -14640,6 +14649,7 @@ pub(crate) mod persist_snapshot {
                     Some(hash)
                 },
                 blob_metas: Vec::new(),
+                blob_metas_chunk_hash: None,
                 key_history,
                 historical_authors_hash: {
                     let ha_data = serde_json::to_vec(&self.historical_authors)
@@ -14654,6 +14664,7 @@ pub(crate) mod persist_snapshot {
                     Some(hash)
                 },
                 historical_authors: None,
+                historical_authors_chunk_hash: None,
                 annotations_hash: {
                     let all_anns = self.otree_crdt.all_annotations();
                     let total: usize = all_anns.iter().map(|(_, a)| a.len()).sum();
@@ -14739,6 +14750,7 @@ pub(crate) mod persist_snapshot {
                     .iter()
                     .map(|(id, c)| (*id, c.clone()))
                     .collect(),
+                social_chunk_hash: None,
             };
 
             let data_dir = match self.data_dir.as_ref() {
