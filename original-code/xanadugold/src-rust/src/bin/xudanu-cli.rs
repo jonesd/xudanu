@@ -1295,7 +1295,6 @@ async fn handle_registry_command(args: &[String]) -> Result<(), Box<dyn std::err
 fn registry_init(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     use ed25519_dalek::SigningKey;
     use std::fs;
-    use std::os::unix::fs::PermissionsExt;
 
     println!("Creating new trusted server registry: {}", path);
     println!();
@@ -1310,10 +1309,14 @@ fn registry_init(path: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     fs::write(&secret_key_path, &authority_key_hex)?;
 
-    // Set file permissions to 600 (owner read/write only)
-    let mut perms = fs::metadata(&secret_key_path)?.permissions();
-    perms.set_mode(0o600);
-    fs::set_permissions(&secret_key_path, perms)?;
+    // Set file permissions to 600 (owner read/write only) on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&secret_key_path)?.permissions();
+        perms.set_mode(0o600);
+        fs::set_permissions(&secret_key_path, perms)?;
+    }
 
     println!("Authority signing key saved to: {}", secret_key_path);
     println!("  File permissions: 600 (owner read/write only)");
