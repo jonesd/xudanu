@@ -337,16 +337,6 @@ function drawOverlay(
       ctx.fillStyle = srcColor.label;
       ctx.fillRect(0 + barOffset, firstTop, 3, barHeight);
 
-      if (firstRect.width > 30) {
-        const labelX = firstRect.left - rect.left + 4;
-        const labelY = firstRect.top - rect.top - 2;
-        if (labelY > 12) {
-          ctx.font = "600 10px Inter, sans-serif";
-          ctx.fillStyle = srcColor.label;
-          ctx.fillText(srcTitle.slice(0, 24), labelX, labelY);
-        }
-      }
-
       const excerptText = cs.resolved_content?.slice(0, 120) || "";
       hitZones.push({
         marker: {
