@@ -295,6 +295,17 @@
   background: var(--amber-light);
 }
 
+.style-btn {
+  border-color: #6a6a76;
+  color: #6a6a76;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  min-width: 32px;
+}
+.style-btn:hover {
+  background: #e8e5de;
+}
+
 .link-action {
   border-color: var(--blue);
   color: var(--blue);
@@ -443,6 +454,12 @@
   font-size: 17px;
   line-height: 1.75;
   color: var(--doc-text);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.document-center .editor-content {
+  min-height: 100%;
+  padding-bottom: 40vh;
 }
 
 /* ── Context Panel (right) ── */
@@ -738,6 +755,10 @@
 .library-item.active { background: var(--bg-elevated); border-left: 3px solid var(--amber); }
 .library-item-title { font-size: 13px; font-weight: 500; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .library-item-id { font-size: 10px; font-family: 'JetBrains Mono', monospace; color: var(--text-dim); }
+.library-item-row { display: flex; align-items: center; gap: 4px; }
+.library-star { background: none; border: none; cursor: pointer; font-size: 14px; padding: 0 2px; color: var(--text-dim); line-height: 1; }
+.library-star:hover { color: var(--amber); }
+.library-star.starred { color: var(--amber); }
 .library-item { flex-wrap: wrap; }
 .library-detail {
   display: none;

@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import type { WorkListEntry, WhoAmIEntry } from "../../api/crdt_sync";
+import type { WorkListEntry } from "../../api/crdt_sync";
 
 interface LibrarySlideOutProps {
   works: WorkListEntry[];
@@ -9,7 +9,8 @@ interface LibrarySlideOutProps {
   onCreate: () => void;
   onImport: () => void;
   connected: boolean;
-  identity: WhoAmIEntry | null;
+  identity: { display_name: string; club_id: number } | null;
+  onToggleStar?: (workId: number, current: boolean) => void;
 }
 
 export function LibrarySlideOut({
@@ -21,6 +22,7 @@ export function LibrarySlideOut({
   onImport,
   connected,
   identity,
+  onToggleStar,
 }: LibrarySlideOutProps) {
   const [query, setQuery] = useState("");
 
@@ -34,9 +36,16 @@ export function LibrarySlideOut({
     );
   }, [works, query]);
 
-  const favorites = filtered.filter((w) => w.is_starred);
-  const documents = filtered.filter((w) => !w.is_source && !w.is_starred);
-  const sources = filtered.filter((w) => w.is_source);
+  const sortByRecent = (a: WorkListEntry, b: WorkListEntry) => {
+    const ta = a.updated_at ?? 0;
+    const tb = b.updated_at ?? 0;
+    if (ta !== tb) return tb - ta;
+    return b.work_id - a.work_id;
+  };
+
+  const favorites = filtered.filter((w) => w.is_starred).sort(sortByRecent);
+  const documents = filtered.filter((w) => !w.is_source && !w.is_starred).sort(sortByRecent);
+  const sources = filtered.filter((w) => w.is_source).sort(sortByRecent);
 
   return (
     <div className="library-drawer">
@@ -107,7 +116,7 @@ export function LibrarySlideOut({
           <>
             <div className="library-section-label">★ Favorites</div>
             {favorites.map((w) => (
-              <WorkItem key={w.work_id} work={w} active={w.work_id === currentWorkId} onSelect={onSelect} />
+              <WorkItem key={w.work_id} work={w} active={w.work_id === currentWorkId} onSelect={onSelect} onToggleStar={onToggleStar} />
             ))}
           </>
         )}
@@ -116,13 +125,13 @@ export function LibrarySlideOut({
           <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--text-dim)" }}>No documents</div>
         )}
         {documents.map((w) => (
-          <WorkItem key={w.work_id} work={w} active={w.work_id === currentWorkId} onSelect={onSelect} />
+          <WorkItem key={w.work_id} work={w} active={w.work_id === currentWorkId} onSelect={onSelect} onToggleStar={onToggleStar} />
         ))}
         {sources.length > 0 && (
           <>
             <div className="library-section-label">Source Works</div>
             {sources.map((w) => (
-              <WorkItem key={w.work_id} work={w} active={w.work_id === currentWorkId} onSelect={onSelect} />
+              <WorkItem key={w.work_id} work={w} active={w.work_id === currentWorkId} onSelect={onSelect} onToggleStar={onToggleStar} />
             ))}
           </>
         )}
@@ -153,10 +162,12 @@ function WorkItem({
   work,
   active,
   onSelect,
+  onToggleStar,
 }: {
   work: WorkListEntry;
   active: boolean;
   onSelect: (id: number) => void;
+  onToggleStar?: (workId: number, current: boolean) => void;
 }) {
   const typeLabel = work.is_source ? "Source" : "Document";
   const revLabel = `${work.revision_count} revision${work.revision_count === 1 ? "" : "s"}`;
@@ -165,15 +176,26 @@ function WorkItem({
       className={`library-item ${active ? "active" : ""}`}
       onClick={() => onSelect(work.work_id)}
     >
-      <span className="library-item-title">{work.title || "Untitled"}</span>
-      <span className="library-item-id">{work.work_id.toString(16).padStart(4, "0")}</span>
+      <div className="library-item-row">
+        {onToggleStar && (
+          <button
+            className={`library-star ${work.is_starred ? "starred" : ""}`}
+            onClick={(e) => { e.stopPropagation(); onToggleStar(work.work_id, !!work.is_starred); }}
+            title={work.is_starred ? "Remove from favorites" : "Add to favorites"}
+          >
+            {work.is_starred ? "\u2605" : "\u2606"}
+          </button>
+        )}
+        <span className="library-item-title">{work.title || "Untitled"}</span>
+        <span className="library-item-id">{work.work_id.toString(16).padStart(4, "0")}</span>
+      </div>
       <div className="library-detail">
         <span>{typeLabel}</span>
-        <span className="library-detail-sep">·</span>
+        <span className="library-detail-sep">{"\u00B7"}</span>
         <span>{revLabel}</span>
         {work.updated_at ? (
           <>
-            <span className="library-detail-sep">·</span>
+            <span className="library-detail-sep">{"\u00B7"}</span>
             <span>edited {formatRelativeTime(work.updated_at)}</span>
           </>
         ) : null}

@@ -326,6 +326,11 @@ export function AppShell() {
         await new Promise((r) => setTimeout(r, 200));
         spanStart = newText.length;
       }
+      for (const sr of compound.spanRanges) {
+        if (sr.flat_end <= spanStart) {
+          spanStart -= (sr.flat_end - sr.flat_start);
+        }
+      }
       await compound.addSpan(
         text,
         spanStart,
@@ -402,12 +407,50 @@ export function AppShell() {
   const handlePullFromWork = useCallback(
     async (sourceWorkId: number, charStart: number, charEnd: number, text: string) => {
       if (!clientRef.current || workBeId === null) return;
-      const position = selectionRange?.end ?? displayText.length;
+      let position = selectionRange?.end ?? displayText.length;
+      for (const sr of compound.spanRanges) {
+        if (sr.flat_end <= position) {
+          position -= (sr.flat_end - sr.flat_start);
+        }
+      }
       await compound.addSpan(text, position, text, sourceWorkId, charStart, charEnd);
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 100));
       await compound.reload();
     },
     [clientRef, workBeId, selectionRange, displayText, compound],
+  );
+
+  const handleToggleStar = useCallback(
+    async (workId: number, current: boolean) => {
+      if (!clientRef.current) return;
+      try {
+        if (current) await clientRef.current.workUnstar(workId);
+        else await clientRef.current.workStar(workId);
+        setWorks((prev) => prev.map((w) => w.work_id === workId ? { ...w, is_starred: !current } : w));
+      } catch (e) {
+        console.error("Failed to toggle star:", e);
+      }
+    },
+    [clientRef],
+  );
+
+  const handleToggleStyle = useCallback(
+    async (kind: string, start: number, end: number) => {
+      if (!clientRef.current || workBeId === null) return;
+      const existing = annotations.find(
+        (a) => a.kind === kind && a.char_start < end && a.char_end > start,
+      );
+      try {
+        if (existing) {
+          await deleteAnnotation(existing.annotation_id);
+        } else {
+          await createAnnotation(kind, "", start, end, false);
+        }
+      } catch (e) {
+        console.error("[handleToggleStyle] failed:", e);
+      }
+    },
+    [clientRef, workBeId, annotations, deleteAnnotation, createAnnotation],
   );
 
   const handleCreateLinkTarget = useCallback(
@@ -614,6 +657,26 @@ export function AppShell() {
           <div className="selection-actions">
             <button
               type="button"
+              className="selection-action-btn style-btn"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => handleToggleStyle("bold", selectionRange.start, selectionRange.end)}
+              title="Bold (Ctrl+B)"
+              style={{ fontWeight: 700 }}
+            >
+              B
+            </button>
+            <button
+              type="button"
+              className="selection-action-btn style-btn"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => handleToggleStyle("italic", selectionRange.start, selectionRange.end)}
+              title="Italic (Ctrl+I)"
+              style={{ fontStyle: "italic" }}
+            >
+              I
+            </button>
+            <button
+              type="button"
               className="selection-action-btn transclusion-action"
               onClick={handleTranscludeSelection}
               title="Hold this selection as a transclusion to insert elsewhere"
@@ -800,6 +863,7 @@ export function AppShell() {
                 lineHeight={docPrefs.lineHeight}
                 annotations={crdt.annotations}
                 onCreateAnnotation={editable ? handleCreateAnnotation : undefined}
+                onToggleStyle={editable ? handleToggleStyle : undefined}
               />
             </div>
             {showProvenance && (
@@ -924,6 +988,7 @@ export function AppShell() {
           onImport={() => { setLibraryOpen(false); setShowImport(true); }}
           connected={connected}
           identity={identity}
+          onToggleStar={handleToggleStar}
         />
       )}
 

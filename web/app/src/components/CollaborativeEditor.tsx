@@ -3,6 +3,7 @@ import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePay
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { TextBuffer } from "../api/text_buffer";
+import { extractStyleMarks, buildStyledText, getCursorOffset, setCursorOffset } from "../styled-text";
 import { SearchPanel } from "./SearchPanel";
 import { OutlinePanel } from "./OutlinePanel";
 import { RemoteCursors } from "./RemoteCursors";
@@ -55,6 +56,7 @@ interface CollaborativeEditorProps {
   lineHeight?: number;
   annotations?: AnnotationEntry[];
   onCreateAnnotation?: (charStart: number, charEnd: number) => void;
+  onToggleStyle?: (kind: string, start: number, end: number) => void;
   compoundSpanRanges?: SpanRangePayload[];
   remoteCursors?: AwarenessState[];
   compoundSourceTitles?: Record<number, string>;
@@ -597,6 +599,7 @@ function drawOverlay(
   }
 
   for (const ann of annotations) {
+    if (ann.kind === "bold" || ann.kind === "italic") continue;
     if (ann.char_start >= ann.char_end) continue;
     const drawStart = Math.max(ann.char_start, 0);
     const drawEnd = Math.min(ann.char_end, textLen);
@@ -667,6 +670,7 @@ export function CollaborativeEditor({
   lineHeight,
   annotations = [],
   onCreateAnnotation,
+  onToggleStyle,
   compoundSpanRanges = [],
   remoteCursors = [],
   compoundSourceTitles: compoundSourceTitles = {},
@@ -693,6 +697,8 @@ export function CollaborativeEditor({
   const [linkTypeFilter, setLinkTypeFilter] = useState<Set<number> | null>(null);
   const [expandedClusters, setExpandedClusters] = useState<Set<number>>(new Set());
   const [showCompoundHighlight, setShowCompoundHighlight] = useState(true);
+  const styleMarks = useMemo(() => extractStyleMarks(annotations), [annotations]);
+  const lastMarksRef = useRef("");
 
   const presentTypes = useMemo(() => presentLinkTypeIds(transclusionMarkers), [transclusionMarkers]);
   const filteredMarkers = useMemo(
@@ -753,6 +759,27 @@ export function CollaborativeEditor({
 
   useEffect(() => {
     const el = editorRef.current;
+    if (!el || hasInlineTransclusions || !displayText) return;
+    const marksKey = styleMarks.map((m) => `${m.kind}:${m.char_start}:${m.char_end}`).join("|");
+    if (marksKey === lastMarksRef.current) return;
+    lastMarksRef.current = marksKey;
+    const savedCursor = getCursorOffset(el);
+    if (styleMarks.length > 0) {
+      el.innerHTML = buildStyledText(displayText, styleMarks);
+      if (displayText.endsWith("\n")) {
+        el.appendChild(document.createTextNode("\u200B"));
+      }
+    } else {
+      el.textContent = displayText;
+      if (displayText.endsWith("\n")) {
+        el.appendChild(document.createTextNode("\u200B"));
+      }
+    }
+    setCursorOffset(el, savedCursor);
+  }, [styleMarks, displayText, hasInlineTransclusions]);
+
+  useEffect(() => {
+    const el = editorRef.current;
     if (!el) return;
     if (isUndoRedoing.current) return;
 
@@ -788,17 +815,27 @@ export function CollaborativeEditor({
       }
       redoStack.current = [];
     }
-    if (currentText !== displayText) {
+    const marksKey = styleMarks.map((m) => `${m.kind}:${m.char_start}:${m.char_end}`).join("|");
+    const marksChanged = marksKey !== lastMarksRef.current;
+    lastMarksRef.current = marksKey;
+    if (currentText !== displayText || marksChanged) {
+      const savedCursor = getCursorOffset(el);
       if (displayText.length > LARGE_DOC_THRESHOLD) {
         chunkedSetTextContent(el, displayText);
       } else if (displayText === "") {
         el.innerHTML = "<br>";
+      } else if (styleMarks.length > 0) {
+        el.innerHTML = buildStyledText(displayText, styleMarks);
+        if (displayText.endsWith("\n")) {
+          el.appendChild(document.createTextNode("\u200B"));
+        }
       } else {
         el.textContent = displayText;
         if (displayText.endsWith("\n")) {
           el.appendChild(document.createTextNode("\u200B"));
         }
       }
+      setCursorOffset(el, savedCursor);
     }
     lastText.current = displayText;
   }, [displayText, inlineResolvedText, hasInlineTransclusions, compoundSpanRanges, compoundSourceTitles]);
@@ -1003,7 +1040,7 @@ export function CollaborativeEditor({
   }, [onTextChange, editable, pushUndo, hasInlineTransclusions]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (!editable) { console.warn("[EDIT-DEBUG] keydown blocked, editable=false"); e.preventDefault(); return; }
+    if (!editable) { e.preventDefault(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
       e.preventDefault();
       if (undoTimer.current !== null) {
@@ -1068,8 +1105,34 @@ export function CollaborativeEditor({
       sel.removeAllRanges();
       sel.addRange(range);
       handleInput();
+    } else if (e.ctrlKey && !e.metaKey && (e.key === "b" || e.key === "B") && onToggleStyle) {
+      e.preventDefault();
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      if (!editorRef.current?.contains(range.startContainer)) return;
+      const pre = document.createRange();
+      pre.selectNodeContents(editorRef.current);
+      pre.setEnd(range.startContainer, range.startOffset);
+      const start = pre.toString().length;
+      const end = start + sel.toString().length;
+      if (start < end) {
+        onToggleStyle("bold", start, end);
+      }
+    } else if (e.ctrlKey && !e.metaKey && (e.key === "i" || e.key === "I") && onToggleStyle) {
+      e.preventDefault();
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      if (!editorRef.current?.contains(range.startContainer)) return;
+      const pre = document.createRange();
+      pre.selectNodeContents(editorRef.current);
+      pre.setEnd(range.startContainer, range.startOffset);
+      const start = pre.toString().length;
+      const end = start + sel.toString().length;
+      if (start < end) onToggleStyle("italic", start, end);
     }
-  }, [handleInput, editable, onCreateAnnotation, onUndoLastTransclusion, restoreUndoEntry]);
+  }, [handleInput, editable, onCreateAnnotation, onUndoLastTransclusion, restoreUndoEntry, onToggleStyle]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     if (!editable) { e.preventDefault(); return; }
