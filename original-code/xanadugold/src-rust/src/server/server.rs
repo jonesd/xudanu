@@ -8404,9 +8404,7 @@ impl Server {
                 is_private,
             )
             .map_err(|e| ServerError::Internal(e.to_string()))?;
-        if let Err(e) = self.checkpoint_to_store() {
-            tracing::error!("annotation checkpoint failed: {}", e);
-        }
+        self.auto_checkpoint();
         Ok(())
     }
 
@@ -8424,9 +8422,7 @@ impl Server {
         self.otree_crdt
             .annotation_delete(work_id, annotation_id)
             .map_err(|e| ServerError::Internal(e.to_string()))?;
-        if let Err(e) = self.checkpoint_to_store() {
-            tracing::error!("annotation delete checkpoint failed: {}", e);
-        }
+        self.auto_checkpoint();
         Ok(())
     }
 

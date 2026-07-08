@@ -232,7 +232,7 @@ export function CompoundPanel({
                         {sourceText}
                       </div>
                       {selRange && (
-                        <div className="compound-pull-selected">
+                        <div className="compound-pull-selected" ref={(el) => { if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" }); }}>
                           <div className="compound-pull-selected-text">
                             Selected: {"\""}{selRange.text.slice(0, 80)}{selRange.text.length > 80 ? "\u2026" : ""}{"\""}
                             <span className="compound-pull-range"> [{selRange.start}:{selRange.end}]</span>
