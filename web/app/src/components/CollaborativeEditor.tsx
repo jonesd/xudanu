@@ -108,6 +108,24 @@ const LINK_TYPE_NAMES: Record<number, string> = {
   5: "See Also",
 };
 
+const COMPOUND_COLORS = [
+  { bg: "rgba(0, 137, 123, 0.12)", border: "rgba(0, 137, 123, 0.35)", label: "#00897b" },
+  { bg: "rgba(92, 107, 192, 0.12)", border: "rgba(92, 107, 192, 0.35)", label: "#5c6bc0" },
+  { bg: "rgba(244, 81, 30, 0.12)", border: "rgba(244, 81, 30, 0.35)", label: "#f4511e" },
+  { bg: "rgba(123, 31, 162, 0.12)", border: "rgba(123, 31, 162, 0.35)", label: "#7b1fa2" },
+  { bg: "rgba(198, 40, 40, 0.12)", border: "rgba(198, 40, 40, 0.35)", label: "#c62828" },
+  { bg: "rgba(46, 125, 50, 0.12)", border: "rgba(46, 125, 50, 0.35)", label: "#2e7d32" },
+  { bg: "rgba(0, 131, 143, 0.12)", border: "rgba(0, 131, 143, 0.35)", label: "#00838f" },
+  { bg: "rgba(230, 81, 0, 0.12)", border: "rgba(230, 81, 0, 0.35)", label: "#e65100" },
+];
+
+function compoundColorForSource(workId: number) {
+  let hash = 0;
+  hash = ((hash << 5) - hash + workId) | 0;
+  hash = ((hash << 5) - hash + (workId >> 8)) | 0;
+  return COMPOUND_COLORS[Math.abs(hash) % COMPOUND_COLORS.length];
+}
+
 const HATCH_COLORS: [string, string][] = [
   ["#00897b", "#4db6ac"],
   ["#5c6bc0", "#9fa8da"],
@@ -166,6 +184,8 @@ function drawOverlay(
   recentChanges: ChangeHighlight[] = [],
   showAttribution: boolean = true,
   expandedClusters: Set<number> = new Set(),
+  compoundSourceTitles: Record<number, string> = {},
+  showCompound: boolean = true,
 ): MarkerHitZone[] {
   const hitZones: MarkerHitZone[] = [];
   if (!editor || !canvas) return hitZones;
@@ -266,11 +286,16 @@ function drawOverlay(
     }
   }
 
+  if (showCompound) {
   for (let csIndex = 0; csIndex < compoundSpans.length; csIndex++) {
     const cs = compoundSpans[csIndex];
     const drawStart = Math.max(cs.flat_start, 0);
     const drawEnd = Math.min(cs.flat_end, textLen);
     if (drawStart >= drawEnd) continue;
+
+    const srcColor = compoundColorForSource(cs.source_work_id);
+    const srcTitle = compoundSourceTitles[cs.source_work_id]
+      || `work:${cs.source_work_id.toString(16).padStart(4, "0")}`;
 
     const range = document.createRange();
     try {
@@ -292,33 +317,47 @@ function drawOverlay(
     for (const r of rangeRects) {
       const x = r.left - rect.left;
       const y = r.top - rect.top;
-      ctx.fillStyle = "#f59e0b14";
+      ctx.fillStyle = srcColor.bg;
       ctx.fillRect(x, y, r.width, r.height);
       ctx.save();
-      ctx.strokeStyle = "#f59e0b50";
+      ctx.strokeStyle = srcColor.border;
       ctx.lineWidth = 1;
-      ctx.setLineDash([3, 2]);
+      ctx.setLineDash([4, 2]);
       ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
       ctx.restore();
     }
 
     if (rangeRects.length > 0) {
-      const firstTop = rangeRects[0].top - rect.top;
+      const firstRect = rangeRects[0];
+      const firstTop = firstRect.top - rect.top;
       const lastRect = rangeRects[rangeRects.length - 1];
       const barHeight = (lastRect.bottom - rect.top) - firstTop;
+
       const barOffset = (csIndex % 3) * 4;
-      ctx.fillStyle = "#f59e0ba0";
+      ctx.fillStyle = srcColor.label;
       ctx.fillRect(0 + barOffset, firstTop, 3, barHeight);
 
+      if (firstRect.width > 30) {
+        const labelX = firstRect.left - rect.left + 4;
+        const labelY = firstRect.top - rect.top - 2;
+        if (labelY > 12) {
+          ctx.font = "600 10px Inter, sans-serif";
+          ctx.fillStyle = srcColor.label;
+          ctx.fillText(srcTitle.slice(0, 24), labelX, labelY);
+        }
+      }
+
+      const excerptText = cs.resolved_content?.slice(0, 120) || "";
       hitZones.push({
         marker: {
           start: cs.flat_start,
           end: cs.flat_end,
           linkId: 0,
-          direction: "outgoing" as const,
+          direction: "incoming" as const,
           otherWorkId: cs.source_work_id,
-          otherWorkTitle: "",
-          color: "#f59e0b",
+          otherWorkTitle: srcTitle,
+          color: srcColor.label,
+          excerpt: excerptText,
           provenanceChain: undefined,
           otherWorkIsArchived: undefined,
           otherWorkOwner: undefined,
@@ -329,6 +368,7 @@ function drawOverlay(
         height: barHeight,
       });
     }
+  }
   }
 
   const now = Date.now();
@@ -639,7 +679,7 @@ export function CollaborativeEditor({
   onCreateAnnotation,
   compoundSpanRanges = [],
   remoteCursors = [],
-  compoundSourceTitles: _compoundSourceTitles = {},
+  compoundSourceTitles: compoundSourceTitles = {},
   recentChanges = [],
   showAttributionColors = true,
   inlineResolvedText,
@@ -662,6 +702,7 @@ export function CollaborativeEditor({
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [linkTypeFilter, setLinkTypeFilter] = useState<Set<number> | null>(null);
   const [expandedClusters, setExpandedClusters] = useState<Set<number>>(new Set());
+  const [showCompoundHighlight, setShowCompoundHighlight] = useState(true);
 
   const presentTypes = useMemo(() => presentLinkTypeIds(transclusionMarkers), [transclusionMarkers]);
   const filteredMarkers = useMemo(
@@ -737,7 +778,7 @@ export function CollaborativeEditor({
           if (undoStack.current.length > MAX_UNDO) undoStack.current.shift();
         }
         redoStack.current = [];
-        buildTransclusionDom(el, inlineResolvedText, compoundSpanRanges, _compoundSourceTitles);
+        buildTransclusionDom(el, inlineResolvedText, compoundSpanRanges, compoundSourceTitles);
         lastText.current = getEditableText(el);
       }
       return;
@@ -770,7 +811,7 @@ export function CollaborativeEditor({
       }
     }
     lastText.current = displayText;
-  }, [displayText, inlineResolvedText, hasInlineTransclusions, compoundSpanRanges, _compoundSourceTitles]);
+  }, [displayText, inlineResolvedText, hasInlineTransclusions, compoundSpanRanges, compoundSourceTitles]);
 
   useEffect(() => {
     if (text === "") {
@@ -794,11 +835,11 @@ export function CollaborativeEditor({
     const redraw = () => {
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters);
+        hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);
       });
     };
 
-    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters);
+    hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);
 
     const ro = new ResizeObserver(redraw);
     ro.observe(container);
@@ -809,7 +850,7 @@ export function CollaborativeEditor({
       container.removeEventListener("scroll", redraw);
       cancelAnimationFrame(rafId);
     };
-  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters]);
+  }, [attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight]);
 
   useEffect(() => {
     if (recentChanges.length === 0) return;
@@ -817,7 +858,7 @@ export function CollaborativeEditor({
       const el = editorRef.current;
       const canvas = overlayRef.current;
       if (!el || !canvas) return;
-      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters);
+      hitZonesRef.current = drawOverlay(el, canvas, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, recentChanges, showAttributionColors, expandedClusters, compoundSourceTitles, showCompoundHighlight);
     }, 200);
     return () => clearInterval(interval);
   }, [recentChanges, attributionSpans, authorColorMap, filteredMarkers, annotations, compoundSpanRanges, showAttributionColors, expandedClusters]);
@@ -1335,6 +1376,25 @@ export function CollaborativeEditor({
                 />
               );
             })}
+            {compoundSpanRanges.length > 0 && (
+              <button
+                type="button"
+                title={showCompoundHighlight ? "Hide compound highlighting" : "Show compound highlighting"}
+                onClick={() => setShowCompoundHighlight((s) => !s)}
+                style={{
+                  background: showCompoundHighlight ? "rgba(0, 137, 123, 0.2)" : "transparent",
+                  border: showCompoundHighlight ? "1px solid #00897b" : "1px solid #30363d",
+                  color: showCompoundHighlight ? "#4db6ac" : "#8b949e",
+                  borderRadius: 3,
+                  padding: "0 6px",
+                  fontSize: 11,
+                  cursor: "pointer",
+                  marginLeft: 4,
+                }}
+              >
+                {"\u25A3"} {compoundSpanRanges.length}
+              </button>
+            )}
           </div>
         )}
         <div
@@ -1366,7 +1426,9 @@ export function CollaborativeEditor({
               <div className="marker-tooltip-direction">
                 {hoveredMarker.linkTypeId
                   ? `${LINK_TYPE_NAMES[hoveredMarker.linkTypeId] ?? "Link"} — ${hoveredMarker.direction === "outgoing" ? "links to" : "linked from"}`
-                  : hoveredMarker.direction === "outgoing" ? "Transcluded to" : "Transcluded from"}
+                  : hoveredMarker.linkId === 0
+                    ? `Compound — transcluded from`
+                    : hoveredMarker.direction === "outgoing" ? "Transcluded to" : "Transcluded from"}
               </div>
               {hoveredMarker.excerpt && (
                 <div className="marker-tooltip-excerpt" style={{ fontSize: 11, color: "#8b949e", marginTop: 4, fontStyle: "italic", maxHeight: 60, overflow: "hidden" }}>
