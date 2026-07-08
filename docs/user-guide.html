@@ -3,242 +3,638 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Xudanu User Guide &mdash; v0.7.0</title>
+<title>Xudanu User Guide &mdash; v0.9.0</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap');
 *{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
 body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
 .mono{font-family:'JetBrains Mono',monospace}
 a{color:#58a6ff;text-decoration:none}
 a:hover{text-decoration:underline}
-.content-wrap{max-width:800px;margin:0 auto;padding:48px 32px 80px}
-h1{font-size:32px;font-weight:800;margin-bottom:8px;color:#e6edf3;letter-spacing:-0.5px}
-.subtitle{font-size:16px;color:#8b949e;font-weight:300;margin-bottom:48px}
-h2{font-size:22px;font-weight:700;margin:40px 0 16px;padding-bottom:8px;border-bottom:1px solid #21262d;color:#e6edf3}
-h3{font-size:16px;font-weight:600;margin:24px 0 8px;color:#e6edf3}
-p{margin-bottom:12px}
-ul,ol{margin:8px 0 16px 24px}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:64px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.toc .toc-sub{padding-left:16px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+ul,ol{margin-left:24px;margin-bottom:16px;list-style:disc}
 li{margin-bottom:6px}
-code{font-family:'JetBrains Mono',monospace;background:#161b22;padding:2px 6px;border-radius:4px;font-size:13px;color:#79c0ff}
-kbd{font-family:'JetBrains Mono',monospace;background:#21262d;padding:2px 8px;border-radius:4px;font-size:12px;border:1px solid #30363d;color:#c9d1d9}
-.screenshot{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px;margin:16px 0;font-size:14px;line-height:1.8}
-.screenshot .bar{background:#0d1117;padding:8px 12px;border-radius:4px;margin-bottom:12px;display:flex;align-items:center;gap:12px;font-size:13px}
-.screenshot .star{color:#f59e0b}
-.screenshot .link{color:#58a6ff}
-.screenshot .purple{color:#a371f7}
-.tip{background:rgba(63,185,80,0.08);border-left:3px solid #3fb950;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px}
-.tip strong{color:#3fb950}
-.warn{background:rgba(210,153,34,0.08);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px}
-.warn strong{color:#d29922}
+ol li{margin-bottom:8px;list-style:decimal}
+.kbd{font-family:'JetBrains Mono',monospace;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;padding:2px 6px;color:#c9d1d9}
+.step{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px 24px;margin:16px 0}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#58a6ff;color:#0d1117;border-radius:50%;font-weight:700;font-size:14px;margin-right:10px;flex-shrink:0}
+.step-title{font-size:16px;font-weight:600;color:#e6edf3;display:flex;align-items:center;margin-bottom:8px}
+.step-body{padding-left:38px}
 .feature-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
 .feature-card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px}
 .feature-card h4{font-size:14px;font-weight:600;margin-bottom:4px;color:#e6edf3}
 .feature-card p{font-size:13px;color:#8b949e;margin:0}
-.footer{margin-top:64px;padding-top:20px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
-@media(max-width:640px){.content-wrap{padding:24px 16px 60px}.feature-grid{grid-template-columns:1fr}}
+.wow{background:linear-gradient(135deg,rgba(88,166,255,0.08),rgba(163,113,247,0.08));border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:24px;margin:24px 0}
+.wow h3{color:#58a6ff;margin-top:0}
+.wow p{color:#c9d1d9}
+.accent-green{color:#3fb950}.accent-blue{color:#58a6ff}.accent-purple{color:#a371f7}.accent-amber{color:#d29922}.accent-red{color:#f85149}.accent-teal{color:#39d2c0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}.feature-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="content-wrap">
 
 <h1>Xudanu User Guide</h1>
-<p class="subtitle">Version 0.7.0 &mdash; Stars, Trails, Document Map, Content Similarity, and hardened persistence</p>
+<p class="subtitle">A connected literature where every quotation maintains its bond to the original, where every reuse carries its full provenance.</p>
 
-<h2>Xanadu Gold Foundations</h2>
-<p>Xudanu builds directly on the <strong>Udanax-Gold</strong> hypertext model &mdash; Ted Nelson's C++ implementation open-sourced in 1999 &mdash; with modern enhancements including BLAKE3 content hashing, Ed25519 cryptographic attribution, CRDT-based collaborative editing, and a real-time web UI. The features in this release rest on core Gold abstractions:</p>
-<ul>
-  <li><strong>Works &amp; Editions</strong> &mdash; Documents are Works containing versioned Editions. Each Edition captures a complete snapshot with per-line attribution, three-way merge, and the O-tree CRDT data model.</li>
-  <li><strong>Transclusion</strong> &mdash; The foundational Xanadu concept: content is linked, not copied. When you transclude text from one document into another, provenance is preserved &mdash; the attribution panel shows <code>via work:XXXX</code> for every transcluded passage.</li>
-  <li><strong>Content Addressing</strong> &mdash; Every piece of text has a BLAKE3 content hash. Identical content shares the same address, enabling automatic transclusion detection and deduplication across documents and revisions.</li>
-  <li><strong>Clubs &amp; Permissions</strong> &mdash; The Gold club hierarchy controls read/write access. Personal clubs own your edits; groups enable collaboration; the public club allows anonymous access.</li>
-  <li><strong>Cryptographic Attribution</strong> &mdash; Every edit is signed with Ed25519. The attribution system traces every character back to its author, distinguishing human input, LLM-generated text, historical imports, and transcluded passages.</li>
-  <li><strong>Trails</strong> &mdash; Ordered paths through documents, directly implementing Nelson's concept of guided reading sequences through a hypertext corpus.</li>
-  <li><strong>Document Map</strong> &mdash; Visualization of the transclusion and similarity graph, showing how documents relate to each other across the entire corpus.</li>
-</ul>
+<div class="toc">
+  <a class="toc-section" href="#vision">The Vision: From Xanadu to Xudanu</a>
+  <a class="toc-section" href="#start">Getting Started</a>
+  <a class="toc-section" href="#works">Works &amp; Editions</a>
+  <a class="toc-section" href="#identity">Identity &amp; Permissions</a>
+  <a class="toc-section" href="#editing">Document Editing</a>
+  <a class="toc-sub" href="#styled">Styled Text (Bold &amp; Italic)</a>
+  <a class="toc-sub" href="#attribution">Attribution &amp; Provenance</a>
+  <a class="toc-sub" href="#collab">Collaborative Editing</a>
+  <a class="toc-section" href="#links">Links &amp; Backlinks</a>
+  <a class="toc-sub" href="#link-types">The Five Link Types</a>
+  <a class="toc-sub" href="#link-create">Creating Links</a>
+  <a class="toc-sub" href="#link-manage">Managing Links</a>
+  <a class="toc-sub" href="#pins">Connection Pins</a>
+  <a class="toc-section" href="#annotations">Annotations</a>
+  <a class="toc-sub" href="#private">Private Annotations</a>
+  <a class="toc-section" href="#transclusion">Transclusion</a>
+  <a class="toc-section" href="#compound">Compound Documents</a>
+  <a class="toc-sub" href="#pull">Pull from Document</a>
+  <a class="toc-sub" href="#compound-vis">Visual Markers</a>
+  <a class="toc-sub" href="#placement">Placement Tracking</a>
+  <a class="toc-section" href="#trails">Trails</a>
+  <a class="toc-section" href="#stars">Stars &amp; Library</a>
+  <a class="toc-section" href="#map">Document Map</a>
+  <a class="toc-section" href="#cross-server">Cross-Server Links</a>
+  <a class="toc-section" href="#persistence">Persistence &amp; Safety</a>
+  <a class="toc-section" href="#shortcuts">Keyboard Shortcuts</a>
+  <a class="toc-section" href="#cli">CLI Reference</a>
+</div>
 
-<h2>Quick Start</h2>
-<ol>
-  <li>Download the release for your platform from <a href="https://github.com/jonesd/xudanu/releases">GitHub Releases</a></li>
-  <li>Extract the archive: <code>tar -xzf xudanu-v0.7.0-*.tar.gz</code></li>
-  <li>Initialize a data directory: <code>./xudanu-server init ./data</code></li>
-  <li>Start the server: <code>./xudanu-server run 127.0.0.1:8080 ./data --static-dir ./dist</code></li>
-  <li>Open <code>http://127.0.0.1:8080</code> in your browser</li>
-  <li>Click <strong>Sign In</strong> and enter credentials (default admin password is set via <code>ADMIN_PASSWORD</code> env var)</li>
-</ol>
+<!-- ============================================================ -->
+<h2 id="vision">The Vision: From Xanadu to Xudanu</h2>
 
-<h2>Document Editing</h2>
-<p>Create documents from the sidebar. Click a document to open it in the editor. All edits are saved automatically &mdash; there is no Save button. Every keystroke is recorded as a CRDT operation with cryptographic attribution.</p>
+<p>
+In 1960, a Harvard student named <strong>Ted Nelson</strong> envisioned a system where documents could be connected, content could be reused without copying, and every quotation would maintain its bond to the original. He called this vision <strong>Xanadu</strong>.
+</p>
 
-<h3>Attribution</h3>
-<p>Click the <strong>Attribution</strong> button (or use the More menu) to see who wrote each section of text. Attribution spans are color-coded:</p>
+<p>
+Over the next four decades, Nelson and his collaborators built increasingly sophisticated implementations: zippered lists (1965), enfilades (1978), Udanax Green (1988), and Udanax Gold (1992). Gold introduced transclusions that preserved provenance, tumblers for global addressing, and the Ent &mdash; a data structure for managing complex versioning. But Gold never shipped as a product. The enfilade was a trade secret until 1999. The demos were few and fragmentary.
+</p>
+
+<p>
+<strong>Xudanu</strong> picks up where Gold left off, with a modern architecture:
+</p>
+
 <div class="feature-grid">
   <div class="feature-card">
-    <h4><span style="color:#22c55e">&#9632;</span> Green &mdash; Human</h4>
-    <p>Text typed directly by a logged-in user</p>
+    <h4>O-tree CRDT</h4>
+    <p>Replaces Gold's Ent with a position-based CRDT using space algebra &mdash; purpose-built for Xudanu's content model</p>
   </div>
   <div class="feature-card">
-    <h4><span style="color:#a855f7">&#9632;</span> Purple &mdash; LLM</h4>
-    <p>Text generated by the AI assistant</p>
+    <h4>Inline Transclusions</h4>
+    <p>Gold stored transclusions in a side-table that could drift. Xudanu puts them directly in the O-tree &mdash; single source of truth</p>
   </div>
   <div class="feature-card">
-    <h4><span style="color:#f59e0b">&#9632;</span> Amber &mdash; Historical</h4>
-    <p>Text from imported or source documents</p>
+    <h4>BLAKE3 + Ed25519</h4>
+    <p>Modern crypto: content fingerprinting, signed attribution, tamper-evident audit logs</p>
   </div>
   <div class="feature-card">
-    <h4><span style="color:#6b7280">&#9632;</span> Gray &mdash; Unattributed</h4>
-    <p>Text with no provenance information</p>
+    <h4>Real-time Web</h4>
+    <p>Collaborative editing in the browser via WebSocket &mdash; Gold was single-user terminal/Motif</p>
   </div>
 </div>
 
-<h3>Transclusion</h3>
-<p>Select text in a document, then click the <strong>Transclude</strong> button that appears. Choose a target document. The selected text is copied into the target with full provenance tracking &mdash; the attribution panel will show <code>via work:XXXX</code> for transcluded passages.</p>
+<div class="diagram-container">
+<svg width="600" height="240" viewBox="0 0 600 240">
+  <rect x="10" y="20" width="170" height="50" rx="6" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+  <text x="95" y="42" text-anchor="middle" fill="#d29922" font-size="11" font-family="Inter" font-weight="600">1960</text>
+  <text x="95" y="58" text-anchor="middle" fill="#c9d1d9" font-size="10" font-family="Inter">Nelson's vision</text>
 
-<h2 id="stars">Stars (Favorites)</h2>
-<p>Star documents to mark them as favorites. Starred documents appear in a dedicated <strong>Favorites</strong> section at the top of the sidebar, and are shown as amber circles in the Document Map.</p>
+  <rect x="10" y="85" width="170" height="50" rx="6" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+  <text x="95" y="107" text-anchor="middle" fill="#d29922" font-size="11" font-family="Inter" font-weight="600">1988-92</text>
+  <text x="95" y="123" text-anchor="middle" fill="#c9d1d9" font-size="10" font-family="Inter">Udanax Green/Gold</text>
 
-<h3>How to star a document</h3>
+  <rect x="10" y="150" width="170" height="50" rx="6" fill="#161b22" stroke="#d29922" stroke-width="1.5"/>
+  <text x="95" y="172" text-anchor="middle" fill="#d29922" font-size="11" font-family="Inter" font-weight="600">1999</text>
+  <text x="95" y="188" text-anchor="middle" fill="#c9d1d9" font-size="10" font-family="Inter">Open sourced</text>
+
+  <line x1="180" y1="115" x2="240" y2="115" stroke="#58a6ff" stroke-width="2"/>
+  <polygon points="240,115 232,111 234,119" fill="#58a6ff"/>
+  <text x="210" y="105" text-anchor="middle" fill="#58a6ff" font-size="9" font-family="Inter">inherits</text>
+
+  <rect x="240" y="85" width="350" height="120" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+  <text x="415" y="110" text-anchor="middle" fill="#58a6ff" font-size="14" font-family="Inter" font-weight="700">XUDANU v0.9.0</text>
+  <text x="415" y="130" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Inter">O-tree CRDT + inline transclusions</text>
+  <text x="415" y="148" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Inter">BLAKE3 + Ed25519 attribution</text>
+  <text x="415" y="166" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Inter">Real-time collaborative editing</text>
+  <text x="415" y="184" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Inter">Cross-server links + compound docs</text>
+</svg>
+</div>
+<p class="diagram-caption">Xudanu inherits the Xanalogical model and reimplements it with modern architecture.</p>
+
+<!-- ============================================================ -->
+<h2 id="start">Getting Started</h2>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span> Start the server</div>
+  <div class="step-body">
+    <pre><code>./xudanu-server run 127.0.0.1:8080 data --static-dir ./dist</code></pre>
+    <p>Open <code>http://127.0.0.1:8080</code> in your browser.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span> Create an identity</div>
+  <div class="step-body">
+    <p>Click the identity icon (person silhouette) in the left rail. Enter a display name. Your identity is a <strong>personal club</strong> &mdash; it owns your documents and edits.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">3</span> Create your first document</div>
+  <div class="step-body">
+    <p>Click <strong>+ New</strong> in the library. Type some text. All edits are saved automatically &mdash; there is no Save button. Every keystroke is recorded with cryptographic attribution.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">4</span> Enable write mode</div>
+  <div class="step-body">
+    <p>Click the <strong>Read/Write</strong> toggle in the top bar. Write mode lets you edit, create links, add annotations, and build compound documents.</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="works">Works &amp; Editions</h2>
+
+<p>
+Every document in Xudanu is a <strong>Work</strong>. A Work contains versioned <strong>Editions</strong> &mdash; each edit creates a new revision of the current edition. The edition is a complete snapshot with per-character attribution.
+</p>
+
+<div class="feature-grid">
+  <div class="feature-card">
+    <h4>Work</h4>
+    <p>A document &mdash; has a title, owner, read/edit permissions, and a current edition</p>
+  </div>
+  <div class="feature-card">
+    <h4>Edition</h4>
+    <p>A versioned snapshot &mdash; contains the text, attribution spans, and revision history</p>
+  </div>
+  <div class="feature-card">
+    <h4>Source Work</h4>
+    <p>An imported read-only work (e.g., a book chapter, legal statute, or reference document)</p>
+  </div>
+  <div class="feature-card">
+    <h4>Revision</h4>
+    <p>Each edit creates a revision. Browse history via the revision panel.</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="identity">Identity &amp; Permissions</h2>
+
+<p>
+Xudanu uses the <strong>club</strong> system inherited from Udanax-Gold. A club is an identity entity that owns works and edits:
+</p>
+
 <ul>
-  <li>Open a document and click the <span class="star">&#9733;</span> star icon in the header bar</li>
-  <li>Or hover over a document in the sidebar and click the star icon</li>
+  <li><strong>Personal club</strong> &mdash; your identity. Owns the documents you create.</li>
+  <li><strong>Public club</strong> &mdash; anonymous access. Works published to the public club are readable by everyone.</li>
+  <li><strong>Admin club</strong> &mdash; server operator. Can manage all works.</li>
 </ul>
 
-<div class="tip">
-  <strong>Tip:</strong> Stars are saved immediately and survive server restarts. They are persisted via the WAL (Write-Ahead Log) and included in every checkpoint.
+<p>
+Each work has a <strong>read club</strong> and an <strong>edit club</strong>:
+</p>
+
+<table>
+  <tr><th>State</th><th>Who can read</th><th>Who can edit</th></tr>
+  <tr><td>Private</td><td>Owner only</td><td>Owner only</td></tr>
+  <tr><td>Published (Edit: Owner)</td><td>Everyone</td><td>Owner only</td></tr>
+  <tr><td>Published (Edit: Open)</td><td>Everyone</td><td>Anyone logged in</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="editing">Document Editing</h2>
+
+<p>
+The editor is a collaborative rich-text editor with real-time multi-user support. All edits are CRDT-based &mdash; no conflicts, no locks, no merge failures.
+</p>
+
+<h3 id="styled">Styled Text (Bold &amp; Italic)</h3>
+
+<p>
+Select text and use the toolbar buttons or keyboard shortcuts:
+</p>
+
+<table>
+  <tr><th>Key</th><th>Action</th></tr>
+  <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">B</span></td><td>Bold</td></tr>
+  <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">I</span></td><td>Italic</td></tr>
+  <tr><td>B / I buttons</td><td>Click after selecting text</td></tr>
+</table>
+
+<p>
+Styles persist across sessions &mdash; they're stored as server-side annotations and survive page reloads.
+</p>
+
+<h3 id="attribution">Attribution &amp; Provenance</h3>
+
+<p>
+Click <strong>Show Prov</strong> in the document toolbar to see who wrote each section. Attribution spans are colour-coded:
+</p>
+
+<div class="feature-grid">
+  <div class="feature-card"><h4><span class="accent-green">&#9632;</span> Green &mdash; Human</h4><p>Text typed directly by a logged-in user</p></div>
+  <div class="feature-card"><h4><span class="accent-purple">&#9632;</span> Purple &mdash; LLM</h4><p>Text generated by AI assistant</p></div>
+  <div class="feature-card"><h4><span class="accent-amber">&#9632;</span> Amber &mdash; Historical</h4><p>Text from imported source documents</p></div>
+  <div class="feature-card"><h4><span class="accent-red">&#9632;</span> Red dashed &mdash; Unsigned</h4><p>Text without valid cryptographic signature</p></div>
 </div>
 
+<div class="wow">
+  <h3>Provenance Chain</h3>
+  <p>Every transcluded passage carries a <strong>provenance chain</strong> &mdash; a recursive trail back to the original source. The <code>again()</code> function follows this chain up to 32 levels deep, showing each hop's author, work, and text. For legal and corporate use, this provides court-grade attribution evidence.</p>
+</div>
+
+<h3 id="collab">Collaborative Editing</h3>
+
+<p>
+Multiple users can edit the same document simultaneously. The O-tree CRDT ensures conflict-free merging &mdash; no one's edits are ever lost. You'll see other users' cursors and selections in real time via the <strong>awareness</strong> system.
+</p>
+
+<div class="feature-grid">
+  <div class="feature-card"><h4>Live cursors</h4><p>See where other users are typing</p></div>
+  <div class="feature-card"><h4>Presence pill</h4><p>"2 others here" in the document toolbar</p></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="links">Links &amp; Backlinks</h2>
+
+<p>
+Links are <strong>typed, bidirectional, unbreakable</strong> connections between passages. Unlike web links (one-way, one-type), Xudanu links:
+</p>
+
+<ul>
+  <li><strong>Bidirectional</strong> &mdash; if A links to B, B automatically sees the incoming backlink</li>
+  <li><strong>Typed</strong> &mdash; each link has a semantic type (Comment, Reference, etc.)</li>
+  <li><strong>Unbreakable</strong> &mdash; links survive edits via span migration</li>
+  <li><strong>Profuse</strong> &mdash; many links can overlap on the same text, created by different users</li>
+</ul>
+
+<h3 id="link-types">The Five Link Types</h3>
+
+<div class="diagram-container">
+<svg width="500" height="180" viewBox="0 0 500 180">
+  <text x="80" y="30" fill="#58a6ff" font-size="13" font-family="Inter" font-weight="600">Comment</text>
+  <line x1="200" y1="26" x2="400" y2="26" stroke="#58a6ff" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="420" y="30" fill="#8b949e" font-size="11" font-family="Inter">Annotate a passage</text>
+
+  <text x="80" y="60" fill="#3fb950" font-size="13" font-family="Inter" font-weight="600">Reference</text>
+  <line x1="200" y1="56" x2="400" y2="56" stroke="#3fb950" stroke-width="2"/>
+  <text x="420" y="60" fill="#8b949e" font-size="11" font-family="Inter">Citation, "see this"</text>
+
+  <text x="80" y="90" fill="#f85149" font-size="13" font-family="Inter" font-weight="600">Disagreement</text>
+  <line x1="200" y1="86" x2="400" y2="86" stroke="#f85149" stroke-width="2" stroke-dasharray="8,3"/>
+  <text x="420" y="90" fill="#8b949e" font-size="11" font-family="Inter">Contested claim</text>
+
+  <text x="80" y="120" fill="#a371f7" font-size="13" font-family="Inter" font-weight="600">Quotation</text>
+  <line x1="200" y1="116" x2="400" y2="116" stroke="#a371f7" stroke-width="2" stroke-dasharray="1,3"/>
+  <text x="420" y="120" fill="#8b949e" font-size="11" font-family="Inter">"This quotes..."</text>
+
+  <text x="80" y="150" fill="#d29922" font-size="13" font-family="Inter" font-weight="600">See Also</text>
+  <line x1="200" y1="146" x2="400" y2="146" stroke="#d29922" stroke-width="2" stroke-dasharray="6,2,1,2"/>
+  <text x="420" y="150" fill="#8b949e" font-size="11" font-family="Inter">Related reading</text>
+</svg>
+</div>
+
+<h3 id="link-create">Creating Links</h3>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span> Select text and click Link</div>
+  <div class="step-body">
+    <p>Highlight a passage in your document. Click the <strong>Link</strong> button (top-right of document area).</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span> Choose a target</div>
+  <div class="step-body">
+    <p>The Link Creator wizard offers four options:</p>
+    <ul>
+      <li><strong>Link to an entire document</strong> &mdash; pick from your library, no navigation needed</li>
+      <li><strong>Link to specific text in another document</strong> &mdash; navigate and select a passage</li>
+      <li><strong>Link to another part of this document</strong> &mdash; same-document cross-reference</li>
+      <li><strong>Link to a remote server</strong> &mdash; connect to content on another Xudanu server</li>
+    </ul>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">3</span> Pick a type and create</div>
+  <div class="step-body">
+    <p>Choose a link type (Comment, Reference, etc.) and click <strong>Create Link</strong>. The linked text gets a coloured underline and margin bar.</p>
+  </div>
+</div>
+
+<h3 id="link-manage">Managing Links</h3>
+
+<p>
+The <strong>Connections panel</strong> (right side) shows all links, backlinks, and transclusions for the current document. Each item shows:
+</p>
+
+<ul>
+  <li>The link type (coloured label)</li>
+  <li>The connected document title</li>
+  <li>An excerpt of the linked text</li>
+  <li>A <strong>type dropdown</strong> to change the link type</li>
+  <li>A <strong>delete button</strong> (&times;) to remove the link</li>
+  <li>A <strong>star</strong> to pin important connections</li>
+</ul>
+
+<p>Use the dropdown at the top to filter by All, Pinned, Links, or Backlinks.</p>
+
+<h3 id="pins">Connection Pins</h3>
+
+<p>
+Pin important connections to keep them at the top of the list. Pins are <strong>per-user</strong> &mdash; only you see your pins. They persist across sessions and devices, stored server-side in the chunk store.
+</p>
+
+<div class="wow">
+  <h3>Backlinks: Who Links Into You</h3>
+  <p>When document A links to document B, B automatically sees the incoming link as a <strong>backlink</strong>. Backlinks appear in the Connections panel with a green border and &larr; arrow. They also paint on the <strong>right margin</strong> of the editor canvas. You never create a backlink directly &mdash; they emerge from the bidirectional nature of Xudanu links.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="annotations">Annotations</h2>
+
+<p>
+Annotations are comments attached to specific text ranges. Unlike links (which connect two passages), annotations are notes on a single passage.
+</p>
+
+<h3>Creating Annotations</h3>
+
+<ol>
+  <li>Select text in the editor</li>
+  <li>Press <span class="kbd">Ctrl</span> + <span class="kbd">Alt</span> + <span class="kbd">A</span></li>
+  <li>A dialog opens with a text area and a "Private" checkbox</li>
+  <li>Type your note and click <strong>Annotate</strong></li>
+</ol>
+
+<p>
+Annotations appear in the <strong>Annotations panel</strong> (left rail icon), showing the kind, text, author, timestamp, and character range. Click an annotation to navigate to its position in the document.
+</p>
+
+<h3 id="private">Private Annotations</h3>
+
+<p>
+Check the <strong>"Private"</strong> checkbox to create an annotation that only you can see. Private annotations are:
+</p>
+
+<ul>
+  <li>Visible only to the creator (enforced server-side)</li>
+  <li>Shown with a lock icon in the panel</li>
+  <li>Persisted like regular annotations (WAL + checkpoint)</li>
+</ul>
+
+<div class="note">
+  <strong>Use case:</strong> A reviewer wants to note "this claim needs a citation" without the document owner seeing the note. Private annotations let multiple reviewers annotate independently.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="transclusion">Transclusion</h2>
+
+<p>
+A <strong>transclusion</strong> is content from one document that appears inline in another &mdash; not a copy, but a live reference. If the source is updated, the transclusion reflects the change.
+</p>
+
+<div class="diagram-container">
+<svg width="500" height="160" viewBox="0 0 500 160">
+  <rect x="10" y="20" width="200" height="60" rx="6" fill="#161b22" stroke="#00897b" stroke-width="1.5"/>
+  <text x="110" y="42" text-anchor="middle" fill="#00897b" font-size="10" font-family="Inter" font-weight="600">SOURCE WORK</text>
+  <text x="110" y="60" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">"privacy is a human right"</text>
+
+  <line x1="210" y1="50" x2="270" y2="50" stroke="#00897b" stroke-width="2" stroke-dasharray="4,2"/>
+  <polygon points="270,50 262,46 264,54" fill="#00897b"/>
+  <text x="240" y="40" text-anchor="middle" fill="#00897b" font-size="9" font-family="Inter">transclusion</text>
+
+  <rect x="270" y="20" width="220" height="100" rx="8" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+  <text x="380" y="42" text-anchor="middle" fill="#d29922" font-size="10" font-family="Inter" font-weight="600">DESTINATION WORK</text>
+  <text x="285" y="62" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">As stated,</text>
+  <rect x="285" y="68" width="190" height="22" rx="3" fill="rgba(0,137,123,0.12)" stroke="#00897b" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="290" y="83" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">"privacy is a human right"</text>
+  <rect x="285" y="68" width="3" height="22" fill="#00897b"/>
+  <text x="285" y="104" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">and this must be protected.</text>
+</svg>
+</div>
+<p class="diagram-caption">A transclusion places source text inline in the destination, with provenance tracking back to the source.</p>
+
+<h3>Creating a Transclusion</h3>
+
+<ol>
+  <li>Open the source document, select text</li>
+  <li>Click <strong>Transclude</strong> (amber button)</li>
+  <li>Navigate to the destination document</li>
+  <li>Click <strong>Place at cursor</strong> on the floating badge</li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="compound">Compound Documents</h2>
+
+<p>
+A <strong>compound document</strong> is assembled from pieces of other documents &mdash; each piece is a transclusion. The compound is one document whose content literally comes from multiple sources, interleaved with original text.
+</p>
+
+<div class="wow">
+  <h3>The Legal Brief Example</h3>
+  <p>Imagine building a legal argument assembled from a statute, case law, and a dissenting opinion. Each piece is transcluded &mdash; live content from another work, not a copy. If the statute is ever updated, the transclusion in your brief resolves to the new text. The provenance chain traces each piece back to its original author.</p>
+</div>
+
+<h3 id="pull">Pull from Document</h3>
+
+<p>
+The <strong>Pull from document</strong> feature lets you build compound documents without navigating between works:
+</p>
+
+<ol>
+  <li>Open the compound panel (left rail icon)</li>
+  <li>Click <strong>"Pull from document"</strong></li>
+  <li>Select a source work from the dropdown &mdash; its text appears in a preview</li>
+  <li>Select a passage in the preview</li>
+  <li>Click <strong>"Insert transclusion"</strong> &mdash; it appears at your cursor position</li>
+  <li>Repeat for each source &mdash; each gets a different colour</li>
+</ol>
+
+<h3 id="compound-vis">Visual Markers</h3>
+
+<p>
+Each transclusion region is colour-coded by source work (8-colour palette):
+</p>
+
+<table>
+  <tr><th>Element</th><th>Description</th></tr>
+  <tr><td>Coloured background</td><td>Each source gets a distinct tint (teal, indigo, orange, etc.)</td></tr>
+  <tr><td>Dashed border</td><td>Outlines the transclusion region</td></tr>
+  <tr><td>Left margin bar</td><td>Coloured bar in the source's colour</td></tr>
+  <tr><td>Hover tooltip</td><td>Shows source title, excerpt, "Go to source" button</td></tr>
+  <tr><td>Compound badge</td><td>"N sources" in the document toolbar</td></tr>
+  <tr><td>Toggle button</td><td>Show/hide compound highlighting</td></tr>
+</table>
+
+<h3 id="placement">Placement Tracking</h3>
+
+<p>
+Each transclusion records <strong>who placed it</strong> and <strong>when</strong> &mdash; stored as <code>placed_at</code> and <code>placed_by</code> on the transclusion element. The compound panel displays "club:XXXX &middot; date" for each element. This provides full accountability for sensitive material &mdash; you can trace not just who wrote the original content, but who curated it into this document.
+</p>
+
+<!-- ============================================================ -->
 <h2 id="trails">Trails</h2>
-<p>Trails are ordered sequences of documents &mdash; curated reading paths through your hypertext corpus. Each trail has a name and an ordered list of stops (documents).</p>
+
+<p>
+Trails are curated reading paths through your document corpus &mdash; directly implementing Nelson's concept of guided sequences. Each trail has a name and an ordered list of stops (documents).
+</p>
 
 <h3>Creating a trail</h3>
 <ol>
-  <li>Open the <strong>More &#9662;</strong> menu and select <strong>Trails</strong></li>
-  <li>Type a name in the "New trail name..." field and click <strong>Create</strong></li>
+  <li>Open the trails panel (left rail icon)</li>
+  <li>Type a name and click <strong>Create</strong></li>
+  <li>Open a document, then click <strong>+</strong> on the trail to add it as a stop</li>
 </ol>
 
-<h3>Adding documents to a trail</h3>
-<ol>
-  <li>Open the document you want to add (click it in the sidebar)</li>
-  <li>Open the Trails panel (More &#9662; &rarr; Trails)</li>
-  <li>Click the <strong>+</strong> button on the trail card</li>
-</ol>
-
-<div class="screenshot">
-  <div class="bar">
-    <span class="star">&#9733; My Document</span>
-    <span>More &#9662;</span>
-  </div>
-  <div style="padding-left:20px">
-    <strong>Trails Panel</strong><br>
-    &#9662; Research Trail &nbsp; <span style="color:#8b949e">3 stops</span> &nbsp; <span style="color:#3fb950">[+]</span> &nbsp; <span style="color:#f85149">[&times;]</span><br>
-    &nbsp;&nbsp;&nbsp;1. <span class="link">Introduction</span><br>
-    &nbsp;&nbsp;&nbsp;2. <span class="link">Methods</span><br>
-    &nbsp;&nbsp;&nbsp;3. <span class="link">Conclusion</span>
-  </div>
-</div>
-
-<h3>Managing trail stops</h3>
+<h3>Managing stops</h3>
 <ul>
-  <li><strong>Reorder:</strong> Use the &#9650; / &#9660; arrows to move stops up or down</li>
-  <li><strong>Remove:</strong> Click the &times; button on a stop</li>
+  <li><strong>Reorder:</strong> Use the up/down arrows</li>
+  <li><strong>Remove:</strong> Click the &times; button</li>
   <li><strong>Navigate:</strong> Click a stop's title to open that document</li>
-  <li><strong>Delete trail:</strong> Click the &times; button on the trail card header</li>
+  <li><strong>Publish:</strong> Published trails are discoverable by other users</li>
 </ul>
 
-<div class="tip">
-  <strong>Tip:</strong> All trail operations auto-save immediately. There is no Save button &mdash; every add, remove, and reorder is persisted via WAL and checkpointed.
-</div>
+<!-- ============================================================ -->
+<h2 id="stars">Stars &amp; Library</h2>
 
-<h2 id="document-map">Document Map</h2>
-<p>The Document Map is a force-directed graph visualization showing all readable documents and their relationships.</p>
+<p>
+Star important documents to mark them as favorites. The library sorts by most recently edited, with starred documents in a <strong>Favorites</strong> section at the top.
+</p>
 
-<h3>Opening the map</h3>
-<p>Open the <strong>More &#9662;</strong> menu and select <strong>Document Map</strong>.</p>
-
-<h3>What you see</h3>
-<div class="feature-grid">
-  <div class="feature-card">
-    <h4><span style="color:#4361ee">&#9679;</span> Blue nodes</h4>
-    <p>The currently open document</p>
-  </div>
-  <div class="feature-card">
-    <h4><span style="color:#f59e0b">&#9679;</span> Amber nodes</h4>
-    <p>Starred documents or source (imported) works</p>
-  </div>
-  <div class="feature-card">
-    <h4><span style="color:#6b7280">&#9679;</span> Gray nodes</h4>
-    <p>Regular documents</p>
-  </div>
-  <div class="feature-card">
-    <h4>Node size</h4>
-    <p>Current doc is largest, starred/source medium, regular smallest</p>
-  </div>
-</div>
-
-<h3>Connections</h3>
 <ul>
-  <li><strong>Solid lines with arrows</strong> &mdash; Transclusion links. Documents that transclude content from each other are connected. These pull together with strong force.</li>
-  <li><strong>Dashed lines</strong> &mdash; Content similarity. Documents that share significant word overlap (>15% Jaccard similarity) are connected. These pull together with weaker force, so similar documents drift nearby without clustering as tightly as transcluded documents.</li>
+  <li>Click the <span class="accent-amber">&#9734;</span> star next to any document in the library</li>
+  <li>Stars persist server-side (WAL + checkpoint)</li>
+  <li>Use the filter box to search by title or work ID</li>
 </ul>
 
-<h3>Interactions</h3>
+<!-- ============================================================ -->
+<h2 id="map">Document Map</h2>
+
+<p>
+The Document Map is a force-directed graph showing all readable documents and their relationships. Open it from the left rail.
+</p>
+
 <ul>
-  <li><strong>Click a node</strong> to navigate to that document (closes the map)</li>
+  <li><strong>Solid lines</strong> &mdash; transclusion links between documents</li>
+  <li><strong>Dashed lines</strong> &mdash; content similarity (shared vocabulary)</li>
+  <li><strong>Click a node</strong> to navigate to that document</li>
   <li><strong>Drag a node</strong> to rearrange the layout</li>
-  <li>The physics simulation runs for 300 frames on load</li>
 </ul>
 
-<div class="tip">
-  <strong>Tip:</strong> Documents that share vocabulary naturally cluster together. If you see a tight cluster of dashed lines, those documents cover similar topics and may benefit from being organized into a Trail.
+<!-- ============================================================ -->
+<h2 id="cross-server">Cross-Server Links</h2>
+
+<p>
+Xudanu servers can link to each other. A cross-server link uses a <strong>tumbler</strong> &mdash; an Xanadu-style global identifier:
+</p>
+
+<pre><code>"alice.example.com".5.3.10.7</code></pre>
+
+<p>
+This tumbler means: content on server <code>alice.example.com</code>, work 5, version 3, revision 10, edition 7. When the link is resolved, Xudanu fetches the content via HTTPS, verifies it against a stored BLAKE3 hash, and caches it locally.
+</p>
+
+<div class="note">
+  <strong>Security:</strong> Cross-server content is verified against a cryptographic hash. If the remote content has been tampered with, the resolution fails with a tamper warning.
 </div>
 
-<h2 id="revisions">Revisions</h2>
-<p>Every edit creates a new revision. Open the <strong>More &#9662;</strong> menu and select <strong>Revisions</strong> to browse the history. You can compare any two revisions side by side.</p>
+<!-- ============================================================ -->
+<h2 id="persistence">Persistence &amp; Safety</h2>
 
-<h2 id="compare">Compare</h2>
-<p>Select two documents and open <strong>More &#9662; &rarr; Compare</strong> to see a side-by-side diff with attribution coloring. Requires at least 2 documents to exist.</p>
+<p>
+All data is protected by three layers:
+</p>
 
-<h2 id="persistence">Persistence</h2>
-<p>v0.7.0 includes a hardened persistence layer with three layers of protection:</p>
 <ol>
-  <li><strong>WAL (Write-Ahead Log)</strong> &mdash; Every star, trail, and manifest mutation is appended to <code>wal.log</code> before the operation completes. On restart, the WAL is replayed to recover any operations that happened after the last checkpoint.</li>
-  <li><strong>Dual Manifest</strong> &mdash; The manifest is written to alternating slots (<code>manifest_a.json</code> / <code>manifest_b.json</code>) before being renamed to <code>manifest.json</code>. If the primary is corrupt, the server falls back to the higher-sequence backup slot.</li>
-  <li><strong>Atomic Checkpoints</strong> &mdash; Manifest writes use the tmp+fsync+rename pattern for crash safety. Auto-checkpoint runs every 5 seconds when changes are pending.</li>
+  <li><strong>WAL (Write-Ahead Log)</strong> &mdash; every operation is appended to <code>wal.log</code> before it completes. On restart, the WAL replays to recover operations after the last checkpoint.</li>
+  <li><strong>Content-addressed chunk store</strong> &mdash; works, links, annotations, pins, trails, and compound editions are stored as BLAKE3-addressed chunks. Each chunk is independently verifiable.</li>
+  <li><strong>Atomic checkpoints</strong> &mdash; the manifest is written via tmp+rename for crash safety. Auto-checkpoint runs periodically.</li>
 </ol>
 
-<div class="warn">
-  <strong>Note:</strong> If you upgrade from a previous version, delete old data and re-initialize: <code>rm -rf data/manifest*.json data/chunks/*</code> then <code>./xudanu-server init data</code>. The manifest schema has changed.
+<div class="note">
+  <strong>Links survive edits:</strong> When text is inserted or deleted, link spans migrate automatically via <code>migrate_link_spans_for_delta()</code>. Links stay pointing at the right passage.
 </div>
 
-<h2>Keyboard Shortcuts</h2>
-<table style="width:100%;border-collapse:collapse;margin:16px 0">
-  <tr style="border-bottom:1px solid #21262d">
-    <td style="padding:8px"><kbd>Ctrl+S</kbd></td>
-    <td style="padding:8px;color:#8b949e">Force checkpoint (no-op in browser, handled by server)</td>
-  </tr>
-  <tr style="border-bottom:1px solid #21262d">
-    <td style="padding:8px"><kbd>Ctrl+K</kbd></td>
-    <td style="padding:8px;color:#8b949e">Open command bar</td>
-  </tr>
-  <tr style="border-bottom:1px solid #21262d">
-    <td style="padding:8px"><kbd>Ctrl+/</kbd></td>
-    <td style="padding:8px;color:#8b949e">Search within document</td>
-  </tr>
+<!-- ============================================================ -->
+<h2 id="shortcuts">Keyboard Shortcuts</h2>
+
+<table>
+  <tr><th>Key</th><th>Action</th></tr>
+  <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">B</span></td><td>Bold (toggle)</td></tr>
+  <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">I</span></td><td>Italic (toggle)</td></tr>
+  <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">Alt</span> + <span class="kbd">A</span></td><td>Create annotation</td></tr>
+  <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">K</span></td><td>Open search</td></tr>
+  <tr><td><span class="kbd">Esc</span></td><td>Cancel pending link/transclusion/annotation</td></tr>
+  <tr><td>Click marker</td><td>Navigate to linked document</td></tr>
+  <tr><td>Double-click marker</td><td>Jump to linked document and show connections</td></tr>
+  <tr><td>Hover marker</td><td>Show tooltip with target, type, excerpt</td></tr>
 </table>
 
-<h2>CLI Reference</h2>
-<div class="screenshot">
-  <code>./xudanu-server init &lt;data-dir&gt;</code> &mdash; Initialize a new data directory<br>
-  <code>./xudanu-server run &lt;addr&gt; &lt;data-dir&gt; [options]</code> &mdash; Start the server<br>
-  <code>./xudanu-server preflight &lt;data-dir&gt;</code> &mdash; Validate data integrity<br><br>
-  <strong>Options for <code>run</code>:</strong><br>
-  <code>--static-dir &lt;path&gt;</code> &mdash; Serve static files from directory (the web UI)<br>
-  <code>--csrf-token</code> &mdash; Enable CSRF token validation<br>
-  <code>--admin-password &lt;pw&gt;</code> &mdash; Set admin password (min 10 chars)<br>
-  <code>ADMIN_PASSWORD</code> &mdash; Env var alternative for admin password
-</div>
+<!-- ============================================================ -->
+<h2 id="cli">CLI Reference</h2>
+
+<pre><code>./xudanu-server init &lt;data-dir&gt;                          Initialize a new data directory
+./xudanu-server run &lt;addr&gt; &lt;data-dir&gt; [options]         Start the server
+./xudanu-server preflight &lt;data-dir&gt;                     Validate data integrity
+./xudanu-server verify &lt;data-dir&gt;                        Verify all chunks and blobs
+./xudanu-server rebuild-manifest &lt;data-dir&gt;              Rebuild manifest from chunks</code></pre>
+
+<h4>Options for <code>run</code></h4>
+<pre><code>--static-dir &lt;path&gt;              Serve built frontend from directory
+--server-name &lt;name&gt;             Display name for this server
+--server-description &lt;desc&gt;      Server description
+--public-address &lt;domain&gt;        Public domain for cross-server links
+--server-namespace-id &lt;id&gt;       Numeric server ID for tumblers
+--tls-cert &lt;path&gt;                TLS certificate path
+--tls-key &lt;path&gt;                 TLS private key path
+--csrf-token                     Enable CSRF token validation
+--key-passphrase &lt;pw&gt;            Server key passphrase
+--github-client-id &lt;id&gt;          GitHub OAuth
+--google-client-id &lt;id&gt;          Google OAuth
+--enable-cluster                 Enable FR-3 cluster federation
+--peer &lt;addr&gt;                    Federation peer address</code></pre>
 
 <div class="footer">
-  Xudanu User Guide &mdash; v0.7.0 &mdash; <a href="index.html">Back to Documentation</a>
+  Xudanu User Guide &mdash; v0.9.0 &mdash; Part of the Xudanu hypertext system.<br>
+  See also: <a href="links-tutorial.html">Links Tutorial</a> &middot; <a href="compound-tutorial.html">Compound Tutorial</a> &middot; <a href="index.html">Documentation Index</a>
 </div>
 
 </div>
