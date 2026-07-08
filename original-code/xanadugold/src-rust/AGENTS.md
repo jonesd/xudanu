@@ -10,18 +10,34 @@ frontend. The project is split across two trees:
 
 ## Technology
 
-**Backend** — Rust (edition 2021). Crate name `xudanu` (v0.8.1).
+**Backend** — Rust (edition 2021). Crate name `xudanu` (v0.9.0).
 - Async runtime: `tokio`; web framework: `axum` 0.8 (HTTP + WebSocket).
 - TLS: `rustls` / `axum-server`; crypto: `chacha20poly1305`, `x25519-dalek`,
-  `ed25519-dalek`, `argon2`, `ring`, `blake3`.
+  `ed25519-dalek`, `argon2`, `ring`, `blake3`, `hex`.
 - Serialization: `postcard` (wire) + `serde_json` (manifests/API).
 - Auth: OAuth2 (GitHub, Google), CSRF tokens, passphrase-protected server keys.
-- Federation between server peers over WebSocket (FR-3: outbound dialer,
-  PeerPool, periodic sync/heartbeat, PBFT broadcast — see `federation_active.rs`).
+- **FR-6 Linked independent servers**: cross-server links via domain-based
+  tumblers (`"alice.example.com".5.3.10.7`), BLAKE3 content hash verification,
+  `CrossServerRef` persisted in `HyperRefPayload`, public content read API
+  (`/api/public/work/{id}`), server directory, `/.well-known/xudanu-server.json`.
+- **FR-3 Cluster federation** (optional, behind `--enable-cluster`): outbound
+  dialer, PeerPool, periodic sync/heartbeat, PBFT broadcast — see
+  `federation_active.rs`.
 - Collaborative editing: Xudanu's own **O-tree CRDT** (`server/otree_crdt.rs`)
   — a custom position-based CRDT using the space algebra (region/displacement).
   Not Yjs/Yrs; the O-tree is purpose-built for Xudanu's content model and
   integrates with span migration, attribution, and federation sync.
+- **Compound documents**: inline `RangeElement::Transclusion` in the O-tree
+  (single source of truth — no side-table drift). 32-level recursive resolution
+  with cycle detection. Span migration through arbitrary deltas.
+- **Links & backlinks**: typed, bidirectional, unbreakable connections between
+  passages. Five built-in types (Comment, Reference, Disagreement, Quotation,
+  See Also). Span migration survives edits.
+- **Annotations**: per-user, optionally private. Private annotations only
+  visible to the creator (enforced server-side in `annotation_list`).
+- **Persistent connection pins**: per-user pins stored in `SocialSection`
+  chunk (same pattern as `starred_works`), WAL recovery, wire ops
+  `0x0349-0x034B`.
 - Optional `wasm` target (`crate-type = ["cdylib", "rlib"]`) for in-browser use.
 
 **Frontend** — React 19 + TypeScript, Vite 8, Vitest. Single-page app that
@@ -54,14 +70,17 @@ npm run build        # tsc -b && vite build -> dist/
 
 ## Run (development)
 
-Run **both** servers; the Vite dev server proxies API/WS calls to the backend.
+**One-liner** from workspace root:
+
+```sh
+./scripts/restart.sh    # kills :8080 and :5173, starts both servers, Ctrl+C stops
+```
+
+Or manually:
 
 ```sh
 # 1. Backend on 127.0.0.1:8080, data dir at ./data  (from src-rust/)
 cargo run --release --features server --bin xudanu-server -- run 127.0.0.1:8080 data
-#   - `run [addr] [data-dir]`  (addr defaults 127.0.0.1:8080; data-dir optional)
-#   - data dir: if manifest.json exists it restores; otherwise initializes fresh
-#   - other subcommands: init | verify | rebuild-manifest | verify-security-log | preflight
 
 # 2. Frontend dev server on :5173  (from web/app/)
 npm run dev
@@ -71,19 +90,26 @@ Open `http://localhost:5173/`. Health check: `curl http://127.0.0.1:8080/health`
 
 Notable `run` flags: `--static-dir <dir>` (serve built frontend instead of
 embedded HTML), `--tls-cert/--tls-key`, `--peer <addr>` (federation),
-`--csrf-token`, `--key-passphrase`, `--github-*-id/--google-*-id` (OAuth).
+`--csrf-token`, `--key-passphrase`, `--github-*-id/--google-*-id` (OAuth),
+`--server-name <name>`, `--server-description <desc>`,
+`--server-namespace-id <id>`, `--public-address <domain>` (FR-6 cross-server).
+
+Other subcommands: `init | verify | rebuild-manifest | verify-security-log | preflight`.
 
 ## Test & lint
 
 ```sh
 # Backend (from src-rust/) — integration & tls tests need the server feature
-cargo test --features server
+cargo test --features server --lib     # 2331 tests
 cargo clippy --features server --all-targets
 
 # Frontend (from web/app/)
-npm test       # vitest run
+npm test       # vitest run — 246 tests
 npm run lint   # eslint
 ```
+
+Pre-push hook (`.git/hooks/pre-push`) runs 6 checks: cargo fmt, cargo test --lib,
+cargo test --test integration, tsc, vite build, vitest.
 
 ## Backend structure (`src/`)
 
@@ -94,19 +120,26 @@ bin/
   xudanu-cli.rs           command-line WebSocket client (repl, create-work, ...)
 edition/                  the CRDT document model & content-addressed storage
   edition.rs, orgl.rs, bundle*.rs, canopy.rs, blob_store.rs,
-  three_way.rs, endorsement.rs, content_address.rs, ...
+  three_way.rs, endorsement.rs, content_address.rs, compound.rs,
+  range_element.rs (Transclusion inline element), transclusion.rs,
+  backfollow.rs (content reuse index), links.rs (HyperLink, HyperRef,
+  CrossServerRef, tumblers), provenance.rs, wrapper.rs, ...
 space/                    position / region / displacement algebra (the o-tree)
-crypto/                   KDF, domain separation labels
+crypto/                   KDF, domain separation labels, key history
 ent/                      entities
-persist/                  durable storage: urdi engine, chunk_store, wal,
-                          manifest, migrations, verify, packer, snapshot
+persist/                  durable storage: chunk_store, wal, manifest
+  (SocialSection, FederationSection, LinkEntry), migrations, verify,
+  packer, snapshot
 server/
-  server.rs               core Server state, restore/checkpoint, recovery stats
+  server.rs               core Server state, restore/checkpoint, recovery stats,
+                          link create/delete/backlinks, annotation CRUD,
+                          pin CRUD, cross-server resolution, http_get_json
+  server_directory.rs     server directory (FR-6: add/remove/trust/persist)
   transport/              HTTP/WS layer: handler, dispatch, codec, protocol,
                           channel, snapshot, oauth, chained_log (security audit),
-                          federation_handler, federation_active (outbound dialer +
-                          PeerPool + sync loop), audit, attribution_log
-  federation.rs           peer mesh + governance/endorsements
+                          federation_handler, federation_active, audit,
+                          attribution_log
+  federation.rs           peer mesh + governance/endorsements/royalties
   identity.rs, keymaster.rs, session.rs, club.rs, admin.rs, otree_crdt.rs,
   detector.rs, lock.rs, wait_barrier.rs, historical_author.rs, source_matcher.rs
 ```
@@ -119,15 +152,39 @@ seeded by `security.log.seed`).
 ## Frontend structure (`web/app/src/`)
 
 ```
-main.tsx, App.tsx                entry + root component
+main.tsx, App.tsx                entry + root component (renders AppShell only)
 api/                             client.ts, crdt_sync.ts, text_buffer.ts
                                   (HTTP + WebSocket transport, CRDT integration)
-components/                       CollaborativeEditor, DocumentRenderer,
-                                  WorkspacePage, panels (Annotation, Attribution,
-                                  Branch, Compare, Diff, Identity, Outline,
-                                  Search, Share, Trails, VersionGenealogy, ...)
-hooks/, types/, reading/         supporting modules
-__tests__/                        vitest specs
+components/
+  shell/
+    AppShell.tsx                 live UI: editor, links, annotations, compounds,
+                                  trails, provenance, identity, settings
+    ContextPanel.tsx             right panel: presence, docuverse, connections,
+                                  attribution
+    LeftRail.tsx, TopBar.tsx, BottomBar.tsx
+    LibrarySlideOut.tsx, SearchOverlay.tsx
+  panels/
+    ConnectionsSection.tsx       links + backlinks + transclusions (filter,
+                                  pin, delete, retype)
+    DocuverseSection.tsx         mini graph of work connections
+    AttributionSection.tsx       authorship spans
+    PresenceSection.tsx          collaborator awareness
+  CollaborativeEditor.tsx        canvas overlay: attribution, link markers,
+                                  compound colour-coding, annotations, tooltips
+  VirtualizedEditor.tsx          virtualized viewport variant
+  LinkCreator.tsx                guided link creation wizard (whole-work,
+                                  specific-text, same-doc, remote-server)
+  AnnotationDialog.tsx           annotation modal with private checkbox
+  AnnotationPanel.tsx            annotation list (collapsible)
+  CompoundPanel.tsx              compound structure viewer
+  TransclusionBadge.tsx          floating transclusion placement bar
+  TrailsPanel.tsx                curated document trails
+  DocumentMapPanel.tsx           force-directed work graph
+  ImportWizard.tsx, IdentityPanel.tsx, PermissionBadge.tsx, ...
+hooks/                           useCrdtSync, useTransclusion, useCompoundEdition
+link-markers.ts                  pure helpers: lanes, clusters, density pills
+prov-validator.ts                PROV-JSON validator HTML builder
+__tests__/                        vitest specs (246 tests)
 ```
 
 Vite proxy config (`vite.config.ts`): `/api`, `/xudanu` (WS), `/csrf-token`,
@@ -144,3 +201,8 @@ Vite proxy config (`vite.config.ts`): `/api`, `/xudanu` (WS), `/csrf-token`,
   `cargo test --features server` before considering work done.
 - After frontend changes, run `npm run build` (typecheck + build) and
   `npm test` from `web/app/`.
+- `WorkspacePage.tsx` is dead code (not imported by App.tsx). The live UI is
+  `AppShell.tsx`. Do not add features to WorkspacePage.
+- Pre-push hook runs 6 checks. If it fails, fix the issue and re-push.
+- Git remotes: `origin` (self-hosted), `github` (github.com/jonesd/xudanu).
+  GitHub Pages deploys from `github` remote.
