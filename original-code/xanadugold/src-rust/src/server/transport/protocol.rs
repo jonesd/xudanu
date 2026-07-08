@@ -3374,6 +3374,7 @@ impl RangeElementPayload {
                 source_work_id,
                 char_start,
                 char_end,
+                ..
             } => RangeElementPayload {
                 elem_type: "transclusion".to_string(),
                 text: None,
