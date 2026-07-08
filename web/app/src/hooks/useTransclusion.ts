@@ -140,13 +140,22 @@ export function useTransclusion(): TransclusionState {
           workTitleMap.set(w.work_id, w.title || "Untitled");
         }
 
+        const fallbackPromises = linkList.map((link) => {
+          const localRef = link.origin === workId ? link.origin_ref : link.destination_ref;
+          const remoteRef = link.origin === workId ? link.destination_ref : link.origin_ref;
+          const excerpt = localRef?.excerpt || remoteRef?.excerpt || "";
+          return excerpt.length >= 3
+            ? client.findExcerptPositions(workId, excerpt)
+            : Promise.resolve([]);
+        });
+        const fallbacks = await Promise.all(fallbackPromises);
+
         const newMarkers: TransclusionMarker[] = [];
-        for (const link of linkList) {
+        for (let i = 0; i < linkList.length; i++) {
+          const link = linkList[i];
           const isOrigin = link.origin === workId;
           const otherWorkId = isOrigin ? link.destination : link.origin;
           const color = markerColorForWork(otherWorkId);
-          // Prefer the link's endpoint title (it covers archived works, which are
-          // excluded from the work list and thus absent from workTitleMap).
           const title =
             (isOrigin ? link.destination_title : link.origin_title) ||
             workTitleMap.get(otherWorkId) ||
@@ -158,9 +167,7 @@ export function useTransclusion(): TransclusionState {
           const remoteRef = isOrigin ? link.destination_ref : link.origin_ref;
           const excerpt = localRef?.excerpt || remoteRef?.excerpt || "";
           const chain = localRef?.provenance_chain || remoteRef?.provenance_chain;
-          const fallback = excerpt.length >= 3
-            ? await client.findExcerptPositions(workId, excerpt)
-            : [];
+          const fallback = fallbacks[i];
           const positions = resolveMarkerPositions(localRef, fallback);
           for (const pos of positions) {
             newMarkers.push({
