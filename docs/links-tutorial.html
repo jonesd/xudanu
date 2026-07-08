@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Creating Links &amp; Backlinks &mdash; Xudanu Tutorial</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+.example-block{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:16px 0}
+.example-block .example-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#484f58;margin-bottom:8px;font-weight:600}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:16px 0}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:12px 0;font-size:12px;color:#8b949e}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-swatch{width:12px;height:12px;border-radius:2px;flex-shrink:0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+ol{margin-left:24px;margin-bottom:16px}
+ol li{margin-bottom:8px}
+.step{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px 24px;margin:16px 0}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#58a6ff;color:#0d1117;border-radius:50%;font-weight:700;font-size:14px;margin-right:10px;flex-shrink:0}
+.step-title{font-size:16px;font-weight:600;color:#e6edf3;display:flex;align-items:center;margin-bottom:8px}
+.step-body{padding-left:38px}
+.kbd{font-family:'JetBrains Mono',monospace;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;padding:2px 6px;color:#c9d1d9}
+.screenshot-mock{background:#faf9f6;border:1px solid #d0cec8;border-radius:8px;padding:16px 20px;margin:16px 0;font-family:'Inter',sans-serif;color:#2a2a2e;font-size:14px;position:relative}
+.screenshot-mock .mock-toolbar{display:flex;gap:8px;margin-bottom:12px;justify-content:flex-end}
+.screenshot-mock .mock-btn{font-size:13px;font-weight:600;padding:5px 14px;border-radius:6px;border:2px solid;cursor:pointer}
+.screenshot-mock .mock-btn.blue{border-color:#2563eb;color:#2563eb}
+.screenshot-mock .mock-btn.amber{border-color:#d97706;color:#d97706}
+.screenshot-mock .mock-text{line-height:1.8;font-family:'Source Serif 4',Georgia,serif;font-size:15px}
+.screenshot-mock .mock-hl{background:rgba(88,166,255,0.15);border-bottom:2px dashed #58a6ff;padding:1px 2px}
+.screenshot-mock .mock-bar-left{position:absolute;left:0;top:0;bottom:0;width:4px;background:#58a6ff;border-radius:8px 0 0 8px}
+.screenshot-mock .mock-bar-right{position:absolute;right:0;top:0;bottom:0;width:4px;background:#3fb950;border-radius:0 8px 8px 0}
+.wizard-mock{background:#fff;border-radius:8px;padding:0;max-width:480px;margin:16px auto;box-shadow:0 4px 24px rgba(0,0,0,0.4);overflow:hidden;font-family:'Inter',sans-serif;color:#2a2a2e}
+.wizard-mock .wm-header{padding:14px 20px;border-bottom:1px solid #e8e5de;font-size:16px;font-weight:700}
+.wizard-mock .wm-source{padding:12px 20px;background:#f6f6f8;border-bottom:1px solid #e8e5de}
+.wizard-mock .wm-source-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#8a8a96;margin-bottom:4px}
+.wizard-mock .wm-source-text{font-size:13px;color:#4a4a56;font-style:italic}
+.wizard-mock .wm-body{padding:20px}
+.wizard-mock .wm-step-title{font-size:14px;font-weight:600;margin-bottom:14px}
+.wizard-mock .wm-option{display:flex;align-items:center;gap:12px;padding:14px 16px;border:2px solid #e8e5de;border-radius:8px;background:#fff;cursor:pointer;margin-bottom:8px}
+.wizard-mock .wm-option:hover{border-color:#c0bdb4;background:#fafaf8}
+.wizard-mock .wm-option-icon{font-size:22px;color:#6a6a76;min-width:28px;text-align:center}
+.wizard-mock .wm-option-name{font-size:13px;font-weight:600}
+.wizard-mock .wm-option-desc{font-size:11px;color:#8a8a96;margin-top:2px}
+.wizard-mock .wm-type-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.wizard-mock .wm-type-card{padding:12px;border:2px solid #e8e5de;border-radius:8px;background:#fff;cursor:pointer;text-align:left}
+.wizard-mock .wm-type-card.selected{border-color:currentColor;background:#fafaf8}
+.wizard-mock .wm-type-name{font-size:13px;font-weight:700;margin-bottom:2px}
+.wizard-mock .wm-type-desc{font-size:11px;color:#8a8a96;line-height:1.4}
+.wizard-mock .wm-submit{width:100%;padding:10px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:14px;font-weight:600;cursor:pointer}
+.conn-mock{background:#22222e;border:1px solid #3a3a48;border-radius:6px;padding:12px;margin:16px 0;font-family:'Inter',sans-serif;font-size:12px}
+.conn-mock .cm-header{font-weight:600;color:#e8e6e0;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.conn-mock .cm-item{border-left:3px solid;padding:8px 10px;margin-bottom:6px;cursor:pointer;border-radius:0 4px 4px 0}
+.conn-mock .cm-item.blue{border-color:#58a6ff}
+.conn-mock .cm-item.green{border-color:#3fb950}
+.conn-mock .cm-item.amber{border-color:#d29922}
+.conn-mock .cm-item-title{color:#e8e6e0;font-size:12px;display:flex;align-items:center;gap:4px}
+.conn-mock .cm-item-excerpt{color:#8a8a96;font-size:11px;margin-top:2px}
+.conn-mock .cm-actions{margin-left:auto;display:flex;gap:4px}
+.conn-mock .cm-actions select,.conn-mock .cm-actions button{font-size:10px;background:transparent;border:1px solid #3a3a48;color:#8a8a96;border-radius:3px;padding:1px 4px;cursor:pointer}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}.screenshot-mock{border-color:#ddd}.wizard-mock{box-shadow:none;border:1px solid #ddd}.step{background:#f5f5f5;border-color:#ddd}.conn-mock{background:#f5f5f5;border-color:#ccc}.conn-mock .cm-item-title,.conn-mock .cm-header{color:#333}.conn-mock .cm-item-excerpt{color:#666}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}.two-col{grid-template-columns:1fr}.wizard-mock .wm-type-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Creating Links &amp; Backlinks</h1>
+<p class="subtitle">A step-by-step tutorial for connecting your documents with typed, bidirectional links &mdash; the defining feature of Xudanu's Nelson-style hypertext.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. What Are Links and Backlinks?</a>
+  <a class="toc-section" href="#s2">2. The Five Link Types</a>
+  <a class="toc-section" href="#s3">3. Creating a Typed Link</a>
+  <a class="toc-section" href="#s4">4. Creating a Transclusion</a>
+  <a class="toc-section" href="#s5">5. Creating a Cross-Server Link</a>
+  <a class="toc-section" href="#s6">6. Managing Your Links</a>
+  <a class="toc-section" href="#s7">7. Understanding the Visual Markers</a>
+  <a class="toc-section" href="#s8">8. The Connections Panel</a>
+  <a class="toc-section" href="#s9">9. Tips and Best Practices</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. What Are Links and Backlinks?</h2>
+
+<p>
+In Xudanu, a <strong>link</strong> is a typed, bidirectional connection between two passages of text.
+Unlike ordinary web links (one-way, one-to-one), Xudanu links are:
+</p>
+
+<ul>
+  <li><strong>Bidirectional</strong> &mdash; if document A links to document B, then B automatically knows about the incoming link (a <em>backlink</em>).</li>
+  <li><strong>Typed</strong> &mdash; every link has a type (Comment, Reference, Disagreement, Quotation, or See Also) that determines its colour and behaviour.</li>
+  <li><strong>Unbreakable</strong> &mdash; links survive edits. When text is inserted or deleted, link spans migrate automatically so they keep pointing at the right passage.</li>
+  <li><strong>Profuse</strong> &mdash; many links can overlap on the same text, created by different users without coordination.</li>
+</ul>
+
+<p>
+A <strong>transclusion</strong> is a special kind of link that copies content from one document into another while maintaining the connection to the original. Think of it as "live quoting" &mdash; the quoted text always traces back to its source.
+</p>
+
+<div class="diagram-container">
+<svg width="600" height="200" viewBox="0 0 600 200">
+  <!-- Work A -->
+  <rect x="20" y="30" width="220" height="80" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="130" y="50" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter">ESSAY</text>
+  <text x="130" y="72" text-anchor="middle" fill="#c9d1d9" font-size="13" font-family="Source Serif 4">"privacy is a</text>
+  <text x="130" y="90" text-anchor="middle" fill="#c9d1d9" font-size="13" font-family="Source Serif 4"> human right"</text>
+  <line x1="70" y1="100" x2="190" y2="100" stroke="#58a6ff" stroke-width="2" stroke-dasharray="4,3"/>
+
+  <!-- Arrow -->
+  <line x1="250" y1="70" x2="350" y2="70" stroke="#d29922" stroke-width="2"/>
+  <polygon points="350,70 342,66 342,74" fill="#d29922"/>
+  <text x="300" y="58" text-anchor="middle" fill="#d29922" font-size="10" font-family="Inter" font-weight="600">LINK TYPE</text>
+
+  <!-- Work B -->
+  <rect x="360" y="30" width="220" height="80" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="470" y="50" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter">REVIEWER NOTES</text>
+  <text x="470" y="72" text-anchor="middle" fill="#c9d1d9" font-size="13" font-family="Source Serif 4">"this claim is</text>
+  <text x="470" y="90" text-anchor="middle" fill="#c9d1d9" font-size="13" font-family="Source Serif 4"> contested"</text>
+  <line x1="400" y1="100" x2="540" y2="100" stroke="#f85149" stroke-width="2" stroke-dasharray="8,3"/>
+
+  <!-- Backlink arrow -->
+  <line x1="350" y1="140" x2="250" y2="140" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="2,3"/>
+  <polygon points="250,140 258,136 258,144" fill="#3fb950"/>
+  <text x="300" y="158" text-anchor="middle" fill="#3fb950" font-size="10" font-family="Inter" font-weight="600">BACKLINK</text>
+
+  <!-- Labels -->
+  <circle cx="130" cy="115" r="8" fill="#58a6ff"/>
+  <text x="130" y="119" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="700" font-family="Inter">C</text>
+
+  <circle cx="470" cy="115" r="8" fill="#f85149"/>
+  <text x="470" y="119" text-anchor="middle" fill="#0d1117" font-size="10" font-weight="700" font-family="Inter">D</text>
+</svg>
+</div>
+<p class="diagram-caption">A Comment link from Essay to Reviewer Notes. The blue "C" bar marks the outgoing link; the red "D" marks the disagreement response. The green dashed arrow shows the automatic backlink.</p>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. The Five Link Types</h2>
+
+<p>
+Each link type has a distinct colour and underline pattern. This makes overlapping links readable even in dense documents.
+</p>
+
+<div class="diagram-container">
+<svg width="500" height="180" viewBox="0 0 500 180">
+  <!-- Type 1: Comment -->
+  <text x="80" y="30" fill="#58a6ff" font-size="13" font-family="Inter" font-weight="600">Comment</text>
+  <line x1="200" y1="26" x2="400" y2="26" stroke="#58a6ff" stroke-width="2" stroke-dasharray="4,3"/>
+  <text x="420" y="30" fill="#8b949e" font-size="11" font-family="Inter">Annotate a passage</text>
+
+  <!-- Type 2: Reference -->
+  <text x="80" y="60" fill="#3fb950" font-size="13" font-family="Inter" font-weight="600">Reference</text>
+  <line x1="200" y1="56" x2="400" y2="56" stroke="#3fb950" stroke-width="2"/>
+  <text x="420" y="60" fill="#8b949e" font-size="11" font-family="Inter">Citation, "see this"</text>
+
+  <!-- Type 3: Disagreement -->
+  <text x="80" y="90" fill="#f85149" font-size="13" font-family="Inter" font-weight="600">Disagreement</text>
+  <line x1="200" y1="86" x2="400" y2="86" stroke="#f85149" stroke-width="2" stroke-dasharray="8,3"/>
+  <text x="420" y="90" fill="#8b949e" font-size="11" font-family="Inter">Contested claim</text>
+
+  <!-- Type 4: Quotation -->
+  <text x="80" y="120" fill="#a371f7" font-size="13" font-family="Inter" font-weight="600">Quotation</text>
+  <line x1="200" y1="116" x2="400" y2="116" stroke="#a371f7" stroke-width="2" stroke-dasharray="1,3"/>
+  <text x="420" y="120" fill="#8b949e" font-size="11" font-family="Inter">"This quotes..."</text>
+
+  <!-- Type 5: See Also -->
+  <text x="80" y="150" fill="#d29922" font-size="13" font-family="Inter" font-weight="600">See Also</text>
+  <line x1="200" y1="146" x2="400" y2="146" stroke="#d29922" stroke-width="2" stroke-dasharray="6,2,1,2"/>
+  <text x="420" y="150" fill="#8b949e" font-size="11" font-family="Inter">Related reading</text>
+</svg>
+</div>
+
+<table>
+  <tr><th>Type</th><th>Colour</th><th>Use When</th></tr>
+  <tr><td><span class="accent-blue">Comment</span></td><td>Blue, dashed</td><td>You want to annotate or add a scholarly note to a passage</td></tr>
+  <tr><td><span class="accent-green">Reference</span></td><td>Green, solid</td><td>Cross-referencing, citing a source, "see this section"</td></tr>
+  <tr><td><span class="accent-red">Disagreement</span></td><td>Red, long dash</td><td>You disagree with a claim and want to link your counter-argument</td></tr>
+  <tr><td><span class="accent-purple">Quotation</span></td><td>Purple, dotted</td><td>This passage is a quote from another document</td></tr>
+  <tr><td><span class="accent-amber">See Also</span></td><td>Amber, dash-dot</td><td>Related reading path or similar work</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Creating a Typed Link</h2>
+
+<p>
+A typed link connects two passages with a semantic relationship. This is the most common type of connection.
+</p>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span> Select the source text</div>
+  <div class="step-body">
+    <p>Open the document you want to link <strong>from</strong>. Highlight the passage you want to connect.</p>
+    <div class="screenshot-mock">
+      <div class="mock-text">
+        Many argue that <span class="mock-hl">privacy is a human right</span> and that any backdoor, however well-meaning, undermines the entire guarantee.
+      </div>
+    </div>
+    <p>Two buttons will appear above the selection: <strong>Transclude</strong> and <strong>Link</strong>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span> Click "Link"</div>
+  <div class="step-body">
+    <p>Click the <strong>Link</strong> button. The Link Creator wizard opens, showing your selected text as the source.</p>
+    <div class="wizard-mock">
+      <div class="wm-header">Create Link</div>
+      <div class="wm-source">
+        <div class="wm-source-label">From: Essay on Privacy</div>
+        <div class="wm-source-text">&ldquo;privacy is a human right&rdquo;</div>
+      </div>
+      <div class="wm-body">
+        <div class="wm-step-title">What do you want to link this to?</div>
+        <div class="wm-option">
+          <div class="wm-option-icon">&#x2192;</div>
+          <div>
+            <div class="wm-option-name">Link to an entire document</div>
+            <div class="wm-option-desc">Pick a document from your library</div>
+          </div>
+        </div>
+        <div class="wm-option">
+          <div class="wm-option-icon">&#x201C;&#x201D;</div>
+          <div>
+            <div class="wm-option-name">Link to specific text in another document</div>
+            <div class="wm-option-desc">Navigate to another document and select a passage</div>
+          </div>
+        </div>
+        <div class="wm-option">
+          <div class="wm-option-icon">&#x21BB;</div>
+          <div>
+            <div class="wm-option-name">Link to another part of this document</div>
+            <div class="wm-option-desc">Select different text in the same document</div>
+          </div>
+        </div>
+        <div class="wm-option">
+          <div class="wm-option-icon">&#x2302;</div>
+          <div>
+            <div class="wm-option-name">Link to a remote server</div>
+            <div class="wm-option-desc">Connect to content on another Xudanu server</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">3a</span> Option A: Link to an entire document</div>
+  <div class="step-body">
+    <p>Choose <strong>"Link to an entire document"</strong>. A list of your documents appears. Click the one you want to link to.</p>
+    <p>Then pick a link type and click <strong>Create Link</strong>. The link is created immediately &mdash; no need to navigate to the other document.</p>
+    <div class="wizard-mock">
+      <div class="wm-body">
+        <div class="wm-step-title">Link type</div>
+        <div class="wm-target-preview" style="font-size:12px;color:#6a6a76;margin-bottom:14px;padding:8px 10px;background:#f6f6f8;border-radius:6px;">Linking to: <strong>Reviewer Notes</strong></div>
+        <div class="wm-type-grid">
+          <div class="wm-type-card selected" style="color:#58a6ff">
+            <div class="wm-type-name">Comment</div>
+            <div class="wm-type-desc">Annotate a passage or add a scholarly note</div>
+          </div>
+          <div class="wm-type-card" style="color:#3fb950">
+            <div class="wm-type-name">Reference</div>
+            <div class="wm-type-desc">Cross-reference, citation, or "see this"</div>
+          </div>
+          <div class="wm-type-card" style="color:#f85149">
+            <div class="wm-type-name">Disagreement</div>
+            <div class="wm-type-desc">Mark a contested claim or counter-argument</div>
+          </div>
+          <div class="wm-type-card" style="color:#a371f7">
+            <div class="wm-type-name">Quotation</div>
+            <div class="wm-type-desc">This passage quotes another source</div>
+          </div>
+        </div>
+        <button class="wm-submit">Create Link</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">3b</span> Option B: Link to specific text in another document</div>
+  <div class="step-body">
+    <p>Choose <strong>"Link to specific text in another document"</strong>. The wizard closes and a yellow action bar appears:</p>
+    <div class="screenshot-mock" style="text-align:center;padding:6px 16px">
+      <span style="font-size:12px;color:#6a6a76">Linking from &ldquo;Essay on Privacy&rdquo; &mdash; select target text</span>
+    </div>
+    <p>Now navigate to the target document (click it in the library sidebar) and highlight the passage you want to link <strong>to</strong>. The action bar will show link type buttons:</p>
+    <div class="screenshot-mock" style="text-align:center;padding:6px 16px">
+      <span style="font-size:12px;color:#6a6a76;margin-right:8px">Link type:</span>
+      <span style="border:1px solid #58a6ff;color:#58a6ff;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;margin-right:4px">Comment</span>
+      <span style="border:1px solid #3fb950;color:#3fb950;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;margin-right:4px">Reference</span>
+      <span style="border:1px solid #f85149;color:#f85149;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;margin-right:4px">Disagreement</span>
+      <span style="border:1px solid #a371f7;color:#a371f7;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;margin-right:4px">Quotation</span>
+      <span style="border:1px solid #d29922;color:#d29922;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600">See Also</span>
+    </div>
+    <p>Click the type you want. The link is created!</p>
+    <p>Press <span class="kbd">Esc</span> at any time to cancel.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">4</span> The link appears</div>
+  <div class="step-body">
+    <p>The linked passage now shows a coloured underline and a margin bar. Hover over the marker to see a tooltip with the target document, link type, and excerpt. Click to navigate to the linked document.</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Creating a Transclusion</h2>
+
+<p>
+A transclusion copies content from one document into another while maintaining the provenance link to the source. This is useful when you want to quote a passage verbatim and have it visible inline.
+</p>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span> Select the source text</div>
+  <div class="step-body">
+    <p>In the source document, highlight the passage you want to transclude.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span> Click "Transclude"</div>
+  <div class="step-body">
+    <p>Click the <strong>Transclude</strong> button. A floating badge appears showing the held selection.</p>
+    <div class="screenshot-mock" style="padding:8px 16px;border-color:#d97706">
+      <span style="font-size:12px;color:#d97706;font-weight:600">Transcluding from: Canon</span>
+      <span style="font-size:12px;color:#6a6a76;margin-left:8px">&ldquo;privacy is a human right&rdquo;</span>
+      <span style="float:right;font-size:11px;color:#2563eb;cursor:pointer">Place at cursor</span>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">3</span> Navigate and place</div>
+  <div class="step-body">
+    <p>Navigate to the destination document. Click <strong>Place at cursor</strong> on the badge, or simply click in the editor where you want the transclusion inserted.</p>
+    <p>The transcluded text appears inline with a hatched margin bar, and a provenance chain connects it back to the original source.</p>
+  </div>
+</div>
+
+<div class="note">
+  <strong>Tip:</strong> Transclusions have no link type &mdash; they are always rendered with a hatched pattern, not a coloured underline. If you want to type a transclusion (e.g., mark it as a Quotation), create a separate typed link in addition to the transclusion.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Creating a Cross-Server Link</h2>
+
+<p>
+Xudanu servers can link to each other. A <strong>cross-server link</strong> connects a passage on your server to content on a remote Xudanu server. The link persists across restarts and carries the remote content's cryptographic hash for tamper verification.
+</p>
+
+<div class="diagram-container">
+<svg width="640" height="220" viewBox="0 0 640 220">
+  <!-- Local server -->
+  <rect x="10" y="20" width="270" height="170" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>
+  <text x="145" y="40" text-anchor="middle" fill="#d29922" font-size="11" font-family="Inter" font-weight="600">YOUR SERVER (xudanu.com)</text>
+  <rect x="30" y="55" width="230" height="55" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="145" y="73" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">LOCAL ESSAY</text>
+  <text x="145" y="92" text-anchor="middle" fill="#c9d1d9" font-size="12" font-family="Source Serif 4">"privacy is a human right"</text>
+  <line x1="60" y1="103" x2="230" y2="103" stroke="#58a6ff" stroke-width="2" stroke-dasharray="4,3"/>
+
+  <!-- Remote server -->
+  <rect x="360" y="20" width="270" height="170" rx="8" fill="#0d1117" stroke="#d29922" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="495" y="40" text-anchor="middle" fill="#d29922" font-size="11" font-family="Inter" font-weight="600">REMOTE SERVER (alice.example.com)</text>
+  <rect x="380" y="55" width="230" height="55" rx="6" fill="#161b22" stroke="#d29922" stroke-opacity="0.5"/>
+  <text x="495" y="73" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">REMOTE CANON</text>
+  <text x="495" y="92" text-anchor="middle" fill="#c9d1d9" font-size="12" font-family="Source Serif 4">"the original source text"</text>
+
+  <!-- Connection -->
+  <line x1="280" y1="80" x2="360" y2="80" stroke="#d29922" stroke-width="2"/>
+  <polygon points="360,80 352,76 352,84" fill="#d29922"/>
+  <text x="320" y="68" text-anchor="middle" fill="#d29922" font-size="9" font-family="Inter" font-weight="600">CROSS-SERVER LINK</text>
+
+  <!-- Hash verification -->
+  <rect x="100" y="130" width="440" height="40" rx="6" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1"/>
+  <text x="320" y="148" text-anchor="middle" fill="#3fb950" font-size="10" font-family="Inter" font-weight="600">BLAKE3 hash verified</text>
+  <text x="320" y="162" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">Content fetched via HTTPS &middot; cached locally &middot; tamper-evident</text>
+</svg>
+</div>
+<p class="diagram-caption">A cross-server link connects a local passage to remote content. The remote server's content is fetched, verified against a BLAKE3 hash, and cached locally.</p>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span> Select source text and open the wizard</div>
+  <div class="step-body">
+    <p>As with any link, select the passage in your document and click <strong>Link</strong>. In the wizard, choose <strong>"Link to a remote server"</strong>.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span> Enter the tumbler</div>
+  <div class="step-body">
+    <p>The <strong>tumbler</strong> is the Xanadu global identifier for the remote content. It takes one of two forms:</p>
+    <table>
+      <tr><th>Format</th><th>Example</th><th>When to use</th></tr>
+      <tr><td>Domain</td><td class="mono">"alice.example.com".5.3.10.7</td><td>Preferred &mdash; human-readable, self-routing via DNS</td></tr>
+      <tr><td>Numeric</td><td class="mono">1.5.3.10.7</td><td>When the server has a registered numeric ID in your directory</td></tr>
+    </table>
+    <p>The tumbler components are: <code>server . work_id . version . revision . edition</code></p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">3</span> Enter the content hash</div>
+  <div class="step-body">
+    <p>Provide the <strong>BLAKE3 content hash</strong> (64 hex characters) from the remote server. This is used to verify that the fetched content has not been tampered with. You can find this hash on the remote server's public content API or from a shared reference.</p>
+    <div class="wizard-mock">
+      <div class="wm-body">
+        <div class="wm-step-title">Remote server link <span style="float:right"><a href="#" style="font-size:12px;color:#2563eb;text-decoration:none">&larr; back</a></span></div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:#4a4a56;margin-bottom:4px">Tumbler</div>
+            <div style="padding:8px 10px;border:1px solid #d0cec8;border-radius:6px;font-size:12px;font-family:'JetBrains Mono',monospace;color:#2a2a2e;background:#fff">"alice.example.com".5.3.10.7</div>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:#4a4a56;margin-bottom:4px">Content hash (BLAKE3, hex)</div>
+            <div style="padding:8px 10px;border:1px solid #d0cec8;border-radius:6px;font-size:11px;font-family:'JetBrains Mono',monospace;color:#2a2a2e;background:#fff">a1b2c3d4e5f6...<span style="color:#8a8a96">(64 chars)</span></div>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:#4a4a56;margin-bottom:4px">Author name (optional)</div>
+            <div style="padding:8px 10px;border:1px solid #d0cec8;border-radius:6px;font-size:12px;color:#2a2a2e;background:#fff">alice</div>
+          </div>
+          <button class="wm-submit">Create Remote Link</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">4</span> Optionally enter author info</div>
+  <div class="step-body">
+    <p>You can add the remote author's name and public key (hex). This information is stored with the link and can be used for attribution and provenance verification. If omitted, the author defaults to "unknown".</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">5</span> Click "Create Remote Link"</div>
+  <div class="step-body">
+    <p>The link is created. The remote server's content is fetched on demand when the link is resolved, verified against the stored hash, and cached locally for fast subsequent access.</p>
+  </div>
+</div>
+
+<div class="gold">
+  <strong>Tumbler format:</strong> The domain format <code>"server.address".work_id.v.revision.edition</code> is preferred because it's self-routing &mdash; the client can look up the server via DNS. The numeric format <code>server_id.work_id.v.revision.edition</code> requires the server ID to be registered in your local server directory.
+</div>
+
+<div class="warning">
+  <strong>Hash verification:</strong> When a cross-server link is resolved, the fetched content's BLAKE3 hash must match the stored hash. If it doesn't, the resolution fails with a tamper warning. This ensures that content cannot be silently altered on the remote server.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Managing Your Links</h2>
+
+<p>
+You can manage existing links from the <strong>Connections panel</strong> on the right side of the screen. Each link shows:
+</p>
+
+<ul>
+  <li>The link type (coloured label)</li>
+  <li>The connected document title</li>
+  <li>An excerpt of the linked text</li>
+  <li>A <strong>type dropdown</strong> to change the link type</li>
+  <li>A <strong>delete button</strong> (&times;) to remove the link</li>
+</ul>
+
+<div class="conn-mock">
+  <div class="cm-header">
+    <span>Connections</span>
+    <select style="font-size:10px;background:#1a1a24;border:1px solid #3a3a48;color:#8a8a96;border-radius:4px;padding:2px 4px">
+      <option>All (3)</option>
+    </select>
+  </div>
+  <div class="cm-item blue">
+    <div class="cm-item-title">
+      <span style="color:#d29922">&#9733;</span>
+      <span style="color:#58a6ff">link</span>
+      <span>&#8644; Reviewer Notes</span>
+      <div class="cm-actions">
+        <select><option>Comment</option><option>Reference</option></select>
+        <button>&times;</button>
+      </div>
+    </div>
+    <div class="cm-item-excerpt">&ldquo;this claim is contested in case law&hellip;&rdquo;</div>
+  </div>
+  <div class="cm-item green">
+    <div class="cm-item-title">
+      <span style="color:#5a5a66">&#9734;</span>
+      <span style="color:#3fb950">backlink</span>
+      <span>&#8592; Rebuttal Essay</span>
+    </div>
+    <div class="cm-item-excerpt">&ldquo;see Doe 2021 &sect;4 for a counter-argument&hellip;&rdquo;</div>
+  </div>
+</div>
+
+<p>To use the management controls:</p>
+<ol>
+  <li><strong>Change type:</strong> Click the dropdown next to any link and select a new type. The underline colour and pattern update immediately.</li>
+  <li><strong>Delete:</strong> Click the &times; button. The link is removed from both documents.</li>
+  <li><strong>Navigate:</strong> Click anywhere on a connection item to jump to the connected document.</li>
+  <li><strong>Pin:</strong> Click the &#9734; star to pin important connections to the top.</li>
+  <li><strong>Filter:</strong> Use the dropdown at the top of the panel to filter by All, Pinned, Transclusions, Links, or Backlinks.</li>
+</ol>
+
+<div class="warning">
+  <strong>Note:</strong> Link management controls only appear when you have edit access to the current document. If you are viewing a read-only document, you can see links but not modify them.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Understanding the Visual Markers</h2>
+
+<p>
+When links exist on a passage, you will see three visual elements:
+</p>
+
+<div class="diagram-container">
+<svg width="560" height="260" viewBox="0 0 560 260">
+  <!-- Document background -->
+  <rect x="40" y="20" width="480" height="220" fill="#faf9f6" stroke="#d0cec8" rx="8"/>
+
+  <!-- Left margin bar (outgoing) -->
+  <rect x="40" y="60" width="4" height="40" fill="#58a6ff" rx="2"/>
+
+  <!-- Text -->
+  <text x="70" y="85" fill="#2a2a2e" font-size="14" font-family="Source Serif 4, Georgia, serif">Many argue that</text>
+  <text x="70" y="85" fill="#2a2a2e" font-size="14" font-family="Source Serif 4, Georgia, serif">
+    <tspan x="70" dy="20">privacy is a human right</tspan>
+  </text>
+
+  <!-- Underline -->
+  <line x1="70" y1="108" x2="240" y2="108" stroke="#58a6ff" stroke-width="2" stroke-dasharray="4,3"/>
+
+  <!-- Right margin bar (incoming) -->
+  <rect x="516" y="120" width="4" height="30" fill="#3fb950" rx="2"/>
+
+  <!-- Annotations -->
+  <line x1="20" y1="80" x2="36" y2="80" stroke="#8b949e" stroke-width="1" stroke-dasharray="2,2"/>
+  <text x="10" y="84" fill="#8b949e" font-size="9" font-family="Inter">L</text>
+  <text x="44" y="55" fill="#58a6ff" font-size="9" font-family="Inter" font-weight="600">left bar</text>
+  <text x="44" y="45" fill="#58a6ff" font-size="8" font-family="Inter">(outgoing)</text>
+
+  <text x="70" y="130" fill="#58a6ff" font-size="9" font-family="Inter" font-weight="600">underline (type style)</text>
+
+  <text x="530" y="145" fill="#3fb950" font-size="9" font-family="Inter" font-weight="600" text-anchor="end">right bar</text>
+  <text x="530" y="135" fill="#3fb950" font-size="8" font-family="Inter" text-anchor="end">(incoming)</text>
+
+  <!-- Hit zone annotation -->
+  <rect x="65" y="68" width="180" height="44" fill="none" stroke="#8b949e" stroke-width="1" stroke-dasharray="3,2" rx="4"/>
+  <text x="160" y="165" text-anchor="middle" fill="#8b949e" font-size="9" font-family="Inter">invisible hit zone (hover &#8594; tooltip, click &#8594; navigate)</text>
+</svg>
+</div>
+<p class="diagram-caption">Anatomy of a link marker: left margin bar (outgoing), coloured underline (type style), right margin bar (incoming), and invisible hit zone for interaction.</p>
+
+<h3>Margin bars</h3>
+<table>
+  <tr><th>Position</th><th>Meaning</th><th>Colour</th></tr>
+  <tr><td>Left margin</td><td>This document links OUT to another document</td><td>Link type colour</td></tr>
+  <tr><td>Right margin</td><td>Another document links IN to this passage</td><td>Green</td></tr>
+  <tr><td>Left margin (dashed)</td><td>Cross-server link OUT to a remote server</td><td>Amber, dashed border</td></tr>
+</table>
+
+<h3>Cross-server link markers</h3>
+<p>
+Links to remote servers display with a distinct <strong>amber dashed border</strong> pattern to distinguish them from local links. The marker tooltip shows the remote server's address, tumbler, and author information. If the remote content has been cached locally, clicking the marker navigates to a read-only view; if not yet cached, the server fetches and verifies it on first access.
+</p>
+
+<h3>When links overlap</h3>
+<p>
+Multiple links on the same passage are rendered in separate vertical <strong>lanes</strong>, each offset by 2px so all remain visible. When five or more links overlap in a region, they collapse into a single amber <strong>density pill</strong> showing the count. Click the pill to expand the cluster.
+</p>
+
+<div class="diagram-container">
+<svg width="400" height="100" viewBox="0 0 400 100">
+  <!-- Density pill -->
+  <rect x="120" y="20" width="36" height="24" rx="4" fill="#d29922"/>
+  <text x="138" y="36" text-anchor="middle" fill="#0d1117" font-size="12" font-weight="700" font-family="Inter">6</text>
+
+  <!-- Underline region -->
+  <rect x="156" y="40" width="120" height="16" fill="rgba(210,153,34,0.15)" rx="2"/>
+  <text x="216" y="52" text-anchor="middle" fill="#2a2a2e" font-size="13" font-family="Source Serif 4">privacy is a human right</text>
+
+  <text x="200" y="80" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter">Click the amber pill &#8594; cluster expands</text>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. The Connections Panel</h2>
+
+<p>
+The Connections panel on the right side of the screen gives you a unified view of all connections for the current document:
+</p>
+
+<table>
+  <tr><th>Section</th><th>What It Shows</th></tr>
+  <tr><td>Transclusions</td><td>Inline transcluded content from other documents (amber border)</td></tr>
+  <tr><td>Links</td><td>Typed links you created from this document (blue border)</td></tr>
+  <tr><td>Backlinks</td><td>Links from other documents pointing into this one (green border)</td></tr>
+  <tr><td>Cross-server</td><td>Links to content on remote Xudanu servers (amber dashed border)</td></tr>
+</table>
+
+<p>
+Use the dropdown at the top to filter by type. Pin important connections with the star (&#9734;) to keep them at the top. Click any item to navigate to the connected document.
+</p>
+
+<div class="gold">
+  <strong>Direction matters:</strong> The same link appears differently depending on which document you're viewing. In the origin document, it shows as a <strong>link</strong> (&#8644;, outgoing, left margin). In the destination document, it shows as a <strong>backlink</strong> (&#8592;, incoming, right margin).
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Tips and Best Practices</h2>
+
+<div class="note">
+  <strong>Choose the right type.</strong> Think about the semantic relationship. Is this a note on the passage? Use Comment. Is it a counter-argument? Use Disagreement. Is it a direct quote? Use Quotation. Getting the type right makes the document's connection graph more meaningful.
+</div>
+
+<div class="note">
+  <strong>Links survive edits.</strong> When you insert or delete text, link spans migrate automatically. You don't need to re-create links after editing.
+</div>
+
+<div class="note">
+  <strong>Overlapping is fine.</strong> Multiple users can create links on the same passage without coordination. The canvas layers them into lanes so all remain visible.
+</div>
+
+<div class="gold">
+  <strong>Transclusion vs. Link:</strong> Use <strong>Transclude</strong> when you want the source text to appear inline in your document (live quote). Use <strong>Link</strong> when you want to connect passages without copying text (annotation, cross-reference).
+</div>
+
+<div class="gold">
+  <strong>Backlinks are automatic.</strong> You never create a backlink directly. When document A links to document B, B automatically sees the incoming link in its Connections panel. This is the bidirectional nature of Xudanu links.
+</div>
+
+<div class="gold">
+  <strong>Persistence:</strong> All links are durably stored. They survive server restarts, crashes, and work archival. When you publish a document, its links become visible to other users.
+</div>
+
+<div class="gold">
+  <strong>Cross-server links are permanent:</strong> Cross-server links store the remote content's BLAKE3 hash, tumbler, and author info. They survive checkpoint, restore, and WAL replay. Even if the remote server goes offline, the link's metadata (excerpt, hash, provenance) remains intact. When the remote server returns, the link can be resolved again.
+</div>
+
+<div class="note">
+  <strong>Remote content caching:</strong> When a cross-server link is resolved, the fetched content is cached in the local blob store. Subsequent accesses are instant. The cache can be cleared by the server operator, but the link itself &mdash; with its hash, tumbler, and excerpt &mdash; is permanent proof of the connection.
+</div>
+
+<h3>Keyboard shortcuts</h3>
+<table>
+  <tr><th>Key</th><th>Action</th></tr>
+  <tr><td><span class="kbd">Esc</span></td><td>Cancel pending link/transclusion creation</td></tr>
+  <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">K</span></td><td>Open search</td></tr>
+  <tr><td>Click marker</td><td>Navigate to the linked document</td></tr>
+  <tr><td>Double-click marker</td><td>Jump to linked document and show its connections</td></tr>
+  <tr><td>Hover marker</td><td>Show tooltip with target, type, excerpt</td></tr>
+</table>
+
+<div class="footer">
+  Xudanu Links Tutorial &mdash; Part of the Xudanu hypertext system.<br>
+  See also: <a href="links-and-backlinks.html">Developer Guide</a> &middot; <a href="editions-and-works.html">Editions &amp; Works</a> &middot; <a href="transclusion-engine.html">Transclusion Engine</a> &middot; <a href="xanadu-network-architecture.html">Network Architecture</a> &middot; <a href="index.html">Documentation Index</a>
+</div>
+
+</div>
+</body>
+</html>

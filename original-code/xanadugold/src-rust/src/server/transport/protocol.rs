@@ -122,6 +122,9 @@ pub enum OperationCode {
     WorkStar,
     WorkUnstar,
     WorkIsStarred,
+    ConnectionPinSet,
+    ConnectionPinUnset,
+    ConnectionPinsGet,
     WorkGraph,
     TrailCreate,
     TrailDelete,
@@ -456,6 +459,9 @@ impl OperationCode {
             0x0346 => Some(OperationCode::TrailUnpublish),
             0x0347 => Some(OperationCode::TrailListPublished),
             0x0348 => Some(OperationCode::TrailListCategories),
+            0x0349 => Some(OperationCode::ConnectionPinSet),
+            0x034a => Some(OperationCode::ConnectionPinUnset),
+            0x034b => Some(OperationCode::ConnectionPinsGet),
             0x0341 => Some(OperationCode::WorkDiffNarration),
             0x0342 => Some(OperationCode::WorkWritingFeedback),
             0x0343 => Some(OperationCode::WorkBacklinks),
@@ -735,6 +741,9 @@ impl OperationCode {
             OperationCode::TrailUnpublish => 0x0346,
             OperationCode::TrailListPublished => 0x0347,
             OperationCode::TrailListCategories => 0x0348,
+            OperationCode::ConnectionPinSet => 0x0349,
+            OperationCode::ConnectionPinUnset => 0x034a,
+            OperationCode::ConnectionPinsGet => 0x034b,
             OperationCode::WorkOwner => 0x0313,
             OperationCode::WorkPublish => 0x0317,
             OperationCode::WorkUnpublish => 0x0318,
@@ -1112,6 +1121,13 @@ pub enum WireRequest {
     WorkIsStarred {
         work_id: BeId,
     },
+    ConnectionPinSet {
+        key: String,
+    },
+    ConnectionPinUnset {
+        key: String,
+    },
+    ConnectionPinsGet,
     WorkGraph,
 
     TrailCreate {
@@ -2147,6 +2163,7 @@ pub enum ResponseValue {
     LinkInfo(LinkPayload),
     LinkList(Vec<LinkPayload>),
     LinkTypes(Vec<LinkTypeInfoPayload>),
+    ConnectionPins(Vec<String>),
     ExcerptPositions(Vec<ExcerptPositionPayload>),
     TransclusionResults(Vec<TransclusionResultPayload>),
     WorkIds(Vec<BeId>),
@@ -2921,6 +2938,89 @@ pub struct HyperRefPayload {
     pub start_position: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end_position: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cross_server_ref: Option<CrossServerRefPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossServerRefPayload {
+    pub tumbler: String,
+    #[serde(default)]
+    pub origin_server_id: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_server_address: Option<String>,
+    pub content_hash: String,
+    #[serde(default = "default_mime_type")]
+    pub mime_type: String,
+    #[serde(default)]
+    pub byte_size: u64,
+    #[serde(default)]
+    pub origin_author: String,
+    pub origin_author_key: String,
+    #[serde(default)]
+    pub origin_server_sig: String,
+    #[serde(default)]
+    pub fetched_at: u64,
+    #[serde(default)]
+    pub excerpt: String,
+}
+
+fn default_mime_type() -> String {
+    "text/plain".to_string()
+}
+
+impl CrossServerRefPayload {
+    pub fn from_cross_server_ref(csr: &crate::edition::links::CrossServerRef) -> Self {
+        CrossServerRefPayload {
+            tumbler: csr.tumbler().to_string(),
+            origin_server_id: csr.origin_server_id(),
+            origin_server_address: csr.origin_server_address().map(|s| s.to_string()),
+            content_hash: hex::encode(csr.content_hash()),
+            mime_type: csr.mime_type().to_string(),
+            byte_size: csr.byte_size(),
+            origin_author: csr.origin_author().to_string(),
+            origin_author_key: hex::encode(csr.origin_author_key()),
+            origin_server_sig: hex::encode(csr.origin_server_sig()),
+            fetched_at: csr.fetched_at(),
+            excerpt: csr.excerpt().to_string(),
+        }
+    }
+
+    pub fn to_cross_server_ref(&self) -> Option<crate::edition::links::CrossServerRef> {
+        let content_hash = hex::decode(&self.content_hash).ok()?;
+        if content_hash.len() != 32 {
+            return None;
+        }
+        let mut hash_arr = [0u8; 32];
+        hash_arr.copy_from_slice(&content_hash);
+
+        let author_key = hex::decode(&self.origin_author_key).ok()?;
+        if author_key.len() != 32 {
+            return None;
+        }
+        let mut key_arr = [0u8; 32];
+        key_arr.copy_from_slice(&author_key);
+
+        let sig = if self.origin_server_sig.is_empty() {
+            Vec::new()
+        } else {
+            hex::decode(&self.origin_server_sig).unwrap_or_default()
+        };
+
+        let mut csr = crate::edition::links::CrossServerRef::new(
+            &self.tumbler,
+            hash_arr,
+            &self.origin_author,
+            key_arr,
+        );
+        csr = csr
+            .with_mime_type(&self.mime_type)
+            .with_byte_size(self.byte_size)
+            .with_server_sig(sig)
+            .with_fetched_at(self.fetched_at)
+            .with_excerpt(&self.excerpt);
+        Some(csr)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3350,6 +3450,9 @@ impl HyperRefPayload {
             provenance_chain,
             start_position: hr.start_position(),
             end_position: hr.end_position(),
+            cross_server_ref: hr
+                .cross_server_ref()
+                .map(CrossServerRefPayload::from_cross_server_ref),
         }
     }
 
@@ -3379,6 +3482,11 @@ impl HyperRefPayload {
         hr = hr.with_span(self.start_position, self.end_position);
         if !provenance_chain.is_empty() {
             hr = hr.with_provenance_chain(provenance_chain);
+        }
+        if let Some(csr_payload) = &self.cross_server_ref {
+            if let Some(csr) = csr_payload.to_cross_server_ref() {
+                hr = hr.with_cross_server_ref(csr);
+            }
         }
         hr
     }

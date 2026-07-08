@@ -17,7 +17,7 @@ required-features = ["server"]
 [features]
 default = []
 wasm = ["wasm-bindgen", "console_error_panic_hook", "serde", "serde_json", "js-sys"]
-server = ["tokio", "axum", "postcard", "tracing", "tracing-subscriber", "tracing-appender", "serde", "serde_json", "futures-util", "tokio-tungstenite", "chacha20poly1305", "x25519-dalek", "ed25519-dalek", "sha2", "hmac", "hkdf", "argon2", "subtle", "rand", "zeroize", "mime_guess", "axum-server", "rustls-pemfile", "rustls", "ring", "base64", "reqwest", "oauth2"]
+server = ["tokio", "axum", "postcard", "tracing", "tracing-subscriber", "tracing-appender", "serde", "serde_json", "futures-util", "tokio-tungstenite", "chacha20poly1305", "x25519-dalek", "ed25519-dalek", "sha2", "hmac", "hkdf", "argon2", "subtle", "rand", "zeroize", "mime_guess", "axum-server", "rustls-pemfile", "rustls", "ring", "base64", "reqwest", "oauth2", "webpki-roots", "hex"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
@@ -58,6 +58,8 @@ ring = { version = "0.17", optional = true }
 base64 = { version = "0.22", optional = true }
 reqwest = { version = "0.12", features = ["rustls-tls", "json", "blocking"], default-features = false, optional = true }
 oauth2 = { version = "5", optional = true }
+webpki-roots = { version = "0.26", optional = true }
+hex = { version = "0.4", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -68,7 +70,6 @@ proptest = "1"
 tempfile = "3"
 rcgen = "0.13"
 rustls = { version = "0.23", features = ["ring", "std", "tls12"] }
-hex = "0.4"
 rustls-pemfile = "2"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 axum = { version = "0.8", features = ["ws"] }

@@ -1086,6 +1086,7 @@ pub fn read_section_chunk<T: serde::de::DeserializeOwned>(
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct SocialSection {
     pub starred_works: std::collections::HashMap<BeId, std::collections::HashSet<BeId>>,
+    pub user_pins: std::collections::HashMap<BeId, std::collections::HashSet<String>>,
     pub trails: Vec<TrailManifestEntry>,
     pub trail_counter: BeId,
     pub compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,

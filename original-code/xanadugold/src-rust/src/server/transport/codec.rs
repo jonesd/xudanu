@@ -644,6 +644,7 @@ impl JsonCodec {
             OperationCode::WorkGraph,
             OperationCode::TrailList,
             OperationCode::WorkListArchived,
+            OperationCode::ConnectionPinsGet,
             #[cfg(feature = "serde")]
             OperationCode::ServerDirectoryList,
         ];
@@ -682,6 +683,7 @@ impl JsonCodec {
                 OperationCode::WorkGraph => Ok(WireRequest::WorkGraph),
                 OperationCode::TrailList => Ok(WireRequest::TrailList),
                 OperationCode::WorkListArchived => Ok(WireRequest::WorkListArchived),
+                OperationCode::ConnectionPinsGet => Ok(WireRequest::ConnectionPinsGet),
                 #[cfg(feature = "serde")]
                 OperationCode::ServerDirectoryList => Ok(WireRequest::ServerDirectoryList),
                 _ => unreachable!(),
@@ -3068,6 +3070,25 @@ impl JsonCodec {
                     work_id: args.work_id,
                 })
             }
+            OperationCode::ConnectionPinSet => {
+                #[derive(Deserialize)]
+                struct Args {
+                    key: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ConnectionPinSet { key: args.key })
+            }
+            OperationCode::ConnectionPinUnset => {
+                #[derive(Deserialize)]
+                struct Args {
+                    key: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ConnectionPinUnset { key: args.key })
+            }
+            OperationCode::ConnectionPinsGet => Ok(WireRequest::ConnectionPinsGet),
             OperationCode::TrailCreate => {
                 #[derive(Deserialize)]
                 struct Args {

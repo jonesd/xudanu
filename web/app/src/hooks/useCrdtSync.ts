@@ -36,7 +36,7 @@ export interface CrdtSyncState {
   logout: () => void;
   annotations: AnnotationEntry[];
   refreshAnnotations: () => void;
-  createAnnotation: (kind: string, payload: string, charStart: number, charEnd: number) => Promise<void>;
+  createAnnotation: (kind: string, payload: string, charStart: number, charEnd: number, isPrivate?: boolean) => Promise<void>;
   deleteAnnotation: (annotationId: number) => Promise<void>;
   connectionEpoch: number;
   canEdit: boolean;
@@ -435,12 +435,12 @@ export function useCrdtSync(
     client.annotationList(workBeId).then(setAnnotations).catch((e) => { console.warn("[refreshAnnotations] failed:", e); });
   }, [workBeId]);
 
-  const createAnnotation = useCallback(async (kind: string, payload: string, charStart: number, charEnd: number) => {
+  const createAnnotation = useCallback(async (kind: string, payload: string, charStart: number, charEnd: number, isPrivate = false) => {
     const client = clientRef.current;
     if (!client || workBeId === null) return;
     if (!client.isConnected()) return;
     const id = Date.now();
-    await client.annotationCreate(workBeId, id, kind, payload, charStart, charEnd);
+    await client.annotationCreate(workBeId, id, kind, payload, charStart, charEnd, isPrivate);
     refreshAnnotations();
   }, [workBeId, refreshAnnotations]);
 

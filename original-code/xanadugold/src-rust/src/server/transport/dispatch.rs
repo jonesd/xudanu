@@ -564,6 +564,19 @@ fn dispatch_inner(
             let starred = srv.work_is_starred(session_id, work_id)?;
             Ok(ResponseValue::Boolean(starred))
         }
+        WireRequest::ConnectionPinSet { key } => {
+            srv.set_connection_pin(session_id, &key)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::ConnectionPinUnset { key } => {
+            srv.unset_connection_pin(session_id, &key)?;
+            Ok(ResponseValue::Void)
+        }
+        WireRequest::ConnectionPinsGet => {
+            srv.ensure_authenticated(session_id)?;
+            let pins = srv.connection_pins_for_session(session_id);
+            Ok(ResponseValue::ConnectionPins(pins.into_iter().collect()))
+        }
         WireRequest::WorkGraph => {
             srv.ensure_authenticated(session_id)?;
             let (raw_nodes, raw_edges) = srv.build_work_graph(session_id);
@@ -1164,13 +1177,19 @@ fn dispatch_inner(
                         labels.iter().filter_map(|l| l.to_range_element()).collect(),
                     )
                 });
-                crate::edition::links::HyperRef::single(
+                let mut hr_built = crate::edition::links::HyperRef::single(
                     excerpt,
                     hr.work_context,
                     hr.original_context,
                     path,
                 )
-                .with_span(span_start, span_end)
+                .with_span(span_start, span_end);
+                if let Some(csr_payload) = &hr.cross_server_ref {
+                    if let Some(csr) = csr_payload.to_cross_server_ref() {
+                        hr_built = hr_built.with_cross_server_ref(csr);
+                    }
+                }
+                hr_built
             });
             let d_ref = destination_ref.map(|hr| {
                 let span_start = hr.start_position;
@@ -1184,13 +1203,19 @@ fn dispatch_inner(
                         labels.iter().filter_map(|l| l.to_range_element()).collect(),
                     )
                 });
-                crate::edition::links::HyperRef::single(
+                let mut hr_built = crate::edition::links::HyperRef::single(
                     excerpt,
                     hr.work_context,
                     hr.original_context,
                     path,
                 )
-                .with_span(span_start, span_end)
+                .with_span(span_start, span_end);
+                if let Some(csr_payload) = &hr.cross_server_ref {
+                    if let Some(csr) = csr_payload.to_cross_server_ref() {
+                        hr_built = hr_built.with_cross_server_ref(csr);
+                    }
+                }
+                hr_built
             });
             let link_id = if link_types.is_empty() {
                 srv.create_link(session_id, origin, destination, o_ref, d_ref)?

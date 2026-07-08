@@ -237,6 +237,20 @@ export interface PassageComposition {
   layers: CompositionLayer[];
 }
 
+export interface CrossServerRefPayload {
+  tumbler: string;
+  origin_server_id?: number;
+  origin_server_address?: string | null;
+  content_hash: string;
+  mime_type?: string;
+  byte_size?: number;
+  origin_author: string;
+  origin_author_key: string;
+  origin_server_sig?: string;
+  fetched_at?: number;
+  excerpt?: string;
+}
+
 export interface HyperRefPayload {
   kind: string;
   work_context: number | null;
@@ -245,6 +259,7 @@ export interface HyperRefPayload {
   provenance_chain?: ProvenanceHop[];
   start_position?: number | null;
   end_position?: number | null;
+  cross_server_ref?: CrossServerRefPayload | null;
 }
 
 export interface SharedRegion {
@@ -811,6 +826,39 @@ export class CrdtSyncClient {
     return extractValue(resp) as number;
   }
 
+  async linkCreateCrossServer(
+    originWorkId: number,
+    originRef: { excerpt: string; start: number; end: number },
+    crossServerRef: CrossServerRefPayload,
+  ): Promise<number> {
+    const payload: Record<string, unknown> = {
+      origin: originWorkId,
+      destination: originWorkId,
+      origin_ref: {
+        kind: "single",
+        work_context: originWorkId,
+        original_context: null,
+        path_context: null,
+        excerpt: originRef.excerpt,
+        start_position: originRef.start,
+        end_position: originRef.end,
+      },
+      destination_ref: {
+        kind: "single",
+        work_context: null,
+        original_context: null,
+        path_context: null,
+        excerpt: crossServerRef.excerpt || null,
+        start_position: null,
+        end_position: null,
+        cross_server_ref: crossServerRef,
+      },
+      link_types: [],
+    };
+    const resp = await this.sendRequest("link_create", payload);
+    return extractValue(resp) as number;
+  }
+
   async linkGet(linkId: number): Promise<LinkEntry> {
     const resp = await this.sendRequest("link_get", { link_id: linkId });
     return extractValue(resp) as LinkEntry;
@@ -1044,6 +1092,21 @@ export class CrdtSyncClient {
 
   async workUnstar(workId: number): Promise<void> {
     await this.sendRequest("work_unstar", { work_id: workId });
+  }
+
+  async connectionPinSet(key: string): Promise<void> {
+    await this.sendRequest("connection_pin_set", { key });
+  }
+
+  async connectionPinUnset(key: string): Promise<void> {
+    await this.sendRequest("connection_pin_unset", { key });
+  }
+
+  async connectionPinsGet(): Promise<string[]> {
+    const resp = await this.sendRequest("connection_pins_get", {});
+    const val = extractValue(resp);
+    if (Array.isArray(val)) return val as string[];
+    return [];
   }
 
   async workArchive(workId: number): Promise<void> {

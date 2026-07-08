@@ -20,6 +20,10 @@ interface ContextPanelProps {
   onExportProvJson?: () => void;
   focusMode: boolean;
   onToggleFocus: () => void;
+  onDeleteLink?: (linkId: number) => void;
+  onRetypeLink?: (linkId: number, typeId: number) => void;
+  pinnedKeys: Set<string>;
+  onTogglePin: (key: string, pinned: boolean) => void;
 }
 
 export function ContextPanel(props: ContextPanelProps) {
@@ -38,7 +42,12 @@ export function ContextPanel(props: ContextPanelProps) {
         backlinks={props.backlinks}
         compoundSpanRanges={props.compoundSpanRanges}
         compoundSourceTitles={props.compoundSourceTitles}
+        currentWorkId={props.currentWorkId}
         onNavigateToWork={props.onNavigateToWork}
+        onDeleteLink={props.onDeleteLink}
+        onRetypeLink={props.onRetypeLink}
+        pinnedKeys={props.pinnedKeys}
+        onTogglePin={props.onTogglePin}
       />
       <AttributionSection attributionSpans={props.attributionSpans} attributionLogStatus={props.attributionLogStatus} onOpenFullView={props.onOpenProvenance} onExportReport={props.onExportReport} onExportProvJson={props.onExportProvJson} currentWorkId={props.currentWorkId} documentLength={props.documentLength} />
     </div>
