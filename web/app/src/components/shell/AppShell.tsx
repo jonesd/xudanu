@@ -399,6 +399,17 @@ export function AppShell() {
     }
   }, [clientRef, workBeId, transclusion, works]);
 
+  const handlePullFromWork = useCallback(
+    async (sourceWorkId: number, charStart: number, charEnd: number, text: string) => {
+      if (!clientRef.current || workBeId === null) return;
+      const position = selectionRange?.end ?? displayText.length;
+      await compound.addSpan(text, position, text, sourceWorkId, charStart, charEnd);
+      await new Promise((r) => setTimeout(r, 300));
+      await compound.reload();
+    },
+    [clientRef, workBeId, selectionRange, displayText, compound],
+  );
+
   const handleCreateLinkTarget = useCallback(
     async (typeId: number) => {
       if (!clientRef.current || workBeId === null || !selectionRange) return;
@@ -854,11 +865,13 @@ export function AppShell() {
                     canEdit={editable}
                     sourceTitles={compound.sourceTitles}
                     spanRanges={compound.spanRanges}
+                    works={works}
                     onReload={() => compound.reload()}
                     onInsertElement={(_i, _el) => Promise.resolve(null)}
                     onRemoveElement={(_i) => Promise.resolve(null)}
                     onMoveElement={(_from, _to) => Promise.resolve(null)}
                     onRemoveTransclusion={compound.undoLastInsert}
+                    onPullFromWork={handlePullFromWork}
                   />
                 </div>
               </div>
