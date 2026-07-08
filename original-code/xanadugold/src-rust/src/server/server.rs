@@ -287,6 +287,7 @@ pub struct Server {
     consequence_tracker: Arc<ConsequenceTracker>,
     write_barrier: Arc<WriteBarrier>,
     starred_works: HashMap<BeId, HashSet<BeId>>,
+    user_pins: HashMap<BeId, HashSet<String>>,
     trails: HashMap<BeId, TrailState>,
     trail_counter: BeId,
     compound_editions: HashMap<BeId, crate::edition::compound::CompoundEdition>,
@@ -408,6 +409,7 @@ pub(crate) struct CheckpointPayload {
     reconcile_counter: u64,
     federation_snapshot: Option<crate::server::federation::FederationSnapshot>,
     starred_works: HashMap<BeId, HashSet<BeId>>,
+    user_pins: HashMap<BeId, HashSet<String>>,
     trails: Vec<crate::persist::manifest::TrailManifestEntry>,
     trail_counter: BeId,
     compound_editions: Vec<(BeId, crate::edition::compound::CompoundEdition)>,
@@ -780,6 +782,7 @@ impl Server {
             consequence_tracker: Arc::new(ConsequenceTracker::new()),
             write_barrier: Arc::new(WriteBarrier::new()),
             starred_works: HashMap::new(),
+            user_pins: HashMap::new(),
             trails: HashMap::new(),
             trail_counter: 10_000,
             compound_editions: HashMap::new(),
@@ -5024,6 +5027,61 @@ impl Server {
         }
     }
 
+    pub fn set_connection_pin(
+        &mut self,
+        session_id: SessionId,
+        key: &str,
+    ) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+        let club_id = self
+            .resolve_author_club(session_id)
+            .ok_or(ServerError::NotAuthorized)?;
+        self.user_pins
+            .entry(club_id)
+            .or_default()
+            .insert(key.to_string());
+        if let Err(e) = self.wal.append_pin(club_id, key.to_string()) {
+            tracing::warn!("WAL write failed for pin: {}", e);
+        }
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    pub fn unset_connection_pin(
+        &mut self,
+        session_id: SessionId,
+        key: &str,
+    ) -> Result<(), ServerError> {
+        self.ensure_authenticated(session_id)?;
+        let club_id = self
+            .resolve_author_club(session_id)
+            .ok_or(ServerError::NotAuthorized)?;
+        if let Some(set) = self.user_pins.get_mut(&club_id) {
+            set.remove(key);
+        }
+        if let Err(e) = self.wal.append_unpin(club_id, key.to_string()) {
+            tracing::warn!("WAL write failed for unpin: {}", e);
+        }
+        self.auto_checkpoint();
+        Ok(())
+    }
+
+    pub fn connection_pins_for_session(&self, session_id: SessionId) -> HashSet<String> {
+        self.resolve_author_club(session_id)
+            .and_then(|cid| self.user_pins.get(&cid).cloned())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn wal_replay_pin(&mut self, club_id: BeId, key: String) {
+        self.user_pins.entry(club_id).or_default().insert(key);
+    }
+
+    pub(crate) fn wal_replay_unpin(&mut self, club_id: BeId, key: String) {
+        if let Some(set) = self.user_pins.get_mut(&club_id) {
+            set.remove(&key);
+        }
+    }
+
     pub(crate) fn wal_replay_trail_create(
         &mut self,
         owner_club: BeId,
@@ -6533,6 +6591,7 @@ impl Server {
                                     }
                                     self.compound_editions =
                                         social.compound_editions.into_iter().collect();
+                                    self.user_pins = social.user_pins;
                                     social.starred_works
                                 }
                                 Err(e) => {
@@ -6585,6 +6644,12 @@ impl Server {
                 "[restore] starred_works: {} clubs, {} total stars",
                 self.starred_works.len(),
                 total
+            );
+            let pin_total: usize = self.user_pins.values().map(|s| s.len()).sum();
+            tracing::info!(
+                "[restore] user_pins: {} clubs, {} total pins",
+                self.user_pins.len(),
+                pin_total
             );
         }
         self.reconcile_store = if let Some(hash) = manifest.federation_chunk_hash {
@@ -13748,6 +13813,7 @@ pub(crate) mod persist_snapshot {
         historical_authors: Option<crate::server::historical_author::HistoricalAuthorRegistry>,
         #[serde(default)]
         starred_works: HashMap<BeId, HashSet<BeId>>,
+        user_pins: HashMap<BeId, HashSet<String>>,
         #[serde(default)]
         trails: Vec<TrailSnapshot>,
         #[serde(default)]
@@ -13926,6 +13992,7 @@ pub(crate) mod persist_snapshot {
                 key_history,
                 historical_authors: Some(self.historical_authors.clone()),
                 starred_works: self.starred_works.clone(),
+                user_pins: self.user_pins.clone(),
                 trails: self
                     .trails
                     .values()
@@ -14029,6 +14096,7 @@ pub(crate) mod persist_snapshot {
                 source_patterns: crate::server::source_matcher::builtin_patterns(),
                 pending_attributions: Vec::new(),
                 starred_works: snapshot.starred_works.clone(),
+                user_pins: snapshot.user_pins.clone(),
                 trails: snapshot
                     .trails
                     .iter()
@@ -14470,6 +14538,7 @@ pub(crate) mod persist_snapshot {
                 reconcile_counter: self.reconcile_counter,
                 federation_snapshot: Some(federation_snapshot),
                 starred_works: self.starred_works.clone(),
+                user_pins: self.user_pins.clone(),
                 trails,
                 trail_counter: self.trail_counter,
                 compound_editions,
@@ -14868,11 +14937,13 @@ pub(crate) mod persist_snapshot {
             // Write social section (starred_works + trails + compound_editions) as a chunk
             let social = crate::persist::manifest::SocialSection {
                 starred_works: manifest.starred_works.clone(),
+                user_pins: self.user_pins.clone(),
                 trails: manifest.trails.clone(),
                 trail_counter: manifest.trail_counter,
                 compound_editions: manifest.compound_editions.clone(),
             };
             if !social.starred_works.is_empty()
+                || !social.user_pins.is_empty()
                 || !social.trails.is_empty()
                 || !social.compound_editions.is_empty()
             {
@@ -22845,6 +22916,107 @@ mod tests {
 
     #[test]
     #[cfg(feature = "server")]
+    fn cross_server_ref_persistence_round_trip() {
+        use crate::edition::links::{CrossServerRef, HyperLink, HyperRef};
+
+        let dir = TempDir::new("csr_persist");
+        let data_dir = dir.snapshot_path().parent().unwrap().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let link_id;
+        let origin_work_id;
+        let dest_work_id;
+
+        let test_hash = [0xabu8; 32];
+        let test_key = [0xcdu8; 32];
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+
+            origin_work_id = server
+                .create_work(sid, Edition::from_text("local origin"))
+                .unwrap();
+            dest_work_id = server
+                .create_work(sid, Edition::from_text("local dest"))
+                .unwrap();
+
+            let csr = CrossServerRef::new(
+                "\"remote.example.com\".5.3.10.7",
+                test_hash,
+                "remote_author",
+                test_key,
+            )
+            .with_mime_type("text/markdown")
+            .with_byte_size(4096)
+            .with_server_sig(vec![0x01, 0x02, 0x03, 0x04])
+            .with_fetched_at(1700000000)
+            .with_excerpt("remote excerpt text");
+
+            let origin_ref = HyperRef::single(
+                Some(Edition::from_text("local excerpt")),
+                Some(origin_work_id),
+                None,
+                None,
+            )
+            .with_span(Some(10), Some(25));
+            let dest_ref =
+                HyperRef::single(None, Some(dest_work_id), None, None).with_cross_server_ref(csr);
+
+            let link = HyperLink::make(vec![1], origin_ref, dest_ref);
+            link_id = server.create_link_with_hyperlink(sid, link).unwrap();
+
+            server.checkpoint_to_store().unwrap();
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let ls = server
+                .links
+                .get(&link_id)
+                .expect("link must survive restore");
+
+            let d_ref = ls.link.end_at("RightEnd").expect("RightEnd must exist");
+            assert!(
+                d_ref.is_cross_server(),
+                "cross_server_ref must survive restore"
+            );
+
+            let csr = d_ref
+                .cross_server_ref()
+                .expect("cross_server_ref must be present after restore");
+            assert_eq!(csr.tumbler(), "\"remote.example.com\".5.3.10.7");
+            assert_eq!(csr.origin_server_id(), 0);
+            assert_eq!(
+                csr.origin_server_address(),
+                Some("remote.example.com"),
+                "origin_server_address must survive"
+            );
+            assert_eq!(
+                csr.content_hash(),
+                &test_hash,
+                "content_hash must survive restore"
+            );
+            assert_eq!(
+                csr.origin_author_key(),
+                &test_key,
+                "origin_author_key must survive restore"
+            );
+            assert_eq!(csr.origin_author(), "remote_author");
+            assert_eq!(csr.mime_type(), "text/markdown");
+            assert_eq!(csr.byte_size(), 4096);
+            assert_eq!(csr.origin_server_sig(), &[0x01, 0x02, 0x03, 0x04]);
+            assert_eq!(csr.fetched_at(), 1700000000);
+            assert_eq!(csr.excerpt(), "remote excerpt text");
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
     fn link_snapshot_round_trip_preserves_all_fields() {
         use crate::edition::links::{HyperLink, HyperRef, Path, ProvenanceHop};
 
@@ -25026,6 +25198,177 @@ mod tests {
         }
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn pin_persistence_round_trip() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_pin_persist_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let sid_a;
+        let club_a;
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            sid_a = server.connect();
+            server.login_public(sid_a).unwrap();
+            club_a = server.resolve_author_club(sid_a).unwrap();
+
+            server.set_connection_pin(sid_a, "link-42").unwrap();
+            server.set_connection_pin(sid_a, "backlink-99").unwrap();
+            server.set_connection_pin(sid_a, "transcl-5-10-20").unwrap();
+
+            let pins = server.connection_pins_for_session(sid_a);
+            assert_eq!(pins.len(), 3, "should have 3 pins before checkpoint");
+            assert!(pins.contains("link-42"));
+            assert!(pins.contains("backlink-99"));
+            assert!(pins.contains("transcl-5-10-20"));
+
+            server.checkpoint_to_store().unwrap();
+
+            let pins_after = server.connection_pins_for_session(sid_a);
+            assert_eq!(
+                pins_after.len(),
+                3,
+                "pins must survive in memory after checkpoint"
+            );
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let pins = server.user_pins.get(&club_a);
+            assert!(
+                pins.is_some(),
+                "user_pins must survive checkpoint/restore in chunk store"
+            );
+            let pins = pins.unwrap();
+            assert_eq!(pins.len(), 3, "3 pins must survive restore");
+            assert!(pins.contains("link-42"));
+            assert!(pins.contains("backlink-99"));
+            assert!(pins.contains("transcl-5-10-20"));
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn wal_replays_pin_after_crash() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_wal_pin_replay_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        std::fs::create_dir_all(&data_dir).unwrap();
+
+        let club_a;
+
+        {
+            let mut server = Server::new();
+            server.init_data_dir(&data_dir, None).unwrap();
+            let sid = server.connect();
+            server.login_public(sid).unwrap();
+            club_a = server.resolve_author_club(sid).unwrap();
+
+            server.checkpoint_to_store().unwrap();
+            assert_eq!(server.wal.seq(), 0, "WAL empty after checkpoint");
+
+            server.set_connection_pin(sid, "link-100").unwrap();
+            server.set_connection_pin(sid, "backlink-200").unwrap();
+            assert_eq!(server.wal.seq(), 2, "WAL should have 2 entries for 2 pins");
+        }
+
+        {
+            let mut server = Server::new();
+            server.restore_from_data_dir(&data_dir, None).unwrap();
+
+            let pins = server
+                .user_pins
+                .get(&club_a)
+                .expect("pins must survive crash via WAL replay");
+            assert_eq!(pins.len(), 2, "2 pins must survive WAL replay");
+            assert!(pins.contains("link-100"));
+            assert!(pins.contains("backlink-200"));
+        }
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn pin_unpin_round_trip() {
+        let (mut server, sid) = setup_logged_in_server();
+        let club = server.resolve_author_club(sid).unwrap();
+
+        server.set_connection_pin(sid, "link-1").unwrap();
+        server.set_connection_pin(sid, "link-2").unwrap();
+        server.set_connection_pin(sid, "link-3").unwrap();
+
+        let pins = server.connection_pins_for_session(sid);
+        assert_eq!(pins.len(), 3);
+
+        server.unset_connection_pin(sid, "link-2").unwrap();
+
+        let pins = server.connection_pins_for_session(sid);
+        assert_eq!(pins.len(), 2, "unpin should remove 1");
+        assert!(pins.contains("link-1"));
+        assert!(!pins.contains("link-2"));
+        assert!(pins.contains("link-3"));
+
+        server.set_connection_pin(sid, "link-1").unwrap();
+        let pins = server.connection_pins_for_session(sid);
+        assert_eq!(pins.len(), 2, "re-pinning existing key is idempotent");
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn pin_isolated_per_user() {
+        let mut server = Server::new();
+
+        server
+            .user_pins
+            .entry(1001)
+            .or_default()
+            .insert("link-42".to_string());
+        server
+            .user_pins
+            .entry(1001)
+            .or_default()
+            .insert("link-43".to_string());
+        server
+            .user_pins
+            .entry(1002)
+            .or_default()
+            .insert("link-99".to_string());
+
+        let pins_a = server.user_pins.get(&1001).unwrap();
+        let pins_b = server.user_pins.get(&1002).unwrap();
+        assert_eq!(pins_a.len(), 2, "club 1001 has 2 pins");
+        assert_eq!(pins_b.len(), 1, "club 1002 has 1 pin");
+        assert!(pins_a.contains("link-42"));
+        assert!(pins_a.contains("link-43"));
+        assert!(!pins_a.contains("link-99"));
+        assert!(pins_b.contains("link-99"));
+        assert!(!pins_b.contains("link-42"));
+
+        let no_pins = server.user_pins.get(&9999);
+        assert!(no_pins.is_none(), "unknown club has no pins");
     }
 
     fn compound_test_setup() -> (Server, SessionId, BeId, BeId) {
@@ -27378,6 +27721,7 @@ mod tests {
             provenance_chain: Vec::new(),
             start_position: Some(5),
             end_position: Some(20),
+            cross_server_ref: None,
         };
 
         let hr = payload.to_hyper_ref(100);
@@ -29150,9 +29494,7 @@ mod tests {
 }
 
 fn http_get_json(url: &str, timeout_secs: u64) -> Result<String, String> {
-    use std::io::{Read, Write};
-    use std::net::TcpStream;
-    use std::time::Duration;
+    let is_https = url.starts_with("https://");
 
     let no_scheme = url
         .strip_prefix("http://")
@@ -29164,11 +29506,102 @@ fn http_get_json(url: &str, timeout_secs: u64) -> Result<String, String> {
         .map(|(h, p)| (h, format!("/{}", p)))
         .unwrap_or((no_scheme, "/".to_string()));
 
+    let default_port = if is_https { 443 } else { 80 };
     let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
-        (h, p.parse::<u16>().unwrap_or(80))
+        (h, p.parse::<u16>().unwrap_or(default_port))
     } else {
-        (host_port, 80u16)
+        (host_port, default_port)
     };
+
+    if is_https {
+        http_get_json_https(host, port, &path, timeout_secs)
+    } else {
+        http_get_json_http(host, port, &path, timeout_secs)
+    }
+}
+
+fn http_get_json_https(
+    host: &str,
+    port: u16,
+    path: &str,
+    timeout_secs: u64,
+) -> Result<String, String> {
+    use std::sync::Arc;
+
+    let mut root_cert_store = rustls::RootCertStore::empty();
+    root_cert_store.extend(::webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    let config = rustls::client::ClientConfig::builder()
+        .with_root_certificates(root_cert_store)
+        .with_no_client_auth();
+
+    let mut connector =
+        std::net::TcpStream::connect((host, port)).map_err(|e| format!("connect failed: {}", e))?;
+
+    connector
+        .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
+        .ok();
+    connector
+        .set_write_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
+        .ok();
+
+    let server_name = rustls::pki_types::ServerName::try_from(host.to_string())
+        .map_err(|e| format!("invalid hostname: {}", e))?;
+
+    let config = Arc::new(config);
+    let mut client = rustls::client::ClientConnection::new(config, server_name)
+        .map_err(|e| format!("TLS setup failed: {}", e))?;
+
+    let mut tls_stream = rustls::Stream::new(&mut client, &mut connector);
+
+    use std::io::Write;
+    let request = format!(
+        "GET {} HTTP/1.0\r\nHost: {}\r\nConnection: close\r\nAccept: application/json\r\n\r\n",
+        path, host
+    );
+
+    tls_stream
+        .write_all(request.as_bytes())
+        .map_err(|e| format!("TLS write failed: {}", e))?;
+
+    let mut all = Vec::new();
+    use std::io::Read;
+    let mut buf = [0u8; 8192];
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    loop {
+        if std::time::Instant::now() > deadline {
+            break;
+        }
+        match tls_stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => all.extend_from_slice(&buf[..n]),
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+    }
+
+    let response_str = String::from_utf8_lossy(&all);
+    let status_line = response_str.lines().next().unwrap_or("");
+    if !status_line.contains("200") {
+        return Err(format!("HTTP error: {}", status_line));
+    }
+
+    let body_start = response_str.find("\r\n\r\n").ok_or("no body separator")?;
+    Ok(response_str[body_start + 4..].to_string())
+}
+
+fn http_get_json_http(
+    host: &str,
+    port: u16,
+    path: &str,
+    timeout_secs: u64,
+) -> Result<String, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
 
     let mut stream =
         TcpStream::connect((host, port)).map_err(|e| format!("connect failed: {}", e))?;
@@ -29196,13 +29629,11 @@ fn http_get_json(url: &str, timeout_secs: u64) -> Result<String, String> {
             Ok(0) => break,
             Ok(n) => {
                 all.extend_from_slice(&buf[..n]);
-                if all.windows(1).any(|w| w[0] == b'}') && all.contains(&b'\n') {
-                    let s = String::from_utf8_lossy(&all);
-                    if let Some(body_start) = s.find("\r\n\r\n") {
-                        let body = &s[body_start + 4..];
-                        if body.trim_end().ends_with('}') {
-                            break;
-                        }
+                let s = String::from_utf8_lossy(&all);
+                if let Some(body_start) = s.find("\r\n\r\n") {
+                    let body = &s[body_start + 4..];
+                    if body.trim_end().ends_with('}') {
+                        break;
                     }
                 }
             }

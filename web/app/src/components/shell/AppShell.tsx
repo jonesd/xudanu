@@ -5,6 +5,11 @@ import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair } from "../../author-color";
 import { CollaborativeEditor } from "../CollaborativeEditor";
 import { TransclusionBadge } from "../TransclusionBadge";
+import { LinkCreator } from "../LinkCreator";
+import type { LinkCreatorSource } from "../LinkCreator";
+import { AnnotationPanel } from "../AnnotationPanel";
+import { AnnotationDialog } from "../AnnotationDialog";
+import { CompoundPanel } from "../CompoundPanel";
 import { AttributionPanel } from "../AttributionPanel";
 import { SourceTextViewer } from "../SourceTextViewer";
 import { ConnectionOverlay } from "../ConnectionOverlay";
@@ -45,11 +50,16 @@ export function AppShell() {
   const [showIdentity, setShowIdentity] = useState(false);
   const [showProvenance, setShowProvenance] = useState(false);
   const [showTrails, setShowTrails] = useState(false);
+  const [showAnnotations, setShowAnnotations] = useState(false);
+  const [showCompound, setShowCompound] = useState(false);
+  const [annotationTarget, setAnnotationTarget] = useState<{ start: number; end: number } | null>(null);
   const [isPublished, setIsPublished] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [works, setWorks] = useState<WorkListEntry[]>([]);
   const [selectionRange, setSelectionRange] = useState<{ start: number; end: number } | null>(null);
   const [docPrefs, setDocPrefs] = useState<DocPreferences>(loadDocPreferences());
+  const [linkCreatorSource, setLinkCreatorSource] = useState<LinkCreatorSource | null>(null);
+  const [pinnedKeys, setPinnedKeys] = useState<Set<string>>(new Set());
   const lastTypingRef = useRef(0);
 
   useEffect(() => {
@@ -76,6 +86,10 @@ export function AppShell() {
     attributionSpans,
     attributionLogStatus,
     refreshAttribution,
+    annotations,
+    refreshAnnotations,
+    createAnnotation,
+    deleteAnnotation,
     canEdit,
     reconnectAttempt,
     fetchWorkList,
@@ -114,12 +128,13 @@ export function AppShell() {
   useEffect(() => {
     if (connected && workBeId !== null && clientRef.current) {
       refreshAttribution();
+      refreshAnnotations();
     }
     if (connected && workBeId !== null && clientRef.current && identity) {
       loadTransclusionLinks(clientRef.current, workBeId, works);
       loadBacklinks(clientRef.current, workBeId);
     }
-  }, [connected, workBeId, works, identity, loadTransclusionLinks, loadBacklinks, refreshAttribution]);
+  }, [connected, workBeId, works, identity, loadTransclusionLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
 
   useEffect(() => {
     if (!connected || workBeId === null || !clientRef.current) return;
@@ -341,6 +356,49 @@ export function AppShell() {
     transclusion.holdLinkSelection(workBeId, title, selectionRange.start, selectionRange.end, selectedText);
   }, [selectionRange, workBeId, displayText, currentWorkMeta, transclusion]);
 
+  const handleOpenLinkCreator = useCallback(() => {
+    if (!selectionRange || workBeId === null) return;
+    let selectedText = "";
+    const domSel = window.getSelection();
+    if (domSel && !domSel.isCollapsed && domSel.toString().length > 0) {
+      selectedText = domSel.toString();
+    } else {
+      selectedText = displayText.slice(selectionRange.start, selectionRange.end);
+    }
+    const title = currentWorkMeta?.title || `Work ${workBeId.toString(16).padStart(4, "0")}`;
+    setLinkCreatorSource({
+      workId: workBeId,
+      workTitle: title,
+      start: selectionRange.start,
+      end: selectionRange.end,
+      text: selectedText,
+    });
+  }, [selectionRange, workBeId, displayText, currentWorkMeta]);
+
+  const handleLinkCreatorDone = useCallback(async () => {
+    if (!clientRef.current || workBeId === null) return;
+    await new Promise((r) => setTimeout(r, 300));
+    await transclusion.loadLinks(clientRef.current, workBeId, works);
+    await transclusion.loadBacklinks(clientRef.current, workBeId);
+  }, [clientRef, workBeId, transclusion, works]);
+
+  const handleDeleteLink = useCallback(async (linkId: number) => {
+    if (!clientRef.current || workBeId === null) return;
+    await transclusion.deleteLink(clientRef.current, linkId);
+    await transclusion.loadBacklinks(clientRef.current, workBeId);
+  }, [clientRef, workBeId, transclusion]);
+
+  const handleRetypeLink = useCallback(async (linkId: number, typeId: number) => {
+    if (!clientRef.current || workBeId === null) return;
+    try {
+      await clientRef.current.linkSetTypes(linkId, [typeId]);
+      await new Promise((r) => setTimeout(r, 200));
+      await transclusion.loadLinks(clientRef.current, workBeId, works);
+    } catch (e) {
+      console.error("Failed to retype link:", e);
+    }
+  }, [clientRef, workBeId, transclusion, works]);
+
   const handleCreateLinkTarget = useCallback(
     async (typeId: number) => {
       if (!clientRef.current || workBeId === null || !selectionRange) return;
@@ -377,6 +435,8 @@ export function AppShell() {
       if (e.key === "Escape") {
         setSearchOpen(false);
         setLibraryOpen(false);
+        setLinkCreatorSource(null);
+        setAnnotationTarget(null);
       }
     };
     document.addEventListener("keydown", handler);
@@ -419,12 +479,75 @@ export function AppShell() {
     return () => { cancelled = true; };
   }, [identity]);
 
+  useEffect(() => {
+    if (!identity || !clientRef.current) { setPinnedKeys(new Set()); return; }
+    const client = clientRef.current;
+    let cancelled = false;
+    client.connectionPinsGet()
+      .then((pins) => {
+        if (!cancelled) setPinnedKeys(new Set(pins));
+      })
+      .catch(() => { if (!cancelled) setPinnedKeys(new Set()); });
+    return () => { cancelled = true; };
+  }, [identity]);
+
+  const handleTogglePin = useCallback(async (key: string, pinned: boolean) => {
+    if (!clientRef.current) return;
+    setPinnedKeys((prev) => {
+      const next = new Set(prev);
+      if (pinned) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+    try {
+      if (pinned) await clientRef.current.connectionPinSet(key);
+      else await clientRef.current.connectionPinUnset(key);
+    } catch (e) {
+      console.error("Failed to persist pin:", e);
+      setPinnedKeys((prev) => {
+        const next = new Set(prev);
+        if (pinned) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    }
+  }, [clientRef]);
+
   const identityName = identity?.display_name || null;
   const identityColor = identityName
     ? authorColorPair(identityName).primary
     : "#8a8a96";
 
   const editable = writeMode && canEdit;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.altKey && (e.metaKey || e.ctrlKey) && e.key === "a") {
+        e.preventDefault();
+        if (selectionRange && workBeId !== null && editable) {
+          setAnnotationTarget({ start: selectionRange.start, end: selectionRange.end });
+        }
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [selectionRange, workBeId, editable]);
+
+  const handleCreateAnnotation = useCallback(
+    (charStart: number, charEnd: number) => {
+      if (!editable) return;
+      setAnnotationTarget({ start: charStart, end: charEnd });
+    },
+    [editable],
+  );
+
+  const handleAnnotationSubmit = useCallback(
+    (text: string, isPrivate: boolean) => {
+      if (!annotationTarget) return;
+      createAnnotation("note", text, annotationTarget.start, annotationTarget.end, isPrivate);
+    },
+    [annotationTarget, createAnnotation],
+  );
 
   const wordCount = useMemo(() => {
     if (!displayText) return 0;
@@ -440,7 +563,8 @@ export function AppShell() {
       else if (item === "settings") setShowSettings(true);
       else if (item === "provenance") setShowProvenance((s) => !s);
       else if (item === "trails") setShowTrails((s) => !s);
-      else if (item === "annotate") setActiveRail("annotate");
+      else if (item === "annotate") setShowAnnotations((s) => !s);
+      else if (item === "compound") setShowCompound((s) => !s);
     },
     []
   );
@@ -475,7 +599,7 @@ export function AppShell() {
       />
 
       <div className="document-area">
-        {workBeId !== null && selectionRange && !transclusion.pending && !transclusion.pendingLink && (
+        {workBeId !== null && selectionRange && !transclusion.pending && !transclusion.pendingLink && !linkCreatorSource && (
           <div className="selection-actions">
             <button
               type="button"
@@ -483,15 +607,15 @@ export function AppShell() {
               onClick={handleTranscludeSelection}
               title="Hold this selection as a transclusion to insert elsewhere"
             >
-              Transclude ({selectionRange.start}-{selectionRange.end})
+              Transclude
             </button>
             <button
               type="button"
               className="selection-action-btn link-action"
-              onClick={handleCreateLinkSelection}
-              title="Hold this selection to create a typed content link"
+              onClick={handleOpenLinkCreator}
+              title="Create a typed link from this selection"
             >
-              Create Link ({selectionRange.start}-{selectionRange.end})
+              Link
             </button>
           </div>
         )}
@@ -659,7 +783,7 @@ export function AppShell() {
                 fontSize={docPrefs.fontSize}
                 lineHeight={docPrefs.lineHeight}
                 annotations={crdt.annotations}
-                onCreateAnnotation={undefined}
+                onCreateAnnotation={editable ? handleCreateAnnotation : undefined}
               />
             </div>
             {showProvenance && (
@@ -684,6 +808,56 @@ export function AppShell() {
                 </div>
               </div>
             )}
+            {showAnnotations && workBeId !== null && (
+              <div className="provenance-split">
+                <div className="provenance-split-header">
+                  <span className="provenance-title">Annotations</span>
+                  <button
+                    type="button"
+                    className="provenance-close"
+                    onClick={() => setShowAnnotations(false)}
+                  >
+                    close
+                  </button>
+                </div>
+                <div className="provenance-split-body">
+                  <AnnotationPanel
+                    annotations={annotations}
+                    onDelete={(id) => { deleteAnnotation(id); }}
+                    onNavigate={(_cs) => {}}
+                    currentClubId={identity?.club_id ?? null}
+                  />
+                </div>
+              </div>
+            )}
+            {showCompound && workBeId !== null && !isSourceWork && (
+              <div className="provenance-split">
+                <div className="provenance-split-header">
+                  <span className="provenance-title">Compound Structure</span>
+                  <button
+                    type="button"
+                    className="provenance-close"
+                    onClick={() => setShowCompound(false)}
+                  >
+                    close
+                  </button>
+                </div>
+                <div className="provenance-split-body">
+                  <CompoundPanel
+                    client={clientRef.current}
+                    workBeId={workBeId}
+                    canEdit={editable}
+                    sourceTitles={compound.sourceTitles}
+                    spanRanges={compound.spanRanges}
+                    onReload={() => compound.reload()}
+                    onInsertElement={(_i, _el) => Promise.resolve(null)}
+                    onRemoveElement={(_i) => Promise.resolve(null)}
+                    onMoveElement={(_from, _to) => Promise.resolve(null)}
+                    onRemoveTransclusion={compound.undoLastInsert}
+                  />
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -704,6 +878,10 @@ export function AppShell() {
         onExportProvJson={handleExportProvJson}
         focusMode={focusMode}
         onToggleFocus={() => setFocusMode((f) => !f)}
+        onDeleteLink={editable ? handleDeleteLink : undefined}
+        onRetypeLink={editable ? handleRetypeLink : undefined}
+        pinnedKeys={pinnedKeys}
+        onTogglePin={handleTogglePin}
       />
 
       <BottomBar
@@ -783,6 +961,25 @@ export function AppShell() {
           onClose={() => setShowTrails(false)}
         />
       )}
+
+      <LinkCreator
+        open={linkCreatorSource !== null}
+        source={linkCreatorSource}
+        works={works}
+        currentWorkId={workBeId}
+        clientRef={clientRef}
+        onLinkCreated={handleLinkCreatorDone}
+        onClose={() => setLinkCreatorSource(null)}
+        onSelectTextInOtherDoc={handleCreateLinkSelection}
+      />
+
+      <AnnotationDialog
+        open={annotationTarget !== null}
+        charStart={annotationTarget?.start ?? 0}
+        charEnd={annotationTarget?.end ?? 0}
+        onCreate={handleAnnotationSubmit}
+        onClose={() => setAnnotationTarget(null)}
+      />
     </div>
   );
 }

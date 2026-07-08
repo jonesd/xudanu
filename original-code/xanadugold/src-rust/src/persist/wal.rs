@@ -135,6 +135,26 @@ impl WalLog {
         )
     }
 
+    pub fn append_pin(&mut self, club_id: BeId, key: String) -> Result<u64, WalError> {
+        self.append(
+            "pin",
+            serde_json::json!({
+                "club_id": club_id,
+                "key": key,
+            }),
+        )
+    }
+
+    pub fn append_unpin(&mut self, club_id: BeId, key: String) -> Result<u64, WalError> {
+        self.append(
+            "unpin",
+            serde_json::json!({
+                "club_id": club_id,
+                "key": key,
+            }),
+        )
+    }
+
     pub fn append_trail_create(
         &mut self,
         owner_club: BeId,
@@ -362,6 +382,28 @@ impl WalLog {
                         entry.args.get("work_id").and_then(|v| v.as_u64()),
                     ) {
                         server.wal_replay_unstar(club_id, work_id);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "pin" => {
+                    if let (Some(club_id), Some(key)) = (
+                        entry.args.get("club_id").and_then(|v| v.as_u64()),
+                        entry.args.get("key").and_then(|v| v.as_str()),
+                    ) {
+                        server.wal_replay_pin(club_id, key.to_string());
+                        true
+                    } else {
+                        false
+                    }
+                }
+                "unpin" => {
+                    if let (Some(club_id), Some(key)) = (
+                        entry.args.get("club_id").and_then(|v| v.as_u64()),
+                        entry.args.get("key").and_then(|v| v.as_str()),
+                    ) {
+                        server.wal_replay_unpin(club_id, key.to_string());
                         true
                     } else {
                         false

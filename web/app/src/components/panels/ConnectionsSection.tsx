@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { LinkEntry, SpanRangePayload, BacklinkEntry } from "../../api/crdt_sync";
-import { getTransclusionColor } from "../../hooks/useTransclusion";
+import { getTransclusionColor, DEFAULT_LINK_TYPES } from "../../hooks/useTransclusion";
 
 const DEFAULT_LINK_TYPE_LABELS: Record<number, string> = {
   1: "Comment",
@@ -15,7 +15,12 @@ interface ConnectionsSectionProps {
   backlinks: BacklinkEntry[];
   compoundSpanRanges: SpanRangePayload[];
   compoundSourceTitles: Record<number, string>;
+  currentWorkId: number | null;
   onNavigateToWork: (workId: number) => void;
+  onDeleteLink?: (linkId: number) => void;
+  onRetypeLink?: (linkId: number, typeId: number) => void;
+  pinnedKeys: Set<string>;
+  onTogglePin: (key: string, pinned: boolean) => void;
 }
 
 export function ConnectionsSection({
@@ -23,18 +28,18 @@ export function ConnectionsSection({
   backlinks,
   compoundSpanRanges,
   compoundSourceTitles,
+  currentWorkId,
   onNavigateToWork,
+  onDeleteLink,
+  onRetypeLink,
+  pinnedKeys,
+  onTogglePin,
 }: ConnectionsSectionProps) {
-  const [pinned, setPinned] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("all");
 
   const togglePin = (key: string) => {
-    setPinned((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    const isPinned = pinnedKeys.has(key);
+    onTogglePin(key, !isPinned);
   };
 
   type ConnItem = {
@@ -44,6 +49,8 @@ export function ConnectionsSection({
     excerpt: string;
     meta: string;
     workId: number;
+    linkId?: number;
+    linkTypeId?: number;
   };
 
   const items: ConnItem[] = [];
@@ -70,14 +77,18 @@ export function ConnectionsSection({
     }
     const key = `link-${link.link_id}`;
     const excerpt = link.origin_ref?.excerpt || link.destination_ref?.excerpt || "";
-    const typeName = (link.link_types?.[0] && DEFAULT_LINK_TYPE_LABELS[link.link_types[0]]) || "link";
+    const typeId = link.link_types?.[0] ?? 0;
+    const typeName = DEFAULT_LINK_TYPE_LABELS[typeId] || "link";
+    const isOutgoing = currentWorkId !== null && link.origin === currentWorkId;
     items.push({
       key,
       type: "link",
       title: link.destination_title || link.origin_title || "Untitled",
       excerpt: excerpt.slice(0, 80),
       meta: typeName,
-      workId: link.destination,
+      workId: isOutgoing ? link.destination : link.origin,
+      linkId: link.link_id,
+      linkTypeId: typeId,
     });
   }
 
@@ -90,13 +101,14 @@ export function ConnectionsSection({
       excerpt: (bl.excerpt || "").slice(0, 80),
       meta: bl.link_type || "link",
       workId: bl.source_work_id,
+      linkId: bl.link_id,
     });
   }
 
   const backlinkCount = backlinks.length;
 
   const filtered = items.filter((item) => {
-    if (filter === "pinned") return pinned.has(item.key);
+    if (filter === "pinned") return pinnedKeys.has(item.key);
     if (filter === "transclusion") return item.type === "transclusion";
     if (filter === "link") return item.type === "link";
     if (filter === "backlink") return item.type === "backlink";
@@ -104,8 +116,8 @@ export function ConnectionsSection({
   });
 
   const sorted = [...filtered].sort((a, b) => {
-    const aPinned = pinned.has(a.key) ? 0 : 1;
-    const bPinned = pinned.has(b.key) ? 0 : 1;
+    const aPinned = pinnedKeys.has(a.key) ? 0 : 1;
+    const bPinned = pinnedKeys.has(b.key) ? 0 : 1;
     if (aPinned !== bPinned) return aPinned - bPinned;
     const typeOrder = { transclusion: 0, link: 1, backlink: 2 };
     return typeOrder[a.type] - typeOrder[b.type];
@@ -113,7 +125,8 @@ export function ConnectionsSection({
 
   if (items.length === 0) return null;
 
-  const pinnedCount = [...pinned].filter((k) => items.some((i) => i.key === k)).length;
+  const pinnedCount = [...pinnedKeys].filter((k) => items.some((i) => i.key === k)).length;
+  const canManage = onDeleteLink !== undefined;
 
   return (
     <div className="ctx-section">
@@ -163,14 +176,46 @@ export function ConnectionsSection({
             <span
               className="pin-toggle"
               onClick={(e) => { e.stopPropagation(); togglePin(item.key); }}
-              style={{ color: pinned.has(item.key) ? "var(--amber)" : "var(--text-dim)" }}
+              style={{ color: pinnedKeys.has(item.key) ? "var(--amber)" : "var(--text-dim)" }}
             >
-              {pinned.has(item.key) ? "★" : "☆"}
+              {pinnedKeys.has(item.key) ? "\u2605" : "\u2606"}
             </span>
             <span className={`conn-type-label ${item.type}`}>{item.type}</span>
-            <span>{item.type === "transclusion" ? "→" : item.type === "backlink" ? "←" : "⇄"} {item.title}</span>
+            <span>{item.type === "transclusion" ? "\u2192" : item.type === "backlink" ? "\u2190" : "\u21c4"} {item.title}</span>
+            {canManage && item.linkId !== undefined && (
+              <div className="conn-item-actions" style={{ marginLeft: "auto" }}>
+                {item.type === "link" && onRetypeLink && (
+                  <select
+                    className="conn-retype-select"
+                    value={item.linkTypeId ?? 0}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      onRetypeLink(item.linkId!, parseInt(e.target.value, 10));
+                    }}
+                    title="Change link type"
+                  >
+                    {DEFAULT_LINK_TYPES.map((t) => (
+                      <option key={t.type_id} value={t.type_id}>{t.name}</option>
+                    ))}
+                  </select>
+                )}
+                {onDeleteLink && (
+                  <button
+                    className="conn-delete-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteLink(item.linkId!);
+                    }}
+                    title="Delete link"
+                  >
+                    {"\u2715"}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-          <div className="conn-excerpt">"{item.excerpt}{item.excerpt.length >= 100 ? "…" : ""}"</div>
+          <div className="conn-excerpt">&ldquo;{item.excerpt}{item.excerpt.length >= 100 ? "\u2026" : ""}&rdquo;</div>
           <div className="conn-meta">
             <span>{item.meta}</span>
           </div>
