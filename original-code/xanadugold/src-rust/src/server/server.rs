@@ -9432,10 +9432,31 @@ impl Server {
         session_id: SessionId,
         work_id: BeId,
         position: i64,
-        element: RangeElement,
+        mut element: RangeElement,
     ) -> Result<u64, ServerError> {
         self.ensure_session(session_id)?;
         let char_position = position.max(0) as usize;
+
+        if let crate::edition::RangeElement::Transclusion {
+            source_work_id,
+            char_start,
+            char_end,
+            ..
+        } = &element
+        {
+            let placed_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let placed_by = self.resolve_author_club(session_id);
+            element = crate::edition::RangeElement::transclusion_with_meta(
+                *source_work_id,
+                *char_start,
+                *char_end,
+                placed_at,
+                placed_by,
+            );
+        }
 
         let new_edition = {
             let ws = self
@@ -9556,6 +9577,7 @@ impl Server {
                         source_work_id: sid,
                         char_start: cs,
                         char_end: ce,
+                        ..
                     } = &carrier.element
                     {
                         if *sid == source_work_id && *cs == char_start && *ce == char_end {
@@ -9922,11 +9944,15 @@ impl Server {
                 source_work_id,
                 char_start,
                 char_end,
+                placed_at,
+                placed_by,
             } = &carrier.element
             {
                 let src_id = *source_work_id;
                 let c_start = *char_start;
                 let c_end = *char_end;
+                let p_at = *placed_at;
+                let p_by = *placed_by;
 
                 let src_text = self.resolve_inline_recursive(
                     src_id,
@@ -9952,6 +9978,8 @@ impl Server {
                     content_len,
                     otree_position: crdt_offset,
                     resolved_content: content.clone(),
+                    placed_at: p_at,
+                    placed_by: p_by,
                 });
 
                 if !source_titles.contains_key(&src_id) {
@@ -10038,6 +10066,7 @@ impl Server {
                         source_work_id: sid,
                         char_start,
                         char_end,
+                        ..
                     } = &new_carrier.element
                     {
                         if *sid == source_work_id {

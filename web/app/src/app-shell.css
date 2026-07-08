@@ -1604,3 +1604,7 @@
 }
 .compound-pull-insert:hover:not(:disabled) { background: #00695c; }
 .compound-pull-insert:disabled { opacity: 0.5; cursor: default; }
+
+.compound-span-range { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #8a8a96; }
+.compound-source-badge { font-size: 10px; font-weight: 600; color: #00897b; background: rgba(0,137,123,0.1); padding: 1px 4px; border-radius: 3px; }
+.compound-placed-meta { font-size: 10px; color: #6a6a76; margin-left: 4px; }

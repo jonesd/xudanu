@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { CrdtSyncClient, CompoundElementPayload, WorkListEntry } from "../api/crdt_sync";
+import type { CrdtSyncClient, CompoundElementPayload, WorkListEntry, SpanRangePayload } from "../api/crdt_sync";
 
 interface CompoundPanelProps {
   client: CrdtSyncClient | null;
   workBeId: number | null;
   canEdit: boolean;
   sourceTitles: Record<number, string>;
-  spanRanges: { source_work_id: number; char_start: number; char_end: number; flat_start: number; flat_end: number }[];
+  spanRanges: SpanRangePayload[];
   works?: WorkListEntry[];
   onReload: () => void;
   onInsertElement: (index: number, element: CompoundElementPayload) => Promise<number | null>;
@@ -178,6 +178,21 @@ export function CompoundPanel({
                   <span className="compound-span-range">
                     [{elem.char_start}:{elem.char_end}]
                   </span>
+                  {(() => {
+                    const sr = spanRanges.find((s) =>
+                      s.source_work_id === elem.source_work_id &&
+                      s.char_start === elem.char_start &&
+                      s.char_end === elem.char_end
+                    );
+                    if (!sr?.placed_at) return null;
+                    const date = new Date(sr.placed_at * 1000);
+                    const by = sr.placed_by != null ? `club:${sr.placed_by.toString(16).padStart(4, "0")}` : "unknown";
+                    return (
+                      <span className="compound-placed-meta" title={`Placed by ${by} on ${date.toLocaleString()}`}>
+                        {"\u00B7"} {by} {"\u00B7"} {date.toLocaleDateString()}
+                      </span>
+                    );
+                  })()}
                 </span>
               )}
               {canEdit && (

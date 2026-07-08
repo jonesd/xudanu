@@ -367,6 +367,8 @@ impl CompoundEdition {
                         content_len: content.chars().count(),
                         otree_position: 0,
                         resolved_content: content.clone(),
+                        placed_at: 0,
+                        placed_by: None,
                     });
 
                     resolved_elements.push(ResolvedElement::Span {
@@ -399,6 +401,10 @@ pub struct SpanRange {
     pub content_len: usize,
     pub otree_position: usize,
     pub resolved_content: String,
+    #[serde(default)]
+    pub placed_at: u64,
+    #[serde(default)]
+    pub placed_by: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

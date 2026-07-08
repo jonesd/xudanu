@@ -51,6 +51,8 @@ pub enum RangeElement {
         source_work_id: u64,
         char_start: usize,
         char_end: usize,
+        placed_at: u64,
+        placed_by: Option<u64>,
     },
 }
 
@@ -125,6 +127,16 @@ impl RangeElement {
     }
 
     pub fn transclusion(source_work_id: u64, char_start: usize, char_end: usize) -> Self {
+        Self::transclusion_with_meta(source_work_id, char_start, char_end, 0, None)
+    }
+
+    pub fn transclusion_with_meta(
+        source_work_id: u64,
+        char_start: usize,
+        char_end: usize,
+        placed_at: u64,
+        placed_by: Option<u64>,
+    ) -> Self {
         let (start, end) = if char_start <= char_end {
             (char_start, char_end)
         } else {
@@ -134,6 +146,8 @@ impl RangeElement {
             source_work_id,
             char_start: start,
             char_end: end,
+            placed_at,
+            placed_by,
         }
     }
 
@@ -195,7 +209,27 @@ impl RangeElement {
                 source_work_id,
                 char_start,
                 char_end,
+                ..
             } => Some((*source_work_id, *char_start, *char_end)),
+            _ => None,
+        }
+    }
+
+    pub fn as_transclusion_full(&self) -> Option<(u64, usize, usize, u64, Option<u64>)> {
+        match self {
+            RangeElement::Transclusion {
+                source_work_id,
+                char_start,
+                char_end,
+                placed_at,
+                placed_by,
+            } => Some((
+                *source_work_id,
+                *char_start,
+                *char_end,
+                *placed_at,
+                *placed_by,
+            )),
             _ => None,
         }
     }
@@ -314,6 +348,7 @@ impl RangeElement {
                 source_work_id,
                 char_start,
                 char_end,
+                ..
             } => {
                 let mut hasher = blake3::Hasher::new();
                 hasher.update(b"transclusion:");

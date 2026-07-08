@@ -16,7 +16,7 @@ function mkClient(): CrdtSyncClient {
 }
 
 const mkSpanRanges = () => [
-  { source_work_id: 2, char_start: 0, char_end: 5, flat_start: 0, flat_end: 5 },
+  { source_work_id: 2, char_start: 0, char_end: 5, flat_start: 0, flat_end: 5, content_len: 5 },
 ];
 
 const mkSourceTitles = () => ({ 2: "Canon" });
