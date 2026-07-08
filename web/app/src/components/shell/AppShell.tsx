@@ -710,6 +710,11 @@ export function AppShell() {
                 {showProvenance ? "Hide Prov" : "Show Prov"}
               </button>
               <div className="doc-meta">
+                {compound.spanRanges.length > 0 && (
+                  <div className="compound-badge" title="This document contains transcluded content from other works">
+                    {"\u25A3"} {compound.spanRanges.length} source{compound.spanRanges.length !== 1 ? "s" : ""}
+                  </div>
+                )}
                 {awareness.length > 1 && (
                   <div className="collab-pill">
                     <div className="collab-pill-dot" />

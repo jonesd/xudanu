@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compound Documents &mdash; Xudanu Tutorial</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.accent-green{color:#3fb950}
+.accent-blue{color:#58a6ff}
+.accent-purple{color:#a371f7}
+.accent-amber{color:#d29922}
+.accent-red{color:#f85149}
+.accent-teal{color:#39d2c0}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+ul{margin-left:24px;margin-bottom:16px;list-style:disc}
+li{margin-bottom:4px}
+ol{margin-left:24px;margin-bottom:16px}
+ol li{margin-bottom:8px}
+.step{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px 24px;margin:16px 0}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#00897b;color:#0d1117;border-radius:50%;font-weight:700;font-size:14px;margin-right:10px;flex-shrink:0}
+.step-title{font-size:16px;font-weight:600;color:#e6edf3;display:flex;align-items:center;margin-bottom:8px}
+.step-body{padding-left:38px}
+.compound-mock{background:#faf9f6;border:1px solid #d0cec8;border-radius:8px;padding:20px;margin:16px 0;font-family:'Source Serif 4',Georgia,serif;color:#2a2a2e;font-size:14px;line-height:1.8;position:relative}
+.compound-mock .cm-source{padding:3px 6px;border-radius:3px;font-size:10px;font-weight:600;font-family:'Inter',sans-serif;margin:0 2px;white-space:nowrap}
+.compound-mock .cm-text{padding:0 2px}
+.compound-mock .cm-bar{position:absolute;left:0;width:4px;border-radius:8px 0 0 8px}
+.compound-mock .cm-label{position:absolute;left:8px;font-size:9px;font-weight:600;font-family:'Inter',sans-serif;text-transform:uppercase;letter-spacing:0.5px}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}h2{page-break-before:always;margin-top:40px}.diagram-container{border:1px solid #ddd;background:#fafafa}pre{background:#f5f5f5;border-color:#ddd;color:#333}code{background:#f0f0f0;color:#555}.note{background:#f0f7ff;border-left-color:#3b82f6}.note strong{color:#3b82f6}a{color:#2563eb}.footer{color:#999}.toc a{color:#444}.compound-mock{border-color:#ddd}.compound-mock .cm-source{color:#333}}
+@media(max-width:640px){.content-wrap{padding:24px 16px 60px}h1{font-size:28px}h2{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Compound Documents</h1>
+<p class="subtitle">Documents assembled from live pieces of other documents &mdash; not copies, but transclusions that maintain their bond to the source and update when the source changes.</p>
+
+<div class="toc">
+  <a class="toc-section" href="#s1">1. What Is a Compound Document?</a>
+  <a class="toc-section" href="#s2">2. The Legal Brief Example</a>
+  <a class="toc-section" href="#s3">3. How to Create a Compound Document</a>
+  <a class="toc-section" href="#s4">4. Visual Markers &mdash; Seeing Where Pieces Come From</a>
+  <a class="toc-section" href="#s5">5. The Compound Panel</a>
+  <a class="toc-section" href="#s6">6. Compound vs. Link &mdash; When to Use Which</a>
+  <a class="toc-section" href="#s7">7. How It Works Under the Hood</a>
+  <a class="toc-section" href="#s8">8. Xudanu vs. Udanax-Gold Compounds</a>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. What Is a Compound Document?</h2>
+
+<p>
+A <strong>compound document</strong> is a document whose content is assembled from pieces of other documents. Each piece is a <strong>transclusion</strong> &mdash; a live reference to a span of text in another work, not a copy.
+</p>
+
+<p>
+Think of it like a film editor's decision list (EDL): the final film is a sequence of clips, each pointing back to the original footage. The film IS the assembly &mdash; the clips aren't links, they ARE the content. If the original footage is recoloured, the final film reflects the change.
+</p>
+
+<div class="diagram-container">
+<svg width="640" height="280" viewBox="0 0 640 280">
+  <!-- Three source works -->
+  <rect x="10" y="20" width="180" height="60" rx="6" fill="#161b22" stroke="#00897b" stroke-width="1.5"/>
+  <text x="100" y="42" text-anchor="middle" fill="#00897b" font-size="10" font-family="Inter" font-weight="600">STATUTE</text>
+  <text x="100" y="60" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">"All persons shall have</text>
+  <text x="100" y="72" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">the right to privacy..."</text>
+
+  <rect x="10" y="100" width="180" height="60" rx="6" fill="#161b22" stroke="#5c6bc0" stroke-width="1.5"/>
+  <text x="100" y="122" text-anchor="middle" fill="#5c6bc0" font-size="10" font-family="Inter" font-weight="600">CASE LAW</text>
+  <text x="100" y="140" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">"The court held that</text>
+  <text x="100" y="152" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">privacy extends..."</text>
+
+  <rect x="10" y="180" width="180" height="60" rx="6" fill="#161b22" stroke="#f4511e" stroke-width="1.5"/>
+  <text x="100" y="202" text-anchor="middle" fill="#f4511e" font-size="10" font-family="Inter" font-weight="600">DISSENT</text>
+  <text x="100" y="220" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">"Privacy is not</text>
+  <text x="100" y="232" text-anchor="middle" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">absolute..."</text>
+
+  <!-- Arrows to compound -->
+  <line x1="190" y1="50" x2="260" y2="80" stroke="#00897b" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <polygon points="260,80 252,78 254,86" fill="#00897b"/>
+  <line x1="190" y1="130" x2="260" y2="140" stroke="#5c6bc0" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <polygon points="260,140 252,138 254,146" fill="#5c6bc0"/>
+  <line x1="190" y1="210" x2="260" y2="200" stroke="#f4511e" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <polygon points="260,200 252,198 254,206" fill="#f4511e"/>
+
+  <!-- Compound document -->
+  <rect x="260" y="20" width="370" height="220" rx="8" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+  <text x="445" y="42" text-anchor="middle" fill="#d29922" font-size="11" font-family="Inter" font-weight="600">LEGAL BRIEF (compound)</text>
+
+  <!-- Transclusion regions -->
+  <rect x="275" y="55" width="340" height="22" rx="3" fill="rgba(0,137,123,0.12)" stroke="#00897b" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="280" y="70" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">"All persons shall have the right to privacy..."</text>
+  <rect x="275" y="55" width="3" height="22" fill="#00897b"/>
+
+  <text x="275" y="88" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">This right has been consistently upheld.</text>
+
+  <rect x="275" y="98" width="340" height="22" rx="3" fill="rgba(92,107,192,0.12)" stroke="#5c6bc0" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="280" y="113" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">"The court held that privacy extends..."</text>
+  <rect x="275" y="98" width="3" height="22" fill="#5c6bc0"/>
+
+  <text x="275" y="136" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">However, this principle is contested.</text>
+
+  <rect x="275" y="146" width="340" height="22" rx="3" fill="rgba(244,81,30,0.12)" stroke="#f4511e" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="280" y="161" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">"Privacy is not absolute where..."</text>
+  <rect x="275" y="146" width="3" height="22" fill="#f4511e"/>
+
+  <text x="275" y="184" fill="#c9d1d9" font-size="11" font-family="Source Serif 4">We disagree with this framing.</text>
+
+  <!-- Source labels -->
+  <text x="445" y="225" text-anchor="middle" fill="#484f58" font-size="9" font-family="Inter">Each coloured region is a live transclusion from a source work</text>
+</svg>
+</div>
+<p class="diagram-caption">A compound Legal Brief assembled from three source works. Each coloured region is a transclusion &mdash; live content from another document, not a copy.</p>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. The Legal Brief Example</h2>
+
+<p>
+Imagine you're building a legal argument. You have three source works on your Xudanu server:
+</p>
+
+<ul>
+  <li><strong class="accent-teal">Statute</strong> &mdash; the original privacy law text</li>
+  <li><strong style="color:#5c6bc0">Case Law</strong> &mdash; a court ruling on digital privacy</li>
+  <li><strong style="color:#f4511e">Dissent</strong> &mdash; a dissenting opinion on privacy limits</li>
+</ul>
+
+<p>
+Your <strong>Legal Brief</strong> is a compound document &mdash; its content is assembled from pieces of all three sources, interleaved with your own analysis:
+</p>
+
+<div class="compound-mock">
+  <div class="cm-bar" style="background:#00897b;top:20px;bottom:235px"></div>
+  <span class="cm-source" style="background:rgba(0,137,123,0.15);color:#00897b;border:1px solid #00897b">Statute [0:72]</span>
+  <span class="cm-text">"All persons shall have the right to privacy in their personal communications."</span>
+  <br/>
+  <span class="cm-text">This right has been consistently upheld. In particular,</span>
+  <br/>
+  <div style="display:inline">
+    <span class="cm-source" style="background:rgba(92,107,192,0.15);color:#5c6bc0;border:1px solid #5c6bc0">Case Law [10:65]</span>
+    <span class="cm-text">"the court held that privacy extends to digital communications."</span>
+  </div>
+  <br/>
+  <span class="cm-text">However, this principle is contested. Critics argue that</span>
+  <br/>
+  <div style="display:inline">
+    <span class="cm-source" style="background:rgba(244,81,30,0.15);color:#f4511e;border:1px solid #f4511e">Dissent [0:58]</span>
+    <span class="cm-text">"privacy is not absolute where national security is concerned."</span>
+  </div>
+  <br/>
+  <span class="cm-text">We disagree with this framing.</span>
+</div>
+
+<p>
+The Brief is <strong>one document</strong> whose content literally comes from four places: three transclusions (from Statute, Case Law, and Dissent) plus your own original text. If the Statute work is ever updated, the transclusion in the Brief resolves to the new content.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. How to Create a Compound Document</h2>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">1</span> Create source works</div>
+  <div class="step-body">
+    <p>Create separate documents for each source. For the legal brief example, create "Statute", "Case Law", and "Dissent" with their respective texts.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">2</span> Open the destination document</div>
+  <div class="step-body">
+    <p>Create a new document (e.g., "Legal Brief") and enable write mode. Write any original analysis text you want to start with.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">3</span> Transclude from the first source</div>
+  <div class="step-body">
+    <p>Open the source work (e.g., "Statute"). Select the passage you want to include. Click <strong>Transclude</strong> (amber button).</p>
+    <p>A floating badge appears: "Transcluding from: Statute &mdash; 'All persons shall have...'"</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">4</span> Place the transclusion</div>
+  <div class="step-body">
+    <p>Navigate back to your "Legal Brief" document. Position the cursor where you want the transcluded text. Click <strong>Place at cursor</strong> on the badge.</p>
+    <p>The transcluded text appears inline, with a coloured background and source label.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">5</span> Repeat for each source</div>
+  <div class="step-body">
+    <p>Go back to each source work, select text, click Transclude, return to the Brief, and place it. Each transclusion gets a <strong>different colour</strong> based on its source work.</p>
+    <p>Interleave with your own original text by simply typing in the editor.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-title"><span class="step-num">6</span> View the compound structure</div>
+  <div class="step-body">
+    <p>Click the <strong>compound icon</strong> in the left rail to open the Compound Panel. It shows every transclusion element with its source work, character range, and resolved text.</p>
+  </div>
+</div>
+
+<div class="note">
+  <strong>Tip:</strong> Each source work gets a distinct colour (teal, indigo, orange, purple, red, green, cyan, or amber). The colour is deterministic based on the work ID &mdash; the same source always has the same colour across all compound documents.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Visual Markers &mdash; Seeing Where Pieces Come From</h2>
+
+<p>
+When a document contains transclusions, you'll see these visual elements:
+</p>
+
+<div class="diagram-container">
+<svg width="560" height="320" viewBox="0 0 560 320">
+  <!-- Document background -->
+  <rect x="40" y="20" width="480" height="280" fill="#faf9f6" stroke="#d0cec8" rx="8"/>
+
+  <!-- Transclusion 1 (teal) -->
+  <rect x="60" y="50" width="300" height="28" fill="rgba(0,137,123,0.12)" stroke="#00897b" stroke-width="1" stroke-dasharray="4,2" rx="3"/>
+  <rect x="40" y="50" width="4" height="28" fill="#00897b" rx="2"/>
+  <text x="65" y="68" fill="#2a2a2e" font-size="13" font-family="Source Serif 4, Georgia, serif">"All persons shall have..."</text>
+  <text x="65" y="46" fill="#00897b" font-size="9" font-family="Inter" font-weight="600">STATUTE</text>
+
+  <!-- Original text -->
+  <text x="60" y="98" fill="#2a2a2e" font-size="13" font-family="Source Serif 4, Georgia, serif">This right has been upheld.</text>
+
+  <!-- Transclusion 2 (indigo) -->
+  <rect x="60" y="115" width="300" height="28" fill="rgba(92,107,192,0.12)" stroke="#5c6bc0" stroke-width="1" stroke-dasharray="4,2" rx="3"/>
+  <rect x="40" y="115" width="4" height="28" fill="#5c6bc0" rx="2"/>
+  <text x="65" y="133" fill="#2a2a2e" font-size="13" font-family="Source Serif 4, Georgia, serif">"The court held that..."</text>
+  <text x="65" y="111" fill="#5c6bc0" font-size="9" font-family="Inter" font-weight="600">CASE LAW</text>
+
+  <!-- Original text -->
+  <text x="60" y="163" fill="#2a2a2e" font-size="13" font-family="Source Serif 4, Georgia, serif">However, this is contested.</text>
+
+  <!-- Transclusion 3 (orange) -->
+  <rect x="60" y="180" width="300" height="28" fill="rgba(244,81,30,0.12)" stroke="#f4511e" stroke-width="1" stroke-dasharray="4,2" rx="3"/>
+  <rect x="40" y="180" width="4" height="28" fill="#f4511e" rx="2"/>
+  <text x="65" y="198" fill="#2a2a2e" font-size="13" font-family="Source Serif 4, Georgia, serif">"Privacy is not absolute..."</text>
+  <text x="65" y="176" fill="#f4511e" font-size="9" font-family="Inter" font-weight="600">DISSENT</text>
+
+  <!-- Original text -->
+  <text x="60" y="228" fill="#2a2a2e" font-size="13" font-family="Source Serif 4, Georgia, serif">We disagree with this framing.</text>
+
+  <!-- Compound badge -->
+  <rect x="420" y="30" width="80" height="22" rx="11" fill="rgba(0,137,123,0.1)" stroke="rgba(0,137,123,0.3)"/>
+  <text x="460" y="44" text-anchor="middle" fill="#00897b" font-size="11" font-family="Inter" font-weight="600">&#9632; 3 sources</text>
+
+  <!-- Toggle button -->
+  <rect x="420" y="260" width="80" height="20" rx="3" fill="rgba(0,137,123,0.2)" stroke="#00897b"/>
+  <text x="460" y="273" text-anchor="middle" fill="#4db6ac" font-size="10" font-family="Inter">&#9633; 3</text>
+
+  <!-- Annotations -->
+  <line x1="20" y1="64" x2="36" y2="64" stroke="#8b949e" stroke-width="1" stroke-dasharray="2,2"/>
+  <text x="10" y="68" fill="#8b949e" font-size="8" font-family="Inter">L</text>
+  <text x="44" y="40" fill="#00897b" font-size="8" font-family="Inter" font-weight="600">source label</text>
+  <text x="44" y="30" fill="#00897b" font-size="7" font-family="Inter">(above region)</text>
+  <text x="380" y="44" fill="#8b949e" font-size="8" font-family="Inter">compound badge</text>
+  <text x="380" y="273" fill="#8b949e" font-size="8" font-family="Inter">toggle</text>
+</svg>
+</div>
+<p class="diagram-caption">Anatomy of a compound document: colour-coded transclusion regions with source labels, left-margin bars, a compound badge in the toolbar, and a toggle button.</p>
+
+<h3>The colour palette</h3>
+<p>Each source work gets one of eight colours, determined by a hash of the work ID:</p>
+<table>
+  <tr><th>Colour</th><th>Hex</th><th>Background tint</th></tr>
+  <tr><td><span style="color:#00897b">Teal</span></td><td class="mono">#00897b</td><td>rgba(0,137,123,0.12)</td></tr>
+  <tr><td><span style="color:#5c6bc0">Indigo</span></td><td class="mono">#5c6bc0</td><td>rgba(92,107,192,0.12)</td></tr>
+  <tr><td><span style="color:#f4511e">Orange</span></td><td class="mono">#f4511e</td><td>rgba(244,81,30,0.12)</td></tr>
+  <tr><td><span style="color:#7b1fa2">Purple</span></td><td class="mono">#7b1fa2</td><td>rgba(123,31,162,0.12)</td></tr>
+  <tr><td><span style="color:#c62828">Red</span></td><td class="mono">#c62828</td><td>rgba(198,40,40,0.12)</td></tr>
+  <tr><td><span style="color:#2e7d32">Green</span></td><td class="mono">#2e7d32</td><td>rgba(46,125,50,0.12)</td></tr>
+  <tr><td><span style="color:#00838f">Cyan</span></td><td class="mono">#00838f</td><td>rgba(0,131,143,0.12)</td></tr>
+  <tr><td><span style="color:#e65100">Amber</span></td><td class="mono">#e65100</td><td>rgba(230,81,0,0.12)</td></tr>
+</table>
+
+<h3>Hover tooltips</h3>
+<p>
+Hovering over a transclusion region (or its left-margin bar) shows a tooltip with:
+</p>
+<ul>
+  <li>The source work title</li>
+  <li>"Compound &mdash; transcluded from" label</li>
+  <li>An excerpt of the transcluded text</li>
+  <li>A "Go to [work ID]" button to navigate to the source</li>
+</ul>
+
+<h3>The compound toggle</h3>
+<p>
+A small button in the editor's filter row shows <code>{"\u25A3"} N</code> where N is the number of transclusion elements. Click it to toggle compound highlighting on or off. This is useful when you want to read the document without visual distractions.
+</p>
+
+<h3>The compound badge</h3>
+<p>
+When a document contains transclusions, a badge appears in the document toolbar: <code>{"\u25A3"} 3 sources</code>. This makes it immediately clear that the document is compound &mdash; you don't need to open the compound panel to know.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. The Compound Panel</h2>
+
+<p>
+Click the <strong>compound icon</strong> in the left rail to open the Compound Structure panel. It shows:
+</p>
+
+<ul>
+  <li><strong>Resolved text preview</strong> &mdash; the first 200 characters of the fully resolved compound text</li>
+  <li><strong>Element list</strong> &mdash; each transclusion element with:
+    <ul>
+      <li>Source work title badge</li>
+      <li>Character range <code>[start:end]</code></li>
+      <li>Move up/down buttons (when editable)</li>
+      <li>Remove button (when editable)</li>
+    </ul>
+  </li>
+</ul>
+
+<div class="note">
+  <strong>Removing a transclusion</strong> from the compound panel removes the transclusion element from the document &mdash; the text disappears from the document. This is different from deleting a link, which only removes the connection without affecting content.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Compound vs. Link &mdash; When to Use Which</h2>
+
+<table>
+  <tr><th></th><th>Compound (Transclusion)</th><th>Link</th></tr>
+  <tr><td><strong>What it does</strong></td><td>Makes foreign text appear inline in your document</td><td>Connects two passages with a typed relationship</td></tr>
+  <tr><td><strong>Content changes</strong></td><td>Your document's content changes when source updates</td><td>Neither document's content changes</td></tr>
+  <tr><td><strong>Visual</strong></td><td>Coloured background + source label</td><td>Coloured underline + margin bar</td></tr>
+  <tr><td><strong>Provenance</strong></td><td>Recursive chain via <code>again()</code></td><td>One-hop provenance</td></tr>
+  <tr><td><strong>Use when</strong></td><td>You want the source text to BE part of your document</td><td>You want to reference or annotate a passage</td></tr>
+</table>
+
+<div class="gold">
+  <strong>They're complementary:</strong> A legal brief might <em>transclude</em> the statute text (so it appears inline) AND <em>link</em> to a commentary on that statute (so the connection is visible without copying the commentary). The transclusion is content; the link is metadata.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. How It Works Under the Hood</h2>
+
+<p>
+Xudanu's compound mechanism is architecturally different from Udanax-Gold's:
+</p>
+
+<div class="diagram-container">
+<svg width="500" height="200" viewBox="0 0 500 200">
+  <!-- Gold: side-table -->
+  <rect x="20" y="30" width="200" height="60" rx="6" fill="#161b22" stroke="#30363d"/>
+  <text x="120" y="52" text-anchor="middle" fill="#d29922" font-size="10" font-family="Inter" font-weight="600">GOLD: O-TREE</text>
+  <text x="120" y="72" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter">document text</text>
+
+  <rect x="20" y="100" width="200" height="60" rx="6" fill="#161b22" stroke="#f85149" stroke-dasharray="4,2"/>
+  <text x="120" y="122" text-anchor="middle" fill="#f85149" font-size="10" font-family="Inter" font-weight="600">GOLD: SIDE-TABLE</text>
+  <text x="120" y="142" text-anchor="middle" fill="#8b949e" font-size="10" font-family="Inter">compound spans (separate)</text>
+
+  <line x1="120" y1="90" x2="120" y2="100" stroke="#f85149" stroke-width="1.5" stroke-dasharray="2,2"/>
+  <text x="140" y="98" fill="#f85149" font-size="8" font-family="Inter">can drift!</text>
+
+  <!-- Xudanu: inline -->
+  <rect x="280" y="65" width="200" height="70" rx="6" fill="#161b22" stroke="#3fb950"/>
+  <text x="380" y="87" text-anchor="middle" fill="#3fb950" font-size="10" font-family="Inter" font-weight="600">XUDANU: O-TREE</text>
+  <text x="380" y="105" text-anchor="middle" fill="#c9d1d9" font-size="10" font-family="Inter">text + transclusion</text>
+  <text x="380" y="120" text-anchor="middle" fill="#c9d1d9" font-size="10" font-family="Inter">elements (inline)</text>
+
+  <text x="380" y="160" text-anchor="middle" fill="#3fb950" font-size="9" font-family="Inter">single source of truth</text>
+</svg>
+</div>
+<p class="diagram-caption">Gold stored compound spans in a separate side-table alongside the O-tree (two copies that could drift apart). Xudanu stores transclusions directly in the O-tree as <code>RangeElement::Transclusion</code> &mdash; a single source of truth.</p>
+
+<h3>Resolution pipeline</h3>
+<ol>
+  <li><strong>Transclusion element</strong> lives in the O-tree at a specific position</li>
+  <li><strong>resolveInlineTransclusions</strong> walks the O-tree, finds each transclusion element, and fetches the source text</li>
+  <li>Resolution is <strong>recursive up to 32 levels</strong> with cycle detection (a transclusion of a transclusion of a transclusion...)</li>
+  <li><strong>Span migration</strong> keeps transclusion positions correct when the source work is edited</li>
+  <li><strong>Live updates</strong> &mdash; the server pushes <code>CompoundSourceChanged</code> events; the frontend also polls every 30 seconds as a fallback</li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Xudanu vs. Udanax-Gold Compounds</h2>
+
+<table>
+  <tr><th>Feature</th><th>Udanax-Gold</th><th>Xudanu</th></tr>
+  <tr><td>Storage model</td><td>Side-table (drift-prone)</td><td>Inline in O-tree (single source of truth)</td></tr>
+  <tr><td>Collaborative editing</td><td>Single-user</td><td>CRDT multi-user</td></tr>
+  <tr><td>Span migration</td><td>Manual</td><td>Automatic through arbitrary deltas</td></tr>
+  <tr><td>Live updates</td><td>Pull-based</td><td>Push + poll (CompoundSourceChanged event)</td></tr>
+  <tr><td>Recursive resolution</td><td><code>again()</code> method</td><td>32-level recursive with cycle detection</td></tr>
+  <tr><td>Lazy/template filling</td><td>PlaceHolder + FillDetector + Agenda</td><td>Not implemented (all resolution synchronous)</td></tr>
+  <tr><td>Federated resolution</td><td>Theoretical</td><td>Not implemented (future work)</td></tr>
+  <tr><td>Flatten/break transclusion</td><td>Not implemented</td><td>Not implemented (future work)</td></tr>
+</table>
+
+<div class="gold">
+  <strong>Xudanu's key innovation:</strong> Moving transclusions directly into the O-tree as <code>RangeElement::Transclusion</code> eliminates the dual-copy drift problem that plagued Gold's side-table architecture. This is a design not found in Gold or any other system.
+</div>
+
+<div class="note">
+  <strong>Gold's unrealised vision:</strong> Gold had a sophisticated lazy-resolution system: <code>PlaceHolder</code> (unfilled slots), <code>FillDetector</code> (async fill events), and <code>Agenda</code> (crash-surviving background work queue). These would enable "living documents" that auto-assemble as content appears in the docuverse. Xudanu has stubs for these but doesn't implement them &mdash; all resolution is synchronous. This remains a future direction.
+</div>
+
+<div class="footer">
+  Xudanu Compound Documents Tutorial &mdash; Part of the Xudanu hypertext system.<br>
+  See also: <a href="links-tutorial.html">Links Tutorial</a> &middot; <a href="compound-documents.html">Compound Architecture</a> &middot; <a href="transclusion-engine.html">Transclusion Engine</a> &middot; <a href="gold-heritage.html">Gold Heritage</a> &middot; <a href="index.html">Documentation Index</a>
+</div>
+
+</div>
+</body>
+</html>

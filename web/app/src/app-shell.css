@@ -1475,3 +1475,15 @@
 }
 .annotation-create-btn:hover:not(:disabled) { background: #1d4ed8; }
 .annotation-create-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Compound Badge ── */
+.compound-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #00897b;
+  background: rgba(0, 137, 123, 0.1);
+  border: 1px solid rgba(0, 137, 123, 0.3);
+  border-radius: 10px;
+  padding: 1px 8px;
+  cursor: default;
+}
