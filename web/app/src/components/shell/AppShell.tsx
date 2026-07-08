@@ -323,7 +323,6 @@ export function AppShell() {
       if (padding && padding.length > 0) {
         const newText = text + padding;
         setText(newText);
-        await new Promise((r) => setTimeout(r, 200));
         spanStart = newText.length;
       }
       for (const sr of compound.spanRanges) {
@@ -341,7 +340,6 @@ export function AppShell() {
       );
       const linkId = await transclusion.placeTransclusion(clientRef.current, workBeId, spanStart);
       if (linkId !== null && clientRef.current) {
-        await new Promise((r) => setTimeout(r, 500));
         await transclusion.loadLinks(clientRef.current, workBeId, works);
       }
     },
@@ -382,7 +380,6 @@ export function AppShell() {
 
   const handleLinkCreatorDone = useCallback(async () => {
     if (!clientRef.current || workBeId === null) return;
-    await new Promise((r) => setTimeout(r, 300));
     await transclusion.loadLinks(clientRef.current, workBeId, works);
     await transclusion.loadBacklinks(clientRef.current, workBeId);
   }, [clientRef, workBeId, transclusion, works]);
@@ -397,7 +394,6 @@ export function AppShell() {
     if (!clientRef.current || workBeId === null) return;
     try {
       await clientRef.current.linkSetTypes(linkId, [typeId]);
-      await new Promise((r) => setTimeout(r, 200));
       await transclusion.loadLinks(clientRef.current, workBeId, works);
     } catch (e) {
       console.error("Failed to retype link:", e);
@@ -472,9 +468,10 @@ export function AppShell() {
         typeId,
       );
       if (linkId !== null && clientRef.current) {
-        await new Promise((r) => setTimeout(r, 300));
-        await transclusion.loadLinks(clientRef.current, workBeId, works);
-        await transclusion.loadBacklinks(clientRef.current, workBeId);
+        await Promise.all([
+          transclusion.loadLinks(clientRef.current, workBeId, works),
+          transclusion.loadBacklinks(clientRef.current, workBeId),
+        ]);
       }
     },
     [clientRef, workBeId, selectionRange, displayText, transclusion, works],
