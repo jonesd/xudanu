@@ -1317,9 +1317,6 @@ export function WorkspacePage() {
                       sourceTitles={compound.sourceTitles}
                       spanRanges={compound.spanRanges}
                       onReload={compound.reload}
-                      onInsertElement={compound.insertElement}
-                      onRemoveElement={compound.removeElement}
-                      onMoveElement={compound.moveElement}
                       onRemoveTransclusion={compound.removeTransclusion}
                     />
                   )}

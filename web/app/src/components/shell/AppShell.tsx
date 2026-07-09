@@ -928,9 +928,6 @@ export function AppShell() {
                     spanRanges={compound.spanRanges}
                     works={works}
                     onReload={() => compound.reload()}
-                    onInsertElement={(_i, _el) => Promise.resolve(null)}
-                    onRemoveElement={(_i) => Promise.resolve(null)}
-                    onMoveElement={(_from, _to) => Promise.resolve(null)}
                     onRemoveTransclusion={compound.undoLastInsert}
                     onPullFromWork={handlePullFromWork}
                   />

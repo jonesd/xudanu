@@ -1,10 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import type {
-  CrdtSyncClient,
-  CompoundElementPayload,
-  CompoundResolveWorkResult,
-  SpanRangePayload,
-} from "../api/crdt_sync";
+import type { CrdtSyncClient, SpanRangePayload } from "../api/crdt_sync";
 
 export function useCompoundEdition(
   client: CrdtSyncClient | null,
@@ -25,16 +20,6 @@ export function useCompoundEdition(
         setSpanRanges(inline.spanRanges);
         setSourceTitles(inline.sourceTitles);
         setResolvedText(inline.text);
-        return;
-      }
-
-      const edition = await client.compoundGetEdition(workBeId);
-      if (edition && edition.elements.length > 0) {
-        setHasCompound(true);
-        const result = await client.compoundResolveRecursive(workBeId);
-        setSpanRanges(result.span_ranges || []);
-        setSourceTitles(result.source_titles || {});
-        setResolvedText(result.flat_text || "");
       } else {
         setHasCompound(false);
         setSpanRanges([]);
@@ -56,20 +41,9 @@ export function useCompoundEdition(
         client
           .resolveInlineTransclusions(workBeId!)
           .then((result) => {
-            if (result.spanRanges.length > 0) {
-              setSpanRanges(result.spanRanges);
-              setSourceTitles(result.sourceTitles);
-              setResolvedText(result.text);
-            } else {
-              client
-                .compoundResolveRecursive(workBeId!)
-                .then((r: CompoundResolveWorkResult) => {
-                  setSpanRanges(r.span_ranges || []);
-                  setSourceTitles(r.source_titles || {});
-                  setResolvedText(r.flat_text || "");
-                })
-                .catch(() => {});
-            }
+            setSpanRanges(result.spanRanges);
+            setSourceTitles(result.sourceTitles);
+            setResolvedText(result.text);
           })
           .catch(() => {});
       };
@@ -154,51 +128,6 @@ export function useCompoundEdition(
     }
   }, [client, workBeId]);
 
-  const insertElement = useCallback(
-    async (index: number, element: CompoundElementPayload): Promise<number | null> => {
-      if (!client || workBeId === null) return null;
-      try {
-        const count = await client.compoundInsertElement(workBeId, index, element);
-        await loadCompound();
-        return count;
-      } catch (e) {
-        console.error("useCompoundEdition: insert element failed", e);
-        return null;
-      }
-    },
-    [client, workBeId, loadCompound],
-  );
-
-  const removeElement = useCallback(
-    async (index: number): Promise<number | null> => {
-      if (!client || workBeId === null) return null;
-      try {
-        const count = await client.compoundRemoveElement(workBeId, index);
-        await loadCompound();
-        return count;
-      } catch (e) {
-        console.error("useCompoundEdition: remove element failed", e);
-        return null;
-      }
-    },
-    [client, workBeId, loadCompound],
-  );
-
-  const moveElement = useCallback(
-    async (from: number, to: number): Promise<number | null> => {
-      if (!client || workBeId === null) return null;
-      try {
-        const count = await client.compoundMoveElement(workBeId, from, to);
-        await loadCompound();
-        return count;
-      } catch (e) {
-        console.error("useCompoundEdition: move element failed", e);
-        return null;
-      }
-    },
-    [client, workBeId, loadCompound],
-  );
-
   return {
     hasCompound,
     spanRanges,
@@ -208,8 +137,5 @@ export function useCompoundEdition(
     undoLastInsert,
     removeTransclusion,
     reload: loadCompound,
-    insertElement,
-    removeElement,
-    moveElement,
   };
 }
